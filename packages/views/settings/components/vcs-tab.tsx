@@ -4,17 +4,17 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, GitBranch, RefreshCw, Trash2 } from "lucide-react";
-import { Button } from "@multica/ui/components/ui/button";
-import { Card, CardContent } from "@multica/ui/components/ui/card";
-import { Input } from "@multica/ui/components/ui/input";
-import { Label } from "@multica/ui/components/ui/label";
+import { Button } from "@cordy/ui/components/ui/button";
+import { Card, CardContent } from "@cordy/ui/components/ui/card";
+import { Input } from "@cordy/ui/components/ui/input";
+import { Label } from "@cordy/ui/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@multica/ui/components/ui/select";
+} from "@cordy/ui/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,11 +24,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { vcsConnectionsOptions } from "@multica/core/vcs";
-import { api } from "@multica/core/api";
-import type { ConnectVCSResponse, VCSProvider } from "@multica/core/types";
+} from "@cordy/ui/components/ui/alert-dialog";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { vcsConnectionsOptions } from "@cordy/core/vcs";
+import { api } from "@cordy/core/api";
+import type { ConnectVCSResponse, VCSProvider } from "@cordy/core/types";
 import { useT } from "../../i18n";
 
 const PROVIDERS: VCSProvider[] = ["forgejo", "gitea", "gitlab"];
@@ -206,7 +206,7 @@ export function VCSTab() {
               <p className="text-caption text-muted-foreground">
                 {t(($) => $.vcs.not_configured)}{" "}
                 <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                  MULTICA_VCS_SECRET_KEY
+                  CORDY_VCS_SECRET_KEY
                 </code>
                 .
               </p>

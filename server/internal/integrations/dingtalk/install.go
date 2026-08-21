@@ -12,15 +12,15 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	"github.com/multica-ai/multica/server/internal/util/secretbox"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel/engine"
+	"github.com/cordy-ai/cordy/server/internal/util/secretbox"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // This file is the DingTalk install backend. DingTalk uses the
 // bring-your-own-app (BYO) model: the workspace admin creates their own DingTalk
 // Stream-mode robot, and pastes its AppKey (client id) + AppSecret (client
-// secret) into Multica (the paste path lives in byo_install.go). The
+// secret) into Cordy (the paste path lives in byo_install.go). The
 // InstallService owns the at-rest encryption of the AppSecret — so no caller can
 // write a channel_installation with a plaintext secret — plus the shared
 // persistInstall transaction and the list / get / revoke management surface.
@@ -29,11 +29,11 @@ var (
 	// ErrInstallationNotFound surfaces "no row matches in this workspace".
 	ErrInstallationNotFound = errors.New("dingtalk installation not found")
 	// ErrRobotOwnedByAnotherWorkspace is returned when the pasted DingTalk robot
-	// is already connected to a live owner in a DIFFERENT Multica workspace — it
+	// is already connected to a live owner in a DIFFERENT Cordy workspace — it
 	// would collide with the (channel_type, app_id) routing index. A DingTalk
 	// robot is one bot identity and maps to one installation/default agent;
 	// group-specific routes may target other agents inside that workspace.
-	ErrRobotOwnedByAnotherWorkspace = errors.New("dingtalk: this DingTalk robot is already connected to a different Multica workspace")
+	ErrRobotOwnedByAnotherWorkspace = errors.New("dingtalk: this DingTalk robot is already connected to a different Cordy workspace")
 	// ErrRobotOwnedBySameWorkspace is returned when the robot is already connected
 	// to a DIFFERENT (live, non-archived) agent in the SAME workspace, pointing
 	// the user at the Disconnect they can actually reach (#4810).

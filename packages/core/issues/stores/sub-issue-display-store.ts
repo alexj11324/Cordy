@@ -60,7 +60,7 @@ export const useSubIssueDisplayStore = create<SubIssueDisplayStore>()(
         })),
     }),
     {
-      name: "multica_sub_issue_display",
+      name: "cordy_sub_issue_display",
       storage: createJSONStorage(() => defaultStorage),
       // Deep-merge rowProperties so a key added in a future release defaults
       // to visible instead of undefined (persist's default shallow merge

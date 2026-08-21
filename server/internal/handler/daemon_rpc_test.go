@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/daemonws"
+	"github.com/cordy-ai/cordy/server/internal/daemonws"
 )
 
 // TestDaemonRPCHandler_TasksClaim pins the WS-first claim binding (MUL-4257):

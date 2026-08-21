@@ -9,9 +9,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/events"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // TestFinalizeTaskClaimFailureRollsBackTokenThenRequeue is the regression for
@@ -80,7 +80,7 @@ func dispatchedCommentTaskFixture(t *testing.T, ctx context.Context, pool *pgxpo
 	suffix := time.Now().UnixNano()
 
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ($1,$2) RETURNING id`,
-		"Finalize Fail Test", fmt.Sprintf("finalize-fail-%d@multica.ai", suffix)).Scan(&userID); err != nil {
+		"Finalize Fail Test", fmt.Sprintf("finalize-fail-%d@cordy.ai", suffix)).Scan(&userID); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	if err := pool.QueryRow(ctx, `INSERT INTO workspace (name, slug, description, issue_prefix) VALUES ($1,$2,$3,$4) RETURNING id`,

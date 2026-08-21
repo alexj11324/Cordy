@@ -19,15 +19,15 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/util"
-	"github.com/multica-ai/multica/server/internal/util/secretbox"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/featureflag"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
-	"github.com/multica-ai/multica/server/pkg/remotemcp"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	"github.com/cordy-ai/cordy/server/internal/util/secretbox"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/featureflag"
+	"github.com/cordy-ai/cordy/server/pkg/plugincontract"
+	"github.com/cordy-ai/cordy/server/pkg/remotemcp"
 )
 
-// LocalSourcePrefix installs from MULTICA_PLUGIN_DIR instead of the network.
+// LocalSourcePrefix installs from CORDY_PLUGIN_DIR instead of the network.
 // Self-hosted operators and plugin authors need a loop that does not require
 // publishing to a public HTTPS host first.
 const LocalSourcePrefix = "local:"
@@ -40,16 +40,16 @@ type PluginService struct {
 	// Secrets encrypts `secret` config values. Nil disables secret writes so a
 	// misconfigured deployment fails closed instead of storing plaintext.
 	Secrets *secretbox.Box
-	// LocalDir is MULTICA_PLUGIN_DIR. Empty disables local sources.
+	// LocalDir is CORDY_PLUGIN_DIR. Empty disables local sources.
 	LocalDir string
-	// DevOrigins is MULTICA_PLUGIN_DEV_ORIGINS: origins a plugin author may
+	// DevOrigins is CORDY_PLUGIN_DEV_ORIGINS: origins a plugin author may
 	// serve a manifest from while building one, typically a localhost static
 	// server. Empty in every deployment that has not opted in, which is the
 	// only reason it is safe to skip the public-HTTPS guard for them.
 	DevOrigins []string
 	// Host gates which declared contributions this build can actually run.
 	Host plugincontract.Capabilities
-	// DeploymentKey is the raw MULTICA_PLUGIN_SECRET_KEY, used to derive each
+	// DeploymentKey is the raw CORDY_PLUGIN_SECRET_KEY, used to derive each
 	// installation's hook signing secret. Held separately from Secrets because
 	// signing needs a key it can reproduce, not a sealed box.
 	DeploymentKey []byte
@@ -75,11 +75,11 @@ func NewPluginService(queries *db.Queries, txStarter TxStarter) *PluginService {
 	service := &PluginService{
 		Queries:    queries,
 		TxStarter:  txStarter,
-		LocalDir:   strings.TrimSpace(os.Getenv("MULTICA_PLUGIN_DIR")),
-		DevOrigins: parseDevOrigins(os.Getenv("MULTICA_PLUGIN_DEV_ORIGINS")),
+		LocalDir:   strings.TrimSpace(os.Getenv("CORDY_PLUGIN_DIR")),
+		DevOrigins: parseDevOrigins(os.Getenv("CORDY_PLUGIN_DEV_ORIGINS")),
 		Host:       plugincontract.HostCapabilities(),
 	}
-	service.HookClient = devHookClient(service.DevOrigins, os.Getenv("MULTICA_PLUGIN_DEV_CA"))
+	service.HookClient = devHookClient(service.DevOrigins, os.Getenv("CORDY_PLUGIN_DEV_CA"))
 	return service
 }
 
@@ -101,12 +101,12 @@ func devHookClient(devOrigins []string, caPath string) *http.Client {
 	}
 	pem, err := os.ReadFile(caPath)
 	if err != nil {
-		slog.Warn("plugins: MULTICA_PLUGIN_DEV_CA could not be read; dev hook endpoints will not be trusted", "path", caPath, "error", err)
+		slog.Warn("plugins: CORDY_PLUGIN_DEV_CA could not be read; dev hook endpoints will not be trusted", "path", caPath, "error", err)
 		return nil
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(pem) {
-		slog.Warn("plugins: MULTICA_PLUGIN_DEV_CA contained no certificates", "path", caPath)
+		slog.Warn("plugins: CORDY_PLUGIN_DEV_CA contained no certificates", "path", caPath)
 		return nil
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -308,13 +308,13 @@ func fetchDevManifest(ctx context.Context, sourceURL string) ([]byte, error) {
 
 func (s *PluginService) readLocalManifest(name string) ([]byte, error) {
 	if s.LocalDir == "" {
-		return nil, pluginErrf(PluginErrorInvalid, "local plugin sources require MULTICA_PLUGIN_DIR")
+		return nil, pluginErrf(PluginErrorInvalid, "local plugin sources require CORDY_PLUGIN_DIR")
 	}
 	// The name indexes a directory the operator already controls, but it still
 	// arrives over the API, so it must not be able to escape the configured
 	// root or name a dotfile path.
 	if name == "" || strings.ContainsAny(name, `/\`) || strings.HasPrefix(name, ".") {
-		return nil, pluginErrf(PluginErrorInvalid, "local plugin source must be a single directory name under MULTICA_PLUGIN_DIR")
+		return nil, pluginErrf(PluginErrorInvalid, "local plugin source must be a single directory name under CORDY_PLUGIN_DIR")
 	}
 	path := filepath.Join(s.LocalDir, name, plugincontract.ManifestFilename)
 	raw, err := os.ReadFile(path)
@@ -643,7 +643,7 @@ func (s *PluginService) SetConfig(ctx context.Context, installation db.PluginIns
 	}
 
 	if len(secrets) > 0 && s.Secrets == nil {
-		return db.PluginInstallation{}, pluginErrf(PluginErrorUnavailable, "plugin secrets are disabled: MULTICA_PLUGIN_SECRET_KEY is not configured")
+		return db.PluginInstallation{}, pluginErrf(PluginErrorUnavailable, "plugin secrets are disabled: CORDY_PLUGIN_SECRET_KEY is not configured")
 	}
 
 	// Secrets and plain values are two tables with no foreign key between them,
@@ -833,10 +833,10 @@ func (s *PluginService) InstallationForWorkspace(ctx context.Context, workspaceI
 // is the layer that touches the filesystem and it does not get to assume that.
 func (s *PluginService) readLocalFile(name, entry string) ([]byte, error) {
 	if s.LocalDir == "" {
-		return nil, pluginErrf(PluginErrorInvalid, "local plugin sources require MULTICA_PLUGIN_DIR")
+		return nil, pluginErrf(PluginErrorInvalid, "local plugin sources require CORDY_PLUGIN_DIR")
 	}
 	if name == "" || strings.ContainsAny(name, `/\`) || strings.HasPrefix(name, ".") {
-		return nil, pluginErrf(PluginErrorInvalid, "local plugin source must be a single directory name under MULTICA_PLUGIN_DIR")
+		return nil, pluginErrf(PluginErrorInvalid, "local plugin source must be a single directory name under CORDY_PLUGIN_DIR")
 	}
 	root := filepath.Join(s.LocalDir, name)
 	path := filepath.Clean(filepath.Join(root, entry))

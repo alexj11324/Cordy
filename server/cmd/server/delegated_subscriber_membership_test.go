@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/events"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // addWorkspaceMember joins a user to the test workspace and returns a function
@@ -54,7 +54,7 @@ func TestDelegatedSubscribe_SkipsOriginatorRemovedFromWorkspace(t *testing.T) {
 	bus := events.New()
 	registerSubscriberListeners(bus, testPool)
 
-	const email = "delegated-revoked-originator@multica.test"
+	const email = "delegated-revoked-originator@cordy.test"
 	cleanupTestUser(t, email)
 	userID := createTestUser(t, email)
 	t.Cleanup(func() { cleanupTestUser(t, email) })
@@ -85,7 +85,7 @@ func TestDelegatedSubscribe_SubscribesOriginatorStillInWorkspace(t *testing.T) {
 	bus := events.New()
 	registerSubscriberListeners(bus, testPool)
 
-	const email = "delegated-active-originator@multica.test"
+	const email = "delegated-active-originator@cordy.test"
 	cleanupTestUser(t, email)
 	userID := createTestUser(t, email)
 	t.Cleanup(func() { cleanupTestUser(t, email) })

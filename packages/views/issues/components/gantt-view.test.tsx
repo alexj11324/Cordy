@@ -4,9 +4,9 @@ import { screen } from "@testing-library/react";
 import {
   type IssueViewState,
   viewStoreSlice,
-} from "@multica/core/issues/stores/view-store";
-import { ViewStoreProvider } from "@multica/core/issues/stores/view-store-context";
-import type { Issue } from "@multica/core/types";
+} from "@cordy/core/issues/stores/view-store";
+import { ViewStoreProvider } from "@cordy/core/issues/stores/view-store-context";
+import type { Issue } from "@cordy/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { IssueContextMenuProvider } from "../actions";
 
@@ -15,13 +15,13 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
   useQuery: () => ({ data: [] }),
 }));
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@cordy/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
 // The row's start / due range lives in a tooltip. This test is about how the
 // dates are formatted, not about hover timing, so render the content inline.
-vi.mock("@multica/ui/components/ui/tooltip", () => ({
+vi.mock("@cordy/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
   TooltipTrigger: ({ render }: { render: React.ReactNode }) => render,
   TooltipContent: ({ children }: { children: React.ReactNode }) => children,
@@ -41,8 +41,8 @@ vi.mock("../../navigation", () => ({
   NavigationProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-vi.mock("@multica/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@multica/core/paths")>();
+vi.mock("@cordy/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@cordy/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",

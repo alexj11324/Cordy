@@ -19,28 +19,28 @@ import type {
   Agent,
   AgentRuntime,
   UpdateAgentRequest,
-} from "@multica/core/types";
+} from "@cordy/core/types";
 import {
   type AgentPresenceDetail,
   isAgentRuntimeBound,
   useWorkspacePresenceMap,
-} from "@multica/core/agents";
-import { api, ApiError } from "@multica/core/api";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useModalStore } from "@multica/core/modals";
-import { useWorkspacePaths } from "@multica/core/paths";
+} from "@cordy/core/agents";
+import { api, ApiError } from "@cordy/core/api";
+import { useAuthStore } from "@cordy/core/auth";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { useModalStore } from "@cordy/core/modals";
+import { useWorkspacePaths } from "@cordy/core/paths";
 import {
   agentDetailOptions,
   agentListOptions,
   cacheAgentResponse,
   memberListOptions,
   workspaceKeys,
-} from "@multica/core/workspace/queries";
-import { runtimeDisplayLabel, runtimeListOptions } from "@multica/core/runtimes";
-import { useAgentPermissions } from "@multica/core/permissions";
-import { Button } from "@multica/ui/components/ui/button";
-import { CapabilityBanner } from "@multica/ui/components/common/capability-banner";
+} from "@cordy/core/workspace/queries";
+import { runtimeDisplayLabel, runtimeListOptions } from "@cordy/core/runtimes";
+import { useAgentPermissions } from "@cordy/core/permissions";
+import { Button } from "@cordy/ui/components/ui/button";
+import { CapabilityBanner } from "@cordy/ui/components/common/capability-banner";
 import {
   Dialog,
   DialogContent,
@@ -48,14 +48,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@cordy/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
+} from "@cordy/ui/components/ui/dropdown-menu";
+import { Skeleton } from "@cordy/ui/components/ui/skeleton";
 import { AppLink, useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -490,7 +490,7 @@ function DetailHeader({
    *  the chat, which is what stops AppLink from pushing. */
   onDm: (e: React.MouseEvent<HTMLAnchorElement>) => void;
   onAssign: () => void;
-  /** Absent for Multica's built-in agents, which the server refuses to
+  /** Absent for Cordy's built-in agents, which the server refuses to
    *  archive — the menu hides the action rather than offering a failure. */
   onArchive?: () => void;
 }) {

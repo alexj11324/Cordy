@@ -14,12 +14,12 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/internal/issuestatus"
-	"github.com/multica-ai/multica/server/internal/logger"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/cordy-ai/cordy/server/internal/analytics"
+	"github.com/cordy-ai/cordy/server/internal/issuestatus"
+	"github.com/cordy-ai/cordy/server/internal/logger"
+	obsmetrics "github.com/cordy-ai/cordy/server/internal/metrics"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 var nonAlpha = regexp.MustCompile(`[^a-zA-Z]`)

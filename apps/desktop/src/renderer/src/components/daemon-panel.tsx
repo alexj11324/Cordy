@@ -15,14 +15,14 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { cn } from "@multica/ui/lib/utils";
-import { copyText } from "@multica/ui/lib/clipboard";
-import { Button } from "@multica/ui/components/ui/button";
+import { cn } from "@cordy/ui/lib/utils";
+import { copyText } from "@cordy/ui/lib/clipboard";
+import { Button } from "@cordy/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@cordy/ui/components/ui/dialog";
 import { toast } from "sonner";
 import type { DaemonStatus } from "../../../shared/daemon-types";
 import {

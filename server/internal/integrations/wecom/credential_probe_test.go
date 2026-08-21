@@ -24,7 +24,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/util/secretbox"
+	"github.com/cordy-ai/cordy/server/internal/util/secretbox"
 )
 
 func testUUID(b byte) pgtype.UUID { return pgtype.UUID{Bytes: [16]byte{b}, Valid: true} }

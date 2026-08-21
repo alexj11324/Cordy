@@ -5,7 +5,7 @@
  * Issue/Comment (views/editor/readonly-content.tsx) — used to carry a verbatim
  * fork of the sanitize schema and urlTransform each, and had already drifted:
  * readonly whitelisted <mark>, chat did not. Both now import the single
- * canonical base from @multica/ui/markdown.
+ * canonical base from @cordy/ui/markdown.
  *
  * This suite runs one set of security fixtures through BOTH surfaces and
  * asserts the same outcome. It is the mechanism that stops a third fork from
@@ -16,9 +16,9 @@ import { render } from "@testing-library/react";
 import {
   Markdown as MarkdownBase,
   markdownSanitizeSchema,
-} from "@multica/ui/markdown";
+} from "@cordy/ui/markdown";
 
-vi.mock("@multica/core/config", () => ({
+vi.mock("@cordy/core/config", () => ({
   useConfigStore: (selector: (state: { cdnDomain: string }) => unknown) =>
     selector({ cdnDomain: "" }),
   configStore: { getState: () => ({ cdnDomain: "" }) },
@@ -38,13 +38,13 @@ vi.mock("../i18n", async () => {
   };
 });
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@cordy/core/api", () => ({
   api: { getAttachmentTextContent: vi.fn() },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@cordy/core/paths", () => ({
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/test/issues/${id}`,
     projectDetail: (id: string) => `/test/projects/${id}`,

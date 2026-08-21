@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { PluginInstallation, PluginSurface } from "@multica/core/types";
+import type { PluginInstallation, PluginSurface } from "@cordy/core/types";
 import {
   buildSurfaceCSP,
   buildSurfaceDocument,
@@ -26,7 +26,7 @@ function installation(overrides: Partial<PluginInstallation> = {}): PluginInstal
     plugin_key: "com.example.hello",
     name: "Hello Panel",
     version: "1.0.0",
-    source_url: "https://example.com/plugin/multica.plugin.json",
+    source_url: "https://example.com/plugin/cordy.plugin.json",
     enabled: true,
     granted_scopes: ["issues:read"],
     config_schema: [],
@@ -92,22 +92,22 @@ describe("surface entry resolution", () => {
   });
 
   it("refuses a plaintext source on a real host", () => {
-    expect(resolveSurfaceEntry(installation({ source_url: "http://example.com/multica.plugin.json" }), SURFACE)).toBeNull();
+    expect(resolveSurfaceEntry(installation({ source_url: "http://example.com/cordy.plugin.json" }), SURFACE)).toBeNull();
   });
 
   it("allows plain HTTP from loopback so a surface can be developed locally", () => {
     // Browsers already treat loopback as a secure context. Without this a
     // plugin author cannot iterate on a surface at all: there is no way to
     // serve one over HTTPS from a laptop.
-    expect(resolveSurfaceEntry(installation({ source_url: "http://localhost:8787/multica.plugin.json" }), SURFACE))
+    expect(resolveSurfaceEntry(installation({ source_url: "http://localhost:8787/cordy.plugin.json" }), SURFACE))
       .toBe("http://localhost:8787/ui/main.js");
-    expect(resolveSurfaceEntry(installation({ source_url: "http://127.0.0.1:8787/multica.plugin.json" }), SURFACE))
+    expect(resolveSurfaceEntry(installation({ source_url: "http://127.0.0.1:8787/cordy.plugin.json" }), SURFACE))
       .toBe("http://127.0.0.1:8787/ui/main.js");
   });
 
   it("does not treat a hostname that merely contains localhost as loopback", () => {
-    expect(resolveSurfaceEntry(installation({ source_url: "http://localhost.evil.test/multica.plugin.json" }), SURFACE)).toBeNull();
-    expect(resolveSurfaceEntry(installation({ source_url: "http://notlocalhost/multica.plugin.json" }), SURFACE)).toBeNull();
+    expect(resolveSurfaceEntry(installation({ source_url: "http://localhost.evil.test/cordy.plugin.json" }), SURFACE)).toBeNull();
+    expect(resolveSurfaceEntry(installation({ source_url: "http://notlocalhost/cordy.plugin.json" }), SURFACE)).toBeNull();
   });
 });
 

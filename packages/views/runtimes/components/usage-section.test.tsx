@@ -3,8 +3,8 @@
 import type { ReactNode } from "react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import type { AgentRuntime } from "@multica/core/types";
-import { I18nProvider } from "@multica/core/i18n/react";
+import type { AgentRuntime } from "@cordy/core/types";
+import { I18nProvider } from "@cordy/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enRuntimes from "../../locales/en/runtimes.json";
 
@@ -26,16 +26,16 @@ vi.mock("../../common/use-viewing-timezone", () => ({
   useViewingTimezone: () => VIEWER_TZ,
 }));
 
-vi.mock("@multica/core/runtimes/queries", () => ({
+vi.mock("@cordy/core/runtimes/queries", () => ({
   runtimeUsageOptions,
   runtimeUsageByAgentOptions,
 }));
 
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@cordy/core/workspace/queries", () => ({
   agentListOptions: () => ({ kind: "agents" as const }),
 }));
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@cordy/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
@@ -49,7 +49,7 @@ const pricingState = vi.hoisted(() => ({
   pricings: {} as Record<string, unknown>,
 }));
 
-vi.mock("@multica/core/runtimes/custom-pricing-store", () => {
+vi.mock("@cordy/core/runtimes/custom-pricing-store", () => {
   const useCustomPricingStore = Object.assign(
     (sel?: (s: typeof pricingState) => unknown) =>
       sel ? sel(pricingState) : pricingState,

@@ -5,8 +5,8 @@ import (
 	"log/slog"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 // revokeAndRemoveMember converges all server-side state that should follow a
@@ -133,7 +133,7 @@ func (h *Handler) revokeAndRemoveMember(ctx context.Context, workspaceID, userID
 	// but pruning stops a stale binding from lingering across a remove/re-add.
 	if err := qtx.DeleteChannelUserBindingsByWorkspaceMember(ctx, db.DeleteChannelUserBindingsByWorkspaceMemberParams{
 		WorkspaceID:   workspaceID,
-		MulticaUserID: userID,
+		CordyUserID: userID,
 	}); err != nil {
 		return empty, err
 	}

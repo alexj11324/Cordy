@@ -13,18 +13,18 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
-import { Badge } from "@multica/ui/components/ui/badge";
-import { Button } from "@multica/ui/components/ui/button";
-import { useCurrentWorkspace } from "@multica/core/paths";
-import { useCurrentMember } from "@multica/core/permissions";
-import { workspaceMcpServersOptions } from "@multica/core/workspace/queries";
+} from "@cordy/ui/components/ui/alert-dialog";
+import { Badge } from "@cordy/ui/components/ui/badge";
+import { Button } from "@cordy/ui/components/ui/button";
+import { useCurrentWorkspace } from "@cordy/core/paths";
+import { useCurrentMember } from "@cordy/core/permissions";
+import { workspaceMcpServersOptions } from "@cordy/core/workspace/queries";
 import {
   useCreateWorkspaceMcpServer,
   useDeleteWorkspaceMcpServer,
   useUpdateWorkspaceMcpServer,
-} from "@multica/core/workspace/mutations";
-import type { WorkspaceMcpServer } from "@multica/core/types";
+} from "@cordy/core/workspace/mutations";
+import type { WorkspaceMcpServer } from "@cordy/core/types";
 import { McpServerDialog } from "../../agents/components/tabs/mcp-server-dialog";
 import type { ManagedMcpServer } from "../../agents/components/tabs/mcp-config-model";
 import { useT } from "../../i18n";

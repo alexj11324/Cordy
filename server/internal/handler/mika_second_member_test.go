@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/cordy-ai/cordy/server/internal/service"
 )
 
 // addSecondWorkspaceMember creates another member of the handler test
@@ -75,7 +75,7 @@ func TestStartMikaOnboarding_AllowsAnyMemberNotJustTheOwner(t *testing.T) {
 		t.Fatalf("provision mika: expected 201, got %d: %s", owner.Code, owner.Body.String())
 	}
 
-	second := addSecondWorkspaceMember(t, "mika-second-member@multica.test")
+	second := addSecondWorkspaceMember(t, "mika-second-member@cordy.test")
 	joined := createMikaAs(t, second, map[string]any{
 		"runtime_id":    handlerTestRuntimeID(t),
 		"language":      "en",
@@ -197,7 +197,7 @@ func TestCreateMikaAgent_SessionIsPerMemberAndStable(t *testing.T) {
 
 	// Another member of the same workspace gets their own conversation with
 	// the same Mika, not the first member's.
-	other := addSecondWorkspaceMember(t, "mika-session-owner@multica.test")
+	other := addSecondWorkspaceMember(t, "mika-session-owner@cordy.test")
 	otherResp := decodeMika(t, createMikaAs(t, other, map[string]any{
 		"runtime_id": runtimeID, "language": "en", "session_title": "Getting started with Mika",
 	}))

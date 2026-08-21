@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { WorkspaceSlugProvider } from "@multica/core/paths";
-import type { InboxItem } from "@multica/core/types";
+import { WorkspaceSlugProvider } from "@cordy/core/paths";
+import type { InboxItem } from "@cordy/core/types";
 import { NavigationProvider } from "../../navigation";
-import { I18nProvider } from "@multica/core/i18n/react";
+import { I18nProvider } from "@cordy/core/i18n/react";
 import enInbox from "../../locales/en/inbox.json";
 
-vi.mock("@multica/core/issue-statuses/hooks", () => ({
+vi.mock("@cordy/core/issue-statuses/hooks", () => ({
   // The catalog is server state; these suites render leaves without a
   // QueryClientProvider, so it is stubbed like the other data hooks. Built-in
   // keys are their own category, which is what this fixture asserts on.

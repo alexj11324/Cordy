@@ -1,19 +1,19 @@
 # Entitlement policy consumer
 
-This package is the mechanical Multica-side consumer of the private Cloud
+This package is the mechanical Cordy-side consumer of the private Cloud
 enforcement-policy endpoint. Commercial inputs stay in Cloud: this package does
 not contain plan names, subscription-state mapping, rollout dates, cohorts,
 exemptions, limit values, or kill-switch policy.
 
 Production wiring remains explicit and off by default. Set
-`MULTICA_ENTITLEMENT_POLICY_ENABLED=true`,
-`MULTICA_ENTITLEMENT_POLICY_URL`, and the independent
-`MULTICA_ENTITLEMENT_SERVICE_TOKEN` to enable the client. A disabled client
+`CORDY_ENTITLEMENT_POLICY_ENABLED=true`,
+`CORDY_ENTITLEMENT_POLICY_URL`, and the independent
+`CORDY_ENTITLEMENT_SERVICE_TOKEN` to enable the client. A disabled client
 performs no HTTP request, and the autopilot consumer does not access its quota
 tables; self-hosted deployments therefore retain the legacy dispatch path.
 Timeout, stale grace, and the emergency down switch are controlled by
-`MULTICA_ENTITLEMENT_POLICY_TIMEOUT`, `MULTICA_ENTITLEMENT_STALE_GRACE`, and
-`MULTICA_ENTITLEMENT_EMERGENCY_DISABLED`.
+`CORDY_ENTITLEMENT_POLICY_TIMEOUT`, `CORDY_ENTITLEMENT_STALE_GRACE`, and
+`CORDY_ENTITLEMENT_EMERGENCY_DISABLED`.
 
 ## Contract
 

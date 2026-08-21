@@ -27,9 +27,9 @@ const h = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@multica/core/api", async () => {
-  const actual = await vi.importActual<typeof import("@multica/core/api")>(
-    "@multica/core/api",
+vi.mock("@cordy/core/api", async () => {
+  const actual = await vi.importActual<typeof import("@cordy/core/api")>(
+    "@cordy/core/api",
   );
   return {
     ...actual,
@@ -43,17 +43,17 @@ vi.mock("@multica/core/api", async () => {
     },
   };
 });
-vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
-vi.mock("@multica/core/chat", () => ({
+vi.mock("@cordy/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@cordy/core/chat", () => ({
   useChatStore: Object.assign((sel: (s: typeof h.store) => unknown) => sel(h.store), {
     getState: () => h.store,
   }),
 }));
-// `@multica/core/realtime` is deliberately NOT mocked: removeChatMessageFromCaches
+// `@cordy/core/realtime` is deliberately NOT mocked: removeChatMessageFromCaches
 // is the behaviour under test.
 
-import { chatKeys } from "@multica/core/chat/queries";
-import type { ChatMessage, ChatMessagesPage } from "@multica/core/types";
+import { chatKeys } from "@cordy/core/chat/queries";
+import type { ChatMessage, ChatMessagesPage } from "@cordy/core/types";
 import { useBuilderSession } from "./use-builder-session";
 
 const sessionId = "session-1";

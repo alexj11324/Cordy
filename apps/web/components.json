@@ -13,11 +13,11 @@
   "iconLibrary": "lucide",
   "rtl": false,
   "aliases": {
-    "components": "@multica/ui/components",
-    "utils": "@multica/ui/lib/utils",
-    "ui": "@multica/ui/components/ui",
-    "lib": "@multica/ui/lib",
-    "hooks": "@multica/ui/hooks"
+    "components": "@cordy/ui/components",
+    "utils": "@cordy/ui/lib/utils",
+    "ui": "@cordy/ui/components/ui",
+    "lib": "@cordy/ui/lib",
+    "hooks": "@cordy/ui/hooks"
   },
   "menuColor": "default",
   "menuAccent": "subtle",

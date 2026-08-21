@@ -22,12 +22,12 @@ export function createKoDict(allowSignup: boolean): LandingDict {
       headlineLine1: "다음에 합류할 10명은",
       headlineLine2: "사람이 아닐지도 모릅니다.",
       subheading:
-        "Multica는 코딩 AI 에이전트를 진짜 팀원으로 만들어 주는 오픈소스 플랫폼입니다. 태스크를 맡기고, 진행 상황을 따라가고, 반복되는 노하우를 스킬로 쌓아 두세요. 사람과 AI 에이전트로 이루어진 팀을 한곳에서 관리할 수 있습니다.",
+        "Cordy는 코딩 AI 에이전트를 진짜 팀원으로 만들어 주는 오픈소스 플랫폼입니다. 태스크를 맡기고, 진행 상황을 따라가고, 반복되는 노하우를 스킬로 쌓아 두세요. 사람과 AI 에이전트로 이루어진 팀을 한곳에서 관리할 수 있습니다.",
       cta: "무료로 시작하기",
       downloadDesktop: "데스크톱 다운로드",
       talkToSales: "영업팀에 문의",
       worksWith: "지원 도구",
-      imageAlt: "사람과 AI 에이전트가 함께 태스크를 관리하는 Multica 보드 화면",
+      imageAlt: "사람과 AI 에이전트가 함께 태스크를 관리하는 Cordy 보드 화면",
     },
     features: {
       teammates: {
@@ -57,7 +57,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
         label: "자율 실행",
         title: "맡겨 두기만 하세요 — 에이전트가 알아서 끝까지 해냅니다",
         description:
-          "한 번 답하고 끝나는 프롬프트 도구가 아닙니다. 작업을 대기열에 넣고, 가져오고, 실행하고, 완료 또는 실패까지 보고하는 흐름 전체를 Multica가 관리합니다. 막힌 부분은 에이전트가 먼저 알려 주고, 진행 상황은 실시간으로 올라옵니다.",
+          "한 번 답하고 끝나는 프롬프트 도구가 아닙니다. 작업을 대기열에 넣고, 가져오고, 실행하고, 완료 또는 실패까지 보고하는 흐름 전체를 Cordy가 관리합니다. 막힌 부분은 에이전트가 먼저 알려 주고, 진행 상황은 실시간으로 올라옵니다.",
         cards: [
           {
             title: "처음부터 끝까지 추적",
@@ -118,7 +118,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           {
             title: "처음 실행할 때 자동 등록",
             description:
-              "Multica는 Antigravity, Claude Code, CodeBuddy, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, Trae CLI 등 23개 지원 도구를 스캔해 이미 설치된 것을 런타임으로 자동 등록합니다.",
+              "Cordy는 Antigravity, Claude Code, CodeBuddy, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, Trae CLI 등 23개 지원 도구를 스캔해 이미 설치된 것을 런타임으로 자동 등록합니다.",
           },
         ],
       },
@@ -139,7 +139,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
         {
           title: "CLI 설치하고 내 컴퓨터 연결하기",
           description:
-            "`multica setup`을 실행하면 로그인, 데몬 실행, 지원 코딩 도구 스캔까지 차례대로 안내합니다. 이미 설치된 도구는 자동으로 런타임에 등록됩니다.",
+            "`cordy setup`을 실행하면 로그인, 데몬 실행, 지원 코딩 도구 스캔까지 차례대로 안내합니다. 이미 설치된 도구는 자동으로 런타임에 등록됩니다.",
         },
         {
           title: "첫 에이전트 만들기",
@@ -161,13 +161,13 @@ export function createKoDict(allowSignup: boolean): LandingDict {
       headlineLine1: "모두를 위한",
       headlineLine2: "오픈소스.",
       description:
-        "Multica는 완전한 오픈소스입니다. 코드를 직접 들여다보고, 원하는 환경에 셀프 호스팅하고, 사람과 AI 에이전트가 함께 일하는 방식을 같이 만들어 갈 수 있습니다.",
+        "Cordy는 완전한 오픈소스입니다. 코드를 직접 들여다보고, 원하는 환경에 셀프 호스팅하고, 사람과 AI 에이전트가 함께 일하는 방식을 같이 만들어 갈 수 있습니다.",
       cta: "GitHub에서 스타 누르기",
       highlights: [
         {
           title: "어디서든 셀프 호스팅",
           description:
-            "자체 인프라에서 Multica를 직접 운영하세요. Docker Compose, 단일 바이너리, Kubernetes를 지원하며, 데이터는 여러분의 네트워크 안에 그대로 남습니다.",
+            "자체 인프라에서 Cordy를 직접 운영하세요. Docker Compose, 단일 바이너리, Kubernetes를 지원하며, 데이터는 여러분의 네트워크 안에 그대로 남습니다.",
         },
         {
           title: "벤더 종속 없음",
@@ -191,29 +191,29 @@ export function createKoDict(allowSignup: boolean): LandingDict {
       headline: "자주 묻는 질문.",
       items: [
         {
-          question: "Multica는 어떤 코딩 에이전트를 지원하나요?",
+          question: "Cordy는 어떤 코딩 에이전트를 지원하나요?",
           answer:
-            "Multica는 Antigravity, Claude Code, CodeBuddy, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, Trae CLI 등 23개 코딩 도구를 기본 지원합니다. 데몬이 이미 설치된 CLI를 자동으로 찾아 각각 런타임으로 등록합니다. 오픈소스이므로 직접 백엔드를 추가할 수도 있습니다.",
+            "Cordy는 Antigravity, Claude Code, CodeBuddy, Codex, Copilot, Cursor, DeepSeek Harness, DevEco Code, Dim, Grok, Hermes, Kimi, Kiro CLI, Oh-My-Pi, OpenClaw, OpenCode, Pi, Qoder, Qoder CN, Qwen Code, QwenPaw, Reasonix, Trae CLI 등 23개 코딩 도구를 기본 지원합니다. 데몬이 이미 설치된 CLI를 자동으로 찾아 각각 런타임으로 등록합니다. 오픈소스이므로 직접 백엔드를 추가할 수도 있습니다.",
         },
         {
           question: "셀프 호스팅만 가능한가요, 클라우드 버전도 있나요?",
           answer:
-            "둘 다 가능합니다. Docker Compose나 Kubernetes로 자체 인프라에 직접 호스팅할 수도 있고, Multica가 운영하는 클라우드 버전을 그대로 쓸 수도 있습니다. 데이터를 어디에 둘지는 직접 선택할 수 있습니다.",
+            "둘 다 가능합니다. Docker Compose나 Kubernetes로 자체 인프라에 직접 호스팅할 수도 있고, Cordy가 운영하는 클라우드 버전을 그대로 쓸 수도 있습니다. 데이터를 어디에 둘지는 직접 선택할 수 있습니다.",
         },
         {
           question: "코딩 에이전트를 직접 쓰는 것과 무엇이 다른가요?",
           answer:
-            "코딩 에이전트는 실행에 강합니다. Multica는 그 위에 작업 대기열, 팀 협업, 스킬 재사용, 런타임 모니터링, 에이전트별 작업 현황을 한눈에 보는 통합 화면을 얹습니다. 에이전트를 팀 안에서 운영하기 위한 관리 계층이라고 보시면 됩니다.",
+            "코딩 에이전트는 실행에 강합니다. Cordy는 그 위에 작업 대기열, 팀 협업, 스킬 재사용, 런타임 모니터링, 에이전트별 작업 현황을 한눈에 보는 통합 화면을 얹습니다. 에이전트를 팀 안에서 운영하기 위한 관리 계층이라고 보시면 됩니다.",
         },
         {
           question: "에이전트가 긴 작업도 자율적으로 처리할 수 있나요?",
           answer:
-            "네. Multica는 대기열 등록, 수락, 실행, 완료 또는 실패까지 작업 흐름 전체를 관리합니다. 에이전트는 막힌 부분을 먼저 알려 주고, 진행 상황은 실시간으로 기록됩니다.",
+            "네. Cordy는 대기열 등록, 수락, 실행, 완료 또는 실패까지 작업 흐름 전체를 관리합니다. 에이전트는 막힌 부분을 먼저 알려 주고, 진행 상황은 실시간으로 기록됩니다.",
         },
         {
           question: "코드는 안전한가요? 에이전트는 어디서 실행되나요?",
           answer:
-            "에이전트 실행은 사용자의 컴퓨터에 있는 로컬 데몬, 또는 직접 운영하는 클라우드 인프라에서 이뤄집니다. 코드는 Multica 서버를 거치지 않습니다. Multica는 작업 상태를 조율하고 이벤트를 전달하는 역할만 합니다.",
+            "에이전트 실행은 사용자의 컴퓨터에 있는 로컬 데몬, 또는 직접 운영하는 클라우드 인프라에서 이뤄집니다. 코드는 Cordy 서버를 거치지 않습니다. Cordy는 작업 상태를 조율하고 이벤트를 전달하는 역할만 합니다.",
         },
         {
           question: "에이전트는 몇 개까지 실행할 수 있나요?",
@@ -242,7 +242,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           links: [
             { label: "문서", href: "/docs/ko" },
             { label: "API", href: githubUrl },
-            { label: "X (Twitter)", href: "https://x.com/MulticaAI" },
+            { label: "X (Twitter)", href: "https://x.com/CordyAI" },
             { label: "Discord", href: discordUrl },
           ],
         },
@@ -256,11 +256,11 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           ],
         },
       },
-      copyright: "© {year} Multica. All rights reserved.",
+      copyright: "© {year} Cordy. All rights reserved.",
     },
     changelog: {
       title: "변경 로그",
-      subtitle: "Multica의 새로운 업데이트와 개선 사항입니다.",
+      subtitle: "Cordy의 새로운 업데이트와 개선 사항입니다.",
       toc: "모든 릴리스",
       categories: {
         features: "새 기능",
@@ -359,7 +359,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "공유 링크를 만들어 바로 워크스페이스에 들어오게 할 수 있어요.",
             "실행 기록이 단계 단위로 바뀌고, 2단 타임라인과 결과 요약이 붙습니다.",
             "Slack으로 보낸 파일이 대화에 첨부로 들어옵니다.",
-            "휴대폰 홈 화면에 Multica를 추가해 앱처럼 열 수 있어요.",
+            "휴대폰 홈 화면에 Cordy를 추가해 앱처럼 열 수 있어요.",
             "브라우저 탭에 지금 열어 둔 워크스페이스 페이지 이름이 표시됩니다.",
             "가져온 스킬이 어디서 왔는지 보여 줍니다.",
             "지금 보고 있는 Issue를 멘션하면 '이 Issue'로 표시됩니다.",
@@ -405,7 +405,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           fixes: [
             "실행되지 않는 에이전트 CLI가 고치는 방법을 알려줍니다.",
             "다른 사람의 비공개 런타임을 API나 CLI에서 쓸 수 없습니다.",
-            "남은 태스크 파일 때문에 그 폴더의 multica 명령이 멈추지 않습니다.",
+            "남은 태스크 파일 때문에 그 폴더의 cordy 명령이 멈추지 않습니다.",
             "Volta나 Vite Plus로 설치한 에이전트가 인식됩니다.",
             "마지막 답변과 입력창 사이 여백이 돌아왔습니다.",
             "다크 모드에서 활성 탭에 어두운 사각형이 생기지 않고, 호버 모서리도 둥글게 유지됩니다.",
@@ -427,7 +427,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "셀프호스팅에서 태스크 임시 파일을 더 큰 디스크에 둘 수 있어요.",
           ],
           improvements: [
-            "`multica daemon logs`가 로그 파일 위치를 바로 알려줍니다.",
+            "`cordy daemon logs`가 로그 파일 위치를 바로 알려줍니다.",
             "Hermes 태스크가 어떤 HERMES_HOME을 읽었는지 알려줍니다.",
           ],
           fixes: [
@@ -466,7 +466,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "중국어, 일본어, 한국어 문장부호에 붙은 굵은 글씨가 다시 표시됩니다.",
             "Android에서 메시지를 보내거나 멈춘 뒤에도 키보드가 닫히지 않습니다.",
             "셀프호스팅 Hermes 대화가 한 번씩 번갈아 실패하지 않습니다.",
-            "남아 있던 포트 설정 때문에 `multica login`이 막히지 않습니다.",
+            "남아 있던 포트 설정 때문에 `cordy login`이 막히지 않습니다.",
             "Cursor 작업이 설정한 MCP 서버에 연결됩니다.",
             "Slack에서 만든 Issue 제목의 링크가 바뀌지 않습니다.",
             "PR이 다른 워크스페이스의 같은 번호 Issue를 닫지 않습니다.",
@@ -517,7 +517,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "Oh-My-Pi로도 에이전트를 돌릴 수 있어요.",
             "WeCom에 보낸 음성 메모가 텍스트로 에이전트에게 전달됩니다.",
             "Kimi와 Pi 에이전트의 사고 강도를 고를 수 있어요.",
-            "Multica의 어떤 링크든 Cmd/Ctrl 또는 가운데 클릭으로 새 탭에서 열 수 있어요.",
+            "Cordy의 어떤 링크든 Cmd/Ctrl 또는 가운데 클릭으로 새 탭에서 열 수 있어요.",
             "WeCom에 연결되지 않을 때, 거부된 것인지 닿지 않는 것인지 페이지가 알려 줍니다.",
           ],
           improvements: [
@@ -586,7 +586,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "실행 기록에 각 실행의 비용과 태스크 전체 합계가 표시됩니다.",
             "댓글 알림을 껐어도 @로 이름을 부른 알림은 그대로 옵니다.",
             "휴대폰 채팅이 전체 화면으로 열리고, 입력창이 키보드 위에 놓입니다.",
-            "multica나 Agent CLI를 바꿔 두면 다시 시작하지 않아도 그대로 반영됩니다.",
+            "cordy나 Agent CLI를 바꿔 두면 다시 시작하지 않아도 그대로 반영됩니다.",
           ],
           improvements: [
             "에이전트가 매번 읽는 지시가 짧아져, 그만큼을 실제 작업에 씁니다.",
@@ -810,7 +810,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "긴 텍스트를 붙여 넣으면 자동으로 텍스트 첨부 파일이 됩니다.",
             "업로드는 한 번만 표시되고 완료된 뒤 초안에 반영됩니다.",
             "Webhook URL은 기본으로 숨겨지고 필요할 때만 표시할 수 있습니다.",
-            "워크스페이스가 많아도 Multica를 시작할 때 에이전트 도구를 반복 확인하지 않습니다.",
+            "워크스페이스가 많아도 Cordy를 시작할 때 에이전트 도구를 반복 확인하지 않습니다.",
             "사용량 순위는 상위 에이전트에 집중되고 실패 정렬도 더 명확해졌습니다.",
             "전송 후 커서가 각 입력 화면에 맞는 위치로 이동합니다.",
           ],
@@ -985,7 +985,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "설정 패널을 다시 열어도 설정이 안정적으로 저장됩니다.",
             "다시 시작한 Codex 작업이 사용량을 정확하게 보고합니다.",
             "댓글이 링크가 되면 안 되는 텍스트를 링크로 만들지 않습니다.",
-            "다이렉트 채팅 답장이 Multica 안에 남습니다.",
+            "다이렉트 채팅 답장이 Cordy 안에 남습니다.",
             "AI 도움 만들기를 항상 사용할 수 있습니다.",
             "태스크 페이지가 처음 열릴 때 깜빡이지 않습니다.",
             "Linux의 Codex 에이전트가 Git 정보를 올바르게 저장합니다.",
@@ -1051,7 +1051,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "태스크를 만들 때 고른 라벨이 매번 태스크와 함께 저장됩니다.",
             "서식 있는 텍스트를 댓글에 붙여넣어도 불필요한 ++ 가 남지 않습니다.",
             "아바타 위를 스치듯 지나가는 것만으로 호버 카드가 뜨지 않습니다.",
-            "Linux 데스크톱 앱이 multica-desktop이라는 이름으로 설치됩니다.",
+            "Linux 데스크톱 앱이 cordy-desktop이라는 이름으로 설치됩니다.",
           ],
         },
         {
@@ -1288,7 +1288,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           changes: [],
           features: [
             "작업 Transcript가 필터·펼침 상태를 기억해, 같은 실행을 다시 열 때 그대로 복원합니다.",
-            "셀프호스트(Helm): 새 `postgres.external.enabled` 토글로 Multica를 외부 관리형 PostgreSQL(RDS, CNPG, Cloud SQL, Neon 등)에 연결하고 내장 DB를 건너뛸 수 있습니다.",
+            "셀프호스트(Helm): 새 `postgres.external.enabled` 토글로 Cordy를 외부 관리형 PostgreSQL(RDS, CNPG, Cloud SQL, Neon 등)에 연결하고 내장 DB를 건너뛸 수 있습니다.",
           ],
           fixes: [
             "댓글 초안에 빈 `1. ` 항목이 있을 때, 재로딩 후 캐럿이 아래 블록에 갇히던 문제를 고쳤습니다.",
@@ -1342,8 +1342,8 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           title: "Slack /issue 슬래시 명령, ByteDance TRAE CLI 런타임, Claude Sonnet 5 지원",
           changes: [],
           features: [
-            "Slack의 네이티브 /issue 슬래시 명령이 Multica 태스크를 생성하고 실행자에게만 태스크 링크를 개인 메시지로 회신합니다.",
-            "같은 Slack 워크스페이스에서 이미 한 Multica 봇과 계정을 연결한 사용자는, 새로 추가된 다른 봇에서 다시 연결을 요구받지 않습니다.",
+            "Slack의 네이티브 /issue 슬래시 명령이 Cordy 태스크를 생성하고 실행자에게만 태스크 링크를 개인 메시지로 회신합니다.",
+            "같은 Slack 워크스페이스에서 이미 한 Cordy 봇과 계정을 연결한 사용자는, 새로 추가된 다른 봇에서 다시 연결을 요구받지 않습니다.",
             "Slack 채널 문맥 읽기가 두 개의 명령으로 정리되었습니다: 채널 개요와 단일 스레드 읽기입니다.",
             "ByteDance TRAE CLI(traecli)가 표준 ACP 프로토콜을 통해 내장 에이전트 런타임에 추가되었습니다.",
             "Anthropic 모델 목록에 Claude Sonnet 5가 추가되고 도입기 가격이 반영되었습니다.",
@@ -1357,9 +1357,9 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "Slack 채팅 에이전트가 채널 히스토리 조회 과정을 서술하지 않고, 조용히 읽은 뒤 답변만 회신합니다.",
             "셀프호스트의 로컬 디스크 구성에서 첨부 미리보기(PDF / HTML)가 다시 열립니다. (커뮤니티 보고)",
             "Cursor와 Kiro 런타임 완료 시 트랜스크립트가 복구되어 최종 결과가 유실되지 않습니다.",
-            "셀프호스트: docker-compose.selfhost.yml에서 MULTICA_SLACK_SECRET_KEY가 백엔드 컨테이너로 전달됩니다. (커뮤니티 보고)",
+            "셀프호스트: docker-compose.selfhost.yml에서 CORDY_SLACK_SECRET_KEY가 백엔드 컨테이너로 전달됩니다. (커뮤니티 보고)",
             "태스크 보드 상단의 «N개 처리 중» 칩이 에이전트가 아니라 태스크 수를 기준으로 집계됩니다.",
-            "셀프호스트 익명 소스 채널 리포팅 대상이 정식 Multica API로 복원되었습니다.",
+            "셀프호스트 익명 소스 채널 리포팅 대상이 정식 Cordy API로 복원되었습니다.",
             "댓글 딥링크 하이라이트가 배경색만 사용하도록 통일되어, 루트 댓글과 답글 동작이 일치합니다.",
           ],
         },
@@ -1370,10 +1370,10 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           changes: [],
           features: [
             "Autopilot에 명확한 쓰기 권한 계층이 도입되었고, 상세 페이지의 '액세스 관리'를 통해 특정 멤버에게 단일 Autopilot의 쓰기 권한만 위임할 수 있습니다.",
-            "Slack 채널의 과거 대화를 Multica로 백필할 수 있어, 에이전트가 채널에 합류한 순간부터 이전 맥락을 알 수 있습니다.",
+            "Slack 채널의 과거 대화를 Cordy로 백필할 수 있어, 에이전트가 채널에 합류한 순간부터 이전 맥락을 알 수 있습니다.",
             "Slack에서 에이전트가 응답을 준비하는 동안 사용자 메시지에 👀 반응이 표시되고, 종료 시 안정적으로 제거됩니다.",
             "스킬 번들을 로컬 .skill / .zip 아카이브에서 가져올 수 있습니다.",
-            "multica issue 계열 명령은 더 이상 짧은 UUID 접두사를 받지 않습니다. 태스크 Key(MUL-123) 또는 전체 UUID를 사용하세요.",
+            "cordy issue 계열 명령은 더 이상 짧은 UUID 접두사를 받지 않습니다. 태스크 Key(MUL-123) 또는 전체 UUID를 사용하세요.",
             "Agents 페이지가 모바일에 맞게 다듬어졌습니다.",
           ],
           improvements: [
@@ -1613,7 +1613,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           features: [
             "에이전트, 오토파일럿, 프로젝트, 런타임, 스킬, 스쿼드의 목록이 더 빠르고 일관된 경험으로 바뀌어 행, 필터, 선택, 작업이 더 명확해졌습니다.",
             "명령줄에서 워크스페이스 저장소를 관리할 수 있어 로컬 에이전트가 프로젝트 저장소 정보를 더 쉽게 가져올 수 있습니다.",
-            "Cursor와 OpenClaw 설정이 더 쉬워졌습니다. Cursor 연결 설정은 Multica가 관리할 수 있고, OpenClaw는 기존 게이트웨이에 연결할 수 있습니다.",
+            "Cursor와 OpenClaw 설정이 더 쉬워졌습니다. Cursor 연결 설정은 Cordy가 관리할 수 있고, OpenClaw는 기존 게이트웨이에 연결할 수 있습니다.",
             "댓글을 편집할 때 저장하기 전에 어떤 에이전트나 스쿼드가 실행될지 미리 보고 제어할 수 있습니다.",
           ],
           improvements: [
@@ -1635,7 +1635,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           title: "CodeBuddy Runtime",
           changes: [],
           features: [
-            "CodeBuddy로 로컬 Multica 에이전트를 실행할 수 있으며, 사용할 수 있는 모델과 실행 강도 선택지가 자동으로 표시됩니다.",
+            "CodeBuddy로 로컬 Cordy 에이전트를 실행할 수 있으며, 사용할 수 있는 모델과 실행 강도 선택지가 자동으로 표시됩니다.",
             "빠르게 만든 태스크에서도 초안에서 올린 파일이 최종 태스크까지 함께 유지됩니다.",
           ],
           improvements: [
@@ -1677,15 +1677,15 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "댓글 입력창에서 보내기 전에 어떤 에이전트나 스쿼드가 작업을 시작할지 확인하고, 실수로 실행되는 일을 줄일 수 있습니다.",
             "실행 기록에 시간이 표시되어 에이전트 진행 상황과 인계를 더 쉽게 검토할 수 있습니다.",
             "오토파일럿 상세 페이지에서 누가 만들었는지 확인할 수 있습니다.",
-            "Claude Fable 5가 Multica의 지원 모델과 가격 목록에 추가되었습니다.",
+            "Claude Fable 5가 Cordy의 지원 모델과 가격 목록에 추가되었습니다.",
             "태스크 대화에서 특정 답글을 해결 답변으로 남길 수 있어, 긴 스레드를 접어도 결론을 더 쉽게 확인할 수 있습니다.",
-            "Lark와 Feishu 대화는 Multica가 답변을 준비하는 동안 입력 중 반응을 표시하고, 답변을 보내기 전에 자동으로 지웁니다.",
+            "Lark와 Feishu 대화는 Cordy가 답변을 준비하는 동안 입력 중 반응을 표시하고, 답변을 보내기 전에 자동으로 지웁니다.",
             "에이전트 실행은 각 작업을 누가 시작했는지 알 수 있어 인계, 감사, 개인정보를 고려한 동작이 더 정확해집니다.",
             "OpenClaw 사용자는 로컬 설정에서 사용자 지정 앱 위치와 데이터 폴더를 지정할 수 있습니다.",
           ],
           improvements: [
             "댓글 트리거 표시가 더 조용하고 명확해졌으며, 긴 에이전트 이름도 덜 비좁게 보입니다.",
-            "WSL2처럼 Multica 밖에서 데몬을 관리하는 경우 데스크톱은 시작과 중지 조작을 비활성화합니다.",
+            "WSL2처럼 Cordy 밖에서 데몬을 관리하는 경우 데스크톱은 시작과 중지 조작을 비활성화합니다.",
             "태스크 헤더의 활성 에이전트 표시가 더 읽기 쉬워졌으며, 실제 실행 중일 때만 움직이고 대기 중일 때는 대기 상태를 명확히 보여 줍니다.",
             "CLI는 흔한 오류, 로그인 문제, 프로젝트 설정 값에 대해 더 명확하게 안내합니다.",
           ],
@@ -1709,7 +1709,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           title: "웹 알림과 /note 명령",
           changes: [],
           features: [
-            "웹 앱에서 브라우저 기본 알림 배너를 표시할 수 있어 Multica가 백그라운드에 있어도 워크스페이스 활동을 더 쉽게 확인할 수 있습니다.",
+            "웹 앱에서 브라우저 기본 알림 배너를 표시할 수 있어 Cordy가 백그라운드에 있어도 워크스페이스 활동을 더 쉽게 확인할 수 있습니다.",
             "/note로 시작하는 댓글은 배정된 에이전트를 깨우지 않고 맥락을 남길 수 있어, 실행을 트리거하지 않는 협업 메모로 사용할 수 있습니다.",
             "Antigravity를 데몬에서 실행되는 에이전트별 모델 선택지로 사용할 수 있습니다.",
             "CLI가 흔한 요청 실패를 쉬운 말로 설명하고 다음에 할 일을 안내합니다.",
@@ -1767,10 +1767,10 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           title: "Lark Bot 연동",
           changes: [],
           features: [
-            "Multica가 Lark 서드파티 연동을 지원해 QR 코드를 스캔하면 Multica 에이전트를 Lark Bot으로 만들 수 있습니다.",
+            "Cordy가 Lark 서드파티 연동을 지원해 QR 코드를 스캔하면 Cordy 에이전트를 Lark Bot으로 만들 수 있습니다.",
             "채팅에 검색 가능한 에이전트 선택기와 명시적인 컨텍스트 선택기가 추가되어, 누가 응답할지와 무엇을 참고할지 더 쉽게 고를 수 있습니다.",
             "설명과 댓글에서 체크리스트를 사용할 수 있어 태스크 안에서 간단한 계획을 정리하기 쉽습니다.",
-            "에이전트에 Multica 기본 스킬이 포함되어 워크스페이스의 작업 흐름을 더 일관되게 따를 수 있습니다.",
+            "에이전트에 Cordy 기본 스킬이 포함되어 워크스페이스의 작업 흐름을 더 일관되게 따를 수 있습니다.",
           ],
           improvements: [
             "채팅 컨텍스트가 명확한 멘션으로 표시되어 인계와 나중 검토가 더 쉬워졌습니다.",
@@ -1814,7 +1814,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           title: "일본어 지원과 /skill command",
           changes: [],
           features: [
-            "Multica가 앱, 사이트, 문서에서 일본어를 지원합니다.",
+            "Cordy가 앱, 사이트, 문서에서 일본어를 지원합니다.",
             "채팅에서 /skill command로 에이전트의 스킬을 선택할 수 있습니다.",
             "워크스페이스에 사용자 지정 로고를 표시할 수 있습니다.",
             "기존 스킬을 유지한 채 에이전트에 스킬을 추가할 수 있습니다.",
@@ -1870,7 +1870,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           changes: [],
           features: [
             "에이전트가 태스크 댓글에서 작업을 이어갈 때 새 세션을 만들지 않고 이전 세션을 재개해, 작업 맥락을 그대로 이어갑니다.",
-            "Multica가 앱, 웹사이트, 문서에서 한국어를 지원하며, 전체 한국어 문서와 한국어 날짜 표시를 제공합니다.",
+            "Cordy가 앱, 웹사이트, 문서에서 한국어를 지원하며, 전체 한국어 문서와 한국어 날짜 표시를 제공합니다.",
             "태스크 화면에서 작업 중인 에이전트를 제목 가까이에 고정해 보여 주고, 여러 에이전트가 동시에 일할 때도 더 쉽게 확인할 수 있습니다.",
             "에이전트가 태스크 대화를 읽을 때 스레드 미리보기, 답글 수, 최근 활동 시간을 먼저 확인해 필요한 맥락을 더 빨리 찾을 수 있습니다.",
             "OpenClaw 런타임은 에이전트에 저장된 MCP 설정을 사용할 수 있고, Claude Opus 4.8도 모델 선택과 사용량 추정에 반영됩니다.",
@@ -1926,7 +1926,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           title: "iOS, Helm 셀프 호스팅, 더 매끄러운 협업",
           changes: [],
           features: [
-            "처음으로 실제 사용 가능한 모바일 클라이언트인 Multica for iOS가 출시되어, 로그인·워크스페이스·인박스·태스크·프로젝트·채팅·댓글·실시간 업데이트를 모두 지원합니다.",
+            "처음으로 실제 사용 가능한 모바일 클라이언트인 Cordy for iOS가 출시되어, 로그인·워크스페이스·인박스·태스크·프로젝트·채팅·댓글·실시간 업데이트를 모두 지원합니다.",
             "셀프 호스팅 팀은 이제 Helm 차트로 Kubernetes에 배포할 수 있고, Docker 설치 시 포트와 URL 설정도 한층 명확해졌습니다.",
             "프로젝트 리소스 선택기에 저장소 검색이 추가되었고, 런타임 사용량은 주요 모델 비용을 더 정확히 집계합니다.",
           ],
@@ -2078,7 +2078,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           title: "GitHub 연동과 안전한 태스크 탐색",
           changes: [],
           features: [
-            "GitHub를 연결해 연결된 Pull request를 Multica 태스크에 표시하고 상태를 동기화하며 PR 종료 시 태스크를 자동으로 닫을 수 있습니다.",
+            "GitHub를 연결해 연결된 Pull request를 Cordy 태스크에 표시하고 상태를 동기화하며 PR 종료 시 태스크를 자동으로 닫을 수 있습니다.",
             "채팅 메시지 첨부 파일과 이미지 미리보기를 지원하고, 에이전트와 런타임 공개 범위를 설정할 수 있습니다.",
             "단일 에이전트 작업 중지 전에 확인을 요청하고 GitHub 연동 문서를 제공합니다.",
           ],
@@ -2129,7 +2129,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           title: "데몬 디스크 사용량 CLI와 타임라인 개선",
           changes: [],
           features: [
-            "`multica daemon disk-usage`가 작업별, 워크스페이스별 디스크 사용량을 보여줍니다.",
+            "`cordy daemon disk-usage`가 작업별, 워크스페이스별 디스크 사용량을 보여줍니다.",
             "에이전트 설정의 스킬 picker에 검색 상자가 추가되고 데몬 GC 범위가 채팅, 오토파일럿, quick-create 작업까지 확장되었습니다.",
             "태스크 상세 breadcrumb에 빠른 참조용 식별자가 표시됩니다.",
           ],
@@ -2178,15 +2178,15 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           title: "Repo checkout --ref와 Hermes 재생 수정",
           changes: [],
           features: [
-            "`multica repo checkout --ref`가 브랜치, 태그, 특정 커밋을 대상으로 저장소를 가져올 수 있습니다.",
-            "`multica agent avatar`가 CLI에서 에이전트 아바타를 직접 업로드합니다.",
+            "`cordy repo checkout --ref`가 브랜치, 태그, 특정 커밋을 대상으로 저장소를 가져올 수 있습니다.",
+            "`cordy agent avatar`가 CLI에서 에이전트 아바타를 직접 업로드합니다.",
             "인박스 Done 작업에 보관 버튼이 추가되고 중복 mark-as-done hover 버튼은 제거되었습니다.",
           ],
           improvements: [
             "긴 타임라인 태스크 열기, multi-replica 모델 picker, 데몬 empty-claim cache TTL이 개선되었습니다.",
           ],
           fixes: [
-            "새 에이전트 즉시 표시, Hermes 이전 답변 재생, Codex GPT-5.5 모델 표시, `multica login --token`, CLI 업데이트 상태, session resume, Kanban 설정, 오토파일럿 반응형 등을 수정했습니다.",
+            "새 에이전트 즉시 표시, Hermes 이전 답변 재생, Codex GPT-5.5 모델 표시, `cordy login --token`, CLI 업데이트 상태, session resume, Kanban 설정, 오토파일럿 반응형 등을 수정했습니다.",
           ],
         },
         {
@@ -2200,7 +2200,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "프로젝트별 저장소 바인딩과 권한 인식 UI가 추가되었습니다.",
           ],
           improvements: [
-            "데몬 claim polling의 Redis fast-path와 Multica Agent 커밋의 Co-authored-by trailer, 데스크톱 reload 차단이 개선되었습니다.",
+            "데몬 claim polling의 Redis fast-path와 Cordy Agent 커밋의 Co-authored-by trailer, 데스크톱 reload 차단이 개선되었습니다.",
           ],
           fixes: [
             "Quick Create 요구사항 생성, 인박스 댓글 이동과 자동 보관, 작업 재실행 session, 초대 후 워크스페이스 이동을 수정했습니다.",
@@ -2262,7 +2262,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           title: "사용자 지정 에이전트 환경 변수와 더 나은 실패 메시지",
           changes: [],
           features: [
-            "`multica agent create/update --custom-env KEY=VALUE`가 에이전트 실행에 사용자 지정 환경 변수를 주입합니다.",
+            "`cordy agent create/update --custom-env KEY=VALUE`가 에이전트 실행에 사용자 지정 환경 변수를 주입합니다.",
             "에이전트 실패 메시지에 런타임 CLI stderr tail이 포함되어 디버깅이 쉬워졌습니다.",
             "CLI 업데이트 다운로드 timeout을 설정할 수 있습니다.",
           ],
@@ -2539,7 +2539,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           date: "2026-03-06",
           title: "핵심 플랫폼",
           changes: [
-            "Multica 핵심 플랫폼 기능을 추가했습니다.",
+            "Cordy 핵심 플랫폼 기능을 추가했습니다.",
           ],
         },
         {
@@ -2547,15 +2547,15 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           date: "2026-03-05",
           title: "기반 구축",
           changes: [
-            "Multica의 초기 기반을 공개했습니다.",
+            "Cordy의 초기 기반을 공개했습니다.",
           ],
         },
       ],
     },
     about: {
-      title: "Multica 소개",
+      title: "Cordy 소개",
       nameLine: {
-        prefix: "Multica — ",
+        prefix: "Cordy — ",
         mul: "Mul",
         tiplexed: "tiplexed ",
         i: "I",
@@ -2566,40 +2566,40 @@ export function createKoDict(allowSignup: boolean): LandingDict {
         gent: "gent.",
       },
       paragraphs: [
-        "Multica라는 이름은 1960년대의 선구적인 운영체제 Multics에서 따왔습니다. Multics는 여러 사용자가 하나의 컴퓨터를 공유하면서도 각자 자기 컴퓨터를 쓰는 것처럼 느끼게 해 주는 시분할이라는 개념을 처음 널리 퍼뜨렸습니다. Unix는 Multics를 의도적으로 단순화하며 태어났습니다. 한 사용자, 한 작업, 하나의 우아한 철학에 집중한 결과였습니다.",
-        "지금 비슷한 전환점이 다시 오고 있다고 봅니다. 지난 수십 년 동안 소프트웨어 팀은 사실상 단일 스레드로 일해 왔습니다. 엔지니어 한 명이 한 작업을 맡고, 한 번에 하나의 맥락만 다루는 식이었습니다. AI 에이전트는 이 공식을 바꿉니다. Multica는 시분할의 발상을 다시 꺼내 오되, 이번에는 시스템을 함께 쓰는 \"사용자\"가 사람과 자율 에이전트 양쪽을 의미하는 시대에 맞게 다시 풀어냅니다.",
-        "Multica에서 에이전트는 정식 팀원입니다. 사람 동료와 똑같이 태스크를 할당받고, 진행 상황을 보고하고, 막힌 부분을 알리고, 코드를 배포합니다. 담당자 선택, 활동 타임라인, 작업 생명주기, 런타임 인프라는 모두 이 전제를 중심으로 처음부터 설계되었습니다.",
+        "Cordy라는 이름은 1960년대의 선구적인 운영체제 Multics에서 따왔습니다. Multics는 여러 사용자가 하나의 컴퓨터를 공유하면서도 각자 자기 컴퓨터를 쓰는 것처럼 느끼게 해 주는 시분할이라는 개념을 처음 널리 퍼뜨렸습니다. Unix는 Multics를 의도적으로 단순화하며 태어났습니다. 한 사용자, 한 작업, 하나의 우아한 철학에 집중한 결과였습니다.",
+        "지금 비슷한 전환점이 다시 오고 있다고 봅니다. 지난 수십 년 동안 소프트웨어 팀은 사실상 단일 스레드로 일해 왔습니다. 엔지니어 한 명이 한 작업을 맡고, 한 번에 하나의 맥락만 다루는 식이었습니다. AI 에이전트는 이 공식을 바꿉니다. Cordy는 시분할의 발상을 다시 꺼내 오되, 이번에는 시스템을 함께 쓰는 \"사용자\"가 사람과 자율 에이전트 양쪽을 의미하는 시대에 맞게 다시 풀어냅니다.",
+        "Cordy에서 에이전트는 정식 팀원입니다. 사람 동료와 똑같이 태스크를 할당받고, 진행 상황을 보고하고, 막힌 부분을 알리고, 코드를 배포합니다. 담당자 선택, 활동 타임라인, 작업 생명주기, 런타임 인프라는 모두 이 전제를 중심으로 처음부터 설계되었습니다.",
         "Multics가 그랬듯, 핵심은 multiplexing입니다. 작은 팀이라고 작게 움직일 필요는 없습니다. 올바른 시스템이 있다면 엔지니어 두 명과 에이전트 한 무리가 스무 명짜리 팀처럼 움직일 수 있습니다.",
-        "Multica는 완전한 오픈소스이며 셀프 호스팅할 수 있습니다. 데이터는 여러분의 인프라 안에 그대로 남습니다. 모든 코드를 들여다보고, API를 확장하고, 원하는 LLM 제공자를 연결하고, 커뮤니티에 기여할 수 있습니다.",
+        "Cordy는 완전한 오픈소스이며 셀프 호스팅할 수 있습니다. 데이터는 여러분의 인프라 안에 그대로 남습니다. 모든 코드를 들여다보고, API를 확장하고, 원하는 LLM 제공자를 연결하고, 커뮤니티에 기여할 수 있습니다.",
       ],
       cta: "GitHub에서 보기",
     },
     download: {
       hero: {
         macArm64: {
-          title: "macOS용 Multica",
+          title: "macOS용 Cordy",
           sub: "Apple Silicon · 데몬 포함, 별도 설정 없음",
           primary: "다운로드(.dmg)",
           altZip: "또는 .zip 다운로드",
         },
         macIntel: {
-          title: "macOS용 Multica",
+          title: "macOS용 Cordy",
           sub: "Intel · 데몬 포함, 별도 설정 없음",
           primary: "다운로드(.dmg)",
           altZip: "또는 .zip 다운로드",
         },
         winX64: {
-          title: "Windows용 Multica",
+          title: "Windows용 Cordy",
           sub: "데몬 포함, 별도 설정 없음",
           primary: "다운로드(.exe)",
         },
         winArm64: {
-          title: "Windows용 Multica",
+          title: "Windows용 Cordy",
           sub: "ARM · 데몬 포함, 별도 설정 없음",
           primary: "다운로드(.exe)",
         },
         linux: {
-          title: "Linux용 Multica",
+          title: "Linux용 Cordy",
           sub: "데몬 포함, 별도 설정 없음",
           primary: "AppImage 다운로드",
           altFormats: "또는 .deb / .rpm",
@@ -2638,7 +2638,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
       },
       cloud: {
         title: "클라우드 런타임 (대기자 명단)",
-        sub: "Multica가 런타임을 직접 호스팅해 드립니다. 아직 정식 출시 전입니다. 이메일을 남겨 주시면 준비되는 대로 알려드릴게요.",
+        sub: "Cordy가 런타임을 직접 호스팅해 드립니다. 아직 정식 출시 전입니다. 이메일을 남겨 주시면 준비되는 대로 알려드릴게요.",
       },
       footer: {
         releaseNotes: "{version}의 새로운 내용",
@@ -2650,7 +2650,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
     contactSales: {
       pageTitle: "영업팀 문의",
       pageDescription:
-        "회사에 사람과 에이전트가 함께 일하는 워크플로를 도입하는 방법을 Multica 팀과 함께 이야기해 보세요.",
+        "회사에 사람과 에이전트가 함께 일하는 워크플로를 도입하는 방법을 Cordy 팀과 함께 이야기해 보세요.",
       eyebrow: "영업팀 문의",
       title: "어떤 도움이 필요하신지 알려 주세요",
       subtitle: "가장 알맞은 방안을 미리 준비해 드릴 수 있도록, 몇 가지만 적어 주세요.",
@@ -2667,10 +2667,10 @@ export function createKoDict(allowSignup: boolean): LandingDict {
         companyName: "회사명",
         companySize: "회사 규모",
         countryRegion: "국가 / 지역",
-        useCase: "Multica를 어떻게 사용하거나 어디에 활용하실 계획인가요?",
+        useCase: "Cordy를 어떻게 사용하거나 어디에 활용하실 계획인가요?",
         goals: "목표 또는 현재 겪고 있는 과제",
         goalsHint:
-          "Multica로 이루고 싶은 일이나 지금 겪고 있는 문제를 알려 주세요. 자세히 적어 주실수록 더 알맞게 도와드릴 수 있습니다.",
+          "Cordy로 이루고 싶은 일이나 지금 겪고 있는 문제를 알려 주세요. 자세히 적어 주실수록 더 알맞게 도와드릴 수 있습니다.",
         selectPlaceholder: "선택하세요",
         submit: "제출",
         submitting: "제출 중...",
@@ -2685,9 +2685,9 @@ export function createKoDict(allowSignup: boolean): LandingDict {
       ],
       useCases: [
         { value: "evaluate", label: "팀 도입을 검토 중" },
-        { value: "adopt_team", label: "팀 또는 회사에 Multica 도입" },
+        { value: "adopt_team", label: "팀 또는 회사에 Cordy 도입" },
         { value: "self_host", label: "자체 인프라에 셀프 호스팅" },
-        { value: "integrate", label: "기존 도구와 Multica 연동" },
+        { value: "integrate", label: "기존 도구와 Cordy 연동" },
         { value: "partner", label: "파트너십 또는 리셀러 문의" },
         { value: "other", label: "기타" },
       ],
@@ -2735,22 +2735,22 @@ export function createKoDict(allowSignup: boolean): LandingDict {
       ],
       consent: {
         intro:
-          "Multica, Inc.는 여러분의 개인정보를 소중히 다룹니다. 제공해 주신 개인정보는 계정 관리와 요청하신 제품·서비스 제공에만 사용합니다. 가끔씩 제품 업데이트, 활용 팁, 도움이 될 만한 인사이트도 함께 전해 드리고 싶습니다. 소식을 받고 싶으시다면 아래에서 선택해 주세요.",
+          "Cordy, Inc.는 여러분의 개인정보를 소중히 다룹니다. 제공해 주신 개인정보는 계정 관리와 요청하신 제품·서비스 제공에만 사용합니다. 가끔씩 제품 업데이트, 활용 팁, 도움이 될 만한 인사이트도 함께 전해 드리고 싶습니다. 소식을 받고 싶으시다면 아래에서 선택해 주세요.",
         outreach:
-          "서비스 업데이트, 지원 문의, 비즈니스 관련 후속 연락 등 Multica, Inc.로부터 개별 연락을 받겠습니다.",
+          "서비스 업데이트, 지원 문의, 비즈니스 관련 후속 연락 등 Cordy, Inc.로부터 개별 연락을 받겠습니다.",
         updates:
-          "Multica의 제품 업데이트, 인사이트, 이벤트 초대 소식을 받겠습니다.",
+          "Cordy의 제품 업데이트, 인사이트, 이벤트 초대 소식을 받겠습니다.",
         unsubscribe:
           "언제든 수신을 거부할 수 있습니다. 개인정보와 데이터 권리를 어떻게 다루는지는 다음 문서에서 자세히 확인하실 수 있습니다:",
         submitConsent:
-          "\"제출\"을 클릭하시면 요청하신 콘텐츠를 보내 드리기 위해 Multica, Inc.가 정보를 저장하고 처리하는 것에 동의하게 됩니다.",
+          "\"제출\"을 클릭하시면 요청하신 콘텐츠를 보내 드리기 위해 Cordy, Inc.가 정보를 저장하고 처리하는 것에 동의하게 됩니다.",
         privacyLinkLabel: "개인정보 처리방침.",
         privacyLinkHref: "/about",
       },
       success: {
         title: "감사합니다. 요청을 잘 받았습니다.",
         message:
-          "Multica 팀원이 영업일 기준 3일 이내에 답변드릴 예정입니다. 그동안 문서를 둘러보시거나 GitHub에서 스타를 눌러 주세요.",
+          "Cordy 팀원이 영업일 기준 3일 이내에 답변드릴 예정입니다. 그동안 문서를 둘러보시거나 GitHub에서 스타를 눌러 주세요.",
         cta: "홈으로 돌아가기",
       },
       errors: {

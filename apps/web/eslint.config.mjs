@@ -1,4 +1,4 @@
-import nextConfig from "@multica/eslint-config/next";
+import nextConfig from "@cordy/eslint-config/next";
 
 export default [
   ...nextConfig,

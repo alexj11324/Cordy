@@ -31,7 +31,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // Installation is the flat, feishu-shaped view of a channel_installation row.
@@ -63,7 +63,7 @@ type Installation struct {
 type UserBinding struct {
 	ID             pgtype.UUID
 	WorkspaceID    pgtype.UUID
-	MulticaUserID  pgtype.UUID
+	CordyUserID  pgtype.UUID
 	InstallationID pgtype.UUID
 	ChannelUserID  string
 	UnionID        pgtype.Text
@@ -199,7 +199,7 @@ func userBindingFromRow(row db.ChannelUserBinding) (UserBinding, error) {
 	return UserBinding{
 		ID:             row.ID,
 		WorkspaceID:    row.WorkspaceID,
-		MulticaUserID:  row.MulticaUserID,
+		CordyUserID:  row.CordyUserID,
 		InstallationID: row.InstallationID,
 		ChannelUserID:  row.ChannelUserID,
 		UnionID:        textOrNull(cfg.UnionID),

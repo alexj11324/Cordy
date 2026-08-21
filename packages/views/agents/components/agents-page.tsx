@@ -13,7 +13,7 @@ import type {
   Agent,
   AgentRuntime,
   MemberWithUser,
-} from "@multica/core/types";
+} from "@cordy/core/types";
 import {
   type AgentActivity,
   agentRunCounts30dOptions,
@@ -23,7 +23,7 @@ import {
   useWorkspacePresenceMap,
   VISIBILITY_TOOLTIP,
   type AgentPresenceDetail,
-} from "@multica/core/agents";
+} from "@cordy/core/agents";
 import {
   type AgentListFilters,
   useAgentsViewStore,
@@ -32,17 +32,17 @@ import {
   type AgentColumnKey,
   type AgentsScope,
   type AgentSortField,
-} from "@multica/core/agents/stores";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
+} from "@cordy/core/agents/stores";
+import { useAuthStore } from "@cordy/core/auth";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { useWorkspacePaths } from "@cordy/core/paths";
 import {
   agentListOptions,
   memberListOptions,
-} from "@multica/core/workspace/queries";
-import { runtimeDisplayLabel, runtimeListOptions } from "@multica/core/runtimes";
-import { Button } from "@multica/ui/components/ui/button";
-import { Checkbox } from "@multica/ui/components/ui/checkbox";
+} from "@cordy/core/workspace/queries";
+import { runtimeDisplayLabel, runtimeListOptions } from "@cordy/core/runtimes";
+import { Button } from "@cordy/ui/components/ui/button";
+import { Checkbox } from "@cordy/ui/components/ui/checkbox";
 import {
   LIST_GRID_BOTTOM_CLEARANCE,
   ListGrid,
@@ -52,13 +52,13 @@ import {
   ListGridHeaderCell,
   ListGridRow,
   type ListGridSortDirection,
-} from "@multica/ui/components/ui/list-grid";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
+} from "@cordy/ui/components/ui/list-grid";
+import { Skeleton } from "@cordy/ui/components/ui/skeleton";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
+} from "@cordy/ui/components/ui/tooltip";
 import { useNavigation, useRowLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
@@ -227,11 +227,11 @@ export function rowMatchesFilters(
 
 /**
  * Bulk-access dialog confirm-button enablement is centralized in
- * `@multica/core/agents` as `isAccessChangeReady` (MUL-3963). The dialog
+ * `@cordy/core/agents` as `isAccessChangeReady` (MUL-3963). The dialog
  * consumes it; the picker also gates its internal Save button on the same
  * predicate (its own Save button is hidden via `hideFooter` in the bulk flow).
  */
-import { isAccessChangeReady } from "@multica/core/agents";
+import { isAccessChangeReady } from "@cordy/core/agents";
 import { AgentBatchToolbar } from "./agent-batch-toolbar";
 export { isAccessChangeReady };
 
@@ -263,7 +263,7 @@ function PageHeaderBar({
       count={totalCount}
       description={t(($) => $.page.tagline)}
       learnMore={{
-        href: "https://multica.ai/docs/agents",
+        href: "https://cordy.ai/docs/agents",
         label: t(($) => $.page.learn_more),
       }}
       actions={

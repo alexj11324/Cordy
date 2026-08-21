@@ -9,19 +9,19 @@ import (
 	"regexp"
 	"strings"
 
-	skillpkg "github.com/multica-ai/multica/server/internal/skill"
-	"github.com/multica-ai/multica/server/pkg/agent"
+	skillpkg "github.com/cordy-ai/cordy/server/internal/skill"
+	"github.com/cordy-ai/cordy/server/pkg/agent"
 	"gopkg.in/yaml.v3"
 )
 
 // TaskContextMarkerRelPath is a non-secret marker the daemon writes under the
 // task workdir. The CLI uses it as a fallback daemon-task signal when a child
-// sandbox strips all MULTICA_* env vars before invoking `multica`.
-const TaskContextMarkerRelPath = ".multica/daemon_task_context.json"
+// sandbox strips all CORDY_* env vars before invoking `cordy`.
+const TaskContextMarkerRelPath = ".cordy/daemon_task_context.json"
 
 // TaskContextMarkerManagedBy is the marker discriminator the CLI checks before
 // treating TaskContextMarkerRelPath as daemon-owned.
-const TaskContextMarkerManagedBy = "multica-daemon-task"
+const TaskContextMarkerManagedBy = "cordy-daemon-task"
 
 type taskContextMarkerFile struct {
 	ManagedBy     string `json:"managed_by"`
@@ -31,11 +31,11 @@ type taskContextMarkerFile struct {
 }
 
 // EnsureWorkspacesRootMarker writes a persistent daemon-task marker at
-// {workspacesRoot}/.multica/daemon_task_context.json.
+// {workspacesRoot}/.cordy/daemon_task_context.json.
 //
-// The per-workdir marker only protects `multica` invocations whose cwd is
+// The per-workdir marker only protects `cordy` invocations whose cwd is
 // inside the workdir, because the CLI discovers markers by walking *up* from
-// cwd. A sandboxed subprocess that lost every MULTICA_* env var and escaped
+// cwd. A sandboxed subprocess that lost every CORDY_* env var and escaped
 // to the workdir's parent directory sits above that marker, finds no daemon
 // signal, and would fall back to the user's config PAT — a confirmed
 // impersonation path. Every directory under workspacesRoot is daemon-owned,
@@ -207,7 +207,7 @@ func writeContextFiles(workDir, provider string, ctx TaskContextForEnv, manifest
 func writeTaskContextMarker(workDir string, ctx TaskContextForEnv, manifest *sidecarManifest) error {
 	dir := filepath.Dir(filepath.Join(workDir, TaskContextMarkerRelPath))
 	if err := recordMkdirAll(dir, 0o755, manifest); err != nil {
-		return fmt.Errorf("create .multica dir: %w", err)
+		return fmt.Errorf("create .cordy dir: %w", err)
 	}
 	// The sidecar manifest removes this marker on normal local_directory
 	// cleanup. If a crash leaves it behind, the CLI intentionally treats it
@@ -277,19 +277,19 @@ func (p ProjectResourceForEnv) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// writeProjectResources writes .multica/project/resources.json into the
+// writeProjectResources writes .cordy/project/resources.json into the
 // working directory when the task carries project context. The file is
 // always written when a project is attached (even with zero resources) so
 // agents can rely on its presence as a signal that a project exists.
 //
-// manifest, when non-nil, is populated with the .multica/project chain
+// manifest, when non-nil, is populated with the .cordy/project chain
 // of created directories and the resources.json file so CleanupSidecars
 // can undo them on local_directory teardown.
 func writeProjectResources(workDir string, ctx TaskContextForEnv, manifest *sidecarManifest) error {
 	if ctx.ProjectID == "" && len(ctx.ProjectResources) == 0 {
 		return nil
 	}
-	dir := filepath.Join(workDir, ".multica", "project")
+	dir := filepath.Join(workDir, ".cordy", "project")
 	if err := recordMkdirAll(dir, 0o755, manifest); err != nil {
 		return err
 	}
@@ -308,7 +308,7 @@ func writeProjectResources(workDir string, ctx TaskContextForEnv, manifest *side
 		return err
 	}
 	if err := recordWriteFile(filepath.Join(dir, "resources.json"), data, 0o644, manifest); err != nil {
-		// .multica/project/resources.json is Multica-owned and a
+		// .cordy/project/resources.json is Cordy-owned and a
 		// pre-existing path is almost certainly user content the
 		// manifest must not destroy. The runtime brief already lists
 		// every project resource so the agent runs fine without the
@@ -463,7 +463,7 @@ var nonAlphaNum = regexp.MustCompile(`[^a-z0-9]+`)
 //     `name` at import time) → prepend `name: <slug>` as the first key of
 //     the existing block so OpenCode can still route the skill.
 //
-// `name` is the one key Multica must own. Runtimes disagree on which field
+// `name` is the one key Cordy must own. Runtimes disagree on which field
 // identifies a skill — Claude routes on the directory name, OpenCode on the
 // frontmatter `name` — so letting the two diverge gives a single skill two
 // different invocable names depending on where it runs (MUL-5529). The slug is
@@ -932,14 +932,14 @@ func sanitizeSkillName(name string) string {
 // local_directory teardown without touching user-owned skill directories
 // that happen to live alongside ours under the same skills/ parent.
 //
-// When a Multica skill's natural slug collides with a user-installed
+// When a Cordy skill's natural slug collides with a user-installed
 // skill at the same path, we allocate a collision-free sibling slug
-// (e.g. `issue-review-multica`) and write there instead. Provider-native
+// (e.g. `issue-review-cordy`) and write there instead. Provider-native
 // discovery still picks it up because every subdir under skillsDir is a
 // distinct skill; the user's original directory stays bit-for-bit
 // intact. Without this fallback writeSkillFiles would have to either
 // overwrite user bytes (the bug PR #3444 review caught) or skip the
-// skill entirely (which would silently drop a Multica skill the agent
+// skill entirely (which would silently drop a Cordy skill the agent
 // expects to see).
 func writeSkillFiles(skillsDir string, skills []SkillContextForEnv, manifest *sidecarManifest) error {
 	if err := recordMkdirAll(skillsDir, 0o755, manifest); err != nil {
@@ -1033,7 +1033,7 @@ func renderIssueContext(provider string, ctx TaskContextForEnv) string {
 	}
 
 	b.WriteString("## Quick Start\n\n")
-	fmt.Fprintf(&b, "Run `multica issue get %s --output json` to fetch the full issue details.\n\n", ctx.IssueID)
+	fmt.Fprintf(&b, "Run `cordy issue get %s --output json` to fetch the full issue details.\n\n", ctx.IssueID)
 
 	return b.String()
 }
@@ -1073,9 +1073,9 @@ func renderAutopilotContext(ctx TaskContextForEnv) string {
 	}
 
 	b.WriteString("## Quick Start\n\n")
-	b.WriteString("This is a run-only autopilot task with no assigned issue. Do not run `multica issue get` unless the autopilot instructions explicitly ask you to create or update an issue.\n\n")
+	b.WriteString("This is a run-only autopilot task with no assigned issue. Do not run `cordy issue get` unless the autopilot instructions explicitly ask you to create or update an issue.\n\n")
 	if ctx.AutopilotID != "" {
-		fmt.Fprintf(&b, "Run `multica autopilot get %s --output json` if you need the full autopilot configuration.\n\n", ctx.AutopilotID)
+		fmt.Fprintf(&b, "Run `cordy autopilot get %s --output json` if you need the full autopilot configuration.\n\n", ctx.AutopilotID)
 	}
 	if strings.TrimSpace(ctx.AutopilotDescription) != "" {
 		b.WriteString("## Autopilot Instructions\n\n")

@@ -12,10 +12,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel/engine"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // This file is the Telegram OutboundReplier — the engine seam that delivers a
@@ -30,8 +30,8 @@ import (
 const (
 	msgFreshPending   = "✅ 已准备开始新对话。你的下一条聊天消息将不带之前的上下文运行。"
 	msgIssueUsage     = "请填写任务标题，格式如下：\n\n/issue <标题>\n[描述]（可选）"
-	msgIssueNotMember = "你不是该 Multica 工作区的成员，因此无法创建任务。请让工作区管理员邀请你后重试。"
-	msgIssueDisabled  = "该 Telegram 机器人未连接到 Multica（或已断开连接）。请让工作区管理员重新连接。"
+	msgIssueNotMember = "你不是该 Cordy 工作区的成员，因此无法创建任务。请让工作区管理员邀请你后重试。"
+	msgIssueDisabled  = "该 Telegram 机器人未连接到 Cordy（或已断开连接）。请让工作区管理员重新连接。"
 )
 
 // bindingMinter is the binding-token surface the replier needs.
@@ -57,8 +57,8 @@ type OutboundReplier struct {
 type OutboundReplierConfig struct {
 	Binding bindingMinter
 	Decrypt Decrypter
-	// AppURL is the Multica web app host for the redeem link, same sourcing as
-	// the Slack replier (MULTICA_APP_URL ?? FRONTEND_ORIGIN).
+	// AppURL is the Cordy web app host for the redeem link, same sourcing as
+	// the Slack replier (CORDY_APP_URL ?? FRONTEND_ORIGIN).
 	AppURL      string
 	BindingPath string // default "/telegram/bind"
 	APIBase     string
@@ -144,7 +144,7 @@ func (r *OutboundReplier) Reply(ctx context.Context, inst engine.ResolvedInstall
 
 func (r *OutboundReplier) sendBindingPrompt(ctx context.Context, inst engine.ResolvedInstallation, msg channel.InboundMessage, res engine.Result) error {
 	// A group-visible bearer link can be redeemed by another group member and
-	// would bind the original sender's Telegram identity to the wrong Multica
+	// would bind the original sender's Telegram identity to the wrong Cordy
 	// user. Ask the sender to start a private chat first; only private-chat
 	// prompts carry a redeem token.
 	if msg.Source.ChatType == channel.ChatTypeGroup {
@@ -168,7 +168,7 @@ func (r *OutboundReplier) sendBindingPrompt(ctx context.Context, inst engine.Res
 		return fmt.Errorf("mint binding token: %w", err)
 	}
 	bindURL := r.appURL + r.bindingPath + "?token=" + url.QueryEscape(token.Raw)
-	text := "👋 要开始和我对话，请先绑定你的 Multica 账号：\n" + bindURL + "\n（链接 15 分钟内有效）"
+	text := "👋 要开始和我对话，请先绑定你的 Cordy 账号：\n" + bindURL + "\n（链接 15 分钟内有效）"
 	return r.post(ctx, inst, msg, text)
 }
 

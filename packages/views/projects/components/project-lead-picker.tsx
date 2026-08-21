@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { UserMinus } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { memberListOptions, agentListOptions } from "@multica/core/workspace/queries";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { Popover, PopoverContent, PopoverTrigger } from "@multica/ui/components/ui/popover";
-import type { Project, UpdateProjectRequest } from "@multica/core/types";
+import { memberListOptions, agentListOptions } from "@cordy/core/workspace/queries";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { useActorName } from "@cordy/core/workspace/hooks";
+import { Popover, PopoverContent, PopoverTrigger } from "@cordy/ui/components/ui/popover";
+import type { Project, UpdateProjectRequest } from "@cordy/core/types";
 import { useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 import { ActorAvatar } from "../../common/actor-avatar";

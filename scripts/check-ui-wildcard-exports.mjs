@@ -48,7 +48,7 @@ import ts from "typescript";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const uiRoot = join(repoRoot, "packages", "ui");
-const pkgName = "@multica/ui";
+const pkgName = "@cordy/ui";
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
 const SKIP_DIRS = new Set(["node_modules", ".git", ".next", ".turbo", "out", "dist", "build"]);

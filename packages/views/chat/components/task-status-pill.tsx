@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { cn } from "@multica/ui/lib/utils";
-import { UnicodeSpinner } from "@multica/ui/components/common/unicode-spinner";
-import type { AgentAvailability } from "@multica/core/agents";
-import type { ChatPendingTask, TaskMessagePayload } from "@multica/core/types";
+import { cn } from "@cordy/ui/lib/utils";
+import { UnicodeSpinner } from "@cordy/ui/components/common/unicode-spinner";
+import type { AgentAvailability } from "@cordy/core/agents";
+import type { ChatPendingTask, TaskMessagePayload } from "@cordy/core/types";
 import { formatElapsedSecs } from "../lib/format";
 import { useT } from "../../i18n";
 

@@ -1,5 +1,5 @@
 import globals from "globals";
-import reactConfig from "@multica/eslint-config/react";
+import reactConfig from "@cordy/eslint-config/react";
 
 export default [
   ...reactConfig,

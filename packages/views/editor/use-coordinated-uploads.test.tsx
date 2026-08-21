@@ -2,10 +2,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
-import { I18nProvider } from "@multica/core/i18n/react";
-import type { DraftUpload } from "@multica/core/drafts";
-import type { UploadResult } from "@multica/core/hooks/use-file-upload";
-import type { Attachment } from "@multica/core/types";
+import { I18nProvider } from "@cordy/core/i18n/react";
+import type { DraftUpload } from "@cordy/core/drafts";
+import type { UploadResult } from "@cordy/core/hooks/use-file-upload";
+import type { Attachment } from "@cordy/core/types";
 import enCommon from "../locales/en/common.json";
 import enEditor from "../locales/en/editor.json";
 import { markPastedTextFile, PASTED_TEXT_FILENAME } from "./extensions/file-upload";
@@ -20,7 +20,7 @@ import {
 // The coordinator (MUL-5181 L2) is what actually performs the request; tests
 // drive an upload's outcome by controlling THAT promise.
 const mockApiUploadFile = vi.hoisted(() => vi.fn());
-vi.mock("@multica/core/api", () => ({ api: { uploadFile: mockApiUploadFile } }));
+vi.mock("@cordy/core/api", () => ({ api: { uploadFile: mockApiUploadFile } }));
 vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 const TEST_RESOURCES = { en: { common: enCommon, editor: enEditor } };

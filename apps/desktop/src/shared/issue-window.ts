@@ -1,4 +1,4 @@
-export const ISSUE_WINDOW_ARGUMENT_PREFIX = "--multica-issue-window=";
+export const ISSUE_WINDOW_ARGUMENT_PREFIX = "--cordy-issue-window=";
 
 const MAX_ISSUE_WINDOW_PATH_LENGTH = 2_048;
 const MAX_ISSUE_WINDOW_TITLE_LENGTH = 256;
@@ -59,11 +59,11 @@ export function parseIssueWindowPath(
 
   let url: URL;
   try {
-    url = new URL(value, "https://desktop.multica.invalid");
+    url = new URL(value, "https://desktop.cordy.invalid");
   } catch {
     return null;
   }
-  if (url.origin !== "https://desktop.multica.invalid") return null;
+  if (url.origin !== "https://desktop.cordy.invalid") return null;
 
   const segments = url.pathname.split("/");
   if (segments.length !== 4 || segments[0] !== "" || segments[2] !== "issues") {

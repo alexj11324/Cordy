@@ -3,8 +3,8 @@ import {
   preprocessMentionShortcodes,
   preprocessFileCards,
   preprocessIssueIdentifiers,
-} from "@multica/ui/markdown";
-import { stripChannelMediaMarkers } from "@multica/core/types";
+} from "@cordy/ui/markdown";
+import { stripChannelMediaMarkers } from "@cordy/core/types";
 
 /**
  * Preprocess a markdown string before loading into Tiptap via contentType: 'markdown'.

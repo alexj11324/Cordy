@@ -2,8 +2,8 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import { I18nProvider } from "@multica/core/i18n/react";
-import type { RuntimeModelsResult } from "@multica/core/types";
+import { I18nProvider } from "@cordy/core/i18n/react";
+import type { RuntimeModelsResult } from "@cordy/core/types";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import enAgents from "../../locales/en/agents.json";
 import enCommon from "../../locales/en/common.json";
@@ -28,7 +28,7 @@ const CODEX_MODELS: RuntimeModelsResult = {
   supported: true,
 };
 
-vi.mock("@multica/core/runtimes", () => ({
+vi.mock("@cordy/core/runtimes", () => ({
   runtimeModelsOptions: (runtimeId: string | null) => ({
     enabled: Boolean(runtimeId),
     queryKey: ["runtime-models", runtimeId],

@@ -21,7 +21,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/selfexec"
+	"github.com/cordy-ai/cordy/server/internal/selfexec"
 )
 
 // ChecksumManifestName is the asset name GoReleaser publishes for the
@@ -147,10 +147,10 @@ func releaseAssetCandidates(targetVersion, goos, goarch string) []string {
 	version := strings.TrimPrefix(tag, "v")
 	ext := releaseArchiveExtension(goos)
 	// Prefer the versioned name (current scheme); fall back to the legacy
-	// `multica_{os}_{arch}` name for releases that still ship it.
+	// `cordy_{os}_{arch}` name for releases that still ship it.
 	return []string{
-		fmt.Sprintf("multica-cli-%s-%s-%s.%s", version, goos, goarch, ext),
-		fmt.Sprintf("multica_%s_%s.%s", goos, goarch, ext),
+		fmt.Sprintf("cordy-cli-%s-%s-%s.%s", version, goos, goarch, ext),
+		fmt.Sprintf("cordy_%s_%s.%s", goos, goarch, ext),
 	}
 }
 
@@ -226,7 +226,7 @@ func verifyAssetSHA256(data []byte, expectedHex, assetName string) error {
 
 func fetchReleaseByTag(tag string) (*GitHubRelease, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/multica-ai/multica/releases/tags/"+tag, nil)
+	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/cordy-ai/cordy/releases/tags/"+tag, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -249,10 +249,10 @@ func fetchReleaseByTag(tag string) (*GitHubRelease, error) {
 	return &release, nil
 }
 
-// FetchLatestRelease fetches the latest release tag from the multica GitHub repo.
+// FetchLatestRelease fetches the latest release tag from the cordy GitHub repo.
 func FetchLatestRelease() (*GitHubRelease, error) {
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/multica-ai/multica/releases/latest", nil)
+	req, err := http.NewRequest(http.MethodGet, "https://api.github.com/repos/cordy-ai/cordy/releases/latest", nil)
 	if err != nil {
 		return nil, err
 	}
@@ -292,7 +292,7 @@ func MatchKnownBrewPrefix(path string) string {
 	return ""
 }
 
-// IsBrewInstall checks whether the running multica binary was installed via Homebrew.
+// IsBrewInstall checks whether the running cordy binary was installed via Homebrew.
 func IsBrewInstall() bool {
 	exePath, err := selfexec.Resolve()
 	if err != nil {
@@ -326,10 +326,10 @@ func GetBrewPrefix() string {
 	return strings.TrimSpace(string(out))
 }
 
-// UpdateViaBrew runs `brew upgrade multica-ai/tap/multica`.
+// UpdateViaBrew runs `brew upgrade cordy-ai/tap/cordy`.
 // Returns the combined output and any error.
 func UpdateViaBrew() (string, error) {
-	cmd := exec.Command("brew", "upgrade", "multica-ai/tap/multica")
+	cmd := exec.Command("brew", "upgrade", "cordy-ai/tap/cordy")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return string(out), fmt.Errorf("brew upgrade failed: %w", err)
@@ -428,9 +428,9 @@ func UpdateViaDownloadWithTimeout(targetVersion string, downloadTimeout time.Dur
 	}
 
 	// Extract the binary from the archive.
-	binaryName := "multica"
+	binaryName := "cordy"
 	if runtime.GOOS == "windows" {
-		binaryName = "multica.exe"
+		binaryName = "cordy.exe"
 	}
 	var binaryData []byte
 	if runtime.GOOS == "windows" {
@@ -444,7 +444,7 @@ func UpdateViaDownloadWithTimeout(targetVersion string, downloadTimeout time.Dur
 
 	// Atomic replace: write to temp file, then rename over the original.
 	dir := filepath.Dir(exePath)
-	tmpFile, err := os.CreateTemp(dir, "multica-update-*")
+	tmpFile, err := os.CreateTemp(dir, "cordy-update-*")
 	if err != nil {
 		return "", fmt.Errorf("create temp file: %w", err)
 	}

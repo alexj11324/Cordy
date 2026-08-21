@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import { buildIssueStatusCatalog } from "@multica/core/issue-statuses";
-import type { IssueStatusEntry } from "@multica/core/types";
+import { buildIssueStatusCatalog } from "@cordy/core/issue-statuses";
+import type { IssueStatusEntry } from "@cordy/core/types";
 import { runConfirmIntent, resolveStatusCategory, type GateIssue } from "./run-confirm-gate";
 
 // The canonical matrix for "does this write need confirming" (MUL-6463). The

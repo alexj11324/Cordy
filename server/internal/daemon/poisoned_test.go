@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/pkg/agent"
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/cordy-ai/cordy/server/internal/service"
+	"github.com/cordy-ai/cordy/server/pkg/agent"
+	"github.com/cordy-ai/cordy/server/pkg/taskfailure"
 )
 
 func TestClassifyPoisonedOutput(t *testing.T) {

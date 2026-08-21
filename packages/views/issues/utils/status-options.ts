@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import { ALL_STATUSES } from "@multica/core/issues/config";
-import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
-import { issueStatusColor } from "@multica/core/issue-statuses/queries";
-import type { IssueStatus, IssueStatusCategory } from "@multica/core/types";
+import { ALL_STATUSES } from "@cordy/core/issues/config";
+import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
+import { issueStatusColor } from "@cordy/core/issue-statuses/queries";
+import type { IssueStatus, IssueStatusCategory } from "@cordy/core/types";
 import { useStatusLabel } from "./status-label";
 
 export interface StatusOption {

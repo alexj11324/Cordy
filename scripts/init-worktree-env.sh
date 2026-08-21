@@ -11,13 +11,13 @@ fi
 worktree_name="${WORKTREE_NAME:-$(basename "$PWD")}"
 slug="$(printf '%s' "$worktree_name" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/_/g; s/__*/_/g; s/^_//; s/_$//')"
 if [ -z "$slug" ]; then
-  slug="multica"
+  slug="cordy"
 fi
 
 hash_value="$(printf '%s' "$PWD" | cksum | awk '{print $1}')"
 offset=$((hash_value % 1000))
 
-postgres_db="multica_${slug}_${offset}"
+postgres_db="cordy_${slug}_${offset}"
 postgres_port=5432
 backend_port=$((18080 + offset))
 frontend_port=$((13000 + offset))
@@ -25,17 +25,17 @@ frontend_origin="http://localhost:${frontend_port}"
 
 cat > "$ENV_FILE" <<EOF
 POSTGRES_DB=${postgres_db}
-POSTGRES_USER=multica
-POSTGRES_PASSWORD=multica
+POSTGRES_USER=cordy
+POSTGRES_PASSWORD=cordy
 POSTGRES_PORT=${postgres_port}
-DATABASE_URL=postgres://multica:multica@localhost:${postgres_port}/${postgres_db}?sslmode=disable
+DATABASE_URL=postgres://cordy:cordy@localhost:${postgres_port}/${postgres_db}?sslmode=disable
 
 PORT=${backend_port}
 JWT_SECRET=change-me-in-production
-MULTICA_DEV_VERIFICATION_CODE=888888
-MULTICA_SERVER_URL=ws://localhost:${backend_port}/ws
-MULTICA_PUBLIC_URL=http://localhost:${backend_port}
-MULTICA_APP_URL=${frontend_origin}
+CORDY_DEV_VERIFICATION_CODE=888888
+CORDY_SERVER_URL=ws://localhost:${backend_port}/ws
+CORDY_PUBLIC_URL=http://localhost:${backend_port}
+CORDY_APP_URL=${frontend_origin}
 
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=

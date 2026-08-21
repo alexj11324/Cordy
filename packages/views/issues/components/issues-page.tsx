@@ -6,9 +6,9 @@ import type {
   IssueTableFacetSpec,
   IssueTableFacetsResponse,
   WorkingAgentSummary,
-} from "@multica/core/types";
-import { useIssuesScope } from "@multica/core/issues/stores/issues-scope-store";
-import { useViewStore } from "@multica/core/issues/stores/view-store-context";
+} from "@cordy/core/types";
+import { useIssuesScope } from "@cordy/core/issues/stores/issues-scope-store";
+import { useViewStore } from "@cordy/core/issues/stores/view-store-context";
 import { PageHeader } from "../../layout/page-header";
 import { useT } from "../../i18n";
 import { IssueSurface } from "../surface/issue-surface";

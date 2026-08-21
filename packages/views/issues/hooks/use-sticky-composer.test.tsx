@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { renderHook } from "@testing-library/react";
-import { useCommentComposerStore } from "@multica/core/issues/stores";
+import { useCommentComposerStore } from "@cordy/core/issues/stores";
 import { useStickyComposer } from "./use-sticky-composer";
 
 // `useIsMobile` reads `window.innerWidth` against a 768px breakpoint, so the

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // TestSubtreeUnsubscribe_LosesToConcurrentRevoke covers MUL-5483 review round 8,
@@ -32,7 +32,7 @@ import (
 func TestSubtreeUnsubscribe_LosesToConcurrentRevoke(t *testing.T) {
 	ctx := context.Background()
 
-	email := "subtree-revoke-race@multica.test"
+	email := "subtree-revoke-race@cordy.test"
 	testPool.Exec(ctx, `DELETE FROM "user" WHERE email = $1`, email)
 	var userID string
 	if err := testPool.QueryRow(ctx,

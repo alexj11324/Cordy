@@ -23,8 +23,8 @@ import {
   UserPen,
   Waves,
 } from "lucide-react";
-import { Button } from "@multica/ui/components/ui/button";
-import { Spinner } from "@multica/ui/components/ui/spinner";
+import { Button } from "@cordy/ui/components/ui/button";
+import { Spinner } from "@cordy/ui/components/ui/spinner";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -39,14 +39,14 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
-} from "@multica/ui/components/ui/dropdown-menu";
+} from "@cordy/ui/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@multica/ui/components/ui/popover";
-import { Calendar } from "@multica/ui/components/ui/calendar";
-import { Switch } from "@multica/ui/components/ui/switch";
+} from "@cordy/ui/components/ui/popover";
+import { Calendar } from "@cordy/ui/components/ui/calendar";
+import { Switch } from "@cordy/ui/components/ui/switch";
 import {
   Select,
   SelectTrigger,
@@ -54,27 +54,27 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
-} from "@multica/ui/components/ui/select";
-import { Toggle } from "@multica/ui/components/ui/toggle";
+} from "@cordy/ui/components/ui/select";
+import { Toggle } from "@cordy/ui/components/ui/toggle";
 import {
   PRIORITY_DISPLAY_ORDER,
-} from "@multica/core/issues/config";
+} from "@cordy/core/issues/config";
 import { StatusIcon, PriorityIcon } from ".";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { memberListOptions, agentListOptions, squadListOptions } from "@multica/core/workspace/queries";
-import { projectListOptions } from "@multica/core/projects/queries";
-import { labelListOptions } from "@multica/core/labels/queries";
-import { propertyListOptions } from "@multica/core/properties";
-import { propertyIdFromViewKey } from "@multica/core/issues/stores/view-store";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { memberListOptions, agentListOptions, squadListOptions } from "@cordy/core/workspace/queries";
+import { projectListOptions } from "@cordy/core/projects/queries";
+import { labelListOptions } from "@cordy/core/labels/queries";
+import { propertyListOptions } from "@cordy/core/properties";
+import { propertyIdFromViewKey } from "@cordy/core/issues/stores/view-store";
 import type {
   Issue,
   IssueProperty,
   IssueTableFacetSpec,
   IssueTableFacetsResponse,
   WorkingAgentSummary,
-} from "@multica/core/types";
-import { formatActorRef, isActorPropertyType } from "@multica/core/types";
+} from "@cordy/core/types";
+import { formatActorRef, isActorPropertyType } from "@cordy/core/types";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropertyIcon } from "../../common/property-icon";
@@ -92,27 +92,27 @@ import {
   type SwimlaneGrouping,
   type TableGrouping,
   type ViewMode,
-} from "@multica/core/issues/stores/view-store";
-import { useViewStore, useViewStoreApi } from "@multica/core/issues/stores/view-store-context";
+} from "@cordy/core/issues/stores/view-store";
+import { useViewStore, useViewStoreApi } from "@cordy/core/issues/stores/view-store-context";
 import { FilterChipsBar } from "./filter-chips-bar";
 import { SaveViewDialog, type SaveViewScope } from "./save-view-dialog";
 import { ViewBar } from "./view-bar";
 import { toast } from "sonner";
-import { useActiveIssueView } from "@multica/core/issue-views/use-active-view";
-import { useAuthStore } from "@multica/core/auth";
-import type { IssueViewScope } from "@multica/core/issue-views/queries";
-import { actorFilterKey, baselineFromQuery, type IssueViewBaseline } from "@multica/core/issue-views/baseline";
-import type { IssueView } from "@multica/core/api/schemas";
-import { addDaysDateOnly, dateOnlyToLocalDate, formatDateOnly, toDateOnly, todayDateOnly } from "@multica/core/issues/date";
+import { useActiveIssueView } from "@cordy/core/issue-views/use-active-view";
+import { useAuthStore } from "@cordy/core/auth";
+import type { IssueViewScope } from "@cordy/core/issue-views/queries";
+import { actorFilterKey, baselineFromQuery, type IssueViewBaseline } from "@cordy/core/issue-views/baseline";
+import type { IssueView } from "@cordy/core/api/schemas";
+import { addDaysDateOnly, dateOnlyToLocalDate, formatDateOnly, toDateOnly, todayDateOnly } from "@cordy/core/issues/date";
 import {
   useIssuesScope,
   useIssuesScopeStore,
   type IssuesScope,
   type IssuesScopePageKey,
-} from "@multica/core/issues/stores/issues-scope-store";
-import { actorKindForViewVariant } from "@multica/core/issues/surface/scope";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
-import { cn } from "@multica/ui/lib/utils";
+} from "@cordy/core/issues/stores/issues-scope-store";
+import { actorKindForViewVariant } from "@cordy/core/issues/surface/scope";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@cordy/ui/components/ui/tooltip";
+import { cn } from "@cordy/ui/lib/utils";
 import { PAGE_GUTTER } from "../../layout/page-header";
 import { useT } from "../../i18n";
 import { useStatusOptions } from "../utils/status-options";

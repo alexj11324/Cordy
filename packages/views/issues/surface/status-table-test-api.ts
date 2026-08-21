@@ -1,4 +1,4 @@
-import { ALL_STATUSES } from "@multica/core/issues/config";
+import { ALL_STATUSES } from "@cordy/core/issues/config";
 import type {
   Issue,
   IssueTableGroupDescriptor,
@@ -9,7 +9,7 @@ import type {
   IssueTableRowsRequest,
   ListIssuesParams,
   ListIssuesResponse,
-} from "@multica/core/types";
+} from "@cordy/core/types";
 
 type LegacyListIssues = (
   params?: ListIssuesParams,

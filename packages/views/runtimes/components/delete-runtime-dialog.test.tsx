@@ -3,8 +3,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import type { Agent, AgentRuntime } from "@multica/core/types";
-import { I18nProvider } from "@multica/core/i18n/react";
+import type { Agent, AgentRuntime } from "@cordy/core/types";
+import { I18nProvider } from "@cordy/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enRuntimes from "../../locales/en/runtimes.json";
 import enAgents from "../../locales/en/agents.json";
@@ -35,7 +35,7 @@ const { ApiError, apiDeleteRuntime, apiUnbindAgentsAndDeleteRuntime } = vi.hoist
   };
 });
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@cordy/core/api", () => ({
   api: {
     deleteRuntime: (...args: unknown[]) => apiDeleteRuntime(...args),
     unbindAgentsAndDeleteRuntime: (...args: unknown[]) =>
@@ -49,7 +49,7 @@ vi.mock("@multica/core/api", () => ({
 // The mutations file imports api lazily via the mock above; the mocked
 // hooks below thread directly to the api stubs so the dialog's mode
 // transitions are deterministic in this test.
-vi.mock("@multica/core/runtimes/mutations", () => ({
+vi.mock("@cordy/core/runtimes/mutations", () => ({
   useDeleteRuntime: () => ({
     isPending: false,
     mutate: vi.fn(),
@@ -77,13 +77,13 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-vi.mock("@multica/core/agents", () => ({
+vi.mock("@cordy/core/agents", () => ({
   // Empty presence map keeps the cell renderers honest without dragging in
   // the full presence pipeline.
   useWorkspacePresenceMap: () => ({ byAgent: new Map(), loading: false }),
 }));
 
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@cordy/core/auth", () => ({
   useAuthStore: (sel: (s: { user: { id: string } }) => unknown) =>
     sel({ user: { id: "user-me" } }),
 }));

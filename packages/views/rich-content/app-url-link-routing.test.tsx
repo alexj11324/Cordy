@@ -21,8 +21,8 @@ vi.mock("../issues/hooks", () => ({
 
 // Only the workspace hooks are stubbed — the real path helpers stay in place so
 // the reserved-slug rule that decides in-app vs external is the shipped one.
-vi.mock("@multica/core/paths", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@multica/core/paths")>()),
+vi.mock("@cordy/core/paths", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@cordy/core/paths")>()),
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/test/issues/${id}`,
     projectDetail: (id: string) => `/test/projects/${id}`,
@@ -56,12 +56,12 @@ let openSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   navigatedPaths = [];
-  window.addEventListener("multica:navigate", captureNavigate);
+  window.addEventListener("cordy:navigate", captureNavigate);
   openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
 });
 
 afterEach(() => {
-  window.removeEventListener("multica:navigate", captureNavigate);
+  window.removeEventListener("cordy:navigate", captureNavigate);
   vi.restoreAllMocks();
 });
 
@@ -92,7 +92,7 @@ describe("RichContent link routing", () => {
   });
 
   it("still hands a genuinely external link to the browser", () => {
-    const external = "https://github.com/multica-ai/multica/pull/1";
+    const external = "https://github.com/cordy-ai/cordy/pull/1";
     renderContent(`[#1](${external})`);
 
     screen.getByText("#1").click();

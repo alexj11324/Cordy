@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/entitlement"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/entitlement"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // AutopilotQuotaMetrics deliberately accepts only bounded labels. Workspace

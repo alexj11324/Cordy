@@ -48,7 +48,7 @@ describe("ApiClient schema fallback", () => {
     it("adds the allowlisted repository return target to the connect request", async () => {
       stubFetchJson({
         configured: true,
-        url: "https://github.com/apps/multica/installations/new",
+        url: "https://github.com/apps/cordy/installations/new",
       });
       const client = new ApiClient("https://api.example.test");
 

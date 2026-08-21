@@ -8,9 +8,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/events"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // batchClaimFixture provisions two runtimes on one machine, each with its own
@@ -23,7 +23,7 @@ func batchClaimFixture(t *testing.T, ctx context.Context, pool *pgxpool.Pool) (r
 
 	var userID string
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ($1,$2) RETURNING id`,
-		"Batch Claim Test", fmt.Sprintf("batch-claim-%d@multica.ai", suffix)).Scan(&userID); err != nil {
+		"Batch Claim Test", fmt.Sprintf("batch-claim-%d@cordy.ai", suffix)).Scan(&userID); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	var workspaceID string

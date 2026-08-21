@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/testutil"
+	"github.com/cordy-ai/cordy/server/internal/testutil"
 )
 
 // A move WITHIN the backlog category must not start a run (MUL-6463).

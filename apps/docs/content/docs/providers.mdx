@@ -1,24 +1,24 @@
 ---
 title: AI coding tools comparison
-description: Compare the AI coding tools Multica supports, and how models, MCP, sessions, and skills differ.
+description: Compare the AI coding tools Cordy supports, and how models, MCP, sessions, and skills differ.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Multica does not replace the AI coding tool you use. A runtime invokes the tool already installed and signed in on the computer, then writes progress and results back to the issue.
+Cordy does not replace the AI coding tool you use. A runtime invokes the tool already installed and signed in on the computer, then writes progress and results back to the issue.
 
 If you already use one of these tools, you can usually keep it as-is. Four things to weigh when choosing:
 
 - whether it is already installed on the computer;
 - which models your account can use;
-- whether Multica needs to configure MCP for it;
+- whether Cordy needs to configure MCP for it;
 - which skills the team wants to reuse.
 
 Install steps are in [Install AI coding tools](/install-agent-runtime).
 
 ## Supported tools
 
-| Tool | Detected command | Session resumption | Multica-managed MCP | Skill injection path |
+| Tool | Detected command | Session resumption | Cordy-managed MCP | Skill injection path |
 |---|---|---:|---:|---|
 | Antigravity | `agy` | ✓ | — | `.agents/skills/` |
 | Claude Code | `claude` | ✓ | ✓ | `.claude/skills/` |
@@ -45,17 +45,17 @@ Install steps are in [Install AI coding tools](/install-agent-runtime).
 | Trae CLI | `traecli` | ✓ | ✓ | `.traecli/skills/` |
 | Dim | `dim` | ✓ | ✓ | — |
 
-"Multica-managed MCP" means you can define MCP servers in the agent configuration and Multica passes them to the tool before a run. It does not mean the tool has no other way to configure MCP.
+"Cordy-managed MCP" means you can define MCP servers in the agent configuration and Cordy passes them to the tool before a run. It does not mean the tool has no other way to configure MCP.
 
 ## Model sources
 
 When you create an agent, the model list comes from the corresponding runtime. Some tools expose a fixed set of model names; others return available models based on local configuration, the signed-in account, and subscription entitlements.
 
-If you do not pick a model, Multica uses the tool's own default. If the list is empty, confirm the runtime is online and the tool is signed in, then refresh the model list.
+If you do not pick a model, Cordy uses the tool's own default. If the list is empty, confirm the runtime is online and the tool is signed in, then refresh the model list.
 
-QwenPaw and MiniMax Code are exceptions: they do not accept a model chosen from Multica, so the picker is inert and shows "Managed by runtime". Choose the model in the tool's own configuration instead. An empty model list is expected there and is not a sign that the runtime is offline.
+QwenPaw and MiniMax Code are exceptions: they do not accept a model chosen from Cordy, so the picker is inert and shows "Managed by runtime". Choose the model in the tool's own configuration instead. An empty model list is expected there and is not a sign that the runtime is offline.
 
-DeepSeek Harness advertises its model catalog from the runtime itself (`dsh --profile multica --list-models`). Its model ids use the `provider/model` form (for example `deepseek-official/deepseek-chat`), so select the full id from the list.
+DeepSeek Harness advertises its model catalog from the runtime itself (`dsh --profile cordy --list-models`). Its model ids use the `provider/model` form (for example `deepseek-official/deepseek-chat`), so select the full id from the list.
 
 <Callout type="info">
 Different tools may use different model names. After switching AI coding tools, the previous model value is invalid in the new tool and needs to be selected again.
@@ -63,9 +63,9 @@ Different tools may use different model names. After switching AI coding tools, 
 
 ## Session resumption
 
-All tools marked ✓ support continuing an existing session in a later run. The prerequisites are that the original session still exists and the task is executed by a runtime that can reach it. MiniMax Code 0.1.2 advertises no session-loading capability over ACP, so Multica starts a fresh MCode session for a later run.
+All tools marked ✓ support continuing an existing session in a later run. The prerequisites are that the original session still exists and the task is executed by a runtime that can reach it. MiniMax Code 0.1.2 advertises no session-loading capability over ACP, so Cordy starts a fresh MCode session for a later run.
 
-Multica stores the session identifier the tool returns. The next time work continues on the same issue, the runtime tries to resume that session; when it cannot, it creates a new session and keeps going. Pi stores a local session file path, so it depends more on the original computer and file.
+Cordy stores the session identifier the tool returns. The next time work continues on the same issue, the runtime tries to resume that session; when it cannot, it creates a new session and keeps going. Pi stores a local session file path, so it depends more on the original computer and file.
 
 Retry and session-resumption rules are in [Tasks](/tasks#manual-retry).
 
@@ -79,9 +79,9 @@ MCP server commands, arguments, and environment variables are saved server-side 
 
 ## Skill injection
 
-Before a run starts, Multica writes the skills bound to the agent into the paths in the table above, so each tool discovers them through its own native mechanism.
+Before a run starts, Cordy writes the skills bound to the agent into the paths in the table above, so each tool discovers them through its own native mechanism.
 
-Skills that already exist in the repository are never overwritten. On a name collision, Multica uses a different directory name for the injected copy; after the run, it cleans up only the files it created.
+Skills that already exist in the repository are never overwritten. On a name collision, Cordy uses a different directory name for the injected copy; after the run, it cleans up only the files it created.
 
 Codex, Hermes, and OpenClaw are handled slightly differently:
 

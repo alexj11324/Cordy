@@ -27,7 +27,7 @@ func newEvictTestRepo(t *testing.T, d *Daemon, workspaceID, repoURL string) stri
 // writeLastUsed pins the on-disk stamp format that repocache.LastUsed reads.
 func writeLastUsed(t *testing.T, barePath string, at time.Time) {
 	t.Helper()
-	path := filepath.Join(barePath, ".multica_last_used")
+	path := filepath.Join(barePath, ".cordy_last_used")
 	if err := os.WriteFile(path, []byte(at.UTC().Format(time.RFC3339Nano)), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestEvictRepoCache_MissingStampIsBackfilledNotEvicted(t *testing.T) {
 	if stats.repoCachesReclaimed != 0 {
 		t.Errorf("repo_caches_reclaimed = %d, want 0", stats.repoCachesReclaimed)
 	}
-	if _, err := os.Stat(filepath.Join(barePath, ".multica_last_used")); err != nil {
+	if _, err := os.Stat(filepath.Join(barePath, ".cordy_last_used")); err != nil {
 		t.Errorf("expected the missing stamp to be backfilled so the clock starts now: %v", err)
 	}
 
@@ -187,7 +187,7 @@ func TestEvictRepoCache_DisabledWhenTTLZero(t *testing.T) {
 	stats := runRepoGC(d)
 
 	if _, err := os.Stat(barePath); err != nil {
-		t.Fatalf("MULTICA_GC_REPO_TTL=0 must disable eviction entirely: %v", err)
+		t.Fatalf("CORDY_GC_REPO_TTL=0 must disable eviction entirely: %v", err)
 	}
 	if stats.repoCachesReclaimed != 0 {
 		t.Errorf("repo_caches_reclaimed = %d, want 0", stats.repoCachesReclaimed)

@@ -7,11 +7,11 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: vi.fn(),
 }));
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@cordy/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@multica/core/issues/queries", () => ({
+vi.mock("@cordy/core/issues/queries", () => ({
   issueListOptions: () => ({ queryKey: ["issues"] }),
   issueDetailOptions: (_workspaceId: string, issueId: string) => ({
     queryKey: ["issue", issueId],

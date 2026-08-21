@@ -3,7 +3,7 @@
 /**
  * useHtmlPreviewScrollRestore — wires the full-page HTML attachment iframe
  * into the desktop tab Coordinator's scroll-capture/restore channel
- * (multica-ai#6405).
+ * (cordy-ai#6405).
  *
  * Why this exists: the full-page preview renders user HTML inside
  * `<iframe sandbox="allow-scripts" srcDoc>` with no `allow-same-origin`, so
@@ -48,7 +48,7 @@ import { hashString } from "../editor/utils/hash-string";
 /** Container key the Coordinator stores this under in the tab memento. */
 export const HTML_IFRAME_SCROLL_KEY = "html-iframe";
 
-const BRIDGE_MARK = "__multica";
+const BRIDGE_MARK = "__cordy";
 
 type BridgeMessage =
   | { kind: "scroll"; y: number; height: number }

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 func TestUpdateIssueActivityExcludesPositionOnlyWrites(t *testing.T) {

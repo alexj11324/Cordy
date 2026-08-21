@@ -1,6 +1,6 @@
-import type { LocaleAdapter, SupportedLocale } from "@multica/core/i18n";
+import type { LocaleAdapter, SupportedLocale } from "@cordy/core/i18n";
 
-const STORAGE_KEY = "multica-locale";
+const STORAGE_KEY = "cordy-locale";
 
 // Desktop adapter:
 //   - User choice: localStorage (set by Settings switcher).

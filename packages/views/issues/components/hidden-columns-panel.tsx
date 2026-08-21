@@ -1,16 +1,16 @@
 "use client";
 
-import { statusCategoryOfKey } from "@multica/core/issues";
+import { statusCategoryOfKey } from "@cordy/core/issues";
 import { Eye, MoreHorizontal } from "lucide-react";
-import type { IssueStatusCategory } from "@multica/core/types";
-import { Button } from "@multica/ui/components/ui/button";
+import type { IssueStatusCategory } from "@cordy/core/types";
+import { Button } from "@cordy/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { useViewStoreApi } from "@multica/core/issues/stores/view-store-context";
+} from "@cordy/ui/components/ui/dropdown-menu";
+import { useViewStoreApi } from "@cordy/core/issues/stores/view-store-context";
 import { StatusIcon } from "./status-icon";
 import { useT } from "../../i18n";
 

@@ -31,7 +31,7 @@ export interface ListVCSConnectionsResponse {
    * renders (visibility is also gated by vcs_integration_available on
    * /api/config, which is the authoritative deployment signal). */
   available?: boolean;
-  /** Whether the deployment has MULTICA_VCS_SECRET_KEY configured. When false
+  /** Whether the deployment has CORDY_VCS_SECRET_KEY configured. When false
    * the connect form is disabled. Older backends omit it; treat as false. */
   configured?: boolean;
   /** Whether the caller can connect / disconnect. Non-admins get false. */

@@ -8,13 +8,13 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/middleware"
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/dbid"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/cordy-ai/cordy/server/internal/middleware"
+	"github.com/cordy-ai/cordy/server/internal/service"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/dbid"
+	"github.com/cordy-ai/cordy/server/pkg/plugincontract"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 // The Action API is what a plugin surface reaches through the host bridge.
@@ -38,7 +38,7 @@ import (
 // session and never will. It presents a bearer token instead, and that changes
 // only WHO the call acts as — the three checks above are the same either way.
 // See pluginActor for how identity is decided.
-const pluginInstallationHeader = "X-Multica-Plugin-Installation"
+const pluginInstallationHeader = "X-Cordy-Plugin-Installation"
 
 // pluginActor is who a call acts as, and it is decided by how the caller
 // authenticated rather than by anything the caller asks for.

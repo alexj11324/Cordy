@@ -1,10 +1,10 @@
 "use client";
 
-import { issueStatusCategory } from "@multica/core/issues";
+import { issueStatusCategory } from "@cordy/core/issues";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { issueListOptions, issueDetailOptions } from "@multica/core/issues/queries";
-import { useWorkspaceId } from "@multica/core/hooks";
+import { issueListOptions, issueDetailOptions } from "@cordy/core/issues/queries";
+import { useWorkspaceId } from "@cordy/core/hooks";
 import { StatusIcon } from "./status-icon";
 
 /**

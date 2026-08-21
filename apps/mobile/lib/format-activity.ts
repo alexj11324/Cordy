@@ -10,8 +10,8 @@
  * mobile clients in the wild must render them as a generic fallback, not
  * crash).
  */
-import type { IssuePriority, TimelineEntry } from "@multica/core/types";
-import { formatDateOnly } from "@multica/core/issues/date";
+import type { IssuePriority, TimelineEntry } from "@cordy/core/types";
+import { formatDateOnly } from "@cordy/core/issues/date";
 import { STATUS_LABEL, isIssueStatusCategory } from "@/lib/issue-status";
 
 const PRIORITY_LABEL: Record<IssuePriority, string> = {

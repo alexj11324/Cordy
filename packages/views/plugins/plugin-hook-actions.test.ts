@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { PluginInstallation } from "@multica/core/types";
+import type { PluginInstallation } from "@cordy/core/types";
 import { collectManualHookActions, pluginHookActionKey } from "./plugin-hook-actions";
 
 // The canonical matrix for which hooks become menu entries. The component
@@ -12,7 +12,7 @@ function installation(overrides: Partial<PluginInstallation> = {}): PluginInstal
     plugin_key: "com.example.one",
     name: "Example",
     version: "1.0.0",
-    source_url: "https://example.com/multica.plugin.json",
+    source_url: "https://example.com/cordy.plugin.json",
     enabled: true,
     granted_scopes: [],
     config_schema: [],

@@ -19,7 +19,7 @@ import (
 
 const (
 	connectionsOpenPath = "/v1.0/gateway/connections/open"
-	streamUserAgent     = "multica-dingtalk/1.0"
+	streamUserAgent     = "cordy-dingtalk/1.0"
 	openConnectTimeout  = 5 * time.Second
 )
 

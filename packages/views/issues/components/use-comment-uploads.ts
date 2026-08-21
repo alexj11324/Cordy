@@ -13,9 +13,9 @@
  */
 
 import { useMemo, type RefObject } from "react";
-import type { DraftUpload } from "@multica/core/drafts";
-import type { UploadContext } from "@multica/core/hooks/use-file-upload";
-import { useCommentDraftStore, type CommentDraftKey } from "@multica/core/issues/stores";
+import type { DraftUpload } from "@cordy/core/drafts";
+import type { UploadContext } from "@cordy/core/hooks/use-file-upload";
+import { useCommentDraftStore, type CommentDraftKey } from "@cordy/core/issues/stores";
 import type { UploadGate } from "../../editor/use-upload-gate";
 import type { ContentEditorRef } from "../../editor/content-editor";
 import {

@@ -329,7 +329,7 @@ while IFS= read -r line; do
       printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"ses_comment_done"}}\n' "$id"
       ;;
     *'"method":"session/prompt"'*)
-      printf '{"jsonrpc":"2.0","method":"session/notification","params":{"sessionId":"ses_comment_done","update":{"type":"ToolCall","toolCallId":"tc-comment","name":"Shell","status":"pending","parameters":{"command":"multica issue comment add issue-1 --content-file ./reply.md"}}}}\n'
+      printf '{"jsonrpc":"2.0","method":"session/notification","params":{"sessionId":"ses_comment_done","update":{"type":"ToolCall","toolCallId":"tc-comment","name":"Shell","status":"pending","parameters":{"command":"cordy issue comment add issue-1 --content-file ./reply.md"}}}}\n'
       printf '{"jsonrpc":"2.0","method":"session/notification","params":{"sessionId":"ses_comment_done","update":{"type":"ToolCallUpdate","toolCallId":"tc-comment","status":"completed","name":"Shell","output":"created comment"}}}\n'
       printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"Internal error","data":"Kiro failed to generate a response"}}\n' "$id"
       exit 0
@@ -395,17 +395,17 @@ func TestKiroIssueCommentAddCommand(t *testing.T) {
 		command string
 		want    bool
 	}{
-		{"multica issue comment add issue-1 --content-file ./reply.md", true},
-		{"./multica issue comment add issue-1 --content-file ./reply.md", true},
-		{"/usr/local/bin/multica issue comment add issue-1 --content-file ./reply.md", true},
-		{"MULTICA_TOKEN=x multica issue comment add issue-1 --content-file ./reply.md", true},
-		{"FOO=1 BAR=2 ./multica issue comment add issue-1", true},
-		{`sh -c "multica issue comment add issue-1 --content-file ./reply.md"`, true},
-		{`bash -c 'multica issue comment add issue-1'`, true},
-		{`/bin/sh -c "multica issue comment add issue-1"`, true},
-		{"multica issue get issue-1", false},
-		{"echo multica issue comment add issue-1", false},
-		{`sh -c "echo multica issue comment add issue-1"`, false},
+		{"cordy issue comment add issue-1 --content-file ./reply.md", true},
+		{"./cordy issue comment add issue-1 --content-file ./reply.md", true},
+		{"/usr/local/bin/cordy issue comment add issue-1 --content-file ./reply.md", true},
+		{"CORDY_TOKEN=x cordy issue comment add issue-1 --content-file ./reply.md", true},
+		{"FOO=1 BAR=2 ./cordy issue comment add issue-1", true},
+		{`sh -c "cordy issue comment add issue-1 --content-file ./reply.md"`, true},
+		{`bash -c 'cordy issue comment add issue-1'`, true},
+		{`/bin/sh -c "cordy issue comment add issue-1"`, true},
+		{"cordy issue get issue-1", false},
+		{"echo cordy issue comment add issue-1", false},
+		{`sh -c "echo cordy issue comment add issue-1"`, false},
 		{"FOO=bar", false},
 		{"", false},
 	}
@@ -417,7 +417,7 @@ func TestKiroIssueCommentAddCommand(t *testing.T) {
 }
 
 // TestKiroIssueCommentAddToolIgnoresToolTitle pins the #5509 decoupling:
-// `multica issue comment add` must be recognized from its command payload
+// `cordy issue comment add` must be recognized from its command payload
 // regardless of the tool's normalized name. The GPT-5.6 Sol adapter can title
 // the shell tool something that doesn't fold into "terminal", and the old
 // msg.Tool=="terminal" gate silently dropped those.
@@ -439,7 +439,7 @@ func TestKiroIssueCommentAddToolIgnoresToolTitle(t *testing.T) {
 		msg := Message{
 			Type:  MessageToolUse,
 			Tool:  tt.tool,
-			Input: map[string]any{"command": "multica issue comment add issue-1 --content-file ./reply.md"},
+			Input: map[string]any{"command": "cordy issue comment add issue-1 --content-file ./reply.md"},
 		}
 		if got := isKiroIssueCommentAddTool(msg); got != tt.want {
 			t.Errorf("%s: isKiroIssueCommentAddTool(tool=%q) = %v, want %v", tt.name, tt.tool, got, tt.want)
@@ -533,7 +533,7 @@ func TestKiroBackendDoesNotCompleteRunningCommentAddWithoutResult(t *testing.T) 
 
 	result := runKiroCloseErrorScript(t, fakeKiroACPRunningToolCloseErrorScript(
 		"execute_bash",
-		"multica issue comment add issue-1 --content-file ./reply.md",
+		"cordy issue comment add issue-1 --content-file ./reply.md",
 	))
 	if result.Status != "failed" {
 		t.Fatalf("expected status=failed for a result-less running comment-add, got %q (error=%q)", result.Status, result.Error)
@@ -593,7 +593,7 @@ func TestKiroBackendTreatsCompletedCommentAddWithNonTerminalTitleAsCompleted(t *
 
 	result := runKiroCloseErrorScript(t, fakeKiroACPCompletedToolCloseErrorScript(
 		"execute_bash",
-		"multica issue comment add issue-1 --content-file ./reply.md",
+		"cordy issue comment add issue-1 --content-file ./reply.md",
 	))
 	if result.Status != "completed" {
 		t.Fatalf("expected status=completed for a completed comment-add + close error, got %q (error=%q)", result.Status, result.Error)
@@ -640,7 +640,7 @@ done
 }
 
 // TestKiroBackendPreservesCompletionOnRealGPT56SolFrames is the end-to-end
-// #5509 regression against the real captured wire shape: a `multica issue
+// #5509 regression against the real captured wire shape: a `cordy issue
 // comment add` run through GPT-5.6 Sol's shell tool (title "Running: ...",
 // object rawOutput) that completes, then hits the -32603 close handshake, must
 // stay completed. This fails without BOTH the object-rawOutput parse fix in
@@ -649,7 +649,7 @@ func TestKiroBackendPreservesCompletionOnRealGPT56SolFrames(t *testing.T) {
 	t.Parallel()
 
 	result := runKiroCloseErrorScript(t, fakeKiroACPRealGPT56SolCloseErrorScript(
-		"multica issue comment add issue-1 --content-file ./reply.md",
+		"cordy issue comment add issue-1 --content-file ./reply.md",
 	))
 	if result.Status != "completed" {
 		t.Fatalf("expected status=completed for the real GPT-5.6 Sol frame shape, got %q (error=%q)", result.Status, result.Error)
@@ -675,9 +675,9 @@ while IFS= read -r line; do
       printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"ses_two"}}\n' "$id"
       ;;
     *'"method":"session/prompt"'*)
-      printf '{"jsonrpc":"2.0","method":"session/notification","params":{"sessionId":"ses_two","update":{"type":"ToolCall","toolCallId":"tc-1","name":"terminal","status":"pending","parameters":{"command":"multica issue comment add issue-1 --content-file ./progress.md"}}}}\n'
+      printf '{"jsonrpc":"2.0","method":"session/notification","params":{"sessionId":"ses_two","update":{"type":"ToolCall","toolCallId":"tc-1","name":"terminal","status":"pending","parameters":{"command":"cordy issue comment add issue-1 --content-file ./progress.md"}}}}\n'
       printf '{"jsonrpc":"2.0","method":"session/notification","params":{"sessionId":"ses_two","update":{"type":"ToolCallUpdate","toolCallId":"tc-1","status":"` + firstStatus + `","name":"terminal","output":"first"}}}\n'
-      printf '{"jsonrpc":"2.0","method":"session/notification","params":{"sessionId":"ses_two","update":{"type":"ToolCall","toolCallId":"tc-2","name":"terminal","status":"pending","parameters":{"command":"multica issue comment add issue-1 --content-file ./final.md"}}}}\n'
+      printf '{"jsonrpc":"2.0","method":"session/notification","params":{"sessionId":"ses_two","update":{"type":"ToolCall","toolCallId":"tc-2","name":"terminal","status":"pending","parameters":{"command":"cordy issue comment add issue-1 --content-file ./final.md"}}}}\n'
       printf '{"jsonrpc":"2.0","method":"session/notification","params":{"sessionId":"ses_two","update":{"type":"ToolCallUpdate","toolCallId":"tc-2","status":"` + secondStatus + `","name":"terminal","output":"second"}}}\n'
       ` + closeErrorFrame + `
       exit 0
@@ -732,7 +732,7 @@ while IFS= read -r line; do
       printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"ses_failed"}}\n' "$id"
       ;;
     *'"method":"session/prompt"'*)
-      printf '{"jsonrpc":"2.0","method":"session/notification","params":{"sessionId":"ses_failed","update":{"type":"ToolCall","toolCallId":"tc-fail","name":"execute_bash","status":"pending","parameters":{"command":"multica issue comment add issue-1 --content-file ./reply.md"}}}}\n'
+      printf '{"jsonrpc":"2.0","method":"session/notification","params":{"sessionId":"ses_failed","update":{"type":"ToolCall","toolCallId":"tc-fail","name":"execute_bash","status":"pending","parameters":{"command":"cordy issue comment add issue-1 --content-file ./reply.md"}}}}\n'
       printf '{"jsonrpc":"2.0","method":"session/notification","params":{"sessionId":"ses_failed","update":{"type":"ToolCallUpdate","toolCallId":"tc-fail","status":"failed","name":"execute_bash","output":"exit status 1"}}}\n'
       ` + closeErrorFrame + `
       exit 0
@@ -929,7 +929,7 @@ func TestKiroBackendInvokesACPWithTrustAllTools(t *testing.T) {
 	session, err := backend.Execute(ctx, "prompt-ignored", ExecOptions{
 		Model:      "bogus-model",
 		Timeout:    5 * time.Second,
-		CustomArgs: []string{"acp", "--trust-tools", "shell", "-a", "--agent", "multica"},
+		CustomArgs: []string{"acp", "--trust-tools", "shell", "-a", "--agent", "cordy"},
 	})
 	if err != nil {
 		t.Fatalf("execute: %v", err)
@@ -961,7 +961,7 @@ func TestKiroBackendInvokesACPWithTrustAllTools(t *testing.T) {
 			}
 		}
 	}
-	if strings.Join(lines, "\n") != strings.Join([]string{"acp", "--trust-all-tools", "--agent", "multica"}, "\n") {
+	if strings.Join(lines, "\n") != strings.Join([]string{"acp", "--trust-all-tools", "--agent", "cordy"}, "\n") {
 		t.Errorf("unexpected argv after filtering: %q", lines)
 	}
 }

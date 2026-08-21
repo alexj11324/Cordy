@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/cordy-ai/cordy/server/internal/daemon/execenv"
 )
 
 // The managed Codex cache (codex-home/.sandbox-bin, a ~285 MiB copy of the
@@ -119,7 +119,7 @@ func TestManagedArtifact_FreshActiveChatKeepsSandboxBin(t *testing.T) {
 	assertKept(t, taskDir, sandboxBinRel+"/codex")
 }
 
-// MULTICA_GC_ARTIFACT_TTL=0 disables the managed reclaim along with the rest of
+// CORDY_GC_ARTIFACT_TTL=0 disables the managed reclaim along with the rest of
 // artifact cleanup — the documented opt-out.
 func TestManagedArtifact_ArtifactTTLZeroDisablesFallback(t *testing.T) {
 	t.Parallel()

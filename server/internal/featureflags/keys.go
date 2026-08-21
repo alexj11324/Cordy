@@ -3,7 +3,7 @@ package featureflags
 import (
 	"context"
 
-	"github.com/multica-ai/multica/server/pkg/featureflag"
+	"github.com/cordy-ai/cordy/server/pkg/featureflag"
 )
 
 const (

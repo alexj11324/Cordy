@@ -11,8 +11,8 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@multica/core/api";
-import { attachmentIdFromDownloadURL } from "@multica/core/types/attachment-url";
+import { api } from "@cordy/core/api";
+import { attachmentIdFromDownloadURL } from "@cordy/core/types/attachment-url";
 
 // Keep refetches well inside the server's signed-URL TTL (30 min default,
 // server/internal/handler/file.go) so a re-render never serves an expired

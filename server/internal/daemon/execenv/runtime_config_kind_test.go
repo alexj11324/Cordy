@@ -68,7 +68,7 @@ func TestBuildMetaSkillContentBriefContent(t *testing.T) {
 		AgentID:          "eve-1",
 	})
 
-	if !strings.Contains(out, "- `multica issue get <id> --output json` — full issue.\n") {
+	if !strings.Contains(out, "- `cordy issue get <id> --output json` — full issue.\n") {
 		t.Errorf("brief is missing the `issue get` one-liner\n---\n%s", out)
 	}
 	if strings.Contains(out, "Get full issue details.") {
@@ -131,13 +131,13 @@ func TestBuildMetaSkillContentSlimKindMatrix(t *testing.T) {
 	}
 	issueKinds := map[taskKind]bool{kindIssue: true}
 	checks := []sectionCheck{
-		{"# Multica Agent Runtime", allKinds},
+		{"# Cordy Agent Runtime", allKinds},
 		{"## Background Task Safety", allKinds},
 		{"## Agent Identity", allKinds},
 		{"## Available Commands", allKinds},
 		{"## Issue Body Formatting", allKinds},
 		{"### Workflow", allKinds},
-		{"## Important: Always Use the `multica` CLI", allKinds},
+		{"## Important: Always Use the `cordy` CLI", allKinds},
 		{"## Output", allKinds},
 		{"## Comment Formatting", issueKinds},
 		{"## Repositories", map[taskKind]bool{
@@ -225,8 +225,8 @@ func TestSlimQuickCreateAvailableCommands(t *testing.T) {
 
 	for _, want := range []string{
 		"## Available Commands",
-		"multica issue create --title",
-		"`multica --help`",
+		"cordy issue create --title",
+		"`cordy --help`",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("quick_create slim Available Commands missing %q", want)
@@ -234,18 +234,18 @@ func TestSlimQuickCreateAvailableCommands(t *testing.T) {
 	}
 
 	for _, banned := range []string{
-		"multica issue get <id>",
-		"multica issue comment list <issue-id>",
-		"multica issue update <id>",
-		"multica issue status <id> <status>",
-		"multica issue comment add <issue-id>",
-		"multica issue metadata list <issue-id>",
-		"multica issue metadata set <issue-id>",
-		"multica issue metadata delete <issue-id>",
-		"multica issue children <id>",
-		"multica repo checkout <url>",
+		"cordy issue get <id>",
+		"cordy issue comment list <issue-id>",
+		"cordy issue update <id>",
+		"cordy issue status <id> <status>",
+		"cordy issue comment add <issue-id>",
+		"cordy issue metadata list <issue-id>",
+		"cordy issue metadata set <issue-id>",
+		"cordy issue metadata delete <issue-id>",
+		"cordy issue children <id>",
+		"cordy repo checkout <url>",
 		"### Squad maintenance",
-		"multica squad member set-role",
+		"cordy squad member set-role",
 	} {
 		if strings.Contains(out, banned) {
 			t.Errorf("quick_create slim Available Commands should NOT advertise %q (hard guardrails forbid the call)", banned)

@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // squadOperatingProtocolHeader is the hard-coded system-level briefing
@@ -38,7 +38,7 @@ Your responsibilities, in order:
    Roster below — prefer the member whose skills cover the work.
 2. **Delegate by @mention.** Post a single comment on this issue that
    @mentions the chosen member(s) and tells them what to do.
-   - **Be terse.** Every Multica agent already has full context of the
+   - **Be terse.** Every Cordy agent already has full context of the
      issue (title, description, all prior comments, attachments) and
      the surrounding workspace. Do NOT restate or summarise the
      issue body, prior discussion, or known facts in your delegation
@@ -51,7 +51,7 @@ Your responsibilities, in order:
      typing a plain "@name" will not trigger anyone.
 3. **Record your evaluation.** After every trigger — whether you delegated,
    decided no action is needed, or encountered an error — record it:
-   ` + "`" + `multica squad activity <issue-id> <outcome> --reason "<short reason>"` + "`" + `
+   ` + "`" + `cordy squad activity <issue-id> <outcome> --reason "<short reason>"` + "`" + `
    Outcome values: ` + "`" + `action` + "`" + ` (you delegated or acted),
    ` + "`" + `no_action` + "`" + ` (you evaluated and decided nothing is needed),
    ` + "`" + `failed` + "`" + ` (you hit an error).
@@ -93,7 +93,7 @@ const squadParentStatusOwned = `6. **Own the parent issue status.** This issue i
    ` + "`" + `in_progress` + "`" + ` and keep it there while members work — a successful
    dispatch is not completion. On later turns, do not flip status for
    routine progress updates. When you confirm the overall goal is met, run
-   ` + "`" + `multica issue status <issue-id> in_review` + "`" + ` — this responsibility is
+   ` + "`" + `cordy issue status <issue-id> in_review` + "`" + ` — this responsibility is
    itself the standing instruction that authorizes that change, so do it even
    when no comment asked you to. Leave ` + "`" + `done` + "`" + ` to a human reviewer or
    existing integrations (for example a PR with close intent that merges).`
@@ -107,7 +107,7 @@ const squadParentStatusNotOwned = `6. **Do NOT change this issue's status.** Thi
    squad — you were pulled in by an @mention (or this is a quick-create turn,
    where the issue does not exist yet). Its status belongs to its own
    assignee. Answer, delegate, or escalate as usual, but never run
-   ` + "`" + `multica issue status` + "`" + ` on it, no matter how complete the work looks
+   ` + "`" + `cordy issue status` + "`" + ` on it, no matter how complete the work looks
    to you.`
 
 const squadOperatingProtocolHardRules = `Hard rules:
@@ -129,7 +129,7 @@ const squadOperatingProtocolHardRules = `Hard rules:
 - If the squad has no member capable of the task, post a comment
   explaining the gap (and @mention the issue's reporter if possible)
   rather than silently doing the work.
-- ALWAYS call ` + "`" + `multica squad activity` + "`" + ` before ending your turn —
+- ALWAYS call ` + "`" + `cordy squad activity` + "`" + ` before ending your turn —
   even when the outcome is no_action.
 - A child issue you create with ` + "`" + `--status todo` + "`" + ` and an agent assignee
   already fires that agent automatically — the assignment IS the trigger.
@@ -288,7 +288,7 @@ func renderMemberRow(ctx context.Context, q *db.Queries, m db.SquadMember, skill
 		}
 		// Mention syntax for humans uses the user_id (matches the rest of
 		// the product — see util.MentionRe and frontend mention payloads).
-		// Humans have no Multica skills, so no skills segment is rendered.
+		// Humans have no Cordy skills, so no skills segment is rendered.
 		userID := util.UUIDToString(m.MemberID)
 		return formatRosterRow(user.Name, "member (human)", role, "", formatMention(user.Name, "member", userID))
 	default:

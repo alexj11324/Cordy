@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"github.com/multica-ai/multica/server/internal/entitlement"
+	"github.com/cordy-ai/cordy/server/internal/entitlement"
 )
 
 func TestStubIsWorkspaceScopedAndDefaultsOff(t *testing.T) {

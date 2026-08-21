@@ -51,7 +51,7 @@ export const useQuickCreateStore = create<QuickCreateState>()(
       setKeepOpen: (v) => set({ keepOpen: v }),
     }),
     {
-      name: "multica_quick_create",
+      name: "cordy_quick_create",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
     },
   ),
@@ -60,7 +60,7 @@ export const useQuickCreateStore = create<QuickCreateState>()(
 registerForWorkspaceRehydration(() => useQuickCreateStore.persist.rehydrate());
 
 registerDraftCleanup({
-  storageKey: "multica_quick_create",
+  storageKey: "cordy_quick_create",
   workspaceScoped: true,
   // Reset the per-user picker memory so it does not survive into the next
   // login on the same tab. (The prompt draft lives in draft-store now.)

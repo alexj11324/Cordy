@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 // What the two sides must agree on is the capability TOKEN, not a version.

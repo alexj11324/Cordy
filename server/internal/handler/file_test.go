@@ -23,9 +23,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/auth"
-	"github.com/multica-ai/multica/server/internal/storage"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/auth"
+	"github.com/cordy-ai/cordy/server/internal/storage"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // createHandlerTestChatSession seeds a chat_session row owned by testUserID
@@ -1666,7 +1666,7 @@ func TestBuildMarkdownURL_PublicCdnAbsoluteURLReusedVerbatim(t *testing.T) {
 		testHandler.CFSigner = origSigner
 		testHandler.Storage = origStorage
 	})
-	testHandler.cfg.PublicURL = "https://api.multica.test"
+	testHandler.cfg.PublicURL = "https://api.cordy.test"
 	testHandler.CFSigner = nil
 	// mockStorage.CdnDomain() returns "cdn.example.com" — that's the
 	// operator-set signal that the URL host serves content publicly
@@ -1674,7 +1674,7 @@ func TestBuildMarkdownURL_PublicCdnAbsoluteURLReusedVerbatim(t *testing.T) {
 	// through the API endpoint to be safe.
 	testHandler.Storage = &mockStorage{}
 
-	id := seedAttachmentURL(t, "https://cdn.multica.test/uploads/abc.png", "abc.png", "image/png", 1)
+	id := seedAttachmentURL(t, "https://cdn.cordy.test/uploads/abc.png", "abc.png", "image/png", 1)
 	att, err := testHandler.Queries.GetAttachment(context.Background(), db.GetAttachmentParams{
 		ID:          parseUUID(id),
 		WorkspaceID: parseUUID(testWorkspaceID),
@@ -1684,7 +1684,7 @@ func TestBuildMarkdownURL_PublicCdnAbsoluteURLReusedVerbatim(t *testing.T) {
 	}
 
 	resp := testHandler.attachmentToResponse(att, attachmentURLModeSigned)
-	if resp.MarkdownURL != "https://cdn.multica.test/uploads/abc.png" {
+	if resp.MarkdownURL != "https://cdn.cordy.test/uploads/abc.png" {
 		t.Fatalf("markdown_url = %q, want raw a.Url passthrough", resp.MarkdownURL)
 	}
 }
@@ -1704,7 +1704,7 @@ func TestBuildMarkdownURL_PrivateBucketWithoutCdnDomainRoutesThroughAPIEndpoint(
 		testHandler.CFSigner = origSigner
 		testHandler.Storage = origStorage
 	})
-	testHandler.cfg.PublicURL = "https://api.multica.test"
+	testHandler.cfg.PublicURL = "https://api.cordy.test"
 	testHandler.CFSigner = nil
 	testHandler.Storage = &mockStorageNoCdn{}
 
@@ -1718,7 +1718,7 @@ func TestBuildMarkdownURL_PrivateBucketWithoutCdnDomainRoutesThroughAPIEndpoint(
 	}
 
 	resp := testHandler.attachmentToResponse(att, attachmentURLModeSigned)
-	want := "https://api.multica.test/api/attachments/" + id + "/download"
+	want := "https://api.cordy.test/api/attachments/" + id + "/download"
 	if resp.MarkdownURL != want {
 		t.Fatalf("markdown_url = %q, want absolute API endpoint %q (private bucket without explicit CDN must not persist raw S3 URL)", resp.MarkdownURL, want)
 	}
@@ -1731,7 +1731,7 @@ func TestBuildMarkdownURL_CloudFrontSignedModeNeverPersistsRawStorageURL(t *test
 		testHandler.cfg.PublicURL = origPublic
 		testHandler.CFSigner = origSigner
 	})
-	testHandler.cfg.PublicURL = "https://api.multica.test"
+	testHandler.cfg.PublicURL = "https://api.cordy.test"
 	testHandler.CFSigner = testCloudFrontSigner(t)
 
 	// Raw S3 URL — private bucket, not loadable directly by clients.
@@ -1745,7 +1745,7 @@ func TestBuildMarkdownURL_CloudFrontSignedModeNeverPersistsRawStorageURL(t *test
 	}
 
 	resp := testHandler.attachmentToResponse(att, attachmentURLModeSigned)
-	want := "https://api.multica.test/api/attachments/" + id + "/download"
+	want := "https://api.cordy.test/api/attachments/" + id + "/download"
 	if resp.MarkdownURL != want {
 		t.Fatalf("markdown_url = %q, want absolute API endpoint %q", resp.MarkdownURL, want)
 	}
@@ -1764,7 +1764,7 @@ func TestBuildMarkdownURL_RelativeStorageURLPrefixedWithPublicURL(t *testing.T) 
 		testHandler.cfg.PublicURL = origPublic
 		testHandler.CFSigner = origSigner
 	})
-	testHandler.cfg.PublicURL = "https://api.multica.test"
+	testHandler.cfg.PublicURL = "https://api.cordy.test"
 	testHandler.CFSigner = nil
 
 	// LocalStorage without LOCAL_UPLOAD_BASE_URL stores a site-relative URL.
@@ -1778,7 +1778,7 @@ func TestBuildMarkdownURL_RelativeStorageURLPrefixedWithPublicURL(t *testing.T) 
 	}
 
 	resp := testHandler.attachmentToResponse(att, attachmentURLModeSigned)
-	want := "https://api.multica.test/api/attachments/" + id + "/download"
+	want := "https://api.cordy.test/api/attachments/" + id + "/download"
 	if resp.MarkdownURL != want {
 		t.Fatalf("markdown_url = %q, want absolute API endpoint %q", resp.MarkdownURL, want)
 	}
@@ -1817,7 +1817,7 @@ func TestBuildMarkdownURL_StripsTrailingSlashOnPublicURL(t *testing.T) {
 		testHandler.cfg.PublicURL = origPublic
 		testHandler.CFSigner = origSigner
 	})
-	testHandler.cfg.PublicURL = "https://api.multica.test/"
+	testHandler.cfg.PublicURL = "https://api.cordy.test/"
 	testHandler.CFSigner = nil
 
 	id := seedAttachmentURL(t, "/uploads/abc.png", "abc.png", "image/png", 1)
@@ -1830,7 +1830,7 @@ func TestBuildMarkdownURL_StripsTrailingSlashOnPublicURL(t *testing.T) {
 	}
 
 	resp := testHandler.attachmentToResponse(att, attachmentURLModeSigned)
-	want := "https://api.multica.test/api/attachments/" + id + "/download"
+	want := "https://api.cordy.test/api/attachments/" + id + "/download"
 	if resp.MarkdownURL != want {
 		t.Fatalf("markdown_url = %q, want exactly one separator %q", resp.MarkdownURL, want)
 	}
@@ -1842,8 +1842,8 @@ func TestIsDurablePublicURL(t *testing.T) {
 		url  string
 		want bool
 	}{
-		{"absolute https no signature", "https://cdn.multica.test/foo.png", true},
-		{"absolute http no signature", "http://cdn.multica.test/foo.png", true},
+		{"absolute https no signature", "https://cdn.cordy.test/foo.png", true},
+		{"absolute http no signature", "http://cdn.cordy.test/foo.png", true},
 		{"absolute with port + path", "https://cdn.example.test:8080/a/b/c.png", true},
 		{"empty string", "", false},
 		{"site-relative", "/uploads/abc.png", false},

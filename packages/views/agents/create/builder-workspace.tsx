@@ -12,12 +12,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
+} from "@cordy/ui/components/ui/alert-dialog";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-} from "@multica/ui/components/ui/resizable";
+} from "@cordy/ui/components/ui/resizable";
 import {
   applyDraftRuntimeChange,
   decodeBuilderInput,
@@ -25,12 +25,12 @@ import {
   mergeBuilderDraft,
   parseBuilderDraft,
   stripBuilderDraft,
-} from "@multica/core/agents";
+} from "@cordy/core/agents";
 import {
   runtimeDisplayLabel,
   runtimeModelsOptions,
-} from "@multica/core/runtimes";
-import type { AgentBuilderSessionSummary } from "@multica/core/types";
+} from "@cordy/core/runtimes";
+import type { AgentBuilderSessionSummary } from "@cordy/core/types";
 import { AgentConfigurationPanel } from "./agent-configuration-panel";
 import { BuilderConversation } from "./builder-conversation";
 import { CreateAgentFooter } from "./create-agent-footer";
@@ -76,7 +76,7 @@ export function BuilderWorkspace({
 }) {
   const { t } = useT("agents");
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "multica_agent_builder_layout",
+    id: "cordy_agent_builder_layout",
   });
 
   // Resuming: the conversation already runs somewhere, and only the server

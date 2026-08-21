@@ -1,11 +1,11 @@
 ---
 title: Contributing
-description: Set up a local Multica development environment, run tests, and submit changes using the repository conventions.
+description: Set up a local Cordy development environment, run tests, and submit changes using the repository conventions.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Multica is a Go backend and pnpm monorepo. The simplest way to start locally is `make dev`; it prepares the environment, database, and migrations for the current checkout, then starts Web and API.
+Cordy is a Go backend and pnpm monorepo. The simplest way to start locally is `make dev`; it prepares the environment, database, and migrations for the current checkout, then starts Web and API.
 
 ## Requirements
 
@@ -20,8 +20,8 @@ Treat the root `package.json`, `server/go.mod`, and CI workflows as the source o
 ## First start
 
 ```bash
-git clone https://github.com/multica-ai/multica.git
-cd multica
+git clone https://github.com/cordy-ai/cordy.git
+cd cordy
 make dev
 ```
 
@@ -41,8 +41,8 @@ The fixed local verification code comes from the development configuration. Do n
 The repository supports running the primary checkout and multiple worktrees at the same time. They share one PostgreSQL container but use separate databases and ports.
 
 ```bash
-git worktree add ../multica-feature -b feat/my-change main
-cd ../multica-feature
+git worktree add ../cordy-feature -b feat/my-change main
+cd ../cordy-feature
 make setup-worktree
 make start-worktree
 ```
@@ -148,7 +148,7 @@ Use an application transaction in the service layer when multiple writes must su
 Run the check closest to the change first, then expand the scope. For a Docs-only change:
 
 ```bash
-pnpm --filter @multica/docs typecheck
+pnpm --filter @cordy/docs typecheck
 ```
 
 For shared frontend changes:

@@ -7,12 +7,12 @@ import {
   applyDraftRuntimeChange,
   type AgentDraft,
   type AgentPermissionScope,
-} from "@multica/core/agents";
-import type { MemberWithUser, RuntimeDevice } from "@multica/core/types";
-import { Checkbox } from "@multica/ui/components/ui/checkbox";
-import { Input } from "@multica/ui/components/ui/input";
-import { Textarea } from "@multica/ui/components/ui/textarea";
-import { cn } from "@multica/ui/lib/utils";
+} from "@cordy/core/agents";
+import type { MemberWithUser, RuntimeDevice } from "@cordy/core/types";
+import { Checkbox } from "@cordy/ui/components/ui/checkbox";
+import { Input } from "@cordy/ui/components/ui/input";
+import { Textarea } from "@cordy/ui/components/ui/textarea";
+import { cn } from "@cordy/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { useT } from "../../i18n";

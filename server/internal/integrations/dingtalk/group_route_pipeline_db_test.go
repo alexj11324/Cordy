@@ -7,9 +7,9 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel/engine"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 func TestDingTalkRejectedGroupCallbacksDoNotDiscoverRoutesDB(t *testing.T) {
@@ -49,7 +49,7 @@ func TestDingTalkRejectedGroupCallbacksDoNotDiscoverRoutesDB(t *testing.T) {
 		}
 	}
 	exec(`INSERT INTO workspace (id, name, slug, description) VALUES ($1, 'DingTalk rejected routes', 'dingtalk-rejected-routes-db', '')`, workspaceID)
-	exec(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider) VALUES ($1, $2, 'DingTalk rejected route runtime', 'local', 'multica_daemon')`, runtimeID, workspaceID)
+	exec(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider) VALUES ($1, $2, 'DingTalk rejected route runtime', 'local', 'cordy_daemon')`, runtimeID, workspaceID)
 	exec(`INSERT INTO agent (id, workspace_id, name, runtime_mode, runtime_id) VALUES ($1, $2, 'DingTalk rejected route agent', 'local', $3)`, agentID, workspaceID, runtimeID)
 	exec(`INSERT INTO channel_installation (id, workspace_id, agent_id, channel_type, config, installer_user_id) VALUES ($1, $2, $3, 'dingtalk', jsonb_build_object('app_id', $4::text), $5)`, installation, workspaceID, agentID, appKey, installerID)
 
@@ -100,7 +100,7 @@ func TestDingTalkRejectedGroupCallbacksDoNotDiscoverRoutesDB(t *testing.T) {
 	}
 	assertNoRoutes("unbound callback")
 
-	exec(`INSERT INTO channel_user_binding (workspace_id, multica_user_id, installation_id, channel_type, channel_user_id) VALUES ($1, $2, $3, 'dingtalk', $4)`, workspaceID, boundUserID, installation, staffID)
+	exec(`INSERT INTO channel_user_binding (workspace_id, cordy_user_id, installation_id, channel_type, channel_user_id) VALUES ($1, $2, $3, 'dingtalk', $4)`, workspaceID, boundUserID, installation, staffID)
 	if err := router.Handle(ctx, message("nonmember", "cid-nonmember", true)); err != nil {
 		t.Fatalf("non-member callback: %v", err)
 	}

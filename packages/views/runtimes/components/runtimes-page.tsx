@@ -11,19 +11,19 @@ import {
 } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { memberNeedsMikaSetup, useBootstrapMika } from "@multica/core/onboarding";
+import { useAuthStore } from "@cordy/core/auth";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { memberNeedsMikaSetup, useBootstrapMika } from "@cordy/core/onboarding";
 import { MIKA_PLACEHOLDER_EMOJI } from "../../onboarding/components/mika-intro";
-import { useRequiredWorkspaceSlug, useWorkspacePaths } from "@multica/core/paths";
-import { agentTaskSnapshotOptions } from "@multica/core/agents";
-import { chatSessionsOptions } from "@multica/core/chat/queries";
-import { runtimeProfileListOptions } from "@multica/core/runtimes";
-import { runtimeListOptions, runtimeKeys } from "@multica/core/runtimes/queries";
-import { useWSEvent } from "@multica/core/realtime";
-import { agentListOptions } from "@multica/core/workspace/queries";
-import type { AgentRuntime } from "@multica/core/types";
-import { Button } from "@multica/ui/components/ui/button";
+import { useRequiredWorkspaceSlug, useWorkspacePaths } from "@cordy/core/paths";
+import { agentTaskSnapshotOptions } from "@cordy/core/agents";
+import { chatSessionsOptions } from "@cordy/core/chat/queries";
+import { runtimeProfileListOptions } from "@cordy/core/runtimes";
+import { runtimeListOptions, runtimeKeys } from "@cordy/core/runtimes/queries";
+import { useWSEvent } from "@cordy/core/realtime";
+import { agentListOptions } from "@cordy/core/workspace/queries";
+import type { AgentRuntime } from "@cordy/core/types";
+import { Button } from "@cordy/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -31,12 +31,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@cordy/ui/components/ui/dialog";
 import {
   MikaRuntimeChoice,
   type MikaRuntimeSelection,
 } from "./mika-runtime-choice";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
+import { Skeleton } from "@cordy/ui/components/ui/skeleton";
 import {
   CollectionPageHeader,
   CollectionPageHeaderAction,

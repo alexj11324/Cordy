@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@multica/core/i18n/react";
-import enCommon from "@multica/views/locales/en/common.json";
-import enAuth from "@multica/views/locales/en/auth.json";
-import enSettings from "@multica/views/locales/en/settings.json";
+import { I18nProvider } from "@cordy/core/i18n/react";
+import enCommon from "@cordy/views/locales/en/common.json";
+import enAuth from "@cordy/views/locales/en/auth.json";
+import enSettings from "@cordy/views/locales/en/settings.json";
 import type { ReactNode } from "react";
 
 const TEST_RESOURCES = {
@@ -62,10 +62,10 @@ vi.mock("next/navigation", () => ({
 // web wrapper uses useAuthStore((s) => s.user/isLoading). Keep the real
 // sanitizeNextUrl so the redirect-sanitization rules are exercised rather
 // than silently drifting behind a mock reimplementation.
-vi.mock("@multica/core/auth", async () => {
+vi.mock("@cordy/core/auth", async () => {
   const actual =
-    await vi.importActual<typeof import("@multica/core/auth")>(
-      "@multica/core/auth",
+    await vi.importActual<typeof import("@cordy/core/auth")>(
+      "@cordy/core/auth",
     );
   authStateRef.state.sendCode = mockSendCode;
   authStateRef.state.verifyCode = mockVerifyCode;
@@ -83,7 +83,7 @@ vi.mock("@/features/auth/auth-cookie", () => ({
 }));
 
 // Mock api
-vi.mock("@multica/core/api", () => ({
+vi.mock("@cordy/core/api", () => ({
   api: {
     listWorkspaces: mockListWorkspaces,
     listMyInvitations: mockListMyInvitations,
@@ -109,7 +109,7 @@ describe("LoginPage", () => {
   it("renders login form with email input and continue button", () => {
     render(<LoginPage />, { wrapper: createWrapper() });
 
-    expect(screen.getByText("Sign in to Multica")).toBeInTheDocument();
+    expect(screen.getByText("Sign in to Cordy")).toBeInTheDocument();
     expect(screen.getByText("Enter your email to get a login code")).toBeInTheDocument();
     expect(screen.getByLabelText("Email")).toBeInTheDocument();
     expect(
@@ -130,11 +130,11 @@ describe("LoginPage", () => {
     const user = userEvent.setup();
     render(<LoginPage />, { wrapper: createWrapper() });
 
-    await user.type(screen.getByLabelText("Email"), "test@multica.ai");
+    await user.type(screen.getByLabelText("Email"), "test@cordy.ai");
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() => {
-      expect(mockSendCode).toHaveBeenCalledWith("test@multica.ai");
+      expect(mockSendCode).toHaveBeenCalledWith("test@cordy.ai");
     });
   });
 
@@ -143,7 +143,7 @@ describe("LoginPage", () => {
     const user = userEvent.setup();
     render(<LoginPage />, { wrapper: createWrapper() });
 
-    await user.type(screen.getByLabelText("Email"), "test@multica.ai");
+    await user.type(screen.getByLabelText("Email"), "test@cordy.ai");
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() => {
@@ -156,7 +156,7 @@ describe("LoginPage", () => {
     const user = userEvent.setup();
     render(<LoginPage />, { wrapper: createWrapper() });
 
-    await user.type(screen.getByLabelText("Email"), "test@multica.ai");
+    await user.type(screen.getByLabelText("Email"), "test@cordy.ai");
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() => {
@@ -169,7 +169,7 @@ describe("LoginPage", () => {
     const user = userEvent.setup();
     render(<LoginPage />, { wrapper: createWrapper() });
 
-    await user.type(screen.getByLabelText("Email"), "test@multica.ai");
+    await user.type(screen.getByLabelText("Email"), "test@cordy.ai");
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
     await waitFor(() => {
@@ -180,10 +180,10 @@ describe("LoginPage", () => {
   // Regression: MUL-1080 — if the user is already authenticated on the web
   // and the Desktop app redirects them to /login?platform=desktop, the web
   // must exchange the cookie session for a bearer token and hand it off via
-  // the multica:// deep link, not silently redirect to the workspace page.
+  // the cordy:// deep link, not silently redirect to the workspace page.
   it("mints a token and deep-links to Desktop when already logged in with platform=desktop", async () => {
     searchParamsState.params = new URLSearchParams({ platform: "desktop" });
-    authStateRef.state.user = { id: "u1", email: "test@multica.ai" };
+    authStateRef.state.user = { id: "u1", email: "test@cordy.ai" };
     mockIssueCliToken.mockImplementation(() =>
       Promise.resolve({ token: "handoff-jwt" }),
     );
@@ -203,11 +203,11 @@ describe("LoginPage", () => {
       });
       await waitFor(() => {
         expect(hrefSetter).toHaveBeenCalledWith(
-          "multica://auth/callback?token=handoff-jwt",
+          "cordy://auth/callback?token=handoff-jwt",
         );
       });
       expect(
-        await screen.findByRole("button", { name: "Open Multica Desktop" }),
+        await screen.findByRole("button", { name: "Open Cordy Desktop" }),
       ).toBeInTheDocument();
     } finally {
       Object.defineProperty(window, "location", {
@@ -226,7 +226,7 @@ describe("LoginPage", () => {
   describe("post-login redirect ownership (#5009)", () => {
     const onboardedUser = {
       id: "u1",
-      email: "test@multica.ai",
+      email: "test@cordy.ai",
       onboarded_at: "2026-01-01T00:00:00Z",
     };
 

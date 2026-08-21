@@ -469,7 +469,7 @@ func (b *hermesBackend) Execute(ctx context.Context, prompt string, opts ExecOpt
 		initResult, err := c.request(runCtx, "initialize", map[string]any{
 			"protocolVersion": 1,
 			"clientInfo": map[string]any{
-				"name":    "multica-agent-sdk",
+				"name":    "cordy-agent-sdk",
 				"version": "0.2.0",
 			},
 			"clientCapabilities": map[string]any{},
@@ -1043,7 +1043,7 @@ func (c *hermesClient) handleLine(line string) {
 // edit-approval path offers only ["allow_once","deny"] and rejects
 // anything but exactly "allow_once" (acp_adapter/edit_approval.py), so
 // the previous hardcoded "approve_for_session" silently blocked every
-// file write on the Hermes ACP runtime (GitHub multica#5300).
+// file write on the Hermes ACP runtime (GitHub cordy#5300).
 // selectACPPermissionOption picks an option the agent offered — a safe
 // grant when one exists, otherwise an offered single-use reject to deny
 // just this action — and we fail closed with a protocol error when the
@@ -1165,7 +1165,7 @@ var acpSessionScopedOptionIDs = []string{"allow_session", "approve_for_session"}
 // then returns a protocol error rather than fabricate an outcome).
 //
 // It only ever returns an id the agent actually offered. Per review of
-// GitHub multica#5300 it refuses to auto-select a permanent "allow_always"
+// GitHub cordy#5300 it refuses to auto-select a permanent "allow_always"
 // grant — on Hermes that persists to the runtime owner's on-disk allowlist
 // and would outlive the task (ACP v1 allow_always "remembers the choice").
 // Grant nature is decided purely by the explicit ACP kind, never by the
@@ -2014,7 +2014,7 @@ func extractACPAuthMethods(result json.RawMessage) []string {
 // extractACPCurrentModelID pulls the model selected by the ACP runtime out of
 // a session/new or session/resume response. Hermes returns this when it uses
 // its own default model, so token usage can still be attributed to a real model
-// even when Multica did not pass an explicit agent.model override.
+// even when Cordy did not pass an explicit agent.model override.
 func extractACPCurrentModelID(result json.RawMessage) string {
 	var r struct {
 		Models struct {
@@ -2208,7 +2208,7 @@ func buildACPMcpServers(raw json.RawMessage, logger *slog.Logger) ([]any, error)
 }
 
 // acpAltMcpConfigKeys are top-level keys that runtime-native MCP config
-// files use instead of Multica's canonical `mcpServers`: jcode and Kiro
+// files use instead of Cordy's canonical `mcpServers`: jcode and Kiro
 // nest under `servers`, OpenCode under `mcp`, Codex's TOML under
 // `mcp_servers`.
 var acpAltMcpConfigKeys = []string{"servers", "mcp", "mcp_servers"}
@@ -2696,7 +2696,7 @@ var acpEchoLogLevels = map[string]bool{"INFO": true, "DEBUG": true}
 // stored message, never as a precondition for *classifying* a line as an
 // error: a real provider failure whose single line happens to exceed this
 // length must still fail the run, not be silently dropped (GitHub
-// multica#5862 — do not gate matching on length).
+// cordy#5862 — do not gate matching on length).
 const acpMaxErrorLineLen = 4096
 
 // newACPProviderErrorSniffer returns a sniffer that tags its messages
@@ -2736,7 +2736,7 @@ func (s *acpProviderErrorSniffer) Write(p []byte) (int, error) {
 		// JSON closes. A complete single-line echo therefore cannot hide a
 		// following bare provider error. Any Python logger prefix also
 		// starts a new record, so non-root ERROR diagnostics remain visible
-		// (GitHub multica#5862).
+		// (GitHub cordy#5862).
 		if m := acpLogRecordPrefixRe.FindStringSubmatch(line); m != nil {
 			s.resetEchoJSON()
 			if acpEchoLogLevels[m[1]] && m[2] == "root" {
@@ -2903,7 +2903,7 @@ func acpTruncateError(msg string) string {
 // Without it, runs that exhaust retries against the upstream LLM
 // (HTTP 429, expired token, …) silently report as "completed"
 // because session/prompt still ends with stopReason=end_turn — see
-// GitHub multica#1952.
+// GitHub cordy#1952.
 func promoteACPResultOnProviderError(finalStatus, finalError, finalOutput string, sniffer *acpProviderErrorSniffer) (string, string) {
 	if finalStatus != "completed" {
 		return finalStatus, finalError

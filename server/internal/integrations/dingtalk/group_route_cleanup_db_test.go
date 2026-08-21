@@ -7,8 +7,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 type dingtalkRouteCleanupOwner struct {
@@ -41,7 +41,7 @@ func seedDingTalkRouteCleanupOwner(
 	}
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider)
-		VALUES ($1, $2, 'DingTalk cleanup runtime', 'local', 'multica_daemon')
+		VALUES ($1, $2, 'DingTalk cleanup runtime', 'local', 'cordy_daemon')
 	`, owner.runtimeID, owner.workspaceID); err != nil {
 		t.Fatalf("seed cleanup runtime: %v", err)
 	}

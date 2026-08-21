@@ -1,16 +1,16 @@
 "use client";
 
 import { useMemo } from "react";
-import type { AgentTask } from "@multica/core/types";
+import type { AgentTask } from "@cordy/core/types";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { useCustomPricingStore } from "@multica/core/runtimes/custom-pricing-store";
+} from "@cordy/ui/components/ui/dialog";
+import { useActorName } from "@cordy/core/workspace/hooks";
+import { useCustomPricingStore } from "@cordy/core/runtimes/custom-pricing-store";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 import { formatDuration } from "../../agents/components/agent-activity-hover-content";

@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { useCurrentMember } from "@multica/core/permissions";
+import { useCurrentMember } from "@cordy/core/permissions";
 import {
   pluginInstallationsOptions,
   useConfigurePlugin,
@@ -12,23 +12,23 @@ import {
   usePreviewPlugin,
   useSetPluginEnabled,
   useUninstallPlugin,
-} from "@multica/core/plugins";
-import { useCurrentWorkspace } from "@multica/core/paths";
-import type { PluginConfigField, PluginInstallation, PluginPreview } from "@multica/core/types";
-import { Alert, AlertDescription, AlertTitle } from "@multica/ui/components/ui/alert";
-import { Badge } from "@multica/ui/components/ui/badge";
-import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
+} from "@cordy/core/plugins";
+import { useCurrentWorkspace } from "@cordy/core/paths";
+import type { PluginConfigField, PluginInstallation, PluginPreview } from "@cordy/core/types";
+import { Alert, AlertDescription, AlertTitle } from "@cordy/ui/components/ui/alert";
+import { Badge } from "@cordy/ui/components/ui/badge";
+import { Button } from "@cordy/ui/components/ui/button";
+import { Input } from "@cordy/ui/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@multica/ui/components/ui/select";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
-import { Textarea } from "@multica/ui/components/ui/textarea";
-import { Switch } from "@multica/ui/components/ui/switch";
+} from "@cordy/ui/components/ui/select";
+import { Skeleton } from "@cordy/ui/components/ui/skeleton";
+import { Textarea } from "@cordy/ui/components/ui/textarea";
+import { Switch } from "@cordy/ui/components/ui/switch";
 import { mcpHooks, PluginHookActivity, PluginMCPApproval } from "../../plugins";
 import { useT } from "../../i18n";
 import { SettingsCard, SettingsSection, SettingsTab } from "./settings-layout";

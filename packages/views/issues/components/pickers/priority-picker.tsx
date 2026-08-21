@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import type { IssuePriority, UpdateIssueRequest } from "@multica/core/types";
-import { PRIORITY_DISPLAY_ORDER, PRIORITY_CONFIG } from "@multica/core/issues/config";
+import type { IssuePriority, UpdateIssueRequest } from "@cordy/core/types";
+import { PRIORITY_DISPLAY_ORDER, PRIORITY_CONFIG } from "@cordy/core/issues/config";
 import { PriorityIcon } from "../priority-icon";
 import { DeferredPopup } from "../../../common/deferred-popup";
 import { PropertyPicker, PickerItem, PICKER_TRIGGER_CLASS } from "./property-picker";

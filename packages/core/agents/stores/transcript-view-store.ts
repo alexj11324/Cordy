@@ -41,7 +41,7 @@ export const useTranscriptViewStore = create<TranscriptViewState>()(
       clearFilterKeys: () => set({ selectedFilterKeys: [] }),
     }),
     {
-      name: "multica_transcript_view",
+      name: "cordy_transcript_view",
       storage: createJSONStorage(() => defaultStorage),
       partialize: (state) => ({
         sortDirection: state.sortDirection,

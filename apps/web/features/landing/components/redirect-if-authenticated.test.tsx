@@ -13,20 +13,20 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: state.replace }),
 }));
 
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@cordy/core/auth", () => ({
   useAuthStore: (
     selector: (auth: { user: typeof state.user; isLoading: boolean }) => unknown,
   ) => selector({ user: state.user, isLoading: state.isLoading }),
 }));
 
-vi.mock("@multica/core/workspace", () => ({
+vi.mock("@cordy/core/workspace", () => ({
   useWorkspaceList: () => ({
     workspaces: state.workspaces,
     ready: state.ready,
   }),
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@cordy/core/paths", () => ({
   useHasOnboarded: () => true,
   resolvePostAuthDestination: (workspaces: { slug: string }[]) =>
     workspaces[0] ? `/${workspaces[0].slug}/issues` : "/workspaces/new",

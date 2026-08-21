@@ -7,13 +7,13 @@ import {
   Check,
   Lock,
 } from "lucide-react";
-import { Button } from "@multica/ui/components/ui/button";
-import { api } from "@multica/core/api";
-import type { RuntimeUpdateStatus } from "@multica/core/types";
+import { Button } from "@cordy/ui/components/ui/button";
+import { api } from "@cordy/core/api";
+import type { RuntimeUpdateStatus } from "@cordy/core/types";
 import { useT } from "../../i18n";
 
 const GITHUB_RELEASES_URL =
-  "https://api.github.com/repos/multica-ai/multica/releases/latest";
+  "https://api.github.com/repos/cordy-ai/cordy/releases/latest";
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 let cachedLatestVersion: string | null = null;

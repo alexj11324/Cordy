@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { createShortcutChord } from "@multica/core/shortcuts";
+import { createShortcutChord } from "@cordy/core/shortcuts";
 import { ShortcutKeycaps } from "./shortcut-keycaps";
 
 describe("ShortcutKeycaps", () => {

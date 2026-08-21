@@ -3,7 +3,7 @@ package wecom
 // binding.go — the WeCom smart-bot user-binding token flow. An unbound WeCom
 // user who messages the bot gets a "link your account" prompt (minted here,
 // delivered by the OutboundReplier), clicks through to the in-product redeem
-// page, and their WeCom userid is bound to their Multica account. Mirrors
+// page, and their WeCom userid is bound to their Cordy account. Mirrors
 // slack.BindingTokenService — runs on the generic channel_binding_token /
 // channel_user_binding tables with channel_type='wecom'.
 //
@@ -26,8 +26,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel/engine"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // BindingTokenTTL bounds a token's life. The channel_binding_token CHECK
@@ -70,7 +70,7 @@ var (
 	// One opaque error for all three avoids a replay timing oracle.
 	ErrBindingTokenInvalid = errors.New("wecom: binding token invalid or expired")
 	// ErrBindingAlreadyAssigned: this WeCom userid is already bound to a
-	// different Multica user (account transfer must go through explicit
+	// different Cordy user (account transfer must go through explicit
 	// unbind, not implemented in iter 1 — an admin can DELETE the row).
 	ErrBindingAlreadyAssigned = errors.New("wecom: user id is already bound to a different user")
 	// ErrBindingNotWorkspaceMember: the redeemer is not a member of the
@@ -183,10 +183,10 @@ func (s *BindingTokenService) Mint(ctx context.Context, workspaceID, installatio
 }
 
 // RedeemAndBind atomically consumes a raw token and binds the WeCom userid
-// to multicaUserID (taken from the session, never from the token). Returns
+// to cordyUserID (taken from the session, never from the token). Returns
 // ErrBindingTokenInvalid / ErrBindingAlreadyAssigned /
 // ErrBindingNotWorkspaceMember.
-func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, multicaUserID pgtype.UUID) (RedeemedBindingToken, error) {
+func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, cordyUserID pgtype.UUID) (RedeemedBindingToken, error) {
 	if s.tx == nil {
 		return RedeemedBindingToken{}, errors.New("wecom: BindingTokenService missing TxStarter")
 	}
@@ -215,7 +215,7 @@ func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, mul
 	// Explicit membership gate (no member FK): returning before Commit rolls
 	// the consume back, so a non-member's attempt does not burn the token.
 	if _, err := qtx.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
-		UserID:      multicaUserID,
+		UserID:      cordyUserID,
 		WorkspaceID: row.WorkspaceID,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -226,14 +226,14 @@ func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, mul
 
 	if _, err := qtx.CreateChannelUserBinding(ctx, db.CreateChannelUserBindingParams{
 		WorkspaceID:    row.WorkspaceID,
-		MulticaUserID:  multicaUserID,
+		CordyUserID:  cordyUserID,
 		InstallationID: row.InstallationID,
 		ChannelType:    channelTypeWecom,
 		ChannelUserID:  row.ChannelUserID,
 		Config:         []byte(`{}`),
 	}); err != nil {
 		// pgx.ErrNoRows means the existing binding points at a different
-		// user — the ON CONFLICT DO UPDATE WHERE multica_user_id=… gating
+		// user — the ON CONFLICT DO UPDATE WHERE cordy_user_id=… gating
 		// rejected it.
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RedeemedBindingToken{}, ErrBindingAlreadyAssigned

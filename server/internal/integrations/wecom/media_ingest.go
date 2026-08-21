@@ -33,9 +33,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel/engine"
+	"github.com/cordy-ai/cordy/server/internal/util"
 )
 
 // mediaFailureNotice lines. WeCom deployments are China-only, so these follow
@@ -136,7 +136,7 @@ func (r *wecomMediaResolver) ResolveMedia(ctx context.Context, inst engine.Resol
 			// "ingest failed" for this sends them looking at WeCom.
 			logLine := "wecom media ingest failed"
 			if failure == mediaFailureBlocked {
-				logLine = "wecom media ingest refused by the media address guard: the host resolved to a non-public address and was not dialed. If this deployment sits behind a fake-IP proxy, declare its range in MULTICA_WECOM_MEDIA_ALLOW_CIDRS; otherwise this is a URL that should not have been sent."
+				logLine = "wecom media ingest refused by the media address guard: the host resolved to a non-public address and was not dialed. If this deployment sits behind a fake-IP proxy, declare its range in CORDY_WECOM_MEDIA_ALLOW_CIDRS; otherwise this is a URL that should not have been sent."
 			}
 			// The url and the key never reach the log: one is a signed
 			// address anyone could then fetch, the other unlocks it. stripURL

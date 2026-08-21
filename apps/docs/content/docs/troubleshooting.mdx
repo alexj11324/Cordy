@@ -5,13 +5,13 @@ description: Diagnose common problems with connections, execution, realtime upda
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-First work out which layer the problem lives in: the Multica service, the daemon, the runtime, or the AI coding tool. These commands are usually enough to surface the first meaningful error:
+First work out which layer the problem lives in: the Cordy service, the daemon, the runtime, or the AI coding tool. These commands are usually enough to surface the first meaningful error:
 
 ```bash
-multica version
-multica auth status
-multica daemon status --output json
-multica daemon logs --lines 100
+cordy version
+cordy auth status
+cordy daemon status --output json
+cordy daemon logs --lines 100
 ```
 
 Self-hosted instances can also check the service directly:
@@ -28,15 +28,15 @@ curl -i https://api.example.com/readyz
 Run these first:
 
 ```bash
-multica auth status
-multica daemon status --output json
-multica daemon logs --lines 100
+cordy auth status
+cordy daemon status --output json
+cordy daemon logs --lines 100
 ```
 
 Common causes include:
 
 - The CLI has not signed in, or the token stored on this machine has expired.
-- The daemon is connected to the wrong Multica service.
+- The daemon is connected to the wrong Cordy service.
 - The executing computer cannot reach the API, or DNS, TLS, or a firewall blocks the connection.
 - The current account is no longer a member of the target workspace.
 - No supported AI coding tool is installed on this machine, so the daemon cannot start.
@@ -44,14 +44,14 @@ Common causes include:
 Sign in again and restart the daemon:
 
 ```bash
-multica login
-multica daemon restart
+cordy login
+cordy daemon restart
 ```
 
-Self-hosted deployments should also request the API's `/health` from the **executing computer** — testing on the server itself cannot expose DNS, TLS, or firewall problems on the executing computer's side. To change the address, rerun `multica setup self-host`, or check the current profile's `server_url`:
+Self-hosted deployments should also request the API's `/health` from the **executing computer** — testing on the server itself cannot expose DNS, TLS, or firewall problems on the executing computer's side. To change the address, rerun `cordy setup self-host`, or check the current profile's `server_url`:
 
 ```bash
-multica config show
+cordy config show
 ```
 
 ## Issue does not start executing
@@ -70,20 +70,20 @@ Open the issue's **execution log** and check the task's current status and what 
 An agent runs at most 6 tasks concurrently by default; a single daemon runs at most 20. At the limit, new tasks stay in the queue until a running one finishes. Tasks also keep queueing while the runtime is offline; they only fail after going unclaimed for more than 2 hours.
 
 ```bash
-multica daemon status --output json
-multica agent get <agent-id>
-multica issue runs <issue-id>
+cordy daemon status --output json
+cordy agent get <agent-id>
+cordy issue runs <issue-id>
 ```
 
-If the runtime list is missing an expected tool, first confirm the tool runs and is signed in under the same system account and `PATH`, then run `multica daemon restart`.
+If the runtime list is missing an expected tool, first confirm the tool runs and is signed in under the same system account and `PATH`, then run `cordy daemon restart`.
 
 ### `waiting_local_directory` status
 
-This means another in-flight task is using the same local directory. Multica waits for the directory lock to be released so two agents never modify the same files at once.
+This means another in-flight task is using the same local directory. Cordy waits for the directory lock to be released so two agents never modify the same files at once.
 
 This wait only exists in the directory's `in_place` ("Direct") mode. If the directory is a git repository, switching the resource to `worktree` ("Parallel") removes the queue altogether: each task gets its own worktree and hands its work back as a branch, so nothing waits on anything. See [Project resources](/project-resources#how-tasks-share-the-directory).
 
-Otherwise you just wait for the earlier task to finish. If it is stuck, stop it from its execution log, or pick a different local directory for the current agent. This directory mutex lives in the daemon's memory — no lock file is written to disk. If you suspect stale lock state, `multica daemon restart` releases it; there is nothing to delete manually.
+Otherwise you just wait for the earlier task to finish. If it is stuck, stop it from its execution log, or pick a different local directory for the current agent. This directory mutex lives in the daemon's memory — no lock file is written to disk. If you suspect stale lock state, `cordy daemon restart` releases it; there is nothing to delete manually.
 
 ## AI coding tool fails to start
 
@@ -129,7 +129,7 @@ docker compose -f docker-compose.selfhost.yml logs backend \
 - **Resend**: confirm the API key is valid and the sender address's domain is verified.
 - **SMTP**: confirm the host, port, credentials, and sender address, and use the error log to tell whether the failure happened at the connection, TLS, authentication, or delivery stage.
 
-When `SMTP_HOST` and Resend are both configured, Multica prefers SMTP. For configuration, see [Sign-in and signup](/auth-setup#email-verification-codes).
+When `SMTP_HOST` and Resend are both configured, Cordy prefers SMTP. For configuration, see [Sign-in and signup](/auth-setup#email-verification-codes).
 
 <Callout type="warning">
 Do not rely on codes in the log in production, and do not enable the fixed local test code.
@@ -191,30 +191,30 @@ lsof -nP -iTCP:8080 -sTCP:LISTEN   # macOS / Linux
 netstat -ano | findstr :8080       # Windows
 ```
 
-If it is another Multica checkout, run `make stop` in that directory first. Otherwise stop the offending program normally, or change the current service's port. Public ports 80/443 are listened on by a reverse proxy such as Caddy or Nginx.
+If it is another Cordy checkout, run `make stop` in that directory first. Otherwise stop the offending program normally, or change the current service's port. Public ports 80/443 are listened on by a reverse proxy such as Caddy or Nginx.
 
 ## Log locations
 
 | Component | How to view |
 | --- | --- |
-| Background daemon | `multica daemon logs --lines 100` |
-| Follow daemon logs live | `multica daemon logs --follow` |
-| Default profile's log file | `~/.multica/daemon.log` |
-| Default profile's startup or crash log | `~/.multica/daemon.err.log` |
-| Named profiles | the matching logs under `~/.multica/profiles/<name>/` |
+| Background daemon | `cordy daemon logs --lines 100` |
+| Follow daemon logs live | `cordy daemon logs --follow` |
+| Default profile's log file | `~/.cordy/daemon.log` |
+| Default profile's startup or crash log | `~/.cordy/daemon.err.log` |
+| Named profiles | the matching logs under `~/.cordy/profiles/<name>/` |
 | Docker backend | `docker compose -f docker-compose.selfhost.yml logs -f backend` |
 | Browser | Console and Network in the developer tools |
 
-Which of those files is the live one depends on the profile the daemon was started with, and a stale log from an earlier daemon still reads perfectly — the easiest way to debug the wrong file. Don't open one by guess: `multica daemon logs` prints the absolute path it resolved before streaming it. Add `--profile <name>` to read a named profile's log.
+Which of those files is the live one depends on the profile the daemon was started with, and a stale log from an earlier daemon still reads perfectly — the easiest way to debug the wrong file. Don't open one by guess: `cordy daemon logs` prints the absolute path it resolved before streaming it. Add `--profile <name>` to read a named profile's log.
 
 To observe the daemon's startup directly, run it in the foreground instead:
 
 ```bash
-multica daemon stop
-multica daemon start --foreground
+cordy daemon stop
+cordy daemon start --foreground
 ```
 
-If you still cannot pin it down, search existing issues or file a new one on [GitHub Issues](https://github.com/multica-ai/multica/issues).
+If you still cannot pin it down, search existing issues or file a new one on [GitHub Issues](https://github.com/cordy-ai/cordy/issues).
 
 ## Next steps
 

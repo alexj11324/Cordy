@@ -12,15 +12,15 @@ import (
 )
 
 // TestDshRealRuntimeSmoke is opt-in because it calls the configured DeepSeek
-// model and consumes API quota. It exercises the complete Multica backend,
+// model and consumes API quota. It exercises the complete Cordy backend,
 // installed DSH profile, model provider, and terminal-result path.
 func TestDshRealRuntimeSmoke(t *testing.T) {
-	if os.Getenv("MULTICA_RUN_REAL_AGENT_SMOKE") != "1" {
-		t.Skip("set MULTICA_RUN_REAL_AGENT_SMOKE=1 to run the DSH integration smoke")
+	if os.Getenv("CORDY_RUN_REAL_AGENT_SMOKE") != "1" {
+		t.Skip("set CORDY_RUN_REAL_AGENT_SMOKE=1 to run the DSH integration smoke")
 	}
-	path := os.Getenv("MULTICA_DSH_PATH")
+	path := os.Getenv("CORDY_DSH_PATH")
 	if path == "" {
-		t.Fatal("MULTICA_DSH_PATH is required")
+		t.Fatal("CORDY_DSH_PATH is required")
 	}
 	b, err := New("dsh", Config{ExecutablePath: path, TaskID: "dsh-real-smoke", Logger: slog.Default()})
 	if err != nil {
@@ -29,7 +29,7 @@ func TestDshRealRuntimeSmoke(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 	cwd := t.TempDir()
-	session, err := b.Execute(ctx, "Remember the code word PINEAPPLE. Reply with exactly DSH_MULTICA_OK and nothing else.", ExecOptions{
+	session, err := b.Execute(ctx, "Remember the code word PINEAPPLE. Reply with exactly DSH_CORDY_OK and nothing else.", ExecOptions{
 		Cwd: cwd, Model: "deepseek-official/deepseek-v4-flash", ThinkingLevel: "off",
 		Timeout: 90 * time.Second,
 	})
@@ -42,7 +42,7 @@ func TestDshRealRuntimeSmoke(t *testing.T) {
 	if result.Status != "completed" {
 		t.Fatalf("DSH smoke failed: status=%q error=%q", result.Status, result.Error)
 	}
-	if strings.TrimSpace(result.Output) != "DSH_MULTICA_OK" {
+	if strings.TrimSpace(result.Output) != "DSH_CORDY_OK" {
 		t.Fatalf("unexpected DSH output: %q", result.Output)
 	}
 	if result.SessionID == "" {

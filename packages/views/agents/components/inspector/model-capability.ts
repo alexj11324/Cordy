@@ -1,4 +1,4 @@
-import type { RuntimeModel } from "@multica/core/types";
+import type { RuntimeModel } from "@cordy/core/types";
 
 // Claude Code appends a context-window modifier to some runtime-native model
 // IDs (for example, claude-opus-5[1m]). Restrict inheritance to a numeric

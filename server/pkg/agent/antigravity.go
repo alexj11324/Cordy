@@ -52,7 +52,7 @@ func (b *antigravityBackend) Execute(ctx context.Context, prompt string, opts Ex
 	// Guard against agy's silent no-op on an unrecognised --model: it exits 0
 	// with empty output, which would otherwise surface as a "completed" but
 	// empty task. opts.Model is the single funnel for both agent.model and the
-	// daemon-wide MULTICA_ANTIGRAVITY_MODEL default (resolved in daemon.go), so
+	// daemon-wide CORDY_ANTIGRAVITY_MODEL default (resolved in daemon.go), so
 	// validating it here covers every source — UI free-text, API, a persisted
 	// value, and the env default alike. Reject a non-empty model the installed
 	// CLI definitively does not advertise, with an actionable error. Validation
@@ -69,7 +69,7 @@ func (b *antigravityBackend) Execute(ctx context.Context, prompt string, opts Ex
 	timeout := opts.Timeout
 	runCtx, cancel := runContext(ctx, timeout)
 
-	logFile, err := os.CreateTemp("", "multica-agy-log-*.log")
+	logFile, err := os.CreateTemp("", "cordy-agy-log-*.log")
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("create agy log file: %w", err)

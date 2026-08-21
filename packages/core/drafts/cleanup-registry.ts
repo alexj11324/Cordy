@@ -7,8 +7,8 @@ import { abortAll as abortAllUploads } from "./upload-coordinator";
  *
  * The old model required every new draft store to remember to append its
  * persist key to a list living in a different file; that list drifted and
- * left `multica_comment_drafts`, `multica_quick_create`, `multica_project_draft`,
- * `multica_feedback_draft`, and the chat draft-attachment / restore keys
+ * left `cordy_comment_drafts`, `cordy_quick_create`, `cordy_project_draft`,
+ * `cordy_feedback_draft`, and the chat draft-attachment / restore keys
  * uncleared on logout and workspace deletion (persistence-layer leak), while
  * the in-memory Zustand singletons kept a previous user's draft after a
  * client-side logout navigation (memory-layer leak, cross-user on a shared

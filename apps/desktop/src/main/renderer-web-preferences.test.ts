@@ -40,7 +40,7 @@ describe("createRendererWebPreferences", () => {
       "--issue-window=<ctx>",
     ]);
     expect(prefs.additionalArguments).toEqual([
-      "--multica-locale=de",
+      "--cordy-locale=de",
       "--issue-window=<ctx>",
     ]);
   });
@@ -48,6 +48,6 @@ describe("createRendererWebPreferences", () => {
   it("defaults to the locale flag alone", () => {
     expect(
       createRendererWebPreferences(PRELOAD, "fr").additionalArguments,
-    ).toEqual(["--multica-locale=fr"]);
+    ).toEqual(["--cordy-locale=fr"]);
   });
 });

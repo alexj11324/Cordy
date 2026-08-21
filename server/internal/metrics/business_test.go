@@ -8,8 +8,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/cordy-ai/cordy/server/internal/analytics"
+	"github.com/cordy-ai/cordy/server/pkg/taskfailure"
 )
 
 func TestBusinessMetricsLifecycleCountersAndGauge(t *testing.T) {
@@ -196,8 +196,8 @@ func TestBusinessMetricsRegistryExposesAllFamilies(t *testing.T) {
 			t.Fatalf("registry did not expose metric family %s", metric)
 		}
 	}
-	if !seen["multica_entitlement_config_error_total"] {
-		t.Fatal("registry did not expose metric family multica_entitlement_config_error_total")
+	if !seen["cordy_entitlement_config_error_total"] {
+		t.Fatal("registry did not expose metric family cordy_entitlement_config_error_total")
 	}
 }
 

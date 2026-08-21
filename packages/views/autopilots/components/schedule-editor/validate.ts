@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { ApiError } from "@multica/core/api";
-import { cronPreviewOptions } from "@multica/core/autopilots/queries";
+import { ApiError } from "@cordy/core/api";
+import { cronPreviewOptions } from "@cordy/core/autopilots/queries";
 import { useT } from "../../../i18n";
 import type { ScheduleConfig } from "./model";
 import { toCron } from "./cron-mapping";

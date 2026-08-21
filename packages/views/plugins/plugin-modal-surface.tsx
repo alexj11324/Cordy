@@ -3,18 +3,18 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plug } from "lucide-react";
-import { useFeatureEnabled } from "@multica/core/config";
-import { PLUGINS_V1_FLAG } from "@multica/core/feature-flags";
-import { useCurrentWorkspace } from "@multica/core/paths";
-import { pluginInstallationsOptions } from "@multica/core/plugins";
-import type { PluginInstallation, PluginSurface } from "@multica/core/types";
+import { useFeatureEnabled } from "@cordy/core/config";
+import { PLUGINS_V1_FLAG } from "@cordy/core/feature-flags";
+import { useCurrentWorkspace } from "@cordy/core/paths";
+import { pluginInstallationsOptions } from "@cordy/core/plugins";
+import type { PluginInstallation, PluginSurface } from "@cordy/core/types";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@cordy/ui/components/ui/dialog";
 import { PluginSurfaceFrame } from "./plugin-surface-frame";
 
 /**

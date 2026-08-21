@@ -744,7 +744,7 @@ func anyModelSupportsThinkingValue(models []Model, value string) bool {
 // providerThinkingEnums is the server-side accept-list for runtimes with a
 // fixed reasoning-effort vocabulary. Codex and OpenCode are deliberately
 // absent because their values come from daemon-local model catalogs, which can
-// gain new tokens without a Multica release.
+// gain new tokens without a Cordy release.
 //
 // The server doesn't have local CLI binaries, so it cannot do per-model
 // discovery the way the daemon can. Fixed-catalog providers use this enum;
@@ -875,7 +875,7 @@ func UsesACPCatalogThinking(providerType string) bool {
 	return acpCatalogThinkingProviders[providerType]
 }
 
-// ThinkingControlSupported reports whether Multica can deliver a per-agent
+// ThinkingControlSupported reports whether Cordy can deliver a per-agent
 // reasoning effort to this runtime at all. False means the answer to any
 // thinking_level is "no", regardless of the token: the runtime exposes no
 // effort dial on the surface the daemon speaks to it over, so there is nothing

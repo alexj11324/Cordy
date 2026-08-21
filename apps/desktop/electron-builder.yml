@@ -1,5 +1,5 @@
-appId: ai.multica.desktop
-productName: Multica
+appId: ai.cordy.desktop
+productName: Cordy
 directories:
   buildResources: build
 files:
@@ -17,7 +17,7 @@ files:
   # Intel (x64) DMG until the HFS volume was full and the real
   # `Electron Framework/Versions/A/Electron Framework` binary was dropped,
   # so Intel Macs crashed on launch with a dyld missing-library error
-  # (github.com/multica-ai/multica/issues/5595). Excluding all of dist/**
+  # (github.com/cordy-ai/cordy/issues/5595). Excluding all of dist/**
   # fixes it regardless of build order; a pre-build clean alone does not,
   # because the first arch writes into dist/ mid-run before the second is
   # packaged.
@@ -30,9 +30,9 @@ extraResources:
   - from: ../../NOTICE
     to: NOTICE
 protocols:
-  - name: Multica
+  - name: Cordy
     schemes:
-      - multica
+      - cordy
 asarUnpack:
   - resources/**
 mac:
@@ -40,63 +40,63 @@ mac:
   target:
     - dmg
     - zip
-  # Hardcoded name avoids the `@multica/desktop-*` subdirectory that
+  # Hardcoded name avoids the `@cordy/desktop-*` subdirectory that
   # `${name}` produces for scoped package names.
-  # Naming scheme: multica-desktop-<version>-<platform>-<arch>.<ext>
+  # Naming scheme: cordy-desktop-<version>-<platform>-<arch>.<ext>
   # so the filename alone surfaces kind, version, platform, and CPU arch.
-  artifactName: multica-desktop-${version}-mac-${arch}.${ext}
+  artifactName: cordy-desktop-${version}-mac-${arch}.${ext}
   # Notarize via notarytool. Requires APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD
   # + APPLE_TEAM_ID env vars at package time. Non-mac contributors are
   # unaffected because `pnpm package` already requires the Developer ID
   # signing cert — notarization is a strict superset.
   notarize: true
 dmg:
-  artifactName: multica-desktop-${version}-mac-${arch}.${ext}
+  artifactName: cordy-desktop-${version}-mac-${arch}.${ext}
 linux:
   # Override the Linux executable name to avoid leaking the scoped npm
-  # package name (`@multica/desktop`) into the installed binary, the
+  # package name (`@cordy/desktop`) into the installed binary, the
   # `.desktop` file, and the hicolor icon filename. Without this override
   # electron-builder defaults `executableName` to the package `name`,
-  # which after slash-stripping becomes `@multicadesktop` — producing
-  # `/usr/share/applications/@multicadesktop.desktop`,
-  # `Icon=@multicadesktop`, and
-  # `/usr/share/icons/hicolor/*/apps/@multicadesktop.png`. The leading `@`
+  # which after slash-stripping becomes `@cordydesktop` — producing
+  # `/usr/share/applications/@cordydesktop.desktop`,
+  # `Icon=@cordydesktop`, and
+  # `/usr/share/icons/hicolor/*/apps/@cordydesktop.png`. The leading `@`
   # violates the freedesktop desktop-entry naming guidance, so GNOME /
   # Ubuntu fail to associate the running window with the `.desktop` entry
   # and fall back to the theme's default app icon (the Settings gear on
   # Yaru).
   #
-  # `multica-desktop` (not `multica`) so the deb/rpm/AppImage package never
-  # installs this Electron binary as `/usr/bin/multica`. The Go CLI is a
+  # `cordy-desktop` (not `cordy`) so the deb/rpm/AppImage package never
+  # installs this Electron binary as `/usr/bin/cordy`. The Go CLI is a
   # separate artifact (see CLI_INSTALL.md) that agents and scripts expect
-  # to find at `multica` on PATH; when both packages are installed on the
+  # to find at `cordy` on PATH; when both packages are installed on the
   # same box, a plain electron-builder default collides the two under one
   # name. Whichever installs later — or wins the PATH lookup order — silently
   # shadows the other. Hitting the Electron binary from a CLI call is the
   # worst failure mode: it exits 0 with empty stdout (its own Chromium flags
   # eat CLI args like `--output json`), which looks like a healthy CLI that
-  # returned nothing rather than "wrong binary" (github.com/multica-ai/multica/issues/5481).
-  # `StartupWMClass=Multica` (productName-derived) is unaffected by this
+  # returned nothing rather than "wrong binary" (github.com/cordy-ai/cordy/issues/5481).
+  # `StartupWMClass=Cordy` (productName-derived) is unaffected by this
   # rename — it comes from `app.getName()`, not `executableName`.
-  executableName: multica-desktop
+  executableName: cordy-desktop
   # Pin StartupWMClass to the WM_CLASS Electron emits on X11. Electron
   # derives WM_CLASS from `app.getName()`, which reads the *packaged*
   # ASAR's `package.json` — `productName` if present, otherwise `name`.
   # PR #2437 assumed electron-builder.yml's productName fed app.getName()
   # directly; it does not. With our source package.json carrying only
-  # `name: "@multica/desktop"`, packaged Electron emitted
-  # `WM_CLASS=@multica/desktop`, which broke association with this entry
+  # `name: "@cordy/desktop"`, packaged Electron emitted
+  # `WM_CLASS=@cordy/desktop`, which broke association with this entry
   # and reproduced #2515 on Ubuntu 0.2.31. The fix lives in two places
-  # outside this file — `productName: "Multica"` on the source
-  # package.json (so the ASAR carries it) and `app.setName("Multica")`
+  # outside this file — `productName: "Cordy"` on the source
+  # package.json (so the ASAR carries it) and `app.setName("Cordy")`
   # in the production branch of `src/main/index.ts` (belt-and-braces).
-  # Keep `StartupWMClass: Multica` pinned here so any future drift in
+  # Keep `StartupWMClass: Cordy` pinned here so any future drift in
   # those two anchors shows up as a diff against this declaration.
   # Verification on a real Ubuntu install: `xprop WM_CLASS` on a running
-  # window prints `Multica` for both fields.
+  # window prints `Cordy` for both fields.
   desktop:
     entry:
-      StartupWMClass: Multica
+      StartupWMClass: Cordy
   # Point at pre-rendered hicolor sizes. electron-builder *can* generate
   # 16/24/32/48/64/128/256/512 from a single build/icon.png, but the
   # auto-generation silently shipped only the 1024×1024 source in our
@@ -108,7 +108,7 @@ linux:
     - AppImage
     - deb
     - rpm
-  artifactName: multica-desktop-${version}-linux-${arch}.${ext}
+  artifactName: cordy-desktop-${version}-linux-${arch}.${ext}
 rpm:
   # Disable RPM build-id symlinks. Electron apps embed the upstream Electron
   # binary, whose GNU build-id is identical across every app shipping the same
@@ -120,11 +120,11 @@ rpm:
 win:
   target:
     - nsis
-  artifactName: multica-desktop-${version}-windows-${arch}.${ext}
+  artifactName: cordy-desktop-${version}-windows-${arch}.${ext}
 publish:
   provider: github
-  owner: multica-ai
-  repo: multica
+  owner: cordy-ai
+  repo: cordy
   # Align with our CLI release flow which pre-creates a *published* GitHub
   # Release via `gh release create`. The electron-builder default of
   # `releaseType: draft` conflicts with `existingType=release` and causes

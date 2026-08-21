@@ -3,7 +3,7 @@ package handler
 import (
 	"net/http"
 
-	"github.com/multica-ai/multica/server/internal/dispatch"
+	"github.com/cordy-ai/cordy/server/internal/dispatch"
 )
 
 // Unified execution-admission contract (MUL-4525).

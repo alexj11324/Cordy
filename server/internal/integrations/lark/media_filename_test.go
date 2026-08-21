@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
 )
 
 func TestCleanFilenameRejectsDotOnlyNames(t *testing.T) {

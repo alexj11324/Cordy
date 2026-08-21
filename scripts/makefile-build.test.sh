@@ -3,7 +3,7 @@ set -euo pipefail
 
 # `make build` has to name its outputs the way the *target* platform expects.
 # Windows refuses to execute an extensionless file, so a Windows source build
-# whose artifacts are named `multica` produces a CLI that cannot re-exec itself
+# whose artifacts are named `cordy` produces a CLI that cannot re-exec itself
 # as a daemon (#7255) — the build succeeds and the failure surfaces later as a
 # misleading "not found" at startup.
 #
@@ -26,7 +26,7 @@ fail() {
 require_outputs() {
   local label=$1 suffix=$2 output=$3 binary
 
-  for binary in server multica migrate; do
+  for binary in server cordy migrate; do
     grep -Fq -- "-o bin/${binary}${suffix} " <<<"$output" ||
       fail "$label: expected 'go build ... -o bin/${binary}${suffix}', got:
 $output"

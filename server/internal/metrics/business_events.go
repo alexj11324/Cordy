@@ -1,7 +1,7 @@
 package metrics
 
 import (
-	"github.com/multica-ai/multica/server/internal/analytics"
+	"github.com/cordy-ai/cordy/server/internal/analytics"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -70,148 +70,148 @@ type businessEventMetrics struct {
 func newBusinessEventMetrics() *businessEventMetrics {
 	return &businessEventMetrics{
 		signup: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_signup_total",
+			Name: "cordy_signup_total",
 			Help: "Total user signups (account creations).",
-		}, metricLabels("multica_signup_total")),
+		}, metricLabels("cordy_signup_total")),
 		workspaceCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_workspace_created_total",
+			Name: "cordy_workspace_created_total",
 			Help: "Total workspaces created.",
-		}, metricLabels("multica_workspace_created_total")),
+		}, metricLabels("cordy_workspace_created_total")),
 		teamInviteSent: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_team_invite_sent_total",
+			Name: "cordy_team_invite_sent_total",
 			Help: "Total workspace invitations sent.",
-		}, metricLabels("multica_team_invite_sent_total")),
+		}, metricLabels("cordy_team_invite_sent_total")),
 		teamInviteAccepted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_team_invite_accepted_total",
+			Name: "cordy_team_invite_accepted_total",
 			Help: "Total workspace invitations accepted.",
-		}, metricLabels("multica_team_invite_accepted_total")),
+		}, metricLabels("cordy_team_invite_accepted_total")),
 		onboardingStarted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_onboarding_started_total",
+			Name: "cordy_onboarding_started_total",
 			Help: "Total onboarding flows started.",
-		}, metricLabels("multica_onboarding_started_total")),
+		}, metricLabels("cordy_onboarding_started_total")),
 		onboardingQuestionnaireSubmit: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_onboarding_questionnaire_submitted_total",
+			Name: "cordy_onboarding_questionnaire_submitted_total",
 			Help: "Total onboarding questionnaires submitted.",
-		}, metricLabels("multica_onboarding_questionnaire_submitted_total")),
+		}, metricLabels("cordy_onboarding_questionnaire_submitted_total")),
 		onboardingSourceSubmit: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_onboarding_source_submitted_total",
+			Name: "cordy_onboarding_source_submitted_total",
 			Help: "Total acquisition-source answers or declines recorded (workspace backfill prompt).",
-		}, metricLabels("multica_onboarding_source_submitted_total")),
+		}, metricLabels("cordy_onboarding_source_submitted_total")),
 		onboardingCompleted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_onboarding_completed_total",
+			Name: "cordy_onboarding_completed_total",
 			Help: "Total onboarding flows completed.",
-		}, metricLabels("multica_onboarding_completed_total")),
+		}, metricLabels("cordy_onboarding_completed_total")),
 		cloudWaitlistJoined: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_cloud_waitlist_joined_total",
+			Name: "cordy_cloud_waitlist_joined_total",
 			Help: "Total users that joined the cloud waitlist.",
-		}, metricLabels("multica_cloud_waitlist_joined_total")),
+		}, metricLabels("cordy_cloud_waitlist_joined_total")),
 		issueCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_issue_created_total",
+			Name: "cordy_issue_created_total",
 			Help: "Total issues created (any source).",
-		}, metricLabels("multica_issue_created_total")),
+		}, metricLabels("cordy_issue_created_total")),
 		chatMessageSent: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_chat_message_sent_total",
+			Name: "cordy_chat_message_sent_total",
 			Help: "Total user chat messages sent (excludes agent replies).",
-		}, metricLabels("multica_chat_message_sent_total")),
+		}, metricLabels("cordy_chat_message_sent_total")),
 		agentCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_agent_created_total",
+			Name: "cordy_agent_created_total",
 			Help: "Total agents created.",
-		}, metricLabels("multica_agent_created_total")),
+		}, metricLabels("cordy_agent_created_total")),
 		squadCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_squad_created_total",
+			Name: "cordy_squad_created_total",
 			Help: "Total squads created.",
-		}, metricLabels("multica_squad_created_total")),
+		}, metricLabels("cordy_squad_created_total")),
 		autopilotCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_autopilot_created_total",
+			Name: "cordy_autopilot_created_total",
 			Help: "Total autopilots created.",
-		}, metricLabels("multica_autopilot_created_total")),
+		}, metricLabels("cordy_autopilot_created_total")),
 		issueExecuted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_issue_executed_total",
+			Name: "cordy_issue_executed_total",
 			Help: "First task completion per issue (per-issue exactly-once activation keystone).",
-		}, metricLabels("multica_issue_executed_total")),
+		}, metricLabels("cordy_issue_executed_total")),
 		runtimeRegistered: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_runtime_registered_total",
+			Name: "cordy_runtime_registered_total",
 			Help: "Total first-time runtime registrations.",
-		}, metricLabels("multica_runtime_registered_total")),
+		}, metricLabels("cordy_runtime_registered_total")),
 		runtimeReady: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_runtime_ready_total",
+			Name: "cordy_runtime_ready_total",
 			Help: "Total runtimes that reached ready state.",
-		}, metricLabels("multica_runtime_ready_total")),
+		}, metricLabels("cordy_runtime_ready_total")),
 		runtimeReadySeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "multica_runtime_ready_seconds",
+			Name:    "cordy_runtime_ready_seconds",
 			Help:    "Time from runtime registration to ready (seconds).",
 			Buckets: runtimeReadyBuckets,
-		}, metricLabels("multica_runtime_ready_seconds")),
+		}, metricLabels("cordy_runtime_ready_seconds")),
 		runtimeFailed: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_runtime_failed_total",
+			Name: "cordy_runtime_failed_total",
 			Help: "Total runtime failures by canonical reason.",
-		}, metricLabels("multica_runtime_failed_total")),
+		}, metricLabels("cordy_runtime_failed_total")),
 		runtimeOffline: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_runtime_offline_total",
+			Name: "cordy_runtime_offline_total",
 			Help: "Total runtime offline transitions.",
-		}, metricLabels("multica_runtime_offline_total")),
+		}, metricLabels("cordy_runtime_offline_total")),
 		daemonWSMessageReceived: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_daemon_ws_message_received_total",
+			Name: "cordy_daemon_ws_message_received_total",
 			Help: "Total daemon WebSocket inbound messages by handler kind.",
-		}, metricLabels("multica_daemon_ws_message_received_total")),
+		}, metricLabels("cordy_daemon_ws_message_received_total")),
 		autopilotRunStarted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_autopilot_run_started_total",
+			Name: "cordy_autopilot_run_started_total",
 			Help: "Total autopilot runs started.",
-		}, metricLabels("multica_autopilot_run_started_total")),
+		}, metricLabels("cordy_autopilot_run_started_total")),
 		autopilotRunTerminal: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_autopilot_run_terminal_total",
+			Name: "cordy_autopilot_run_terminal_total",
 			Help: "Total autopilot runs that reached a terminal status.",
-		}, metricLabels("multica_autopilot_run_terminal_total")),
+		}, metricLabels("cordy_autopilot_run_terminal_total")),
 		autopilotRunSkipped: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_autopilot_run_skipped_total",
+			Name: "cordy_autopilot_run_skipped_total",
 			Help: "Total autopilot runs that admission-skipped (concurrency / cooldown / other).",
-		}, metricLabels("multica_autopilot_run_skipped_total")),
+		}, metricLabels("cordy_autopilot_run_skipped_total")),
 		webhookDelivery: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_webhook_delivery_total",
+			Name: "cordy_webhook_delivery_total",
 			Help: "Total inbound webhook deliveries by provider and outcome.",
-		}, metricLabels("multica_webhook_delivery_total")),
+		}, metricLabels("cordy_webhook_delivery_total")),
 		webhookRateLimited: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_webhook_rate_limited_total",
+			Name: "cordy_webhook_rate_limited_total",
 			Help: "Total webhook admissions or worker dispatches delayed by a bounded safety gate.",
-		}, metricLabels("multica_webhook_rate_limited_total")),
+		}, metricLabels("cordy_webhook_rate_limited_total")),
 		emailRateLimited: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_email_rate_limited_total",
+			Name: "cordy_email_rate_limited_total",
 			Help: "Total email-producing actions rejected by a bounded safety gate.",
-		}, metricLabels("multica_email_rate_limited_total")),
+		}, metricLabels("cordy_email_rate_limited_total")),
 		githubEventReceived: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_github_event_received_total",
+			Name: "cordy_github_event_received_total",
 			Help: "Total GitHub webhook events received by event kind and action.",
-		}, metricLabels("multica_github_event_received_total")),
+		}, metricLabels("cordy_github_event_received_total")),
 		githubPRReview: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_github_pr_review_total",
+			Name: "cordy_github_pr_review_total",
 			Help: "Total GitHub pull request reviews observed by result.",
-		}, metricLabels("multica_github_pr_review_total")),
+		}, metricLabels("cordy_github_pr_review_total")),
 		githubPRMergeSeconds: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name:    "multica_github_pr_merge_seconds",
+			Name:    "cordy_github_pr_merge_seconds",
 			Help:    "Time from PR opened to merged (seconds).",
 			Buckets: prMergeSecondsBuckets,
 		}),
 		cloudRuntimeRequest: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_cloudruntime_request_total",
+			Name: "cordy_cloudruntime_request_total",
 			Help: "Total outbound cloud runtime requests by op and status bucket.",
-		}, metricLabels("multica_cloudruntime_request_total")),
+		}, metricLabels("cordy_cloudruntime_request_total")),
 		cloudRuntimeRequestDurationSecs: prometheus.NewHistogramVec(prometheus.HistogramOpts{
-			Name:    "multica_cloudruntime_request_duration_seconds",
+			Name:    "cordy_cloudruntime_request_duration_seconds",
 			Help:    "Outbound cloud runtime request duration (seconds).",
 			Buckets: cloudRuntimeRequestBuckets,
-		}, metricLabels("multica_cloudruntime_request_duration_seconds")),
+		}, metricLabels("cordy_cloudruntime_request_duration_seconds")),
 		feedbackSubmitted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_feedback_submitted_total",
+			Name: "cordy_feedback_submitted_total",
 			Help: "Total in-app feedback submissions.",
-		}, metricLabels("multica_feedback_submitted_total")),
+		}, metricLabels("cordy_feedback_submitted_total")),
 		contactSalesSubmitted: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_contact_sales_submitted_total",
+			Name: "cordy_contact_sales_submitted_total",
 			Help: "Total contact-sales inquiries submitted.",
-		}, metricLabels("multica_contact_sales_submitted_total")),
+		}, metricLabels("cordy_contact_sales_submitted_total")),
 		chatOutputLocalPath: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "multica_chat_output_local_path_total",
+			Name: "cordy_chat_output_local_path_total",
 			Help: "Total agent chat replies that referenced a runtime-local path, by evidence kind. Observation only — the reply is still delivered.",
-		}, metricLabels("multica_chat_output_local_path_total")),
+		}, metricLabels("cordy_chat_output_local_path_total")),
 	}
 }
 

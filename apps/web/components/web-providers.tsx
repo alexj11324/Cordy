@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo } from "react";
-import { CoreProvider } from "@multica/core/platform";
-import { createBrowserCookieLocaleAdapter } from "@multica/core/i18n/browser";
-import type { LocaleResources, SupportedLocale } from "@multica/core/i18n";
-import { useWelcomeStore } from "@multica/core/onboarding";
+import { CoreProvider } from "@cordy/core/platform";
+import { createBrowserCookieLocaleAdapter } from "@cordy/core/i18n/browser";
+import type { LocaleResources, SupportedLocale } from "@cordy/core/i18n";
+import { useWelcomeStore } from "@cordy/core/onboarding";
 import packageJson from "../package.json";
 import { WebNavigationProvider } from "@/platform/navigation";
 import { WebScrollRestorationProvider } from "@/platform/scroll-restoration";
@@ -13,21 +13,7 @@ import {
   clearLoggedInCookie,
 } from "@/features/auth/auth-cookie";
 import { detectWebOS } from "@/platform/client-os";
-
-// Legacy token in localStorage → keep this session in token mode so users who
-// logged in before the cookie-auth migration stay authed. They migrate to
-// cookie mode on their next logout/login cycle (logout clears multica_token).
-// Sunset: once telemetry shows <1% of sessions still carry multica_token,
-// delete this branch and hard-code `cookieAuth` — the localStorage token is
-// XSS-exposed and is the exact thing the cookie migration exists to remove.
-function hasLegacyToken(): boolean {
-  if (typeof window === "undefined") return false;
-  try {
-    return Boolean(window.localStorage.getItem("multica_token"));
-  } catch {
-    return false;
-  }
-}
+import { ClerkAuthAdapter } from "./clerk-auth-adapter";
 
 // Derive WebSocket URL from the page origin so self-hosted / LAN deployments
 // work without an explicit runtime wsUrl. The Next.js runtime proxy handles
@@ -57,7 +43,9 @@ export function WebProviders({
   apiBaseUrl?: string;
   wsUrl?: string;
 }) {
-  const cookieAuth = !hasLegacyToken();
+  // Clerk handles all authentication on web — skip legacy cookie/token logic.
+  const clerkAuth = true;
+
   // Stable identity reference so downstream effects keyed on it don't see a
   // new object on every parent render.
   const identity = useMemo(
@@ -69,15 +57,10 @@ export function WebProviders({
     <CoreProvider
       apiBaseUrl={apiBaseUrl}
       wsUrl={wsUrl || deriveWsUrl()}
-      cookieAuth={cookieAuth}
+      clerkAuth={clerkAuth}
+      cookieAuth={false}
       onLogin={setLoggedInCookie}
       onLogout={() => {
-        // welcome-store holds the transient post-onboarding signal. Must
-        // clear on logout so user B logging into the same browser doesn't
-        // inherit user A's signal and have <WelcomeAfterOnboarding /> fire
-        // listAgents / createIssue against a workspace user B doesn't even
-        // belong to. The store's own docstring promises this reset; this
-        // is where it gets wired.
         useWelcomeStore.getState().reset();
         clearLoggedInCookie();
       }}
@@ -86,9 +69,11 @@ export function WebProviders({
       resources={resources}
       localeAdapter={localeAdapter}
     >
-      <WebNavigationProvider>
-        <WebScrollRestorationProvider>{children}</WebScrollRestorationProvider>
-      </WebNavigationProvider>
+      <ClerkAuthAdapter>
+        <WebNavigationProvider>
+          <WebScrollRestorationProvider>{children}</WebScrollRestorationProvider>
+        </WebNavigationProvider>
+      </ClerkAuthAdapter>
     </CoreProvider>
   );
 }

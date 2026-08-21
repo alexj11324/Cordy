@@ -2,9 +2,9 @@
 
 import { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { agentBuilderSessionListOptions } from "@multica/core/agents";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
+import { agentBuilderSessionListOptions } from "@cordy/core/agents";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { useWorkspacePaths } from "@cordy/core/paths";
 import { useBackOrReplace, useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { BuilderWorkspace } from "./builder-workspace";

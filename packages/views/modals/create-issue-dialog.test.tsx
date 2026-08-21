@@ -9,7 +9,7 @@ const mockCreateModeStore = {
   setLastMode: mockSetLastMode,
 };
 
-vi.mock("@multica/core/issues/stores/create-mode-store", () => ({
+vi.mock("@cordy/core/issues/stores/create-mode-store", () => ({
   useCreateModeStore: Object.assign(
     (selector: (s: typeof mockCreateModeStore) => unknown) =>
       selector(mockCreateModeStore),
@@ -17,7 +17,7 @@ vi.mock("@multica/core/issues/stores/create-mode-store", () => ({
   ),
 }));
 
-vi.mock("@multica/ui/components/ui/dialog", () => ({
+vi.mock("@cordy/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogContent: ({
     className,

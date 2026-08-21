@@ -11,8 +11,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/multica-ai/multica/server/internal/skill"
-	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/cordy-ai/cordy/server/internal/skill"
+	"github.com/cordy-ai/cordy/server/pkg/agent"
 )
 
 const (

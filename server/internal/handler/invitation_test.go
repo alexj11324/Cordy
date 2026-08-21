@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	"github.com/multica-ai/multica/server/internal/middleware"
+	obsmetrics "github.com/cordy-ai/cordy/server/internal/metrics"
+	"github.com/cordy-ai/cordy/server/internal/middleware"
 )
 
-const invitationTestEmail = "invitation-test@multica.ai"
+const invitationTestEmail = "invitation-test@cordy.ai"
 
 func TestDefaultInvitationRateLimits(t *testing.T) {
 	limits := DefaultInvitationRateLimits()
@@ -195,7 +195,7 @@ func TestCreateInvitation_RateLimitChecksEveryGateBeforeWrite(t *testing.T) {
 	recipient := &stubInvitationRateLimiter{allowed: false, retryAfter: 24 * time.Hour}
 	useInvitationRateLimiters(t, InvitationRateLimiters{Actor: actor, Workspace: workspace, Recipient: recipient})
 
-	const rawEmail = "  Invitation-Limited@Multica.AI  "
+	const rawEmail = "  Invitation-Limited@Cordy.AI  "
 	req := newRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/members", CreateMemberRequest{
 		Email: rawEmail,
 		Role:  "member",
@@ -279,7 +279,7 @@ func TestCreateInvitation_RateLimiterFailureReturnsServiceUnavailable(t *testing
 	})
 
 	req := newRequest(http.MethodPost, "/api/workspaces/"+testWorkspaceID+"/members", CreateMemberRequest{
-		Email: "invitation-limiter-error@multica.ai",
+		Email: "invitation-limiter-error@cordy.ai",
 		Role:  "member",
 	})
 	req = withURLParam(req, "id", testWorkspaceID)
@@ -299,7 +299,7 @@ func TestCreateInvitation_RateLimiterFailureReturnsServiceUnavailable(t *testing
 	if body["code"] != "invitation_rate_limiter_unavailable" {
 		t.Errorf("code = %q, want invitation_rate_limiter_unavailable", body["code"])
 	}
-	metricFamily := obsmetrics.GatherForTest(t, testHandler.Metrics)["multica_email_rate_limited_total"]
+	metricFamily := obsmetrics.GatherForTest(t, testHandler.Metrics)["cordy_email_rate_limited_total"]
 	for _, metric := range metricFamily.GetMetric() {
 		if metric.GetCounter().GetValue() != 0 {
 			t.Errorf("rate-limit metric = %v, want 0 when the final response is 503", metric.GetCounter().GetValue())
@@ -322,7 +322,7 @@ func TestCreateInvitation_RateLimiterFailureReturnsServiceUnavailable(t *testing
 	var pendingCount int
 	if err := testPool.QueryRow(context.Background(), `
 		SELECT COUNT(*) FROM workspace_invitation
-		WHERE workspace_id = $1 AND invitee_email = 'invitation-limiter-error@multica.ai' AND status = 'pending'
+		WHERE workspace_id = $1 AND invitee_email = 'invitation-limiter-error@cordy.ai' AND status = 'pending'
 	`, parseUUID(testWorkspaceID)).Scan(&pendingCount); err != nil {
 		t.Fatalf("count pending invitations: %v", err)
 	}
@@ -345,15 +345,15 @@ func TestAdmitInvitation_RejectedActorDoesNotConsumeWorkspaceBudget(t *testing.T
 		return h.admitInvitation(httptest.NewRecorder(), req, actorID, "workspace-a", email)
 	}
 
-	if !admit("actor-a", "first@multica.ai") {
+	if !admit("actor-a", "first@cordy.ai") {
 		t.Fatal("first invitation was unexpectedly rejected")
 	}
 	for i := 0; i < 3; i++ {
-		if admit("actor-a", fmt.Sprintf("rejected-%d@multica.ai", i)) {
+		if admit("actor-a", fmt.Sprintf("rejected-%d@cordy.ai", i)) {
 			t.Fatalf("actor-limited invitation %d was unexpectedly admitted", i)
 		}
 	}
-	if !admit("actor-b", "second@multica.ai") {
+	if !admit("actor-b", "second@cordy.ai") {
 		t.Fatal("actor-limited retries consumed the shared workspace budget")
 	}
 }
@@ -369,7 +369,7 @@ func TestAdmitInvitation_RejectedActorDoesNotConsumeRecipientBudget(t *testing.T
 
 	admit := func(actorID, workspaceID string) bool {
 		req := httptest.NewRequest(http.MethodPost, "/api/workspaces/"+workspaceID+"/members", nil)
-		return h.admitInvitation(httptest.NewRecorder(), req, actorID, workspaceID, "shared@multica.ai")
+		return h.admitInvitation(httptest.NewRecorder(), req, actorID, workspaceID, "shared@cordy.ai")
 	}
 
 	if !admit("actor-a", "workspace-a") {
@@ -392,7 +392,7 @@ func TestAdmitInvitation_AllowsBoundedOvershootWhenGateFillsAfterCheck(t *testin
 	h.InvitationRateLimiters = InvitationRateLimiters{Actor: actor, Workspace: workspace, Recipient: recipient}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-a/members", nil)
-	if !h.admitInvitation(httptest.NewRecorder(), req, "actor-a", "workspace-a", "recipient@multica.ai") {
+	if !h.admitInvitation(httptest.NewRecorder(), req, "actor-a", "workspace-a", "recipient@cordy.ai") {
 		t.Fatal("concurrent fill rejected after a different gate may already have consumed")
 	}
 	for name, calls := range map[string]int{
@@ -414,7 +414,7 @@ func TestAdmitInvitation_AllowsBoundedOvershootWhenBackendFailsAfterChecks(t *te
 
 	req := httptest.NewRequest(http.MethodPost, "/api/workspaces/workspace-a/members", nil)
 	rec := httptest.NewRecorder()
-	if !h.admitInvitation(rec, req, "actor-a", "workspace-a", "recipient@multica.ai") {
+	if !h.admitInvitation(rec, req, "actor-a", "workspace-a", "recipient@cordy.ai") {
 		t.Fatalf("backend failed after successful checks: request was rejected with %d: %s", rec.Code, rec.Body.String())
 	}
 	if rec.Body.Len() != 0 || rec.Header().Get("Retry-After") != "" {
@@ -433,7 +433,7 @@ func TestAdmitInvitation_AllowsBoundedOvershootWhenBackendFailsAfterChecks(t *te
 func TestCreateInvitation_RouteRequiresAdminRole(t *testing.T) {
 	clearInvitationsForTestWorkspace(t)
 	ctx := context.Background()
-	const memberEmail = "invitation-route-member@multica.ai"
+	const memberEmail = "invitation-route-member@cordy.ai"
 	_, _ = testPool.Exec(ctx, `DELETE FROM "user" WHERE email = $1`, memberEmail)
 	var memberUserID string
 	if err := testPool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Invitation Route Member', $1) RETURNING id`, memberEmail).Scan(&memberUserID); err != nil {
@@ -467,10 +467,10 @@ func TestCreateInvitation_RouteRequiresAdminRole(t *testing.T) {
 		return rec
 	}
 
-	if rec := call(memberUserID, "invitation-route-rejected@multica.ai"); rec.Code != http.StatusForbidden {
+	if rec := call(memberUserID, "invitation-route-rejected@cordy.ai"); rec.Code != http.StatusForbidden {
 		t.Errorf("member status = %d, want 403: %s", rec.Code, rec.Body.String())
 	}
-	if rec := call(testUserID, fmt.Sprintf("invitation-route-owner-%s@multica.ai", testWorkspaceID)); rec.Code != http.StatusCreated {
+	if rec := call(testUserID, fmt.Sprintf("invitation-route-owner-%s@cordy.ai", testWorkspaceID)); rec.Code != http.StatusCreated {
 		t.Errorf("owner status = %d, want 201: %s", rec.Code, rec.Body.String())
 	}
 }

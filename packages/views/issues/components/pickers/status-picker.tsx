@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { IssueStatus, UpdateIssueRequest } from "@multica/core/types";
-import { STATUS_CONFIG } from "@multica/core/issues/config";
-import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
-import { useWorkspaceId } from "@multica/core/hooks";
+import type { IssueStatus, UpdateIssueRequest } from "@cordy/core/types";
+import { STATUS_CONFIG } from "@cordy/core/issues/config";
+import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
+import { useWorkspaceId } from "@cordy/core/hooks";
 import { StatusIcon } from "../status-icon";
 import { PropertyPicker, PickerItem } from "./property-picker";
 import { useT } from "../../../i18n";

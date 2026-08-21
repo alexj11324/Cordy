@@ -2,15 +2,15 @@
 
 import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Issue, Project } from "@multica/core/types";
-import { ALL_STATUSES } from "@multica/core/issues/config";
-import { projectListOptions } from "@multica/core/projects/queries";
-import { childIssueProgressOptions } from "@multica/core/issues/queries";
-import { issueSurfaceGanttOptions } from "@multica/core/issues/surface/repository";
-import type { IssueSurfaceQueryPlan } from "@multica/core/issues/surface/query-plan";
-import type { IssueStatus, IssueStatusCategory } from "@multica/core/types";
-import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
-import { issueBehavesAsAny, statusFilterColumns } from "@multica/core/issues";
+import type { Issue, Project } from "@cordy/core/types";
+import { ALL_STATUSES } from "@cordy/core/issues/config";
+import { projectListOptions } from "@cordy/core/projects/queries";
+import { childIssueProgressOptions } from "@cordy/core/issues/queries";
+import { issueSurfaceGanttOptions } from "@cordy/core/issues/surface/repository";
+import type { IssueSurfaceQueryPlan } from "@cordy/core/issues/surface/query-plan";
+import type { IssueStatus, IssueStatusCategory } from "@cordy/core/types";
+import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
+import { issueBehavesAsAny, statusFilterColumns } from "@cordy/core/issues";
 import {
   applyIssueFilters,
   type IssueFilterState,

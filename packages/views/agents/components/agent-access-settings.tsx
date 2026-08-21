@@ -1,6 +1,6 @@
 "use client";
 
-import type { Agent, MemberWithUser } from "@multica/core/types";
+import type { Agent, MemberWithUser } from "@cordy/core/types";
 import {
   SettingsCard,
   SettingsSection,

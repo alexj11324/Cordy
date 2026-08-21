@@ -13,8 +13,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/middleware"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/middleware"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 var testSeq atomic.Int64
@@ -48,7 +48,7 @@ func createTestUserAndMember(t *testing.T, role string) string {
 	if err := testPool.QueryRow(ctx,
 		`INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id`,
 		fmt.Sprintf("sharelink-test-%d", seq),
-		fmt.Sprintf("sharelink-test-%d@multica.ai", seq),
+		fmt.Sprintf("sharelink-test-%d@cordy.ai", seq),
 	).Scan(&userID); err != nil {
 		t.Fatalf("create share-link test user: %v", err)
 	}

@@ -4,13 +4,13 @@ import { useState } from "react";
 import { Loader2, RotateCw } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Skill, SkillSummary } from "@multica/core/types";
-import { api } from "@multica/core/api";
+import type { Skill, SkillSummary } from "@cordy/core/types";
+import { api } from "@cordy/core/api";
 import {
   skillDetailOptions,
   workspaceKeys,
-} from "@multica/core/workspace/queries";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@cordy/core/workspace/queries";
+import { Button } from "@cordy/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -18,12 +18,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@cordy/ui/components/ui/dialog";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
+} from "@cordy/ui/components/ui/tooltip";
 import { midTruncate } from "../../common/github-url";
 import { useT } from "../../i18n";
 import { originSourceUrl, type OriginInfo } from "../lib/origin";

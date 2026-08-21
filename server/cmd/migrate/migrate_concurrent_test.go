@@ -20,7 +20,7 @@ import (
 
 // MUL-2956 — concurrent migration race test.
 //
-// PR multica-ai/multica#3658 (MUL-2923) added a Postgres advisory lock
+// PR cordy-ai/cordy#3658 (MUL-2923) added a Postgres advisory lock
 // around the migration loop to serialize concurrent runners. This file
 // is the live-Postgres test that proves the lock is actually doing its
 // job. We run N goroutines that all call runMigrations against the same
@@ -45,7 +45,7 @@ import (
 //     MUL-2923 / #3658) and effectively become a no-op.
 //
 // The test connects to whatever DATABASE_URL points at (default
-// postgres://multica:multica@localhost:5432/multica?sslmode=disable),
+// postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable),
 // matching the harness pattern already used in
 // server/internal/handler/handler_test.go and
 // server/internal/metrics/business_sampler_pgsleep_test.go. If
@@ -61,7 +61,7 @@ import (
 // during cleanup.
 
 const (
-	defaultTestDatabaseURL = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+	defaultTestDatabaseURL = "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable"
 	// concurrentRunners is the goroutine count for the race tests. Set
 	// large enough that a missing lock would reliably trip on a multi-
 	// core box with -race, but small enough to keep the suite fast on a

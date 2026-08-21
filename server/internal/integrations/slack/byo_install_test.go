@@ -11,7 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // slackMock parameterizes the install-time Slack API stub. botAppID defaults to
@@ -199,7 +199,7 @@ func TestRegisterBYO_AuthTestFailure(t *testing.T) {
 func TestRegisterBYO_AppConnectedToAnotherWorkspace_Rejected(t *testing.T) {
 	srv := authTestServer(t, true)
 	defer srv.Close()
-	// The pasted app is live-owned by an agent in a DIFFERENT Multica workspace,
+	// The pasted app is live-owned by an agent in a DIFFERENT Cordy workspace,
 	// so after the dead-owner reclaim the (channel_type, app_id) routing index
 	// still rejects the upsert. We must refuse, not steal it — and name the real
 	// case (another workspace), not the old catch-all.

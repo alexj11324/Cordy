@@ -6,12 +6,12 @@ description: コンピュータを接続し、最初のエージェントを作�
 import { Callout } from "fumadocs-ui/components/callout";
 
 <Callout type="info">
-エージェントが実行するには、実行するコンピュータに Claude Code、Codex、Cursor などの[サポートされている AI コーディングツール](/providers)が少なくとも 1 つインストールされ、ログイン済みである必要があります。Multica にこれらのツールは同梱されていません。
+エージェントが実行するには、実行するコンピュータに Claude Code、Codex、Cursor などの[サポートされている AI コーディングツール](/providers)が少なくとも 1 つインストールされ、ログイン済みである必要があります。Cordy にこれらのツールは同梱されていません。
 </Callout>
 
 ## 1. ログインしてワークスペースに入る
 
-Web（[multica.ai](https://multica.ai)）または [Multica Desktop](https://multica.ai/download) でログインします。メール認証コードと Google に対応しています。
+Web（[cordy.ai](https://cordy.ai)）または [Cordy Desktop](https://cordy.ai/download) でログインします。メール認証コードと Google に対応しています。
 
 - **Desktop**：このコンピュータを自動で接続できます。
 - **Web**：次のステップでコマンドラインから接続します。
@@ -26,18 +26,18 @@ Web（[multica.ai](https://multica.ai)）または [Multica Desktop](https://mul
   **macOS / Linux**
 
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
-  multica setup
+  curl -fsSL https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.sh | bash
+  cordy setup
   ```
 
   **Windows PowerShell**
 
   ```powershell
-  irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex
-  multica setup
+  irm https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.ps1 | iex
+  cordy setup
   ```
 
-  `multica setup` はブラウザを開いてログインを完了し、その後デーモンをバックグラウンドで実行し続けます。デーモンがオンラインになると、通常 1 分以内にダイアログがこのコンピュータを検出します。
+  `cordy setup` はブラウザを開いてログインを完了し、その後デーモンをバックグラウンドで実行し続けます。デーモンがオンラインになると、通常 1 分以内にダイアログがこのコンピュータを検出します。
 
 **成功の目安**：ランタイム一覧にオンラインのコンピュータが表示されます。
 
@@ -66,9 +66,9 @@ Web（[multica.ai](https://multica.ai)）または [Multica Desktop](https://mul
 
 1. **作成者** で、作成したばかりのエージェントを選択します。
 2. やってほしいことを一言二言で説明します。例：「このワークスペースの使い方を紹介して」。
-3. 送信します。Multica がイシューを作成し、エージェントを担当者に設定して、すぐに実行を開始します。
+3. 送信します。Cordy がイシューを作成し、エージェントを担当者に設定して、すぐに実行を開始します。
 
-![新規イシューダイアログのエージェントモード：Created by に Multica Assistant が選択されている](/images/docs/quickstart-new-issue.webp)
+![新規イシューダイアログのエージェントモード：Created by に Cordy Assistant が選択されている](/images/docs/quickstart-new-issue.webp)
 
 ## 5. 進捗と結果を確認する
 
@@ -82,14 +82,14 @@ Web（[multica.ai](https://multica.ai)）または [Multica Desktop](https://mul
 
 | 症状 | まず確認すること |
 |---|---|
-| ランタイムが見つからない | AI コーディングツールがインストール済みで、ターミナルから実行できることを確認します。Desktop では「更新」をクリックし、CLI の場合は `multica setup` を再実行します。 |
-| ランタイムがオフラインと表示される | Desktop を開いたままにします。CLI の場合は `multica daemon status` を実行し、起動していなければ `multica daemon start` を実行します。 |
+| ランタイムが見つからない | AI コーディングツールがインストール済みで、ターミナルから実行できることを確認します。Desktop では「更新」をクリックし、CLI の場合は `cordy setup` を再実行します。 |
+| ランタイムがオフラインと表示される | Desktop を開いたままにします。CLI の場合は `cordy daemon status` を実行し、起動していなければ `cordy daemon start` を実行します。 |
 | イシューがキューに入ったまま | エージェントが使うランタイムがオンラインであることを確認します。ランタイムが同時実行の上限に達している場合、新しいタスクはキューで待機し続けます。 |
 
 その他のケースは[トラブルシューティング](/troubleshooting)を参照してください。
 
 ## 次のステップ
 
-- [コアコンセプト](/concepts) — Multica のすべてのコアオブジェクトを 3 分で把握する。
-- [Multica の仕組み](/how-multica-works) — イシュー、エージェント、ランタイム、各実行の関係を理解する。
+- [コアコンセプト](/concepts) — Cordy のすべてのコアオブジェクトを 3 分で把握する。
+- [Cordy の仕組み](/how-cordy-works) — イシュー、エージェント、ランタイム、各実行の関係を理解する。
 - [エージェントに仕事を任せる](/triggering-agents) — 割り当てのほかに、@コメント、チャット、オートパイロットという 3 つのトリガー方法。

@@ -14,7 +14,7 @@ import (
 // Before the fix, Prepare wrote the marker early and persisted the manifest that
 // records it last, and the caller receives no Environment on a failure — so a
 // failed Prepare left a marker no code path knew how to remove, which disabled
-// every human-local multica command in that directory tree until someone deleted
+// every human-local cordy command in that directory tree until someone deleted
 // the file by hand.
 //
 // The induced failure is a pre-existing .cursor/mcp.json, which the managed

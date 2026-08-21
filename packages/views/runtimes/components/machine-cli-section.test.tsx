@@ -2,7 +2,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import type { AgentRuntime } from "@multica/core/types";
+import type { AgentRuntime } from "@cordy/core/types";
 import type { RuntimeMachine } from "./runtime-machines";
 
 const mockUpdateSection = vi.hoisted(() => vi.fn());

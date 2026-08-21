@@ -1,15 +1,15 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { AlertCircle, Info, LogIn } from "lucide-react";
-import { Button } from "@multica/ui/components/ui/button";
-import { Switch } from "@multica/ui/components/ui/switch";
-import { cn } from "@multica/ui/lib/utils";
+import { Button } from "@cordy/ui/components/ui/button";
+import { Switch } from "@cordy/ui/components/ui/switch";
+import { cn } from "@cordy/ui/lib/utils";
 import { toast } from "sonner";
 import {
   SettingsCard,
   SettingsRow,
   SettingsSection,
   SettingsTab,
-} from "@multica/views/settings";
+} from "@cordy/views/settings";
 import { reauthenticateDaemon } from "../platform/daemon-reauth";
 import type { DaemonPrefs, DaemonStatus } from "../../../shared/daemon-types";
 import {
@@ -126,8 +126,8 @@ export function DaemonSettingsTab() {
             This device&apos;s daemon runs outside the app — for example inside
             WSL2 — so the app can&apos;t start or stop it. Start or stop it from
             that environment with{" "}
-            <code className="font-mono text-caption">multica daemon start</code> /{" "}
-            <code className="font-mono text-caption">multica daemon stop</code>.
+            <code className="font-mono text-caption">cordy daemon start</code> /{" "}
+            <code className="font-mono text-caption">cordy daemon stop</code>.
           </p>
         </div>
       )}
@@ -161,8 +161,8 @@ export function DaemonSettingsTab() {
             cliInstalled === null
               ? "Checking…"
               : cliInstalled
-                ? "multica CLI is installed and available in PATH."
-                : "multica CLI not found. Install it to enable daemon management."
+                ? "cordy CLI is installed and available in PATH."
+                : "cordy CLI not found. Install it to enable daemon management."
           }
         >
           {cliInstalled === false && (
@@ -171,7 +171,7 @@ export function DaemonSettingsTab() {
               size="sm"
               onClick={() =>
                 window.desktopAPI.openExternal(
-                  "https://github.com/multica-ai/multica#cli-installation",
+                  "https://github.com/cordy-ai/cordy#cli-installation",
                 )
               }
             >

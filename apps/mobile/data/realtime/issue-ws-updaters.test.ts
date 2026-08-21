@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import type { Issue, IssueReaction, TimelineEntry } from "@multica/core/types";
+import type { Issue, IssueReaction, TimelineEntry } from "@cordy/core/types";
 import { describe, expect, it, vi } from "vitest";
 
 import { issueKeys } from "@/data/queries/issue-keys";

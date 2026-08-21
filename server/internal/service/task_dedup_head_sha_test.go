@@ -9,9 +9,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/events"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // TEN-356 regression: the reviewer-loop dedup keyed only on (issue_id,
@@ -27,7 +27,7 @@ func newHeadShaDedupPool(t *testing.T) *pgxpool.Pool {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+		dbURL = "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable"
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -59,7 +59,7 @@ func createHeadShaDedupFixture(t *testing.T, ctx context.Context, pool *pgxpool.
 	t.Helper()
 
 	suffix := time.Now().UnixNano()
-	email := fmt.Sprintf("head-sha-dedup-%d@multica.ai", suffix)
+	email := fmt.Sprintf("head-sha-dedup-%d@cordy.ai", suffix)
 	slug := fmt.Sprintf("head-sha-dedup-%d", suffix)
 
 	var userID string
@@ -126,7 +126,7 @@ func createHeadShaDedupFixture(t *testing.T, ctx context.Context, pool *pgxpool.
 				workspace_id, installation_id, repo_owner, repo_name, pr_number,
 				title, state, html_url, pr_created_at, pr_updated_at, head_sha
 			)
-			VALUES ($1, 1, 'multica-ai', 'multica', $2, 'review PR', $3,
+			VALUES ($1, 1, 'cordy-ai', 'cordy', $2, 'review PR', $3,
 				'https://example.test/pr', now(), now(), $4)
 			RETURNING id
 		`, workspaceID, 4000+int(suffix%1000), state, prHeadSha).Scan(&prID); err != nil {

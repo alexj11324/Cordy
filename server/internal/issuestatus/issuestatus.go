@@ -31,7 +31,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // The 7 canonical status keys. Each is simultaneously a status key and the
@@ -76,7 +76,7 @@ var canonicalRank = func() map[string]int {
 var ErrUnknownStatus = errors.New("unknown issue status")
 
 // keyPattern mirrors the issue_status.key CHECK constraint. Keys are lowercase
-// so `multica issue status <id> human_review` is unambiguous to type.
+// so `cordy issue status <id> human_review` is unambiguous to type.
 var keyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_]{0,31}$`)
 
 // Querier is the slice of the generated query set this package needs. Taking an

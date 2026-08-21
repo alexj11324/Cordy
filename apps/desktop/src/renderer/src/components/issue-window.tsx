@@ -6,15 +6,15 @@ import {
   useRouteError,
 } from "react-router-dom";
 import { AlertTriangle, RotateCw, X } from "lucide-react";
-import { useAuthStore } from "@multica/core/auth";
-import { setCurrentWorkspace } from "@multica/core/platform";
-import { WorkspaceSlugProvider } from "@multica/core/paths";
-import { useWorkspaceList } from "@multica/core/workspace";
-import { Button } from "@multica/ui/components/ui/button";
-import { MulticaIcon } from "@multica/ui/components/common/multica-icon";
-import { ModalRegistry } from "@multica/views/modals/registry";
-import { WorkspacePresencePrefetch } from "@multica/views/layout";
-import { DragStrip } from "@multica/views/platform";
+import { useAuthStore } from "@cordy/core/auth";
+import { setCurrentWorkspace } from "@cordy/core/platform";
+import { WorkspaceSlugProvider } from "@cordy/core/paths";
+import { useWorkspaceList } from "@cordy/core/workspace";
+import { Button } from "@cordy/ui/components/ui/button";
+import { CordyIcon } from "@cordy/ui/components/common/cordy-icon";
+import { ModalRegistry } from "@cordy/views/modals/registry";
+import { WorkspacePresencePrefetch } from "@cordy/views/layout";
+import { DragStrip } from "@cordy/views/platform";
 import type { IssueWindowContext } from "../../../shared/issue-window";
 import { DesktopAuthRecoveryPage } from "../pages/auth-recovery";
 import { IssueDetailPage } from "../pages/issue-detail-page";
@@ -67,7 +67,7 @@ function IssueWindowRoute() {
     return (
       <IssueWindowFrame>
         <div className="flex min-h-0 flex-1 items-center justify-center">
-          <MulticaIcon className="size-6 animate-pulse" />
+          <CordyIcon className="size-6 animate-pulse" />
         </div>
       </IssueWindowFrame>
     );

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/multica-ai/multica/server/internal/agentconfig"
+	"github.com/cordy-ai/cordy/server/internal/agentconfig"
 )
 
 func validateAgentMaxConcurrentTasks(value int32) error {

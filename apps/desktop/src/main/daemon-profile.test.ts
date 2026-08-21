@@ -14,13 +14,13 @@ import {
   profileUserIdPath,
 } from "./daemon-profile";
 
-const MULTICA_DIR = join(homedir(), ".multica");
-const DEFAULT_CLI_CONFIG = join(MULTICA_DIR, "config.json");
+const CORDY_DIR = join(homedir(), ".cordy");
+const DEFAULT_CLI_CONFIG = join(CORDY_DIR, "config.json");
 
 describe("deriveProfileName", () => {
   it("names the profile after the target host", () => {
-    expect(deriveProfileName("https://api.multica.ai")).toBe(
-      "desktop-api.multica.ai",
+    expect(deriveProfileName("https://api.cordy.ai")).toBe(
+      "desktop-api.cordy.ai",
     );
   });
 
@@ -37,20 +37,20 @@ describe("deriveProfileName", () => {
 
 describe("profile paths", () => {
   it("always resolves under profiles/<name>", () => {
-    const dir = join(MULTICA_DIR, "profiles", "desktop-api.multica.ai");
-    expect(profileDir("desktop-api.multica.ai")).toBe(dir);
-    expect(profileConfigPath("desktop-api.multica.ai")).toBe(
+    const dir = join(CORDY_DIR, "profiles", "desktop-api.cordy.ai");
+    expect(profileDir("desktop-api.cordy.ai")).toBe(dir);
+    expect(profileConfigPath("desktop-api.cordy.ai")).toBe(
       join(dir, "config.json"),
     );
-    expect(profileLogPath("desktop-api.multica.ai")).toBe(
+    expect(profileLogPath("desktop-api.cordy.ai")).toBe(
       join(dir, "daemon.log"),
     );
-    expect(profileUserIdPath("desktop-api.multica.ai")).toBe(
+    expect(profileUserIdPath("desktop-api.cordy.ai")).toBe(
       join(dir, ".desktop-user-id"),
     );
   });
 
-  // Regression: an unresolved profile used to resolve to ~/.multica, so Desktop
+  // Regression: an unresolved profile used to resolve to ~/.cordy, so Desktop
   // could overwrite server_url and token in the user's own CLI config. #6399.
   it("refuses to build a path for an unresolved profile", () => {
     expect(() => profileDir("")).toThrow(/unresolved/);
@@ -60,7 +60,7 @@ describe("profile paths", () => {
   });
 
   it("never yields the default CLI config path for any input", () => {
-    for (const name of ["desktop-api.multica.ai", "desktop", "x"]) {
+    for (const name of ["desktop-api.cordy.ai", "desktop", "x"]) {
       expect(profileConfigPath(name)).not.toBe(DEFAULT_CLI_CONFIG);
     }
     expect(() => profileConfigPath("")).toThrow();
@@ -69,9 +69,9 @@ describe("profile paths", () => {
 
 describe("profileArgs", () => {
   it("selects the Desktop-owned profile", () => {
-    expect(profileArgs("desktop-api.multica.ai")).toEqual([
+    expect(profileArgs("desktop-api.cordy.ai")).toEqual([
       "--profile",
-      "desktop-api.multica.ai",
+      "desktop-api.cordy.ai",
     ]);
   });
 
@@ -91,14 +91,14 @@ describe("healthPortForProfile", () => {
   });
 
   it("never derives the default profile's port", () => {
-    for (const name of ["desktop-api.multica.ai", "desktop", "x", "a".repeat(50)]) {
+    for (const name of ["desktop-api.cordy.ai", "desktop", "x", "a".repeat(50)]) {
       expect(healthPortForProfile(name)).not.toBe(DEFAULT_HEALTH_PORT);
     }
   });
 
   it("derives a stable per-profile port above the default", () => {
-    const port = healthPortForProfile("desktop-api.multica.ai");
+    const port = healthPortForProfile("desktop-api.cordy.ai");
     expect(port).toBeGreaterThan(DEFAULT_HEALTH_PORT);
-    expect(port).toBe(healthPortForProfile("desktop-api.multica.ai"));
+    expect(port).toBe(healthPortForProfile("desktop-api.cordy.ai"));
   });
 });

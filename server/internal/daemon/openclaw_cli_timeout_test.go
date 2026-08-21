@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/cordy-ai/cordy/server/internal/daemon/execenv"
+	"github.com/cordy-ai/cordy/server/pkg/taskfailure"
 )
 
 // TestTaskRunFailureReasonLabelsOpenclawCLITimeout is the daemon half of the

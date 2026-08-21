@@ -42,7 +42,7 @@ type WecomMetrics struct {
 func NewWecomMetrics() *WecomMetrics {
 	counter := func(name, help string) prometheus.Counter {
 		return prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "multica", Subsystem: "wecom", Name: name, Help: help,
+			Namespace: "cordy", Subsystem: "wecom", Name: name, Help: help,
 		})
 	}
 	return &WecomMetrics{

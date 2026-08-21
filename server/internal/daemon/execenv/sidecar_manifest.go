@@ -15,7 +15,7 @@ import (
 // state. The file lives in envRoot (daemon scratch), never in WorkDir,
 // so a local_directory run does not litter the user's repo with the
 // bookkeeping file used to undo the litter.
-const sidecarManifestFile = ".multica_sidecar_manifest.json"
+const sidecarManifestFile = ".cordy_sidecar_manifest.json"
 
 // errPathPreExists is the sentinel recordWriteFile returns when the
 // target path already exists. The manifest contract is that we never
@@ -28,10 +28,10 @@ const sidecarManifestFile = ".multica_sidecar_manifest.json"
 //
 //   - For per-skill directories the caller allocates a collision-free
 //     alternative slug (see allocateCollisionFreeSkillDir) and retries
-//     so the agent still discovers the Multica skill, just under a
+//     so the agent still discovers the Cordy skill, just under a
 //     different directory name.
-//   - For Multica-only namespaces (.agent_context/issue_context.md,
-//     .multica/project/resources.json) the caller swallows the error
+//   - For Cordy-only namespaces (.agent_context/issue_context.md,
+//     .cordy/project/resources.json) the caller swallows the error
 //     and proceeds — the agent's runtime brief already carries every
 //     fact that would have appeared in those files, so missing-from-
 //     disk is degraded behavior, not failure.
@@ -156,10 +156,10 @@ func recordWriteFile(path string, data []byte, perm os.FileMode, m *sidecarManif
 
 // allocateCollisionFreeSkillDir picks a directory under skillsParent
 // whose path does NOT currently exist, so writeSkillFiles can lay
-// down a Multica skill without colliding with a user-installed skill
+// down a Cordy skill without colliding with a user-installed skill
 // of the same slug. The first attempt is always the natural baseSlug
 // — that's the path provider-native discovery already knows. On
-// collision we append `-multica`, then `-multica-2`, `-multica-3`,
+// collision we append `-cordy`, then `-cordy-2`, `-cordy-3`,
 // … until a free slot is found. The chosen slug is returned alongside
 // the absolute path so callers can use it in frontmatter and brief
 // listings.
@@ -189,7 +189,7 @@ func allocateCollisionFreeSkillDir(skillsParent, baseSlug string) (slug, dir str
 }
 
 // skillSlugCandidate is the nth name to try for a skill whose natural slug is
-// baseSlug: the bare slug first, then `-multica`, then numbered variants.
+// baseSlug: the bare slug first, then `-cordy`, then numbered variants.
 //
 // Two callers must agree on this sequence — allocateCollisionFreeSkillDir,
 // which probes the filesystem, and resolveSkillSlugs, which deduplicates a
@@ -200,9 +200,9 @@ func skillSlugCandidate(baseSlug string, attempt int) string {
 	case attempt <= 0:
 		return baseSlug
 	case attempt == 1:
-		return baseSlug + "-multica"
+		return baseSlug + "-cordy"
 	default:
-		return fmt.Sprintf("%s-multica-%d", baseSlug, attempt)
+		return fmt.Sprintf("%s-cordy-%d", baseSlug, attempt)
 	}
 }
 
@@ -266,7 +266,7 @@ func writeSidecarManifest(envRoot string, m *sidecarManifest) error {
 // Pair this with CleanupRuntimeConfig on the local_directory cleanup
 // path: that function handles the runtime brief inside CLAUDE.md /
 // AGENTS.md, this one handles the sidecar tree
-// (.agent_context/, .multica/, .claude/skills/, .github/skills/,
+// (.agent_context/, .cordy/, .claude/skills/, .github/skills/,
 // .opencode/skills/, skills/, .pi/skills/, .cursor/skills/,
 // .kimi/skills/, .reasonix/skills/, .kiro/skills/, .agents/skills/, fallback
 // .agent_context/skills/). The two together restore the workdir to
@@ -371,7 +371,7 @@ func rollBackManifest(m sidecarManifest, manifestPath string) error {
 // that tree on disk with no on-disk record of it, and the caller never receives
 // an Environment, so no teardown defer downstream knows there is anything to
 // clean (MUL-6132). For a local_directory task the workdir is the user's own
-// repository, so "left on disk" means a marker that disables every multica
+// repository, so "left on disk" means a marker that disables every cordy
 // command in that directory tree until someone deletes it by hand.
 //
 // There is no manifest file to remove, so manifestPath is empty.
@@ -391,7 +391,7 @@ func rollBackPreparedSidecars(m sidecarManifest) error {
 // prior-run agent wrote into .claude/skills/issue-review/, CleanupSidecars
 // deletes the recorded SKILL.md yet keeps the directory, so the canonical
 // slug stays occupied and the refreshed skill dodges to
-// issue-review-multica. A managed skill directory is platform-owned — the
+// issue-review-cordy. A managed skill directory is platform-owned — the
 // manifest is proof we created it — so on reuse we reclaim the whole
 // directory (dropping any scratch the agent left inside it, exactly as the
 // Codex path's os.RemoveAll(skillsDir) already does) and let the refresh

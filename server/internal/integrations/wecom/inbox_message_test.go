@@ -47,7 +47,7 @@ func TestBuildInboxMarkdown_FallsBackToWorkspaceUUIDWhenSlugMissing(t *testing.T
 
 func TestBuildInboxMarkdown_NoAppURLDropsLink(t *testing.T) {
 	// Unset every var buildInboxMarkdown looks at.
-	for _, k := range []string{"WECOM_APP_URL", "MULTICA_APP_URL", "FRONTEND_ORIGIN"} {
+	for _, k := range []string{"WECOM_APP_URL", "CORDY_APP_URL", "FRONTEND_ORIGIN"} {
 		if v, ok := os.LookupEnv(k); ok {
 			t.Cleanup(func() { os.Setenv(k, v) })
 		}
@@ -61,7 +61,7 @@ func TestBuildInboxMarkdown_NoAppURLDropsLink(t *testing.T) {
 }
 
 func TestBuildInboxMarkdown_NonHTTPSAppURLIsRejected(t *testing.T) {
-	for _, k := range []string{"WECOM_APP_URL", "MULTICA_APP_URL", "FRONTEND_ORIGIN"} {
+	for _, k := range []string{"WECOM_APP_URL", "CORDY_APP_URL", "FRONTEND_ORIGIN"} {
 		if v, ok := os.LookupEnv(k); ok {
 			t.Cleanup(func() { os.Setenv(k, v) })
 		}
@@ -157,7 +157,7 @@ func TestInboxCardDoesNotRenderMemberAuthoredLinks(t *testing.T) {
 // not fit is a message silently lost, not a message truncated.
 func TestInboxCardFitsTheCapEvenWithAHugeTitle(t *testing.T) {
 	huge := strings.Repeat("标题", 4000) // far past inboxMarkdownMaxLen on its own
-	t.Setenv("MULTICA_APP_URL", "https://multica.example")
+	t.Setenv("CORDY_APP_URL", "https://cordy.example")
 	item := map[string]any{"type": "mentioned", "title": huge, "body": "body"}
 	out := buildInboxMarkdown(item, "ws-uuid", "acme")
 	if n := utf8.RuneCountInString(out); n > inboxMarkdownMaxLen {
@@ -177,7 +177,7 @@ func TestInboxCardFitsTheCapEvenWithAHugeTitle(t *testing.T) {
 // the card must carry them through untouched.
 func TestInboxCardKeepsAnOrdinaryBracketedTitleVerbatim(t *testing.T) {
 	t.Setenv("WECOM_APP_URL", "")
-	t.Setenv("MULTICA_APP_URL", "")
+	t.Setenv("CORDY_APP_URL", "")
 	t.Setenv("FRONTEND_ORIGIN", "")
 
 	item := map[string]any{
@@ -205,7 +205,7 @@ func TestInboxCardKeepsAnOrdinaryBracketedTitleVerbatim(t *testing.T) {
 // in the output would then be member-authored.
 func TestInboxCardNeverPutsCloseBracketNextToOpenParen(t *testing.T) {
 	t.Setenv("WECOM_APP_URL", "")
-	t.Setenv("MULTICA_APP_URL", "")
+	t.Setenv("CORDY_APP_URL", "")
 	t.Setenv("FRONTEND_ORIGIN", "")
 
 	cases := []struct {
@@ -244,7 +244,7 @@ func TestInboxCardNeverPutsCloseBracketNextToOpenParen(t *testing.T) {
 // the same property without the luck.
 func TestInboxCardSeamSurvivesEveryCutOffset(t *testing.T) {
 	t.Setenv("WECOM_APP_URL", "")
-	t.Setenv("MULTICA_APP_URL", "")
+	t.Setenv("CORDY_APP_URL", "")
 	t.Setenv("FRONTEND_ORIGIN", "")
 
 	for pad := 0; pad < 12; pad++ {
@@ -275,7 +275,7 @@ func TestInboxCardSeamSurvivesEveryCutOffset(t *testing.T) {
 // text. Measured after truncation, the card would ship over the cap and WeCom
 // would refuse the whole frame while the send path reports success.
 func TestInboxCardBudgetsTheSpacesItInserts(t *testing.T) {
-	t.Setenv("MULTICA_APP_URL", "https://multica.example")
+	t.Setenv("CORDY_APP_URL", "https://cordy.example")
 	item := map[string]any{
 		"type":  "mentioned",
 		"title": "t",
@@ -302,7 +302,7 @@ func TestInboxCardBudgetsTheSpacesItInserts(t *testing.T) {
 // the parsed output is then member-authored.
 func TestInboxCardDefinesNoResolvableLinkReference(t *testing.T) {
 	t.Setenv("WECOM_APP_URL", "")
-	t.Setenv("MULTICA_APP_URL", "")
+	t.Setenv("CORDY_APP_URL", "")
 	t.Setenv("FRONTEND_ORIGIN", "")
 
 	for _, tc := range linkReferenceAttacks {
@@ -346,7 +346,7 @@ func TestInboxCardDefinesNoResolvableLinkReference(t *testing.T) {
 // for byte, or the guard is too blunt.
 func TestInboxCardKeepsAReferenceLikeTitleVerbatim(t *testing.T) {
 	t.Setenv("WECOM_APP_URL", "")
-	t.Setenv("MULTICA_APP_URL", "")
+	t.Setenv("CORDY_APP_URL", "")
 	t.Setenv("FRONTEND_ORIGIN", "")
 
 	item := map[string]any{
@@ -368,7 +368,7 @@ func TestInboxCardKeepsAReferenceLikeTitleVerbatim(t *testing.T) {
 // pattern, and it holds the card inside the cap while it is at it.
 func TestInboxCardSeamKeepsDefinitionsBrokenAtEveryCutOffset(t *testing.T) {
 	t.Setenv("WECOM_APP_URL", "")
-	t.Setenv("MULTICA_APP_URL", "")
+	t.Setenv("CORDY_APP_URL", "")
 	t.Setenv("FRONTEND_ORIGIN", "")
 
 	for pad := 0; pad < 12; pad++ {
@@ -399,7 +399,7 @@ func TestInboxCardSeamKeepsDefinitionsBrokenAtEveryCutOffset(t *testing.T) {
 // the card ships over the cap and WeCom drops the whole frame while the send
 // path reports success.
 func TestInboxCardBudgetsTheSpacesTheDefinitionBreakInserts(t *testing.T) {
-	t.Setenv("MULTICA_APP_URL", "https://multica.example")
+	t.Setenv("CORDY_APP_URL", "https://cordy.example")
 	item := map[string]any{
 		"type":  "mentioned",
 		"title": "t",

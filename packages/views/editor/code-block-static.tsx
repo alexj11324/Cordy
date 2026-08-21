@@ -15,7 +15,7 @@
 
 import { useMemo } from "react";
 import { toHtml } from "hast-util-to-html";
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@cordy/ui/lib/utils";
 import { highlightCode } from "./syntax-highlight";
 import "./styles/code.css";
 

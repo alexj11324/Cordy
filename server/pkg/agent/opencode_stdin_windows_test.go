@@ -47,7 +47,7 @@ func TestOpencodeExecuteOversizedPromptStartsOnWindows(t *testing.T) {
 
 	// Past the 32,767-character CreateProcess ceiling, in the same shape as the
 	// reported 39,629-byte agent-builder payload.
-	prompt := "MULTICA_AGENT_BUILDER_INPUT\n" +
+	prompt := "CORDY_AGENT_BUILDER_INPUT\n" +
 		strings.Repeat(`{"available_workspace_skills":[{"description":"- inspect local changes"}]}`+"\n", 600)
 	if len(prompt) <= 32767 {
 		t.Fatalf("test prompt must exceed the CreateProcess limit, got %d bytes", len(prompt))
@@ -94,7 +94,7 @@ func TestOpencodeExecuteOversizedPromptStartsOnWindows(t *testing.T) {
 		t.Fatalf("native child never recorded argv: %v; result=%+v", err, result)
 	}
 	gotArgv := string(argvRaw)
-	for _, needle := range []string{"MULTICA_AGENT_BUILDER_INPUT", "available_workspace_skills", "inspect local"} {
+	for _, needle := range []string{"CORDY_AGENT_BUILDER_INPUT", "available_workspace_skills", "inspect local"} {
 		if strings.Contains(gotArgv, needle) {
 			t.Errorf("prompt fragment %q leaked into argv: %q", needle, gotArgv)
 		}

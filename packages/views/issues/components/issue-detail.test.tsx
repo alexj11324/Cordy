@@ -2,15 +2,15 @@ import { forwardRef, useEffect, useRef, useState, useImperativeHandle } from "re
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Issue, IssueStatusEntry, Label, TimelineEntry } from "@multica/core/types";
-import { issueStatusKeys } from "@multica/core/issue-statuses";
-import { I18nProvider } from "@multica/core/i18n/react";
+import type { Issue, IssueStatusEntry, Label, TimelineEntry } from "@cordy/core/types";
+import { issueStatusKeys } from "@cordy/core/issue-statuses";
+import { I18nProvider } from "@cordy/core/i18n/react";
 import { toast } from "sonner";
-import { useResolvedExpandStore } from "@multica/core/issues/stores/resolved-expand-store";
+import { useResolvedExpandStore } from "@cordy/core/issues/stores/resolved-expand-store";
 import {
   DEFAULT_SUB_ISSUE_ROW_PROPERTIES,
   useSubIssueDisplayStore,
-} from "@multica/core/issues/stores/sub-issue-display-store";
+} from "@cordy/core/issues/stores/sub-issue-display-store";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
@@ -26,15 +26,15 @@ const contentEditorMounts = vi.hoisted(() => ({ count: 0 }));
 // stable identity. A fresh `[]` per call would loop useSyncExternalStore.
 const emptyDraftAttachments = vi.hoisted(() => [] as unknown[]);
 
-vi.mock("@multica/ui/hooks/use-mobile", () => ({
+vi.mock("@cordy/ui/hooks/use-mobile", () => ({
   useIsMobile: () => mockViewport.isMobile,
 }));
 
 // useWorkspaceId() derives from useCurrentWorkspace (relative import inside
-// @multica/core/hooks.tsx). vi.mock("@multica/core/paths") only intercepts
+// @cordy/core/hooks.tsx). vi.mock("@cordy/core/paths") only intercepts
 // the bare-specifier, not the internal relative import. Mock the hooks module
 // directly so the bridge hook returns the test UUID.
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@cordy/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
@@ -42,9 +42,9 @@ vi.mock("@multica/core/hooks", () => ({
 // Mocks
 // ---------------------------------------------------------------------------
 
-// Mock @multica/core/auth
+// Mock @cordy/core/auth
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@cordy/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -56,8 +56,8 @@ vi.mock("@multica/core/auth", () => ({
   createAuthStore: vi.fn(),
 }));
 
-// Mock @multica/core/workspace/hooks
-vi.mock("@multica/core/workspace/hooks", () => ({
+// Mock @cordy/core/workspace/hooks
+vi.mock("@cordy/core/workspace/hooks", () => ({
   useActorName: () => ({
     getMemberName: (id: string) => (id === "user-1" ? "Test User" : "Unknown"),
     getAgentName: (id: string) => (id === "agent-1" ? "Claude Agent" : "Unknown Agent"),
@@ -72,7 +72,7 @@ vi.mock("@multica/core/workspace/hooks", () => ({
 }));
 
 // Mock workspace queries
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@cordy/core/workspace/queries", () => ({
   memberListOptions: () => ({
     queryKey: ["workspaces", "ws-1", "members"],
     queryFn: () => Promise.resolve([{ user_id: "user-1", name: "Test User", email: "test@test.com", role: "admin" }]),
@@ -95,12 +95,12 @@ vi.mock("@multica/core/workspace/queries", () => ({
   }),
 }));
 
-// Mock @multica/core/paths — after the URL-driven workspace refactor,
+// Mock @cordy/core/paths — after the URL-driven workspace refactor,
 // useCurrentWorkspace / useWorkspacePaths derive from the workspace slug in
 // URL Context. Tests don't mount a real route, so we short-circuit to fixtures.
-vi.mock("@multica/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@multica/core/paths")>(
-    "@multica/core/paths",
+vi.mock("@cordy/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@cordy/core/paths")>(
+    "@cordy/core/paths",
   );
   return {
     ...actual,
@@ -119,7 +119,7 @@ vi.mock("../../navigation", () => ({
   useNavigation: () => ({
     push: vi.fn(),
     pathname: "/issues/issue-1",
-    getShareableUrl: (p: string) => `https://app.multica.com${p}`,
+    getShareableUrl: (p: string) => `https://app.cordy.com${p}`,
   }),
   useBackOrReplace: () => vi.fn(),
   NavigationProvider: ({ children }: { children: React.ReactNode }) => children,
@@ -323,7 +323,7 @@ const mockApiObj = vi.hoisted(() => ({
   listProjects: vi.fn().mockResolvedValue({ projects: [] }),
 }));
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@cordy/core/api", () => ({
   api: mockApiObj,
   getApi: () => mockApiObj,
   setApiInstance: vi.fn(),
@@ -334,7 +334,7 @@ vi.mock("@multica/core/api", () => ({
 }));
 
 // Mock issue config
-vi.mock("@multica/core/issues/config", () => ({
+vi.mock("@cordy/core/issues/config", () => ({
   ALL_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_ORDER: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_CONFIG: {
@@ -359,23 +359,23 @@ vi.mock("@multica/core/issues/config", () => ({
 
 // Mock recent issues store
 const mockRecordVisit = vi.fn();
-vi.mock("@multica/core/issues/stores", async () => ({
+vi.mock("@cordy/core/issues/stores", async () => ({
   // Real store, not a stub: resolved-thread expand/collapse behavior under
   // test runs through it. Deep import keeps the persisted sibling stores
   // (which need localStorage) out of this mock.
   ...(await vi.importActual<
-    typeof import("@multica/core/issues/stores/resolved-expand-store")
-  >("@multica/core/issues/stores/resolved-expand-store")),
+    typeof import("@cordy/core/issues/stores/resolved-expand-store")
+  >("@cordy/core/issues/stores/resolved-expand-store")),
   // Real store: sub-issue display tests drive it with setState, and the
   // component reads it through the barrel — both must hit the same instance.
   ...(await vi.importActual<
-    typeof import("@multica/core/issues/stores/sub-issue-display-store")
-  >("@multica/core/issues/stores/sub-issue-display-store")),
+    typeof import("@cordy/core/issues/stores/sub-issue-display-store")
+  >("@cordy/core/issues/stores/sub-issue-display-store")),
   // Real store, in-memory (no localStorage): backs the sub-issues section's
   // collapsed state.
   ...(await vi.importActual<
-    typeof import("@multica/core/issues/stores/sub-issues-collapse-store")
-  >("@multica/core/issues/stores/sub-issues-collapse-store")),
+    typeof import("@cordy/core/issues/stores/sub-issues-collapse-store")
+  >("@cordy/core/issues/stores/sub-issues-collapse-store")),
   useRecentIssuesStore: Object.assign(
     (selector?: any) => {
       const state = { byWorkspace: {}, recordVisit: mockRecordVisit, pruneWorkspaces: vi.fn() };
@@ -496,7 +496,7 @@ beforeEach(() => {
 });
 
 // Mock modals
-vi.mock("@multica/core/modals", () => ({
+vi.mock("@cordy/core/modals", () => ({
   useModalStore: Object.assign(
     () => ({ open: vi.fn() }),
     { getState: () => ({ open: vi.fn() }) },
@@ -504,12 +504,12 @@ vi.mock("@multica/core/modals", () => ({
 }));
 
 // Mock core/hooks/use-file-upload
-vi.mock("@multica/core/hooks/use-file-upload", () => ({
+vi.mock("@cordy/core/hooks/use-file-upload", () => ({
   useFileUpload: () => ({ uploadWithToast: vi.fn().mockResolvedValue("https://example.com/file.png") }),
 }));
 
 // Mock realtime
-vi.mock("@multica/core/realtime", () => ({
+vi.mock("@cordy/core/realtime", () => ({
   useWSEvent: vi.fn(),
   useWSReconnect: vi.fn(),
   useWS: () => ({ subscribe: vi.fn(() => () => {}), onReconnect: vi.fn(() => () => {}) }),
@@ -522,7 +522,7 @@ vi.mock("sonner", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-// Mock react-resizable-panels (used by @multica/ui/components/ui/resizable)
+// Mock react-resizable-panels (used by @cordy/ui/components/ui/resizable)
 vi.mock("react-resizable-panels", () => ({
   Group: ({ children, ...props }: any) => <div data-testid="panel-group" {...props}>{children}</div>,
   Panel: ({ children, ...props }: any) => <div data-testid="panel" {...props}>{children}</div>,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Issue } from "@multica/core/types";
+import type { Issue } from "@cordy/core/types";
 import {
   buildIssueTableCsv,
   calculateIssueTableColumn,

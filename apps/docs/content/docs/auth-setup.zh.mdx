@@ -5,11 +5,11 @@ description: 配置邮箱验证码、Google 登录和新用户注册范围。
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Multica 默认使用邮箱验证码登录，也可以增加 Google OAuth。已经存在的用户始终可以再次登录；注册限制只决定是否允许创建新账号。
+Cordy 默认使用邮箱验证码登录，也可以增加 Google OAuth。已经存在的用户始终可以再次登录；注册限制只决定是否允许创建新账号。
 
 ## 邮箱验证码
 
-用户输入邮箱后，Multica 会发送一个 6 位验证码。验证码 10 分钟内有效，验证成功后浏览器获得登录 cookie。
+用户输入邮箱后，Cordy 会发送一个 6 位验证码。验证码 10 分钟内有效，验证成功后浏览器获得登录 cookie。
 
 邮件可以通过 Resend 或 SMTP 发送。两者同时配置时，`SMTP_HOST` 优先。
 
@@ -34,7 +34,7 @@ Multica 默认使用邮箱验证码登录，也可以增加 Google OAuth。已�
 ```dotenv
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
-SMTP_USERNAME=multica
+SMTP_USERNAME=cordy
 SMTP_PASSWORD=<password>
 SMTP_FROM_EMAIL=noreply@example.com
 ```
@@ -67,22 +67,22 @@ SMTP_EHLO_NAME=mail.example.com
 
 ```dotenv
 APP_ENV=development
-MULTICA_DEV_VERIFICATION_CODE=888888
+CORDY_DEV_VERIFICATION_CODE=888888
 ```
 
 验证码必须是 6 位数字。`APP_ENV=production` 时固定验证码会被忽略。
 
 <Callout type="warning">
-不要在公网实例中启用固定验证码。生产环境的组合是 `APP_ENV=production` 加空的 `MULTICA_DEV_VERIFICATION_CODE`。
+不要在公网实例中启用固定验证码。生产环境的组合是 `APP_ENV=production` 加空的 `CORDY_DEV_VERIFICATION_CODE`。
 </Callout>
 
 ## Google 登录
 
 1. 在 [Google Cloud Console](https://console.cloud.google.com/) 创建 OAuth 2.0 client。
-2. 把 Multica 前端的回调地址加入 **Authorized redirect URIs**：
+2. 把 Cordy 前端的回调地址加入 **Authorized redirect URIs**：
 
    ```text
-   https://multica.example.com/auth/callback
+   https://cordy.example.com/auth/callback
    ```
 
 3. 设置：
@@ -90,7 +90,7 @@ MULTICA_DEV_VERIFICATION_CODE=888888
    ```dotenv
    GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
    GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxxxx
-   GOOGLE_REDIRECT_URI=https://multica.example.com/auth/callback
+   GOOGLE_REDIRECT_URI=https://cordy.example.com/auth/callback
    ```
 
 4. 重启 API 服务。
@@ -134,7 +134,7 @@ ALLOWED_EMAILS=partner@example.net
 
 邀请不会自动绕过注册限制：
 
-- 对方已经有 Multica 账号时，可以登录并接受邀请；
+- 对方已经有 Cordy 账号时，可以登录并接受邀请；
 - 对方还没有账号时，邮箱必须符合上面的注册规则。
 
 在关闭开放注册的实例中邀请新成员时，先把对方邮箱加入 `ALLOWED_EMAILS`。账号创建并接受邀请后，可以再从名单中移除。

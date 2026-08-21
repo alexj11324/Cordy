@@ -1,11 +1,27 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { LOCALE_COOKIE } from "@multica/core/i18n";
+import { getAuth, createRouteMatcher } from "@clerk/nextjs/server";
+import { LOCALE_COOKIE } from "@cordy/core/i18n";
 import {
-  MULTICA_LOCALE_HEADER,
+  CORDY_LOCALE_HEADER,
   resolveLocaleFromSignals,
 } from "./lib/locale-routing";
 import { runtimeRewriteDestination } from "./config/runtime-urls";
 import { isOfficialMarketingHost } from "./lib/public-host";
+
+// Clerk public routes — no authentication required
+const clerkPublicRoutes = createRouteMatcher([
+  "/",
+  "/login(.*)",
+  "/signup(.*)",
+  "/sso-callback(.*)",
+  "/api/webhooks(.*)",
+  "/api/config",
+  "/api/health",
+  "/pricing",
+  "/docs(.*)",
+  "/legal(.*)",
+  "/changelog",
+]);
 
 // Old workspace-scoped route segments that existed before the URL refactor
 // (pre-#1131). Any URL with these as the FIRST segment is a legacy URL that
@@ -32,13 +48,13 @@ function resolveLocale(req: NextRequest): string {
   });
 }
 
-// Forward the resolved locale to RSC layouts via the `x-multica-locale`
+// Forward the resolved locale to RSC layouts via the `x-cordy-locale`
 // request header. layout.tsx reads it through `await headers()`. The
 // `request: { headers }` form is what makes the header land on the upstream
 // request — without it the value would only sit on the response.
 function nextWithLocale(req: NextRequest): NextResponse {
   const headers = new Headers(req.headers);
-  headers.set(MULTICA_LOCALE_HEADER, resolveLocale(req));
+  headers.set(CORDY_LOCALE_HEADER, resolveLocale(req));
   return NextResponse.next({ request: { headers } });
 }
 
@@ -46,8 +62,9 @@ function nextWithLocale(req: NextRequest): NextResponse {
 // NextResponse / cookies / matcher) is identical; the only behavioral
 // change is the runtime — proxy is forced to nodejs and cannot opt into
 // edge.
-export function proxy(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+
   const runtimeDestination = runtimeRewriteDestination(pathname, process.env);
   if (runtimeDestination) {
     const url = new URL(runtimeDestination);
@@ -55,7 +72,17 @@ export function proxy(req: NextRequest) {
     return NextResponse.rewrite(url);
   }
 
-  const hasSession = req.cookies.has("multica_logged_in");
+  if (!clerkPublicRoutes(req)) {
+    const { userId } = await getAuth(req);
+    if (!userId) {
+      const loginUrl = req.nextUrl.clone();
+      loginUrl.pathname = "/login";
+      loginUrl.searchParams.set("redirect_url", pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+  }
+
+  const hasSession = req.cookies.has("cordy_logged_in");
   const lastSlug = req.cookies.get("last_workspace_slug")?.value;
 
   // --- Legacy URL redirect: /issues/... → /{slug}/issues/... ---
@@ -92,7 +119,7 @@ export function proxy(req: NextRequest) {
 
   // --- Root path: redirect logged-in users to their last workspace ---
   // The official cloud host also serves the public marketing site. Visiting
-  // https://multica.ai/ must remain a public-site navigation even when a local
+  // https://cordy.ai/ must remain a public-site navigation even when a local
   // desktop/runtime session has fresh auth cookies; explicit app routes such
   // as /acme/issues and legacy /issues still route to the workspace app.
   if (

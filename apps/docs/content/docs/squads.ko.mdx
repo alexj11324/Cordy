@@ -5,7 +5,7 @@ description: 리더 한 명이 여러 에이전트 또는 멤버를 조율해 �
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-스쿼드는 리더 에이전트 한 명과 여러 멤버로 구성됩니다. 이슈를 스쿼드에 할당해도 모든 에이전트가 동시에 실행되지는 않습니다. Multica가 먼저 리더를 깨우고, 리더가 컨텍스트를 읽은 뒤 다음 작업을 누구에게 맡길지 결정합니다.
+스쿼드는 리더 에이전트 한 명과 여러 멤버로 구성됩니다. 이슈를 스쿼드에 할당해도 모든 에이전트가 동시에 실행되지는 않습니다. Cordy가 먼저 리더를 깨우고, 리더가 컨텍스트를 읽은 뒤 다음 작업을 누구에게 맡길지 결정합니다.
 
 스쿼드는 작업을 누구에게 맡길지 해결합니다. 여러 에이전트를 하나의 새 에이전트로 합치거나 동시 실행 수를 자동으로 늘리지는 않습니다.
 
@@ -28,7 +28,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 할당 후 실행 과정
 
-1. 이슈가 `backlog`가 아닌 상태에서 스쿼드에 할당되면 Multica가 리더의 실행 태스크를 만듭니다.
+1. 이슈가 `backlog`가 아닌 상태에서 스쿼드에 할당되면 Cordy가 리더의 실행 태스크를 만듭니다.
 2. 리더는 이슈 컨텍스트, 스쿼드 지시문, 멤버의 역할과 스킬이 포함된 명단을 확인합니다.
 3. 리더가 댓글에서 적합한 멤버를 @멘션합니다. 에이전트를 @멘션하면 새 실행이 트리거되고 사람 멤버를 @멘션하면 알림이 전달됩니다.
 4. 멤버의 진행 상황과 결과는 원래 이슈에 계속 기록되며 리더는 이후 정보를 기준으로 다시 조율할 수 있습니다.
@@ -46,7 +46,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 | **이슈를 스쿼드에 할당** | 예 | 스쿼드가 담당자가 되고 리더를 트리거합니다. |
 | **댓글에서 스쿼드 @멘션** | 아니요 | 리더가 이 댓글만 처리하며 기존 담당자는 바뀌지 않습니다. |
 
-특정 멤버를 직접 @멘션하면 해당 멤버에게 작업이 전달됩니다. Multica는 중복 트리거를 합치고 리더의 댓글이 리더 자신을 다시 트리거하지 않게 막아 실행 루프를 방지합니다.
+특정 멤버를 직접 @멘션하면 해당 멤버에게 작업이 전달됩니다. Cordy는 중복 트리거를 합치고 리더의 댓글이 리더 자신을 다시 트리거하지 않게 막아 실행 루프를 방지합니다.
 
 ## 스쿼드와 Access
 
@@ -73,8 +73,8 @@ import { Callout } from "fumadocs-ui/components/callout";
 ## CLI 사용
 
 ```bash
-multica squad create --name "Product Delivery" --leader delivery-lead
-multica squad member add <squad-id> \
+cordy squad create --name "Product Delivery" --leader delivery-lead
+cordy squad member add <squad-id> \
   --member-id <agent-or-member-id> \
   --type agent \
   --role "프런트엔드 구현 담당"

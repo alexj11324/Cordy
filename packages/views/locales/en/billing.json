@@ -1,6 +1,6 @@
 {
   "title": "Billing (test page)",
-  "subtitle": "Direct passthrough to multica-cloud's /api/v1/billing/*. Not a finished UI — just every endpoint stuffed onto one page so we can verify the proxy + Stripe flow.",
+  "subtitle": "Direct passthrough to cordy-cloud's /api/v1/billing/*. Not a finished UI — just every endpoint stuffed onto one page so we can verify the proxy + Stripe flow.",
   "endpoints": {
     "balance": "GET /api/cloud-billing/balance",
     "transactions": "GET /api/cloud-billing/transactions",
@@ -241,6 +241,6 @@
     "workspace_missing_title": "Could not find that workspace",
     "workspace_missing_description": "You came back from Stripe, but this workspace is no longer available to you — it may have been removed, or your access changed. Open Billing in the workspace you expected to check the current state.",
     "retry": "Try again",
-    "go_to_app": "Go to Multica"
+    "go_to_app": "Go to Cordy"
   }
 }

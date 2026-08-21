@@ -16,9 +16,9 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { Virtuoso } from "react-virtuoso";
-import { Button } from "@multica/ui/components/ui/button";
-import type { Issue, IssueStatusCategory, Project } from "@multica/core/types";
-import { useViewStore } from "@multica/core/issues/stores/view-store-context";
+import { Button } from "@cordy/ui/components/ui/button";
+import type { Issue, IssueStatusCategory, Project } from "@cordy/core/types";
+import { useViewStore } from "@cordy/core/issues/stores/view-store-context";
 import { StatusHeading } from "./status-heading";
 import { ListRow, DraggableListRow, type ChildProgress } from "./list-row";
 import { useDragSettle } from "./use-drag-settle";

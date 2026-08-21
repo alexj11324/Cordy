@@ -4,8 +4,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Agent, AgentRuntime } from "@multica/core/types";
-import { I18nProvider } from "@multica/core/i18n/react";
+import type { Agent, AgentRuntime } from "@cordy/core/types";
+import { I18nProvider } from "@cordy/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 
@@ -34,11 +34,11 @@ const { ApiError } = vi.hoisted(() => {
   return { ApiError };
 });
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@cordy/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@cordy/core/api", () => ({
   api: {
     listSkills: (...args: unknown[]) => mockListSkills(...args),
     getSkill: (...args: unknown[]) => mockGetSkill(...args),
@@ -51,10 +51,10 @@ vi.mock("@multica/core/api", () => ({
   ApiError,
 }));
 
-vi.mock("@multica/core/runtimes", async () => {
+vi.mock("@cordy/core/runtimes", async () => {
   const actual =
-    await vi.importActual<typeof import("@multica/core/runtimes")>(
-      "@multica/core/runtimes",
+    await vi.importActual<typeof import("@cordy/core/runtimes")>(
+      "@cordy/core/runtimes",
     );
   return {
     ...actual,

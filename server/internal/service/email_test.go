@@ -230,7 +230,7 @@ func TestNewEmailService_FromEmailResolution(t *testing.T) {
 		},
 		{
 			name: "default",
-			want: "noreply@multica.ai",
+			want: "noreply@cordy.ai",
 		},
 	}
 
@@ -320,11 +320,11 @@ func TestBuildInvitationParams_EscapesHTMLInBody(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := buildInvitationParams(
-				"noreply@multica.ai",
+				"noreply@cordy.ai",
 				"invitee@example.com",
 				tt.inviter,
 				tt.workspace,
-				"https://multica.ai/invite/abc-123",
+				"https://cordy.ai/invite/abc-123",
 			)
 			for _, needle := range tt.wantInBody {
 				if !strings.Contains(p.Html, needle) {
@@ -342,16 +342,16 @@ func TestBuildInvitationParams_EscapesHTMLInBody(t *testing.T) {
 
 func TestBuildInvitationParams_SubjectStripsControls(t *testing.T) {
 	p := buildInvitationParams(
-		"noreply@multica.ai",
+		"noreply@cordy.ai",
 		"invitee@example.com",
 		"Alice\r\n",
 		"Acme\t",
-		"https://multica.ai/invite/abc",
+		"https://cordy.ai/invite/abc",
 	)
 	if strings.ContainsAny(p.Subject, "\r\n\t") {
 		t.Errorf("subject still contains control characters: %q", p.Subject)
 	}
-	if p.Subject != "Alice invited you to Acme on Multica" {
+	if p.Subject != "Alice invited you to Acme on Cordy" {
 		t.Errorf("unexpected subject: %q", p.Subject)
 	}
 }
@@ -359,11 +359,11 @@ func TestBuildInvitationParams_SubjectStripsControls(t *testing.T) {
 func TestBuildInvitationParams_SubjectNotHTMLEscaped(t *testing.T) {
 	// Subject is not HTML-rendered; entities would render literally in inboxes.
 	p := buildInvitationParams(
-		"noreply@multica.ai",
+		"noreply@cordy.ai",
 		"invitee@example.com",
 		"Alice",
 		"Acme & Co.",
-		"https://multica.ai/invite/abc",
+		"https://cordy.ai/invite/abc",
 	)
 	if strings.Contains(p.Subject, "&amp;") {
 		t.Errorf("subject should not be HTML-escaped, got %q", p.Subject)
@@ -376,15 +376,15 @@ func TestBuildInvitationParams_SubjectNotHTMLEscaped(t *testing.T) {
 func TestBuildInvitationParams_SubjectTruncated(t *testing.T) {
 	longWorkspace := strings.Repeat("A", 200)
 	p := buildInvitationParams(
-		"noreply@multica.ai",
+		"noreply@cordy.ai",
 		"invitee@example.com",
 		"Alice",
 		longWorkspace,
-		"https://multica.ai/invite/abc",
+		"https://cordy.ai/invite/abc",
 	)
-	// Template: "Alice invited you to <ws> on Multica"
+	// Template: "Alice invited you to <ws> on Cordy"
 	// ws is capped at maxSubjectFieldRunes; overall subject should also be bounded.
-	maxExpected := len("Alice invited you to  on Multica") + maxSubjectFieldRunes
+	maxExpected := len("Alice invited you to  on Cordy") + maxSubjectFieldRunes
 	if runes := len([]rune(p.Subject)); runes > maxExpected {
 		t.Errorf("subject not bounded: %d runes, max %d: %q", runes, maxExpected, p.Subject)
 	}
@@ -395,19 +395,19 @@ func TestBuildInvitationParams_SubjectTruncated(t *testing.T) {
 
 func TestBuildInvitationParams_ToAndFromPassedThrough(t *testing.T) {
 	p := buildInvitationParams(
-		"noreply@multica.ai",
+		"noreply@cordy.ai",
 		"invitee@example.com",
 		"Alice",
 		"Acme",
-		"https://multica.ai/invite/abc",
+		"https://cordy.ai/invite/abc",
 	)
-	if p.From != "noreply@multica.ai" {
+	if p.From != "noreply@cordy.ai" {
 		t.Errorf("From = %q", p.From)
 	}
 	if len(p.To) != 1 || p.To[0] != "invitee@example.com" {
 		t.Errorf("To = %v", p.To)
 	}
-	if !strings.Contains(p.Html, "https://multica.ai/invite/abc") {
+	if !strings.Contains(p.Html, "https://cordy.ai/invite/abc") {
 		t.Errorf("body missing invite URL: %s", p.Html)
 	}
 }

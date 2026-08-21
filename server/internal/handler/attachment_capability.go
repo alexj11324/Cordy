@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/auth"
+	"github.com/cordy-ai/cordy/server/internal/auth"
 )
 
 // Attachment download capabilities — MUL-5292.

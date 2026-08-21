@@ -12,19 +12,19 @@ import {
   EMPTY_AGENT_DRAFT,
   isDraftDescriptionWithinLimit,
   type AgentDraft,
-} from "@multica/core/agents";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { isRuntimeUsableForUser, runtimeListOptions } from "@multica/core/runtimes";
+} from "@cordy/core/agents";
+import { useAuthStore } from "@cordy/core/auth";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { isRuntimeUsableForUser, runtimeListOptions } from "@cordy/core/runtimes";
 import type {
   MemberWithUser,
   RuntimeDevice,
   SkillSummary,
-} from "@multica/core/types";
+} from "@cordy/core/types";
 import {
   memberListOptions,
   skillListOptions,
-} from "@multica/core/workspace/queries";
+} from "@cordy/core/workspace/queries";
 
 interface CreateAgentForm {
   draft: AgentDraft;

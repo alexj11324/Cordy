@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, CardContent } from "@multica/ui/components/ui/card";
-import { Button } from "@multica/ui/components/ui/button";
-import { api } from "@multica/core/api";
-import { useAuthStore } from "@multica/core/auth";
+import { Card, CardContent } from "@cordy/ui/components/ui/card";
+import { Button } from "@cordy/ui/components/ui/button";
+import { api } from "@cordy/core/api";
+import { useAuthStore } from "@cordy/core/auth";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
 
@@ -17,7 +17,7 @@ type RedeemState =
 
 // TelegramBindPage is the destination the bot's "link your account" prompt
 // points at, mirroring SlackBindPage. Auth is required before redeeming: the
-// redeemer's Multica identity comes from the session, never the token.
+// redeemer's Cordy identity comes from the session, never the token.
 export function TelegramBindPage({ token }: { token: string | null }) {
   const { t } = useT("common");
   const user = useAuthStore((s) => s.user);

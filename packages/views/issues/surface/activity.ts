@@ -2,9 +2,9 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { agentTaskSnapshotOptions } from "@multica/core/agents";
-import { useWorkspaceId } from "@multica/core/hooks";
-import type { AgentTask } from "@multica/core/types";
+import { agentTaskSnapshotOptions } from "@cordy/core/agents";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import type { AgentTask } from "@cordy/core/types";
 
 export interface IssueActivityState {
   isWorking: boolean;

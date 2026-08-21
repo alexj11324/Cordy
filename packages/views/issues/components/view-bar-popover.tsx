@@ -25,7 +25,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@multica/ui/components/ui/button";
+import { Button } from "@cordy/ui/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,16 +35,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
+} from "@cordy/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { cn } from "@multica/ui/lib/utils";
-import type { IssueView } from "@multica/core/api/schemas";
+} from "@cordy/ui/components/ui/dropdown-menu";
+import { cn } from "@cordy/ui/lib/utils";
+import type { IssueView } from "@cordy/core/api/schemas";
 import { useT } from "../../i18n";
 
 /** One entry on the bar: a built-in tab or a saved view. */

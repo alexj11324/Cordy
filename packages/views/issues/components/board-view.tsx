@@ -20,13 +20,13 @@ import type {
   IssueStatusCategory,
   Project,
   IssueProperty,
-} from "@multica/core/types";
-import { useViewStore } from "@multica/core/issues/stores/view-store-context";
-import { propertyIdFromViewKey } from "@multica/core/issues/stores/view-store";
-import { propertyListOptions, useSetIssueProperty, useUnsetIssueProperty } from "@multica/core/properties";
-import { useWorkspaceId } from "@multica/core/hooks";
-import type { IssueGrouping } from "@multica/core/issues/stores/view-store";
-import { useActorName } from "@multica/core/workspace/hooks";
+} from "@cordy/core/types";
+import { useViewStore } from "@cordy/core/issues/stores/view-store-context";
+import { propertyIdFromViewKey } from "@cordy/core/issues/stores/view-store";
+import { propertyListOptions, useSetIssueProperty, useUnsetIssueProperty } from "@cordy/core/properties";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import type { IssueGrouping } from "@cordy/core/issues/stores/view-store";
+import { useActorName } from "@cordy/core/workspace/hooks";
 import { BoardColumn, BOARD_CARD_WIDTH, type BoardColumnGroup } from "./board-column";
 import { BoardCardContent } from "./board-card";
 import { HiddenColumnsPanel, HiddenColumnRow } from "./hidden-columns-panel";

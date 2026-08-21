@@ -11,10 +11,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/dingtalk"
-	"github.com/multica-ai/multica/server/internal/middleware"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/cordy-ai/cordy/server/internal/integrations/dingtalk"
+	"github.com/cordy-ai/cordy/server/internal/middleware"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 // DingTalkInstallationResponse is the wire shape for a DingTalk installation
@@ -258,7 +258,7 @@ func (h *Handler) ListDingTalkInstallations(w http.ResponseWriter, r *http.Reque
 		}
 		bindings, err := h.Queries.ListDingTalkUserBindingsForMember(r.Context(), db.ListDingTalkUserBindingsForMemberParams{
 			WorkspaceID:   wsUUID,
-			MulticaUserID: userUUID,
+			CordyUserID: userUUID,
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to list dingtalk user bindings")
@@ -352,7 +352,7 @@ func (h *Handler) RegisterDingTalkBYO(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, dingtalk.ErrRobotOwnedByArchivedAgent):
 			writeError(w, http.StatusConflict, "this DingTalk robot is connected to an archived agent in this workspace — restore that agent, or disconnect its robot, before connecting it here")
 		case errors.Is(err, dingtalk.ErrRobotOwnedByAnotherWorkspace):
-			writeError(w, http.StatusConflict, "this DingTalk robot is already connected to a different Multica workspace — disconnect it there before connecting it here")
+			writeError(w, http.StatusConflict, "this DingTalk robot is already connected to a different Cordy workspace — disconnect it there before connecting it here")
 		case errors.Is(err, dingtalk.ErrCredentialValidation):
 			// The access-token mint rejected the pasted credentials (a user error),
 			// so guide the user to recheck them.
@@ -437,7 +437,7 @@ type RedeemDingTalkBindingTokenResponse struct {
 }
 
 // RedeemDingTalkBindingToken (POST /api/dingtalk/binding/redeem) binds the
-// DingTalk user id carried by the bearer token to the logged-in Multica user.
+// DingTalk user id carried by the bearer token to the logged-in Cordy user.
 // The redeemer's identity comes from the session, while token possession proves
 // control of the link delivered to that DingTalk account. Failure modes map to
 // distinct status codes:
@@ -473,7 +473,7 @@ func (h *Handler) RedeemDingTalkBindingToken(w http.ResponseWriter, r *http.Requ
 		case errors.Is(err, dingtalk.ErrBindingTokenInvalid):
 			writeError(w, http.StatusGone, "binding token invalid or expired")
 		case errors.Is(err, dingtalk.ErrBindingAlreadyAssigned):
-			writeError(w, http.StatusConflict, "this DingTalk account is already bound to a different Multica user")
+			writeError(w, http.StatusConflict, "this DingTalk account is already bound to a different Cordy user")
 		case errors.Is(err, dingtalk.ErrBindingNotWorkspaceMember):
 			writeError(w, http.StatusForbidden, "binding refused (are you a workspace member?)")
 		default:

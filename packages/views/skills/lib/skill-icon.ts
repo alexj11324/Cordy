@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { WORKSPACE_PAGES } from "@multica/core/paths";
+import { WORKSPACE_PAGES } from "@cordy/core/paths";
 import { ROUTE_ICON_COMPONENTS } from "../../layout/route-icon-components";
 
 /**

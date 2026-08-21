@@ -2,7 +2,7 @@ package wecom
 
 // outbound_media_test.go — the last hop for a file an agent produced.
 //
-// `multica attachment upload` already bound the file to the assistant message;
+// `cordy attachment upload` already bound the file to the assistant message;
 // everything downstream of that bind assumed a browser, so a WeCom
 // conversation received the words and nothing else. These drive the whole path
 // through processEvent, because the bug was never in the upload protocol — it
@@ -26,9 +26,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/cordy-ai/cordy/server/internal/events"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 const (
@@ -220,8 +220,8 @@ func TestProcessEvent_SendsTheAnswerAndThenTheFile(t *testing.T) {
 
 // A file is a second way an answer reaches the room, so the origin gate has to
 // refuse it on the same terms it refuses the words. A session that started in
-// WeCom can be continued from the Multica web UI, and that answer's artifacts
-// belong in Multica — pushing them into a group chat puts a file in front of
+// WeCom can be continued from the Cordy web UI, and that answer's artifacts
+// belong in Cordy — pushing them into a group chat puts a file in front of
 // everyone in the room, which is the failure the gate exists to prevent.
 //
 // This is also what keeps the gate ahead of the upload: the upload is a write
@@ -236,7 +236,7 @@ func TestProcessEvent_AWebUIAnswerDeliversNeitherWordsNorFile(t *testing.T) {
 		ContentType: "application/pdf",
 		SizeBytes:   9,
 	})
-	q.channelIngested = askedInTheWebUI() // asked in Multica, not over WeCom
+	q.channelIngested = askedInTheWebUI() // asked in Cordy, not over WeCom
 	o, instID, conn := newOutboundWithMedia(t, q, &fakeObjectStore{key: "obj/abc", data: []byte("SECRETS!!!")})
 	q.sessionBinding.InstallationID = instID
 	q.installation.ID = instID

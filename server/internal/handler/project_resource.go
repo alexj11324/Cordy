@@ -12,9 +12,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	agentpkg "github.com/multica-ai/multica/server/pkg/agent"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	agentpkg "github.com/cordy-ai/cordy/server/pkg/agent"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 // ProjectResourceResponse is the JSON shape returned by the project resource API.
@@ -187,7 +187,7 @@ func (h *Handler) requireWorktreeCapableDaemon(w http.ResponseWriter, r *http.Re
 	// never dispatch correctly is worse than a save-time error.
 	writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 		"error": fmt.Sprintf(
-			"local_directory: %q is set to parallel (worktree) mode, but the Multica runtime on that machine does not support it. Update the Multica app on that machine to the latest version, or keep the resource on in_place.",
+			"local_directory: %q is set to parallel (worktree) mode, but the Cordy runtime on that machine does not support it. Update the Cordy app on that machine to the latest version, or keep the resource on in_place.",
 			ref.LocalPath),
 		"code":            "daemon_version_unsupported",
 		"current_version": latestDaemonCLIVersion(runtimes, ref.DaemonID),

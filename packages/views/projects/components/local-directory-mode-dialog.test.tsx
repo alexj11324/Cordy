@@ -2,8 +2,8 @@
 
 import { describe, it, expect, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { I18nProvider } from "@multica/core/i18n/react";
-import type { LocalDirectoryExecutionMode } from "@multica/core/types";
+import { I18nProvider } from "@cordy/core/i18n/react";
+import type { LocalDirectoryExecutionMode } from "@cordy/core/types";
 import enProjects from "../../locales/en/projects.json";
 import enCommon from "../../locales/en/common.json";
 import { LocalDirectoryModeDialog } from "./local-directory-mode-dialog";
@@ -97,7 +97,7 @@ describe("LocalDirectoryModeDialog", () => {
 
     const option = worktreeOption();
     expect(option.hasAttribute("disabled")).toBe(true);
-    const notice = screen.getByText(/Multica server is too old/i);
+    const notice = screen.getByText(/Cordy server is too old/i);
     expect(notice.textContent).toMatch(/Update the server/i);
 
     fireEvent.click(option);
@@ -112,7 +112,7 @@ describe("LocalDirectoryModeDialog", () => {
   it("shows a server rejection inline so the dialog stays actionable", () => {
     renderDialog({
       errorMessage:
-        "the Multica runtime on that machine does not support it. Update the Multica app on that machine",
+        "the Cordy runtime on that machine does not support it. Update the Cordy app on that machine",
     });
     expect(screen.getByText(/does not support it/i)).toBeTruthy();
   });

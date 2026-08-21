@@ -8,8 +8,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/realtime"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/realtime"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // fakeScopeQuerier implements scopeAuthQuerier with in-memory maps.

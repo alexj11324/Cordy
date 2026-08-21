@@ -15,8 +15,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/util"
 )
 
 // Installation is the channel-agnostic view of one channel_installation

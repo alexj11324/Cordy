@@ -6,7 +6,7 @@
  * unrecognized — is what decides how it should look (icon + title). This module
  * turns a URL into that semantic {@link TabSubject}. It is pure: no React, no
  * Lucide, no query — only URL parsing. The visual/title mapping lives in
- * `tab-presentation.ts`; the React glue lives in `@multica/views`.
+ * `tab-presentation.ts`; the React glue lives in `@cordy/views`.
  *
  * Workspace URLs are `/{slug}/{segment}/...`. The slug is index 0, the route
  * segment index 1, and any resource id index 2. Container selection (Inbox,

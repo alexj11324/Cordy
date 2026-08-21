@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/cordy-ai/cordy/server/internal/util"
 )
 
 // createPermissionTestMember inserts a fresh workspace member and returns its
@@ -155,8 +155,8 @@ func TestCanInvokeAgent_PublicToMemberWhitelist(t *testing.T) {
 	}
 	runtimeID := handlerTestRuntimeID(t)
 
-	allowedMember := createPermissionTestMember(t, "perm-allowed-member@multica.test")
-	otherMember := createPermissionTestMember(t, "perm-other-member@multica.test")
+	allowedMember := createPermissionTestMember(t, "perm-allowed-member@cordy.test")
+	otherMember := createPermissionTestMember(t, "perm-other-member@cordy.test")
 
 	// Owner (testUserID) creates an agent public_to the allowed member only.
 	w := httptest.NewRecorder()
@@ -262,8 +262,8 @@ func TestCanInvokeAgent_MixedMemberAndTeamTargets(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
-	memberA := createPermissionTestMember(t, "perm-mix-a@multica.test")
-	memberB := createPermissionTestMember(t, "perm-mix-b@multica.test")
+	memberA := createPermissionTestMember(t, "perm-mix-a@cordy.test")
+	memberB := createPermissionTestMember(t, "perm-mix-b@cordy.test")
 	teamID := "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee" // no team table FK in v1
 
 	agentID := createPublicToAgentWithTargets(t, "mixed-member-team-agent", []map[string]any{
@@ -289,9 +289,9 @@ func TestUpdateAgent_BatchReplaceOverlappingMembers(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
-	memberA := createPermissionTestMember(t, "perm-batch-a@multica.test")
-	memberB := createPermissionTestMember(t, "perm-batch-b@multica.test")
-	memberC := createPermissionTestMember(t, "perm-batch-c@multica.test")
+	memberA := createPermissionTestMember(t, "perm-batch-a@cordy.test")
+	memberB := createPermissionTestMember(t, "perm-batch-b@cordy.test")
+	memberC := createPermissionTestMember(t, "perm-batch-c@cordy.test")
 
 	agentID := createPublicToAgentWithTargets(t, "batch-replace-agent", []map[string]any{
 		{"target_type": "member", "target_id": memberA},
@@ -340,8 +340,8 @@ func TestUpdateAgent_WorkspaceStacksWithMembersThenNarrowed(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
-	memberA := createPermissionTestMember(t, "perm-stack-a@multica.test")
-	memberB := createPermissionTestMember(t, "perm-stack-b@multica.test")
+	memberA := createPermissionTestMember(t, "perm-stack-a@cordy.test")
+	memberB := createPermissionTestMember(t, "perm-stack-b@cordy.test")
 
 	agentID := createPublicToAgentWithTargets(t, "workspace-plus-member-agent", []map[string]any{
 		{"target_type": "workspace"},
@@ -354,7 +354,7 @@ func TestUpdateAgent_WorkspaceStacksWithMembersThenNarrowed(t *testing.T) {
 	}
 
 	// Narrow to member C only — workspace grant is dropped by the replace.
-	memberC := createPermissionTestMember(t, "perm-stack-c@multica.test")
+	memberC := createPermissionTestMember(t, "perm-stack-c@cordy.test")
 	w := httptest.NewRecorder()
 	r := newRequest("PUT", "/api/agents/"+agentID, map[string]any{
 		"permission_mode": "public_to",
@@ -416,7 +416,7 @@ func TestCreateAgent_EmptyPublicToNormalizesToWorkspace(t *testing.T) {
 		t.Errorf("empty public_to must normalise to a workspace target, got %+v", resp.InvocationTargets)
 	}
 	// And any workspace member can then invoke it.
-	someMember := createPermissionTestMember(t, "perm-emptypublic-m@multica.test")
+	someMember := createPermissionTestMember(t, "perm-emptypublic-m@cordy.test")
 	if !canMemberInvoke(t, resp.ID, someMember) {
 		t.Errorf("a workspace member should be able to invoke the normalised public_to-workspace agent")
 	}
@@ -449,7 +449,7 @@ func TestCanInvokeAgent_SystemWorkspaceExceptionAndMemberFailClosed(t *testing.T
 
 	// public_to member-only agent → system / unattributed agent trigger must
 	// fail closed (member target requires a resolved human originator).
-	memberX := createPermissionTestMember(t, "perm-sys-failclosed@multica.test")
+	memberX := createPermissionTestMember(t, "perm-sys-failclosed@cordy.test")
 	memAgentID := createPublicToAgentWithTargets(t, "sys-exception-member-agent", []map[string]any{
 		{"target_type": "member", "target_id": memberX},
 	})
@@ -478,7 +478,7 @@ func TestRevokeMember_ClearsInvocationTargets(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	memberX := createPermissionTestMember(t, "perm-revoke-x@multica.test")
+	memberX := createPermissionTestMember(t, "perm-revoke-x@cordy.test")
 	agentID := createPublicToAgentWithTargets(t, "revoke-member-target-agent", []map[string]any{
 		{"target_type": "member", "target_id": memberX},
 	})
@@ -534,7 +534,7 @@ func TestRevokeMember_InvocationTargetCleanupIsWorkspaceScoped(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	userX := createPermissionTestMember(t, "perm-xws@multica.test")
+	userX := createPermissionTestMember(t, "perm-xws@cordy.test")
 
 	// Workspace A (the shared test workspace): an agent allow-lists userX.
 	agentA := createPublicToAgentWithTargets(t, "xws-agent-a", []map[string]any{
@@ -644,7 +644,7 @@ func TestUpdateAgent_AccessChangeIsOwnerOnly(t *testing.T) {
 
 	// Agent owned by testUserID, public_to workspace (createHandlerTestAgent).
 	agentID := createHandlerTestAgent(t, "owner-only-access-agent", nil)
-	adminID := createPermissionTestAdmin(t, "perm-access-admin@multica.test")
+	adminID := createPermissionTestAdmin(t, "perm-access-admin@cordy.test")
 
 	put := func(actorID string, body map[string]any) int {
 		rec := httptest.NewRecorder()
@@ -701,11 +701,11 @@ func TestUpdateAgent_LegacyVisibilityNoOpForMemberOnlyPublicTo(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	memberX := createPermissionTestMember(t, "perm-legacyvis-x@multica.test")
+	memberX := createPermissionTestMember(t, "perm-legacyvis-x@cordy.test")
 	agentID := createPublicToAgentWithTargets(t, "legacy-vis-member-only-agent", []map[string]any{
 		{"target_type": "member", "target_id": memberX},
 	})
-	adminID := createPermissionTestAdmin(t, "perm-legacyvis-admin@multica.test")
+	adminID := createPermissionTestAdmin(t, "perm-legacyvis-admin@cordy.test")
 
 	put := func(actorID string, body map[string]any) int {
 		rec := httptest.NewRecorder()

@@ -1,11 +1,11 @@
-// Hello Panel — the reference Multica surface.
+// Hello Panel — the reference Cordy surface.
 //
 // Plain ES module, no build step: the point is to show the contract, not a
 // toolchain. It runs in a sandboxed iframe with an opaque origin, so there is
 // no cookie, no localStorage and no access to the page around it. Everything it
 // does goes through the host bridge.
 //
-// In a real plugin you would `import { multica } from "@multica/plugin-sdk"`.
+// In a real plugin you would `import { cordy } from "@cordy/plugin-sdk"`.
 // This file inlines a minimal client so it can be served as a single static
 // file with nothing to install.
 
@@ -15,7 +15,7 @@ let sequence = 0;
 
 window.addEventListener("message", (event) => {
   const data = event.data;
-  if (!data || data.type !== "multica:plugin-bridge-init" || !event.ports[0]) return;
+  if (!data || data.type !== "cordy:plugin-bridge-init" || !event.ports[0]) return;
   // Only the embedder may hand this frame a port, and only once. Sibling frames
   // are mutually opaque but `parent.frames[i]` is an allowed cross-origin
   // access, so another plugin on this page could otherwise deliver its own port
@@ -45,7 +45,7 @@ window.addEventListener("message", (event) => {
 // ready first — the one ordering neither side controls.
 (function announce(attempts) {
   if (port || attempts > 50) return;
-  window.parent.postMessage({ type: "multica:plugin-surface-ready" }, "*");
+  window.parent.postMessage({ type: "cordy:plugin-surface-ready" }, "*");
   setTimeout(() => announce(attempts + 1), 120);
 })(0);
 

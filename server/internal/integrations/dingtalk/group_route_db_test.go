@@ -8,9 +8,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel/engine"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 func TestDingTalkGroupRoute_DiscoverReassignAndFenceStaleSessionDB(t *testing.T) {
@@ -57,9 +57,9 @@ func TestDingTalkGroupRoute_DiscoverReassignAndFenceStaleSessionDB(t *testing.T)
 			t.Fatalf("seed group route fixture: %v", err)
 		}
 	}
-	exec(`INSERT INTO "user" (id, name, email) VALUES ($1, 'DingTalk route owner', 'dingtalk-route-owner@multica.test')`, installerID)
+	exec(`INSERT INTO "user" (id, name, email) VALUES ($1, 'DingTalk route owner', 'dingtalk-route-owner@cordy.test')`, installerID)
 	exec(`INSERT INTO workspace (id, name, slug, description) VALUES ($1, 'DingTalk routes', 'dingtalk-routes-db', '')`, workspaceID)
-	exec(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider) VALUES ($1, $2, 'DingTalk route runtime', 'local', 'multica_daemon')`, runtimeID, workspaceID)
+	exec(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider) VALUES ($1, $2, 'DingTalk route runtime', 'local', 'cordy_daemon')`, runtimeID, workspaceID)
 	for _, agent := range []string{defaultAgent, routedAgent} {
 		exec(`INSERT INTO agent (id, workspace_id, name, runtime_mode, runtime_id) VALUES ($1, $2, $3, 'local', $4)`, agent, workspaceID, "DingTalk route "+agent, runtimeID)
 	}

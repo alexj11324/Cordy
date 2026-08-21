@@ -9,8 +9,8 @@ import type {
   Issue,
   SearchIssueResult,
   SearchProjectResult,
-} from "@multica/core/types";
-import { partitionAggregatedSearchResults } from "@multica/core/search/cancelled-rank";
+} from "@cordy/core/types";
+import { partitionAggregatedSearchResults } from "@cordy/core/search/cancelled-rank";
 
 export type RowItem =
   | { kind: "header"; key: string; title: string }

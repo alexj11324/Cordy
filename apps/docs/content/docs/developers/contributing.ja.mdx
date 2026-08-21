@@ -1,11 +1,11 @@
 ---
 title: 開発に参加する
-description: Multica のローカル開発環境を構築し、テストを実行して、リポジトリの規約に従って変更を提出します。
+description: Cordy のローカル開発環境を構築し、テストを実行して、リポジトリの規約に従って変更を提出します。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Multica は Go バックエンドと pnpm monorepo で構成されています。ローカルで起動する最も簡単な方法は `make dev` です。現在の checkout 用に環境、データベース、migration を準備し、Web と API を起動します。
+Cordy は Go バックエンドと pnpm monorepo で構成されています。ローカルで起動する最も簡単な方法は `make dev` です。現在の checkout 用に環境、データベース、migration を準備し、Web と API を起動します。
 
 ## 必要な環境
 
@@ -20,8 +20,8 @@ Multica は Go バックエンドと pnpm monorepo で構成されています�
 ## 初回起動
 
 ```bash
-git clone https://github.com/multica-ai/multica.git
-cd multica
+git clone https://github.com/cordy-ai/cordy.git
+cd cordy
 make dev
 ```
 
@@ -41,8 +41,8 @@ API: http://localhost:8080
 このリポジトリでは、メイン checkout と複数の worktree を同時に実行できます。1 つの PostgreSQL コンテナを共有しますが、データベースとポートは分かれています。
 
 ```bash
-git worktree add ../multica-feature -b feat/my-change main
-cd ../multica-feature
+git worktree add ../cordy-feature -b feat/my-change main
+cd ../cordy-feature
 make setup-worktree
 make start-worktree
 ```
@@ -148,7 +148,7 @@ Migration は `server/migrations/`、クエリは `server/pkg/db/queries/` に�
 まず変更に最も近いチェックを実行し、その後に範囲を広げます。Docs だけの変更例:
 
 ```bash
-pnpm --filter @multica/docs typecheck
+pnpm --filter @cordy/docs typecheck
 ```
 
 共有フロントエンドの変更:

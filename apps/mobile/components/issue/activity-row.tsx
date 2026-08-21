@@ -21,7 +21,7 @@
  */
 import { View } from "react-native";
 import Svg, { Line, Rect } from "react-native-svg";
-import type { IssuePriority, TimelineEntry } from "@multica/core/types";
+import type { IssuePriority, TimelineEntry } from "@cordy/core/types";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { PriorityIcon } from "@/components/ui/priority-icon";

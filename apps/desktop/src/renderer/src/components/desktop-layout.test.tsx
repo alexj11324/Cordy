@@ -2,9 +2,9 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@multica/core/i18n/react";
-import { useSidebar } from "@multica/ui/components/ui/sidebar";
-import { RESOURCES } from "@multica/views/locales";
+import { I18nProvider } from "@cordy/core/i18n/react";
+import { useSidebar } from "@cordy/ui/components/ui/sidebar";
+import { RESOURCES } from "@cordy/views/locales";
 
 // The shell resolves the mocked `getCurrentSlug()` against the workspace list
 // before mounting workspace-scoped chrome, so the list has to contain it or
@@ -33,7 +33,7 @@ vi.mock("@/platform/navigation", () => ({
   routeContentLinkPath: vi.fn(),
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@cordy/core/paths", () => ({
   WorkspaceSlugProvider: ({ children }: { children: ReactNode }) => (
     <>{children}</>
   ),
@@ -41,38 +41,38 @@ vi.mock("@multica/core/paths", () => ({
   useCurrentWorkspace: () => null,
 }));
 
-vi.mock("@multica/core/platform", () => ({
+vi.mock("@cordy/core/platform", () => ({
   getCurrentSlug: () => "acme",
   subscribeToCurrentSlug: () => () => {},
 }));
 
-vi.mock("@multica/core/workspace", () => ({
+vi.mock("@cordy/core/workspace", () => ({
   workspaceListOptions: () => ({
     queryKey: ["workspace-list"],
     queryFn: async () => WORKSPACES,
   }),
 }));
 
-vi.mock("@multica/views/navigation", () => ({
+vi.mock("@cordy/views/navigation", () => ({
   useNavigation: () => ({ push: vi.fn() }),
 }));
 
-vi.mock("@multica/views/platform", () => ({
+vi.mock("@cordy/views/platform", () => ({
   useDesktopUnreadBadge: () => {},
 }));
 
-vi.mock("@multica/views/layout", () => ({
+vi.mock("@cordy/views/layout", () => ({
   AppSidebar: () => null,
   GlobalShortcuts: () => null,
   NavigationProgress: () => null,
 }));
 
-vi.mock("@multica/views/modals/registry", () => ({ ModalRegistry: () => null }));
-vi.mock("@multica/views/search", () => ({
+vi.mock("@cordy/views/modals/registry", () => ({ ModalRegistry: () => null }));
+vi.mock("@cordy/views/search", () => ({
   SearchCommand: () => null,
   SearchTrigger: () => null,
 }));
-vi.mock("@multica/views/chat", () => ({ FloatingChat: () => null }));
+vi.mock("@cordy/views/chat", () => ({ FloatingChat: () => null }));
 vi.mock("./tab-bar", () => ({ TabBar: () => null }));
 vi.mock("./window-overlay", () => ({ WindowOverlay: () => null }));
 

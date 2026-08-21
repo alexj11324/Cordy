@@ -1,7 +1,7 @@
 "use client";
 
 import { use } from "react";
-import { SkillDetailPage } from "@multica/views/skills";
+import { SkillDetailPage } from "@cordy/views/skills";
 
 export default function SkillDetailRoute({
   params,

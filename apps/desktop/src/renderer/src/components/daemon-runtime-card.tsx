@@ -10,10 +10,10 @@ import {
   Info,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { runtimeListOptions } from "@multica/core/runtimes";
-import { agentTaskSnapshotOptions } from "@multica/core/agents";
-import { Button } from "@multica/ui/components/ui/button";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { runtimeListOptions } from "@cordy/core/runtimes";
+import { agentTaskSnapshotOptions } from "@cordy/core/agents";
+import { Button } from "@cordy/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@cordy/ui/components/ui/dialog";
 import { toast } from "sonner";
 import { DaemonPanel } from "./daemon-panel";
 import { reauthenticateDaemon } from "../platform/daemon-reauth";

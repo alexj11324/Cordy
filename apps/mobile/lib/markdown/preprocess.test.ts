@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { preprocessMobileMarkdown } from "./preprocess";
 
 const UUID = "019f49e2-5b07-7970-beef-c0d537fb8c1d";
-const ABS_URL = `https://multica-app.copilothub.ai/api/attachments/${UUID}/download`;
+const ABS_URL = `https://cordy-app.copilothub.ai/api/attachments/${UUID}/download`;
 const REL_URL = `/api/attachments/${UUID}/download`;
 
 describe("preprocessMobileMarkdown — !file file cards", () => {
   it("keeps channel images visible while hiding their provenance marker", () => {
     const image = `![](${REL_URL})`;
-    const marker = `<!-- multica:channel-media:${UUID} -->`;
+    const marker = `<!-- cordy:channel-media:${UUID} -->`;
 
     expect(preprocessMobileMarkdown(`${image}\n\n${marker}`)).toBe(`${image}\n\n`);
   });

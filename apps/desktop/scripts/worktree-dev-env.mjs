@@ -2,7 +2,7 @@
 //
 // Two `pnpm dev:desktop` instances from two different git worktrees collide on
 // the renderer Vite port (5173) and the single-instance lock / userData dir
-// (keyed by the app name "Multica Canary"). The env hooks to override both
+// (keyed by the app name "Cordy Canary"). The env hooks to override both
 // already exist — electron.vite.config.ts reads DESKTOP_RENDERER_PORT and
 // src/main/index.ts reads DESKTOP_APP_SUFFIX — but nothing derives unique
 // values per worktree. This module does, mirroring the offset scheme that
@@ -18,7 +18,7 @@ import { basename, join } from "node:path";
 
 // Worktree renderer ports start at 5174 so they never reuse 5173 — the primary
 // checkout's default — even when a worktree's offset is 0 (e.g. POSIX cksum of
-// "/tmp/multica-3494" is 1189739000, and 1189739000 % 1000 === 0). Range 5174–6173.
+// "/tmp/cordy-3494" is 1189739000, and 1189739000 % 1000 === 0). Range 5174–6173.
 const RENDERER_PORT_BASE = 5174;
 const OFFSET_MODULO = 1000;
 
@@ -79,10 +79,10 @@ export function rendererPortForPath(path) {
 }
 
 // Worktree → a readable, unique, filesystem-safe suffix "<folder>-<offset>".
-// The dev app then shows e.g. "Multica Canary mul-3724-194" in Cmd+Tab and gets
+// The dev app then shows e.g. "Cordy Canary mul-3724-194" in Cmd+Tab and gets
 // its own userData / single-instance lock under that name. The offset is what
 // makes the lock unique: the folder name alone collides for worktrees that share
-// a basename at different paths (e.g. /a/multica vs /b/multica) or whose names
+// a basename at different paths (e.g. /a/cordy vs /b/cordy) or whose names
 // slug to the same fallback — those would share one lock and the second Electron
 // would still be blocked.
 export function appSuffixForPath(path) {
@@ -96,7 +96,7 @@ export function appSuffixForPath(path) {
 
 // A linked git worktree has a `.git` FILE (a "gitdir:" pointer); the primary
 // checkout has a `.git` DIRECTORY. We only auto-isolate linked worktrees, so
-// the primary checkout keeps the unchanged 5173 / "Multica Canary" defaults.
+// the primary checkout keeps the unchanged 5173 / "Cordy Canary" defaults.
 export function isLinkedWorktree(root) {
   try {
     return statSync(join(root, ".git")).isFile();
@@ -124,7 +124,7 @@ export function applyWorktreeDevEnv(env, { root, log = false } = {}) {
   if (log) {
     console.log(
       `[dev:desktop] worktree isolation → renderer port ${env.DESKTOP_RENDERER_PORT}, ` +
-        `app "Multica Canary ${env.DESKTOP_APP_SUFFIX}"`,
+        `app "Cordy Canary ${env.DESKTOP_APP_SUFFIX}"`,
     );
   }
   return env;

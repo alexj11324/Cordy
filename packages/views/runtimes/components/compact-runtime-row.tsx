@@ -1,6 +1,6 @@
-import { cn } from "@multica/ui/lib/utils";
-import type { AgentRuntime } from "@multica/core/types";
-import { runtimeDisplayName } from "@multica/core/runtimes";
+import { cn } from "@cordy/ui/lib/utils";
+import type { AgentRuntime } from "@cordy/core/types";
+import { runtimeDisplayName } from "@cordy/core/runtimes";
 import { ProviderLogo } from "./provider-logo";
 import { useT } from "../../i18n";
 

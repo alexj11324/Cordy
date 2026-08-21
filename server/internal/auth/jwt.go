@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-const defaultJWTSecret = "multica-dev-secret-change-in-production"
+const defaultJWTSecret = "cordy-dev-secret-change-in-production"
 
 var (
 	jwtSecret     []byte

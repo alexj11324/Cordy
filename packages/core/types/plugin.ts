@@ -1,6 +1,6 @@
 /**
- * A plugin relates to Multica in exactly three ways: Action (plugin calls
- * Multica), Hook (Multica calls plugin), and Resource (a static contribution
+ * A plugin relates to Cordy in exactly three ways: Action (plugin calls
+ * Cordy), Hook (Cordy calls plugin), and Resource (a static contribution
  * with no call at all). These types mirror the manifest contract the server
  * parses; the client never re-derives them from anything else.
  */

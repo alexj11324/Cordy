@@ -1,4 +1,4 @@
-import type { AgentRuntime, RuntimeProfile } from "@multica/core/types";
+import type { AgentRuntime, RuntimeProfile } from "@cordy/core/types";
 
 export const PENDING_RUNTIME_WARNING_MS = 45_000;
 

@@ -15,7 +15,7 @@ func testPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+		dbURL = "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable"
 	}
 	pool, err := pgxpool.New(context.Background(), dbURL)
 	if err != nil {

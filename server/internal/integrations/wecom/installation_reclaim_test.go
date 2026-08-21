@@ -16,9 +16,9 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/multica-ai/multica/server/internal/util"
-	"github.com/multica-ai/multica/server/internal/util/secretbox"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	"github.com/cordy-ai/cordy/server/internal/util/secretbox"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 const (
@@ -39,7 +39,7 @@ func reclaimTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+		dsn = "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable"
 	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dsn)
@@ -87,7 +87,7 @@ func seedReclaimOwners(t *testing.T, ctx context.Context, pool *pgxpool.Pool) {
 	}
 	exec(`INSERT INTO workspace (id, name, slug, description) VALUES ($1, 'wecom reclaim', 'wecom-reclaim', '') ON CONFLICT (id) DO NOTHING`, wcRclWS)
 	exec(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider)
-VALUES ($1, $2, 'wecom reclaim runtime', 'local', 'multica_daemon') ON CONFLICT (id) DO NOTHING`, wcRclRuntime, wcRclWS)
+VALUES ($1, $2, 'wecom reclaim runtime', 'local', 'cordy_daemon') ON CONFLICT (id) DO NOTHING`, wcRclRuntime, wcRclWS)
 	for _, a := range []string{wcRclAgentA, wcRclAgentB} {
 		exec(`INSERT INTO agent (id, workspace_id, name, runtime_mode, runtime_id)
 VALUES ($1, $2, $3, 'local', $4) ON CONFLICT (id) DO NOTHING`, a, wcRclWS, "wecom reclaim "+a, wcRclRuntime)

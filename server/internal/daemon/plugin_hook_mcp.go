@@ -20,7 +20,7 @@ import (
 // is. This synthesises the protocol from the manifest — the hook description
 // becomes the tool description, the hook's input_schema becomes the tool's.
 //
-// A tool call does NOT go to the plugin from here. It goes back to Multica,
+// A tool call does NOT go to the plugin from here. It goes back to Cordy,
 // which makes the signed request. The daemon runs on someone's laptop; putting
 // the signing secret there would mean every machine running an agent holds a
 // credential that can impersonate the server to every plugin backend. Routing
@@ -33,7 +33,7 @@ const (
 	pluginHookMCPCallTimeout     = 60 * time.Second
 )
 
-// pluginHookInvoker performs one hook call against the Multica server.
+// pluginHookInvoker performs one hook call against the Cordy server.
 type pluginHookInvoker func(ctx context.Context, taskID, installationID, hookKey string, input json.RawMessage) (json.RawMessage, error)
 
 type pluginHookMCPServer struct {
@@ -117,7 +117,7 @@ func startTaskPluginHookMCP(lifetimeCtx context.Context, taskID string, tools []
 	}()
 
 	raw, err := json.Marshal(map[string]any{"mcpServers": map[string]any{
-		"multica-plugins": map[string]any{
+		"cordy-plugins": map[string]any{
 			"type": "http",
 			"url":  "http://" + listener.Addr().String() + handler.path,
 		},
@@ -159,7 +159,7 @@ func (s *pluginHookMCPServer) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		writePluginHookMCPResult(w, request.ID, map[string]any{
 			"protocolVersion": pluginHookMCPProtocolVersion,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "multica-plugins", "version": "1"},
+			"serverInfo":      map[string]any{"name": "cordy-plugins", "version": "1"},
 		})
 	case "notifications/initialized":
 		// A notification has no id and takes no reply.

@@ -2,8 +2,8 @@
 
 import React, { useMemo, useState } from "react";
 import { Plus } from "lucide-react";
-import { Button } from "@multica/ui/components/ui/button";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
+import { Button } from "@cordy/ui/components/ui/button";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@cordy/ui/components/ui/tooltip";
 import { ActorAvatar } from "../../common/actor-avatar";
 import {
   PickerEmpty,
@@ -12,8 +12,8 @@ import {
   PropertyPicker,
 } from "../../issues/components/pickers/property-picker";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
-import type { Agent } from "@multica/core/types";
-import { isAgentRuntimeBound } from "@multica/core/agents";
+import type { Agent } from "@cordy/core/types";
+import { isAgentRuntimeBound } from "@cordy/core/agents";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 

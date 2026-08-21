@@ -12,10 +12,10 @@ import {
   ALL_ACCESS_SCOPES,
   effectiveAccessScope,
   type AgentAvailability,
-} from "@multica/core/agents";
-import type { MemberWithUser } from "@multica/core/types";
-import { runtimeDisplayLabel } from "@multica/core/runtimes";
-import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
+} from "@cordy/core/agents";
+import type { MemberWithUser } from "@cordy/core/types";
+import { runtimeDisplayLabel } from "@cordy/core/runtimes";
+import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
 import {
   AGENT_SCOPES,
   type AgentColumnKey,
@@ -23,9 +23,9 @@ import {
   type AgentsScope,
   type AgentSortDirection,
   type AgentSortField,
-} from "@multica/core/agents/stores";
-import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
+} from "@cordy/core/agents/stores";
+import { Button } from "@cordy/ui/components/ui/button";
+import { Input } from "@cordy/ui/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -36,25 +36,25 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
+} from "@cordy/ui/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@multica/ui/components/ui/popover";
-import { Switch } from "@multica/ui/components/ui/switch";
+} from "@cordy/ui/components/ui/popover";
+import { Switch } from "@cordy/ui/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
-import { ActorAvatar } from "@multica/ui/components/common/actor-avatar";
+} from "@cordy/ui/components/ui/tooltip";
+import { ActorAvatar } from "@cordy/ui/components/common/actor-avatar";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
 import { availabilityConfig } from "../presence";
 import { useT } from "../../i18n";
 import type { AgentListRow } from "./agents-page";
 import { PAGE_GUTTER } from "../../layout/page-header";
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@cordy/ui/lib/utils";
 
 const COLUMN_KEYS: AgentColumnKey[] = [
   "status",

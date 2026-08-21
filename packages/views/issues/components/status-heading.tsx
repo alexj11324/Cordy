@@ -1,5 +1,5 @@
-import { statusCategoryOfKey } from "@multica/core/issues";
-import type { IssueStatus } from "@multica/core/types";
+import { statusCategoryOfKey } from "@cordy/core/issues";
+import type { IssueStatus } from "@cordy/core/types";
 import { StatusIcon } from "./status-icon";
 import { useT } from "../../i18n";
 

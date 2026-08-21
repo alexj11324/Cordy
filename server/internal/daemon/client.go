@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/multica-ai/multica/server/pkg/agent"
-	"github.com/multica-ai/multica/server/pkg/protocol"
-	"github.com/multica-ai/multica/server/pkg/remotemcp"
+	"github.com/cordy-ai/cordy/server/pkg/agent"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
+	"github.com/cordy-ai/cordy/server/pkg/remotemcp"
 )
 
 // requestError is returned by postJSON/getJSON when the server responds with an error status.
@@ -90,7 +90,7 @@ func isRuntimeNotFoundError(err error) bool {
 	return strings.Contains(strings.ToLower(reqErr.Body), "runtime not found")
 }
 
-// Client handles HTTP communication with the Multica server daemon API.
+// Client handles HTTP communication with the Cordy server daemon API.
 type Client struct {
 	baseURL string
 	token   string

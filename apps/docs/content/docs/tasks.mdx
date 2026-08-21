@@ -5,7 +5,7 @@ description: How a single agent run is queued, runs, stops, and retries.
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Every time an agent starts working, Multica creates a **task**. It records what triggered the run, which agent it went to, how far it has progressed, and whether it ultimately succeeded.
+Every time an agent starts working, Cordy creates a **task**. It records what triggered the run, which agent it went to, how far it has progressed, and whether it ultimately succeeded.
 
 ## Issues and tasks
 
@@ -28,7 +28,7 @@ Any of the following can trigger a run:
 - Sending a message to an agent in chat.
 - An Autopilot firing on a schedule or from an external event.
 
-Different entry points provide different context, but execution works the same way: Multica creates a task, a runtime claims it, and the runtime invokes the AI coding tool the agent is configured with.
+Different entry points provide different context, but execution works the same way: Cordy creates a task, a runtime claims it, and the runtime invokes the AI coding tool the agent is configured with.
 
 ## Execution lifecycle
 
@@ -131,7 +131,7 @@ A retry keeps the files the previous run already wrote to the local directory wh
 You can also rerun the current issue from the CLI:
 
 ```bash
-multica issue rerun <issue-id>
+cordy issue rerun <issue-id>
 ```
 
 This form does not point at a specific past task, so it uses the issue's current agent assignee and starts with a fresh session and working directory.

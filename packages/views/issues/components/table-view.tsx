@@ -52,9 +52,9 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { DataTable } from "@multica/ui/components/ui/data-table";
-import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
+import { DataTable } from "@cordy/ui/components/ui/data-table";
+import { Button } from "@cordy/ui/components/ui/button";
+import { Input } from "@cordy/ui/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -64,38 +64,38 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
+} from "@cordy/ui/components/ui/dropdown-menu";
 import {
   TableCell,
   TableRow,
-} from "@multica/ui/components/ui/table";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
-import { cn } from "@multica/ui/lib/utils";
-import { ApiError } from "@multica/core/api";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
-import { useModalStore } from "@multica/core/modals";
+} from "@cordy/ui/components/ui/table";
+import { Skeleton } from "@cordy/ui/components/ui/skeleton";
+import { cn } from "@cordy/ui/lib/utils";
+import { ApiError } from "@cordy/core/api";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
+import { useModalStore } from "@cordy/core/modals";
 import {
   issueKeys,
   issueTableGroupsOptions,
   issueTableRowPageOptions,
-} from "@multica/core/issues/queries";
+} from "@cordy/core/issues/queries";
 import {
   TABLE_SYSTEM_COLUMNS,
   propertyIdFromViewKey,
   type SortField,
   type TableColumnKey,
   type TableSystemColumnKey,
-} from "@multica/core/issues/stores/view-store";
-import { useViewStore } from "@multica/core/issues/stores/view-store-context";
-import { propertyListOptions } from "@multica/core/properties";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { buildActorNameResolver, useActorName } from "@multica/core/workspace/hooks";
+} from "@cordy/core/issues/stores/view-store";
+import { useViewStore } from "@cordy/core/issues/stores/view-store-context";
+import { propertyListOptions } from "@cordy/core/properties";
+import { useWorkspacePaths } from "@cordy/core/paths";
+import { buildActorNameResolver, useActorName } from "@cordy/core/workspace/hooks";
 import {
   agentListOptions,
   memberListOptions,
   squadListOptions,
-} from "@multica/core/workspace/queries";
+} from "@cordy/core/workspace/queries";
 import type {
   Issue,
   IssueProperty,
@@ -106,12 +106,12 @@ import type {
   IssueTableRowsResponse,
   Project,
   UpdateIssueRequest,
-} from "@multica/core/types";
+} from "@cordy/core/types";
 import {
   actorRefsFromValue,
   formatActorRef,
   isActorPropertyType,
-} from "@multica/core/types";
+} from "@cordy/core/types";
 import {
   useInfiniteQuery,
   useQueries,

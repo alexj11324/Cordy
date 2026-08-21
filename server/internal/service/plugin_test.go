@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/plugincontract"
 )
 
 const testManifestJSON = `{
@@ -81,7 +81,7 @@ func TestNormalizeConfigValue(t *testing.T) {
 		return got
 	}
 
-	if value, err := normalizeConfigValue(field("repo"), "multica-ai/multica"); err != nil || value != "multica-ai/multica" {
+	if value, err := normalizeConfigValue(field("repo"), "cordy-ai/cordy"); err != nil || value != "cordy-ai/cordy" {
 		t.Fatalf("string field = (%v, %v)", value, err)
 	}
 	if value, err := normalizeConfigValue(field("count"), float64(3)); err != nil || value != float64(3) {
@@ -209,7 +209,7 @@ func TestFetchManifestFromLocalDir(t *testing.T) {
 
 	disabled := &PluginService{}
 	if _, _, err := disabled.FetchManifest(context.Background(), LocalSourcePrefix+"hello"); err == nil {
-		t.Fatal("local sources must require MULTICA_PLUGIN_DIR")
+		t.Fatal("local sources must require CORDY_PLUGIN_DIR")
 	}
 }
 
@@ -217,12 +217,12 @@ func TestFetchManifestRejectsNonPublicSources(t *testing.T) {
 	service := &PluginService{}
 	for _, source := range []string{
 		"",
-		"http://example.com/multica.plugin.json",
-		"https://localhost/multica.plugin.json",
-		"https://127.0.0.1/multica.plugin.json",
+		"http://example.com/cordy.plugin.json",
+		"https://localhost/cordy.plugin.json",
+		"https://127.0.0.1/cordy.plugin.json",
 		"https://169.254.169.254/latest/meta-data",
 		"file:///etc/passwd",
-		"https://user:pass@example.com/multica.plugin.json",
+		"https://user:pass@example.com/cordy.plugin.json",
 	} {
 		if _, _, err := service.FetchManifest(context.Background(), source); err == nil {
 			t.Fatalf("FetchManifest accepted source %q", source)

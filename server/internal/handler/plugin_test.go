@@ -12,10 +12,10 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/middleware"
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/internal/util/secretbox"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	"github.com/cordy-ai/cordy/server/internal/middleware"
+	"github.com/cordy-ai/cordy/server/internal/service"
+	"github.com/cordy-ai/cordy/server/internal/util/secretbox"
+	"github.com/cordy-ai/cordy/server/pkg/plugincontract"
 )
 
 // The reference manifest for handler tests declares only capabilities this
@@ -80,7 +80,7 @@ func writeLocalPluginManifest(t *testing.T, root, manifest string) {
 	}
 }
 
-// withLocalPluginSource points the service at a temp MULTICA_PLUGIN_DIR and
+// withLocalPluginSource points the service at a temp CORDY_PLUGIN_DIR and
 // enables every capability, so these tests exercise the HTTP surface rather
 // than the staged-rollout gate.
 func withLocalPluginSource(t *testing.T, manifest string) string {
@@ -243,7 +243,7 @@ func TestPluginInstallConfigureAndUninstall(t *testing.T) {
 	}
 
 	params := map[string]string{"id": testWorkspaceID, "installationId": installed.ID}
-	configure, _ := json.Marshal(map[string]any{"values": map[string]any{"repo": "multica-ai/multica", "token": "sk-super-secret"}})
+	configure, _ := json.Marshal(map[string]any{"values": map[string]any{"repo": "cordy-ai/cordy", "token": "sk-super-secret"}})
 	recorder = httptest.NewRecorder()
 	testHandler.ConfigurePlugin(recorder, pluginHandlerRequest(http.MethodPut, "/plugins/config", configure, params))
 	if recorder.Code != http.StatusOK {
@@ -261,7 +261,7 @@ func TestPluginInstallConfigureAndUninstall(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &configured); err != nil {
 		t.Fatalf("decode configured installation: %v", err)
 	}
-	if configured.Config["repo"] != "multica-ai/multica" {
+	if configured.Config["repo"] != "cordy-ai/cordy" {
 		t.Fatalf("plain config value was not stored: %v", configured.Config)
 	}
 	if _, present := configured.Config["token"]; present {

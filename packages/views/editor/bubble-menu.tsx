@@ -33,25 +33,25 @@ import type { Editor } from "@tiptap/core";
 import { posToDOMRect } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
 import { toast } from "sonner";
-import { useCreateIssue } from "@multica/core/issues/mutations";
+import { useCreateIssue } from "@cordy/core/issues/mutations";
 import { useT } from "../i18n";
-import { createShortcutChord, type ShortcutChord } from "@multica/core/shortcuts";
+import { createShortcutChord, type ShortcutChord } from "@cordy/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
-import { Toggle } from "@multica/ui/components/ui/toggle";
-import { Separator } from "@multica/ui/components/ui/separator";
+import { Toggle } from "@cordy/ui/components/ui/toggle";
+import { Separator } from "@cordy/ui/components/ui/separator";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
   TooltipProvider,
-} from "@multica/ui/components/ui/tooltip";
+} from "@cordy/ui/components/ui/tooltip";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@multica/ui/components/ui/popover";
-import { Input } from "@multica/ui/components/ui/input";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@cordy/ui/components/ui/popover";
+import { Input } from "@cordy/ui/components/ui/input";
+import { Button } from "@cordy/ui/components/ui/button";
 import {
   Bold,
   Italic,

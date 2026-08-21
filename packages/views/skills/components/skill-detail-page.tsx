@@ -26,28 +26,28 @@ import type {
   Skill,
   SkillFile,
   UpdateSkillRequest,
-} from "@multica/core/types";
+} from "@cordy/core/types";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@multica/core/api";
-import { useAuthStore } from "@multica/core/auth";
+import { api } from "@cordy/core/api";
+import { useAuthStore } from "@cordy/core/auth";
 import { useTimeAgo } from "../../i18n";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { useWorkspacePaths } from "@cordy/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   selectSkillAssignments,
   skillDetailOptions,
   workspaceKeys,
-} from "@multica/core/workspace/queries";
-import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
+} from "@cordy/core/workspace/queries";
+import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
 import {
   runtimeDisplayLabel,
   runtimeListOptions,
-} from "@multica/core/runtimes";
-import { ActorAvatar } from "@multica/ui/components/common/actor-avatar";
-import { Button, buttonVariants } from "@multica/ui/components/ui/button";
+} from "@cordy/core/runtimes";
+import { ActorAvatar } from "@cordy/ui/components/common/actor-avatar";
+import { Button, buttonVariants } from "@cordy/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -55,21 +55,21 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
-import { Input } from "@multica/ui/components/ui/input";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
-import { Textarea } from "@multica/ui/components/ui/textarea";
+} from "@cordy/ui/components/ui/dialog";
+import { Input } from "@cordy/ui/components/ui/input";
+import { Skeleton } from "@cordy/ui/components/ui/skeleton";
+import { Textarea } from "@cordy/ui/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
-import { cn } from "@multica/ui/lib/utils";
+} from "@cordy/ui/components/ui/tooltip";
+import { cn } from "@cordy/ui/lib/utils";
 import { AppLink, useNavigation } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { useCanEditSkill } from "../hooks/use-can-edit-skill";
-import { useSkillPermissions } from "@multica/core/permissions";
-import { CapabilityBanner } from "@multica/ui/components/common/capability-banner";
+import { useSkillPermissions } from "@cordy/core/permissions";
+import { CapabilityBanner } from "@cordy/ui/components/common/capability-banner";
 import {
   isRefreshableOrigin,
   originSourceUrl,

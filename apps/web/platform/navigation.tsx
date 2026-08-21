@@ -5,11 +5,11 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
   NavigationProvider,
   type NavigationAdapter,
-} from "@multica/views/navigation";
+} from "@cordy/views/navigation";
 import { canGoBackInApp } from "./in-app-history";
 
 /**
- * Web half of the `multica:navigate` bridge — the event shared content
+ * Web half of the `cordy:navigate` bridge — the event shared content
  * (comments, chat, issue descriptions) fires when a link resolves to an in-app
  * destination. A plain click ("push") is a router push in place. A modifier
  * click normally never reaches here on web — real anchors leave it to the
@@ -39,8 +39,8 @@ function useInternalLinkHandler(router: ReturnType<typeof useRouter>) {
       }
       router.push(path);
     };
-    window.addEventListener("multica:navigate", handler);
-    return () => window.removeEventListener("multica:navigate", handler);
+    window.addEventListener("cordy:navigate", handler);
+    return () => window.removeEventListener("cordy:navigate", handler);
   }, [router]);
 }
 

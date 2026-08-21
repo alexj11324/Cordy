@@ -3,25 +3,25 @@
 import { useEffect, useState } from "react";
 import { CalendarDays, Check, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
-import type { Issue, IssueProperty, IssuePropertyValue } from "@multica/core/types";
-import { hasUnknownActorRef } from "@multica/core/types";
+import type { Issue, IssueProperty, IssuePropertyValue } from "@cordy/core/types";
+import { hasUnknownActorRef } from "@cordy/core/types";
 import {
   useSetIssueProperty,
   useUnsetIssueProperty,
-} from "@multica/core/properties";
+} from "@cordy/core/properties";
 import {
   toDateOnly,
   dateOnlyToLocalDate,
   formatDateOnly,
-} from "@multica/core/issues/date";
-import { Calendar } from "@multica/ui/components/ui/calendar";
+} from "@cordy/core/issues/date";
+import { Calendar } from "@cordy/ui/components/ui/calendar";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@multica/ui/components/ui/popover";
-import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
+} from "@cordy/ui/components/ui/popover";
+import { Button } from "@cordy/ui/components/ui/button";
+import { Input } from "@cordy/ui/components/ui/input";
 import { useT } from "../../../i18n";
 import { PropertyPicker, PickerItem } from "./property-picker";
 import { ActorPropertyPicker, ActorPropertyDisplay } from "./actor-property-picker";

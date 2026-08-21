@@ -3,28 +3,28 @@
 import { Suspense, lazy, useRef, useState } from "react";
 import { Bot, Camera, ImagePlus, Loader2, Users, X } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@multica/core/api";
-import { useFileUpload } from "@multica/core/hooks/use-file-upload";
-import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
+import { api } from "@cordy/core/api";
+import { useFileUpload } from "@cordy/core/hooks/use-file-upload";
+import { resolvePublicFileUrl } from "@cordy/core/workspace/avatar-url";
 import {
   AVATAR_EMOJI_SUGGESTIONS,
   formatAvatarEmoji,
   parseAvatarEmoji,
-} from "@multica/ui/lib/avatar-emoji";
+} from "@cordy/ui/lib/avatar-emoji";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@multica/ui/components/ui/popover";
-import { Separator } from "@multica/ui/components/ui/separator";
-import { cn } from "@multica/ui/lib/utils";
+} from "@cordy/ui/components/ui/popover";
+import { Separator } from "@cordy/ui/components/ui/separator";
+import { cn } from "@cordy/ui/lib/utils";
 import { useT } from "../i18n";
 import { AvatarCropDialog } from "./avatar-crop-dialog";
 
 // The full emoji-mart picker is ~1MB of emoji data. Only the handful of
 // suggestions render eagerly; the searchable set loads when asked for.
 const EmojiPicker = lazy(() =>
-  import("@multica/ui/components/common/emoji-picker").then((m) => ({
+  import("@cordy/ui/components/common/emoji-picker").then((m) => ({
     default: m.EmojiPicker,
   })),
 );

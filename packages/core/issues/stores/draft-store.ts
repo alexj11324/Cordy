@@ -123,7 +123,7 @@ function isLegacyFlatDraft(d: Record<string, unknown>): boolean {
 // use the pre-MUL-5181 flat shape. Backfill defaults so every read site can
 // rely on the declared IssueCreateDraft shape instead of re-defending, and lift
 // a legacy flat draft into the manual/shared slots (there was no agent prompt
-// in that store — it lived in `multica_quick_create` and is not carried over).
+// in that store — it lived in `cordy_quick_create` and is not carried over).
 function migrateDraft(raw: unknown): IssueCreateDraft {
   const d = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
 
@@ -215,7 +215,7 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
       },
     }),
     {
-      name: "multica_issue_draft",
+      name: "cordy_issue_draft",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       merge: (persistedState, currentState) => {
         const persisted = (persistedState ?? {}) as Partial<IssueDraftStore> & {
@@ -234,7 +234,7 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
 registerForWorkspaceRehydration(() => useIssueDraftStore.persist.rehydrate());
 
 registerDraftCleanup({
-  storageKey: "multica_issue_draft",
+  storageKey: "cordy_issue_draft",
   workspaceScoped: true,
   // Full reset, NOT clearDraft(): clearDraft deliberately keeps the
   // last-assignee preference and re-seeds it into the fresh draft's manual

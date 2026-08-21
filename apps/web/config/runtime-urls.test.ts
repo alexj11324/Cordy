@@ -134,9 +134,9 @@ describe("browser runtime URLs", () => {
   it("keeps a non-/api path prefix so prefix-mounted backends still work", () => {
     expect(
       resolveBrowserApiBaseUrl({
-        NEXT_PUBLIC_API_URL: "https://app.example.com/multica",
+        NEXT_PUBLIC_API_URL: "https://app.example.com/cordy",
       }),
-    ).toBe("https://app.example.com/multica");
+    ).toBe("https://app.example.com/cordy");
   });
 
   it("does not mistake an `api` host for an /api path suffix", () => {
@@ -265,9 +265,9 @@ describe("runtimeRewriteDestination", () => {
   it("maps docs paths to the runtime docs origin", () => {
     expect(
       runtimeRewriteDestination("/docs/zh/agents", {
-        DOCS_URL: "http://multica-docs:3000",
+        DOCS_URL: "http://cordy-docs:3000",
       }),
-    ).toBe("http://multica-docs:3000/docs/zh/agents");
+    ).toBe("http://cordy-docs:3000/docs/zh/agents");
   });
 
   it("maps websocket paths to the runtime API origin", () => {

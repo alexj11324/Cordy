@@ -1,15 +1,15 @@
-# @multica/plugin-sdk
+# @cordy/plugin-sdk
 
-What a Multica plugin surface imports.
+What a Cordy plugin surface imports.
 
 ```js
-import { multica } from "@multica/plugin-sdk";
+import { cordy } from "@cordy/plugin-sdk";
 
-const ctx   = await multica.context.get();
-const issue = await multica.issue.get();
-await multica.issue.comment({ body: "hello" });
-const note  = await multica.storage.user.get("note");
-multica.ui.resize(320);
+const ctx   = await cordy.context.get();
+const issue = await cordy.issue.get();
+await cordy.issue.comment({ body: "hello" });
+const note  = await cordy.storage.user.get("note");
+cordy.ui.resize(320);
 ```
 
 ## What a surface is
@@ -21,7 +21,7 @@ The frame is mounted with `sandbox="allow-scripts"` and **not**
 before you write one:
 
 - **No browser storage.** `localStorage`, `sessionStorage` and cookies all throw
-  or are empty. Use `multica.storage` — it is server-side, scoped per workspace
+  or are empty. Use `cordy.storage` — it is server-side, scoped per workspace
   or per member, and survives the frame.
 - **`Origin: null` on your own requests.** If your surface calls your backend
   directly, that backend must accept a null origin in CORS.
@@ -41,7 +41,7 @@ user's own session. Two limits apply at once:
 
 So a member without access to an issue gets a 404 through your surface too, and
 a scope the admin declined is a 403 that names it. Errors are
-`MulticaPluginError` with a `status` mirroring HTTP.
+`CordyPluginError` with a `status` mirroring HTTP.
 
 A comment you post is authored by **the user**, recorded as having been made
 through your plugin. It does not run `@mention` trigger dispatch — a surface
@@ -54,9 +54,9 @@ the SDK writes them as custom properties on `:root`. Use `var(--foreground)`,
 `var(--background)`, `var(--border)`, `var(--radius)` and friends and your
 surface will look native without shipping a stylesheet.
 
-`multica.ui.onThemeChange(fn)` if you need to react in JS.
+`cordy.ui.onThemeChange(fn)` if you need to react in JS.
 
 ## Sizing
 
-The frame does not auto-size. Call `multica.ui.resize(px)` after your content
+The frame does not auto-size. Call `cordy.ui.resize(px)` after your content
 settles; the host clamps the value.

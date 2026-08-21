@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/cordy-ai/cordy/server/pkg/agent"
 )
 
 // stubAgentProbe replaces CLI discovery for the duration of a test. The returned

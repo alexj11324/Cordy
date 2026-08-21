@@ -1,5 +1,5 @@
 {
-  "extends": "@multica/tsconfig/react-library.json",
+  "extends": "@cordy/tsconfig/react-library.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": ".",
@@ -7,8 +7,8 @@
       "@/lib/utils": ["./lib/utils.ts"],
       "@/hooks/*": ["./hooks/*"],
       "@/components/ui/*": ["./components/ui/*"],
-      "@multica/ui/components": ["./components"],
-      "@multica/ui/lib": ["./lib"]
+      "@cordy/ui/components": ["./components"],
+      "@cordy/ui/lib": ["./lib"]
     }
   },
   "include": ["**/*.ts", "**/*.tsx"],

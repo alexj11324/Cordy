@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // Regression tests for MUL-5492: the per-issue timeline cap used to be applied

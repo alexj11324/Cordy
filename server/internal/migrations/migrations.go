@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/selfexec"
+	"github.com/cordy-ai/cordy/server/internal/selfexec"
 )
 
 const maxSearchDepth = 4

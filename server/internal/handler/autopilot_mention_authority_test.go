@@ -6,8 +6,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // autopilotDelegationFixture builds the MUL-4857 create_issue scenario: a
@@ -636,7 +636,7 @@ func TestUpdateComment_AdminEditOfAgentCommentClearsStaleLineage(t *testing.T) {
 	commentID := seedLeaderPlainComment(t, issueID, fx.LeaderAgentID, fx.LeaderTaskID)
 
 	// A workspace admin who is NEITHER the worker owner nor the comment author.
-	adminID := createPermissionTestAdmin(t, "mul4857-edit-admin@multica.test")
+	adminID := createPermissionTestAdmin(t, "mul4857-edit-admin@cordy.test")
 
 	countQueued := func() int {
 		var n int

@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@multica/core/i18n/react";
-import type { Issue, IssueStatus, IssueStatusCategory } from "@multica/core/types";
+import { I18nProvider } from "@cordy/core/i18n/react";
+import type { Issue, IssueStatus, IssueStatusCategory } from "@cordy/core/types";
 import { ListView } from "./list-view";
 import { IssueContextMenuProvider } from "../actions";
 import { ScrollRestorationProvider } from "../../platform";
@@ -13,20 +13,20 @@ import enIssues from "../../locales/en/issues.json";
 
 const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@cordy/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 const mockGetAgentTaskSnapshot = vi.hoisted(() => vi.fn().mockResolvedValue([]));
-vi.mock("@multica/core/api", () => ({
+vi.mock("@cordy/core/api", () => ({
   api: { getAgentTaskSnapshot: mockGetAgentTaskSnapshot },
   getApi: () => ({ getAgentTaskSnapshot: mockGetAgentTaskSnapshot }),
   setApiInstance: vi.fn(),
 }));
 
-vi.mock("@multica/core/paths", async () => {
+vi.mock("@cordy/core/paths", async () => {
   const actual =
-    await vi.importActual<typeof import("@multica/core/paths")>("@multica/core/paths");
+    await vi.importActual<typeof import("@cordy/core/paths")>("@cordy/core/paths");
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",
@@ -48,7 +48,7 @@ vi.mock("../../navigation", () => ({
 }));
 
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@cordy/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -83,7 +83,7 @@ const mockViewState: {
   }),
 };
 
-vi.mock("@multica/core/issues/stores/view-store-context", () => ({
+vi.mock("@cordy/core/issues/stores/view-store-context", () => ({
   ViewStoreProvider: ({ children }: { children: React.ReactNode }) => children,
   useViewStore: (selector?: any) => (selector ? selector(mockViewState) : mockViewState),
   useViewStoreApi: () => ({
@@ -93,7 +93,7 @@ vi.mock("@multica/core/issues/stores/view-store-context", () => ({
   }),
 }));
 
-vi.mock("@multica/core/modals", () => ({
+vi.mock("@cordy/core/modals", () => ({
   useModalStore: Object.assign(
     () => ({ open: vi.fn() }),
     { getState: () => ({ open: vi.fn() }) },

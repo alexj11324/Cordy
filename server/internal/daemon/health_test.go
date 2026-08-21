@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/daemon/repocache"
+	"github.com/cordy-ai/cordy/server/internal/daemon/repocache"
 )
 
 func TestHealthHandlerReportsCLIVersionAndTaskCounts(t *testing.T) {
@@ -96,7 +96,7 @@ func TestHealthHandlerReportsCLIVersionAndTaskCounts(t *testing.T) {
 
 // TestHealthHandlerReportsDeferredReload covers the "while waiting to restart,
 // the reason and state are visible" criterion. When trySelfReload has confirmed
-// a multica version change but the daemon was busy at the barrier check, the
+// a cordy version change but the daemon was busy at the barrier check, the
 // only way a user can tell why the daemon is still on the old version is this
 // field. It is omitempty, so an idle daemon must not emit the key at all.
 func TestHealthHandlerReportsDeferredReload(t *testing.T) {
@@ -130,7 +130,7 @@ func TestHealthHandlerReportsDeferredReload(t *testing.T) {
 
 	t.Run("explains a deferred restart", func(t *testing.T) {
 		d, probe := newHealthProbe(t)
-		d.setReloadPending("multica binary on disk reports 0.3.8, running 0.3.7")
+		d.setReloadPending("cordy binary on disk reports 0.3.8, running 0.3.7")
 
 		got, _ := probe()["reload_pending_reason"].(string)
 		if !strings.Contains(got, "0.3.8") {
@@ -662,8 +662,8 @@ func TestHealthHandlerReportsProfileIdentity(t *testing.T) {
 
 	t.Run("named profile reports its name", func(t *testing.T) {
 		t.Parallel()
-		raw := rawHealth(t, Config{Profile: "desktop-api.multica.ai", LaunchedBy: "desktop"})
-		if got, want := raw["profile"], "desktop-api.multica.ai"; got != want {
+		raw := rawHealth(t, Config{Profile: "desktop-api.cordy.ai", LaunchedBy: "desktop"})
+		if got, want := raw["profile"], "desktop-api.cordy.ai"; got != want {
 			t.Errorf("profile key: got %v, want %q", got, want)
 		}
 		if got, want := raw["launched_by"], "desktop"; got != want {

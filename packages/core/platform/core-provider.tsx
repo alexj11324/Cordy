@@ -36,6 +36,7 @@ function initCore(
   onLogout?: () => void,
   cookieAuth?: boolean,
   identity?: ClientIdentity,
+  clerkAuth?: boolean,
 ) {
   if (initialized) return;
 
@@ -47,8 +48,6 @@ function initCore(
       ? identity.os
       : null,
   );
-  // Authoritative override; before this runs (module-eval store hydration)
-  // detectShortcutRuntime() reads the preload globals and already agrees.
   configureShortcutRuntime(
     identity?.platform === "desktop" ? "desktop" : null,
   );
@@ -56,22 +55,25 @@ function initCore(
   const api = new ApiClient(apiBaseUrl, {
     logger: createLogger("api"),
     onUnauthorized: () => {
-      storage.removeItem("multica_token");
+      storage.removeItem("cordy_token");
     },
     identity,
   });
   setApiInstance(api);
   setSchemaLogger(createLogger("api-schema"));
 
-  // In token mode, hydrate token from storage.
-  if (!cookieAuth) {
-    const token = storage.getItem("multica_token");
+  if (!cookieAuth && !clerkAuth) {
+    const token = storage.getItem("cordy_token");
     if (token) api.setToken(token);
   }
-  // Workspace identity is URL-driven: the [workspaceSlug] layout resolves
-  // the slug and calls setCurrentWorkspace(slug, wsId) on mount. The api
-  // client reads the slug from that singleton for the X-Workspace-Slug
-  // header. No boot-time hydration from storage is required.
+
+  if (clerkAuth) {
+    api.setTokenProvider(async () => {
+      const w = globalThis as unknown as Record<string, unknown>;
+      const provider = w["__CLERK_GET_TOKEN__"] as (() => Promise<string | null>) | undefined;
+      return provider ? provider() : null;
+    });
+  }
 
   authStore = createAuthStore({ api, storage, onLogin, onLogout, cookieAuth });
   registerAuthStore(authStore);
@@ -88,6 +90,7 @@ export function CoreProvider({
   wsUrl = "ws://localhost:8080/ws",
   storage = defaultStorage,
   cookieAuth,
+  clerkAuth,
   onLogin,
   onLogout,
   identity,
@@ -98,7 +101,19 @@ export function CoreProvider({
   // Initialize singletons on first render only. Dependencies are read-once:
   // apiBaseUrl, storage, and callbacks are set at app boot and never change at runtime.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useMemo(() => initCore(apiBaseUrl, storage, onLogin, onLogout, cookieAuth, identity), []);
+  useMemo(
+    () =>
+      initCore(
+        apiBaseUrl,
+        storage,
+        onLogin,
+        onLogout,
+        cookieAuth,
+        identity,
+        clerkAuth,
+      ),
+    [],
+  );
 
   // Client-only freeze watchdog — shared by web and desktop. No-op on the
   // server and idempotent, so mounting it here covers both apps in one place.
@@ -116,6 +131,7 @@ export function CoreProvider({
         onLogout={onLogout}
         storage={storage}
         cookieAuth={cookieAuth}
+        clerkAuth={clerkAuth}
         identity={identity}
       >
         {/* Desktop's reporter owns both activity and runtime state so it must

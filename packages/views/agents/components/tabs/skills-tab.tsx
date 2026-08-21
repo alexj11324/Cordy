@@ -16,29 +16,29 @@ import type {
   AgentRuntime,
   DisabledRuntimeSkill,
   RuntimeLocalSkillSummary,
-} from "@multica/core/types";
-import { api, ApiError } from "@multica/core/api";
-import { useWorkspaceId } from "@multica/core/hooks";
+} from "@cordy/core/types";
+import { api, ApiError } from "@cordy/core/api";
+import { useWorkspaceId } from "@cordy/core/hooks";
 import {
   runtimeCapabilitiesOptions,
   runtimeDisplayLabel,
-} from "@multica/core/runtimes";
+} from "@cordy/core/runtimes";
 import {
   skillDetailOptions,
   skillListOptions,
   workspaceKeys,
-} from "@multica/core/workspace/queries";
-import { Badge } from "@multica/ui/components/ui/badge";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@cordy/core/workspace/queries";
+import { Badge } from "@cordy/ui/components/ui/badge";
+import { Button } from "@cordy/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
-import { Switch } from "@multica/ui/components/ui/switch";
-import { cn } from "@multica/ui/lib/utils";
+} from "@cordy/ui/components/ui/dialog";
+import { Switch } from "@cordy/ui/components/ui/switch";
+import { cn } from "@cordy/ui/lib/utils";
 import { SkillAddDialog } from "../skill-add-dialog";
 import { useT } from "../../../i18n";
 

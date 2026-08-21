@@ -3,16 +3,16 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   bucketDiagnosticPath,
   setDiagnosticRoute,
-} from "@multica/core/diagnostics";
+} from "@cordy/core/diagnostics";
 import {
   NavigationProvider,
   type LinkClickIntent,
   type NavigationAdapter,
-} from "@multica/views/navigation";
+} from "@cordy/views/navigation";
 import { parseIssueWindowPath } from "../../../shared/issue-window";
 
 /**
- * Answer the `multica:navigate` event inside a dedicated issue window (MUL-5208).
+ * Answer the `cordy:navigate` event inside a dedicated issue window (MUL-5208).
  *
  * The event is what a link in content (comment, description) fires once it
  * resolves to an in-app destination, including an absolute URL on this
@@ -55,8 +55,8 @@ function useContentLinkHandler(
         `${runtimeConfig.config.appUrl}${path}`,
       );
     };
-    window.addEventListener("multica:navigate", handler);
-    return () => window.removeEventListener("multica:navigate", handler);
+    window.addEventListener("cordy:navigate", handler);
+    return () => window.removeEventListener("cordy:navigate", handler);
   }, [navigate, runtimeConfig]);
 }
 

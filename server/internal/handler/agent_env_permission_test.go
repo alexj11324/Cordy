@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // TestCanManageAgentEnv_Pure exercises the predicate behind the env
@@ -80,7 +80,7 @@ func TestAgentEnv_AgentOwnerMemberCanRevealAndUpdate(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	agentID, ownerUserID := agentEnvOwnerFixture(t, "env-owner-member-agent", "env-owner-member@multica.test")
+	agentID, ownerUserID := agentEnvOwnerFixture(t, "env-owner-member-agent", "env-owner-member@cordy.test")
 
 	req := withURLParam(newRequestAs(ownerUserID, http.MethodGet, "/api/agents/"+agentID+"/env", nil), "id", agentID)
 	w := httptest.NewRecorder()
@@ -143,8 +143,8 @@ func TestAgentEnv_UnrelatedMemberForbidden(t *testing.T) {
 		t.Skip("database not available")
 	}
 
-	agentID, _ := agentEnvOwnerFixture(t, "env-unrelated-target-agent", "env-target-owner@multica.test")
-	strangerID := createPermissionTestMember(t, "env-stranger@multica.test")
+	agentID, _ := agentEnvOwnerFixture(t, "env-unrelated-target-agent", "env-target-owner@cordy.test")
+	strangerID := createPermissionTestMember(t, "env-stranger@cordy.test")
 
 	cases := []struct {
 		name string
@@ -188,9 +188,9 @@ func TestAgentEnv_WorkspaceRolesUnchanged(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	agentID, _ := agentEnvOwnerFixture(t, "env-role-check-agent", "env-role-check-owner@multica.test")
+	agentID, _ := agentEnvOwnerFixture(t, "env-role-check-agent", "env-role-check-owner@cordy.test")
 
-	adminID := createPermissionTestMember(t, "env-admin@multica.test")
+	adminID := createPermissionTestMember(t, "env-admin@cordy.test")
 	if _, err := testPool.Exec(ctx, `
 		UPDATE member SET role = 'admin' WHERE workspace_id = $1 AND user_id = $2
 	`, testWorkspaceID, adminID); err != nil {
@@ -219,7 +219,7 @@ func TestAgentEnv_AgentActorRejectedForOwnedAgent(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	targetID, ownerUserID := agentEnvOwnerFixture(t, "env-actor-target-agent", "env-actor-owner@multica.test")
+	targetID, ownerUserID := agentEnvOwnerFixture(t, "env-actor-target-agent", "env-actor-owner@cordy.test")
 
 	// The calling agent runs on behalf of the same human who owns the
 	// target agent, so the owner check alone would let it through.

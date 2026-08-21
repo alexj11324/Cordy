@@ -1,6 +1,6 @@
 # Triage Notify
 
-Demonstrates the hook engine: Multica calling **out** to a plugin's own server,
+Demonstrates the hook engine: Cordy calling **out** to a plugin's own server,
 and that server calling back in.
 
 The three previous examples only ever ran inbound — a sandboxed panel asking the
@@ -29,7 +29,7 @@ else's server was slow.
 ```bash
 # The signing secret is shown once, next to the install token, when an admin
 # rotates the plugin's token in workspace settings.
-MULTICA_SIGNING_SECRET=whsec_… node server/handler.mjs
+CORDY_SIGNING_SECRET=whsec_… node server/handler.mjs
 ```
 
 `server/handler.mjs` is the interesting file if you are writing a plugin. It
@@ -66,7 +66,7 @@ suffix: a plugin that needs `api.triage.example.com` declares that too. The same
 list becomes the panel's CSP `connect-src`, so one string means one thing in
 both places.
 
-Nothing a deployment can configure widens it. `MULTICA_PLUGIN_DEV_ORIGINS` lets
+Nothing a deployment can configure widens it. `CORDY_PLUGIN_DEV_ORIGINS` lets
 an author point a hook at a local server during development, but the `net:`
 check still runs — the operator can relax where the network guard applies, not
 what the admin approved.
@@ -74,7 +74,7 @@ what the admin approved.
 ## Local development
 
 ```bash
-export MULTICA_PLUGIN_DEV_ORIGINS=https://localhost:8787
+export CORDY_PLUGIN_DEV_ORIGINS=https://localhost:8787
 ```
 
 Then point `transport.url` at your local handler and declare the matching

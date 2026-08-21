@@ -1,8 +1,8 @@
-import { useAuthStore } from "@multica/core/auth";
-import { Button } from "@multica/ui/components/ui/button";
-import { MulticaIcon } from "@multica/ui/components/common/multica-icon";
-import { useT } from "@multica/views/i18n";
-import { DragStrip } from "@multica/views/platform";
+import { useAuthStore } from "@cordy/core/auth";
+import { Button } from "@cordy/ui/components/ui/button";
+import { CordyIcon } from "@cordy/ui/components/common/cordy-icon";
+import { useT } from "@cordy/views/i18n";
+import { DragStrip } from "@cordy/views/platform";
 
 export function DesktopAuthRecoveryPage({
   onRetry,
@@ -21,7 +21,7 @@ export function DesktopAuthRecoveryPage({
       <DragStrip />
       <div className="flex flex-1 items-center justify-center p-8">
         <div className="flex max-w-sm flex-col items-center text-center">
-          <MulticaIcon bordered size="lg" />
+          <CordyIcon bordered size="lg" />
           <h1 className="mt-6 text-title font-semibold">
             {t(($) => $.desktop.recovery.title)}
           </h1>

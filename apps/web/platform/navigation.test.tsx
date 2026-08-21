@@ -1,5 +1,5 @@
 /**
- * MUL-5208 — the web half of the `multica:navigate` bridge.
+ * MUL-5208 — the web half of the `cordy:navigate` bridge.
  *
  * Shared content (comments, chat, issue descriptions) fires this event whenever
  * a link resolves to an in-app destination, including an absolute URL on this
@@ -23,11 +23,11 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { WebNavigationProvider } from "./navigation";
-import { useNavigation, type NavigationAdapter } from "@multica/views/navigation";
+import { useNavigation, type NavigationAdapter } from "@cordy/views/navigation";
 
 function navigate(path: string) {
   window.dispatchEvent(
-    new CustomEvent("multica:navigate", { detail: { path } }),
+    new CustomEvent("cordy:navigate", { detail: { path } }),
   );
 }
 
@@ -61,7 +61,7 @@ describe("WebNavigationProvider internal link bridge", () => {
   it("ignores an event without a path", () => {
     render(<WebNavigationProvider>{null}</WebNavigationProvider>);
 
-    window.dispatchEvent(new CustomEvent("multica:navigate", { detail: {} }));
+    window.dispatchEvent(new CustomEvent("cordy:navigate", { detail: {} }));
 
     expect(router.push).not.toHaveBeenCalled();
   });
@@ -80,7 +80,7 @@ describe("WebNavigationProvider internal link bridge", () => {
 
 /**
  * `canGoBack` decides whether a page whose subject was just deleted steps back
- * or replaces with a fallback. A wrong `true` walks the user out of Multica,
+ * or replaces with a fallback. A wrong `true` walks the user out of Cordy,
  * so the adapter must expose the browser's own answer and nothing derived.
  */
 describe("WebNavigationProvider canGoBack", () => {

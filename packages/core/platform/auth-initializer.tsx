@@ -36,6 +36,7 @@ export function AuthInitializer({
   onLogout,
   storage = defaultStorage,
   cookieAuth,
+  clerkAuth,
   identity,
 }: {
   children: ReactNode;
@@ -43,6 +44,7 @@ export function AuthInitializer({
   onLogout?: () => void;
   storage?: StorageAdapter;
   cookieAuth?: boolean;
+  clerkAuth?: boolean;
   identity?: ClientIdentity;
 }) {
   const qc = useQueryClient();
@@ -313,8 +315,11 @@ export function AuthInitializer({
       void attempt();
     };
 
-    if (!cookieAuth) {
-      const token = storage.getItem("multica_token");
+    if (cookieAuth || clerkAuth) {
+      window.addEventListener("online", retryNow);
+      void attempt();
+    } else {
+      const token = storage.getItem("cordy_token");
       if (!token) {
         settled = true;
         onLogout?.();
@@ -328,9 +333,6 @@ export function AuthInitializer({
         window.addEventListener("online", retryNow);
         void attempt();
       }
-    } else {
-      window.addEventListener("online", retryNow);
-      void attempt();
     }
 
     return () => {

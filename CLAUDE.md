@@ -13,7 +13,7 @@ Read it before editing translations in `packages/views/locales/`, naming routes/
 
 ## Project Shape
 
-Multica is an AI-native task management platform for small teams, with agents as first-class assignees that can own issues, comment, and change status.
+Cordy is an AI-native task management platform for small teams, with agents as first-class assignees that can own issues, comment, and change status.
 
 - `server/`: Go backend, Chi router, sqlc, gorilla/websocket.
 - `apps/web/`: Next.js App Router.
@@ -51,7 +51,7 @@ Keep server state and client state separate.
 These are hard constraints:
 
 - `packages/core/`: no `react-dom`, `localStorage` (use `StorageAdapter`), `process.env`, or UI libraries.
-- `packages/ui/`: no `@multica/core` imports and no business logic.
+- `packages/ui/`: no `@cordy/core` imports and no business logic.
 - `packages/views/`: no `next/*`, no `react-router-dom`, no stores. Use `NavigationAdapter`, `useNavigation()`, and `<AppLink>`.
 - `apps/web/platform/`: only place for Next.js navigation/platform APIs.
 - `apps/desktop/src/renderer/src/platform/`: only place for `react-router-dom` navigation wiring.
@@ -69,7 +69,7 @@ If the same logic exists in both web and desktop, extract it unless it depends o
 3. Shared UI or business views belong in `packages/views/`.
 4. Shared primitives belong in `packages/ui/`.
 
-Mobile is independent. It may import types and pure functions from `@multica/core`, with `import type` for types, but owns its UI, state, hooks, providers, i18n, React version, build pipeline, and release cadence.
+Mobile is independent. It may import types and pure functions from `@cordy/core`, with `import type` for types, but owns its UI, state, hooks, providers, i18n, React version, build pipeline, and release cadence.
 
 ## Commands
 
@@ -167,11 +167,11 @@ Desktop routing has three categories:
 More desktop constraints:
 
 - New pre-workspace desktop flows register a `WindowOverlay` type in `stores/window-overlay-store.ts`; do not add them to `routes.tsx`.
-- `setCurrentWorkspace(slug, uuid)` from `@multica/core/platform` mirrors the active route for headers, storage namespaces, and reconnects; workspace route layouts own setting it.
+- `setCurrentWorkspace(slug, uuid)` from `@cordy/core/platform` mirrors the active route for headers, storage namespaces, and reconnects; workspace route layouts own setting it.
 - Code that leaves workspace context must call `setCurrentWorkspace(null, null)` explicitly.
 - Workspace delete must await the server before navigation/cleanup. Workspace leave currently clears/navigates before mutation only to avoid the `member:removed` realtime race; treat that as known debt, not a reusable pattern.
 - Cross-workspace navigation must go through the navigation adapter so it can call `switchWorkspace(slug, targetPath)`.
-- Full-window desktop views outside the dashboard shell must mount `<DragStrip />` from `@multica/views/platform` as the first flex child. Interactive controls in the top 48px need `WebkitAppRegion: "no-drag"`.
+- Full-window desktop views outside the dashboard shell must mount `<DragStrip />` from `@cordy/views/platform` as the first flex child. Interactive controls in the top 48px need `WebkitAppRegion: "no-drag"`.
 
 ## Mobile Rules
 
@@ -179,14 +179,14 @@ Read `apps/mobile/CLAUDE.md` before touching `apps/mobile/`. It contains the man
 
 Root-level reminders:
 
-- Mobile shares only `@multica/core` types and pure functions.
+- Mobile shares only `@cordy/core` types and pure functions.
 - Mobile must match web/desktop product semantics: counts, permissions, enums/transitions, and data identity.
 - Mobile may differ in UI/interaction when the phone context requires it.
 
 ## UI Rules
 
 - Prefer shadcn/Base UI components over custom implementations. Add them with `pnpm ui:add <component>` from the repo root.
-- The Pro `@reui` registry is configured in `packages/ui/components.json`; add items with `pnpm ui:add @reui/<name>` and answer `n` to every overwrite prompt so local component customizations survive. It reads `REUI_LICENSE_KEY` from the environment — agents get it from their Multica agent environment, humans export it in their own shell. Never write the key into a repo file.
+- The Pro `@reui` registry is configured in `packages/ui/components.json`; add items with `pnpm ui:add @reui/<name>` and answer `n` to every overwrite prompt so local component customizations survive. It reads `REUI_LICENSE_KEY` from the environment — agents get it from their Cordy agent environment, humans export it in their own shell. Never write the key into a repo file.
 - ReUI ships source, not a dependency: route the vendored output to our layout (new primitives to `packages/ui/components/ui/`, compositions to `packages/views/<domain>/`) and rewrite it to our conventions before committing.
 - Use design tokens and semantic classes; avoid hardcoded colors. Font sizes come from the role-named `--text-*` scale in `packages/ui/styles/tokens.css` (`text-caption`, `text-body`, `text-title`, …), which is the authoritative list — not Tailwind's default `text-sm` / `text-base` ramp.
 - An active/selected state must stay identifiable while hovered. Express it on a dimension hover does not touch (weight, text color), or define the `data-active:hover:` compound explicitly — otherwise hovering a selected row visually downgrades it to plain hover.
@@ -212,16 +212,16 @@ Rules:
 - Give each product behavior ONE canonical layer. Pure parsing, state transitions and boundary matrices belong in a `.test.ts` beside the helper; the component suite keeps the happy path, the wiring, accessibility and named regressions, and points at the canonical file in a comment. Do not re-run a helper's matrix through a DOM mount.
 - A `.test.ts` that needs no DOM must start with `// @vitest-environment node`. jsdom costs ~0.8s of setup per file and buys such a suite nothing. Do not add it to a test whose code under test branches on `typeof window`/`document` — under node it would silently take the SSR path and still pass.
 - `packages/views/` tests must not mock `next/*` or `react-router-dom`.
-- Mock `@multica/core` stores with the Zustand callable-store shape (`selectorFn` plus `getState`).
-- Mock `@multica/core/api` for API calls.
+- Mock `@cordy/core` stores with the Zustand callable-store shape (`selectorFn` plus `getState`).
+- Mock `@cordy/core/api` for API calls.
 - E2E tests should use `TestApiClient` for setup/teardown.
 - Prefer writing the failing test in the correct package before implementation when the change is behavioral.
 - DB-backed Go tests build their rows through `server/internal/testutil` (`dbfx.Issue`, `dbfx.Task`, `dbfx.Insert`) and drive handlers through `testutil.Call(h, req).Want(status).JSON(&out)`. Do not open-code an `INSERT ... RETURNING id` with its matching `t.Cleanup(DELETE ...)`, or a `httptest.NewRecorder()` / status-check / decode quartet, in a new test. `internal/handler` held ~1000 of the first and ~1200 of the second before the shared fixtures landed, and every change to a shared contract had to be made once per copy.
 - Keep an assertion where the test wrote it when its message says something the shared one cannot. `.Want()` prints the request line, both statuses and the response body; it does not know which case in a loop was running.
 - Helpers in `internal/testutil` insert rows, run handlers and report mismatches. They must not assert a product rule on a test's behalf — a helper that knows what a correct response looks like has taken the assertion away from the test making it.
 - Default tests must never resolve or execute user-installed agent CLIs. Pass a test-created fake executable path or a test-created missing path to agent subprocess code.
-- Real-agent smoke tests belong behind the `agentintegration` build tag and must check `MULTICA_RUN_REAL_AGENT_SMOKE=1` before executable lookup or account access.
-- Run an explicitly authorized real-agent smoke test with `(cd server && MULTICA_RUN_REAL_AGENT_SMOKE=1 go test -tags=agentintegration ./pkg/agent -run '<test-name>' -count=1 -v)`. This command may access an authenticated account and consume quota.
+- Real-agent smoke tests belong behind the `agentintegration` build tag and must check `CORDY_RUN_REAL_AGENT_SMOKE=1` before executable lookup or account access.
+- Run an explicitly authorized real-agent smoke test with `(cd server && CORDY_RUN_REAL_AGENT_SMOKE=1 go test -tags=agentintegration ./pkg/agent -run '<test-name>' -count=1 -v)`. This command may access an authenticated account and consume quota.
 - When adding a default agent command, add it to `scripts/agent-cli-command-names.txt`; the normal Linux/macOS test entry points fail on ambient agent CLI execution.
 
 ## Verification

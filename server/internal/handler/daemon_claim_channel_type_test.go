@@ -15,11 +15,11 @@ import (
 // — which writes the same channel_chat_session_binding row under
 // channel_type='feishu' (lark/channel_store.go) — came back with an empty
 // chat_channel_type, i.e. indistinguishable from a web chat. Downstream that
-// mis-flag made the daemon inject `multica attachment upload` guidance into a
+// mis-flag made the daemon inject `cordy attachment upload` guidance into a
 // conversation that cannot carry attachments at all.
 //
 // chat_in_thread stays Slack-only and is asserted as such: it selects between
-// `multica chat history` and `multica chat thread`, and both endpoints are
+// `cordy chat history` and `cordy chat thread`, and both endpoints are
 // hardwired to h.SlackHistory (chat_history.go). There is no Feishu reader, so
 // the flag has nothing to select between and must not imply one exists.
 
@@ -135,7 +135,7 @@ func TestClaim_SlackBoundSessionStillReportsThreadState(t *testing.T) {
 // A channel whose adapter the claim handler does not name must still be
 // reported. The lookup enumerated a fixed {slack, feishu} list, so every
 // channel added after it — WeCom is the first — claimed as a web chat and
-// inherited the web chat's `multica attachment upload` guidance, the exact
+// inherited the web chat's `cordy attachment upload` guidance, the exact
 // MUL-4899 failure the fixed list was supposed to have ended.
 //
 // The list is what is under test here, not WeCom: the binding row shape is

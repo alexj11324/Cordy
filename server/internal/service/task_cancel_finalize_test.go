@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/cordy-ai/cordy/server/internal/events"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 func newCancelFinalizePool(t *testing.T) *pgxpool.Pool {
@@ -20,7 +20,7 @@ func newCancelFinalizePool(t *testing.T) *pgxpool.Pool {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+		dbURL = "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable"
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -54,7 +54,7 @@ func createCancelFinalizeFixture(t *testing.T, ctx context.Context, pool *pgxpoo
 	t.Helper()
 
 	suffix := time.Now().UnixNano()
-	email := fmt.Sprintf("cancel-finalize-%d@multica.ai", suffix)
+	email := fmt.Sprintf("cancel-finalize-%d@cordy.ai", suffix)
 	slug := fmt.Sprintf("cancel-finalize-%d", suffix)
 
 	var userID string
@@ -616,7 +616,7 @@ func (f cancelFinalizeFixture) unbindChannelSession(t *testing.T, ctx context.Co
 }
 
 // Channel-ingested user messages are the durable record of what the platform
-// sender wrote — the sender has no Multica composer to restore a draft into.
+// sender wrote — the sender has no Cordy composer to restore a draft into.
 // The gate is the immutable per-message channel_ingested stamp, so it must
 // hold even after archiving/rebinding deleted the session binding: cancelling
 // the sealed queued task keeps the messages and settles as "Stopped.".

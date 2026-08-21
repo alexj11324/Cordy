@@ -33,12 +33,12 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/cordy-ai/cordy/server/internal/events"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel/engine"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 // outboundQueries is the slice of generated queries the WeCom outbound
@@ -164,8 +164,8 @@ func (o *Outbound) processEvent(ctx context.Context, e events.Event) error {
 	}
 	// Only bound, non-empty completions reach here, so classify the task
 	// origin before loading credentials or sending. A question asked in the
-	// Multica web UI can reuse a session that originated in WeCom — and its
-	// answer belongs only in Multica. Without this gate that answer is pushed
+	// Cordy web UI can reuse a session that originated in WeCom — and its
+	// answer belongs only in Cordy. Without this gate that answer is pushed
 	// into the WeCom chat, which in a group means in front of everyone in the
 	// room. slack/outbound.go:118 and the lark and dingtalk equivalents all
 	// gate here; WeCom was the one that did not.
@@ -316,7 +316,7 @@ func (o *Outbound) tryDeliverInbox(ctx context.Context, item map[string]any, rec
 	}
 	binding, err := o.q.FindChannelBindingForMember(ctx, db.FindChannelBindingForMemberParams{
 		WorkspaceID:   workspaceID,
-		MulticaUserID: recipientID,
+		CordyUserID: recipientID,
 		ChannelType:   channelTypeWecom,
 	})
 	if err != nil {

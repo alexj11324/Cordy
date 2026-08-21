@@ -2,12 +2,12 @@
 
 import { cleanup, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { TaskAttribution } from "@multica/core/types";
+import type { TaskAttribution } from "@cordy/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
 // The avatar is presentational plumbing here; stub it so the tests assert the
 // badge's own text/tone rather than the shared avatar's fallback behavior.
-vi.mock("@multica/ui/components/common/actor-avatar", () => ({
+vi.mock("@cordy/ui/components/common/actor-avatar", () => ({
   ActorAvatar: ({ name }: { name: string }) => (
     <span data-testid="actor-avatar">{name}</span>
   ),

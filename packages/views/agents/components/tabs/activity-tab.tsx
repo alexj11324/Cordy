@@ -15,22 +15,22 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
-import { NumberFlow } from "@multica/ui/components/ui/number-flow";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
+} from "@cordy/ui/components/ui/tooltip";
+import { NumberFlow } from "@cordy/ui/components/ui/number-flow";
+import { Skeleton } from "@cordy/ui/components/ui/skeleton";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import type { Agent, AgentTask, Issue } from "@multica/core/types";
+import type { Agent, AgentTask, Issue } from "@cordy/core/types";
 import {
   type AgentActivity,
   agentTaskSnapshotOptions,
   agentTasksOptions,
   summarizeActivityWindow,
   useWorkspaceActivityMap,
-} from "@multica/core/agents";
-import { api } from "@multica/core/api";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { issueDetailOptions } from "@multica/core/issues/queries";
+} from "@cordy/core/agents";
+import { api } from "@cordy/core/api";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { useWorkspacePaths } from "@cordy/core/paths";
+import { issueDetailOptions } from "@cordy/core/issues/queries";
 import { AppLink } from "../../../navigation";
 import { TranscriptButton } from "../../../common/task-transcript";
 import { AttributionBadge } from "../../../issues/components/attribution-badge";

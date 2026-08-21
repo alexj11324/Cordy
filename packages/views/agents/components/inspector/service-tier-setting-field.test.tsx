@@ -12,8 +12,8 @@ import {
 import type {
   RuntimeModel,
   RuntimeModelListRequest,
-} from "@multica/core/types";
-import { I18nProvider } from "@multica/core/i18n/react";
+} from "@cordy/core/types";
+import { I18nProvider } from "@cordy/core/i18n/react";
 import enAgents from "../../../locales/en/agents.json";
 import enCommon from "../../../locales/en/common.json";
 import enIssues from "../../../locales/en/issues.json";
@@ -21,7 +21,7 @@ import enIssues from "../../../locales/en/issues.json";
 const mockInitiateListModels = vi.hoisted(() => vi.fn());
 const mockGetListModelsResult = vi.hoisted(() => vi.fn());
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@cordy/core/api", () => ({
   api: {
     initiateListModels: (...args: unknown[]) =>
       mockInitiateListModels(...args),

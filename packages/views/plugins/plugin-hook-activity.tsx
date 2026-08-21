@@ -2,9 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle } from "lucide-react";
-import { pluginInvocationsOptions } from "@multica/core/plugins";
-import type { PluginInvocation } from "@multica/core/types";
-import { cn } from "@multica/ui/lib/utils";
+import { pluginInvocationsOptions } from "@cordy/core/plugins";
+import type { PluginInvocation } from "@cordy/core/types";
+import { cn } from "@cordy/ui/lib/utils";
 import { useT } from "../i18n";
 
 /**

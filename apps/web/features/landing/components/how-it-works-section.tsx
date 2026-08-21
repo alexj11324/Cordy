@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useAuthStore } from "@multica/core/auth";
+import { useAuthStore } from "@cordy/core/auth";
 import { docsHrefForLocale, useLocale } from "../i18n";
 import { useDashboardCtaHref } from "../utils/use-dashboard-cta";
 import { GitHubMark, githubUrl, heroButtonClassName } from "./shared";

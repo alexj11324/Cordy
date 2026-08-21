@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, Trash2 } from "lucide-react";
-import { Button } from "@multica/ui/components/ui/button";
+import { Button } from "@cordy/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -10,16 +10,16 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
-import { Input } from "@multica/ui/components/ui/input";
-import { Label } from "@multica/ui/components/ui/label";
+} from "@cordy/ui/components/ui/dialog";
+import { Input } from "@cordy/ui/components/ui/input";
+import { Label } from "@cordy/ui/components/ui/label";
 import {
   Tabs,
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@multica/ui/components/ui/tabs";
-import { Textarea } from "@multica/ui/components/ui/textarea";
+} from "@cordy/ui/components/ui/tabs";
+import { Textarea } from "@cordy/ui/components/ui/textarea";
 import { useT } from "../../../i18n";
 import type { ManagedMcpServer } from "./mcp-config-model";
 import { isRecord, mcpTransport } from "./mcp-config-model";

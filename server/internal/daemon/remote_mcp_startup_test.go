@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/pkg/remotemcp"
-	"github.com/multica-ai/multica/server/pkg/remotemcp/remotemcptest"
+	"github.com/cordy-ai/cordy/server/pkg/remotemcp"
+	"github.com/cordy-ai/cordy/server/pkg/remotemcp/remotemcptest"
 )
 
 // Connection startup: the check that makes "the administrator approved these
@@ -17,7 +17,7 @@ import (
 // startup itself was not reachable from a test — it validates the endpoint as a
 // public HTTPS URL, and the fixture serves plain HTTP on a loopback address. So
 // the layer carrying the whole approval guarantee ran zero times. These tests
-// exist because MULTICA_PLUGIN_DEV_ORIGINS now lets a caller name that origin.
+// exist because CORDY_PLUGIN_DEV_ORIGINS now lets a caller name that origin.
 
 // The version remotemcptest.Server negotiates. Named once so a fixture change
 // is a single edit rather than four.

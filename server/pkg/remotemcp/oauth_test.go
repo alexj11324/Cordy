@@ -32,7 +32,7 @@ func TestBuildAuthorizationURLPinsPKCEStateAndResource(t *testing.T) {
 		AuthorizationEndpoint: "https://login.example.com/authorize?audience=existing",
 	}
 	registration := OAuthClientRegistration{ClientID: "client-1"}
-	got, err := BuildAuthorizationURL(metadata, registration, "https://multica.example/api/callback", "state-1", "verifier-1", "search read")
+	got, err := BuildAuthorizationURL(metadata, registration, "https://cordy.example/api/callback", "state-1", "verifier-1", "search read")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestBuildAuthorizationURLPinsPKCEStateAndResource(t *testing.T) {
 		"audience":              "existing",
 		"response_type":         "code",
 		"client_id":             "client-1",
-		"redirect_uri":          "https://multica.example/api/callback",
+		"redirect_uri":          "https://cordy.example/api/callback",
 		"state":                 "state-1",
 		"code_challenge":        base64.RawURLEncoding.EncodeToString(wantChallenge[:]),
 		"code_challenge_method": "S256",

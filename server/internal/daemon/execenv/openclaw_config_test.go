@@ -1192,7 +1192,7 @@ func TestPrepareOpenclawConfigFailsClosedOnMalformedMcpConfig(t *testing.T) {
 }
 
 // TestPrepareOpenclawSkillWriteMatchesScanPath is the regression test the
-// MUL-2219 DoD calls out: the directory Multica writes skills into MUST be
+// MUL-2219 DoD calls out: the directory Cordy writes skills into MUST be
 // the same directory the OpenClaw scanner reads from. We assert this by
 // resolving the workspaceDir the way OpenClaw does (agents.defaults.workspace
 // from the synthesized config) and proving {workspaceDir}/skills/ holds the
@@ -1236,7 +1236,7 @@ func TestPrepareOpenclawSkillWriteMatchesScanPath(t *testing.T) {
 	for _, s := range skills {
 		want := filepath.Join(wsDir, "skills", sanitizeSkillName(s.Name), "SKILL.md")
 		if _, err := os.Stat(want); err != nil {
-			t.Errorf("openclaw scan target %s missing — Multica's write path and the openclaw scanner are out of sync: %v", want, err)
+			t.Errorf("openclaw scan target %s missing — Cordy's write path and the openclaw scanner are out of sync: %v", want, err)
 		}
 	}
 }
@@ -1389,7 +1389,7 @@ func TestPrepareEnvironmentNonOpenclawSkipsConfig(t *testing.T) {
 
 // ── Gateway endpoint pinning (issue #3260) ──
 //
-// When a multica agent is configured for gateway-mode openclaw and the
+// When a cordy agent is configured for gateway-mode openclaw and the
 // runtime_config carries a Gateway endpoint, the per-task wrapper must pin
 // that endpoint in its `gateway` block. OpenClaw deep-merges sibling object
 // keys after $include, so the wrapper's `gateway.*` settings override

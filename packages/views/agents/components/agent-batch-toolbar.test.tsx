@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@multica/core/i18n/react";
+import { I18nProvider } from "@cordy/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
 
@@ -15,10 +15,10 @@ const updateAgentSpy = vi.hoisted(() =>
 const archiveSpy = vi.hoisted(() => vi.fn(async () => ({})));
 const restoreSpy = vi.hoisted(() => vi.fn(async () => ({})));
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@cordy/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
-vi.mock("@multica/core/api", () => ({
+vi.mock("@cordy/core/api", () => ({
   api: {
     updateAgent: updateAgentSpy,
     archiveAgent: archiveSpy,

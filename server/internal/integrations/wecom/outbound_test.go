@@ -20,10 +20,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/cordy-ai/cordy/server/internal/events"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 // fakeOutboundQueries is an in-memory stand-in for the queries Outbound
@@ -56,7 +56,7 @@ type fakeOutboundQueries struct {
 	taskGets int
 	// channelIngested is the channel_ingested stamp on the input batch the
 	// task owns: askedOverWecom for a question typed in the room,
-	// askedInTheWebUI for one typed in Multica.
+	// askedInTheWebUI for one typed in Cordy.
 	//
 	// It is a pointer, and it has no default on purpose. Two gates read this
 	// one stamp in opposite directions — the answer path delivers only when it
@@ -137,7 +137,7 @@ func (f *fakeOutboundQueries) failStampNotSet(taskID string) {
 	msg := "fakeOutboundQueries: the origin gate read the channel_ingested stamp for task " +
 		taskID + ", but this rig never set channelIngested. Say where the question was asked: " +
 		"channelIngested: askedOverWecom() for one typed in the room, askedInTheWebUI() for one " +
-		"typed in Multica. There is no default — the answer path delivers only when the stamp is " +
+		"typed in Cordy. There is no default — the answer path delivers only when the stamp is " +
 		"set and the failure path delivers unless it is, so either zero value would let one of " +
 		"those two pass a test that never stated what it meant."
 	if f.t == nil {
@@ -350,8 +350,8 @@ func TestChatDoneContent(t *testing.T) {
 }
 
 // TestProcessEvent_DoesNotPushAWebUIAnswerIntoTheRoom is the privacy case. A
-// session that originated in WeCom can be continued from the Multica web UI,
-// and that answer belongs only in Multica. Without the origin gate it is
+// session that originated in WeCom can be continued from the Cordy web UI,
+// and that answer belongs only in Cordy. Without the origin gate it is
 // pushed to the bound chat — which in a group means in front of everyone in
 // the room, an answer to a question none of them saw asked.
 func TestProcessEvent_DoesNotPushAWebUIAnswerIntoTheRoom(t *testing.T) {

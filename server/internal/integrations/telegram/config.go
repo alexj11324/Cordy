@@ -1,6 +1,6 @@
 // Package telegram is the Telegram integration for the channel-agnostic
 // engine. It follows the Slack BYO model: the workspace admin creates a bot
-// via @BotFather, pastes its bot token into Multica, and the installation is
+// via @BotFather, pastes its bot token into Cordy, and the installation is
 // keyed by the bot's numeric id (the token prefix). Inbound runs on a
 // per-installation getUpdates long-polling loop (telegram_channel.go) —
 // Telegram offers no WebSocket transport, and long polling is the deployment
@@ -12,7 +12,7 @@
 //
 // Maintenance: this package is COMMUNITY-MAINTAINED. Its maintainers, the
 // support boundary and the retirement rule are published at
-// https://multica.ai/docs/community-maintained
+// https://cordy.ai/docs/community-maintained
 // (apps/docs/content/docs/community-maintained.mdx, four locales). That page
 // is the single source of truth — record ownership changes there, not here.
 // Changing the shared channel engine? Keep this adapter building, and loop in
@@ -26,7 +26,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
 )
 
 // TypeTelegram is the channel discriminator for the Telegram adapter. Defined

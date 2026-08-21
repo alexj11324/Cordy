@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/slack-go/slack"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // ---- fakes ----
@@ -120,7 +120,7 @@ func issueSlashCmd() slack.SlashCommand {
 func TestSlashHandle_EnqueuesQuickCreateAndAcks(t *testing.T) {
 	q := &fakeSlashQueries{
 		inst:    activeSlashInstallation(),
-		binding: db.ChannelUserBinding{MulticaUserID: slashTestUUID(9)},
+		binding: db.ChannelUserBinding{CordyUserID: slashTestUUID(9)},
 	}
 	tasks := &fakeQuickCreate{}
 	p, captured, count := newTestSlashProcessor(q, tasks, &fakeBindingMinter{})
@@ -159,7 +159,7 @@ func TestSlashHandle_EnqueuesQuickCreateAndAcks(t *testing.T) {
 func TestSlashHandle_MultilinePromptPassedThrough(t *testing.T) {
 	q := &fakeSlashQueries{
 		inst:    activeSlashInstallation(),
-		binding: db.ChannelUserBinding{MulticaUserID: slashTestUUID(9)},
+		binding: db.ChannelUserBinding{CordyUserID: slashTestUUID(9)},
 	}
 	tasks := &fakeQuickCreate{}
 	p, _, _ := newTestSlashProcessor(q, tasks, &fakeBindingMinter{})
@@ -213,7 +213,7 @@ func TestSlashHandle_UnboundUserGetsLink(t *testing.T) {
 func TestSlashHandle_NonMemberDropped(t *testing.T) {
 	q := &fakeSlashQueries{
 		inst:      activeSlashInstallation(),
-		binding:   db.ChannelUserBinding{MulticaUserID: slashTestUUID(9)},
+		binding:   db.ChannelUserBinding{CordyUserID: slashTestUUID(9)},
 		memberErr: pgx.ErrNoRows,
 	}
 	tasks := &fakeQuickCreate{}
@@ -258,7 +258,7 @@ func TestSlashHandle_TeamMismatchTreatedAsDisconnected(t *testing.T) {
 func TestSlashHandle_EnqueueFailureIsInternalError(t *testing.T) {
 	q := &fakeSlashQueries{
 		inst:    activeSlashInstallation(),
-		binding: db.ChannelUserBinding{MulticaUserID: slashTestUUID(9)},
+		binding: db.ChannelUserBinding{CordyUserID: slashTestUUID(9)},
 	}
 	tasks := &fakeQuickCreate{err: errors.New("agent has no runtime")}
 	p, captured, _ := newTestSlashProcessor(q, tasks, &fakeBindingMinter{})

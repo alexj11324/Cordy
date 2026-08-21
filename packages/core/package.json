@@ -1,5 +1,5 @@
 {
-  "name": "@multica/core",
+  "name": "@cordy/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -172,8 +172,8 @@
     "react": "catalog:"
   },
   "devDependencies": {
-    "@multica/eslint-config": "workspace:*",
-    "@multica/tsconfig": "workspace:*",
+    "@cordy/eslint-config": "workspace:*",
+    "@cordy/tsconfig": "workspace:*",
     "@testing-library/react": "catalog:",
     "@types/react": "catalog:",
     "jsdom": "catalog:",

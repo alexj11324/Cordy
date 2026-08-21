@@ -6,16 +6,16 @@ import type {
   Agent,
   AgentRuntime,
   MemberWithUser,
-} from "@multica/core/types";
-import { providerSupportsMcpConfig } from "@multica/core/agents";
-import { useFeatureEnabled } from "@multica/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@multica/core/feature-flags";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { larkInstallationsOptions } from "@multica/core/lark";
-import { slackInstallationsOptions } from "@multica/core/slack";
-import { dingtalkInstallationsOptions } from "@multica/core/dingtalk";
-import { wecomInstallationsOptions } from "@multica/core/wecom";
-import { telegramInstallationsOptions } from "@multica/core/telegram";
+} from "@cordy/core/types";
+import { providerSupportsMcpConfig } from "@cordy/core/agents";
+import { useFeatureEnabled } from "@cordy/core/config";
+import { COMPOSIO_MCP_APPS_FLAG } from "@cordy/core/feature-flags";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { larkInstallationsOptions } from "@cordy/core/lark";
+import { slackInstallationsOptions } from "@cordy/core/slack";
+import { dingtalkInstallationsOptions } from "@cordy/core/dingtalk";
+import { wecomInstallationsOptions } from "@cordy/core/wecom";
+import { telegramInstallationsOptions } from "@cordy/core/telegram";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,8 +25,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
-import { cn } from "@multica/ui/lib/utils";
+} from "@cordy/ui/components/ui/alert-dialog";
+import { cn } from "@cordy/ui/lib/utils";
 import { ActivityTab } from "./tabs/activity-tab";
 import { InstructionsTab } from "./tabs/instructions-tab";
 import { SkillsTab } from "./tabs/skills-tab";

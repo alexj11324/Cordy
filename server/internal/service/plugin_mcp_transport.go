@@ -6,13 +6,13 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
-	"github.com/multica-ai/multica/server/pkg/remotemcp"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/plugincontract"
+	"github.com/cordy-ai/cordy/server/pkg/remotemcp"
 )
 
 // The `mcp` transport: a hook that points at an MCP server the plugin author
-// already runs, whose tools Multica adopts.
+// already runs, whose tools Cordy adopts.
 //
 // The whole difference from an `http` hook is who decides the shape. An http
 // hook declares one endpoint in a manifest an administrator read and approved.
@@ -255,7 +255,7 @@ func (s *PluginService) mcpCredentialHeaders(ctx context.Context, installation d
 // exists to make structural.
 func (s *PluginService) decryptedSecret(ctx context.Context, installationID pgtype.UUID, key string) (string, error) {
 	if s.Secrets == nil {
-		return "", pluginErrf(PluginErrorUnavailable, "plugin secrets are disabled: MULTICA_PLUGIN_SECRET_KEY is not configured")
+		return "", pluginErrf(PluginErrorUnavailable, "plugin secrets are disabled: CORDY_PLUGIN_SECRET_KEY is not configured")
 	}
 	row, err := s.Queries.GetPluginSecret(ctx, db.GetPluginSecretParams{InstallationID: installationID, Key: key})
 	if err != nil {

@@ -1,9 +1,9 @@
 "use client";
 
 import { Server } from "lucide-react";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { Button } from "@multica/ui/components/ui/button";
-import { cn } from "@multica/ui/lib/utils";
+import { useWorkspacePaths } from "@cordy/core/paths";
+import { Button } from "@cordy/ui/components/ui/button";
+import { cn } from "@cordy/ui/lib/utils";
 import { AppLink } from "../../navigation";
 import { useT } from "../../i18n";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";

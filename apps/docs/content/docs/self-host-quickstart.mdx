@@ -1,24 +1,24 @@
 ---
 title: Self-host quickstart
-description: Start Multica with Docker Compose, log in, and connect your first computer.
+description: Start Cordy with Docker Compose, log in, and connect your first computer.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Self-hosting Multica has two parts:
+Self-hosting Cordy has two parts:
 
 | Part | What it runs | Where it lives |
 |---|---|---|
-| **Multica service** | Web, API, and PostgreSQL | One machine with Docker installed |
-| **Computer** | The Multica daemon and AI coding tools | The computer developers actually work on |
+| **Cordy service** | Web, API, and PostgreSQL | One machine with Docker installed |
+| **Computer** | The Cordy daemon and AI coding tools | The computer developers actually work on |
 
-They can be the same machine or separate ones. Self-hosting replaces only the Multica Cloud part.
+They can be the same machine or separate ones. Self-hosting replaces only the Cordy Cloud part.
 
-This guide uses Docker Compose. For Kubernetes deployments, see the [Self-hosting guide](https://github.com/multica-ai/multica/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative) in the repository.
+This guide uses Docker Compose. For Kubernetes deployments, see the [Self-hosting guide](https://github.com/cordy-ai/cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative) in the repository.
 
 ## Before you start
 
-The machine running the Multica service needs:
+The machine running the Cordy service needs:
 
 - Docker Engine or Docker Desktop, with `docker compose` working
 - Git, Make, curl, and OpenSSL
@@ -31,25 +31,25 @@ docker info
 docker compose version
 ```
 
-Multica uses Compose v2, invoked as `docker compose`. The legacy `docker-compose` v1 is not supported.
+Cordy uses Compose v2, invoked as `docker compose`. The legacy `docker-compose` v1 is not supported.
 
-The computer also needs at least one [AI coding tool](/providers) installed and logged in, such as Claude Code, Codex, or Cursor. The Multica CLI is installed in step 5.
+The computer also needs at least one [AI coding tool](/providers) installed and logged in, such as Claude Code, Codex, or Cursor. The Cordy CLI is installed in step 5.
 
-## 1. Start Multica
+## 1. Start Cordy
 
 On the machine that will run the service:
 
 ```bash
-git clone --depth 1 https://github.com/multica-ai/multica.git
-cd multica
+git clone --depth 1 https://github.com/cordy-ai/cordy.git
+cd cordy
 make selfhost
 ```
 
 On first run, `make selfhost` will:
 
 1. Create `.env` from `.env.example`
-2. Generate a random `JWT_SECRET`, PostgreSQL password, and `MULTICA_VCS_SECRET_KEY` (the encryption key for self-hosted Git integrations)
-3. Pull the PostgreSQL, Multica backend, and Multica frontend images
+2. Generate a random `JWT_SECRET`, PostgreSQL password, and `CORDY_VCS_SECRET_KEY` (the encryption key for self-hosted Git integrations)
+3. Pull the PostgreSQL, Cordy backend, and Cordy frontend images
 4. Create persistent volumes and start the three containers
 5. Wait until the backend starts answering health checks
 
@@ -85,7 +85,7 @@ The backend container runs database migrations on every startup before serving; 
 
 ### Local access
 
-Open [http://localhost:3000](http://localhost:3000) directly. You also won't need to pass any URLs when running `multica setup self-host` later.
+Open [http://localhost:3000](http://localhost:3000) directly. You also won't need to pass any URLs when running `cordy setup self-host` later.
 
 ### Remote access
 
@@ -93,15 +93,15 @@ Docker Compose binds `3000` and `8080` to `127.0.0.1` only. Do not switch this t
 
 The example below uses two domains:
 
-- `app.example.com`: the Multica web app
+- `app.example.com`: the Cordy web app
 - `api.example.com`: the API, health checks, and daemon connections
 
 First set the public URLs in `.env`:
 
 ```bash
 FRONTEND_ORIGIN=https://app.example.com
-MULTICA_APP_URL=https://app.example.com
-MULTICA_PUBLIC_URL=https://api.example.com
+CORDY_APP_URL=https://app.example.com
+CORDY_PUBLIC_URL=https://api.example.com
 ```
 
 With this configuration all browser traffic stays on the app domain, so cookies never cross domains and `COOKIE_DOMAIN` is not needed. If the browser talks to the api domain directly instead, you must set it — see [Environment variables](/environment-variables).
@@ -162,7 +162,7 @@ The logs contain a line like:
 Enter the code and create your first workspace. Once Resend or SMTP is configured, codes are sent by email and members no longer need to read container logs — see [Auth setup](/auth-setup).
 
 <Callout type="warning">
-Self-hosted deployments default to `APP_ENV=production`, which disables fixed verification codes. Do not set `MULTICA_DEV_VERIFICATION_CODE` on a public instance.
+Self-hosted deployments default to `APP_ENV=production`, which disables fixed verification codes. Do not set `CORDY_DEV_VERIFICATION_CODE` on a public instance.
 </Callout>
 
 ## 5. Connect a computer
@@ -173,30 +173,30 @@ Run the commands below on **the computer that runs your AI coding tools**, which
 Tasks run with the full permissions of the user running the daemon — they can read and write everything that user can. Run the daemon as a dedicated Unix user, in a container, or in a VM rather than under your personal account. See the [security model](/security-model).
 </Callout>
 
-Install the Multica CLI first:
+Install the Cordy CLI first:
 
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.sh | bash
 ```
 
 **Windows PowerShell**
 
 ```powershell
-irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/cordy-ai/cordy/main/scripts/install.ps1 | iex
 ```
 
-If the Multica service runs on this same computer:
+If the Cordy service runs on this same computer:
 
 ```bash
-multica setup self-host
+cordy setup self-host
 ```
 
-If the Multica service runs on another machine, pass the two URLs you configured earlier:
+If the Cordy service runs on another machine, pass the two URLs you configured earlier:
 
 ```bash
-multica setup self-host \
+cordy setup self-host \
   --server-url https://api.example.com \
   --app-url https://app.example.com
 ```
@@ -206,7 +206,7 @@ The command first checks `<server-url>/health`, then opens a browser to complete
 Confirm the connection:
 
 ```bash
-multica daemon status
+cordy daemon status
 ```
 
 The output should show:
@@ -217,13 +217,13 @@ The output should show:
 
 ## 6. Complete the first run
 
-Back in Multica, once an online runtime appears in the runtime list, create an agent and assign it your first issue.
+Back in Cordy, once an online runtime appears in the runtime list, create an agent and assign it your first issue.
 
 When the run shows as completed and the agent's reply appears in the timeline, the self-hosted service, the computer, and the AI coding tool are all connected. For detailed steps, see steps 3-5 of the [quickstart](/cloud-quickstart).
 
 ## Common admin commands
 
-Run all of these from the `multica` repository directory:
+Run all of these from the `cordy` repository directory:
 
 ```bash
 # Check status
@@ -251,13 +251,13 @@ curl -fsS http://localhost:8080/readyz
 Two ways to upgrade a Docker Compose install. On an existing install they produce the **same result** — the `selfhost` target in the `Makefile` runs the same `docker compose pull` + `up -d`, and additionally creates `.env` when it is missing and waits on `/health` before printing a status summary. Pick whichever you prefer:
 
 ```bash
-cd multica
+cd cordy
 git pull
 make selfhost
 ```
 
 ```bash
-cd multica
+cd cordy
 git pull
 docker compose -f docker-compose.selfhost.yml pull
 docker compose -f docker-compose.selfhost.yml up -d
@@ -265,16 +265,16 @@ docker compose -f docker-compose.selfhost.yml up -d
 
 ### What `git pull` actually does
 
-`git pull` updates **`docker-compose.selfhost.yml` itself** — new environment variables, new services, changed healthchecks. It is **not** how you get a new Multica version.
+`git pull` updates **`docker-compose.selfhost.yml` itself** — new environment variables, new services, changed healthchecks. It is **not** how you get a new Cordy version.
 
 The version you end up running is resolved by `docker compose pull`, which asks GHCR what the tag points at right now. A checkout that is months out of date will still pull today's `latest` images; conversely, `git pull` alone changes nothing until you pull images and recreate the containers.
 
 <Callout type="warning">
-**If you pinned `MULTICA_IMAGE_TAG`, neither command upgrades anything.** Both images resolve as `${MULTICA_IMAGE_TAG:-latest}` (`docker-compose.selfhost.yml:42`, `:125`), and `.env.example` ships `MULTICA_IMAGE_TAG=latest`. If your `.env` pins an exact release, `pull` just re-fetches that same tag and you stay on the old version — no error, no warning. Check before you upgrade:
+**If you pinned `CORDY_IMAGE_TAG`, neither command upgrades anything.** Both images resolve as `${CORDY_IMAGE_TAG:-latest}` (`docker-compose.selfhost.yml:42`, `:125`), and `.env.example` ships `CORDY_IMAGE_TAG=latest`. If your `.env` pins an exact release, `pull` just re-fetches that same tag and you stay on the old version — no error, no warning. Check before you upgrade:
 
 ```bash
-grep MULTICA_IMAGE_TAG .env
-# MULTICA_IMAGE_TAG=v0.4.5   ← pinned: edit to `latest` (or the release you want) first
+grep CORDY_IMAGE_TAG .env
+# CORDY_IMAGE_TAG=v0.4.5   ← pinned: edit to `latest` (or the release you want) first
 ```
 </Callout>
 
@@ -288,14 +288,14 @@ Migrations are forward-only, so take a dump before upgrading a deployment you ca
 
 ```bash
 docker compose -f docker-compose.selfhost.yml exec -T postgres \
-  pg_dump -U multica multica > multica-backup.sql && gzip multica-backup.sql
+  pg_dump -U cordy cordy > cordy-backup.sql && gzip cordy-backup.sql
 ```
 
 <Callout type="warning">
 **Do not pipe `pg_dump` straight into `gzip`.** A shell reports the exit status of the *last* command in a pipeline, so `pg_dump … | gzip > backup.sql.gz` exits `0` even when the dump failed — leaving a perfectly valid 20-byte archive containing nothing. Redirecting to a file first makes `pg_dump`'s own exit status the one that counts, and `&&` only compresses a dump that actually succeeded.
 </Callout>
 
-Use your own `POSTGRES_USER` / `POSTGRES_DB` from `.env` if you changed them from the `multica` defaults. Data lives in the named volume `multica_pgdata`, which survives `docker compose down` — but not `down -v`.
+Use your own `POSTGRES_USER` / `POSTGRES_DB` from `.env` if you changed them from the `cordy` defaults. Data lives in the named volume `cordy_pgdata`, which survives `docker compose down` — but not `down -v`.
 
 ### Migrations run themselves
 
@@ -322,7 +322,7 @@ Anything other than HTTP 200 with both checks `ok` means the new version did not
 
 Helm has its own upgrade path: set `images.backend.tag` / `images.frontend.tag` to the release you want in your values file, then `helm upgrade`. Changing the tag changes the pod spec, so Kubernetes pulls the new image and rolls the Deployments — this is the reliable route.
 
-`kubectl -n multica rollout restart` is **not** an upgrade on its own. The chart ships `pullPolicy: IfNotPresent` (`deploy/helm/multica/values.yaml`), so a node that already has that tag cached reuses the old image and the restart silently changes nothing — the same class of trap as a pinned `MULTICA_IMAGE_TAG`. If you want to track a floating tag that way, set `images.backend.pullPolicy` / `images.frontend.pullPolicy` to `Always` first. See the [Self-hosting guide](https://github.com/multica-ai/multica/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative).
+`kubectl -n cordy rollout restart` is **not** an upgrade on its own. The chart ships `pullPolicy: IfNotPresent` (`deploy/helm/cordy/values.yaml`), so a node that already has that tag cached reuses the old image and the restart silently changes nothing — the same class of trap as a pinned `CORDY_IMAGE_TAG`. If you want to track a floating tag that way, set `images.backend.pullPolicy` / `images.frontend.pullPolicy` to `Always` first. See the [Self-hosting guide](https://github.com/cordy-ai/cordy/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative).
 
 <Callout type="warning">
 `docker compose down` keeps `pgdata` and `backend_uploads`. Adding `-v` deletes these volumes, including the database; do not run `docker compose down -v` unless you intend to wipe the instance.
@@ -335,8 +335,8 @@ Helm has its own upgrade path: set `images.backend.tag` / `images.frontend.tag` 
 | `/readyz` does not return `ok` | Run `docker compose -f docker-compose.selfhost.yml logs backend postgres`. |
 | No verification code arrives | Request a code, then search the backend logs for `Verification code`. |
 | `setup self-host` reports the server is unreachable | From the computer, request `https://api.example.com/health` to confirm DNS, TLS, and the reverse proxy are all reachable. |
-| The daemon lists no `Agents` | Confirm the AI coding tools are on `PATH` and logged in, then run `multica daemon restart`. |
-| Issues stay queued | Run `multica daemon status` to confirm the daemon is running and connected to the workspace. |
+| The daemon lists no `Agents` | Confirm the AI coding tools are on `PATH` and logged in, then run `cordy daemon restart`. |
+| Issues stay queued | Run `cordy daemon status` to confirm the daemon is running and connected to the workspace. |
 
 For more scenarios, see [Troubleshooting](/troubleshooting).
 
@@ -344,5 +344,5 @@ For more scenarios, see [Troubleshooting](/troubleshooting).
 
 - [Auth setup](/auth-setup) — configure email, Google login, and signup scope.
 - [Environment variables](/environment-variables) — the full server configuration reference.
-- [Self-hosting guide](https://github.com/multica-ai/multica/blob/main/SELF_HOSTING.md) — Kubernetes, upgrades, and manual deployment.
+- [Self-hosting guide](https://github.com/cordy-ai/cordy/blob/main/SELF_HOSTING.md) — Kubernetes, upgrades, and manual deployment.
 - [Desktop app](/desktop-app) — connect Desktop to a self-hosted service.

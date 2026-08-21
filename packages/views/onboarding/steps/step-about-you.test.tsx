@@ -1,8 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { QuestionnaireAnswers } from "@multica/core/onboarding";
-import { I18nProvider } from "@multica/core/i18n/react";
+import type { QuestionnaireAnswers } from "@cordy/core/onboarding";
+import { I18nProvider } from "@cordy/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enOnboarding from "../../locales/en/onboarding.json";
 import { StepAboutYou } from "./step-about-you";
@@ -48,7 +48,7 @@ describe("StepAboutYou", () => {
       screen.getByText("Which best describes you?"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("What do you want to use Multica for?"),
+      screen.getByText("What do you want to use Cordy for?"),
     ).toBeInTheDocument();
   });
 

@@ -5,7 +5,7 @@
 -- API enrichment and a webhook secret used to verify inbound webhook signatures.
 --
 -- Both secrets are stored as base64-encoded secretbox ciphertext (never
--- plaintext). Decryption uses the MULTICA_VCS_SECRET_KEY box wired in
+-- plaintext). Decryption uses the CORDY_VCS_SECRET_KEY box wired in
 -- cmd/server/router.go.
 --
 -- Mirrored pull requests and commit statuses are stored in vcs_pull_request

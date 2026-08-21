@@ -16,7 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 const (
@@ -46,7 +46,7 @@ func setupBotName(t *testing.T) (context.Context, *pgxpool.Pool, *InstallationSe
 	}
 	exec(`INSERT INTO workspace (id, name, slug, description) VALUES ($1, 'wecom bot name', 'wecom-bot-name', '') ON CONFLICT (id) DO NOTHING`, wcNameWS)
 	exec(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider)
-VALUES ($1, $2, 'wecom bot name runtime', 'local', 'multica_daemon') ON CONFLICT (id) DO NOTHING`, wcNameRuntime, wcNameWS)
+VALUES ($1, $2, 'wecom bot name runtime', 'local', 'cordy_daemon') ON CONFLICT (id) DO NOTHING`, wcNameRuntime, wcNameWS)
 	exec(`INSERT INTO agent (id, workspace_id, name, runtime_mode, runtime_id)
 VALUES ($1, $2, 'wecom bot name agent', 'local', $3) ON CONFLICT (id) DO NOTHING`, wcNameAgent, wcNameWS, wcNameRuntime)
 	t.Cleanup(clean)
@@ -74,14 +74,14 @@ func botNameParams(bot, displayName string) InstallationParams {
 func TestRotatingTheSecretKeepsTheBotName(t *testing.T) {
 	ctx, _, svc := setupBotName(t)
 
-	if _, err := svc.Upsert(ctx, botNameParams(wcNameBotA, "Multica Bot")); err != nil {
+	if _, err := svc.Upsert(ctx, botNameParams(wcNameBotA, "Cordy Bot")); err != nil {
 		t.Fatalf("first install: %v", err)
 	}
 	again, err := svc.Upsert(ctx, botNameParams(wcNameBotA, ""))
 	if err != nil {
 		t.Fatalf("secret rotation: %v", err)
 	}
-	if again.BotDisplayName != "Multica Bot" {
+	if again.BotDisplayName != "Cordy Bot" {
 		t.Fatalf("BotDisplayName after rotation = %q, want it kept — a blank optional field "+
 			"erased the name, and every group slash command goes back to the whitespace guess", again.BotDisplayName)
 	}
@@ -93,7 +93,7 @@ func TestRotatingTheSecretKeepsTheBotName(t *testing.T) {
 func TestRenamingTheBotOverwritesTheStoredName(t *testing.T) {
 	ctx, _, svc := setupBotName(t)
 
-	if _, err := svc.Upsert(ctx, botNameParams(wcNameBotA, "Multica Bot")); err != nil {
+	if _, err := svc.Upsert(ctx, botNameParams(wcNameBotA, "Cordy Bot")); err != nil {
 		t.Fatalf("first install: %v", err)
 	}
 	renamed, err := svc.Upsert(ctx, botNameParams(wcNameBotA, "Acme Support Bot"))
@@ -111,7 +111,7 @@ func TestRenamingTheBotOverwritesTheStoredName(t *testing.T) {
 func TestSwappingTheBotDoesNotInheritTheOldName(t *testing.T) {
 	ctx, _, svc := setupBotName(t)
 
-	if _, err := svc.Upsert(ctx, botNameParams(wcNameBotA, "Multica Bot")); err != nil {
+	if _, err := svc.Upsert(ctx, botNameParams(wcNameBotA, "Cordy Bot")); err != nil {
 		t.Fatalf("first install: %v", err)
 	}
 	swapped, err := svc.Upsert(ctx, botNameParams(wcNameBotB, ""))
@@ -128,7 +128,7 @@ func TestSwappingTheBotDoesNotInheritTheOldName(t *testing.T) {
 // reads at boot.
 func TestTheBotNameSurvivesTheConfigRoundTrip(t *testing.T) {
 	t.Parallel()
-	cfg, err := encodeInstallConfig(Installation{BotID: "bot-xyz", BotDisplayName: "Multica Bot"})
+	cfg, err := encodeInstallConfig(Installation{BotID: "bot-xyz", BotDisplayName: "Cordy Bot"})
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
@@ -136,7 +136,7 @@ func TestTheBotNameSurvivesTheConfigRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if out.BotDisplayName != "Multica Bot" {
-		t.Fatalf("BotDisplayName round trip = %q, want Multica Bot", out.BotDisplayName)
+	if out.BotDisplayName != "Cordy Bot" {
+		t.Fatalf("BotDisplayName round trip = %q, want Cordy Bot", out.BotDisplayName)
 	}
 }

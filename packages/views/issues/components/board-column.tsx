@@ -10,16 +10,16 @@ import type {
   IssueAssigneeType,
   IssueStatusCategory,
   Project,
-} from "@multica/core/types";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@cordy/core/types";
+import { Button } from "@cordy/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { STATUS_CONFIG } from "@multica/core/issues/config";
-import { useViewStoreApi } from "@multica/core/issues/stores/view-store-context";
+} from "@cordy/ui/components/ui/dropdown-menu";
+import { STATUS_CONFIG } from "@cordy/core/issues/config";
+import { useViewStoreApi } from "@cordy/core/issues/stores/view-store-context";
 import { useViewBaseline } from "../surface/view-baseline-context";
 import { StatusHeading } from "./status-heading";
 import { DraggableBoardCard } from "./board-card";

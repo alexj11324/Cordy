@@ -1,12 +1,12 @@
 import { homedir } from "os";
 import { join } from "path";
 
-// Keep the Go impl in sync: server/cmd/multica/cmd_daemon.go healthPortForProfile.
+// Keep the Go impl in sync: server/cmd/cordy/cmd_daemon.go healthPortForProfile.
 export const DEFAULT_HEALTH_PORT = 19514;
 
 /**
- * Desktop owns only `~/.multica/profiles/desktop-<host>/`. The default profile
- * at `~/.multica/` — config, daemon log, and health port 19514 — belongs to the
+ * Desktop owns only `~/.cordy/profiles/desktop-<host>/`. The default profile
+ * at `~/.cordy/` — config, daemon log, and health port 19514 — belongs to the
  * user's terminal CLI and must never be read, written, probed, or passed to the
  * bundled CLI.
  *
@@ -24,7 +24,7 @@ export function assertResolvedProfile(profile: string): void {
 
 // Desktop owns a dedicated CLI profile named after the target API host, so it
 // never reads or writes the user's hand-configured profiles. Profile dir:
-//   ~/.multica/profiles/desktop-<host>/
+//   ~/.cordy/profiles/desktop-<host>/
 export function deriveProfileName(targetUrl: string): string {
   try {
     const url = new URL(targetUrl);
@@ -49,7 +49,7 @@ export function healthPortForProfile(profile: string): number {
 
 export function profileDir(profile: string): string {
   assertResolvedProfile(profile);
-  return join(homedir(), ".multica", "profiles", profile);
+  return join(homedir(), ".cordy", "profiles", profile);
 }
 
 export function profileConfigPath(profile: string): string {
@@ -60,7 +60,7 @@ export function profileLogPath(profile: string): string {
   return join(profileDir(profile), "daemon.log");
 }
 
-// Sidecar file that records which Multica user the cached PAT in config.json
+// Sidecar file that records which Cordy user the cached PAT in config.json
 // was minted for. The Go CLI/daemon never read or write this file, so it
 // survives Go-side config rewrites. Used to detect user switches and mint a
 // fresh PAT instead of reusing a token that belongs to a previous user.
@@ -71,7 +71,7 @@ export function profileUserIdPath(profile: string): string {
 /**
  * CLI args selecting the Desktop-owned profile. An unresolved profile must
  * never produce an empty arg list: the bundled CLI would then act on the
- * user's default profile at `~/.multica/config.json`.
+ * user's default profile at `~/.cordy/config.json`.
  */
 export function profileArgs(profile: string): string[] {
   assertResolvedProfile(profile);

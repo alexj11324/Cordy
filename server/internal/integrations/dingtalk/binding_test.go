@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 func TestValidateBindingTokenChannel(t *testing.T) {

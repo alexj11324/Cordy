@@ -122,7 +122,7 @@ vi.mock("@tanstack/react-query", () => ({
   },
 }));
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@cordy/core/api", () => ({
   api: {
     quickCreateIssue: mockQuickCreateIssue,
     uploadFile: mockApiUploadFile,
@@ -132,11 +132,11 @@ vi.mock("@multica/core/api", () => ({
   },
 }));
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@cordy/core/hooks", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@cordy/core/paths", () => ({
   useCurrentWorkspace: () => ({ name: "Test Workspace" }),
   useWorkspacePaths: () => ({
     settings: () => "/ws-test/settings",
@@ -149,7 +149,7 @@ vi.mock("../navigation/context", () => ({
   useNavigation: () => ({ push: mockNavigationPush }),
 }));
 
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@cordy/core/workspace/queries", () => ({
   agentListOptions: () => ({ queryKey: ["agents"] }),
   memberListOptions: () => ({ queryKey: ["members"] }),
   squadListOptions: (wsId: string) => ({
@@ -157,16 +157,16 @@ vi.mock("@multica/core/workspace/queries", () => ({
   }),
 }));
 
-vi.mock("@multica/core/projects/queries", () => ({
+vi.mock("@cordy/core/projects/queries", () => ({
   projectListOptions: () => ({ queryKey: ["projects"] }),
 }));
 
-vi.mock("@multica/core/issues/stores/quick-create-store", () => ({
+vi.mock("@cordy/core/issues/stores/quick-create-store", () => ({
   useQuickCreateStore: (selector?: (state: typeof mockQuickCreateStore) => unknown) =>
     (selector ? selector(mockQuickCreateStore) : mockQuickCreateStore),
 }));
 
-vi.mock("@multica/core/issues/stores/draft-store", () => ({
+vi.mock("@cordy/core/issues/stores/draft-store", () => ({
   useIssueDraftStore: Object.assign(
     (selector?: (state: typeof mockIssueDraftStore) => unknown) =>
       (selector ? selector(mockIssueDraftStore) : mockIssueDraftStore),
@@ -174,23 +174,23 @@ vi.mock("@multica/core/issues/stores/draft-store", () => ({
   ),
 }));
 
-vi.mock("@multica/core/issues/stores/issue-create-settings-store", () => ({
+vi.mock("@cordy/core/issues/stores/issue-create-settings-store", () => ({
   useIssueCreateSettingsStore: (
     selector?: (state: typeof mockCreateSettingsStore) => unknown,
   ) => (selector ? selector(mockCreateSettingsStore) : mockCreateSettingsStore),
 }));
 
-vi.mock("@multica/core/issues/stores/create-mode-store", () => ({
+vi.mock("@cordy/core/issues/stores/create-mode-store", () => ({
   useCreateModeStore: (selector?: (state: { setLastMode: typeof mockSetLastMode }) => unknown) =>
     (selector ? selector({ setLastMode: mockSetLastMode }) : { setLastMode: mockSetLastMode }),
 }));
 
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@cordy/core/auth", () => ({
   useAuthStore: (selector?: (state: { user: { id: string } }) => unknown) =>
     (selector ? selector({ user: { id: "user-1" } }) : { user: { id: "user-1" } }),
 }));
 
-vi.mock("@multica/core/runtimes", () => ({
+vi.mock("@cordy/core/runtimes", () => ({
   runtimeListOptions: () => ({ queryKey: ["runtimes"] }),
   checkQuickCreateCliVersion: () => ({ state: "ok", min: "1.0.0" }),
   checkQuickCreateFieldsCliVersion: () => ({ state: "ok", min: "1.0.0" }),
@@ -234,7 +234,7 @@ vi.mock("../projects/components/project-picker", () => ({
   ),
 }));
 
-vi.mock("@multica/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@cordy/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => <>{children}</>,
   DropdownMenuTrigger: ({ render }: { render: ReactNode }) => <>{render}</>,
   DropdownMenuContent: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -257,7 +257,7 @@ vi.mock("@multica/ui/components/ui/dropdown-menu", () => ({
   DropdownMenuSeparator: () => null,
 }));
 
-vi.mock("@multica/ui/lib/utils", () => ({
+vi.mock("@cordy/ui/lib/utils", () => ({
   cn: (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(" "),
 }));
 
@@ -342,7 +342,7 @@ vi.mock("../editor", async () => {
   };
 });
 
-vi.mock("@multica/ui/components/ui/dialog", () => ({
+vi.mock("@cordy/ui/components/ui/dialog", () => ({
   DialogTitle: ({ children, className }: { children: ReactNode; className?: string }) => (
     <div className={className}>{children}</div>
   ),
@@ -392,7 +392,7 @@ vi.mock("../issues/components/pickers/property-picker", () => ({
   PickerEmpty: () => <div data-testid="picker-empty" />,
 }));
 
-vi.mock("@multica/ui/components/ui/button", () => ({
+vi.mock("@cordy/ui/components/ui/button", () => ({
   Button: ({ children, disabled, onClick }: { children: ReactNode; disabled?: boolean; onClick?: () => void }) => (
     <button type="button" disabled={disabled} onClick={onClick}>
       {children}
@@ -400,7 +400,7 @@ vi.mock("@multica/ui/components/ui/button", () => ({
   ),
 }));
 
-vi.mock("@multica/ui/components/ui/switch", () => ({
+vi.mock("@cordy/ui/components/ui/switch", () => ({
   Switch: ({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (v: boolean) => void }) => (
     <input
       type="checkbox"
@@ -410,7 +410,7 @@ vi.mock("@multica/ui/components/ui/switch", () => ({
   ),
 }));
 
-vi.mock("@multica/ui/components/common/file-upload-button", () => ({
+vi.mock("@cordy/ui/components/common/file-upload-button", () => ({
   // `disabled` is forwarded so the "can still queue another file mid-upload"
   // guarantee is actually assertable here (MUL-4808).
   FileUploadButton: ({ disabled }: { disabled?: boolean }) => (
@@ -424,7 +424,7 @@ vi.mock("sonner", () => ({
   },
 }));
 
-import { I18nProvider } from "@multica/core/i18n/react";
+import { I18nProvider } from "@cordy/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enModals from "../locales/en/modals.json";
 import enEditor from "../locales/en/editor.json";

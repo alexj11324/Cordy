@@ -1,7 +1,7 @@
 "use client";
 
-import { cn } from "@multica/ui/lib/utils";
-import { SidebarTrigger, useSidebarSafe } from "@multica/ui/components/ui/sidebar";
+import { cn } from "@cordy/ui/lib/utils";
+import { SidebarTrigger, useSidebarSafe } from "@cordy/ui/components/ui/sidebar";
 
 /**
  * The left edge every page shares: the header, the toolbar under it, and any

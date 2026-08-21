@@ -5,14 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { setApiInstance } from "@multica/core/api";
-import type { ApiClient } from "@multica/core/api/client";
+import { setApiInstance } from "@cordy/core/api";
+import type { ApiClient } from "@cordy/core/api/client";
 import type {
   Issue,
   IssueStatusCategory,
   IssueTableGroupsRequest,
   IssueTableRowsRequest,
-} from "@multica/core/types";
+} from "@cordy/core/types";
 import { useIssueGroupBranches } from "./use-issue-group-branches";
 
 /**

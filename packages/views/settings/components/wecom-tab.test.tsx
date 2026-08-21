@@ -4,7 +4,7 @@ import { type ReactNode } from "react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@multica/core/i18n/react";
+import { I18nProvider } from "@cordy/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -43,13 +43,13 @@ vi.mock("@tanstack/react-query", () => ({
   queryOptions: <T,>(opts: T) => opts,
 }));
 
-vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("@cordy/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
 
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@cordy/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
 }));
 
-vi.mock("@multica/core/workspace/hooks", () => ({
+vi.mock("@cordy/core/workspace/hooks", () => ({
   useActorName: () => ({
     getAgentName: (agentId: string) => `Agent ${agentId}`,
     getMemberName: () => "Unknown",
@@ -66,7 +66,7 @@ vi.mock("../../common/actor-avatar", () => ({
   ),
 }));
 
-vi.mock("@multica/core/wecom", () => ({
+vi.mock("@cordy/core/wecom", () => ({
   wecomInstallationsOptions: () => ({
     queryKey: ["wecom", "installations"],
     queryFn: vi.fn(),
@@ -74,7 +74,7 @@ vi.mock("@multica/core/wecom", () => ({
   wecomKeys: { installations: (wsId: string) => ["wecom", "installations", wsId] },
 }));
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@cordy/core/api", () => ({
   api: {
     registerWecomBYO: mockRegisterBYO,
     deleteWecomInstallation: mockDeleteInstallation,
@@ -85,7 +85,7 @@ vi.mock("@multica/core/api", () => ({
     e && typeof e === "object" ? (e as { code?: string }).code : undefined,
 }));
 
-vi.mock("@multica/core/auth", () => {
+vi.mock("@cordy/core/auth", () => {
   const useAuthStore = Object.assign(
     (sel?: (s: { user: { id: string } }) => unknown) =>
       sel ? sel({ user: { id: "user-1" } }) : { user: { id: "user-1" } },
@@ -213,7 +213,7 @@ describe("WecomAgentBindButton", () => {
   // The bot's chat name reaches the server, and only when it was typed.
   //
   // WeCom delivers a group @-mention as literal text with no structured
-  // mention list, so a name containing a space ("Multica Bot") swallows the
+  // mention list, so a name containing a space ("Cordy Bot") swallows the
   // slash command typed after it. The name is the only way to tell where the
   // mention ends — and it cannot be discovered, because the smart bot exposes
   // no REST surface to ask. Left blank, the request omits it entirely so a
@@ -224,11 +224,11 @@ describe("WecomAgentBindButton", () => {
     await userEvent.click(screen.getByTestId("wecom-agent-connect"));
     await userEvent.type(await screen.findByTestId("wecom-byo-bot-id"), "aib94");
     await userEvent.type(screen.getByTestId("wecom-byo-secret"), "s3cret");
-    await userEvent.type(screen.getByTestId("wecom-byo-bot-name"), "  Multica Bot  ");
+    await userEvent.type(screen.getByTestId("wecom-byo-bot-name"), "  Cordy Bot  ");
     await userEvent.click(screen.getByTestId("wecom-byo-submit"));
 
     await waitFor(() => expect(mockRegisterBYO).toHaveBeenCalled());
-    expect(mockRegisterBYO.mock.calls[0]?.[2].bot_name).toBe("Multica Bot");
+    expect(mockRegisterBYO.mock.calls[0]?.[2].bot_name).toBe("Cordy Bot");
 
     cleanup();
     mockRegisterBYO.mockClear();

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
 )
 
 func textCallback(convType string, inAtList bool) *botCallbackData {

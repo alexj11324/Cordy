@@ -10,9 +10,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/pkg/agent"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/cordy-ai/cordy/server/pkg/agent"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 // ---------------------------------------------------------------------------
@@ -23,7 +23,7 @@ import (
 // for their workspace, resolve command_name on PATH, and register an
 // agent_runtime instance carrying the profile_id. The profile only changes how
 // a runtime is launched/displayed; the underlying protocol_family must be a
-// backend Multica officially supports (validated against agent.SupportedTypes).
+// backend Cordy officially supports (validated against agent.SupportedTypes).
 //
 // Iron rule: a profile carries NO generic per-agent args. Per-agent launch args
 // stay on agent.custom_args. The only args field is fixed_args — args every

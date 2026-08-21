@@ -8,15 +8,15 @@ import {
   stripBuilderDraft,
   type AgentDraft,
   type BuilderRestore,
-} from "@multica/core/agents";
-import { isRuntimeUsableForUser } from "@multica/core/runtimes";
+} from "@cordy/core/agents";
+import { isRuntimeUsableForUser } from "@cordy/core/runtimes";
 import type {
   ChatMessage,
   MemberWithUser,
   RuntimeDevice,
-} from "@multica/core/types";
-import { Button } from "@multica/ui/components/ui/button";
-import { cn } from "@multica/ui/lib/utils";
+} from "@cordy/core/types";
+import { Button } from "@cordy/ui/components/ui/button";
+import { cn } from "@cordy/ui/lib/utils";
 import { ChatInput } from "../../chat/components/chat-input";
 import {
   ChatMessageList,

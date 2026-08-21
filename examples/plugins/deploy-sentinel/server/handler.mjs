@@ -1,4 +1,4 @@
-// Deploy Sentinel's own server. Multica never runs this — the plugin author does.
+// Deploy Sentinel's own server. Cordy never runs this — the plugin author does.
 //
 // Everything a real hook backend has to get right is here and nowhere else:
 // verifying the signature, refusing a replay, applying the team's own rules, and
@@ -6,7 +6,7 @@
 //
 //   node server/handler.mjs
 //
-// Env: MULTICA_SIGNING_SECRET (the whsec_… shown once when the token was issued)
+// Env: CORDY_SIGNING_SECRET (the whsec_… shown once when the token was issued)
 //      PORT (default 8788)
 
 import { createServer } from "node:https";
@@ -14,14 +14,14 @@ import { readFileSync } from "node:fs";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 // HTTPS, not HTTP. A hook's transport URL must be an https:// URL or the
-// manifest will not install, and MULTICA_PLUGIN_DEV_CA only changes WHICH
-// certificate Multica trusts — it never turns verification off. Generate one:
+// manifest will not install, and CORDY_PLUGIN_DEV_CA only changes WHICH
+// certificate Cordy trusts — it never turns verification off. Generate one:
 //
 //   openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
 //     -keyout dev-key.pem -out dev-cert.pem \
 //     -subj "/CN=127.0.0.1" -addext "subjectAltName=IP:127.0.0.1"
 //
-// then point MULTICA_PLUGIN_DEV_CA at dev-cert.pem.
+// then point CORDY_PLUGIN_DEV_CA at dev-cert.pem.
 function tlsOptions() {
   const cert = process.env.TLS_CERT ?? "dev-cert.pem";
   const key = process.env.TLS_KEY ?? "dev-key.pem";
@@ -35,7 +35,7 @@ function tlsOptions() {
 }
 
 const PORT = Number(process.env.PORT ?? 8788);
-const SIGNING_SECRET = process.env.MULTICA_SIGNING_SECRET ?? "";
+const SIGNING_SECRET = process.env.CORDY_SIGNING_SECRET ?? "";
 const REPLAY_WINDOW_SECONDS = 300;
 
 // Stand-in for the deploy system this plugin would really talk to. Deploy ids
@@ -53,7 +53,7 @@ function verifySignature(rawBody, signature, timestamp) {
   if (!SIGNING_SECRET) return { ok: false, reason: "server has no signing secret configured" };
   if (!signature || !timestamp) return { ok: false, reason: "missing signature headers" };
 
-  // Reject a replay before spending time on the comparison. Multica signs
+  // Reject a replay before spending time on the comparison. Cordy signs
   // timestamp + body precisely so an old, validly-signed request cannot be
   // resent later.
   const age = Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp));
@@ -163,8 +163,8 @@ const server = createServer(tlsOptions(), async (req, res) => {
 
   const verified = verifySignature(
     rawBody,
-    req.headers["x-multica-signature"],
-    req.headers["x-multica-timestamp"],
+    req.headers["x-cordy-signature"],
+    req.headers["x-cordy-timestamp"],
   );
   if (!verified.ok) {
     console.warn(`refused ${req.url}: ${verified.reason}`);
@@ -208,7 +208,7 @@ const server = createServer(tlsOptions(), async (req, res) => {
     case "page_oncall": {
       // An event hook's response is discarded, so there is nothing to return
       // that anybody reads. Acknowledge fast and do the work; blocking here
-      // would hold a Multica worker for no benefit.
+      // would hold a Cordy worker for no benefit.
       const issue = payload.event?.issue ?? {};
       console.log(`paging on-call for ${payload.event?.type}: ${issue.title ?? issueId}`);
       return reply(202, { acknowledged: true });
@@ -222,6 +222,6 @@ const server = createServer(tlsOptions(), async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Deploy Sentinel listening on https://127.0.0.1:${PORT}`);
   if (!SIGNING_SECRET) {
-    console.warn("MULTICA_SIGNING_SECRET is not set — every request will be refused.");
+    console.warn("CORDY_SIGNING_SECRET is not set — every request will be refused.");
   }
 });

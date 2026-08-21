@@ -2,17 +2,18 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Inter, Geist_Mono, Source_Serif_4 } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
-import { Toaster } from "@multica/ui/components/ui/sonner";
-import { cn } from "@multica/ui/lib/utils";
+import { Toaster } from "@cordy/ui/components/ui/sonner";
+import { cn } from "@cordy/ui/lib/utils";
 import { WebProviders } from "@/components/web-providers";
-import type { SupportedLocale } from "@multica/core/i18n";
-import { RESOURCES } from "@multica/views/locales";
+import type { SupportedLocale } from "@cordy/core/i18n";
+import { RESOURCES } from "@cordy/views/locales";
 import { getRequestLocale } from "@/lib/request-locale";
 import { SITE_TITLE, TITLE_TEMPLATE } from "@/platform/document-title";
 import {
   resolveBrowserApiBaseUrl,
   resolveBrowserWsUrl,
 } from "@/config/runtime-urls";
+import { ClerkProvider } from "@/components/clerk-provider";
 import "./globals.css";
 
 // Inter is the Latin UI face. next/font produces a hashed family (`__Inter_xxx`)
@@ -73,7 +74,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://www.multica.ai"),
+  metadataBase: new URL("https://www.cordy.ai"),
   title: {
     default: SITE_TITLE,
     template: TITLE_TEMPLATE,
@@ -88,13 +89,13 @@ export const metadata: Metadata = {
     apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180" }],
   },
   // Home-screen behaviour: launch without browser chrome, and label the icon
-  // "Multica" rather than the long SEO <title>. `capable` renders the
+  // "Cordy" rather than the long SEO <title>. `capable` renders the
   // standardised `mobile-web-app-capable` tag — Next 16 no longer emits the
   // deprecated apple-prefixed spelling, so iOS standalone rides on the
   // manifest's `display` instead (honoured since iOS 16.4).
   appleWebApp: {
     capable: true,
-    title: "Multica",
+    title: "Cordy",
     // `default` keeps the web view below the status bar. Going edge-to-edge
     // (`black-translucent` + viewport-fit=cover) needs env(safe-area-inset-*)
     // padding, which no surface in the app has yet.
@@ -102,13 +103,13 @@ export const metadata: Metadata = {
   },
   openGraph: {
     type: "website",
-    siteName: "Multica",
+    siteName: "Cordy",
     locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    site: "@multica_hq",
-    creator: "@multica_hq",
+    site: "@cordy_hq",
+    creator: "@cordy_hq",
   },
   alternates: {
     canonical: "/",
@@ -165,17 +166,19 @@ export default async function RootLayout({
             strategy="beforeInteractive"
           />
         )}
-        <ThemeProvider>
-          <WebProviders
-            locale={locale}
-            resources={resources}
-            apiBaseUrl={apiBaseUrl}
-            wsUrl={wsUrl}
-          >
-            {children}
-          </WebProviders>
-          <Toaster />
-        </ThemeProvider>
+        <ClerkProvider>
+          <ThemeProvider>
+            <WebProviders
+              locale={locale}
+              resources={resources}
+              apiBaseUrl={apiBaseUrl}
+              wsUrl={wsUrl}
+            >
+              {children}
+            </WebProviders>
+            <Toaster />
+          </ThemeProvider>
+        </ClerkProvider>
       </body>
     </html>
   );

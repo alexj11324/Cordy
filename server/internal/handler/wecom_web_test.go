@@ -14,7 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/wecom"
+	"github.com/cordy-ai/cordy/server/internal/integrations/wecom"
 )
 
 // fakeRedeemer records whether the handler ever got as far as the service.

@@ -6,7 +6,7 @@ import {
   ItemDescription,
   ItemMedia,
   ItemTitle,
-} from "@multica/ui/components/ui/item";
+} from "@cordy/ui/components/ui/item";
 import { useT } from "../../i18n";
 
 /** Mirrors `mikaAgentAvatarURL` in server/internal/handler/mika_agent.go.

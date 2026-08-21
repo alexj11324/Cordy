@@ -65,7 +65,7 @@ func TestDecryptMediaRoundTripsRealCiphertext(t *testing.T) {
 		{"64 bytes", bytes.Repeat([]byte("g"), 64)},
 		{"a PNG header", []byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")},
 		{"utf-8 text", []byte("这是一份季度报告，请查收。")},
-		{"a megabyte", bytes.Repeat([]byte("multica"), 150000)},
+		{"a megabyte", bytes.Repeat([]byte("cordy"), 150000)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

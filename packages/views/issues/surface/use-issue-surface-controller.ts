@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { hashKey, keepPreviousData, useQuery } from "@tanstack/react-query";
-import { api } from "@multica/core/api";
+import { api } from "@cordy/core/api";
 import type {
   Issue,
   IssueStatusCategory,
@@ -12,27 +12,27 @@ import type {
   IssueTableQuerySpec,
   Project,
   WorkingAgentSummary,
-} from "@multica/core/types";
-import { workspaceWorkingAgentsOptions } from "@multica/core/agents";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { ALL_STATUSES } from "@multica/core/issues/config";
-import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
-import { statusFilterColumns } from "@multica/core/issues";
-import { dateOnlyToLocalDate } from "@multica/core/issues/date";
-import type { IssueSortParam } from "@multica/core/issues/queries";
-import { issueTableFacetsOptions } from "@multica/core/issues/queries";
+} from "@cordy/core/types";
+import { workspaceWorkingAgentsOptions } from "@cordy/core/agents";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { ALL_STATUSES } from "@cordy/core/issues/config";
+import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
+import { statusFilterColumns } from "@cordy/core/issues";
+import { dateOnlyToLocalDate } from "@cordy/core/issues/date";
+import type { IssueSortParam } from "@cordy/core/issues/queries";
+import { issueTableFacetsOptions } from "@cordy/core/issues/queries";
 import {
   buildIssueSurfaceQueryPlan,
   type IssueSurfaceQueryPlan,
-} from "@multica/core/issues/surface/query-plan";
+} from "@cordy/core/issues/surface/query-plan";
 import {
   assigneeTypesForActorKind,
   type IssueScope,
-} from "@multica/core/issues/surface/scope";
-import type { IssueDateFilter, SortField } from "@multica/core/issues/stores/view-store";
-import { propertyListOptions } from "@multica/core/properties";
-import { propertyIdFromViewKey } from "@multica/core/issues/stores/view-store";
-import { useViewStore } from "@multica/core/issues/stores/view-store-context";
+} from "@cordy/core/issues/surface/scope";
+import type { IssueDateFilter, SortField } from "@cordy/core/issues/stores/view-store";
+import { propertyListOptions } from "@cordy/core/properties";
+import { propertyIdFromViewKey } from "@cordy/core/issues/stores/view-store";
+import { useViewStore } from "@cordy/core/issues/stores/view-store-context";
 import type { IssueFilters } from "../utils/filter";
 import type { ChildProgress } from "../components/list-row";
 import { IssueTableExportIntegrityError } from "../components/table-view-model";

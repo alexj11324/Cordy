@@ -3,14 +3,14 @@
 import { use, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, usePathname } from "next/navigation";
-import { WorkspaceSlugProvider, paths } from "@multica/core/paths";
-import { workspaceBySlugOptions } from "@multica/core/workspace";
-import { setCurrentWorkspace } from "@multica/core/platform";
-import { useAuthStore } from "@multica/core/auth";
-import { NoAccessPage } from "@multica/views/workspace/no-access-page";
-import { WelcomeAfterOnboarding } from "@multica/views/workspace/welcome-after-onboarding";
-import { MulticaIcon } from "@multica/ui/components/common/multica-icon";
-import { useWorkspaceSeen } from "@multica/views/workspace/use-workspace-seen";
+import { WorkspaceSlugProvider, paths } from "@cordy/core/paths";
+import { workspaceBySlugOptions } from "@cordy/core/workspace";
+import { setCurrentWorkspace } from "@cordy/core/platform";
+import { useAuthStore } from "@cordy/core/auth";
+import { NoAccessPage } from "@cordy/views/workspace/no-access-page";
+import { WelcomeAfterOnboarding } from "@cordy/views/workspace/welcome-after-onboarding";
+import { CordyIcon } from "@cordy/ui/components/common/cordy-icon";
+import { useWorkspaceSeen } from "@cordy/views/workspace/use-workspace-seen";
 import { workspaceSlugFromPathname } from "@/lib/workspace-slug-from-pathname";
 
 export default function WorkspaceLayout({
@@ -97,7 +97,7 @@ export default function WorkspaceLayout({
 
   const loadingIndicator = (
     <div className="flex h-svh items-center justify-center">
-      <MulticaIcon className="size-6 animate-pulse" />
+      <CordyIcon className="size-6 animate-pulse" />
     </div>
   );
 

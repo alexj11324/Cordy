@@ -9,10 +9,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/multica-ai/multica/server/internal/attribution"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/attribution"
+	"github.com/cordy-ai/cordy/server/internal/events"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // seedAttributionFixture creates the minimal user/workspace/member/runtime/agent
@@ -24,7 +24,7 @@ func seedAttributionFixture(t *testing.T, pool *pgxpool.Pool) (workspaceID, user
 	suffix := time.Now().UnixNano()
 
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Attr User', $1) RETURNING id`,
-		fmt.Sprintf("attr-%d@multica.test", suffix)).Scan(&userID); err != nil {
+		fmt.Sprintf("attr-%d@cordy.test", suffix)).Scan(&userID); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 	t.Cleanup(func() { pool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, userID) })
@@ -132,7 +132,7 @@ func TestEnqueueTaskForIssueWithHandoffAttributesToActor(t *testing.T) {
 	var actorID string
 	suffix := time.Now().UnixNano()
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Actor', $1) RETURNING id`,
-		fmt.Sprintf("actor-%d@multica.test", suffix)).Scan(&actorID); err != nil {
+		fmt.Sprintf("actor-%d@cordy.test", suffix)).Scan(&actorID); err != nil {
 		t.Fatalf("seed actor user: %v", err)
 	}
 	t.Cleanup(func() { pool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, actorID) })
@@ -190,7 +190,7 @@ func TestMergeCommentIntoPendingTask_KeepsAccountableEqualsOriginator(t *testing
 	// A second member B whose comment will be coalesced in.
 	var userB string
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Attr User B', $1) RETURNING id`,
-		fmt.Sprintf("attr-b-%d@multica.test", time.Now().UnixNano())).Scan(&userB); err != nil {
+		fmt.Sprintf("attr-b-%d@cordy.test", time.Now().UnixNano())).Scan(&userB); err != nil {
 		t.Fatalf("seed user B: %v", err)
 	}
 	t.Cleanup(func() { pool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, userB) })
@@ -333,7 +333,7 @@ func TestAttributionInvariantCheck_RejectsBypass(t *testing.T) {
 	// originator != accountable → also rejected.
 	var userB string
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Check B', $1) RETURNING id`,
-		fmt.Sprintf("check-b-%d@multica.test", time.Now().UnixNano())).Scan(&userB); err != nil {
+		fmt.Sprintf("check-b-%d@cordy.test", time.Now().UnixNano())).Scan(&userB); err != nil {
 		t.Fatalf("seed user B: %v", err)
 	}
 	t.Cleanup(func() { pool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, userB) })
@@ -468,7 +468,7 @@ func seedExtraMember(t *testing.T, pool *pgxpool.Pool, workspaceID, label string
 	suffix := time.Now().UnixNano()
 	var userID string
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id`,
-		label, fmt.Sprintf("%s-%d@multica.test", label, suffix)).Scan(&userID); err != nil {
+		label, fmt.Sprintf("%s-%d@cordy.test", label, suffix)).Scan(&userID); err != nil {
 		t.Fatalf("seed %s user: %v", label, err)
 	}
 	t.Cleanup(func() { pool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, userID) })
@@ -840,7 +840,7 @@ func TestDispatchRunOnlyManualStampsDirectHuman(t *testing.T) {
 	}
 	var actorID string
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Trigger', $1) RETURNING id`,
-		fmt.Sprintf("trigger-%d@multica.test", time.Now().UnixNano())).Scan(&actorID); err != nil {
+		fmt.Sprintf("trigger-%d@cordy.test", time.Now().UnixNano())).Scan(&actorID); err != nil {
 		t.Fatalf("seed actor: %v", err)
 	}
 	t.Cleanup(func() { pool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, actorID) })
@@ -994,7 +994,7 @@ func TestEnqueueTaskForIssueAutopilotManualStampsDirectHuman(t *testing.T) {
 	// A distinct triggering member (not the rule publisher) manually triggers.
 	var actorID string
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Trigger', $1) RETURNING id`,
-		fmt.Sprintf("trig2-%d@multica.test", time.Now().UnixNano())).Scan(&actorID); err != nil {
+		fmt.Sprintf("trig2-%d@cordy.test", time.Now().UnixNano())).Scan(&actorID); err != nil {
 		t.Fatalf("seed actor: %v", err)
 	}
 	t.Cleanup(func() { pool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, actorID) })
@@ -1051,7 +1051,7 @@ func TestRecordAutopilotRuleVersionRepublishReattributes(t *testing.T) {
 
 	var memberB string
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Editor', $1) RETURNING id`,
-		fmt.Sprintf("editor-%d@multica.test", time.Now().UnixNano())).Scan(&memberB); err != nil {
+		fmt.Sprintf("editor-%d@cordy.test", time.Now().UnixNano())).Scan(&memberB); err != nil {
 		t.Fatalf("seed member B: %v", err)
 	}
 	t.Cleanup(func() { pool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, memberB) })
@@ -1162,7 +1162,7 @@ func TestRerunIssueAttributesToRerunningMember(t *testing.T) {
 	// A distinct member performs the rerun.
 	var rerunnerID string
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Rerunner', $1) RETURNING id`,
-		fmt.Sprintf("rerunner-%d@multica.test", time.Now().UnixNano())).Scan(&rerunnerID); err != nil {
+		fmt.Sprintf("rerunner-%d@cordy.test", time.Now().UnixNano())).Scan(&rerunnerID); err != nil {
 		t.Fatalf("seed rerunner: %v", err)
 	}
 	t.Cleanup(func() { pool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, rerunnerID) })

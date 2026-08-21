@@ -24,7 +24,7 @@ export interface IssueStatusEntry {
   workspace_id: string;
   /**
    * Stable machine handle, immutable after creation. This is the value stored
-   * in `issue.status`, accepted by `multica issue status`, and referenced in
+   * in `issue.status`, accepted by `cordy issue status`, and referenced in
    * agent instructions — so it does NOT track renames of `name`.
    */
   key: string;

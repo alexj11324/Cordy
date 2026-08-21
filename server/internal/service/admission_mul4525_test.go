@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/dispatch"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/dispatch"
+	"github.com/cordy-ai/cordy/server/internal/events"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // TestRerunIssueBlockedBeforeMutationWhenInvokeDenied is the security acceptance
@@ -107,7 +107,7 @@ func TestAutopilotDispatchAdmitsClickerNotCreator(t *testing.T) {
 	// nor sit on its allow-list, so the creator gate denies them.
 	var apCreatorID string
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('AP Creator', $1) RETURNING id`,
-		fmt.Sprintf("apc-%d@multica.test", time.Now().UnixNano())).Scan(&apCreatorID); err != nil {
+		fmt.Sprintf("apc-%d@cordy.test", time.Now().UnixNano())).Scan(&apCreatorID); err != nil {
 		t.Fatalf("seed ap creator: %v", err)
 	}
 	t.Cleanup(func() { pool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, apCreatorID) })

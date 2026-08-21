@@ -2,27 +2,27 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Trash2, Copy, Check, Info } from "lucide-react";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
-import type { PersonalAccessToken } from "@multica/core/types";
-import { Alert, AlertDescription } from "@multica/ui/components/ui/alert";
-import { Checkbox } from "@multica/ui/components/ui/checkbox";
-import { Input } from "@multica/ui/components/ui/input";
-import { Button } from "@multica/ui/components/ui/button";
-import { Card, CardContent } from "@multica/ui/components/ui/card";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@cordy/ui/components/ui/tooltip";
+import type { PersonalAccessToken } from "@cordy/core/types";
+import { Alert, AlertDescription } from "@cordy/ui/components/ui/alert";
+import { Checkbox } from "@cordy/ui/components/ui/checkbox";
+import { Input } from "@cordy/ui/components/ui/input";
+import { Button } from "@cordy/ui/components/ui/button";
+import { Card, CardContent } from "@cordy/ui/components/ui/card";
 import {
   Select,
   SelectTrigger,
   SelectValue,
   SelectContent,
   SelectItem,
-} from "@multica/ui/components/ui/select";
+} from "@cordy/ui/components/ui/select";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@multica/ui/components/ui/dialog";
+} from "@cordy/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,11 +32,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
-import { copyText } from "@multica/ui/lib/clipboard";
+} from "@cordy/ui/components/ui/alert-dialog";
+import { Skeleton } from "@cordy/ui/components/ui/skeleton";
+import { copyText } from "@cordy/ui/lib/clipboard";
 import { toast } from "sonner";
-import { api } from "@multica/core/api";
+import { api } from "@cordy/core/api";
 import { useT } from "../../i18n";
 import { SettingsSection, SettingsTab } from "./settings-layout";
 
@@ -115,7 +115,7 @@ export function TokensTab() {
 
   const handleCopyCommand = async () => {
     if (!newToken) return;
-    if (await copyText(`multica login --token ${newToken}`)) {
+    if (await copyText(`cordy login --token ${newToken}`)) {
       setCommandCopied(true);
       setTimeout(() => setCommandCopied(false), 2000);
     }
@@ -300,7 +300,7 @@ export function TokensTab() {
             <p className="text-caption text-muted-foreground">{t(($) => $.tokens.created_dialog.cli_hint)}</p>
             <div className="flex min-w-0 items-center gap-2">
               <code className="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-body select-all">
-                {`multica login --token ${newToken}`}
+                {`cordy login --token ${newToken}`}
               </code>
               <Tooltip>
                 <TooltipTrigger

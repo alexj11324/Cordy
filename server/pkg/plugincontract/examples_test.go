@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	"github.com/cordy-ai/cordy/server/pkg/plugincontract"
 )
 
 // The shipped examples are documentation, and documentation that does not parse
@@ -28,7 +28,7 @@ func TestShippedExamplesParseAndInstallOnThisHost(t *testing.T) {
 		if !entry.IsDir() {
 			continue
 		}
-		path := filepath.Join(root, entry.Name(), "multica.plugin.json")
+		path := filepath.Join(root, entry.Name(), "cordy.plugin.json")
 		raw, err := os.ReadFile(path)
 		if os.IsNotExist(err) {
 			continue

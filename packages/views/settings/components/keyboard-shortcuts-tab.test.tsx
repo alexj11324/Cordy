@@ -5,7 +5,7 @@ import {
   configureShortcutPlatform,
   getShortcut,
   useShortcutStore,
-} from "@multica/core/shortcuts";
+} from "@cordy/core/shortcuts";
 import { renderWithI18n } from "../../test/i18n";
 import { KeyboardShortcutsTab } from "./keyboard-shortcuts-tab";
 

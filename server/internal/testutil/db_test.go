@@ -16,7 +16,7 @@ var (
 )
 
 const (
-	fixtureEmail = "testutil-fixture@multica.ai"
+	fixtureEmail = "testutil-fixture@cordy.ai"
 	fixtureSlug  = "testutil-fixtures"
 )
 
@@ -28,7 +28,7 @@ func TestMain(m *testing.M) {
 	ctx := context.Background()
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+		dbURL = "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable"
 	}
 
 	pool, err := pgxpool.New(ctx, dbURL)
@@ -200,7 +200,7 @@ func TestIssueNumbersDoNotCollide(t *testing.T) {
 func TestUserTableIsQuoted(t *testing.T) {
 	f := newFixture(t)
 
-	userID := f.User(t, "Quoted Name", "testutil-quoted@multica.ai")
+	userID := f.User(t, "Quoted Name", "testutil-quoted@cordy.ai")
 	var name string
 	f.QueryRow(t, `SELECT name FROM "user" WHERE id = $1`, userID).Scan(&name)
 	if name != "Quoted Name" {

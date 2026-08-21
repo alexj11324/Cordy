@@ -239,7 +239,7 @@ func TestRunContextZeroTimeoutHasNoDeadline(t *testing.T) {
 func TestRunContextPositiveTimeoutHasDeadline(t *testing.T) {
 	t.Parallel()
 	// A positive timeout keeps the hard wall-clock deadline (the opt-in
-	// absolute cap operators can still set via MULTICA_AGENT_TIMEOUT).
+	// absolute cap operators can still set via CORDY_AGENT_TIMEOUT).
 	ctx, cancel := runContext(context.Background(), time.Hour)
 	defer cancel()
 	deadline, ok := ctx.Deadline()

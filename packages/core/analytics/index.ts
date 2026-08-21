@@ -19,7 +19,7 @@ import { isBenignException } from "./benign-exceptions";
 
 export const EVENT_SCHEMA_VERSION = 2;
 
-const SIGNUP_SOURCE_COOKIE = "multica_signup_source";
+const SIGNUP_SOURCE_COOKIE = "cordy_signup_source";
 // Per-value cap keeps a long utm_content from blowing the budget. We drop
 // the entire cookie if the JSON still exceeds the overall limit — partial
 // JSON is worse than no attribution because PostHog can't parse it.
@@ -304,7 +304,7 @@ function captureNow(
  * handlers can't see.
  *
  * Currently called by the web route-level `global-error`. Section-level
- * `@multica/ui` ErrorBoundary can opt in by passing `onError={captureException}`
+ * `@cordy/ui` ErrorBoundary can opt in by passing `onError={captureException}`
  * at its call sites; it is not wired app-wide (those failures already degrade
  * gracefully with fallback UI).
  *

@@ -1,15 +1,15 @@
 /**
- * @multica/plugin-sdk — what a plugin surface imports.
+ * @cordy/plugin-sdk — what a plugin surface imports.
  *
  * A surface is an ordinary script running in a sandboxed iframe. It holds no
- * credential and cannot reach Multica's API directly: every call here becomes a
+ * credential and cannot reach Cordy's API directly: every call here becomes a
  * message to the host page, which performs the call on the signed-in user's own
  * session and sends the result back. That indirection is the whole security
  * story — a plugin can never do more than the person looking at it, and there
  * is no token in the frame to leak.
  *
- * Zero runtime dependencies, and deliberately no import of `@multica/core` or
- * `@multica/ui`: this ships to third parties.
+ * Zero runtime dependencies, and deliberately no import of `@cordy/core` or
+ * `@cordy/ui`: this ships to third parties.
  */
 
 import {
@@ -72,12 +72,12 @@ export interface StorageKey {
 }
 
 /** Thrown when the host refuses or the call fails. `status` mirrors HTTP. */
-export class MulticaPluginError extends Error {
+export class CordyPluginError extends Error {
   readonly status: number;
 
   constructor(status: number, message: string) {
     super(message);
-    this.name = "MulticaPluginError";
+    this.name = "CordyPluginError";
     this.status = status;
   }
 }
@@ -178,7 +178,7 @@ class Bridge {
     this.pending.delete(message.id);
     clearTimeout(pending.timer);
     if (message.ok) pending.resolve(message.data);
-    else pending.reject(new MulticaPluginError(message.status, message.error));
+    else pending.reject(new CordyPluginError(message.status, message.error));
   };
 
   private applyTheme(theme: ThemeTokens) {
@@ -210,7 +210,7 @@ class Bridge {
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new MulticaPluginError(408, `Multica did not answer ${method} ${path} in time`));
+        reject(new CordyPluginError(408, `Cordy did not answer ${method} ${path} in time`));
       }, DEFAULT_TIMEOUT_MS);
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
       this.port?.postMessage(request);
@@ -232,7 +232,7 @@ function storageApi(scope: "workspace" | "user") {
         return result.value;
       } catch (error) {
         // A missing key is an ordinary outcome, not an error to handle.
-        if (error instanceof MulticaPluginError && error.status === 404) return null;
+        if (error instanceof CordyPluginError && error.status === 404) return null;
         throw error;
       }
     },
@@ -247,7 +247,7 @@ function storageApi(scope: "workspace" | "user") {
 
 let cachedContext: PluginContext | null = null;
 
-export const multica = {
+export const cordy = {
   context: {
     /** Who is looking, where, and which issue this surface is mounted on. */
     async get(force = false): Promise<PluginContext> {
@@ -300,7 +300,7 @@ export const multica = {
      * `ui` trigger.
      */
     async invoke(hookKey: string, input?: unknown): Promise<HookResult> {
-      const issue = (await multica.context.get()).issue;
+      const issue = (await cordy.context.get()).issue;
       return bridge.request<HookResult>("POST", `/hooks/${encodeURIComponent(hookKey)}`, {
         trigger: "ui",
         issue_id: issue?.id,
@@ -322,11 +322,11 @@ export const multica = {
 };
 
 async function requireIssueId(): Promise<string> {
-  const context = await multica.context.get();
+  const context = await cordy.context.get();
   if (!context.issue) {
-    throw new MulticaPluginError(400, "This surface is not mounted on an issue; pass an issue id explicitly.");
+    throw new CordyPluginError(400, "This surface is not mounted on an issue; pass an issue id explicitly.");
   }
   return context.issue.id;
 }
 
-export default multica;
+export default cordy;

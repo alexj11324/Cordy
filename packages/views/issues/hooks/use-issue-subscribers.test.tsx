@@ -5,10 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { setApiInstance } from "@multica/core/api";
-import { issueKeys } from "@multica/core/issues/queries";
-import { ApiError } from "@multica/core/api/client";
-import type { ApiClient } from "@multica/core/api/client";
+import { setApiInstance } from "@cordy/core/api";
+import { issueKeys } from "@cordy/core/issues/queries";
+import { ApiError } from "@cordy/core/api/client";
+import type { ApiClient } from "@cordy/core/api/client";
 
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
@@ -39,7 +39,7 @@ vi.mock("../../i18n", () => ({
   }),
 }));
 
-vi.mock("@multica/core/realtime", () => ({
+vi.mock("@cordy/core/realtime", () => ({
   useWSEvent: () => undefined,
   useWSReconnect: () => undefined,
 }));

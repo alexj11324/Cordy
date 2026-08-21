@@ -19,31 +19,31 @@ type ChannelLeaseMetrics struct {
 func NewChannelLeaseMetrics() *ChannelLeaseMetrics {
 	return &ChannelLeaseMetrics{
 		Operations: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "cordy",
 			Subsystem: "channel_lease",
 			Name:      "operations_total",
 			Help:      "Channel lease operations by operation and outcome.",
 		}, []string{"operation", "outcome"}),
 		ActiveOwners: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "multica",
+			Namespace: "cordy",
 			Subsystem: "channel_lease",
 			Name:      "active_owners",
 			Help:      "Channel installations currently owned by this process.",
 		}),
 		OwnersWithRenewalErrors: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "multica",
+			Namespace: "cordy",
 			Subsystem: "channel_lease",
 			Name:      "owners_with_renewal_errors",
 			Help:      "Channel lease owners whose latest renewal attempt failed.",
 		}),
 		LastSuccessfulRenew: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "multica",
+			Namespace: "cordy",
 			Subsystem: "channel_lease",
 			Name:      "last_successful_renewal_timestamp_seconds",
 			Help:      "Unix timestamp of the most recent successful channel lease renewal.",
 		}),
 		TakeoverLatency: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Namespace: "multica",
+			Namespace: "cordy",
 			Subsystem: "channel_lease",
 			Name:      "takeover_latency_seconds",
 			Help:      "Time from first observed contention until this process acquires the lease.",

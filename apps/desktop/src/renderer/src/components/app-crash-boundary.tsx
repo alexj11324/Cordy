@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import { ErrorBoundary } from "@multica/ui/components/common/error-boundary";
-import { Button } from "@multica/ui/components/ui/button";
-import { captureException } from "@multica/core/analytics";
-import { DragStrip } from "@multica/views/platform";
+import { ErrorBoundary } from "@cordy/ui/components/common/error-boundary";
+import { Button } from "@cordy/ui/components/ui/button";
+import { captureException } from "@cordy/core/analytics";
+import { DragStrip } from "@cordy/views/platform";
 
 /**
  * Last-resort boundary around the entire desktop renderer.
@@ -68,7 +68,7 @@ function CrashFallback({ error }: { error: Error }) {
         <div className="max-w-xl rounded-lg border bg-card p-6 shadow-sm">
           <h1 className="text-title font-semibold">Something went wrong</h1>
           <p className="mt-3 text-body text-muted-foreground">
-            Multica Desktop hit an unexpected error and could not keep
+            Cordy Desktop hit an unexpected error and could not keep
             rendering. Reloading usually recovers — your work is stored on the
             server.
           </p>

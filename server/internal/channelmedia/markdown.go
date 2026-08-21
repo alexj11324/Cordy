@@ -7,9 +7,9 @@ import (
 	"github.com/google/uuid"
 )
 
-const markerPrefix = "<!-- multica:channel-media:"
+const markerPrefix = "<!-- cordy:channel-media:"
 
-var markerPattern = regexp.MustCompile(`<!-- multica:channel-media:([0-9a-fA-F-]{36}) -->`)
+var markerPattern = regexp.MustCompile(`<!-- cordy:channel-media:([0-9a-fA-F-]{36}) -->`)
 
 // DownloadPath is the durable, authorization-aware attachment URL persisted in
 // issue and chat Markdown.

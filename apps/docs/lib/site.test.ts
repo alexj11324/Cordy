@@ -41,11 +41,11 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://www.multica.ai/docs/agents",
+      canonical: "https://www.cordy.ai/docs/agents",
       languages: {
-        en: "https://www.multica.ai/docs/agents",
-        zh: "https://www.multica.ai/docs/zh/agents",
-        "x-default": "https://www.multica.ai/docs/agents",
+        en: "https://www.cordy.ai/docs/agents",
+        zh: "https://www.cordy.ai/docs/zh/agents",
+        "x-default": "https://www.cordy.ai/docs/agents",
       },
     });
   });
@@ -61,12 +61,12 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://www.multica.ai/docs/agents",
+      canonical: "https://www.cordy.ai/docs/agents",
       languages: {
-        en: "https://www.multica.ai/docs/agents",
-        zh: "https://www.multica.ai/docs/zh/agents",
-        ko: "https://www.multica.ai/docs/ko/agents",
-        "x-default": "https://www.multica.ai/docs/agents",
+        en: "https://www.cordy.ai/docs/agents",
+        zh: "https://www.cordy.ai/docs/zh/agents",
+        ko: "https://www.cordy.ai/docs/ko/agents",
+        "x-default": "https://www.cordy.ai/docs/agents",
       },
     });
   });
@@ -76,12 +76,12 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://www.multica.ai/docs/agents",
+      canonical: "https://www.cordy.ai/docs/agents",
       languages: {
-        en: "https://www.multica.ai/docs/agents",
-        zh: "https://www.multica.ai/docs/zh/agents",
-        ja: "https://www.multica.ai/docs/ja/agents",
-        "x-default": "https://www.multica.ai/docs/agents",
+        en: "https://www.cordy.ai/docs/agents",
+        zh: "https://www.cordy.ai/docs/zh/agents",
+        ja: "https://www.cordy.ai/docs/ja/agents",
+        "x-default": "https://www.cordy.ai/docs/agents",
       },
     });
   });
@@ -90,11 +90,11 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates([])).toEqual({
-      canonical: "https://www.multica.ai/docs",
+      canonical: "https://www.cordy.ai/docs",
       languages: {
-        en: "https://www.multica.ai/docs",
-        zh: "https://www.multica.ai/docs/zh",
-        "x-default": "https://www.multica.ai/docs",
+        en: "https://www.cordy.ai/docs",
+        zh: "https://www.cordy.ai/docs/zh",
+        "x-default": "https://www.cordy.ai/docs",
       },
     });
   });

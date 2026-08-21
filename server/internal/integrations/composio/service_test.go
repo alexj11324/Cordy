@@ -11,9 +11,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/util"
-	sdk "github.com/multica-ai/multica/server/pkg/composio"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	sdk "github.com/cordy-ai/cordy/server/pkg/composio"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // ---- fakes ---------------------------------------------------------------
@@ -206,8 +206,8 @@ func newTestService(t *testing.T, client SDK, store Store) *Service {
 	t.Helper()
 	svc, err := NewService(client, store, Config{
 		StateSecret:     testSecret,
-		CallbackBaseURL: "https://multica.ai",
-		FrontendBaseURL: "https://multica.ai",
+		CallbackBaseURL: "https://cordy.ai",
+		FrontendBaseURL: "https://cordy.ai",
 		Now:             func() time.Time { return time.Unix(1_700_000_000, 0) },
 	})
 	if err != nil {
@@ -251,13 +251,13 @@ func TestBeginConnect_MappingAndState(t *testing.T) {
 	if sdkFake.lastCreateLink.AuthConfigID != "ac_notion" {
 		t.Errorf("auth config = %q", sdkFake.lastCreateLink.AuthConfigID)
 	}
-	// composio_user_id == multica user id
+	// composio_user_id == cordy user id
 	if sdkFake.lastCreateLink.UserID != util.UUIDToString(userID) {
 		t.Errorf("composio user id = %q, want %q", sdkFake.lastCreateLink.UserID, util.UUIDToString(userID))
 	}
 	// callback URL carries the signed state and points at our callback path
 	cb := sdkFake.lastCreateLink.CallbackURL
-	if !strings.HasPrefix(cb, "https://multica.ai"+callbackPath+"?state=") {
+	if !strings.HasPrefix(cb, "https://cordy.ai"+callbackPath+"?state=") {
 		t.Fatalf("callback url = %q", cb)
 	}
 	u, _ := url.Parse(cb)
@@ -709,10 +709,10 @@ func TestCreateMCPSession_PinsConnectedAccounts(t *testing.T) {
 func TestCallbackRedirect(t *testing.T) {
 	t.Parallel()
 	svc := newTestService(t, &fakeSDK{}, newFakeStore())
-	if got := svc.CallbackRedirect("notion", true); got != "https://multica.ai/settings?tab=integrations&connected=notion" {
+	if got := svc.CallbackRedirect("notion", true); got != "https://cordy.ai/settings?tab=integrations&connected=notion" {
 		t.Errorf("success redirect = %q", got)
 	}
-	if got := svc.CallbackRedirect("notion", false); got != "https://multica.ai/settings?tab=integrations&error=composio_connect_failed" {
+	if got := svc.CallbackRedirect("notion", false); got != "https://cordy.ai/settings?tab=integrations&error=composio_connect_failed" {
 		t.Errorf("failure redirect = %q", got)
 	}
 }

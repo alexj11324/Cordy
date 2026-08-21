@@ -55,7 +55,7 @@ test("onboarding — structural blocks match the column width on every step", as
   await api.login(`widths-${Date.now()}@localhost`, "Width Guard");
   const token = api.getToken();
 
-  await page.addInitScript((t) => localStorage.setItem("multica_token", t), token);
+  await page.addInitScript((t) => localStorage.setItem("cordy_token", t), token);
   await page.goto("/onboarding", { waitUntil: "domcontentloaded" });
   await waitForPageText(page, "Continue on web");
   await page.getByRole("button", { name: "Continue on web" }).click();
@@ -91,7 +91,7 @@ test("onboarding — the shell survives step changes instead of re-mounting", as
   await api.login(`shell-${Date.now()}@localhost`, "Shell Guard");
 
   await page.addInitScript(
-    (t) => localStorage.setItem("multica_token", t),
+    (t) => localStorage.setItem("cordy_token", t),
     api.getToken(),
   );
   await page.goto("/onboarding", { waitUntil: "domcontentloaded" });

@@ -11,8 +11,8 @@ import {
   RefreshCw,
   ShieldCheck,
 } from "lucide-react";
-import { ApiError } from "@multica/core/api";
-import { autopilotQuotaUsageOptions } from "@multica/core/autopilots";
+import { ApiError } from "@cordy/core/api";
+import { autopilotQuotaUsageOptions } from "@cordy/core/autopilots";
 import {
   useCreateWorkspaceSubscriptionCheckout,
   useCreateWorkspaceSubscriptionPortal,
@@ -20,17 +20,17 @@ import {
   workspaceSubscriptionEntitlementsOptions,
   workspaceSubscriptionPricesOptions,
   workspaceSubscriptionSummaryOptions,
-} from "@multica/core/billing";
-import { useFeatureEnabled } from "@multica/core/config";
-import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@multica/core/feature-flags";
-import { useCurrentMember } from "@multica/core/permissions";
-import { useCurrentWorkspace } from "@multica/core/paths";
-import type { WorkspaceSubscriptionInterval } from "@multica/core/types";
+} from "@cordy/core/billing";
+import { useFeatureEnabled } from "@cordy/core/config";
+import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@cordy/core/feature-flags";
+import { useCurrentMember } from "@cordy/core/permissions";
+import { useCurrentWorkspace } from "@cordy/core/paths";
+import type { WorkspaceSubscriptionInterval } from "@cordy/core/types";
 import {
   Alert,
   AlertDescription,
   AlertTitle,
-} from "@multica/ui/components/ui/alert";
+} from "@cordy/ui/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,15 +40,15 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
-import { Badge } from "@multica/ui/components/ui/badge";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@cordy/ui/components/ui/alert-dialog";
+import { Badge } from "@cordy/ui/components/ui/badge";
+import { Button } from "@cordy/ui/components/ui/button";
 import {
   Progress,
   ProgressLabel,
   ProgressValue,
-} from "@multica/ui/components/ui/progress";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
+} from "@cordy/ui/components/ui/progress";
+import { Skeleton } from "@cordy/ui/components/ui/skeleton";
 import { useLocale, useT } from "../../i18n";
 import { useNavigation } from "../../navigation";
 import { openExternal } from "../../platform";

@@ -10,7 +10,7 @@ import (
 )
 
 // The isolated checkout exists so a Codex task can commit inside its own
-// workdir (multica-ai/multica#2925 on Linux, #6449 on Windows). The rest of
+// workdir (cordy-ai/cordy#2925 on Linux, #6449 on Windows). The rest of
 // the suite proves the shape of that checkout on whatever platform CI runs,
 // but two of its guarantees are claims about Windows itself: that Git really
 // puts the gitdir inside the task directory there, and that --no-hardlinks
@@ -146,7 +146,7 @@ func tempDirOnOtherVolume(t *testing.T, other string) string {
 		if strings.ToUpper(volume) == skipVolume {
 			continue
 		}
-		dir, err := os.MkdirTemp(volume+`\`, "multica-repocache-")
+		dir, err := os.MkdirTemp(volume+`\`, "cordy-repocache-")
 		if err != nil {
 			continue
 		}

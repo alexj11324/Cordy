@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestProbeDshMulticaProfile(t *testing.T) {
+func TestProbeDshCordyProfile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture")
 	}
@@ -27,14 +27,14 @@ func TestProbeDshMulticaProfile(t *testing.T) {
 			if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if got := probeDshMulticaProfile(path); got != tc.want {
-				t.Fatalf("probeDshMulticaProfile() = %v, want %v", got, tc.want)
+			if got := probeDshCordyProfile(path); got != tc.want {
+				t.Fatalf("probeDshCordyProfile() = %v, want %v", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestProbeAgentCLIsRequiresDshMulticaProfile(t *testing.T) {
+func TestProbeAgentCLIsRequiresDshCordyProfile(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture")
 	}
@@ -49,7 +49,7 @@ func TestProbeAgentCLIsRequiresDshMulticaProfile(t *testing.T) {
 		want bool
 	}{
 		{name: "profile installed", body: `printf '%s\n' '{"v":1,"type":"probe","runtime":"dsh","protocol_version":1}'`, want: true},
-		{name: "profile missing", body: `printf '%s\n' 'missing multica profile'; exit 1`, want: false},
+		{name: "profile missing", body: `printf '%s\n' 'missing cordy profile'; exit 1`, want: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			fakeDir := t.TempDir()
@@ -58,7 +58,7 @@ func TestProbeAgentCLIsRequiresDshMulticaProfile(t *testing.T) {
 				t.Fatal(err)
 			}
 			t.Setenv("PATH", fakeDir)
-			t.Setenv("MULTICA_DSH_PATH", "")
+			t.Setenv("CORDY_DSH_PATH", "")
 			_, found := probeAgentCLIs()["dsh"]
 			if found != tc.want {
 				t.Fatalf("dsh discovered = %v, want %v", found, tc.want)

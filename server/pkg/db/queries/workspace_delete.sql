@@ -5,7 +5,7 @@
 -- name: SetWorkspaceTeardownMode :exec
 -- The setting is transaction-local. Migration 242 makes only the three DELETE
 -- dirty triggers skip their per-row work while this flag is on.
-SELECT set_config('multica.workspace_teardown', 'on', true);
+SELECT set_config('cordy.workspace_teardown', 'on', true);
 
 -- name: LockTaskUsageRollupForWorkspaceDelete :exec
 -- Advisory lock 4246 is the hourly rollup family's key: the rollup function

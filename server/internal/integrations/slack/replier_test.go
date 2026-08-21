@@ -8,9 +8,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel/engine"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 type fakeReplySender struct {
@@ -43,7 +43,7 @@ func newTestReplier(binding bindingMinter, sender replySender) *OutboundReplier 
 	r := NewOutboundReplier(OutboundReplierConfig{
 		Binding: binding,
 		Decrypt: nil, // identity: stored bot token is base64 plaintext
-		AppURL:  "https://multica.example",
+		AppURL:  "https://cordy.example",
 	})
 	r.newSender = func(credentials) replySender { return sender }
 	return r
@@ -102,7 +102,7 @@ func TestReply_NeedsBinding_MintsAndPostsPrompt(t *testing.T) {
 	}
 	// The prompt must carry the redeem URL with the minted token, wrapped as a
 	// Slack link so formatMrkdwn does not mangle the base64url token.
-	wantLink := "<https://multica.example/slack/bind?token=tok_RAW-123|link your account>"
+	wantLink := "<https://cordy.example/slack/bind?token=tok_RAW-123|link your account>"
 	if !strings.Contains(sender.sent.Text, wantLink) {
 		t.Errorf("prompt text = %q, want it to contain %q", sender.sent.Text, wantLink)
 	}

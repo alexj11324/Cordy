@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/issuestatus"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/issuestatus"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // Board, list and swimlane columns are CATEGORIES, not status keys (MUL-6243).

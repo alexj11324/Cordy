@@ -1,7 +1,7 @@
 // Package dingtalk is the DingTalk integration for the channel-agnostic engine.
 // It uses the bring-your-own-app (BYO) model: a workspace admin creates their
 // own DingTalk Stream-mode robot and pastes its AppKey (client id) and AppSecret
-// (client secret) into Multica. Each channel_installation carries its OWN
+// (client secret) into Cordy. Each channel_installation carries its OWN
 // AppSecret and gets its OWN Stream-mode connection, supervised per-installation
 // by the engine like Feishu and Slack (dingtalk_channel.go) — so several agents
 // can each have a distinct bot identity in one DingTalk organization.
@@ -15,7 +15,7 @@
 //
 // Maintenance: this package is COMMUNITY-MAINTAINED. Its maintainers, the
 // support boundary and the retirement rule are published at
-// https://multica.ai/docs/community-maintained
+// https://cordy.ai/docs/community-maintained
 // (apps/docs/content/docs/community-maintained.mdx, four locales). That page
 // is the single source of truth — record ownership changes there, not here.
 // Changing the shared channel engine? Keep this adapter building, and loop in
@@ -29,7 +29,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
 )
 
 // TypeDingTalk is the channel discriminator for the DingTalk adapter. It is

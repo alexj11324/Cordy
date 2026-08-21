@@ -14,7 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 func makePropertyDef(propType string, options []PropertyOption) db.IssueProperty {
@@ -1138,7 +1138,7 @@ func TestIssuePropertyFacetNoValue(t *testing.T) {
 func createPropertyTestMember(t *testing.T) string {
 	t.Helper()
 	ctx := context.Background()
-	email := "actor-second-" + uuid.NewString()[:8] + "@multica.test"
+	email := "actor-second-" + uuid.NewString()[:8] + "@cordy.test"
 	var userID string
 	if err := testPool.QueryRow(ctx,
 		`INSERT INTO "user" (name, email) VALUES ('Actor Second Member', $1) RETURNING id`, email,

@@ -27,12 +27,12 @@ Skill 是工作区中可以复用的一组工作方法。它以 `SKILL.md` 为�
 | **从 URL 导入** | 从 GitHub、ClawHub 或 Skills.sh 导入已经发布的 skill。 |
 | **从运行时复制** | 扫描连接电脑上的 skill，并把选中的内容复制到工作区。 |
 
-从运行时复制的是当时的文件快照。之后本地文件发生变化，不会自动更新工作区中的版本；需要重新导入或在 Multica 中编辑。
+从运行时复制的是当时的文件快照。之后本地文件发生变化，不会自动更新工作区中的版本；需要重新导入或在 Cordy 中编辑。
 
 使用 CLI 时，也可以从 `.skill` 或 `.zip` 文件导入：
 
 ```bash
-multica skill import --file ./review-helper.skill
+cordy skill import --file ./review-helper.skill
 ```
 
 导入时如果工作区已经存在同名 skill，可以停止导入、覆盖原内容、使用新名称保存，或跳过。通过导入覆盖仅限该 skill 的创建者本人；工作区 `admin` 即使可以在应用内编辑它，也不能用导入的方式覆盖。要为已在工作区里的 skill 拉取新版本，请改用[更新已导入的 skill](#更新已导入的-skill)。
@@ -42,7 +42,7 @@ multica skill import --file ./review-helper.skill
 从 GitHub、ClawHub 或 Skills.sh 导入的 skill 会记住它的来源。要拉取最新版本，在 skill 页面点击**更新**（或在列表行菜单里选「从来源更新」），也可以用 CLI：
 
 ```bash
-multica skill refresh <skill-id>
+cordy skill refresh <skill-id>
 ```
 
 Skill 会从来源重新下载并就地替换：
@@ -88,9 +88,9 @@ scripts/check.sh
 
 ## 工作区 skill 和仓库中的 skill
 
-工作区 skill 保存在 Multica 中，适合由团队共同维护，并添加给不同智能体。
+工作区 skill 保存在 Cordy 中，适合由团队共同维护，并添加给不同智能体。
 
-部分 AI 编程工具也会直接读取代码仓库中的项目级 skill，例如 `.claude/skills/` 或 `.agents/skills/`。这些文件仍由仓库管理，Multica 不会自动把它们登记为工作区 skill。具体支持方式取决于使用的工具，见 [AI 编程工具对照](/providers)。
+部分 AI 编程工具也会直接读取代码仓库中的项目级 skill，例如 `.claude/skills/` 或 `.agents/skills/`。这些文件仍由仓库管理，Cordy 不会自动把它们登记为工作区 skill。具体支持方式取决于使用的工具，见 [AI 编程工具对照](/providers)。
 
 连接电脑上已安装的运行时本地 skill（Claude Code 和 Codex）会显示在智能体的 **Skills** 标签页中，可以按智能体单独停用。停用同样需要有权修改该智能体。
 
@@ -101,7 +101,7 @@ scripts/check.sh
 删除是永久操作，同时会从所有智能体上移除该 skill。
 
 <Callout type="warning">
-从外部导入的 skill 可能包含脚本、命令或不安全的指令。Multica 不会替你审查、签名或隔离这些内容。导入的内容会原样提供给智能体执行，来源需要可信。
+从外部导入的 skill 可能包含脚本、命令或不安全的指令。Cordy 不会替你审查、签名或隔离这些内容。导入的内容会原样提供给智能体执行，来源需要可信。
 </Callout>
 
 ## 接下来

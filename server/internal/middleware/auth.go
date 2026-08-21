@@ -10,9 +10,9 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/auth"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/auth"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 func uuidToString(u pgtype.UUID) string { return util.UUIDToString(u) }
@@ -34,7 +34,7 @@ func rejectTemporarilyDisabledUser(w http.ResponseWriter, r *http.Request, userI
 // Auth middleware validates JWT tokens or Personal Access Tokens.
 // Token sources (in priority order):
 //  1. Authorization: Bearer <token> header (PAT or JWT)
-//  2. multica_auth HttpOnly cookie (JWT) — requires valid CSRF token for state-changing requests
+//  2. cordy_auth HttpOnly cookie (JWT) — requires valid CSRF token for state-changing requests
 //
 // Sets X-User-ID and X-User-Email headers on the request for downstream handlers.
 //
@@ -44,7 +44,7 @@ func rejectTemporarilyDisabledUser(w http.ResponseWriter, r *http.Request, userI
 // at most once per TTL window per token, not per request.
 //
 // cloudPAT is optional; when non-nil, tokens with the mcn_ prefix are
-// validated by calling the Multica Cloud Fleet service rather than the
+// validated by calling the Cordy Cloud Fleet service rather than the
 // local DB. When nil (Fleet URL unset) mcn_ tokens are rejected at the
 // prefix branch — we don't fall through to the mul_ / JWT paths, since
 // an mcn_ string is by construction not a valid mul_ PAT or JWT.
@@ -59,6 +59,17 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 			// to convince a downstream handler that its request came
 			// from a non-task-token path.
 			r.Header.Del("X-Actor-Source")
+
+			// When the Next.js / Clerk frontend has already authenticated
+			// the request and forwarded it with X-User-ID set, trust it
+			// directly — no JWT/PAT verification needed. This is the
+			// standard path for web app requests: Clerk middleware
+			// validates the session, then the API route forwards to Go
+			// with X-User-ID populated from the Clerk session.
+			if userID := r.Header.Get("X-User-ID"); userID != "" {
+				next.ServeHTTP(w, r)
+				return
+			}
 
 			tokenString, fromCookie := extractToken(r)
 			if tokenString == "" {
@@ -115,13 +126,13 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 			}
 
 			// Cloud Node PAT: "mcn_" prefix. Verified by calling the
-			// Multica Cloud Fleet service — Cloud (not us) is the
+			// Cordy Cloud Fleet service — Cloud (not us) is the
 			// authoritative owner of the token's status and owner_id
 			// binding. We never look at the local
 			// personal_access_tokens table for this prefix; an mcn_
 			// string is not a valid mul_ value, so falling through
 			// would just be a redundant DB miss. When the verifier
-			// is unconfigured (no MULTICA_CLOUD_FLEET_URL) we reject
+			// is unconfigured (no CORDY_CLOUD_FLEET_URL) we reject
 			// at this branch rather than treating the token as a
 			// JWT/PAT — failing closed avoids a misconfigured prod
 			// silently downgrading auth.
@@ -267,7 +278,7 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 }
 
 // extractToken returns the bearer token and whether it came from a cookie.
-// Priority: Authorization header > multica_auth cookie.
+// Priority: Authorization header > cordy_auth cookie.
 func extractToken(r *http.Request) (token string, fromCookie bool) {
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")

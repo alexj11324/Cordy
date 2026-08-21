@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
-	"github.com/multica-ai/multica/server/internal/daemon/processtree"
-	"github.com/multica-ai/multica/server/internal/daemon/repocache"
+	"github.com/cordy-ai/cordy/server/internal/daemon/execenv"
+	"github.com/cordy-ai/cordy/server/internal/daemon/processtree"
+	"github.com/cordy-ai/cordy/server/internal/daemon/repocache"
 )
 
 // reposDirName is the bare-repo cache directory inside the workspaces root.
@@ -999,7 +999,7 @@ func dirSizeContext(ctx context.Context, root string) (int64, error) {
 const (
 	gitCmdTimeout         = 30 * time.Second
 	gitMaintenanceTimeout = 10 * time.Minute
-	repoMaintenanceMarker = ".multica-maintenance-pending"
+	repoMaintenanceMarker = ".cordy-maintenance-pending"
 )
 
 // pruneRepoWorktrees runs `git worktree prune` on all bare repos in the cache,

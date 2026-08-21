@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
 )
 
 // Tunables for the inbound dispatcher. Remote media resolution is detached by

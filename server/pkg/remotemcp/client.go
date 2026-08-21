@@ -205,7 +205,7 @@ func Discover(ctx context.Context, rawEndpoint string, allowedHosts, protocolVer
 		"params": map[string]any{
 			"protocolVersion": protocolVersion,
 			"capabilities":    map[string]any{},
-			"clientInfo":      map[string]any{"name": "multica-plugin-review", "version": "1"},
+			"clientInfo":      map[string]any{"name": "cordy-plugin-review", "version": "1"},
 		},
 	}
 	initializeResponse, responseHeaders, err := call(ctx, client, endpoint, headers, sessionID, initialize)

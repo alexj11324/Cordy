@@ -43,7 +43,7 @@ var dimBlockedArgs = map[string]blockedArgMode{
 //     creation, which would silently deny every file write and process
 //     spawn. The backend therefore issues `session/set_config_option`
 //     (permission → full-access, mode → agent) right after session/new so
-//     Multica agents can do real work. A resumed session retains these
+//     Cordy agents can do real work. A resumed session retains these
 //     settings across `session/load`, so set_config_option is re-applied on
 //     both fresh and resumed sessions (idempotent). Model override is handled through the standard
 //     `session/set_model` RPC; the model catalog is advertised by
@@ -340,7 +340,7 @@ func (b *dimBackend) Execute(ctx context.Context, prompt string, opts ExecOption
 		initResult, err := c.request(runCtx, "initialize", map[string]any{
 			"protocolVersion": 1,
 			"clientInfo": map[string]any{
-				"name":    "multica-agent-sdk",
+				"name":    "cordy-agent-sdk",
 				"version": "0.2.0",
 			},
 			"clientCapabilities": map[string]any{},

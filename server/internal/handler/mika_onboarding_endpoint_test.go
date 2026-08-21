@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/cordy-ai/cordy/server/internal/service"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 // startMikaOnboarding drives the endpoint the way the router does: session id
@@ -135,7 +135,7 @@ func TestStartMikaOnboarding_WritesTheOpeningWithoutRunningAnAgent(t *testing.T)
 	if opening.hasTask {
 		t.Error("no agent produced the opening, so it must carry no task id")
 	}
-	if !strings.Contains(opening.content, "Multica") {
+	if !strings.Contains(opening.content, "Cordy") {
 		t.Errorf("the opening does not read like the product copy: %q", opening.content)
 	}
 	// The kickoff quotes the opening — that is what stops Mika greeting twice.

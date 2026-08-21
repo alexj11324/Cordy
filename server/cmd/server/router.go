@@ -18,33 +18,33 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/internal/auth"
-	"github.com/multica-ai/multica/server/internal/cloudruntime"
-	"github.com/multica-ai/multica/server/internal/daemonws"
-	"github.com/multica-ai/multica/server/internal/entitlement"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/featureflags"
-	"github.com/multica-ai/multica/server/internal/handler"
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	composiointeg "github.com/multica-ai/multica/server/internal/integrations/composio"
-	"github.com/multica-ai/multica/server/internal/integrations/dingtalk"
-	"github.com/multica-ai/multica/server/internal/integrations/lark"
-	"github.com/multica-ai/multica/server/internal/integrations/slack"
-	"github.com/multica-ai/multica/server/internal/integrations/telegram"
-	"github.com/multica-ai/multica/server/internal/integrations/wecom"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	"github.com/multica-ai/multica/server/internal/middleware"
-	"github.com/multica-ai/multica/server/internal/realtime"
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/internal/storage"
-	"github.com/multica-ai/multica/server/internal/util"
-	"github.com/multica-ai/multica/server/internal/util/secretbox"
-	composiosdk "github.com/multica-ai/multica/server/pkg/composio"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/featureflag"
-	"github.com/multica-ai/multica/server/pkg/llm"
+	"github.com/cordy-ai/cordy/server/internal/analytics"
+	"github.com/cordy-ai/cordy/server/internal/auth"
+	"github.com/cordy-ai/cordy/server/internal/cloudruntime"
+	"github.com/cordy-ai/cordy/server/internal/daemonws"
+	"github.com/cordy-ai/cordy/server/internal/entitlement"
+	"github.com/cordy-ai/cordy/server/internal/events"
+	"github.com/cordy-ai/cordy/server/internal/featureflags"
+	"github.com/cordy-ai/cordy/server/internal/handler"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel/engine"
+	composiointeg "github.com/cordy-ai/cordy/server/internal/integrations/composio"
+	"github.com/cordy-ai/cordy/server/internal/integrations/dingtalk"
+	"github.com/cordy-ai/cordy/server/internal/integrations/lark"
+	"github.com/cordy-ai/cordy/server/internal/integrations/slack"
+	"github.com/cordy-ai/cordy/server/internal/integrations/telegram"
+	"github.com/cordy-ai/cordy/server/internal/integrations/wecom"
+	obsmetrics "github.com/cordy-ai/cordy/server/internal/metrics"
+	"github.com/cordy-ai/cordy/server/internal/middleware"
+	"github.com/cordy-ai/cordy/server/internal/realtime"
+	"github.com/cordy-ai/cordy/server/internal/service"
+	"github.com/cordy-ai/cordy/server/internal/storage"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	"github.com/cordy-ai/cordy/server/internal/util/secretbox"
+	composiosdk "github.com/cordy-ai/cordy/server/pkg/composio"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/featureflag"
+	"github.com/cordy-ai/cordy/server/pkg/llm"
 )
 
 var defaultOrigins = []string{
@@ -75,7 +75,7 @@ var corsAllowedHeaders = []string{
 	"X-Client-OS",
 	"X-Client-Capabilities",
 	// Sent by the host page when it relays a plugin surface's Action API call.
-	"X-Multica-Plugin-Installation",
+	"X-Cordy-Plugin-Installation",
 }
 
 // corsExposedHeaders lists response headers browser clients are allowed to read.
@@ -115,18 +115,18 @@ func allowedOrigins() []string {
 }
 
 // appURLFromEnv resolves the user-facing web app URL. It prefers
-// MULTICA_APP_URL and falls back to FRONTEND_ORIGIN, matching how the backend
+// CORDY_APP_URL and falls back to FRONTEND_ORIGIN, matching how the backend
 // resolves the app URL elsewhere (handler.daemonSetupURLsFromEnv) and the CLI
-// login flow (cmd/multica tryResolveAppURL). Empty when neither is set.
+// login flow (cmd/cordy tryResolveAppURL). Empty when neither is set.
 func appURLFromEnv() string {
-	if v := strings.TrimRight(strings.TrimSpace(os.Getenv("MULTICA_APP_URL")), "/"); v != "" {
+	if v := strings.TrimRight(strings.TrimSpace(os.Getenv("CORDY_APP_URL")), "/"); v != "" {
 		return v
 	}
 	return strings.TrimRight(strings.TrimSpace(os.Getenv("FRONTEND_ORIGIN")), "/")
 }
 
 // parseTrustedProxies parses a comma-separated list of CIDR prefixes from the
-// MULTICA_TRUSTED_PROXIES env var. Invalid entries are dropped with a single
+// CORDY_TRUSTED_PROXIES env var. Invalid entries are dropped with a single
 // warn-line per entry rather than crashing the server — a typo in one CIDR
 // shouldn't take the whole API down. Returns nil for empty input, which the
 // rate limiter treats as "trust no proxy headers, use RemoteAddr only".
@@ -143,7 +143,7 @@ func parseTrustedProxies(raw string) []netip.Prefix {
 		}
 		p, err := netip.ParsePrefix(s)
 		if err != nil {
-			slog.Warn("MULTICA_TRUSTED_PROXIES: ignoring invalid CIDR",
+			slog.Warn("CORDY_TRUSTED_PROXIES: ignoring invalid CIDR",
 				"value", s, "error", err)
 			continue
 		}
@@ -196,8 +196,8 @@ type RouterOptions struct {
 	// BatchedHeartbeatScheduler here so the caller can also drive Run/Stop;
 	// tests leave this nil and get the legacy synchronous behavior.
 	HeartbeatScheduler handler.HeartbeatScheduler
-	// LLMMaxRetries carries the parsed MULTICA_LLM_MAX_RETRIES budget. Unlike
-	// its three MULTICA_LLM_* siblings it is injected rather than read here,
+	// LLMMaxRetries carries the parsed CORDY_LLM_MAX_RETRIES budget. Unlike
+	// its three CORDY_LLM_* siblings it is injected rather than read here,
 	// because an invalid value must fail the boot and only main() can exit —
 	// terminating the process from inside a router constructor would also kill
 	// any test that happened to have the variable set. nil means unset, which
@@ -342,17 +342,17 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		AllowedEmails:            splitAndTrim(os.Getenv("ALLOWED_EMAILS")),
 		AllowedEmailDomains:      splitAndTrim(os.Getenv("ALLOWED_EMAIL_DOMAINS")),
 		DisableWorkspaceCreation: os.Getenv("DISABLE_WORKSPACE_CREATION") == "true",
-		VCSIntegrationEnabled:    os.Getenv("MULTICA_VCS_INTEGRATION_ENABLED") == "true",
-		PublicURL:                strings.TrimRight(strings.TrimSpace(os.Getenv("MULTICA_PUBLIC_URL")), "/"),
-		TrustedProxies:           parseTrustedProxies(os.Getenv("MULTICA_TRUSTED_PROXIES")),
+		VCSIntegrationEnabled:    os.Getenv("CORDY_VCS_INTEGRATION_ENABLED") == "true",
+		PublicURL:                strings.TrimRight(strings.TrimSpace(os.Getenv("CORDY_PUBLIC_URL")), "/"),
+		TrustedProxies:           parseTrustedProxies(os.Getenv("CORDY_TRUSTED_PROXIES")),
 		CloudRuntimeFleetURL:     cloudRuntimeFleetURLFromEnv(),
-		CloudRuntimeFleetTimeout: envDuration("MULTICA_CLOUD_FLEET_TIMEOUT", 35*time.Second),
+		CloudRuntimeFleetTimeout: envDuration("CORDY_CLOUD_FLEET_TIMEOUT", 35*time.Second),
 		AttachmentDownloadMode:   os.Getenv("ATTACHMENT_DOWNLOAD_MODE"),
 		AttachmentDownloadURLTTL: envDuration("ATTACHMENT_DOWNLOAD_URL_TTL", 30*time.Minute),
 		AttachmentFrameAncestors: origins,
-		LLMAPIKey:                strings.TrimSpace(os.Getenv("MULTICA_LLM_API_KEY")),
-		LLMBaseURL:               strings.TrimSpace(os.Getenv("MULTICA_LLM_BASE_URL")),
-		LLMDefaultModel:          strings.TrimSpace(os.Getenv("MULTICA_LLM_DEFAULT_MODEL")),
+		LLMAPIKey:                strings.TrimSpace(os.Getenv("CORDY_LLM_API_KEY")),
+		LLMBaseURL:               strings.TrimSpace(os.Getenv("CORDY_LLM_BASE_URL")),
+		LLMDefaultModel:          strings.TrimSpace(os.Getenv("CORDY_LLM_DEFAULT_MODEL")),
 		LLMMaxRetries:            opts.LLMMaxRetries,
 		ServerVersion:            normalizeServerVersion(version),
 	}
@@ -368,25 +368,25 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	h.TaskService.Metrics = opts.BusinessMetrics
 	h.IssueService.Metrics = opts.BusinessMetrics
 	entitlementClient, entitlementErr := entitlement.New(entitlement.Config{
-		Enabled:      envBool("MULTICA_ENTITLEMENT_POLICY_ENABLED", false),
-		BaseURL:      strings.TrimSpace(os.Getenv("MULTICA_ENTITLEMENT_POLICY_URL")),
-		ServiceToken: os.Getenv("MULTICA_ENTITLEMENT_SERVICE_TOKEN"),
-		Timeout:      envDuration("MULTICA_ENTITLEMENT_POLICY_TIMEOUT", 3*time.Second),
-		StaleGrace:   envNonNegativeDuration("MULTICA_ENTITLEMENT_STALE_GRACE", 15*time.Minute),
+		Enabled:      envBool("CORDY_ENTITLEMENT_POLICY_ENABLED", false),
+		BaseURL:      strings.TrimSpace(os.Getenv("CORDY_ENTITLEMENT_POLICY_URL")),
+		ServiceToken: os.Getenv("CORDY_ENTITLEMENT_SERVICE_TOKEN"),
+		Timeout:      envDuration("CORDY_ENTITLEMENT_POLICY_TIMEOUT", 3*time.Second),
+		StaleGrace:   envNonNegativeDuration("CORDY_ENTITLEMENT_STALE_GRACE", 15*time.Minute),
 		Observer:     opts.BusinessMetrics,
 	})
 	if entitlementErr != nil {
 		slog.Error("entitlement policy client disabled by invalid configuration", "error", entitlementErr)
 		opts.BusinessMetrics.RecordEntitlementConfigError()
 	} else if entitlementClient.Enabled() {
-		entitlementClient.SetEmergencyDisabled(envBool("MULTICA_ENTITLEMENT_EMERGENCY_DISABLED", false))
+		entitlementClient.SetEmergencyDisabled(envBool("CORDY_ENTITLEMENT_EMERGENCY_DISABLED", false))
 		h.AutopilotService.Entitlements = entitlementClient
 		h.AutopilotService.QuotaMetrics = opts.BusinessMetrics
 	}
 	if opts.BusinessMetrics != nil {
 		// Wire the BusinessMetrics receiver into the cloud runtime client
 		// so every outbound Fleet/Gateway request feeds the
-		// multica_cloudruntime_request_* histograms.
+		// cordy_cloudruntime_request_* histograms.
 		if client, ok := h.CloudRuntime.(*cloudruntime.Client); ok {
 			client.SetRecorder(opts.BusinessMetrics)
 		}
@@ -457,7 +457,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		opts,
 	)
 
-	// Lark integration. Only wired when MULTICA_LARK_SECRET_KEY is set:
+	// Lark integration. Only wired when CORDY_LARK_SECRET_KEY is set:
 	// the InstallationService refuses to fall back to plaintext storage
 	// for app_secret, and the BindingTokenService cannot mint usable
 	// tokens without it either. When the key is absent the Lark
@@ -465,7 +465,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// continues to start so self-host deployments that have not opted
 	// in to Lark are unaffected. Feishu registers its Factory + ResolverSet
 	// into the channel engine above.
-	if larkKey, err := secretbox.LoadKey("MULTICA_LARK_SECRET_KEY"); err == nil {
+	if larkKey, err := secretbox.LoadKey("CORDY_LARK_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(larkKey)
 		if err != nil {
 			slog.Error("lark: secretbox.New failed; lark integration disabled", "error", err)
@@ -480,15 +480,15 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 
 				// APIClient: wire the real Lark Open Platform HTTP client
 				// (IM v1 send/patch + binding-prompt + bot info). Setting
-				// MULTICA_LARK_SECRET_KEY is the operator's opt-in for
+				// CORDY_LARK_SECRET_KEY is the operator's opt-in for
 				// the integration as a whole; we don't expose a separate
 				// "HTTP enabled" knob because the inbound dispatcher
 				// without outbound replies is not a useful production
 				// state, and CI / integration tests that want to avoid
-				// real Lark traffic can point MULTICA_LARK_HTTP_BASE_URL
+				// real Lark traffic can point CORDY_LARK_HTTP_BASE_URL
 				// at a mock server.
 				//
-				// MULTICA_LARK_HTTP_BASE_URL is an OPTIONAL deployment-wide
+				// CORDY_LARK_HTTP_BASE_URL is an OPTIONAL deployment-wide
 				// override. Normal operation leaves it empty: each call then
 				// resolves its open-platform host from the installation's
 				// region (open.feishu.cn vs open.larksuite.com), so one
@@ -496,7 +496,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// installation onto one host — a proxy, a mock for tests, or
 				// a single-cloud staging setup.
 				larkClient := lark.NewHTTPAPIClient(lark.HTTPClientConfig{
-					BaseURL: strings.TrimSpace(os.Getenv("MULTICA_LARK_HTTP_BASE_URL")),
+					BaseURL: strings.TrimSpace(os.Getenv("CORDY_LARK_HTTP_BASE_URL")),
 					Logger:  slog.Default(),
 				})
 				h.LarkAPIClient = larkClient
@@ -557,7 +557,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// every read with a ctx-cancel watchdog so lease loss /
 				// shutdown breaks the blocking ReadMessage in bounded time —
 				// the invariant §4.4 leans on. If the endpoint fetcher fails
-				// to initialize (bad MULTICA_LARK_CALLBACK_BASE_URL or
+				// to initialize (bad CORDY_LARK_CALLBACK_BASE_URL or
 				// similar), buildLarkConnector logs and falls back to the
 				// NoopConnector so the lease / supervisor lifecycle still runs
 				// against real DB rows — inbound messages are silently dropped
@@ -598,8 +598,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// deployments. Off the hot startup path like the union_id
 				// backfill. MUL-3083.
 				go lark.BackfillRegionFromLegacyOverride(context.Background(), cs,
-					strings.TrimSpace(os.Getenv("MULTICA_LARK_HTTP_BASE_URL")),
-					strings.TrimSpace(os.Getenv("MULTICA_LARK_CALLBACK_BASE_URL")),
+					strings.TrimSpace(os.Getenv("CORDY_LARK_HTTP_BASE_URL")),
+					strings.TrimSpace(os.Getenv("CORDY_LARK_CALLBACK_BASE_URL")),
 					slog.Default())
 
 				// Device-flow registration service: end-to-end install
@@ -607,11 +607,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// for the QR-scan handshake and then commits the
 				// resulting Bot credentials + the installer's
 				// lark_user_binding in one DB transaction. The optional
-				// MULTICA_LARK_REGISTRATION_DOMAIN / _LARK_DOMAIN env
+				// CORDY_LARK_REGISTRATION_DOMAIN / _LARK_DOMAIN env
 				// vars override the protocol hosts for staging / dev.
 				regCfg := lark.RegistrationConfig{
-					Domain:     strings.TrimSpace(os.Getenv("MULTICA_LARK_REGISTRATION_DOMAIN")),
-					LarkDomain: strings.TrimSpace(os.Getenv("MULTICA_LARK_REGISTRATION_LARK_DOMAIN")),
+					Domain:     strings.TrimSpace(os.Getenv("CORDY_LARK_REGISTRATION_DOMAIN")),
+					LarkDomain: strings.TrimSpace(os.Getenv("CORDY_LARK_REGISTRATION_LARK_DOMAIN")),
 				}
 				regClient := lark.NewRegistrationClient(regCfg)
 				regSvc, rerr := lark.NewRegistrationService(
@@ -636,20 +636,20 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			}
 		}
 	} else {
-		slog.Info("lark integration disabled (MULTICA_LARK_SECRET_KEY not set)")
+		slog.Info("lark integration disabled (CORDY_LARK_SECRET_KEY not set)")
 	}
 
-	// Slack integration. Multi-tenant B2 model (MUL-3666): Multica hosts ONE
+	// Slack integration. Multi-tenant B2 model (MUL-3666): Cordy hosts ONE
 	// Slack app, workspaces self-install via OAuth, and inbound runs on a single
 	// deployment-level Socket Mode connection routed by team_id — replacing the
 	// stage-3 per-installation connection model (MUL-3516).
 	//
 	// Two deployment-level env vars gate the two halves:
-	//   - MULTICA_SLACK_SECRET_KEY decrypts the per-installation bot token
+	//   - CORDY_SLACK_SECRET_KEY decrypts the per-installation bot token
 	//     (xoxb-) stored on the channel_installation row. It gates the inbound
 	//     ResolverSet + the outbound reply subscriber, so without it there is no
 	//     Slack at all.
-	//   - MULTICA_SLACK_APP_TOKEN is the app-level token (xapp-) authorizing the
+	//   - CORDY_SLACK_APP_TOKEN is the app-level token (xapp-) authorizing the
 	//     single Socket Mode connection. It cannot be obtained via OAuth, so it
 	//     is a one-time operator config. Without it, inbound is disabled (the
 	//     ResolverSet + outbound are still wired so an existing install's replies
@@ -661,7 +661,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// installation is a bring-your-own-app (BYO) install carrying its OWN
 	// app-level token, so a per-installation Slack Factory is registered and the
 	// Supervisor drives one Socket Mode connection per installation (like Feishu).
-	if slackKey, err := secretbox.LoadKey("MULTICA_SLACK_SECRET_KEY"); err == nil {
+	if slackKey, err := secretbox.LoadKey("CORDY_SLACK_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(slackKey)
 		if err != nil {
 			slog.Error("slack: secretbox.New failed; slack integration disabled", "error", err)
@@ -670,14 +670,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// AgentOffline / AgentArchived / issue-created notices. The binding
 			// token service mints the single-use token embedded in the prompt's
 			// redeem link; the redeem endpoint (registered below, public) binds
-			// the Slack user to their Multica account.
+			// the Slack user to their Cordy account.
 			slackBindingSvc := slack.NewBindingTokenService(queries, pool)
 			h.SlackBindingTokens = slackBindingSvc
 			slackReplier := slack.NewOutboundReplier(slack.OutboundReplierConfig{
 				Binding: slackBindingSvc,
 				Decrypt: box.Open,
 				// The bind link (/slack/bind) is a web-app page, so it must use the
-				// app URL (MULTICA_APP_URL ?? FRONTEND_ORIGIN), NOT MULTICA_PUBLIC_URL
+				// app URL (CORDY_APP_URL ?? FRONTEND_ORIGIN), NOT CORDY_PUBLIC_URL
 				// (the backend/API URL). Mirrors the Lark replier (appURLFromEnv).
 				AppURL: appURLFromEnv(),
 				Logger: slog.Default(),
@@ -706,7 +706,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			channelRouter.Register(slack.TypeSlack, slack.NewSlackResolverSet(queries, pool, slackReplier, slackTyping, slackMedia))
 			slack.NewOutbound(queries, box.Open, slog.Default()).Register(bus)
 
-			// On-demand history reader behind the unified `multica chat history`
+			// On-demand history reader behind the unified `cordy chat history`
 			// command (MUL-3871): pull the session's Slack conversation when the
 			// agent asks, instead of force-assembling it on every inbound.
 			h.SlackHistory = slack.NewHistory(queries, box.Open, slog.Default())
@@ -717,7 +717,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			// a quick-create task (no chat session or chat run) and the agent authors
 			// the well-formed issue in the background — reusing the shared TaskService
 			// + binding service. The invoker gets a private ephemeral acknowledgement
-			// and a Multica notification when the issue lands.
+			// and a Cordy notification when the issue lands.
 			slackSlash := slack.NewSlashCommandProcessor(slack.SlashCommandConfig{
 				Queries: queries,
 				Tasks:   h.TaskService,
@@ -744,13 +744,13 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			slog.Info("slack integration enabled (BYO per-installation socket mode)")
 		}
 	} else {
-		slog.Info("slack integration disabled (MULTICA_SLACK_SECRET_KEY not set)")
+		slog.Info("slack integration disabled (CORDY_SLACK_SECRET_KEY not set)")
 	}
 
 	// DingTalk uses one outbound Stream connection per BYO installation. The
 	// AppSecret is encrypted at rest and the integration is inert unless its
 	// dedicated deployment key is configured.
-	if dingtalkKey, err := secretbox.LoadKey("MULTICA_DINGTALK_SECRET_KEY"); err == nil {
+	if dingtalkKey, err := secretbox.LoadKey("CORDY_DINGTALK_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(dingtalkKey)
 		if err != nil {
 			slog.Error("dingtalk: secretbox.New failed; integration disabled", "error", err)
@@ -792,7 +792,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			slog.Info("dingtalk integration enabled (BYO per-installation stream mode)")
 		}
 	} else {
-		slog.Info("dingtalk integration disabled (MULTICA_DINGTALK_SECRET_KEY not set)")
+		slog.Info("dingtalk integration disabled (CORDY_DINGTALK_SECRET_KEY not set)")
 	}
 
 	// WeCom smart-bot integration ("智能机器人" / aibot). Per-installation
@@ -801,11 +801,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// by the shared ws_lease_token so multi-replica deployments still hold
 	// at most one active socket per bot (WeCom itself only permits one).
 	//
-	// Gated by MULTICA_WECOM_SECRET_KEY. Without it, the whole block is
+	// Gated by CORDY_WECOM_SECRET_KEY. Without it, the whole block is
 	// skipped and the wecom Web-UI endpoints return 503; existing deployments
 	// are unaffected. The smart-bot flow does NOT require any public HTTP
 	// callback, so nothing else needs to be exposed to the internet.
-	if wecomKey, err := secretbox.LoadKey("MULTICA_WECOM_SECRET_KEY"); err == nil {
+	if wecomKey, err := secretbox.LoadKey("CORDY_WECOM_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(wecomKey)
 		if err != nil {
 			slog.Error("wecom: secretbox.New failed; wecom integration disabled", "error", err)
@@ -818,7 +818,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				h.WecomStore = wecomStore
 				h.WecomCredentials = credsResolver
 
-				// Binding tokens back the per-user "link your Multica account"
+				// Binding tokens back the per-user "link your Cordy account"
 				// prompt sent to first-time WeCom senders. aibot userids are
 				// anonymized T-prefixed ids with no relation to real userids
 				// or emails, so an explicit binding table is the only correct
@@ -880,7 +880,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// EventChatDone subscriber: pushes the agent's chat reply
 				// back over the same aibot WebSocket the inbound loop owns.
 				// Mirrors slack.NewOutbound(...).Register(bus). Without it
-				// the agent's reply lands only in Multica's web UI — the
+				// the agent's reply lands only in Cordy's web UI — the
 				// user in WeCom sees no response.
 				//
 				// WithAttachments adds the second hop: the files the agent
@@ -911,7 +911,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// proxy's pool (198.18.0.0/15 is the common one), so WeCom's
 				// own COS host is indistinguishable from a metadata endpoint
 				// by address alone and every attachment is refused.
-				if raw := strings.TrimSpace(os.Getenv("MULTICA_WECOM_MEDIA_ALLOW_CIDRS")); raw != "" {
+				if raw := strings.TrimSpace(os.Getenv("CORDY_WECOM_MEDIA_ALLOW_CIDRS")); raw != "" {
 					for _, err := range wecom.SetMediaAllowedPrefixes(strings.Split(raw, ",")) {
 						slog.Error("wecom: ignoring malformed media allow cidr", "error", err)
 					}
@@ -924,8 +924,8 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				// it is on has to be visible in the log it is writing into —
 				// otherwise a session gets left switched on and nobody
 				// notices message content accumulating.
-				if wecom.SetTrace(os.Getenv("MULTICA_WECOM_TRACE") == "1") {
-					slog.Warn("wecom: frame tracing ON — records message text; unset MULTICA_WECOM_TRACE when done")
+				if wecom.SetTrace(os.Getenv("CORDY_WECOM_TRACE") == "1") {
+					slog.Warn("wecom: frame tracing ON — records message text; unset CORDY_WECOM_TRACE when done")
 				}
 
 				slog.Info("wecom integration enabled (smart bot, long connection)")
@@ -944,17 +944,17 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			}
 		}
 	} else {
-		slog.Info("wecom integration disabled (MULTICA_WECOM_SECRET_KEY not set)")
+		slog.Info("wecom integration disabled (CORDY_WECOM_SECRET_KEY not set)")
 	}
 
 	// Telegram integration. Same shape as Slack: BYO bot token pasted at
 	// install, one getUpdates long-polling loop per active installation
 	// supervised by the shared engine.Supervisor, resolvers on the generic
 	// channel_* tables, outbound streaming via throttled editMessageText on
-	// the event bus. Gated by MULTICA_TELEGRAM_SECRET_KEY (the at-rest token
+	// the event bus. Gated by CORDY_TELEGRAM_SECRET_KEY (the at-rest token
 	// encryption key); when unset the handlers return 503 and no Factory is
 	// registered.
-	if telegramKey, err := secretbox.LoadKey("MULTICA_TELEGRAM_SECRET_KEY"); err == nil {
+	if telegramKey, err := secretbox.LoadKey("CORDY_TELEGRAM_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(telegramKey)
 		if err != nil {
 			slog.Error("telegram: secretbox.New failed; telegram integration disabled", "error", err)
@@ -988,7 +988,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			slog.Info("telegram integration enabled (per-installation long polling)")
 		}
 	} else {
-		slog.Info("telegram integration disabled (MULTICA_TELEGRAM_SECRET_KEY not set)")
+		slog.Info("telegram integration disabled (CORDY_TELEGRAM_SECRET_KEY not set)")
 	}
 
 	// Composio integration (MUL-3720). Gated by COMPOSIO_API_KEY plus the
@@ -998,7 +998,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// flag-disabled the whole block is skipped and the composio HTTP handlers
 	// return 503; existing deployments are unaffected. An operator opts in by
 	// setting COMPOSIO_API_KEY plus a callback base
-	// (COMPOSIO_CALLBACK_BASE_URL, falling back to MULTICA_PUBLIC_URL). The
+	// (COMPOSIO_CALLBACK_BASE_URL, falling back to CORDY_PUBLIC_URL). The
 	// toolkit→auth-config mapping is NOT configured here — it is resolved
 	// dynamically from the project's /auth_configs at request time, so enabling
 	// a toolkit is a dashboard action, not a redeploy. State signing uses
@@ -1017,7 +1017,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				case len(stateSecret) == 0:
 					slog.Error("composio: no state secret (set COMPOSIO_STATE_SECRET or JWT_SECRET); composio integration disabled")
 				case callbackBase == "":
-					slog.Error("composio: no callback base url (set COMPOSIO_CALLBACK_BASE_URL or MULTICA_PUBLIC_URL); composio integration disabled")
+					slog.Error("composio: no callback base url (set COMPOSIO_CALLBACK_BASE_URL or CORDY_PUBLIC_URL); composio integration disabled")
 				default:
 					svc, serr := composiointeg.NewService(sdkClient, queries, composiointeg.Config{
 						StateSecret:     stateSecret,
@@ -1052,7 +1052,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// webhook secrets for token-based providers (Forgejo / Gitea / GitLab).
 	// Without it, connect/webhook handlers return 503 (so a misconfigured
 	// self-host never stores plaintext secrets).
-	if vcsKey, err := secretbox.LoadKey("MULTICA_VCS_SECRET_KEY"); err == nil {
+	if vcsKey, err := secretbox.LoadKey("CORDY_VCS_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(vcsKey)
 		if err != nil {
 			slog.Error("vcs: secretbox.New failed; vcs integration disabled", "error", err)
@@ -1061,14 +1061,14 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			slog.Info("vcs integration enabled")
 		}
 	} else {
-		slog.Info("vcs integration disabled (MULTICA_VCS_SECRET_KEY not set)")
+		slog.Info("vcs integration disabled (CORDY_VCS_SECRET_KEY not set)")
 	}
 
 	// Plugin secrets use a dedicated deployment key. Keeping this separate from
 	// VCS and channel secrets gives operators an isolated rotation and blast
 	// radius; without it, saving a `secret` config field fails closed rather
 	// than storing plaintext.
-	if pluginKey, err := secretbox.LoadKey("MULTICA_PLUGIN_SECRET_KEY"); err == nil {
+	if pluginKey, err := secretbox.LoadKey("CORDY_PLUGIN_SECRET_KEY"); err == nil {
 		box, err := secretbox.New(pluginKey)
 		if err != nil {
 			slog.Error("plugins: secretbox.New failed; Plugin secrets disabled", "error", err)
@@ -1084,7 +1084,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 			slog.Info("Plugin secret encryption enabled")
 		}
 	} else {
-		slog.Info("Plugin secrets disabled (MULTICA_PLUGIN_SECRET_KEY not set)")
+		slog.Info("Plugin secrets disabled (CORDY_PLUGIN_SECRET_KEY not set)")
 	}
 
 	// Hook engine. Event-triggered hooks are dispatched off the bus onto a
@@ -1096,10 +1096,10 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		// Omitted rather than sent relative: a handler receiving
 		// "/api/v1/plugin" cannot call anything with it, and a broken absolute
 		// URL is harder to diagnose than an absent one.
-		if publicURL := strings.TrimSpace(os.Getenv("MULTICA_PUBLIC_URL")); publicURL != "" {
+		if publicURL := strings.TrimSpace(os.Getenv("CORDY_PUBLIC_URL")); publicURL != "" {
 			h.PluginService.CallbackBaseURL = strings.TrimSuffix(publicURL, "/") + "/api/v1/plugin"
 		} else {
-			slog.Warn("plugins: MULTICA_PUBLIC_URL is not set; hook callbacks will carry no callback_url")
+			slog.Warn("plugins: CORDY_PUBLIC_URL is not set; hook callbacks will carry no callback_url")
 		}
 		// The flag reaches the event path only through the service: a worker has
 		// no request to read it from.
@@ -1122,11 +1122,11 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	h.DaemonTokenCache = daemonTokenCache
 	h.MembershipCache = auth.NewMembershipCache(rdb)
 
-	// Cloud PAT verifier: validates mcn_ tokens against Multica Cloud
+	// Cloud PAT verifier: validates mcn_ tokens against Cordy Cloud
 	// Fleet. Returns nil when no Fleet URL is configured — the Auth /
 	// DaemonAuth middlewares treat nil as "mcn_ not supported" and
 	// reject with 401, instead of falling through to mul_/JWT paths.
-	// Reuses MULTICA_CLOUD_FLEET_URL (the same URL the cloud-runtime
+	// Reuses CORDY_CLOUD_FLEET_URL (the same URL the cloud-runtime
 	// proxy uses) so a deployment doesn't need a second config knob.
 	cloudPATVerifier := auth.NewCloudPATVerifier(auth.CloudPATVerifierConfig{
 		FleetBaseURL: signupConfig.CloudRuntimeFleetURL,
@@ -1162,7 +1162,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// Share allowed origins with WebSocket origin checker.
 	realtime.SetAllowedOrigins(origins)
 
-	// Share the same trusted-proxy CIDRs (MULTICA_TRUSTED_PROXIES) so the
+	// Share the same trusted-proxy CIDRs (CORDY_TRUSTED_PROXIES) so the
 	// WebSocket origin check honors X-Forwarded-Host only from trusted proxies,
 	// using one config source instead of a parallel one.
 	realtime.SetTrustedProxies(signupConfig.TrustedProxies)
@@ -1260,21 +1260,21 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 	// purpose: the bearer token in the URL path IS the credential. Workspace
 	// context is derived from the trigger row, never from request headers.
 	r.Post("/api/webhooks/autopilots/{token}", h.HandleAutopilotWebhook)
-	// GitHub App webhook (no Multica auth — requests are authenticated via
+	// GitHub App webhook (no Cordy auth — requests are authenticated via
 	// HMAC-SHA256 signature in the handler) and post-install setup callback.
 	r.Post("/api/webhooks/github", h.HandleGitHubWebhook)
 	r.Get("/api/github/setup", h.GitHubSetupCallback)
-	// Slack OAuth callback (no Multica auth in the path — it is hit by Slack's
+	// Slack OAuth callback (no Cordy auth in the path — it is hit by Slack's
 	// browser redirect; the workspace/agent/initiator are recovered from the
 	// sealed state). It exchanges the code, upserts the install, then bounces
 	// the browser back to Settings → Integrations.
-	// VCS webhook for token-based providers (Forgejo / Gitea / GitLab). No Multica
+	// VCS webhook for token-based providers (Forgejo / Gitea / GitLab). No Cordy
 	// auth — authenticated per-connection by the provider's signature scheme;
 	// the connection id in the path selects the workspace, provider, and
 	// decryption secret.
 	r.Post("/api/webhooks/vcs/{connectionId}", h.HandleVCSWebhook)
-	// Stripe webhook (no Multica auth — Stripe signs the raw body
-	// with a shared secret, the multica-cloud upstream verifies. We
+	// Stripe webhook (no Cordy auth — Stripe signs the raw body
+	// with a shared secret, the cordy-cloud upstream verifies. We
 	// only forward the bytes + the Stripe-Signature header; see
 	// HandleCloudBillingStripeWebhook for the rationale).
 	r.Post("/api/webhooks/stripe", h.HandleCloudBillingStripeWebhook)
@@ -1615,7 +1615,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		r.Post("/api/dingtalk/binding/redeem", h.RedeemDingTalkBindingToken)
 		// WeCom smart-bot binding-token redemption. Same rationale as
 		// Lark/Slack: the session is the source of truth for the redeemer's
-		// Multica identity; the token only carries the WeCom userid to bind.
+		// Cordy identity; the token only carries the WeCom userid to bind.
 		r.Post("/api/wecom/binding/redeem", h.RedeemWecomBindingToken)
 		// Telegram binding-token redemption. Same rationale: not
 		// workspace-scoped, identity from the session, token proves only
@@ -1649,7 +1649,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 		})
 
 		// Cloud Billing proxy. Same upstream service / port as
-		// cloud-runtime — multica-cloud's Fleet and Billing share
+		// cloud-runtime — cordy-cloud's Fleet and Billing share
 		// :8080 and the same chi router. All routes here forward
 		// to /api/v1/billing/* with X-User-ID stamped from the
 		// authenticated context.
@@ -2161,7 +2161,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 // feishuChannel hands it the per-installation row.
 //
 // If the endpoint fetcher fails to initialize (typically a malformed
-// MULTICA_LARK_CALLBACK_BASE_URL), we log and fall back to the
+// CORDY_LARK_CALLBACK_BASE_URL), we log and fall back to the
 // NoopConnector so the lease / supervisor lifecycle still exercises
 // against real DB rows. Inbound messages are silently dropped until
 // the config is fixed; the boot log labels the mode "noop" so the
@@ -2171,7 +2171,7 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 // "ws-long-conn" in the healthy case, "noop" in the fallback case.
 func buildLarkConnector(installSvc *lark.InstallationService, apiClient lark.APIClient) (lark.EventConnector, string) {
 	endpointFetcher, err := lark.NewHTTPConnectionTokenFetcher(lark.HTTPConnectionTokenConfig{
-		BaseURL: strings.TrimSpace(os.Getenv("MULTICA_LARK_CALLBACK_BASE_URL")),
+		BaseURL: strings.TrimSpace(os.Getenv("CORDY_LARK_CALLBACK_BASE_URL")),
 		Logger:  slog.Default(),
 	})
 	if err != nil {
@@ -2180,7 +2180,7 @@ func buildLarkConnector(installSvc *lark.InstallationService, apiClient lark.API
 	}
 	decoder := lark.NewLarkJSONFrameDecoder()
 	dialer := lark.NewGorillaDialer()
-	if proxyURL := strings.TrimSpace(os.Getenv("MULTICA_LARK_WS_PROXY_URL")); proxyURL != "" {
+	if proxyURL := strings.TrimSpace(os.Getenv("CORDY_LARK_WS_PROXY_URL")); proxyURL != "" {
 		dialer.ProxyURL = proxyURL
 	}
 	credsProvider := lark.CredentialsProviderFunc(func(ctx context.Context, inst lark.Installation) (lark.InstallationCredentials, error) {
@@ -2306,10 +2306,10 @@ func splitAndTrim(s string) []string {
 }
 
 func cloudRuntimeFleetURLFromEnv() string {
-	if url := strings.TrimSpace(os.Getenv("MULTICA_CLOUD_FLEET_URL")); url != "" {
+	if url := strings.TrimSpace(os.Getenv("CORDY_CLOUD_FLEET_URL")); url != "" {
 		return url
 	}
-	return strings.TrimSpace(os.Getenv("MULTICA_FLEET_URL"))
+	return strings.TrimSpace(os.Getenv("CORDY_FLEET_URL"))
 }
 
 // composioStateSecret resolves the HMAC key for the connect-state. Prefers an
@@ -2329,7 +2329,7 @@ func composioStateSecret() []byte {
 
 // composioCallbackBaseURL resolves the public API base used to build the
 // Composio callback URL. Prefers COMPOSIO_CALLBACK_BASE_URL, then the
-// already-resolved MULTICA_PUBLIC_URL, then the app URL.
+// already-resolved CORDY_PUBLIC_URL, then the app URL.
 func composioCallbackBaseURL(publicURL string) string {
 	if v := strings.TrimRight(strings.TrimSpace(os.Getenv("COMPOSIO_CALLBACK_BASE_URL")), "/"); v != "" {
 		return v

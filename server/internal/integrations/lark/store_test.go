@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 func uuidFrom(b byte) pgtype.UUID {
@@ -169,7 +169,7 @@ func TestUserBindingConfigRoundTrip(t *testing.T) {
 	in := UserBinding{
 		ID:             uuidFrom(0x55),
 		WorkspaceID:    uuidFrom(0x22),
-		MulticaUserID:  uuidFrom(0x66),
+		CordyUserID:  uuidFrom(0x66),
 		InstallationID: uuidFrom(0x11),
 		ChannelUserID:  "ou_sender",
 		UnionID:        pgtype.Text{String: "on_union_777", Valid: true},
@@ -181,7 +181,7 @@ func TestUserBindingConfigRoundTrip(t *testing.T) {
 	got, err := userBindingFromRow(db.ChannelUserBinding{
 		ID:             in.ID,
 		WorkspaceID:    in.WorkspaceID,
-		MulticaUserID:  in.MulticaUserID,
+		CordyUserID:  in.CordyUserID,
 		InstallationID: in.InstallationID,
 		ChannelUserID:  in.ChannelUserID,
 		Config:         cfg,
@@ -189,7 +189,7 @@ func TestUserBindingConfigRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("userBindingFromRow: %v", err)
 	}
-	if got.UnionID != in.UnionID || got.ChannelUserID != in.ChannelUserID || got.MulticaUserID != in.MulticaUserID {
+	if got.UnionID != in.UnionID || got.ChannelUserID != in.ChannelUserID || got.CordyUserID != in.CordyUserID {
 		t.Fatalf("user binding round-trip mismatch: %+v", got)
 	}
 }

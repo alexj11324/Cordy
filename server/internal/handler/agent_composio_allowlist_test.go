@@ -18,14 +18,14 @@ func allowlistFixture(t *testing.T) (agentID, agentOwnerID string) {
 	ctx := context.Background()
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO "user" (name, email)
-		VALUES ('Allowlist Owner', 'allowlist-owner@multica.test')
+		VALUES ('Allowlist Owner', 'allowlist-owner@cordy.test')
 		RETURNING id
 	`).Scan(&agentOwnerID); err != nil {
 		t.Fatalf("create owner user: %v", err)
 	}
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
-			`DELETE FROM "user" WHERE email = 'allowlist-owner@multica.test'`)
+			`DELETE FROM "user" WHERE email = 'allowlist-owner@cordy.test'`)
 	})
 
 	if _, err := testPool.Exec(ctx, `

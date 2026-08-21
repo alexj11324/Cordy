@@ -17,15 +17,15 @@ import {
   issueKeys,
   issueTableGroupsOptions,
   issueTableRowPageOptions,
-} from "@multica/core/issues/queries";
-import { issueStatusCategory } from "@multica/core/issues";
+} from "@cordy/core/issues/queries";
+import { issueStatusCategory } from "@cordy/core/issues";
 import type {
   Issue,
   IssueTableGroupDescriptor,
   IssueTableGroupsRequest,
   IssueTableQuerySpec,
   IssueTableRowsResponse,
-} from "@multica/core/types";
+} from "@cordy/core/types";
 
 export interface IssueGroupPageState {
   total: number;

@@ -68,7 +68,7 @@ func TestPublicAddrOnlyRefusesEverythingInward(t *testing.T) {
 		"100.64.0.1", "100.100.100.100", "100.127.255.254",
 		// IPv6 unique local
 		"fc00::1", "fd12:3456::1",
-		// unspecified, multicast, broadcast
+		// unspecified, cordyst, broadcast
 		"0.0.0.0", "::", "224.0.0.1", "ff02::1", "255.255.255.255",
 		// IETF reserved, including the proxy fake-IP range on this machine
 		"192.0.0.1", "192.0.2.1", "198.18.0.18", "198.19.255.1",

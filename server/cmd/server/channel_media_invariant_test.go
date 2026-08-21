@@ -3,9 +3,9 @@ package main
 import (
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	"github.com/multica-ai/multica/server/internal/integrations/lark"
-	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel/engine"
+	"github.com/cordy-ai/cordy/server/internal/integrations/lark"
+	"github.com/cordy-ai/cordy/server/internal/service"
 )
 
 // The reconciler's settle delay carries NO correctness weight (the ledger

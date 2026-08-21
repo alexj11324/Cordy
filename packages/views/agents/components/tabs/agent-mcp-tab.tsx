@@ -4,16 +4,16 @@ import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertTriangle, Loader2, Lock, Plug } from "lucide-react";
 import { toast } from "sonner";
-import type { Agent, ComposioToolkit } from "@multica/core/types";
-import { useUpdateAgentAllowlist } from "@multica/core/agents";
-import { useFeatureEnabled } from "@multica/core/config";
+import type { Agent, ComposioToolkit } from "@cordy/core/types";
+import { useUpdateAgentAllowlist } from "@cordy/core/agents";
+import { useFeatureEnabled } from "@cordy/core/config";
 import {
   composioConnectionsOptions,
   composioToolkitsOptions,
-} from "@multica/core/composio";
-import { COMPOSIO_MCP_APPS_FLAG } from "@multica/core/feature-flags";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { Checkbox } from "@multica/ui/components/ui/checkbox";
+} from "@cordy/core/composio";
+import { COMPOSIO_MCP_APPS_FLAG } from "@cordy/core/feature-flags";
+import { useWorkspacePaths } from "@cordy/core/paths";
+import { Checkbox } from "@cordy/ui/components/ui/checkbox";
 import { ComposioToolkitLogo } from "../../../common/composio-toolkit-logo";
 import { AppLink } from "../../../navigation";
 import { useT } from "../../../i18n";

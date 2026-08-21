@@ -19,7 +19,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/multica-ai/multica/server/pkg/remotemcp"
+	"github.com/cordy-ai/cordy/server/pkg/remotemcp"
 )
 
 const (

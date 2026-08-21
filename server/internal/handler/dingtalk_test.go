@@ -6,10 +6,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	dingtalkintegration "github.com/multica-ai/multica/server/internal/integrations/dingtalk"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/cordy-ai/cordy/server/internal/events"
+	dingtalkintegration "github.com/cordy-ai/cordy/server/internal/integrations/dingtalk"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 func TestPublishDingTalkInstallationCreated(t *testing.T) {
@@ -104,8 +104,8 @@ func TestRedeemDingTalkBindingTokenPublishesAccountBindingUpdateAfterCommit(t *t
 	if queryErr != nil {
 		t.Fatalf("binding was not visible when event fired: %v", queryErr)
 	}
-	if bindingAtEvent.MulticaUserID != parseUUID(testUserID) {
-		t.Errorf("binding user = %v, want %s", bindingAtEvent.MulticaUserID, testUserID)
+	if bindingAtEvent.CordyUserID != parseUUID(testUserID) {
+		t.Errorf("binding user = %v, want %s", bindingAtEvent.CordyUserID, testUserID)
 	}
 	if published.WorkspaceID != testWorkspaceID || published.ActorType != "user" || published.ActorID != testUserID {
 		t.Errorf("event envelope = %+v", published)

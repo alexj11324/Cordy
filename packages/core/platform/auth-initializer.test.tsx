@@ -71,7 +71,7 @@ function makeApi(overrides: Partial<ApiClient> = {}): ApiClient {
 
 function renderInitializer({
   api,
-  storage = makeStorage({ multica_token: "token-1" }),
+  storage = makeStorage({ cordy_token: "token-1" }),
   cookieAuth = false,
   platform = "desktop",
 }: {
@@ -117,7 +117,7 @@ afterEach(() => {
 
 describe("AuthInitializer recovery", () => {
   it("keeps the token and recovers on the online event after a network failure", async () => {
-    const storage = makeStorage({ multica_token: "token-1" });
+    const storage = makeStorage({ cordy_token: "token-1" });
     const getMe = vi
       .fn()
       .mockRejectedValueOnce(new TypeError("fetch failed"))
@@ -128,7 +128,7 @@ describe("AuthInitializer recovery", () => {
     await waitFor(() => {
       expect(useAuthStore.getState().status).toBe("recovering");
     });
-    expect(storage.snapshot().multica_token).toBe("token-1");
+    expect(storage.snapshot().cordy_token).toBe("token-1");
     expect(onLogout).not.toHaveBeenCalled();
 
     act(() => window.dispatchEvent(new Event("online")));
@@ -272,9 +272,9 @@ describe("AuthInitializer recovery", () => {
   });
 
   it("publishes a definitive logout for a genuine 401", async () => {
-    const storage = makeStorage({ multica_token: "token-1" });
+    const storage = makeStorage({ cordy_token: "token-1" });
     const getMe = vi.fn().mockImplementation(() => {
-      storage.removeItem("multica_token");
+      storage.removeItem("cordy_token");
       return Promise.reject(new ApiError("unauthorized", 401, "Unauthorized"));
     });
     const api = makeApi({ getMe });
@@ -283,7 +283,7 @@ describe("AuthInitializer recovery", () => {
     await waitFor(() => {
       expect(useAuthStore.getState().status).toBe("unauthenticated");
     });
-    expect(storage.snapshot().multica_token).toBeUndefined();
+    expect(storage.snapshot().cordy_token).toBeUndefined();
     expect(onLogout).toHaveBeenCalledOnce();
   });
 });

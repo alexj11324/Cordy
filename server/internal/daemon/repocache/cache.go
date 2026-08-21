@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/daemon/processtree"
+	"github.com/cordy-ai/cordy/server/internal/daemon/processtree"
 )
 
 // gitEnv returns an environment for git subprocesses that contact remotes.
@@ -159,7 +159,7 @@ type CachedRepo struct {
 
 // Cache manages bare git clones for workspace repositories.
 type Cache struct {
-	root   string // base directory for all caches (e.g. ~/multica_workspaces/.repos)
+	root   string // base directory for all caches (e.g. ~/cordy_workspaces/.repos)
 	logger *slog.Logger
 	// repoLocks maps bare repo path → dedicated mutex. Any mutating operation
 	// on a given bare repo (clone, fetch, worktree add, ref update) must
@@ -421,7 +421,7 @@ func (c *Cache) BarePath(workspaceID, url string) string {
 // out in months. atime is worse: noatime is common on Linux and Windows
 // disables it by default. So the signal has to be written explicitly, at the
 // one place that means a repo was really used — CreateWorktree.
-const lastUsedFile = ".multica_last_used"
+const lastUsedFile = ".cordy_last_used"
 
 // MarkUsed records that this bare repo was just used for a checkout. Callers
 // must already hold the repo lock. Best-effort: a failed stamp only risks the
@@ -727,8 +727,8 @@ type WorktreeParams struct {
 	// inside WorkDir instead of a linked worktree whose gitdir lives under the
 	// shared cache. Codex tasks need this because workspace-write keeps a
 	// resolved external worktree gitdir read-only even when it is explicitly
-	// listed as a writable root — on Linux (multica-ai/multica#2925) and on the
-	// Windows native sandbox (multica-ai/multica#6449).
+	// listed as a writable root — on Linux (cordy-ai/cordy#2925) and on the
+	// Windows native sandbox (cordy-ai/cordy#6449).
 	IsolatedGitMetadata bool
 }
 
@@ -963,9 +963,9 @@ func (c *Cache) CreateWorktreeContext(ctx context.Context, params WorktreeParams
 }
 
 const (
-	isolatedCheckoutConfigKey   = "multica.checkout-mode"
+	isolatedCheckoutConfigKey   = "cordy.checkout-mode"
 	isolatedCheckoutConfigValue = "isolated"
-	isolatedCacheRemoteName     = "multica-cache"
+	isolatedCacheRemoteName     = "cordy-cache"
 )
 
 // createOrUpdateIsolatedCheckout keeps Git metadata inside the task workdir.
@@ -1021,7 +1021,7 @@ func (c *Cache) createOrUpdateIsolatedCheckoutContext(ctx context.Context, bareP
 		}
 	}
 	if _, err := os.Stat(checkoutPath); err == nil {
-		return "", fmt.Errorf("checkout path already exists and is not a Multica isolated checkout: %s", checkoutPath)
+		return "", fmt.Errorf("checkout path already exists and is not a Cordy isolated checkout: %s", checkoutPath)
 	} else if !os.IsNotExist(err) {
 		return "", fmt.Errorf("stat checkout path: %w", err)
 	}
@@ -1266,7 +1266,7 @@ func deleteAllLocalBranchesContext(ctx context.Context, repoPath string) error {
 	return deleteLocalBranchesUnderContext(ctx, repoPath, "refs/heads/", "")
 }
 
-// deleteStaleAgentBranches prunes branches left by earlier Multica tasks while
+// deleteStaleAgentBranches prunes branches left by earlier Cordy tasks while
 // preserving the current task branch and every user-created local branch.
 func deleteStaleAgentBranches(repoPath, keepBranch string) error {
 	return deleteStaleAgentBranchesContext(context.Background(), repoPath, keepBranch)
@@ -1576,31 +1576,31 @@ func bareHeadBranchContext(ctx context.Context, barePath string) string {
 	return ref
 }
 
-// multicaHookMarker is a sentinel comment embedded in every prepare-commit-msg
+// cordyHookMarker is a sentinel comment embedded in every prepare-commit-msg
 // hook installed by the daemon. removeCoAuthoredByHook uses it to recognize
 // hooks it owns so it never deletes a hook installed by the user or another
 // tool. Do not change without bumping the recognition logic.
-const multicaHookMarker = "# multica:prepare-commit-msg:co-authored-by"
+const cordyHookMarker = "# cordy:prepare-commit-msg:co-authored-by"
 
 // daemonInstalledHookSignatures lists substrings that identify a
 // prepare-commit-msg hook as one the daemon installed. removeCoAuthoredByHook
-// treats a hook as Multica-owned if its content contains ANY of these
+// treats a hook as Cordy-owned if its content contains ANY of these
 // substrings. The list deliberately includes the legacy comment that the
-// daemon used before multicaHookMarker existed, so disabling the toggle on
+// daemon used before cordyHookMarker existed, so disabling the toggle on
 // existing installations still cleans up old hooks seeded by previous daemon
 // versions. Add to this list — never remove from it — so future tweaks to
 // prepareCommitMsgHook keep recognizing every previously-shipped variant.
 var daemonInstalledHookSignatures = []string{
-	multicaHookMarker,
-	"# Installed by the Multica daemon.",
+	cordyHookMarker,
+	"# Installed by the Cordy daemon.",
 }
 
 // prepareCommitMsgHook is the prepare-commit-msg hook script that appends a
-// Co-authored-by trailer for the Multica Agent to every commit message.
+// Co-authored-by trailer for the Cordy Agent to every commit message.
 const prepareCommitMsgHook = `#!/bin/sh
-# multica:prepare-commit-msg:co-authored-by
-# Multica: add Co-authored-by trailer for the Multica Agent.
-# Installed by the Multica daemon. Do not edit — it will be overwritten.
+# cordy:prepare-commit-msg:co-authored-by
+# Cordy: add Co-authored-by trailer for the Cordy Agent.
+# Installed by the Cordy daemon. Do not edit — it will be overwritten.
 
 COMMIT_MSG_FILE="$1"
 COMMIT_SOURCE="$2"
@@ -1610,7 +1610,7 @@ case "$COMMIT_SOURCE" in
   merge|squash) exit 0 ;;
 esac
 
-TRAILER="Co-authored-by: multica-agent <github@multica.ai>"
+TRAILER="Co-authored-by: cordy-agent <github@cordy.ai>"
 
 # Don't add if already present.
 if grep -qF "$TRAILER" "$COMMIT_MSG_FILE"; then
@@ -1622,7 +1622,7 @@ git interpret-trailers --in-place --trailer "$TRAILER" "$COMMIT_MSG_FILE"
 `
 
 // installCoAuthoredByHook installs a prepare-commit-msg git hook that appends
-// a Co-authored-by trailer for the Multica Agent. The hook is installed in the
+// a Co-authored-by trailer for the Cordy Agent. The hook is installed in the
 // git common directory (the bare repo for worktrees) so it applies to all
 // worktrees created from this cache.
 func installCoAuthoredByHook(worktreePath string) error {
@@ -1652,7 +1652,7 @@ func installCoAuthoredByHookContext(ctx context.Context, worktreePath string) er
 }
 
 // isDaemonInstalledHook reports whether a prepare-commit-msg hook on disk was
-// installed by the Multica daemon (current or any previously released
+// installed by the Cordy daemon (current or any previously released
 // version). It returns false for hooks that don't carry any known daemon
 // signature, so a user-installed hook at the same path is left alone.
 func isDaemonInstalledHook(contents []byte) bool {

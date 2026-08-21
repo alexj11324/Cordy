@@ -5,10 +5,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/internal/events"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	"github.com/multica-ai/multica/server/internal/realtime"
+	"github.com/cordy-ai/cordy/server/internal/analytics"
+	"github.com/cordy-ai/cordy/server/internal/events"
+	obsmetrics "github.com/cordy-ai/cordy/server/internal/metrics"
+	"github.com/cordy-ai/cordy/server/internal/realtime"
 )
 
 func TestMainRouterDoesNotExposeDiagnostics(t *testing.T) {

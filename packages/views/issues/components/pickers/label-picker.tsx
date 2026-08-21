@@ -4,16 +4,16 @@ import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Tag, Plus, Settings2 } from "lucide-react";
 import { toast } from "sonner";
-import type { Label } from "@multica/core/types";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
+import type { Label } from "@cordy/core/types";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { useWorkspacePaths } from "@cordy/core/paths";
 import {
   labelListOptions,
   issueLabelsOptions,
   useAttachLabel,
   useDetachLabel,
   useCreateLabel,
-} from "@multica/core/labels";
+} from "@cordy/core/labels";
 import { LabelChip } from "../../../labels/label-chip";
 import { useNavigation } from "../../../navigation";
 import {

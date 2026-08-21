@@ -13,17 +13,17 @@ _setup_sandbox() {
   local payload_dir="$tmp/payload"
   mkdir -p "$stub_bin" "$install_bin" "$payload_dir"
 
-  cat >"$payload_dir/multica" <<'STUB'
+  cat >"$payload_dir/cordy" <<'STUB'
 #!/usr/bin/env bash
-echo "multica v0.3.2 (commit: test)"
+echo "cordy v0.3.2 (commit: test)"
 STUB
-  chmod +x "$payload_dir/multica"
-  tar -czf "$tmp/multica.tar.gz" -C "$payload_dir" multica
+  chmod +x "$payload_dir/cordy"
+  tar -czf "$tmp/cordy.tar.gz" -C "$payload_dir" cordy
 
   cat >"$stub_bin/curl" <<'STUB'
 #!/usr/bin/env bash
 if [[ "$*" == *"-sI"* ]]; then
-  printf 'HTTP/2 302\r\nlocation: https://github.com/multica-ai/multica/releases/tag/v0.3.2\r\n'
+  printf 'HTTP/2 302\r\nlocation: https://github.com/cordy-ai/cordy/releases/tag/v0.3.2\r\n'
   exit 0
 fi
 
@@ -44,7 +44,7 @@ if [[ -z "$out" ]]; then
   echo "stub curl expected -o" >&2
   exit 2
 fi
-cp "$MULTICA_TEST_ARCHIVE" "$out"
+cp "$CORDY_TEST_ARCHIVE" "$out"
 STUB
   chmod +x "$stub_bin/curl"
 }
@@ -54,8 +54,8 @@ _run_installer() {
   local out="$tmp/install.out"
   local err="$tmp/install.err"
   if ! PATH="$tmp/stub-bin:$tmp/install-bin:/usr/bin:/bin" \
-    MULTICA_BIN_DIR="$tmp/install-bin" \
-    MULTICA_TEST_ARCHIVE="$tmp/multica.tar.gz" \
+    CORDY_BIN_DIR="$tmp/install-bin" \
+    CORDY_TEST_ARCHIVE="$tmp/cordy.tar.gz" \
     bash "$ROOT_DIR/scripts/install.sh" >"$out" 2>"$err"; then
     echo "install.sh exited non-zero" >&2
     cat "$out" >&2 || true
@@ -63,8 +63,8 @@ _run_installer() {
     return 1
   fi
 
-  if [[ ! -x "$tmp/install-bin/multica" ]]; then
-    echo "expected fallback binary at $tmp/install-bin/multica" >&2
+  if [[ ! -x "$tmp/install-bin/cordy" ]]; then
+    echo "expected fallback binary at $tmp/install-bin/cordy" >&2
     cat "$out" >&2 || true
     cat "$err" >&2 || true
     return 1
@@ -166,7 +166,7 @@ STUB
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if ! grep -q "https://multica.ai/settings?tab=tokens" "$tmp/install.out"; then
+  if ! grep -q "https://cordy.ai/settings?tab=tokens" "$tmp/install.out"; then
     echo "expected direct API Tokens settings URL in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
@@ -176,17 +176,17 @@ STUB
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if ! grep -q "multica login --token <YOUR_TOKEN>" "$tmp/install.out"; then
+  if ! grep -q "cordy login --token <YOUR_TOKEN>" "$tmp/install.out"; then
     echo "expected token login command in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if grep -q "multica config set server_url" "$tmp/install.out"; then
+  if grep -q "cordy config set server_url" "$tmp/install.out"; then
     echo "did not expect default cloud server config command in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if grep -q "multica config set app_url" "$tmp/install.out"; then
+  if grep -q "cordy config set app_url" "$tmp/install.out"; then
     echo "did not expect default cloud app config command in installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
@@ -229,7 +229,7 @@ STUB
     cat "$tmp/install.out" >&2 || true
     return 1
   fi
-  if grep -q "multica login --token <YOUR_TOKEN>" "$tmp/install.out"; then
+  if grep -q "cordy login --token <YOUR_TOKEN>" "$tmp/install.out"; then
     echo "did not expect token login command in local installer output" >&2
     cat "$tmp/install.out" >&2 || true
     return 1
@@ -267,8 +267,8 @@ PORT=8080
 # SERVER_PORT=8080
 FRONTEND_PORT=3000
 JWT_SECRET=change-me-in-production
-POSTGRES_PASSWORD=multica
-DATABASE_URL=postgres://multica:multica@localhost:5432/multica?sslmode=disable
+POSTGRES_PASSWORD=cordy
+DATABASE_URL=postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
 ENVFILE
   touch "$server_dir/docker-compose.selfhost.yml"
 
@@ -358,8 +358,8 @@ STUB
   printf '#!/usr/bin/env bash\nexit 0\n' >"$stub_bin/brew"
   chmod +x "$stub_bin/brew"
 
-  printf '#!/usr/bin/env bash\necho "multica v0.3.2 (commit: test)"\n' >"$stub_bin/multica"
-  chmod +x "$stub_bin/multica"
+  printf '#!/usr/bin/env bash\necho "cordy v0.3.2 (commit: test)"\n' >"$stub_bin/cordy"
+  chmod +x "$stub_bin/cordy"
 
   # curl records every probed URL so the health-check port can be asserted.
   cat >"$stub_bin/curl" <<'STUB'
@@ -367,7 +367,7 @@ STUB
 set -uo pipefail
 for arg in "$@"; do
   case "$arg" in
-    http*) printf '%s\n' "$arg" >>"$MULTICA_TEST_CURL_LOG" ;;
+    http*) printf '%s\n' "$arg" >>"$CORDY_TEST_CURL_LOG" ;;
   esac
 done
 exit 0
@@ -389,9 +389,9 @@ _run_with_server() {
   if ! env -i \
     PATH="$tmp/stub-bin:/usr/bin:/bin" \
     HOME="$tmp" \
-    MULTICA_INSTALL_DIR="$tmp/server" \
-    MULTICA_SELFHOST_REF="main" \
-    MULTICA_TEST_CURL_LOG="$tmp/curl.log" \
+    CORDY_INSTALL_DIR="$tmp/server" \
+    CORDY_SELFHOST_REF="main" \
+    CORDY_TEST_CURL_LOG="$tmp/curl.log" \
     "$@" \
     bash "$ROOT_DIR/scripts/install.sh" --with-server \
     >"$tmp/install.out" 2>"$tmp/install.err"; then

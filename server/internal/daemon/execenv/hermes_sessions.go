@@ -8,14 +8,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/cli"
+	"github.com/cordy-ai/cordy/server/internal/cli"
 )
 
 // Background
 //
 // Hermes persists every ACP session — the actual conversation transcript — in
 // the SQLite database at `<HERMES_HOME>/state.db` (acp_adapter/session.py).
-// Because Multica has to take over HERMES_HOME to inject bound skills, that
+// Because Cordy has to take over HERMES_HOME to inject bound skills, that
 // database landed inside the per-task overlay, which made a Hermes agent's
 // conversation last exactly one task.
 //
@@ -30,7 +30,7 @@ import (
 //
 // The store is keyed by (agent, hermes profile, conversation):
 //
-//	<multica profile dir>/hermes-sessions/<agent>/<hermes profile>/<conversation>/state.db
+//	<cordy profile dir>/hermes-sessions/<agent>/<hermes profile>/<conversation>/state.db
 //
 // Keying to the conversation — the issue, or `chat_<id>` for a chat session —
 // is what makes this safe to share where #6693 could not. Its stated reason
@@ -55,7 +55,7 @@ import (
 // database rather than in the task directory, and a task teardown can never
 // take the write-ahead log with it.
 
-// hermesSessionStoreRoot is the directory under the daemon's Multica profile
+// hermesSessionStoreRoot is the directory under the daemon's Cordy profile
 // dir that holds every agent's persistent Hermes conversation shards.
 const hermesSessionStoreRoot = "hermes-sessions"
 
@@ -66,7 +66,7 @@ const hermesSessionDBEntry = "state.db"
 // HermesSessionStorePath returns the persistent session store for
 // (daemonProfile, agentID, sourceHome, conversation), or "" when the session
 // database must stay task-local — no agent to key on, no conversation to key
-// on (neither an issue nor a chat session), or an unresolvable Multica profile
+// on (neither an issue nor a chat session), or an unresolvable Cordy profile
 // dir. The daemon marks the returned path in-use for the task's duration so
 // PruneHermesSessionStores never reclaims it mid-mount.
 func HermesSessionStorePath(daemonProfile, agentID, sourceHome string, task TaskContextForEnv) string {
@@ -207,7 +207,7 @@ func mountHermesSessionDB(hermesHome, storeDir string, logger *slog.Logger) (her
 // published over state.db. Dot-prefixed so isHermesTaskLocalStateEntry does not
 // match it and the family cleanup cannot remove the link it is about to
 // publish.
-const hermesSessionLinkStagingEntry = ".multica-session-link"
+const hermesSessionLinkStagingEntry = ".cordy-session-link"
 
 // hermesStoreHasSessionDB reports whether storeDir holds a session database
 // with content. A zero-length file is what SQLite leaves after an `open` that

@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // Phase 1 of MUL-5372 / GitHub #5999: bulk responses stop pre-signing
@@ -190,7 +190,7 @@ func TestAttachmentToResponse_StableModeIsNoOpWithoutSigner(t *testing.T) {
 
 // TestGetAttachmentByID_IgnoresStableCapability is the load-bearing carve-out.
 // Stable-mode callers exchange the stable path for a loadable URL here —
-// `multica attachment download <id>` reads download_url off this endpoint — so
+// `cordy attachment download <id>` reads download_url off this endpoint — so
 // honoring the capability would break the flow that makes stable mode safe.
 func TestGetAttachmentByID_IgnoresStableCapability(t *testing.T) {
 	withCloudFrontSigner(t)

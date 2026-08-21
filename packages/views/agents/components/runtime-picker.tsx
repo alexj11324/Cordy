@@ -7,14 +7,14 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import {
   isRuntimeUsableForUser,
   runtimeDisplayName,
-} from "@multica/core/runtimes";
-import type { MemberWithUser, RuntimeDevice } from "@multica/core/types";
+} from "@cordy/core/runtimes";
+import type { MemberWithUser, RuntimeDevice } from "@cordy/core/types";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@multica/ui/components/ui/popover";
-import { Label } from "@multica/ui/components/ui/label";
+} from "@cordy/ui/components/ui/popover";
+import { Label } from "@cordy/ui/components/ui/label";
 import { useT } from "../../i18n";
 import {
   buildRuntimeMachines,

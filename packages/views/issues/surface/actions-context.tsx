@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, type ReactNode } from "react";
-import type { Issue, UpdateIssueRequest } from "@multica/core/types";
+import type { Issue, UpdateIssueRequest } from "@cordy/core/types";
 import type { IssueCreateDefaults } from "./types";
 
 export type IssueSurfaceMutationOptions = {

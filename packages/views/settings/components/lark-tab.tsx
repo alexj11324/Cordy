@@ -12,9 +12,9 @@ import { ChevronRight, ExternalLink, RefreshCw, Trash2 } from "lucide-react";
 // was fine. The named export maps straight to `exports.QRCode` and
 // resolves correctly under both bundlers.
 import { QRCode } from "react-qr-code";
-import { cn } from "@multica/ui/lib/utils";
-import { Button } from "@multica/ui/components/ui/button";
-import { Card, CardContent } from "@multica/ui/components/ui/card";
+import { cn } from "@cordy/ui/lib/utils";
+import { Button } from "@cordy/ui/components/ui/button";
+import { Card, CardContent } from "@cordy/ui/components/ui/card";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,7 +24,7 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
+} from "@cordy/ui/components/ui/alert-dialog";
 import {
   Dialog,
   DialogContent,
@@ -32,14 +32,14 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@multica/ui/components/ui/dialog";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { memberListOptions } from "@multica/core/workspace/queries";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { larkInstallationsOptions, larkKeys } from "@multica/core/lark";
-import { api, ApiError } from "@multica/core/api";
-import type { LarkInstallation, LarkInstallStatusResponse } from "@multica/core/types";
+} from "@cordy/ui/components/ui/dialog";
+import { useAuthStore } from "@cordy/core/auth";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { memberListOptions } from "@cordy/core/workspace/queries";
+import { useActorName } from "@cordy/core/workspace/hooks";
+import { larkInstallationsOptions, larkKeys } from "@cordy/core/lark";
+import { api, ApiError } from "@cordy/core/api";
+import type { LarkInstallation, LarkInstallStatusResponse } from "@cordy/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 
@@ -57,7 +57,7 @@ const LARK_INTL_CONNECT_ENABLED: boolean = false;
 // backend enforces it; the UI hides the button for non-admins to match).
 //
 // Adding a new installation flows through the Agent detail page: the
-// install path is per-agent (each Multica Agent gets exactly one Bot —
+// install path is per-agent (each Cordy Agent gets exactly one Bot —
 // see the (workspace_id, agent_id) UNIQUE in lark_installation), so
 // asking the user to pick an agent here would re-create that page's
 // picker. The "Bind your first agent" copy in the empty state hints
@@ -114,7 +114,7 @@ export function LarkTab() {
             <p className="text-caption text-muted-foreground">
               {t(($) => $.lark.not_enabled_description_prefix)}{" "}
               <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                MULTICA_LARK_SECRET_KEY
+                CORDY_LARK_SECRET_KEY
               </code>{" "}
               {t(($) => $.lark.not_enabled_description_suffix)}{" "}
               {t(($) => $.lark.not_enabled_self_host_hint)}
@@ -214,8 +214,8 @@ function InstallationRow({
   onDisconnect: () => void;
 }) {
   const { t } = useT("settings");
-  // The bot is bound 1:1 to a Multica Agent (per the (workspace_id,
-  // agent_id) UNIQUE in lark_installation). Render the Multica agent's
+  // The bot is bound 1:1 to a Cordy Agent (per the (workspace_id,
+  // agent_id) UNIQUE in lark_installation). Render the Cordy agent's
   // identity here rather than the raw Lark app_id / bot_open_id — those
   // mean nothing to product users. getAgentName falls back to
   // "Unknown Agent" when the agent has been deleted; the Disconnect

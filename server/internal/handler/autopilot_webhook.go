@@ -22,11 +22,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	"github.com/multica-ai/multica/server/internal/middleware"
-	"github.com/multica-ai/multica/server/internal/service"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/dbid"
+	obsmetrics "github.com/cordy-ai/cordy/server/internal/metrics"
+	"github.com/cordy-ai/cordy/server/internal/middleware"
+	"github.com/cordy-ai/cordy/server/internal/service"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/dbid"
 )
 
 // maxWebhookBodyBytes is the request body size cap for webhook ingress.
@@ -948,7 +948,7 @@ func writeWebhookRateLimit(w http.ResponseWriter, r *http.Request, limiter Webho
 //
 // Default behaviour: use the host portion of r.RemoteAddr. Forwarded
 // headers (X-Forwarded-For, X-Real-IP) are IGNORED unless the operator
-// has explicitly opted in via MULTICA_TRUSTED_PROXIES — and even then
+// has explicitly opted in via CORDY_TRUSTED_PROXIES — and even then
 // only when r.RemoteAddr is itself inside one of the listed CIDRs.
 func (h *Handler) clientIPForRateLimit(r *http.Request) string {
 	remoteIP := remoteAddrHost(r.RemoteAddr)

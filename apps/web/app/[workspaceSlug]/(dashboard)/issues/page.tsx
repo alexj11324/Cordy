@@ -1,8 +1,8 @@
 "use client";
 
 import { Suspense } from "react";
-import { IssuesPage } from "@multica/views/issues/components";
-import { ErrorBoundary } from "@multica/ui/components/common/error-boundary";
+import { IssuesPage } from "@cordy/views/issues/components";
+import { ErrorBoundary } from "@cordy/ui/components/common/error-boundary";
 import { useIssueViewUrlSync } from "../../../../platform/use-issue-view-url-sync";
 
 function IssueViewUrlSync() {

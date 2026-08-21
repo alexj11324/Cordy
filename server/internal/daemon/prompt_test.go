@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/cordy-ai/cordy/server/internal/daemon/execenv"
 )
 
 // TestBuildQuickCreatePromptRules locks in the rules that govern how the
@@ -27,7 +27,7 @@ func TestBuildQuickCreatePromptRules(t *testing.T) {
 		"verbal routing wrappers about creating the issue",
 		"pure conversational fillers",
 		// cc routing must survive: mention link stays in description so the
-		// auto-subscribe path fires (multica issue create has no --subscriber flag)
+		// auto-subscribe path fires (cordy issue create has no --subscriber flag)
 		"CC exception",
 		"auto-subscribes members",
 		// context section is conditional and must not be an apology log
@@ -37,7 +37,7 @@ func TestBuildQuickCreatePromptRules(t *testing.T) {
 		// use custom issue prefixes, so a successful issue creation should
 		// not look failed merely because the identifier does not match one
 		// fixed prefix.
-		"multica issue create --output json",
+		"cordy issue create --output json",
 		"JSON response",
 		"identifier",
 		"Do not scrape human output",
@@ -72,7 +72,7 @@ func TestBuildQuickCreatePromptRules(t *testing.T) {
 func TestBuildQuickCreatePromptAssigneeIncludesSquads(t *testing.T) {
 	out := buildQuickCreatePrompt(Task{QuickCreatePrompt: "fix the login button color"})
 	mustContain := []string{
-		"multica squad list",
+		"cordy squad list",
 		"Squads are first-class assignees",
 		"Treat bare @-routing as an assignee directive",
 		"让 @独立团 review 这个 PR",
@@ -398,7 +398,7 @@ func TestBuildPromptProtocolHeadingInInstructionsIsNotALeader(t *testing.T) {
 
 	for _, banned := range []string{
 		"Squad leader no_action rule",
-		"multica squad activity",
+		"cordy squad activity",
 		"DO NOT post any comment",
 		"Unless your outcome is `no_action`",
 	} {
@@ -436,7 +436,7 @@ func TestBuildPromptLegacyServerKeepsBriefingBasedLeaderRole(t *testing.T) {
 
 	for _, want := range []string{
 		"Squad leader no_action rule",
-		"multica squad activity",
+		"cordy squad activity",
 		"DO NOT post any comment",
 	} {
 		if !strings.Contains(out, want) {
@@ -457,7 +457,7 @@ func TestBuildChatPromptAttachmentIDsCanBeBoundToCreatedIssues(t *testing.T) {
 	for _, want := range []string{
 		"Attachments on this message:",
 		"id=019ec09d-6222-722b-bdfa-427b105d80be",
-		"multica attachment download <id>",
+		"cordy attachment download <id>",
 		"--attachment-id <id>",
 	} {
 		if !strings.Contains(out, want) {
@@ -473,7 +473,7 @@ func TestBuildChatPromptChannelAwareness(t *testing.T) {
 			ChatChannelType: "slack",
 			ChatMessage:     "你刚刚和 xxx 聊了什么",
 		})
-		for _, want := range []string{"Slack", "NOT in Multica", "multica chat history", "multica chat thread", "Do NOT narrate"} {
+		for _, want := range []string{"Slack", "NOT in Cordy", "cordy chat history", "cordy chat thread", "Do NOT narrate"} {
 			if !strings.Contains(out, want) {
 				t.Fatalf("slack-backed prompt missing %q\n--- output ---\n%s", want, out)
 			}
@@ -482,14 +482,14 @@ func TestBuildChatPromptChannelAwareness(t *testing.T) {
 
 	t.Run("top-level mention starts with history", func(t *testing.T) {
 		out := buildChatPrompt(Task{ChatSessionID: "s", ChatChannelType: "slack", ChatInThread: false, ChatMessage: "hi"})
-		if !strings.Contains(out, "top level: start with `multica chat history`") {
+		if !strings.Contains(out, "top level: start with `cordy chat history`") {
 			t.Fatalf("expected top-level guidance, got:\n%s", out)
 		}
 	})
 
 	t.Run("in-thread mention starts with thread", func(t *testing.T) {
 		out := buildChatPrompt(Task{ChatSessionID: "s", ChatChannelType: "slack", ChatInThread: true, ChatMessage: "hi"})
-		if !strings.Contains(out, "inside a thread: start with `multica chat thread`") {
+		if !strings.Contains(out, "inside a thread: start with `cordy chat thread`") {
 			t.Fatalf("expected in-thread guidance, got:\n%s", out)
 		}
 	})
@@ -499,13 +499,13 @@ func TestBuildChatPromptChannelAwareness(t *testing.T) {
 			ChatSessionID: "sess-1",
 			ChatMessage:   "hi",
 		})
-		if strings.Contains(out, "multica chat history") {
+		if strings.Contains(out, "cordy chat history") {
 			t.Fatalf("web-only chat prompt should not mention channel history, got:\n%s", out)
 		}
 	})
 
-	// A transcript surface must not be told its history is "NOT in Multica" and
-	// then handed a Multica command to read that history. The claim used to be
+	// A transcript surface must not be told its history is "NOT in Cordy" and
+	// then handed a Cordy command to read that history. The claim used to be
 	// unconditional, so every Feishu/WeCom/DingTalk prompt carried both halves;
 	// an agent that believes the first one has no reason to run the second.
 	for _, channelType := range []string{
@@ -519,15 +519,15 @@ func TestBuildChatPromptChannelAwareness(t *testing.T) {
 				ChatChannelType: channelType,
 				ChatMessage:     "刚刚聊到哪了",
 			})
-			if !strings.Contains(out, "multica chat history") {
+			if !strings.Contains(out, "cordy chat history") {
 				t.Fatalf("transcript surface lost its read-back command\n--- output ---\n%s", out)
 			}
-			if strings.Contains(out, "NOT in Multica") {
-				t.Errorf("transcript surface told its history is NOT in Multica, then told to read it from Multica\n--- output ---\n%s", out)
+			if strings.Contains(out, "NOT in Cordy") {
+				t.Errorf("transcript surface told its history is NOT in Cordy, then told to read it from Cordy\n--- output ---\n%s", out)
 			}
 			// The useful half of the original sentence must survive: the agent
 			// still must not go hunting through issues and comments.
-			if !strings.Contains(out, "Never look in Multica issues or comments") {
+			if !strings.Contains(out, "Never look in Cordy issues or comments") {
 				t.Errorf("lost the issues/comments prohibition\n--- output ---\n%s", out)
 			}
 		})
@@ -598,9 +598,9 @@ func TestBuildChatPromptNoNarrationOnEveryChannel(t *testing.T) {
 //     guidance only where the adapter goes back for the bound attachment AND
 //     that deployment has the object storage to go back to
 //     (integrations/wecom/outbound_media.go, cmd/server/router.go).
-//   - history: `multica chat history` is injected for Slack (live channel) and
+//   - history: `cordy chat history` is injected for Slack (live channel) and
 //     for every surface that persists a transcript (Feishu, WeCom, DingTalk);
-//     `multica chat thread` is Slack-only. handler/chat_history.go reads the
+//     `cordy chat thread` is Slack-only. handler/chat_history.go reads the
 //     live channel for Slack and falls back to the stored chat_message
 //     transcript for every other session.
 //
@@ -612,13 +612,13 @@ func TestBuildChatPromptNoNarrationOnEveryChannel(t *testing.T) {
 // why it cannot be the channel type either.
 func TestBuildChatPromptTwoLayerChannelPolicy(t *testing.T) {
 	// Match the IMPERATIVE, not the bare command name. An IM prompt names
-	// `multica attachment upload` on purpose — to state that it does not apply
+	// `cordy attachment upload` on purpose — to state that it does not apply
 	// here. That negation is the useful copy (an agent carries the command over
 	// from every other surface, and the brief no longer names it for a
 	// channel-backed chat, so silence would leave it guessing), so asserting on
 	// the bare name would forbid the very sentence we want.
-	const uploadGuidance = "run `multica attachment upload <local-path>`"
-	const historyGuidance = "multica chat history"
+	const uploadGuidance = "run `cordy attachment upload <local-path>`"
+	const historyGuidance = "cordy chat history"
 
 	cases := []struct {
 		name          string
@@ -658,7 +658,7 @@ func TestBuildChatPromptTwoLayerChannelPolicy(t *testing.T) {
 			wantHistory: true,
 			wantPhrases: []string{
 				"Feishu/Lark",
-				"read it back with `multica chat history`",
+				"read it back with `cordy chat history`",
 				"delivered to Feishu/Lark as text",
 				"You cannot attach a file to it",
 			},
@@ -681,7 +681,7 @@ func TestBuildChatPromptTwoLayerChannelPolicy(t *testing.T) {
 				"WeCom",
 				"sends it into the WeCom conversation as a separate message",
 				"there is no way to place it inline",
-				"read it back with `multica chat history`",
+				"read it back with `cordy chat history`",
 			},
 		},
 		{
@@ -701,7 +701,7 @@ func TestBuildChatPromptTwoLayerChannelPolicy(t *testing.T) {
 				"WeCom",
 				"delivered to WeCom as text",
 				"You cannot attach a file to it",
-				"read it back with `multica chat history`",
+				"read it back with `cordy chat history`",
 			},
 		},
 		{
@@ -714,7 +714,7 @@ func TestBuildChatPromptTwoLayerChannelPolicy(t *testing.T) {
 			wantHistory: true,
 			wantPhrases: []string{
 				"DingTalk",
-				"read it back with `multica chat history`",
+				"read it back with `cordy chat history`",
 				"delivered to DingTalk as text",
 				"You cannot attach a file to it",
 			},
@@ -754,8 +754,8 @@ func TestBuildChatPromptFeishuIgnoresChatInThread(t *testing.T) {
 		ChatInThread:    true,
 		ChatMessage:     "hi",
 	})
-	if strings.Contains(out, "multica chat thread") {
-		t.Errorf("feishu prompt must not teach `multica chat thread` (no thread reader)\n--- output ---\n%s", out)
+	if strings.Contains(out, "cordy chat thread") {
+		t.Errorf("feishu prompt must not teach `cordy chat thread` (no thread reader)\n--- output ---\n%s", out)
 	}
 }
 
@@ -954,7 +954,7 @@ func TestBuildChatPromptSlashSkills(t *testing.T) {
 func TestBuildPromptDefaultScansRootsFirst(t *testing.T) {
 	out := BuildPrompt(Task{IssueID: "issue-default-1"}, "claude")
 	for _, s := range []string{
-		"multica issue comment list issue-default-1 --roots-only --summary --compact --output json",
+		"cordy issue comment list issue-default-1 --roots-only --summary --compact --output json",
 		"--since",
 	} {
 		if !strings.Contains(out, s) {
@@ -987,7 +987,7 @@ func TestBuildPromptDefaultScansRootsFirst(t *testing.T) {
 	if strings.Contains(out, "If you need comment history") {
 		t.Errorf("default BuildPrompt still carries the legacy 'If you need' soft phrasing that conflicts with the mandatory workflow\n--- output ---\n%s", out)
 	}
-	if strings.Contains(out, "multica issue comment list issue-default-1 --output json") {
+	if strings.Contains(out, "cordy issue comment list issue-default-1 --output json") {
 		t.Errorf("default BuildPrompt still presents the unbounded flat read as the assignment catch-up command\n--- output ---\n%s", out)
 	}
 }
@@ -1009,15 +1009,15 @@ func TestBuildPromptWarnsAboutActiveSiblingRuns(t *testing.T) {
 		"Active sibling runs",
 		"MUL-6000",
 		"task-existing",
-		"multica issue comment list issue-target --roots-only --summary --compact --output json",
-		"multica issue run-messages task-existing",
+		"cordy issue comment list issue-target --roots-only --summary --compact --output json",
+		"cordy issue run-messages task-existing",
 		"--no-start",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("prompt missing %q\n--- output ---\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "multica issue runs") {
+	if strings.Contains(out, "cordy issue runs") {
 		t.Errorf("prompt must not direct overlap checks to the target issue's run list\n--- output ---\n%s", out)
 	}
 	if strings.Contains(out, "run-messages task-existing --issue") {
@@ -1090,7 +1090,7 @@ func TestBuildPromptNewCommentsHint(t *testing.T) {
 		t.Errorf("hint must discourage blindly reading every new comment, got:\n%s", out)
 	}
 	// Parent thread first: the --thread <trigger> read is the prioritized action.
-	if !strings.Contains(out, "multica issue comment list "+issueID+" --thread thread-root-1 --since "+since+" --compact --output json") {
+	if !strings.Contains(out, "cordy issue comment list "+issueID+" --thread thread-root-1 --since "+since+" --compact --output json") {
 		t.Errorf("hint must point at the triggering (parent) thread --since read first, got:\n%s", out)
 	}
 	if !strings.Contains(out, "--tail 30") {
@@ -1102,7 +1102,7 @@ func TestBuildPromptNewCommentsHint(t *testing.T) {
 	if !strings.Contains(out, "rerun it without `--thread` for the issue-wide catch-up") {
 		t.Errorf("hint must keep the issue-wide catch-up fallback, got:\n%s", out)
 	}
-	if strings.Contains(out, "multica issue comment list "+issueID+" --since "+since+" --output json") {
+	if strings.Contains(out, "cordy issue comment list "+issueID+" --since "+since+" --output json") {
 		t.Errorf("warm hint must not render a second full issue-wide command (MUL-5721 OPT-1), got:\n%s", out)
 	}
 	// The old cursor-heavy paragraph must be gone.
@@ -1130,7 +1130,7 @@ func TestBuildPromptColdStartThreadRead(t *testing.T) {
 	if strings.Contains(out, "new comment(s) since your last run") {
 		t.Errorf("no since-delta hint should render on cold start, got:\n%s", out)
 	}
-	if !strings.Contains(out, "multica issue comment list "+issueID+" --thread thread-root-1 --tail 30 --compact --output json") {
+	if !strings.Contains(out, "cordy issue comment list "+issueID+" --thread thread-root-1 --tail 30 --compact --output json") {
 		t.Errorf("cold start must point at the triggering thread read, got:\n%s", out)
 	}
 	// MUL-5372: cross-thread background is a cheap roots scan. The hint names
@@ -1142,7 +1142,7 @@ func TestBuildPromptColdStartThreadRead(t *testing.T) {
 	if !strings.Contains(out, "Rerun with `--roots-only --summary` replacing `--thread ... --tail 30`") {
 		t.Errorf("cold start should offer the cheap roots scan for cross-thread background, got:\n%s", out)
 	}
-	if strings.Contains(out, "multica issue comment list "+issueID+" --roots-only --summary --output json") {
+	if strings.Contains(out, "cordy issue comment list "+issueID+" --roots-only --summary --output json") {
 		t.Errorf("cold hint must not render a second full command for the roots scan (MUL-5721 OPT-1), got:\n%s", out)
 	}
 	if strings.Contains(out, "--recent") {
@@ -1173,7 +1173,7 @@ func TestBuildPromptResumedNoDeltaDoesNotForceThreadRead(t *testing.T) {
 		"No other new comments on this issue since your last run",
 		"If your reply depends on thread context",
 		"do not rely only on resumed session memory",
-		"multica issue comment list " + issueID + " --thread thread-root-1 --tail 30 --compact --output json",
+		"cordy issue comment list " + issueID + " --thread thread-root-1 --tail 30 --compact --output json",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("resumed/no-delta prompt missing %q\n--- output ---\n%s", want, out)
@@ -1281,7 +1281,7 @@ func TestBuildCommentPromptCoalescedIDsOnlyFallback(t *testing.T) {
 		task.NewCommentsSince = "2026-08-03T06:00:00Z"
 		out := BuildPrompt(task, "claude")
 
-		want := "multica issue comment list issue-fallback-1 --since 2026-08-03T06:00:00Z --compact --output json"
+		want := "cordy issue comment list issue-fallback-1 --since 2026-08-03T06:00:00Z --compact --output json"
 		if !strings.Contains(out, want) {
 			t.Errorf("id-only fallback should prefetch the window with %q, got:\n%s", want, out)
 		}
@@ -1334,7 +1334,7 @@ func assertBoundedIDOnlyFallback(t *testing.T, out string) {
 	// id is reachable without knowing its thread; paging keeps it reachable even
 	// when it is older than the tail window.
 	for _, want := range []string{
-		"multica issue comment list issue-fallback-1 --thread <comment-id> --tail 30 --compact --output json",
+		"cordy issue comment list issue-fallback-1 --thread <comment-id> --tail 30 --compact --output json",
 		"accepts a reply id",
 		"Next reply cursor",
 		"--before-id",
@@ -1495,7 +1495,7 @@ func TestBuildCommentPromptCrossThreadFansOutReplies(t *testing.T) {
 	// Formatting` for the posting mechanism instead of restating it, so the
 	// assembled cross-thread prompt carries no `comment add` example commands
 	// at all — the `--parent` targets plus the pointer are the whole recipe.
-	if strings.Contains(out, "multica issue comment add") {
+	if strings.Contains(out, "cordy issue comment add") {
 		t.Errorf("cross-thread prompt re-grew embedded comment-add commands (mechanism lives in ## Comment Formatting — MUL-5825), got:\n%s", out)
 	}
 	if !strings.Contains(out, "`## Comment Formatting`") {
@@ -1710,7 +1710,7 @@ func TestChatChannelDeliversFilesDefaultsOffAcrossVersions(t *testing.T) {
 	}
 
 	out := buildChatPrompt(task)
-	if strings.Contains(out, "run `multica attachment upload <local-path>`") {
+	if strings.Contains(out, "run `cordy attachment upload <local-path>`") {
 		t.Errorf("an old server's WeCom claim was told to upload files\n--- output ---\n%s", out)
 	}
 	if !strings.Contains(out, "You cannot attach a file to it") {
@@ -1724,7 +1724,7 @@ func TestChatChannelDeliversFilesDefaultsOffAcrossVersions(t *testing.T) {
 	if err := json.Unmarshal([]byte(`{"chat_session_id":"sess-1","chat_channel_type":"wecom","chat_channel_delivers_files":true}`), &delivering); err != nil {
 		t.Fatalf("decode claim: %v", err)
 	}
-	if !strings.Contains(buildChatPrompt(delivering), "run `multica attachment upload <local-path>`") {
+	if !strings.Contains(buildChatPrompt(delivering), "run `cordy attachment upload <local-path>`") {
 		t.Error("a server that reported file delivery did not produce the upload guidance")
 	}
 }

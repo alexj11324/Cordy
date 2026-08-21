@@ -502,8 +502,8 @@ func commitIdentityArgs(dir string) []string {
 		return nil
 	}
 	return []string{
-		"-c", "user.name=Multica Agent",
-		"-c", "user.email=agent@multica.local",
+		"-c", "user.name=Cordy Agent",
+		"-c", "user.email=agent@cordy.local",
 	}
 }
 
@@ -622,12 +622,12 @@ func copyUntrackedFiles(gitRoot, worktreePath string, logger *slog.Logger) (copi
 		if rel == "" {
 			continue
 		}
-		// Never replay Multica's own sidecars. They are untracked files in the
+		// Never replay Cordy's own sidecars. They are untracked files in the
 		// user's directory whenever an in_place task is mid-flight on the same
 		// path, or was killed before its cleanup ran. Copying them would put
 		// another issue's brief inside this task's worktree — where the agent
 		// would read it as its own context — and commit it to the branch.
-		if isMulticaSidecarPath(rel) {
+		if isCordySidecarPath(rel) {
 			continue
 		}
 		if copied >= maxUntrackedFiles || budget <= 0 {
@@ -685,26 +685,26 @@ func copyUntrackedFiles(gitRoot, worktreePath string, logger *slog.Logger) (copi
 // copyUntrackedFile copies one untracked file into the worktree, creating
 // parent directories and preserving the executable bit — a script the user just
 // wrote and hasn't committed has to stay runnable for the agent.
-// multicaSidecarDirNames are the directories Prepare writes into a workdir. A
+// cordySidecarDirNames are the directories Prepare writes into a workdir. A
 // task running in_place on the same directory leaves these present as
 // untracked files for the length of its run, so a concurrent worktree snapshot
 // sees them. CLAUDE.md / AGENTS.md are deliberately absent: those are
 // ordinarily the user's own tracked files, and the runtime only injects a
 // marker block into them, which CleanupRuntimeConfig removes.
-var multicaSidecarDirNames = []string{
+var cordySidecarDirNames = []string{
 	".agent_context",
-	".multica",
+	".cordy",
 }
 
-// isMulticaSidecarPath reports whether a repo-relative path is one of the
+// isCordySidecarPath reports whether a repo-relative path is one of the
 // daemon's own sidecars rather than the user's content. Matched as a whole
 // path segment at ANY depth, not just the repo root: an in_place resource may
 // point at a subdirectory of this repo, in which case its sidecars sit at
 // <subdir>/.agent_context — replaying those would put another issue's brief
 // inside this task's worktree and commit it to the delivered branch.
-func isMulticaSidecarPath(rel string) bool {
+func isCordySidecarPath(rel string) bool {
 	for _, seg := range strings.Split(filepath.ToSlash(rel), "/") {
-		for _, name := range multicaSidecarDirNames {
+		for _, name := range cordySidecarDirNames {
 			if seg == name {
 				return true
 			}

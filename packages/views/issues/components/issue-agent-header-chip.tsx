@@ -6,12 +6,12 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@multica/ui/components/ui/popover";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { cn } from "@multica/ui/lib/utils";
-import { api } from "@multica/core/api";
-import { issueKeys } from "@multica/core/issues/queries";
-import type { AgentTask } from "@multica/core/types";
+} from "@cordy/ui/components/ui/popover";
+import { useActorName } from "@cordy/core/workspace/hooks";
+import { cn } from "@cordy/ui/lib/utils";
+import { api } from "@cordy/core/api";
+import { issueKeys } from "@cordy/core/issues/queries";
+import type { AgentTask } from "@cordy/core/types";
 import { TranscriptButton } from "../../common/task-transcript";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { ActiveTaskRow } from "./execution-log-section";

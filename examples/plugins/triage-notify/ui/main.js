@@ -16,7 +16,7 @@ let sequence = 0;
 
 window.addEventListener("message", (event) => {
   const data = event.data;
-  if (!data || data.type !== "multica:plugin-bridge-init" || !event.ports[0]) return;
+  if (!data || data.type !== "cordy:plugin-bridge-init" || !event.ports[0]) return;
   // Only the embedder may hand this frame a port, and only once. Sibling frames
   // are mutually opaque but `parent.frames[i]` is an allowed cross-origin
   // access, so another plugin on this page could otherwise deliver its own port
@@ -40,7 +40,7 @@ window.addEventListener("message", (event) => {
 
 (function announce(attempts) {
   if (port || attempts > 50) return;
-  window.parent.postMessage({ type: "multica:plugin-surface-ready" }, "*");
+  window.parent.postMessage({ type: "cordy:plugin-surface-ready" }, "*");
   setTimeout(() => announce(attempts + 1), 120);
 })(0);
 

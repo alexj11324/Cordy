@@ -1,5 +1,5 @@
 {
-  "name": "@multica/web",
+  "name": "@cordy/web",
   "version": "0.4.31",
   "private": true,
   "type": "module",
@@ -13,9 +13,10 @@
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
-    "@multica/core": "workspace:*",
-    "@multica/ui": "workspace:*",
-    "@multica/views": "workspace:*",
+    "@clerk/nextjs": "^7.7.9",
+    "@cordy/core": "workspace:*",
+    "@cordy/ui": "workspace:*",
+    "@cordy/views": "workspace:*",
     "@tanstack/react-query": "catalog:",
     "dotenv": "^17.4.1",
     "fumadocs-core": "^15.5.2",
@@ -29,9 +30,8 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@multica/eslint-config": "workspace:*",
+    "@cordy/eslint-config": "workspace:*",
     "@tailwindcss/postcss": "catalog:",
-    "postcss": "catalog:",
     "@testing-library/jest-dom": "catalog:",
     "@testing-library/react": "catalog:",
     "@testing-library/user-event": "catalog:",
@@ -39,6 +39,7 @@
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
     "jsdom": "catalog:",
+    "postcss": "catalog:",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

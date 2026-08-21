@@ -21,22 +21,22 @@ import type { ReactNode } from "react";
 import { BoardView } from "./board-view";
 import { SwimLaneView } from "./swimlane-view";
 import { IssueContextMenuProvider } from "../actions";
-import { setApiInstance } from "@multica/core/api";
-import type { ApiClient } from "@multica/core/api/client";
-import type { Issue } from "@multica/core/types";
-import { I18nProvider } from "@multica/core/i18n/react";
+import { setApiInstance } from "@cordy/core/api";
+import type { ApiClient } from "@cordy/core/api/client";
+import type { Issue } from "@cordy/core/types";
+import { I18nProvider } from "@cordy/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
 const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@cordy/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@multica/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@multica/core/paths")>(
-    "@multica/core/paths",
+vi.mock("@cordy/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@cordy/core/paths")>(
+    "@cordy/core/paths",
   );
   return {
     ...actual,
@@ -47,7 +47,7 @@ vi.mock("@multica/core/paths", async () => {
 });
 
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@cordy/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -71,7 +71,7 @@ vi.mock("../../navigation", () => ({
   NavigationProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-vi.mock("@multica/core/issues/config", () => ({
+vi.mock("@cordy/core/issues/config", () => ({
   ALL_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_ORDER: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_CONFIG: {
@@ -94,15 +94,15 @@ vi.mock("@multica/core/issues/config", () => ({
   },
 }));
 
-vi.mock("@multica/core/issues/mutations", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@multica/core/issues/mutations")>();
+vi.mock("@cordy/core/issues/mutations", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@cordy/core/issues/mutations")>();
   return {
     ...actual,
   };
 });
 
-vi.mock("@multica/core/properties", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@multica/core/properties")>();
+vi.mock("@cordy/core/properties", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@cordy/core/properties")>();
   return {
     ...actual,
     useSetIssueProperty: () => ({ mutate: vi.fn(), mutateAsync: vi.fn() }),
@@ -135,13 +135,13 @@ const mockViewState: Record<string, unknown> = {
   cardPropertyIds: [],
   agentRunningFilter: false,
 };
-vi.mock("@multica/core/issues/stores/view-store-context", () => ({
+vi.mock("@cordy/core/issues/stores/view-store-context", () => ({
   ViewStoreProvider: ({ children }: { children: ReactNode }) => children,
   useViewStore: (selector?: any) => (selector ? selector(mockViewState) : mockViewState),
   useViewStoreApi: () => ({ getState: () => mockViewState, setState: vi.fn(), subscribe: vi.fn() }),
 }));
 
-vi.mock("@multica/core/modals", () => ({
+vi.mock("@cordy/core/modals", () => ({
   useModalStore: Object.assign(
     () => ({ open: vi.fn() }),
     { getState: () => ({ open: vi.fn() }) },

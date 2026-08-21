@@ -1092,14 +1092,14 @@ func TestHTTPClient_SendBindingPromptCard_HappyPath(t *testing.T) {
 	if err := c.SendBindingPromptCard(context.Background(), BindingPromptParams{
 		InstallationID: testCreds(),
 		OpenID:         OpenID("ou_user_1"),
-		BindURL:        "https://multica.test/lark/bind?token=abc",
+		BindURL:        "https://cordy.test/lark/bind?token=abc",
 	}); err != nil {
 		t.Fatalf("bind prompt: %v", err)
 	}
 	if capturedBody["receive_id"] != "ou_user_1" {
 		t.Errorf("receive_id: got %q", capturedBody["receive_id"])
 	}
-	if !strings.Contains(capturedBody["content"], "multica.test/lark/bind") {
+	if !strings.Contains(capturedBody["content"], "cordy.test/lark/bind") {
 		t.Errorf("binding card should embed BindURL: %q", capturedBody["content"])
 	}
 	if !strings.Contains(capturedBody["content"], "去绑定") {
@@ -1464,7 +1464,7 @@ func TestHTTPClient_TokenExpire_ClampedToSafety(t *testing.T) {
 }
 
 func TestBindingPromptTemplate_Shape(t *testing.T) {
-	raw, err := bindingPromptTemplate("https://multica.test/bind?token=abc")
+	raw, err := bindingPromptTemplate("https://cordy.test/bind?token=abc")
 	if err != nil {
 		t.Fatalf("template: %v", err)
 	}
@@ -1493,7 +1493,7 @@ func TestBindingPromptTemplate_Shape(t *testing.T) {
 		t.Fatalf("no actions in card")
 	}
 	btn, _ := actions[0].(map[string]any)
-	if btn["url"] != "https://multica.test/bind?token=abc" {
+	if btn["url"] != "https://cordy.test/bind?token=abc" {
 		t.Errorf("button url: got %v", btn["url"])
 	}
 }

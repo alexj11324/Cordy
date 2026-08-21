@@ -3,8 +3,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Agent } from "@multica/core/types";
-import { I18nProvider } from "@multica/core/i18n/react";
+import type { Agent } from "@cordy/core/types";
+import { I18nProvider } from "@cordy/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 
@@ -12,7 +12,7 @@ const getAgentEnv = vi.hoisted(() => vi.fn());
 const updateAgentEnv = vi.hoisted(() => vi.fn());
 const toastError = vi.hoisted(() => vi.fn());
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@cordy/core/api", () => ({
   api: { getAgentEnv, updateAgentEnv },
 }));
 

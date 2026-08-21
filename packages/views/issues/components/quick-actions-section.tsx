@@ -4,11 +4,11 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Loader2, Zap } from "lucide-react";
 import { toast } from "sonner";
-import { dispatchReasonCode } from "@multica/core/api";
-import { useCurrentWorkspace } from "@multica/core/paths";
-import { quickActionListOptions, useRunQuickAction } from "@multica/core/quick-actions";
-import type { Comment, CommentTriggerOutcome, QuickAction } from "@multica/core/types";
-import { QUICK_ACTION_SIDEBAR_LIMIT } from "@multica/core/types";
+import { dispatchReasonCode } from "@cordy/core/api";
+import { useCurrentWorkspace } from "@cordy/core/paths";
+import { quickActionListOptions, useRunQuickAction } from "@cordy/core/quick-actions";
+import type { Comment, CommentTriggerOutcome, QuickAction } from "@cordy/core/types";
+import { QUICK_ACTION_SIDEBAR_LIMIT } from "@cordy/core/types";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,9 +17,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@multica/ui/components/ui/tooltip";
-import { cn } from "@multica/ui/lib/utils";
+} from "@cordy/ui/components/ui/alert-dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@cordy/ui/components/ui/tooltip";
+import { cn } from "@cordy/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 

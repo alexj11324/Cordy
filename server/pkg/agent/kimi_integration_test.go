@@ -95,10 +95,10 @@ func kimiSmokeModel() string {
 }
 
 // TestKimiRealMcpConfigReachesSessionSmoke drives the real `kimi acp` binary
-// through this package's own backend with a Multica-shaped agent.mcp_config
+// through this package's own backend with a Cordy-shaped agent.mcp_config
 // and asserts the server is actually connected and callable.
 //
-// Users reported that MCP configured in Multica "never reaches kimi", pointing
+// Users reported that MCP configured in Cordy "never reaches kimi", pointing
 // at the bare `kimi acp` launch line as evidence (MUL-5846). That line carries
 // no MCP flags because the CLI has none — kimi takes MCP over ACP session/new
 // instead — so only an end-to-end run against the real binary can settle it.
@@ -132,12 +132,12 @@ func TestKimiRealMcpConfigReachesSessionSmoke(t *testing.T) {
 	}
 
 	// Exactly the shape the daemon forwards from agent.mcp_config.
-	mcpConfig := fmt.Sprintf(`{"mcpServers":{"multicaprobe":{"command":%q,"args":[],"env":{}}}}`, serverPath)
+	mcpConfig := fmt.Sprintf(`{"mcpServers":{"cordyprobe":{"command":%q,"args":[],"env":{}}}}`, serverPath)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 240*time.Second)
 	defer cancel()
 	session, err := backend.Execute(ctx,
-		"Call the multica_probe_ping tool and reply with exactly what it returned. Do nothing else.",
+		"Call the cordy_probe_ping tool and reply with exactly what it returned. Do nothing else.",
 		ExecOptions{
 			Timeout:   210 * time.Second,
 			Cwd:       dir,
@@ -164,7 +164,7 @@ func TestKimiRealMcpConfigReachesSessionSmoke(t *testing.T) {
 	if !bytes.Contains(spawned, []byte("tools/list")) {
 		t.Fatalf("kimi started the MCP server but never listed its tools: %q", spawned)
 	}
-	if !strings.Contains(result.Output, "MULTICA_MCP_OK") {
+	if !strings.Contains(result.Output, "CORDY_MCP_OK") {
 		t.Fatalf("agent output does not contain the tool's sentinel: %q", result.Output)
 	}
 }
@@ -181,13 +181,13 @@ while IFS= read -r line; do
   id=` + "`" + `printf '%s' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p'` + "`" + `
   case "$line" in
     *'"method":"initialize"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"multica-probe","version":"1.0.0"}}}\n' "$id"
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-06-18","capabilities":{"tools":{"listChanged":false}},"serverInfo":{"name":"cordy-probe","version":"1.0.0"}}}\n' "$id"
       ;;
     *'"method":"tools/list"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"multica_probe_ping","description":"Returns MULTICA_MCP_OK.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}]}}\n' "$id"
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"cordy_probe_ping","description":"Returns CORDY_MCP_OK.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}]}}\n' "$id"
       ;;
     *'"method":"tools/call"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"MULTICA_MCP_OK"}],"isError":false}}\n' "$id"
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"CORDY_MCP_OK"}],"isError":false}}\n' "$id"
       ;;
     *'"method":"resources/list"'*)
       printf '{"jsonrpc":"2.0","id":%s,"result":{"resources":[]}}\n' "$id"

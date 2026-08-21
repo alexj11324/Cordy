@@ -28,7 +28,7 @@ import type {
   IssuePriority,
   IssueStatus,
   IssueStatusCategory,
-} from "@multica/core/types";
+} from "@cordy/core/types";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { Header } from "@/components/ui/header";

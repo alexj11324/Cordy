@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useSidebar } from "@multica/ui/components/ui/sidebar";
+import { useSidebar } from "@cordy/ui/components/ui/sidebar";
 import {
   getShortcut,
   isEditableShortcutTarget,
@@ -9,12 +9,12 @@ import {
   SHORTCUT_ACTION_BY_ID,
   useShortcutStore,
   type ShortcutActionId,
-} from "@multica/core/shortcuts";
-import { useChatStore } from "@multica/core/chat";
-import { openCreateIssueWithPreference } from "@multica/core/issues/stores";
-import { useModalStore } from "@multica/core/modals";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { isImeComposing } from "@multica/core/utils";
+} from "@cordy/core/shortcuts";
+import { useChatStore } from "@cordy/core/chat";
+import { openCreateIssueWithPreference } from "@cordy/core/issues/stores";
+import { useModalStore } from "@cordy/core/modals";
+import { useWorkspacePaths } from "@cordy/core/paths";
+import { isImeComposing } from "@cordy/core/utils";
 import { isFloatingChatRouteSuppressed } from "../chat/floating-chat-visibility";
 import { useNavigation } from "../navigation";
 import { useSearchStore } from "../search/search-store";

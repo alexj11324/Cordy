@@ -4,24 +4,24 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronRight, ExternalLink, Trash2 } from "lucide-react";
-import { cn } from "@multica/ui/lib/utils";
-import { Button } from "@multica/ui/components/ui/button";
-import { Card, CardContent } from "@multica/ui/components/ui/card";
+import { cn } from "@cordy/ui/lib/utils";
+import { Button } from "@cordy/ui/components/ui/button";
+import { Card, CardContent } from "@cordy/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
-import { Input } from "@multica/ui/components/ui/input";
-import { Label } from "@multica/ui/components/ui/label";
+} from "@cordy/ui/components/ui/dialog";
+import { Input } from "@cordy/ui/components/ui/input";
+import { Label } from "@cordy/ui/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@multica/ui/components/ui/select";
+} from "@cordy/ui/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,19 +31,19 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { agentListOptions, memberListOptions } from "@multica/core/workspace/queries";
+} from "@cordy/ui/components/ui/alert-dialog";
+import { useAuthStore } from "@cordy/core/auth";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { agentListOptions, memberListOptions } from "@cordy/core/workspace/queries";
 import { DingTalkMark } from "./dingtalk-mark";
-import { useActorName } from "@multica/core/workspace/hooks";
+import { useActorName } from "@cordy/core/workspace/hooks";
 import {
   dingtalkGroupRoutesOptions,
   dingtalkInstallationsOptions,
   dingtalkKeys,
-} from "@multica/core/dingtalk";
-import { api } from "@multica/core/api";
-import type { DingTalkGroupRoute, DingTalkInstallation } from "@multica/core/types";
+} from "@cordy/core/dingtalk";
+import { api } from "@cordy/core/api";
+import type { DingTalkGroupRoute, DingTalkInstallation } from "@cordy/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { openExternal } from "../../platform";
 import { useT } from "../../i18n";
@@ -154,7 +154,7 @@ export function DingTalkTab() {
             <p className="text-caption text-muted-foreground">
               {t(($) => $.dingtalk.not_enabled_description_prefix)}{" "}
               <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                MULTICA_DINGTALK_SECRET_KEY
+                CORDY_DINGTALK_SECRET_KEY
               </code>{" "}
               {t(($) => $.dingtalk.not_enabled_description_suffix)}{" "}
               {t(($) => $.dingtalk.not_enabled_self_host_hint)}
@@ -476,7 +476,7 @@ function dingtalkDocsUrl(lang: string | undefined): string {
       : lang?.startsWith("ko")
         ? "/ko"
         : "";
-  return `https://multica.ai/docs${prefix}/dingtalk-bot-integration`;
+  return `https://cordy.ai/docs${prefix}/dingtalk-bot-integration`;
 }
 
 // DingTalkAgentBindButton is the per-agent CTA exposed from the agent detail

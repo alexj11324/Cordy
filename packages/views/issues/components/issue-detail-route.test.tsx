@@ -2,19 +2,19 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { setApiInstance } from "@multica/core/api";
-import type { ApiClient } from "@multica/core/api/client";
+import { setApiInstance } from "@cordy/core/api";
+import type { ApiClient } from "@cordy/core/api/client";
 import { NavigationProvider } from "../../navigation";
 import type { NavigationAdapter } from "../../navigation";
 import { IssueDetailRoute, useCanonicalIssueUrl } from "./issue-detail-route";
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@cordy/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@multica/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@multica/core/paths")>(
-    "@multica/core/paths",
+vi.mock("@cordy/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@cordy/core/paths")>(
+    "@cordy/core/paths",
   );
   return {
     ...actual,
@@ -33,7 +33,7 @@ function wrapper({ children }: { children: ReactNode }) {
     back: vi.fn(),
     pathname: "/acme/issues/x",
     searchParams: new URLSearchParams(),
-    getShareableUrl: (p: string) => `https://app.multica.com${p}`,
+    getShareableUrl: (p: string) => `https://app.cordy.com${p}`,
   };
   return <NavigationProvider value={adapter}>{children}</NavigationProvider>;
 }
@@ -111,7 +111,7 @@ describe("IssueDetailRoute with an identifier that names no issue", () => {
             back: vi.fn(),
             pathname: "/acme/issues/ZZZ-134",
             searchParams: new URLSearchParams(),
-            getShareableUrl: (p: string) => `https://app.multica.com${p}`,
+            getShareableUrl: (p: string) => `https://app.cordy.com${p}`,
           }}
         >
           <IssueDetailRoute routeId="ZZZ-134" />
@@ -132,7 +132,7 @@ describe("IssueDetailRoute with an identifier that names no issue", () => {
             back: vi.fn(),
             pathname: "/acme/issues/ZZZ-134",
             searchParams: new URLSearchParams(),
-            getShareableUrl: (p: string) => `https://app.multica.com${p}`,
+            getShareableUrl: (p: string) => `https://app.cordy.com${p}`,
           }}
         >
           <IssueDetailRoute routeId="ZZZ-134" />

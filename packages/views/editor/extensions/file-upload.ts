@@ -1,7 +1,7 @@
 import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
-import type { UploadResult } from "@multica/core/hooks/use-file-upload";
-import { createSafeId } from "@multica/core/utils";
+import type { UploadResult } from "@cordy/core/hooks/use-file-upload";
+import { createSafeId } from "@cordy/core/utils";
 
 /**
  * Locate this upload's placeholder node, whichever shape it took.

@@ -1,11 +1,11 @@
 ---
 title: 参与开发
-description: 配置 Multica 本地开发环境，运行测试，并按仓库约定提交改动。
+description: 配置 Cordy 本地开发环境，运行测试，并按仓库约定提交改动。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Multica 是 Go backend 与 pnpm monorepo。最简单的本地启动方式是 `make dev`；它会为当前 checkout 准备环境、数据库和 migration，再启动 Web 与 API。
+Cordy 是 Go backend 与 pnpm monorepo。最简单的本地启动方式是 `make dev`；它会为当前 checkout 准备环境、数据库和 migration，再启动 Web 与 API。
 
 ## 环境要求
 
@@ -20,8 +20,8 @@ Multica 是 Go backend 与 pnpm monorepo。最简单的本地启动方式是 `ma
 ## 第一次启动
 
 ```bash
-git clone https://github.com/multica-ai/multica.git
-cd multica
+git clone https://github.com/cordy-ai/cordy.git
+cd cordy
 make dev
 ```
 
@@ -41,8 +41,8 @@ API: http://localhost:8080
 仓库支持主 checkout 和多个 worktree 同时运行。它们共用一个 PostgreSQL 容器，但使用不同数据库和端口。
 
 ```bash
-git worktree add ../multica-feature -b feat/my-change main
-cd ../multica-feature
+git worktree add ../cordy-feature -b feat/my-change main
+cd ../cordy-feature
 make setup-worktree
 make start-worktree
 ```
@@ -148,7 +148,7 @@ Migration 位于 `server/migrations/`，查询位于 `server/pkg/db/queries/`。
 先运行与改动最接近的检查，再扩大范围。例如只改 Docs：
 
 ```bash
-pnpm --filter @multica/docs typecheck
+pnpm --filter @cordy/docs typecheck
 ```
 
 共享前端改动：

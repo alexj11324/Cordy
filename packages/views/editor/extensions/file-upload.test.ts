@@ -3,7 +3,7 @@ import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "@tiptap/markdown";
 import { Slice } from "@tiptap/pm/model";
-import type { UploadResult } from "@multica/core/hooks/use-file-upload";
+import type { UploadResult } from "@cordy/core/hooks/use-file-upload";
 import { ImageExtension, createEditorExtensions } from "./index";
 import { FileCardExtension } from "./file-card";
 import {

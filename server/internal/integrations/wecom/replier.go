@@ -16,9 +16,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel/engine"
+	"github.com/cordy-ai/cordy/server/internal/util"
 )
 
 const (
@@ -54,10 +54,10 @@ type OutboundReplierConfig struct {
 	// with. The replier looks up the live wsSender by installation id.
 	Senders *sendersRegistry
 
-	// AppURL is the Multica web app host the user clicks into to redeem
-	// the binding token (e.g. https://multica.example). It comes from
-	// MULTICA_APP_URL (falling back to FRONTEND_ORIGIN) and is
-	// intentionally separate from MULTICA_PUBLIC_URL, which is the
+	// AppURL is the Cordy web app host the user clicks into to redeem
+	// the binding token (e.g. https://cordy.example). It comes from
+	// CORDY_APP_URL (falling back to FRONTEND_ORIGIN) and is
+	// intentionally separate from CORDY_PUBLIC_URL, which is the
 	// backend/API URL — the bind page (/wecom/bind) is served by the web
 	// app, so the link must point at the app host.
 	AppURL      string
@@ -183,13 +183,13 @@ func (r *OutboundReplier) sendBindingPrompt(ctx context.Context, inst engine.Res
 	text := "👋 绑定链接刚才已经发给你了，就在上方，请直接点击完成绑定。"
 	if !token.Reused {
 		bindURL := r.appURL + r.bindingPath + "?token=" + url.QueryEscape(token.Raw)
-		text = "👋 请先绑定你的 Multica 账号，才能与我对话：\n" + bindURL + "\n（链接 15 分钟内有效）"
+		text = "👋 请先绑定你的 Cordy 账号，才能与我对话：\n" + bindURL + "\n（链接 15 分钟内有效）"
 	}
 	// A binding token is a bearer credential: binding.Redeem only checks that
 	// the redeemer belongs to the token's workspace, and the bind page redeems
 	// on load as whoever is signed in. Sending it to msg.Source.ChatID — which
 	// in a group IS the group — would let any member click first and bind the
-	// sender's WeCom userid to their own Multica account, after which the
+	// sender's WeCom userid to their own Cordy account, after which the
 	// sender's messages (/issue included) resolve to the hijacker. So deliver
 	// the link privately to the sender's own userid with chat_type=1 (the same
 	// address outbound.go uses for inbox pushes), never to the room. Lark's

@@ -10,9 +10,9 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel/engine"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 type fakeTelegramBindingMinter struct {
@@ -40,7 +40,7 @@ func TestReplyNeedsBindingDoesNotMintBearerLinkInGroup(t *testing.T) {
 	r := NewOutboundReplier(OutboundReplierConfig{
 		Binding:    minter,
 		Decrypt:    nil,
-		AppURL:     "https://multica.example",
+		AppURL:     "https://cordy.example",
 		APIBase:    srv.URL,
 		HTTPClient: srv.Client(),
 		Logger:     testLogger(),
@@ -65,7 +65,7 @@ func TestReplyNeedsBindingDoesNotMintBearerLinkInGroup(t *testing.T) {
 	if !strings.Contains(got.Text, msgBindingGroupHint) {
 		t.Fatalf("group prompt = %q, want %q", got.Text, msgBindingGroupHint)
 	}
-	if strings.Contains(got.Text, "secret-token") || strings.Contains(got.Text, "multica.example") {
+	if strings.Contains(got.Text, "secret-token") || strings.Contains(got.Text, "cordy.example") {
 		t.Fatalf("group prompt exposed a redeem link: %q", got.Text)
 	}
 }
@@ -83,7 +83,7 @@ func TestReplyNeedsBindingInPrivateChatMintsQuotedLink(t *testing.T) {
 
 	minter := &fakeTelegramBindingMinter{raw: "one-time-token"}
 	r := NewOutboundReplier(OutboundReplierConfig{
-		Binding: minter, AppURL: "https://multica.example/", APIBase: srv.URL,
+		Binding: minter, AppURL: "https://cordy.example/", APIBase: srv.URL,
 		HTTPClient: srv.Client(), Logger: testLogger(),
 	})
 	inst := engine.ResolvedInstallation{
@@ -96,7 +96,7 @@ func TestReplyNeedsBindingInPrivateChatMintsQuotedLink(t *testing.T) {
 	}
 	r.Reply(context.Background(), inst, msg, engine.Result{Outcome: engine.OutcomeNeedsBinding})
 
-	if minter.calls != 1 || !strings.Contains(got.Text, "https://multica.example/telegram/bind?token=one-time-token") {
+	if minter.calls != 1 || !strings.Contains(got.Text, "https://cordy.example/telegram/bind?token=one-time-token") {
 		t.Fatalf("binding prompt = %+v; mint calls = %d", got, minter.calls)
 	}
 	if got.ReplyParameters == nil || got.ReplyParameters.MessageID != 7 || !got.ReplyParameters.AllowSendingWithoutReply {

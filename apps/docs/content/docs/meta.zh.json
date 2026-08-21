@@ -1,11 +1,11 @@
 {
-  "title": "Multica 文档",
+  "title": "Cordy 文档",
   "pages": [
     "---开始使用---",
     "index",
     "cloud-quickstart",
     "concepts",
-    "how-multica-works",
+    "how-cordy-works",
     "tutorial",
     "self-host-quickstart",
     "---工作区---",

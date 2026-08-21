@@ -7,8 +7,8 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	skillpkg "github.com/multica-ai/multica/server/internal/skill"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	skillpkg "github.com/cordy-ai/cordy/server/internal/skill"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 type skillCreateInput struct {

@@ -6,14 +6,14 @@ import {
   dateOnlyToLocalDate,
   formatDateOnly,
   isPastDateOnly,
-} from "@multica/core/issues/date";
+} from "@cordy/core/issues/date";
 import { Check } from "lucide-react";
-import { Calendar } from "@multica/ui/components/ui/calendar";
+import { Calendar } from "@cordy/ui/components/ui/calendar";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@multica/ui/components/ui/popover";
+} from "@cordy/ui/components/ui/popover";
 import { DeferredPopup } from "./deferred-popup";
 
 /**
@@ -52,7 +52,7 @@ interface DateOnlyPickerProps {
  * Entity-agnostic calendar-day picker: the shared behaviour behind every
  * start/due-date pill (issues, projects, …). It owns the Popover + Calendar +
  * clear wiring and the calendar-day transport ("YYYY-MM-DD", no timezone shift,
- * via @multica/core/issues/date); each entity wraps it to supply only the field
+ * via @cordy/core/issues/date); each entity wraps it to supply only the field
  * name (through `onChange`), the icon, and the localized copy. Keeping this in
  * one place stops the per-entity pills from drifting in behaviour or display
  * formatting.

@@ -10,7 +10,7 @@
  * Mirrors the web/desktop `ImageSequenceProvider`
  * (packages/views/editor/image-sequence-context.tsx) — same product contract,
  * different presentation. The ordering itself is NOT re-derived here: both
- * clients call `collectImageSequence` from @multica/core so an issue's images
+ * clients call `collectImageSequence` from @cordy/core so an issue's images
  * are counted the same way on every client (mobile parity rule: mirror the
  * shared logic, own the UI).
  *
@@ -22,7 +22,7 @@ import { createContext, use, useMemo, type ReactNode } from "react";
 import {
   collectImageSequence,
   type ImageSequenceBlock,
-} from "@multica/core/attachments/image-sequence";
+} from "@cordy/core/attachments/image-sequence";
 import { resolveAttachmentUrl } from "@/lib/attachment-url";
 
 const ImageSequenceContext = createContext<readonly string[]>([]);

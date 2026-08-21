@@ -10,19 +10,19 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
-import { Button } from "@multica/ui/components/ui/button";
-import { Textarea } from "@multica/ui/components/ui/textarea";
-import { Spinner } from "@multica/ui/components/ui/spinner";
-import type { IssueAssigneeType, IssueStatus, UpdateIssueRequest } from "@multica/core/types";
-import { useUpdateIssue, useBatchUpdateIssues } from "@multica/core/issues/mutations";
-import { errorCode } from "@multica/core/api";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { agentListOptions, squadListOptions } from "@multica/core/workspace/queries";
-import { runtimeListOptions, readRuntimeCliVersion, handoffSupported } from "@multica/core/runtimes";
-import { useShortcut, shortcutMatchesEvent, isPlainShortcut } from "@multica/core/shortcuts";
-import { isImeComposing } from "@multica/core/utils";
+} from "@cordy/ui/components/ui/dialog";
+import { Button } from "@cordy/ui/components/ui/button";
+import { Textarea } from "@cordy/ui/components/ui/textarea";
+import { Spinner } from "@cordy/ui/components/ui/spinner";
+import type { IssueAssigneeType, IssueStatus, UpdateIssueRequest } from "@cordy/core/types";
+import { useUpdateIssue, useBatchUpdateIssues } from "@cordy/core/issues/mutations";
+import { errorCode } from "@cordy/core/api";
+import { useActorName } from "@cordy/core/workspace/hooks";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { agentListOptions, squadListOptions } from "@cordy/core/workspace/queries";
+import { runtimeListOptions, readRuntimeCliVersion, handoffSupported } from "@cordy/core/runtimes";
+import { useShortcut, shortcutMatchesEvent, isPlainShortcut } from "@cordy/core/shortcuts";
+import { isImeComposing } from "@cordy/core/utils";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import { useStatusLabel } from "../issues/utils/status-label";
 import { useT } from "../i18n";

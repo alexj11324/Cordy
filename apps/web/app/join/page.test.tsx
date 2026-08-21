@@ -2,10 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@multica/core/i18n/react";
-import enCommon from "@multica/views/locales/en/common.json";
-import enAuth from "@multica/views/locales/en/auth.json";
-import enSettings from "@multica/views/locales/en/settings.json";
+import { I18nProvider } from "@cordy/core/i18n/react";
+import enCommon from "@cordy/views/locales/en/common.json";
+import enAuth from "@cordy/views/locales/en/auth.json";
+import enSettings from "@cordy/views/locales/en/settings.json";
 import type { ReactNode } from "react";
 
 const TEST_RESOURCES = {
@@ -48,9 +48,9 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => searchParamsState.params,
 }));
 
-vi.mock("@multica/core/auth", async () => {
-  const actual = await vi.importActual<typeof import("@multica/core/auth")>(
-    "@multica/core/auth",
+vi.mock("@cordy/core/auth", async () => {
+  const actual = await vi.importActual<typeof import("@cordy/core/auth")>(
+    "@cordy/core/auth",
   );
   const useAuthStore = Object.assign(
     (selector: (s: typeof authStateRef.state) => unknown) =>
@@ -60,7 +60,7 @@ vi.mock("@multica/core/auth", async () => {
   return { ...actual, useAuthStore };
 });
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@cordy/core/api", () => ({
   api: {
     getShareLinkInfo: mockGetShareLinkInfo,
     joinByShareLink: mockJoinByShareLink,

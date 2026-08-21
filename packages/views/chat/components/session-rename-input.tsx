@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { isImeComposing } from "@multica/core/utils";
+import { isImeComposing } from "@cordy/core/utils";
 import { useT } from "../../i18n";
 
 /**

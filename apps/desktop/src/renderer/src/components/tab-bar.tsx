@@ -32,16 +32,16 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from "@multica/ui/components/ui/context-menu";
-import { useScrollFade } from "@multica/ui/hooks/use-scroll-fade";
-import { SIDEBAR_WRAPPER_FILL_CLASS } from "@multica/ui/components/ui/sidebar";
-import { cn } from "@multica/ui/lib/utils";
+} from "@cordy/ui/components/ui/context-menu";
+import { useScrollFade } from "@cordy/ui/hooks/use-scroll-fade";
+import { SIDEBAR_WRAPPER_FILL_CLASS } from "@cordy/ui/components/ui/sidebar";
+import { cn } from "@cordy/ui/lib/utils";
 import { useTabStore, useActiveGroup, type Tab } from "@/stores/tab-store";
-import { paths } from "@multica/core/paths";
+import { paths } from "@cordy/core/paths";
 import {
   useTabPresentation,
   ResourceLeadingVisual,
-} from "@multica/views/layout";
+} from "@cordy/views/layout";
 import { parseIssueWindowPath } from "../../../shared/issue-window";
 
 const TAB_SCROLL_FADE_SIZE = 24;
@@ -213,7 +213,7 @@ function SortableTabItem({
   // The tab's leading visual and title are derived live from its URL and the
   // query cache — a resource's own icon/status/avatar and its real title,
   // updated as the cache updates. `tab.title` is only a persisted first-frame
-  // fallback. See @multica/views useTabPresentation.
+  // fallback. See @cordy/views useTabPresentation.
   const { visual, title } = useTabPresentation(tab.url, tab.title);
 
   // Persist the active tab's resolved title so it survives as the next

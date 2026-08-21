@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/integrations/lark"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/cordy-ai/cordy/server/internal/integrations/lark"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 // LarkInstallationResponse is the wire shape for an installation row.
@@ -71,7 +71,7 @@ func larkInstallationToResponse(row lark.Installation) LarkInstallationResponse 
 //     UI hides the tab.
 //   - install_supported: the device-flow install path is wired
 //     end-to-end: a RegistrationService exists (deployment supplied
-//     MULTICA_LARK_SECRET_KEY) AND the APIClient.IsConfigured signal
+//     CORDY_LARK_SECRET_KEY) AND the APIClient.IsConfigured signal
 //     is true (the real Lark HTTP client is in place — the stub
 //     cannot complete the post-poll GetBotInfo call). When false,
 //     the agent-detail "Bind" button stays hidden and the Settings
@@ -196,7 +196,7 @@ type RedeemLarkBindingTokenResponse struct {
 // path that writes a lark_user_binding row from user-driven action.
 // The redeemer's identity is taken from the session, not the token,
 // so a stolen token cannot bind a Lark open_id to an attacker's
-// Multica account. The token only proves "this open_id requested
+// Cordy account. The token only proves "this open_id requested
 // binding" — combining it with the logged-in user is what creates
 // the (open_id ↔ user) mapping.
 //
@@ -236,7 +236,7 @@ func (h *Handler) RedeemLarkBindingToken(w http.ResponseWriter, r *http.Request)
 		case errors.Is(err, lark.ErrBindingTokenInvalid):
 			writeError(w, http.StatusGone, "binding token invalid or expired")
 		case errors.Is(err, lark.ErrBindingAlreadyAssigned):
-			writeError(w, http.StatusConflict, "this Lark account is already bound to a different Multica user")
+			writeError(w, http.StatusConflict, "this Lark account is already bound to a different Cordy user")
 		case errors.Is(err, lark.ErrBindingNotWorkspaceMember):
 			writeError(w, http.StatusForbidden, "binding refused (are you a workspace member?)")
 		default:
@@ -269,7 +269,7 @@ type BeginLarkInstallResponse struct {
 // via canManageAgent (the agent's owner OR a workspace owner/admin), so
 // an agent owner can bind their own agent's Bot without being a
 // workspace admin (MUL-4213). The agent_id query param picks which
-// Multica Agent the new Bot will be bound to; the agent must belong to
+// Cordy Agent the new Bot will be bound to; the agent must belong to
 // this workspace (RegistrationService re-checks that defense-in-depth).
 //
 // Returns 503 when the integration is not wired (no at-rest key, no

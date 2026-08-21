@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import type { Issue, IssueAssigneeGroup } from "@multica/core/types";
+import type { Issue, IssueAssigneeGroup } from "@cordy/core/types";
 import {
   applyIssueFilters,
   filterAssigneeGroups,

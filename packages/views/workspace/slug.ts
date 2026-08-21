@@ -1,5 +1,5 @@
 import { pinyin } from "pinyin-pro";
-import type { SupportedLocale } from "@multica/core/i18n";
+import type { SupportedLocale } from "@cordy/core/i18n";
 import { CELESTIAL_WORKSPACE_NAMES } from "./celestial-workspace-names";
 
 export const WORKSPACE_SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;

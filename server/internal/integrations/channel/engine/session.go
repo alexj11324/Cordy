@@ -13,10 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/channelmedia"
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/dbid"
+	"github.com/cordy-ai/cordy/server/internal/channelmedia"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/dbid"
 )
 
 // This file is the SHARED, channel-agnostic chat-session service every IM
@@ -182,7 +182,7 @@ func newChatSessionWith(q SessionQueries, tx TxStarter, channelType channel.Type
 // Slack's real channel_id when BindingKey is a composite — persisted on the
 // binding's config for the outbound path to read back. nil means "{}".
 //
-// Sender is the already-resolved Multica user (the session creator: the sole
+// Sender is the already-resolved Cordy user (the session creator: the sole
 // human for p2p, the installer for group chats — the caller decides which).
 type EnsureSessionInput struct {
 	WorkspaceID    pgtype.UUID

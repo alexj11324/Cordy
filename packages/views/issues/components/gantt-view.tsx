@@ -2,21 +2,21 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { useViewStore, useViewStoreApi } from "@multica/core/issues/stores/view-store-context";
-import type { GanttZoom } from "@multica/core/issues/stores/view-store";
-import { projectListOptions } from "@multica/core/projects/queries";
-import type { Issue, IssueStatusCategory } from "@multica/core/types";
-import { issueStatusCategory } from "@multica/core/issues";
-import { dateOnlyToUTCDate } from "@multica/core/issues/date";
-import { cn } from "@multica/ui/lib/utils";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { useWorkspacePaths } from "@cordy/core/paths";
+import { useViewStore, useViewStoreApi } from "@cordy/core/issues/stores/view-store-context";
+import type { GanttZoom } from "@cordy/core/issues/stores/view-store";
+import { projectListOptions } from "@cordy/core/projects/queries";
+import type { Issue, IssueStatusCategory } from "@cordy/core/types";
+import { issueStatusCategory } from "@cordy/core/issues";
+import { dateOnlyToUTCDate } from "@cordy/core/issues/date";
+import { cn } from "@cordy/ui/lib/utils";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@multica/ui/components/ui/tooltip";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@cordy/ui/components/ui/tooltip";
+import { Button } from "@cordy/ui/components/ui/button";
 import { AppLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ProjectIcon } from "../../projects/components/project-icon";
@@ -47,7 +47,7 @@ function daysBetween(a: Date, b: Date): number {
 
 // Issue dates arrive as date-only "YYYY-MM-DD" strings (calendar days). Anchor
 // each to UTC midnight so the bar lands on exactly that day, independent of the
-// viewer's timezone. See @multica/core/issues/date.
+// viewer's timezone. See @cordy/core/issues/date.
 function parseDay(iso: string | null): Date | null {
   return dateOnlyToUTCDate(iso);
 }

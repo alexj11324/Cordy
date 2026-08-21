@@ -22,7 +22,7 @@ func TestDiscoveryCacheKeyScopesByExecutable(t *testing.T) {
 // TestCachedDiscoveryDoesNotShareMemoAcrossExecutables is the reason the key
 // carries the path (MUL-5789). A host can run a built-in runtime and a custom
 // runtime profile of the same protocol family at once — the reporter's own
-// `MULTICA_HERMES_PATH` workaround produces exactly that pair. With a
+// `CORDY_HERMES_PATH` workaround produces exactly that pair. With a
 // provider-only key the first discovery to land would answer for both for the
 // full TTL, reintroducing the catalog/binary mismatch the daemon-side fix
 // removes.

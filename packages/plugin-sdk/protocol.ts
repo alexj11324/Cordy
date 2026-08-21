@@ -1,8 +1,8 @@
 /**
  * The bridge wire format, shared in spirit by the surface (this package) and
  * the host (`packages/views/plugins`). It is duplicated rather than imported:
- * the SDK ships to plugin authors and must not pull `@multica/core` or
- * `@multica/ui` in behind it, and the host must not depend on a package a
+ * the SDK ships to plugin authors and must not pull `@cordy/core` or
+ * `@cordy/ui` in behind it, and the host must not depend on a package a
  * third party could install a different version of.
  *
  * Two properties matter more than the shape:
@@ -19,7 +19,7 @@
 export const BRIDGE_PROTOCOL_VERSION = 1;
 
 /** Marks the single window message that carries the port. */
-export const BRIDGE_INIT_MESSAGE = "multica:plugin-bridge-init";
+export const BRIDGE_INIT_MESSAGE = "cordy:plugin-bridge-init";
 
 /**
  * Posted by the surface to its embedder once its message listener is attached.
@@ -31,7 +31,7 @@ export const BRIDGE_INIT_MESSAGE = "multica:plugin-bridge-init";
  * panel. The host answers this signal instead, and matches `event.source`
  * against the iframe it created so another frame cannot claim the port.
  */
-export const BRIDGE_READY_MESSAGE = "multica:plugin-surface-ready";
+export const BRIDGE_READY_MESSAGE = "cordy:plugin-surface-ready";
 
 export type BridgeInitMessage = {
   type: typeof BRIDGE_INIT_MESSAGE;

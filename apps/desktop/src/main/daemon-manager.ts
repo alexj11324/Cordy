@@ -45,7 +45,7 @@ import {
 } from "./daemon-auth-probe";
 
 const POLL_INTERVAL_MS = 5_000;
-const PREFS_PATH = join(homedir(), ".multica", "desktop_prefs.json");
+const PREFS_PATH = join(homedir(), ".cordy", "desktop_prefs.json");
 const LOG_TAIL_RETRY_MS = 2_000;
 const LOG_TAIL_MAX_RETRIES = 5;
 // How long a start may sit in "starting" (with no /health) before we probe the
@@ -53,8 +53,8 @@ const LOG_TAIL_MAX_RETRIES = 5;
 // take a while (it renews the PAT and lists workspaces before serving /health), so we
 // wait past the common case to avoid probing healthy-but-slow starts.
 const AUTH_PROBE_GRACE_MS = 10_000;
-// `multica daemon start` blocks until the daemon reports ready, polling /health
-// for up to its own startup timeout (45s in server/cmd/multica/cmd_daemon.go) to
+// `cordy daemon start` blocks until the daemon reports ready, polling /health
+// for up to its own startup timeout (45s in server/cmd/cordy/cmd_daemon.go) to
 // cover cold-start agent-version detection. This execFile timeout MUST stay
 // above that — otherwise Electron kills the CLI supervisor mid-startup and a
 // healthy-but-slow start is misreported as a failure (the detached daemon child
@@ -181,7 +181,7 @@ async function fetchHealthAtPort(
 
 /**
  * Validates the daemon profile's token against the backend to find out whether
- * a stuck start is an auth problem. Hits the same endpoint `multica auth status`
+ * a stuck start is an auth problem. Hits the same endpoint `cordy auth status`
  * uses (GET /api/me) with the exact token the daemon loads from config.json, so
  * the verdict matches what the daemon itself would get from the server.
  *
@@ -244,7 +244,7 @@ async function writeProfileConfig(
  *
  * Returns `null` until the renderer reports its `apiUrl`. There is no profile
  * to act on in that window, and callers must do nothing rather than reach for
- * the user's default CLI profile at `~/.multica/` — neither its files nor its
+ * the user's default CLI profile at `~/.cordy/` — neither its files nor its
  * health port.
  */
 async function resolveActiveProfile(): Promise<ActiveProfile | null> {
@@ -371,7 +371,7 @@ async function fetchHealth(): Promise<DaemonStatus> {
 }
 
 function findCliOnPath(): string | null {
-  const candidates = process.platform === "win32" ? ["multica.exe"] : ["multica"];
+  const candidates = process.platform === "win32" ? ["cordy.exe"] : ["cordy"];
   const paths = (process.env["PATH"] ?? "").split(
     process.platform === "win32" ? ";" : ":",
   );
@@ -391,14 +391,14 @@ function findCliOnPath(): string | null {
  * Returns the path to the CLI binary bundled inside the Desktop app.
  *
  * - Dev (`electron-vite dev`): `app.getAppPath()` → `apps/desktop`, resolving
- *   to `apps/desktop/resources/bin/multica`. `bundle-cli.mjs` populates this
+ *   to `apps/desktop/resources/bin/cordy`. `bundle-cli.mjs` populates this
  *   before dev starts, so iterating on Go changes is "make build → restart".
- * - Packaged: `app.getAppPath()` → `<Multica.app>/Contents/Resources/app.asar`.
+ * - Packaged: `app.getAppPath()` → `<Cordy.app>/Contents/Resources/app.asar`.
  *   electron-builder's `asarUnpack: resources/**` extracts the binary to
  *   `app.asar.unpacked/`, so we swap the path segment to execute it.
  */
 function bundledCliPath(): string {
-  const binName = process.platform === "win32" ? "multica.exe" : "multica";
+  const binName = process.platform === "win32" ? "cordy.exe" : "cordy";
   return join(app.getAppPath(), "resources", "bin", binName).replace(
     "app.asar",
     "app.asar.unpacked",
@@ -436,12 +436,12 @@ async function probeCliBinary(
 }
 
 /**
- * Returns a usable `multica` binary path. Priority:
+ * Returns a usable `cordy` binary path. Priority:
  *   1. Cached result from a previous successful resolve.
  *   2. Bundled binary shipped with the Desktop app (`bundle-cli.mjs`).
  *   3. Managed binary already installed in userData (`managedCliPath`).
  *   4. Download + install latest release into userData.
- *   5. `multica` on PATH (dev convenience / user-installed via brew).
+ *   5. `cordy` on PATH (dev convenience / user-installed via brew).
  * Returns `null` only when all of the above fail.
  *
  * Bundled is preferred so Desktop iterates in lockstep with Go changes in
@@ -610,7 +610,7 @@ async function mintPat(jwt: string): Promise<string> {
       Authorization: `Bearer ${jwt}`,
     },
     // Omit expires_in_days → server treats as null → non-expiring PAT.
-    body: JSON.stringify({ name: "Multica Desktop" }),
+    body: JSON.stringify({ name: "Cordy Desktop" }),
   });
   if (!res.ok) {
     const body = await res.text().catch(() => "");
@@ -717,7 +717,7 @@ async function loadPrefs(): Promise<DaemonPrefs> {
 }
 
 async function savePrefs(prefs: DaemonPrefs): Promise<void> {
-  const dir = join(homedir(), ".multica");
+  const dir = join(homedir(), ".cordy");
   await mkdir(dir, { recursive: true });
   await writeFile(PREFS_PATH, JSON.stringify(prefs, null, 2), "utf-8");
 }
@@ -888,12 +888,12 @@ async function probeLocalRuntimes(): Promise<LocalRuntimeProbe> {
 // applied by fix-path in main/index.ts — as a top-level const it would
 // snapshot process.env at import time, before that block runs.
 function desktopSpawnEnv(): NodeJS.ProcessEnv {
-  return { ...process.env, MULTICA_LAUNCHED_BY: "desktop" };
+  return { ...process.env, CORDY_LAUNCHED_BY: "desktop" };
 }
 
 async function startDaemon(): Promise<{ success: boolean; error?: string }> {
   const bin = await resolveCliBinary();
-  if (!bin) return { success: false, error: "multica CLI is not installed" };
+  if (!bin) return { success: false, error: "cordy CLI is not installed" };
 
   const active = await ensureActiveProfile();
   if (!active) {
@@ -967,7 +967,7 @@ async function stopDaemon(): Promise<{ success: boolean; error?: string }> {
   if (await lifecycleBlockedByForeignDaemon()) return { success: true };
 
   const bin = await resolveCliBinary();
-  if (!bin) return { success: false, error: "multica CLI is not installed" };
+  if (!bin) return { success: false, error: "cordy CLI is not installed" };
 
   const active = await ensureActiveProfile();
   if (!active) return { success: true };

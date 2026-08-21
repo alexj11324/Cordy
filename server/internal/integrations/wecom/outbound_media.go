@@ -3,7 +3,7 @@ package wecom
 // outbound_media.go — delivering the files an agent produced.
 //
 // The agent's side of this already exists and is platform-agnostic: it runs
-// `multica attachment upload <path>`, the file lands in object storage, and
+// `cordy attachment upload <path>`, the file lands in object storage, and
 // CompleteTask binds the row to the assistant message it just wrote. What was
 // missing was the last hop. Everything downstream of that bind assumed a chat
 // window in a browser, so a WeCom conversation was told it could not take
@@ -37,10 +37,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/cordy-ai/cordy/server/internal/events"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 // mediaObjectStore is the slice of storage.Storage this path needs: the

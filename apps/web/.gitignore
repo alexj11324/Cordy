@@ -1,2 +1,5 @@
 .vercel
 .source/
+
+# clerk configuration (can include secrets)
+/.clerk/

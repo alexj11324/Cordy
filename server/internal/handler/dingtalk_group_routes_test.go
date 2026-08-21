@@ -13,10 +13,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	dingtalkintegration "github.com/multica-ai/multica/server/internal/integrations/dingtalk"
-	"github.com/multica-ai/multica/server/internal/middleware"
-	"github.com/multica-ai/multica/server/internal/util/secretbox"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	dingtalkintegration "github.com/cordy-ai/cordy/server/internal/integrations/dingtalk"
+	"github.com/cordy-ai/cordy/server/internal/middleware"
+	"github.com/cordy-ai/cordy/server/internal/util/secretbox"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 type dingtalkGroupRouteHandlerFixture struct {
@@ -352,7 +352,7 @@ func TestListDingTalkInstallationsAdvertisesGroupRoutingCapability(t *testing.T)
 		var regularMemberID string
 		if err := testPool.QueryRow(context.Background(), `
 			INSERT INTO "user" (name, email)
-			VALUES ('DingTalk installation list member', 'dingtalk-installation-list-member@multica.test')
+			VALUES ('DingTalk installation list member', 'dingtalk-installation-list-member@cordy.test')
 			RETURNING id
 		`).Scan(&regularMemberID); err != nil {
 			t.Fatalf("create regular member for DingTalk installation listing: %v", err)
@@ -365,7 +365,7 @@ func TestListDingTalkInstallationsAdvertisesGroupRoutingCapability(t *testing.T)
 		var adminMemberID string
 		if err := testPool.QueryRow(context.Background(), `
 			INSERT INTO "user" (name, email)
-			VALUES ('DingTalk installation list admin', 'dingtalk-installation-list-admin@multica.test')
+			VALUES ('DingTalk installation list admin', 'dingtalk-installation-list-admin@cordy.test')
 			RETURNING id
 		`).Scan(&adminMemberID); err != nil {
 			t.Fatalf("create admin for DingTalk installation listing: %v", err)
@@ -381,7 +381,7 @@ func TestListDingTalkInstallationsAdvertisesGroupRoutingCapability(t *testing.T)
 		})
 		if _, err := testPool.Exec(context.Background(), `
 			INSERT INTO channel_user_binding (
-				workspace_id, multica_user_id, installation_id,
+				workspace_id, cordy_user_id, installation_id,
 				channel_type, channel_user_id
 			) VALUES
 				($1, $2, $3, 'dingtalk', 'staff-current-member'),
@@ -710,7 +710,7 @@ func TestDingTalkGroupRouteAuthorizationWiring(t *testing.T) {
 	createUser := func(label string) string {
 		t.Helper()
 		var id string
-		if err := testPool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id`, "DingTalk "+label, fmt.Sprintf("dingtalk-route-%s@multica.test", label)).Scan(&id); err != nil {
+		if err := testPool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id`, "DingTalk "+label, fmt.Sprintf("dingtalk-route-%s@cordy.test", label)).Scan(&id); err != nil {
 			t.Fatalf("create %s user: %v", label, err)
 		}
 		return id

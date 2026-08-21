@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
-	"github.com/multica-ai/multica/server/internal/daemon/repocache"
+	"github.com/cordy-ai/cordy/server/internal/daemon/execenv"
+	"github.com/cordy-ai/cordy/server/internal/daemon/repocache"
 )
 
 // newGCTestDaemon creates a minimal Daemon for GC testing with a mock HTTP server.
@@ -1520,17 +1520,17 @@ func TestPruneWorktreePreemptionCleansLocksBeforeTaskStarts(t *testing.T) {
 	script := `#!/bin/sh
 if [ "$3" = "reflog" ] && [ "$4" = "expire" ]; then
   : > "$2/refs/remotes/origin/main.lock"
-  : > "$MULTICA_TEST_MAINTENANCE_STARTED"
+  : > "$CORDY_TEST_MAINTENANCE_STARTED"
   trap 'exit 143' TERM INT
   while :; do sleep 1; done
 fi
-exec "$MULTICA_TEST_REAL_GIT" "$@"
+exec "$CORDY_TEST_REAL_GIT" "$@"
 `
 	if err := os.WriteFile(fakeGit, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("MULTICA_TEST_REAL_GIT", realGit)
-	t.Setenv("MULTICA_TEST_MAINTENANCE_STARTED", startedPath)
+	t.Setenv("CORDY_TEST_REAL_GIT", realGit)
+	t.Setenv("CORDY_TEST_MAINTENANCE_STARTED", startedPath)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	pruneDone := make(chan struct{})

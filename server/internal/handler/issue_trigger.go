@@ -7,10 +7,10 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/internal/util"
-	agentver "github.com/multica-ai/multica/server/pkg/agent"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/service"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	agentver "github.com/cordy-ai/cordy/server/pkg/agent"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // maxPreviewTriggerIssues caps a single preview request so a pathological

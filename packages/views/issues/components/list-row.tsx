@@ -7,15 +7,15 @@ import { CSS } from "@dnd-kit/utilities";
 import { AppLink } from "../../navigation";
 import type { Issue, Project,
   IssueProperty,
-} from "@multica/core/types";
-import { formatDateOnly } from "@multica/core/issues/date";
+} from "@cordy/core/types";
+import { formatDateOnly } from "@cordy/core/issues/date";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropertyIcon } from "../../common/property-icon";
-import { useWorkspacePaths } from "@multica/core/paths";
+import { useWorkspacePaths } from "@cordy/core/paths";
 import { useQuery } from "@tanstack/react-query";
-import { useViewStore } from "@multica/core/issues/stores/view-store-context";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { propertyListOptions } from "@multica/core/properties";
+import { useViewStore } from "@cordy/core/issues/stores/view-store-context";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { propertyListOptions } from "@cordy/core/properties";
 import { CustomPropertyValueDisplay } from "./pickers/custom-property-picker";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { PriorityIcon } from "./priority-icon";

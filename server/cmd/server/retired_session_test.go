@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/service"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/events"
+	"github.com/cordy-ai/cordy/server/internal/service"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )

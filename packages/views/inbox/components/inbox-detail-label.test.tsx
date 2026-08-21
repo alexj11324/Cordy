@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { InboxItem } from "@multica/core/types";
+import type { InboxItem } from "@cordy/core/types";
 import en from "../../locales/en/inbox.json";
 import { InboxDetailLabel } from "./inbox-detail-label";
 
@@ -8,10 +8,10 @@ vi.mock("../../issues/components", () => ({
   StatusIcon: () => null,
   PriorityIcon: () => null,
 }));
-vi.mock("@multica/core/workspace/hooks", () => ({
+vi.mock("@cordy/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Someone" }),
 }));
-vi.mock("@multica/core/issue-statuses/hooks", () => ({
+vi.mock("@cordy/core/issue-statuses/hooks", () => ({
   // Leaf render test: stub the catalog the same way the other data hooks are
   // stubbed, so the component can be mounted without a QueryClientProvider.
   useIssueStatuses: () => ({

@@ -32,7 +32,7 @@ import type {
   IssueStatusCategory,
   SearchIssueResult,
   SearchProjectResult,
-} from "@multica/core/types";
+} from "@cordy/core/types";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { PriorityIcon } from "@/components/ui/priority-icon";

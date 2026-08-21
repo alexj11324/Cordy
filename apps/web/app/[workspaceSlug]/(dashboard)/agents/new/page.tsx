@@ -1,4 +1,4 @@
-import { ChooseCreateMethodPage } from "@multica/views/agents";
+import { ChooseCreateMethodPage } from "@cordy/views/agents";
 
 export default function NewAgentRoute() {
   return <ChooseCreateMethodPage />;

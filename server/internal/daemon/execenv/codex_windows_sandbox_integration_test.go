@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/cordy-ai/cordy/server/pkg/agent"
 )
 
 // TestWindowsSandboxHonorsShellQuotedCustomArg is the MUL-4957 round-3 must-fix

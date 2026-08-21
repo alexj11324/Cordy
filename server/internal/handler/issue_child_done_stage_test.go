@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // child builds a sibling row with the given stage (0 = unstaged/NULL) and
@@ -180,7 +180,7 @@ func TestStageAdvanceInstruction(t *testing.T) {
 		if !strings.Contains(got, "next stage") {
 			t.Fatalf("expected create-next-stage guidance, got %q", got)
 		}
-		if !strings.Contains(got, "multica issue status "+parentID+" in_review") {
+		if !strings.Contains(got, "cordy issue status "+parentID+" in_review") {
 			t.Fatalf("expected explicit in_review instruction for confirmed completion, got %q", got)
 		}
 	})

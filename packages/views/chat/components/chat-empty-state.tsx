@@ -1,6 +1,6 @@
 "use client";
 
-import type { Agent } from "@multica/core/types";
+import type { Agent } from "@cordy/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 

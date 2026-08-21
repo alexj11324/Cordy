@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/multica-ai/multica/server/internal/dispatch"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/dispatch"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // AgentAvailability is what a readiness check concluded, in the vocabulary the

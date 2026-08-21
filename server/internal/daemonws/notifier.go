@@ -5,7 +5,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
-	"github.com/multica-ai/multica/server/internal/realtime"
+	"github.com/cordy-ai/cordy/server/internal/realtime"
 )
 
 // RelayNotifier sends daemon wakeup hints to the local daemon hub and, when

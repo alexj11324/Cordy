@@ -1,4 +1,4 @@
-/** A DingTalk robot installation with one default Multica agent. Group routes
+/** A DingTalk robot installation with one default Cordy agent. Group routes
  * may target other agents without duplicating the installation.
  *
  * Wire shape mirrors `DingTalkInstallationResponse` in
@@ -14,7 +14,7 @@ export interface DingTalkInstallation {
   installed_at: string;
   created_at: string;
   updated_at: string;
-  /** DingTalk staff ids linked by the currently authenticated Multica user for
+  /** DingTalk staff ids linked by the currently authenticated Cordy user for
    * this bot. Member-scoped so the member-visible installation endpoint does
    * not disclose other members' DingTalk identities. */
   bound_dingtalk_user_ids?: string[];
@@ -39,7 +39,7 @@ export interface ListDingTalkInstallationsResponse {
 }
 
 /** A DingTalk group observed by one Stream-mode robot and routed to a fixed
- * Multica agent. Groups are discovered from inbound callbacks; admins can
+ * Cordy agent. Groups are discovered from inbound callbacks; admins can
  * reassign the agent without reconnecting or duplicating the robot. */
 export interface DingTalkGroupRoute {
   id: string;
@@ -70,7 +70,7 @@ export interface RegisterDingTalkBYORequest {
 }
 
 /** Post-redemption echo: the DingTalk user id the token carried is now bound to
- * the logged-in Multica user in this workspace/installation. */
+ * the logged-in Cordy user in this workspace/installation. */
 export interface RedeemDingTalkBindingTokenResponse {
   workspace_id: string;
   installation_id: string;

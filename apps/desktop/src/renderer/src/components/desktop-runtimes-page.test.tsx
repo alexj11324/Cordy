@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const runtimesPage = vi.fn<(props: Record<string, unknown>) => null>(() => null);
 const useDesktopRuntimeContext = vi.fn();
 
-vi.mock("@multica/views/runtimes", () => ({
+vi.mock("@cordy/views/runtimes", () => ({
   RuntimesPage: (props: Record<string, unknown>) => runtimesPage(props),
 }));
 

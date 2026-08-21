@@ -1,14 +1,14 @@
 "use client";
 
-import { ActorAvatar } from "@multica/ui/components/common/actor-avatar";
-import { Button } from "@multica/ui/components/ui/button";
+import { ActorAvatar } from "@cordy/ui/components/common/actor-avatar";
+import { Button } from "@cordy/ui/components/ui/button";
 import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
-} from "@multica/ui/components/ui/hover-card";
-import { useActorName } from "@multica/core/workspace/hooks";
-import type { WorkingAgentSummary } from "@multica/core/types";
+} from "@cordy/ui/components/ui/hover-card";
+import { useActorName } from "@cordy/core/workspace/hooks";
+import type { WorkingAgentSummary } from "@cordy/core/types";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { useT } from "../../i18n";
 

@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
 )
 
 // User-facing copy the bot speaks in Telegram. Chinese-first, aligned with
@@ -19,7 +19,7 @@ const (
 	msgAgentOffline     = "⚠️ 智能体当前离线，消息已记录。下次 daemon 上线后会自动继续处理。"
 	msgAgentArchived    = "⚠️ 该智能体已归档，无法回复。请联系工作区管理员。"
 	msgUnsupportedType  = "暂不支持此类消息，请发送文字内容。"
-	msgBindingGroupHint = "请先私聊我发送一条消息，再完成 Multica 账号绑定。"
+	msgBindingGroupHint = "请先私聊我发送一条消息，再完成 Cordy 账号绑定。"
 )
 
 // maxMessageUnits caps one outbound sendMessage body. Telegram hard-caps a

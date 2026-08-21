@@ -6,16 +6,16 @@ import type {
   Agent,
   AgentRuntime,
   MemberWithUser,
-} from "@multica/core/types";
+} from "@cordy/core/types";
 import {
   AGENT_DESCRIPTION_MAX_LENGTH,
   AGENT_MAX_CONCURRENT_TASKS_MAX,
   AGENT_MAX_CONCURRENT_TASKS_MIN,
-} from "@multica/core/agents";
-import { runtimeModelsOptions } from "@multica/core/runtimes";
-import { isImeComposing } from "@multica/core/utils";
-import { Input } from "@multica/ui/components/ui/input";
-import { Textarea } from "@multica/ui/components/ui/textarea";
+} from "@cordy/core/agents";
+import { runtimeModelsOptions } from "@cordy/core/runtimes";
+import { isImeComposing } from "@cordy/core/utils";
+import { Input } from "@cordy/ui/components/ui/input";
+import { Textarea } from "@cordy/ui/components/ui/textarea";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import {
   SettingsCard,

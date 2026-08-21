@@ -3,8 +3,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Agent } from "@multica/core/types";
-import { I18nProvider } from "@multica/core/i18n/react";
+import type { Agent } from "@cordy/core/types";
+import { I18nProvider } from "@cordy/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 import {
@@ -14,14 +14,14 @@ import {
 
 const TEST_RESOURCES = { en: { common: enCommon, agents: enAgents } };
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@cordy/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 // api / paths are only reached from a rendered TaskRow, which never mounts in
 // the loading and empty states under test — stub them so the module graph
 // resolves without dragging in platform wiring.
-vi.mock("@multica/core/api", () => ({ api: {} }));
+vi.mock("@cordy/core/api", () => ({ api: {} }));
 
 // The tab reads three data sources. Snapshot ("Now") and the activity map
 // ("Last 30 days") stay empty; the per-agent task list is the one under test,
@@ -29,7 +29,7 @@ vi.mock("@multica/core/api", () => ({ api: {} }));
 const agentTasksRef = vi.hoisted(() => ({
   current: () => new Promise<unknown>(() => {}),
 }));
-vi.mock("@multica/core/agents", () => ({
+vi.mock("@cordy/core/agents", () => ({
   agentTaskSnapshotOptions: () => ({
     queryKey: ["snapshot"],
     queryFn: () => Promise.resolve([]),

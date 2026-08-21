@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/cordy-ai/cordy/server/pkg/agent"
 )
 
 const (
-	longPathExecutableHelperEnv = "MULTICA_LONG_PATH_EXECUTABLE_HELPER"
-	longPathExecutableMarkerEnv = "MULTICA_LONG_PATH_EXECUTABLE_MARKER"
+	longPathExecutableHelperEnv = "CORDY_LONG_PATH_EXECUTABLE_HELPER"
+	longPathExecutableMarkerEnv = "CORDY_LONG_PATH_EXECUTABLE_MARKER"
 )
 
 func TestLongPathExecutableHelper(t *testing.T) {

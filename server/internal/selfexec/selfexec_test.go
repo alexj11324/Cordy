@@ -28,7 +28,7 @@ func TestResolveWithFallsBackToArgv0(t *testing.T) {
 	failExecutable := func() (string, error) { return "", executableErr }
 
 	t.Run("absolute path", func(t *testing.T) {
-		want := writeTestExecutable(t, t.TempDir(), "multica")
+		want := writeTestExecutable(t, t.TempDir(), "cordy")
 
 		got, err := resolveWith(failExecutable, []string{want})
 		if err != nil {
@@ -41,7 +41,7 @@ func TestResolveWithFallsBackToArgv0(t *testing.T) {
 
 	t.Run("relative path", func(t *testing.T) {
 		dir := t.TempDir()
-		want := writeTestExecutable(t, dir, "multica")
+		want := writeTestExecutable(t, dir, "cordy")
 		t.Chdir(dir)
 		argv0 := "." + string(os.PathSeparator) + filepath.Base(want)
 
@@ -56,10 +56,10 @@ func TestResolveWithFallsBackToArgv0(t *testing.T) {
 
 	t.Run("PATH command", func(t *testing.T) {
 		dir := t.TempDir()
-		want := writeTestExecutable(t, dir, "multica")
+		want := writeTestExecutable(t, dir, "cordy")
 		t.Setenv("PATH", dir)
 
-		got, err := resolveWith(failExecutable, []string{"multica"})
+		got, err := resolveWith(failExecutable, []string{"cordy"})
 		if err != nil {
 			t.Fatalf("resolveWith() error = %v", err)
 		}
@@ -80,7 +80,7 @@ func TestResolveWithRejectsInvalidFallback(t *testing.T) {
 	}{
 		{name: "missing argv0", args: nil, want: "argv[0] is empty"},
 		{name: "empty argv0", args: []string{""}, want: "argv[0] is empty"},
-		{name: "missing executable", args: []string{"multica-does-not-exist"}, want: "multica-does-not-exist"},
+		{name: "missing executable", args: []string{"cordy-does-not-exist"}, want: "cordy-does-not-exist"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -99,7 +99,7 @@ func TestResolveWithRejectsInvalidFallback(t *testing.T) {
 
 	if runtime.GOOS != "windows" {
 		t.Run("non-executable file", func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "multica")
+			path := filepath.Join(t.TempDir(), "cordy")
 			if err := os.WriteFile(path, []byte("not executable"), 0o644); err != nil {
 				t.Fatalf("write non-executable fixture: %v", err)
 			}

@@ -111,7 +111,7 @@ func TestPrepareQwenpawWorkspacePreservesCollidingSkillSlugs(t *testing.T) {
 
 	expectedSkills := map[string]string{
 		"a-b":         "first skill body",
-		"a-b-multica": "second skill body",
+		"a-b-cordy": "second skill body",
 	}
 	for slug, wantBody := range expectedSkills {
 		data, err := os.ReadFile(filepath.Join(workspaceDir, "skills", slug, "SKILL.md"))
@@ -333,7 +333,7 @@ func TestPrepareQwenpawWorkspaceReplace(t *testing.T) {
 			t.Fatalf("new skill dir %q should exist: %v", slug, err)
 		}
 		// Verify no collision suffix
-		if _, err := os.Stat(filepath.Join(skillsDir, slug+"-multica")); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(skillsDir, slug+"-cordy")); !os.IsNotExist(err) {
 			t.Errorf("slug %q should not have a collision suffix after replace", slug)
 		}
 	}
@@ -385,10 +385,10 @@ func TestPrepareQwenpawWorkspaceRepeatedReuse(t *testing.T) {
 			t.Fatalf("skill dir %q should exist: %v", slug, err)
 		}
 		// No collision suffix
-		if _, err := os.Stat(filepath.Join(skillsDir, slug+"-multica")); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(skillsDir, slug+"-cordy")); !os.IsNotExist(err) {
 			t.Errorf("slug %q should not have a collision suffix after repeated reuse", slug)
 		}
-		if _, err := os.Stat(filepath.Join(skillsDir, slug+"-multica-2")); !os.IsNotExist(err) {
+		if _, err := os.Stat(filepath.Join(skillsDir, slug+"-cordy-2")); !os.IsNotExist(err) {
 			t.Errorf("slug %q should not have a collision suffix after repeated reuse", slug)
 		}
 	}

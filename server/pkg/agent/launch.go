@@ -38,7 +38,7 @@ func newAgentCommandLogArgs(invocationArgs []string, trustedPositionals ...trust
 	}
 }
 
-// Command is the identity of a runtime CLI: the executable Multica spawns plus
+// Command is the identity of a runtime CLI: the executable Cordy spawns plus
 // the argv prefix that belongs to the command itself rather than to any single
 // invocation.
 //

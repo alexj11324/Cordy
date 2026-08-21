@@ -2,13 +2,13 @@
 /**
  * A reference hook handler — the plugin author's side of the contract.
  *
- * This is the half that does NOT run in Multica. It is an ordinary HTTP server
- * the author operates; Multica only ever sends it a signed POST. Everything
+ * This is the half that does NOT run in Cordy. It is an ordinary HTTP server
+ * the author operates; Cordy only ever sends it a signed POST. Everything
  * security-relevant here is on this side of the wire, which is the point: the
  * host cannot make a handler safe, it can only give it what it needs to be.
  *
  * Run:
- *   MULTICA_SIGNING_SECRET=whsec_... node handler.mjs
+ *   CORDY_SIGNING_SECRET=whsec_... node handler.mjs
  *
  * The signing secret is shown once, next to the install token, when an admin
  * rotates the plugin's token in workspace settings.
@@ -20,11 +20,11 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 const PORT = Number(process.env.PORT ?? 8787);
-const SIGNING_SECRET = process.env.MULTICA_SIGNING_SECRET ?? "";
+const SIGNING_SECRET = process.env.CORDY_SIGNING_SECRET ?? "";
 const TOLERANCE_SECONDS = 5 * 60;
 
 if (!SIGNING_SECRET) {
-  console.error("MULTICA_SIGNING_SECRET is required. Rotate the plugin token in Multica to obtain it.");
+  console.error("CORDY_SIGNING_SECRET is required. Rotate the plugin token in Cordy to obtain it.");
   process.exit(1);
 }
 
@@ -48,8 +48,8 @@ function rememberSignature(signature, now) {
 }
 
 function verify(rawBody, headers) {
-  const timestamp = headers["x-multica-timestamp"];
-  const presented = String(headers["x-multica-signature"] ?? "").replace(/^v1=/, "");
+  const timestamp = headers["x-cordy-timestamp"];
+  const presented = String(headers["x-cordy-signature"] ?? "").replace(/^v1=/, "");
   if (!timestamp || !presented) return "missing signature headers";
 
   const drift = Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp));
@@ -74,7 +74,7 @@ function verify(rawBody, headers) {
 }
 
 /**
- * Calls Multica back using the one-shot token that arrived with the request.
+ * Calls Cordy back using the one-shot token that arrived with the request.
  *
  * The token is scoped to this invocation and expires in minutes, so it is worth
  * spending on the work at hand rather than storing. It is good for as many calls
@@ -93,7 +93,7 @@ async function callback(body, method, path, payload) {
     body: payload === undefined ? undefined : JSON.stringify(payload),
   });
   if (!response.ok) {
-    throw new Error(`Multica answered ${response.status}: ${await response.text()}`);
+    throw new Error(`Cordy answered ${response.status}: ${await response.text()}`);
   }
   return response.json();
 }
@@ -113,8 +113,8 @@ function triage(issue) {
 // TLS when a cert is supplied. A hook transport URL must be HTTPS — the
 // manifest validator requires it — so a handler that only speaks HTTP cannot be
 // pointed at even in development.
-const tlsCert = process.env.MULTICA_HOOK_TLS_CERT;
-const tlsKey = process.env.MULTICA_HOOK_TLS_KEY;
+const tlsCert = process.env.CORDY_HOOK_TLS_CERT;
+const tlsKey = process.env.CORDY_HOOK_TLS_KEY;
 const createServer = tlsCert && tlsKey
   ? (handler) => createHTTPSServer({ cert: readFileSync(tlsCert), key: readFileSync(tlsKey) }, handler)
   : createHTTPServer;

@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Card, CardContent } from "@multica/ui/components/ui/card";
-import { Button } from "@multica/ui/components/ui/button";
-import { api, ApiError } from "@multica/core/api";
-import { useAuthStore } from "@multica/core/auth";
+import { Card, CardContent } from "@cordy/ui/components/ui/card";
+import { Button } from "@cordy/ui/components/ui/button";
+import { api, ApiError } from "@cordy/core/api";
+import { useAuthStore } from "@cordy/core/auth";
 import { AppLink } from "../navigation";
 import { useT } from "../i18n";
 
@@ -17,7 +17,7 @@ type RedeemState =
 
 // DingTalkBindPage is the destination the bot's "link your account" prompt
 // points at. The user lands here logged out OR logged in; we require auth
-// before redeeming because the redeemer's Multica identity is taken from the
+// before redeeming because the redeemer's Cordy identity is taken from the
 // session (the token alone never proves who is binding).
 //
 // The token comes in via `?token=<raw>`. We POST it to

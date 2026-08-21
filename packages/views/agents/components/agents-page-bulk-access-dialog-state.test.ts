@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isAccessChangeReady } from "@multica/core/agents";
+import { isAccessChangeReady } from "@cordy/core/agents";
 import type { AccessChange } from "./inspector/access-picker";
 
 function change(

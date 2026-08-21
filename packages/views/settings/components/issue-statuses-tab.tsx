@@ -25,24 +25,24 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useAuthStore } from "@multica/core/auth";
-import { useFeatureEnabled } from "@multica/core/config";
-import { memberListOptions } from "@multica/core/workspace/queries";
-import { issueStatusColor, issueStatusListOptions } from "@multica/core/issue-statuses/queries";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { useAuthStore } from "@cordy/core/auth";
+import { useFeatureEnabled } from "@cordy/core/config";
+import { memberListOptions } from "@cordy/core/workspace/queries";
+import { issueStatusColor, issueStatusListOptions } from "@cordy/core/issue-statuses/queries";
 import {
   useArchiveIssueStatus,
   useCreateIssueStatus,
   useReorderIssueStatuses,
   useUpdateIssueStatus,
-} from "@multica/core/issue-statuses/mutations";
-import { ALL_STATUSES } from "@multica/core/issues/config";
-import type { IssueStatusCategory, IssueStatusEntry } from "@multica/core/types";
-import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
-import { Textarea } from "@multica/ui/components/ui/textarea";
-import { Label as FieldLabel } from "@multica/ui/components/ui/label";
-import { Switch } from "@multica/ui/components/ui/switch";
+} from "@cordy/core/issue-statuses/mutations";
+import { ALL_STATUSES } from "@cordy/core/issues/config";
+import type { IssueStatusCategory, IssueStatusEntry } from "@cordy/core/types";
+import { Button } from "@cordy/ui/components/ui/button";
+import { Input } from "@cordy/ui/components/ui/input";
+import { Textarea } from "@cordy/ui/components/ui/textarea";
+import { Label as FieldLabel } from "@cordy/ui/components/ui/label";
+import { Switch } from "@cordy/ui/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -50,7 +50,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@cordy/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -60,25 +60,25 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
+} from "@cordy/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
+} from "@cordy/ui/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@multica/ui/components/ui/select";
+} from "@cordy/ui/components/ui/select";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@multica/ui/components/ui/tooltip";
+} from "@cordy/ui/components/ui/tooltip";
 import { ColorPicker, COLOR_PICKER_PRESETS } from "../../common/color-picker";
 import { StatusIcon } from "../../issues/components/status-icon";
 import { useStatusLabel } from "../../issues/utils/status-label";

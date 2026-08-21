@@ -24,7 +24,7 @@
 import { useMemo } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import type { Attachment } from "@multica/core/types";
+import type { Attachment } from "@cordy/core/types";
 import { standaloneAttachments } from "@/lib/attachment-dedup";
 import { MarkdownImage } from "@/lib/markdown/markdown-image";
 import { resolveAttachmentUrl } from "@/lib/attachment-url";

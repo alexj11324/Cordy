@@ -9,17 +9,17 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel"
+	"github.com/cordy-ai/cordy/server/internal/integrations/channel/engine"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 func dingtalkInstallTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+		dsn = "postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable"
 	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dsn)
@@ -53,7 +53,7 @@ func TestRegisterBYO_DifferentAppKey_IsolatesIdentityStateDB(t *testing.T) {
 		workspaceID    = "d1470000-0000-4000-8000-000000000001"
 		agentID        = "d1470000-0000-4000-8000-000000000002"
 		installerID    = "d1470000-0000-4000-8000-000000000003"
-		multicaUserID  = "d1470000-0000-4000-8000-000000000004"
+		cordyUserID  = "d1470000-0000-4000-8000-000000000004"
 		oldInstallID   = "d1470000-0000-4000-8000-000000000010"
 		chatSessionID  = "d1470000-0000-4000-8000-000000000020"
 		mediaMessageID = "d1470000-0000-4000-8000-000000000030"
@@ -90,9 +90,9 @@ INSERT INTO channel_installation (id, workspace_id, agent_id, channel_type, conf
 VALUES ($1, $2, $3, 'dingtalk', jsonb_build_object('app_id', $4::text), $5)
 `, oldInstallID, workspaceID, agentID, oldAppKey, installerID)
 	exec(`
-INSERT INTO channel_user_binding (workspace_id, multica_user_id, installation_id, channel_type, channel_user_id)
+INSERT INTO channel_user_binding (workspace_id, cordy_user_id, installation_id, channel_type, channel_user_id)
 VALUES ($1, $2, $3, 'dingtalk', $4)
-`, workspaceID, multicaUserID, oldInstallID, staffID)
+`, workspaceID, cordyUserID, oldInstallID, staffID)
 	exec(`
 INSERT INTO channel_chat_session_binding (chat_session_id, installation_id, channel_type, channel_chat_id, chat_type)
 VALUES ($1, $2, 'dingtalk', $3, 'p2p')

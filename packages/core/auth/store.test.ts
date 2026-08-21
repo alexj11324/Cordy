@@ -34,7 +34,7 @@ function makeApi(): ApiClient {
 
 describe("authStore", () => {
   it("publishes a retry request instead of silently ignoring it", () => {
-    const storage = makeStorage({ multica_token: "t" });
+    const storage = makeStorage({ cordy_token: "t" });
     const api = makeApi();
     const store = createAuthStore({ api, storage });
 
@@ -46,7 +46,7 @@ describe("authStore", () => {
   });
 
   it("explicit logout still clears credentials and publishes unauthenticated state", () => {
-    const storage = makeStorage({ multica_token: "t" });
+    const storage = makeStorage({ cordy_token: "t" });
     const api = makeApi();
     const onLogout = vi.fn();
     const store = createAuthStore({ api, storage, onLogout });
@@ -54,7 +54,7 @@ describe("authStore", () => {
     store.setState({ user: fakeUser, status: "authenticated", isLoading: false });
     store.getState().logout();
 
-    expect(storage.snapshot().multica_token).toBeUndefined();
+    expect(storage.snapshot().cordy_token).toBeUndefined();
     expect(api.setToken).toHaveBeenCalledWith(null);
     expect(onLogout).toHaveBeenCalledOnce();
     expect(store.getState().user).toBeNull();

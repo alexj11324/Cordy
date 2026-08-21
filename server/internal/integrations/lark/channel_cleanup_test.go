@@ -6,8 +6,8 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // Delete-time channel cleanup fixtures. These pin the #4810 fix on the OTHER
@@ -60,7 +60,7 @@ RETURNING id
 			t.Fatalf("seed dependent for app=%s: %v", app, err)
 		}
 	}
-	exec(`INSERT INTO channel_user_binding (workspace_id, multica_user_id, installation_id, channel_type, channel_user_id)
+	exec(`INSERT INTO channel_user_binding (workspace_id, cordy_user_id, installation_id, channel_type, channel_user_id)
 VALUES ($1, $2, $3, 'feishu', 'ou_cc_user')`, ws, ccUser, id)
 	exec(`INSERT INTO channel_chat_session_binding (chat_session_id, installation_id, channel_type, channel_chat_id, chat_type)
 VALUES ($1, $2, 'feishu', 'oc_cc_chat', 'p2p')`, chatSess, id)
@@ -145,7 +145,7 @@ func TestDeleteChannelInstallationsBySystemRuntimeAgents(t *testing.T) {
 
 	clean := func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM channel_installation WHERE config->>'app_id' = ANY($1)`, []string{ccAppArchive, ccAppLive})
-		_, _ = pool.Exec(ctx, `DELETE FROM channel_user_binding WHERE multica_user_id = $1`, ccUser)
+		_, _ = pool.Exec(ctx, `DELETE FROM channel_user_binding WHERE cordy_user_id = $1`, ccUser)
 		_, _ = pool.Exec(ctx, `DELETE FROM channel_chat_session_binding WHERE chat_session_id = ANY($1)`, []string{ccChatArch, ccChatLive})
 		_, _ = pool.Exec(ctx, `DELETE FROM channel_binding_token WHERE token_hash = ANY($1)`, []string{ccTokenArch, ccTokenLive})
 		_, _ = pool.Exec(ctx, `DELETE FROM channel_outbound_card_message WHERE chat_session_id = ANY($1)`, []string{ccChatArch, ccChatLive})
@@ -163,7 +163,7 @@ func TestDeleteChannelInstallationsBySystemRuntimeAgents(t *testing.T) {
 	}
 	exec(`INSERT INTO workspace (id, name, slug, description) VALUES ($1, 'cc ws', 'cc-ws', '')`, ccWS)
 	exec(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider)
-VALUES ($1, $2, 'cc runtime', 'local', 'multica_daemon')`, ccRuntime, ccWS)
+VALUES ($1, $2, 'cc runtime', 'local', 'cordy_daemon')`, ccRuntime, ccWS)
 	exec(`INSERT INTO agent (id, workspace_id, name, runtime_mode, runtime_id, kind, system_key)
 VALUES ($1, $2, 'cc system agent', 'local', $3, 'system', 'cc_probe')`, ccAgentArch, ccWS, ccRuntime)
 	exec(`INSERT INTO agent (id, workspace_id, name, runtime_mode, runtime_id)
@@ -191,7 +191,7 @@ func TestDeleteWorkspace_SweepsChannelInstallations(t *testing.T) {
 
 	clean := func() {
 		_, _ = pool.Exec(ctx, `DELETE FROM channel_installation WHERE config->>'app_id' = $1`, ccAppWs)
-		_, _ = pool.Exec(ctx, `DELETE FROM channel_user_binding WHERE multica_user_id = $1`, ccUser)
+		_, _ = pool.Exec(ctx, `DELETE FROM channel_user_binding WHERE cordy_user_id = $1`, ccUser)
 		_, _ = pool.Exec(ctx, `DELETE FROM channel_chat_session_binding WHERE chat_session_id = $1`, ccChatWs)
 		_, _ = pool.Exec(ctx, `DELETE FROM channel_binding_token WHERE token_hash = $1`, ccTokenWs)
 		_, _ = pool.Exec(ctx, `DELETE FROM channel_outbound_card_message WHERE chat_session_id = $1`, ccChatWs)
@@ -209,7 +209,7 @@ func TestDeleteWorkspace_SweepsChannelInstallations(t *testing.T) {
 	}
 	exec(`INSERT INTO workspace (id, name, slug, description) VALUES ($1, 'cc ws del', 'cc-ws-del', '')`, ccWSDel)
 	exec(`INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider)
-VALUES ($1, $2, 'cc runtime del', 'local', 'multica_daemon')`, ccRuntimeDel, ccWSDel)
+VALUES ($1, $2, 'cc runtime del', 'local', 'cordy_daemon')`, ccRuntimeDel, ccWSDel)
 	exec(`INSERT INTO agent (id, workspace_id, name, runtime_mode, runtime_id)
 VALUES ($1, $2, 'cc agent del', 'local', $3)`, ccAgentDel, ccWSDel, ccRuntimeDel)
 

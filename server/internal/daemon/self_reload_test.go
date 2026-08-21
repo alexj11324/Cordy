@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/cli"
+	"github.com/cordy-ai/cordy/server/internal/cli"
 )
 
 // newSelfReloadTestDaemon returns a Daemon wired for trySelfReload: a stubbed
@@ -26,7 +26,7 @@ func newSelfReloadTestDaemon(t *testing.T, runningVersion string) (*Daemon, *ato
 		resolveSelfExecutable = origResolve
 		isBrewInstall = origBrew
 	})
-	binary := filepath.Join(t.TempDir(), "multica")
+	binary := filepath.Join(t.TempDir(), "cordy")
 	resolveSelfExecutable = func() (string, error) { return binary, nil }
 	isBrewInstall = func() bool { return false }
 
@@ -39,7 +39,7 @@ func newSelfReloadTestDaemon(t *testing.T, runningVersion string) (*Daemon, *ato
 	return d, &restartCalls
 }
 
-// stubSelfVersion makes the `multica --version` probe report version (or fail).
+// stubSelfVersion makes the `cordy --version` probe report version (or fail).
 func stubSelfVersion(t *testing.T, version string, err error) *atomic.Int32 {
 	t.Helper()
 	orig := detectSelfVersion
@@ -263,7 +263,7 @@ func TestTrySelfReload_ReleasesBarrierWhenHandoffFails(t *testing.T) {
 
 // TestAutoUpdateLoop_WatchesTheBinaryWhenAutoUpdateIsOff is the review's first
 // product decision: the on-disk check must not sit behind
-// MULTICA_DAEMON_AUTO_UPDATE. Self-hosted daemons default auto-update off
+// CORDY_DAEMON_AUTO_UPDATE. Self-hosted daemons default auto-update off
 // (MUL-2381), and "don't pull from GitHub" is not "don't follow the binary I
 // replaced myself".
 func TestAutoUpdateLoop_WatchesTheBinaryWhenAutoUpdateIsOff(t *testing.T) {
@@ -361,12 +361,12 @@ func TestParseSelfVersion(t *testing.T) {
 	}{
 		{
 			name: "release build template",
-			raw:  "multica 0.3.7 (commit: abc1234, built: 2026-07-29T10:00:00Z)\ngo: go1.26.1, os/arch: darwin/arm64\n",
+			raw:  "cordy 0.3.7 (commit: abc1234, built: 2026-07-29T10:00:00Z)\ngo: go1.26.1, os/arch: darwin/arm64\n",
 			want: "0.3.7",
 		},
 		{
 			name: "dev build from git describe",
-			raw:  "multica v0.3.7-42-gabcdef0-dirty (commit: abcdef0, built: unknown)\n",
+			raw:  "cordy v0.3.7-42-gabcdef0-dirty (commit: abcdef0, built: unknown)\n",
 			want: "v0.3.7-42-gabcdef0-dirty",
 		},
 		{

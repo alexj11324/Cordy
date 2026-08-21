@@ -583,6 +583,8 @@ function workspaceHeader(
 export class ApiClient {
   private baseUrl: string;
   private token: string | null = null;
+  /** Async token provider for Clerk / external auth (e.g. window.__CLERK_GET_TOKEN__). */
+  private tokenProvider: (() => Promise<string | null>) | null = null;
   private logger: Logger;
   private options: ApiClientOptions;
 
@@ -600,17 +602,29 @@ export class ApiClient {
     this.token = token;
   }
 
+  /**
+   * Register an async token provider. When set, `authHeaders()` calls this
+   * on every request to get a fresh token (e.g. a Clerk session JWT),
+   * falling back to the static `this.token` if the provider returns null.
+   */
+  setTokenProvider(provider: (() => Promise<string | null>) | null) {
+    this.tokenProvider = provider;
+  }
+
   private readCsrfToken(): string | null {
     if (typeof document === "undefined") return null;
     const match = document.cookie
       .split("; ")
-      .find((c) => c.startsWith("multica_csrf="));
+      .find((c) => c.startsWith("cordy_csrf="));
     return match ? match.split("=")[1] ?? null : null;
   }
 
-  private authHeaders(): Record<string, string> {
+  private async authHeaders(): Promise<Record<string, string>> {
     const headers: Record<string, string> = {};
-    if (this.token) headers["Authorization"] = `Bearer ${this.token}`;
+    const token = this.tokenProvider
+      ? await this.tokenProvider()
+      : this.token;
+    if (token) headers["Authorization"] = `Bearer ${token}`;
     const slug = getCurrentSlug();
     if (slug) headers["X-Workspace-Slug"] = slug;
     const csrf = this.readCsrfToken();
@@ -667,9 +681,10 @@ export class ApiClient {
     const start = Date.now();
     const method = init?.method ?? "GET";
 
+    const auth = await this.authHeaders();
     const headers: Record<string, string> = {
       "X-Request-ID": rid,
-      ...this.authHeaders(),
+      ...auth,
       ...(init?.extraHeaders ?? {}),
       ...((init?.headers as Record<string, string>) ?? {}),
     };
@@ -1529,8 +1544,8 @@ export class ApiClient {
   }
 
   // ---------------------------------------------------------------------
-  // Cloud Billing — proxies to multica-cloud /api/v1/billing/*. The
-  // multica-api server stamps X-User-ID and forwards bytes; everything
+  // Cloud Billing — proxies to cordy-cloud /api/v1/billing/*. The
+  // cordy-api server stamps X-User-ID and forwards bytes; everything
   // here is upstream-shaped. See packages/core/types/billing.ts for the
   // response field documentation.
   // ---------------------------------------------------------------------
@@ -2524,7 +2539,7 @@ export class ApiClient {
       : "";
     return this.fetch<unknown>(`/api/v1/plugin${request.path}${query}`, {
       method: request.method,
-      headers: { "X-Multica-Plugin-Installation": installationId },
+      headers: { "X-Cordy-Plugin-Installation": installationId },
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
     });
   }
@@ -2545,7 +2560,7 @@ export class ApiClient {
   ): Promise<PluginHookResult> {
     const raw = await this.fetch<unknown>(`/api/v1/plugin/hooks/${encodeURIComponent(hookKey)}`, {
       method: "POST",
-      headers: { "X-Multica-Plugin-Installation": installationId },
+      headers: { "X-Cordy-Plugin-Installation": installationId },
       body: JSON.stringify({ trigger: request.trigger, issue_id: request.issueId, input: request.input }),
     });
     return parseWithFallback(raw, PluginHookResultSchema, {
@@ -2856,9 +2871,10 @@ export class ApiClient {
     const start = Date.now();
     this.logger.info("→ POST /api/upload-file", { rid });
 
+    const auth = await this.authHeaders();
     const res = await fetch(`${this.baseUrl}/api/upload-file`, {
       method: "POST",
-      headers: this.authHeaders(),
+      headers: auth,
       body: formData,
       credentials: "include",
       signal,
@@ -4272,7 +4288,7 @@ export class ApiClient {
 
   // registerWecomBYO performs a bring-your-own-app install: the admin pastes
   // the bot id and long-connection secret from the WeCom admin console,
-  // and the backend seals the secret with MULTICA_WECOM_SECRET_KEY before
+  // and the backend seals the secret with CORDY_WECOM_SECRET_KEY before
   // persisting, returning the new installation.
   async registerWecomBYO(
     workspaceId: string,
@@ -4299,8 +4315,8 @@ export class ApiClient {
   }
 
   // redeemWecomBindingToken binds the WeCom aibot userid carried by the
-  // token to the logged-in Multica user. Called by the /wecom/bind redeem
-  // page after the user clicks through the "link your Multica account"
+  // token to the logged-in Cordy user. Called by the /wecom/bind redeem
+  // page after the user clicks through the "link your Cordy account"
   // prompt the bot sent in WeCom. Status codes:
   //   410 Gone      → invalid / expired / already consumed
   //   409 Conflict  → the WeCom user is already bound to a different user

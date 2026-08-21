@@ -108,12 +108,12 @@ Editing configuration does not change tasks already running. Later tasks use the
 Environment variables suit limited-privilege credentials the agent needs at run time, such as a read-only API key or a single-scope token.
 
 <Callout type="warning">
-**`custom_env` values are stored in plaintext in the Multica server database** — they are not "stays on this machine" data. Agent list and detail endpoints no longer return any env values, only an opaque count; only workspace `owner`s and `admin`s can unlock and modify values, and every read or change leaves an audit record. A running agent cannot call the admin endpoints to read another agent's variables.
+**`custom_env` values are stored in plaintext in the Cordy server database** — they are not "stays on this machine" data. Agent list and detail endpoints no longer return any env values, only an opaque count; only workspace `owner`s and `admin`s can unlock and modify values, and every read or change leaves an audit record. A running agent cannot call the admin endpoints to read another agent's variables.
 </Callout>
 
 Do not use production database admin passwords or other high-value long-lived credentials.
 
-Critical runtime variables such as `PATH`, `HOME`, and `MULTICA_*` cannot be overridden here.
+Critical runtime variables such as `PATH`, `HOME`, and `CORDY_*` cannot be overridden here.
 
 ## Custom arguments and MCP
 
@@ -134,7 +134,7 @@ Environment variable values and MCP configuration are never copied and must be s
 ## Creating with the CLI
 
 ```bash
-multica agent create \
+cordy agent create \
   --name "Frontend Reviewer" \
   --runtime-id <runtime-id> \
   --description "Reviews frontend pull requests" \
@@ -146,7 +146,7 @@ Plaintext in command-line arguments ends up in shell history; stdin and permissi
 When a similarly configured agent already exists, copy it directly:
 
 ```bash
-multica agent copy <agent-id>
+cordy agent copy <agent-id>
 ```
 
 By default the copy stays on the same runtime; add `--runtime-id` to move it to another runtime, which also requires `--model`. Environment variables, MCP configuration, and `runtime_config` are never copied; the runtime binding itself is kept. Full flags in [Using the CLI](/cli).

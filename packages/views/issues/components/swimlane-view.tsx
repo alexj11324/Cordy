@@ -1,6 +1,6 @@
 "use client";
 
-import { issueColumnCategory, issueStatusCategory, statusCategoryOfKey } from "@multica/core/issues";
+import { issueColumnCategory, issueStatusCategory, statusCategoryOfKey } from "@cordy/core/issues";
 import { memo, useState, useCallback, useMemo, useEffect, useRef } from "react";
 import {
   DndContext,
@@ -29,28 +29,28 @@ import type {
   IssueTableGroupDescriptor,
   Project,
   UpdateIssueRequest,
-} from "@multica/core/types";
-import { useViewStore, useViewStoreApi } from "@multica/core/issues/stores/view-store-context";
+} from "@cordy/core/types";
+import { useViewStore, useViewStoreApi } from "@cordy/core/issues/stores/view-store-context";
 import { useViewBaseline } from "../surface/view-baseline-context";
 import { filterIssues, type IssueFilters } from "../utils/filter";
 import { getMoveAnchors } from "../utils/drag-utils";
-import type { SwimlaneGrouping } from "@multica/core/issues/stores/view-store";
-import { useWorkspacePaths } from "@multica/core/paths";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { childrenByParentsOptions, issueKeys } from "@multica/core/issues/queries";
+import type { SwimlaneGrouping } from "@cordy/core/issues/stores/view-store";
+import { useWorkspacePaths } from "@cordy/core/paths";
+import { useWorkspaceId } from "@cordy/core/hooks";
+import { useIssueStatuses } from "@cordy/core/issue-statuses/hooks";
+import { useActorName } from "@cordy/core/workspace/hooks";
+import { childrenByParentsOptions, issueKeys } from "@cordy/core/issues/queries";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "@multica/ui/components/ui/dropdown-menu";
+} from "@cordy/ui/components/ui/dropdown-menu";
 import { sortIssues } from "../utils/sort";
-import { ALL_STATUSES, STATUS_CONFIG } from "@multica/core/issues/config";
+import { ALL_STATUSES, STATUS_CONFIG } from "@cordy/core/issues/config";
 import { DraggableBoardCard, BoardCardContent } from "./board-card";
 import { StatusIcon } from "./status-icon";
-import { Button } from "@multica/ui/components/ui/button";
+import { Button } from "@cordy/ui/components/ui/button";
 import { StatusHeading } from "./status-heading";
 import { HiddenColumnsPanel, HiddenColumnRow } from "./hidden-columns-panel";
 import { InfiniteScrollSentinel } from "./infinite-scroll-sentinel";
