@@ -1,0 +1,246 @@
+//! Daemon auth middleware — port of `server/internal/middleware/daemon_auth.go`.
+//!
+//! Validates daemon auth tokens (`mdt_` prefix) or falls back to JWT/PAT
+//! validation for backward compatibility with daemons that authenticate via
+//! user tokens.
+//!
+//! Identity is injected as a [`DaemonContext`] request extension plus the same
+//! `X-User-ID` header contract as the regular Auth middleware. The resolved
+//! auth path ("daemon_token"/"pat"/"cloud_pat"/"jwt") rides along for
+//! slow-log attribution.
+
+use axum::extract::{Request, State};
+use axum::http::{header, StatusCode};
+use axum::middleware::Next;
+use axum::response::Response;
+use cordy_auth::daemon_token_cache::{DaemonTokenCache, DaemonTokenIdentity};
+use cordy_auth::disabled_users::is_temporarily_disabled_user;
+use cordy_auth::jwt::hash_token;
+use cordy_auth::pat_cache::{ttl_for_expiry, PatCache};
+use cordy_db::queries::{daemon_token, personal_access_token};
+
+/// Cloud node PAT prefix. Fail-closed until the Cloud Fleet verifier lands
+/// with the integrations port — mirrors Go when CORDY_CLOUD_FLEET_URL unset.
+const CLOUD_PAT_PREFIX: &str = "mcn_";
+
+/// Auth path labels exposed via [`DaemonContext`] for telemetry.
+pub const DAEMON_AUTH_PATH_DAEMON_TOKEN: &str = "daemon_token";
+pub const DAEMON_AUTH_PATH_PAT: &str = "pat";
+pub const DAEMON_AUTH_PATH_CLOUD_PAT: &str = "cloud_pat";
+pub const DAEMON_AUTH_PATH_JWT: &str = "jwt";
+
+/// Daemon identity + auth path injected into request extensions.
+#[derive(Clone)]
+pub struct DaemonContext {
+    /// Set only on the daemon_token path.
+    pub workspace_id: Option<String>,
+    /// Set only on the daemon_token path.
+    pub daemon_id: Option<String>,
+    pub auth_path: &'static str,
+}
+
+#[derive(Clone)]
+pub struct DaemonAuthState {
+    pub pool: sqlx::PgPool,
+    /// Shared with the regular Auth middleware so a hot PAT used by both a
+    /// human CLI and a daemon converges on one DB round-trip per TTL window.
+    pub pat_cache: PatCache,
+    pub daemon_cache: DaemonTokenCache,
+}
+
+fn reject_disabled(user_id: &str, email: &str, auth_path: &str) -> bool {
+    if is_temporarily_disabled_user(user_id, email) {
+        tracing::warn!(
+            user_id = %user_id,
+            auth_path = %auth_path,
+            "auth: temporarily disabled user rejected"
+        );
+        true
+    } else {
+        false
+    }
+}
+
+/// DaemonAuth middleware entrypoint — use via
+/// `axum::middleware::from_fn_with_state(state, daemon_auth_middleware)`.
+pub async fn daemon_auth_middleware(
+    State(state): State<DaemonAuthState>,
+    mut req: Request,
+    next: Next,
+) -> Result<Response, (StatusCode, &'static str)> {
+    // X-Actor-Source is server-set only — strip any client-supplied value
+    // before any branch can re-stamp it, keeping the contract uniform with
+    // the regular Auth middleware.
+    req.headers_mut().remove("x-actor-source");
+
+    let Some(auth_header) = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .filter(|v| !v.is_empty())
+    else {
+        tracing::debug!(path = ?req.uri().path(), "daemon_auth: missing authorization header");
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            r#"{"error":"missing authorization header"}"#,
+        ));
+    };
+
+    // Bearer prefix required — an unprefixed header falls to the invalid
+    // format branch here (unlike Auth, there is no cookie fallback).
+    let Some(token) = auth_header.strip_prefix("Bearer ") else {
+        tracing::debug!(path = ?req.uri().path(), "daemon_auth: invalid format");
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            r#"{"error":"invalid authorization format"}"#,
+        ));
+    };
+    let hash = hash_token(token);
+
+    // Daemon token: "mdt_" prefix — the primary path.
+    if token.starts_with("mdt_") {
+        // Cache hit short-circuits the DB lookup entirely.
+        if let Some(id) = state.daemon_cache.get(&hash).await {
+            req.extensions_mut().insert(DaemonContext {
+                workspace_id: Some(id.workspace_id),
+                daemon_id: Some(id.daemon_id),
+                auth_path: DAEMON_AUTH_PATH_DAEMON_TOKEN,
+            });
+            return Ok(next.run(req).await);
+        }
+
+        let Some(dt) = daemon_token::get_daemon_token_by_hash(&state.pool, &hash)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "daemon_auth: daemon token lookup failed");
+                None
+            })
+        else {
+            tracing::warn!(path = ?req.uri().path(), "daemon_auth: invalid daemon token");
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                r#"{"error":"invalid daemon token"}"#,
+            ));
+        };
+
+        let identity = DaemonTokenIdentity {
+            workspace_id: dt.workspace_id.to_string(),
+            daemon_id: dt.daemon_id.clone(),
+        };
+        // expires_at is NOT NULL; SQL also filters expired rows.
+        let ttl = ttl_for_expiry(chrono::Utc::now(), Some(dt.expires_at));
+        state.daemon_cache.set(&hash, &identity, ttl).await;
+
+        req.extensions_mut().insert(DaemonContext {
+            workspace_id: Some(identity.workspace_id),
+            daemon_id: Some(identity.daemon_id),
+            auth_path: DAEMON_AUTH_PATH_DAEMON_TOKEN,
+        });
+        return Ok(next.run(req).await);
+    }
+
+    // Cloud Node PAT: "mcn_" prefix. Cordy Cloud Fleet is authoritative; we
+    // only surface the resolved owner_id as X-User-ID downstream. Same
+    // fail-closed semantics as Auth: no verifier configured → 401, Fleet
+    // unreachable → 503.
+    if token.starts_with(CLOUD_PAT_PREFIX) {
+        tracing::warn!(
+            path = ?req.uri().path(),
+            "daemon_auth: mcn_ token presented but cloud verifier not configured"
+        );
+        return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+    }
+
+    // Fallback: PAT tokens ("mul_" prefix).
+    if token.starts_with("mul_") {
+        if let Some(user_id) = state.pat_cache.get(&hash).await {
+            if reject_disabled(&user_id, "", DAEMON_AUTH_PATH_PAT) {
+                return Err(err_disabled());
+            }
+            set_user(&mut req, &user_id);
+            req.extensions_mut().insert(DaemonContext {
+                workspace_id: None,
+                daemon_id: None,
+                auth_path: DAEMON_AUTH_PATH_PAT,
+            });
+            return Ok(next.run(req).await);
+        }
+
+        let Some(pat) =
+            personal_access_token::get_personal_access_token_by_hash(&state.pool, &hash)
+                .await
+                .unwrap_or_else(|e| {
+                    tracing::warn!(error = %e, "daemon_auth: invalid PAT");
+                    None
+                })
+        else {
+            tracing::warn!(path = ?req.uri().path(), "daemon_auth: invalid PAT");
+            return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+        };
+
+        let user_id = pat.user_id.to_string();
+        if reject_disabled(&user_id, "", DAEMON_AUTH_PATH_PAT) {
+            return Err(err_disabled());
+        }
+        set_user(&mut req, &user_id);
+
+        let ttl = ttl_for_expiry(chrono::Utc::now(), pat.expires_at);
+        state.pat_cache.set(&hash, &user_id, ttl).await;
+
+        // Cache miss = first request in this TTL window; refresh last_used_at
+        // asynchronously, subsequent hits skip the write entirely.
+        let pool = state.pool.clone();
+        let pat_id = pat.id;
+        tokio::spawn(async move {
+            if let Err(e) =
+                personal_access_token::update_personal_access_token_last_used(&pool, pat_id).await
+            {
+                tracing::warn!(error = %e, "daemon_auth: failed to refresh PAT last_used_at");
+            }
+        });
+
+        req.extensions_mut().insert(DaemonContext {
+            workspace_id: None,
+            daemon_id: None,
+            auth_path: DAEMON_AUTH_PATH_PAT,
+        });
+        return Ok(next.run(req).await);
+    }
+
+    // Fallback: JWT tokens.
+    let claims = crate::auth::decode_jwt_claims(token);
+    let Some(claims) = claims else {
+        tracing::warn!(path = ?req.uri().path(), "daemon_auth: invalid token");
+        return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+    };
+    let sub = claims
+        .get("sub")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let Some(sub) = sub else {
+        return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid claims"}"#));
+    };
+    let email = claims.get("email").and_then(|v| v.as_str()).unwrap_or("");
+    if reject_disabled(sub, email, DAEMON_AUTH_PATH_JWT) {
+        return Err(err_disabled());
+    }
+    set_user(&mut req, sub);
+    req.extensions_mut().insert(DaemonContext {
+        workspace_id: None,
+        daemon_id: None,
+        auth_path: DAEMON_AUTH_PATH_JWT,
+    });
+    Ok(next.run(req).await)
+}
+
+fn err_disabled() -> (StatusCode, &'static str) {
+    (StatusCode::FORBIDDEN, r#"{"error":"account disabled"}"#)
+}
+
+fn set_user(req: &mut Request, user_id: &str) {
+    use axum::http::HeaderValue;
+    if let Ok(v) = HeaderValue::from_str(user_id) {
+        req.headers_mut().insert("x-user-id", v);
+    }
+}

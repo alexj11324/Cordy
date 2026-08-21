@@ -1,0 +1,100 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, name, email, avatar_url, created_at, updated_at,\n                  onboarded_at, onboarding_questionnaire, cloud_waitlist_email,\n                  cloud_waitlist_reason, starter_content_state, language,\n                  profile_description, timezone\n           FROM \"user\" WHERE id = $1",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "email",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "avatar_url",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 5,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 6,
+        "name": "onboarded_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 7,
+        "name": "onboarding_questionnaire",
+        "type_info": "Jsonb"
+      },
+      {
+        "ordinal": 8,
+        "name": "cloud_waitlist_email",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 9,
+        "name": "cloud_waitlist_reason",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 10,
+        "name": "starter_content_state",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "language",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 12,
+        "name": "profile_description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 13,
+        "name": "timezone",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      true,
+      false,
+      true,
+      true,
+      true,
+      true,
+      false,
+      true
+    ]
+  },
+  "hash": "2e4615e029c56bac018632c0ce900853233ac1b8b818ba333605761dba71c2e4"
+}

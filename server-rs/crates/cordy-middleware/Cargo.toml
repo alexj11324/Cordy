@@ -1,0 +1,20 @@
+[package]
+name = "cordy-middleware"
+description = "HTTP middleware — port of server/internal/middleware"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+axum = { workspace = true }
+cordy-auth = { path = "../cordy-auth" }
+cordy-db = { path = "../cordy-db" }
+chrono = { workspace = true }
+ipnetwork = { workspace = true }
+jsonwebtoken = { workspace = true }
+redis = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }

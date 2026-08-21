@@ -1,0 +1,82 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cordy-analytics",
+    "crates/cordy-auth",
+    "crates/cordy-config",
+    "crates/cordy-db",
+    "crates/cordy-events",
+    "crates/cordy-metrics",
+    "crates/cordy-protocol",
+    "crates/cordy-realtime",
+    "crates/cordy-service",
+    "crates/cordy-task-failure",
+    "crates/cordy-util",
+    "crates/cordy-migrate",
+    "crates/cordy-middleware",
+    "crates/cordy-server",
+]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "UNLICENSED"
+
+[workspace.dependencies]
+# async runtime & web
+tokio = { version = "1", features = ["full"] }
+axum = "0.8"
+# data
+sqlx = { version = "0.8", features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "uuid",
+    "chrono",
+    "json",
+    "migrate",
+    "ipnetwork",
+] }
+redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+# serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+# observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+prometheus = "0.14"
+# errors
+thiserror = "2"
+anyhow = "1"
+# ids & time
+uuid = { version = "1", features = ["v7", "serde"] }
+ipnetwork = "0.20"
+chrono = { version = "0.4", features = ["serde"] }
+# crypto & tokens
+rand = "0.8"
+sha2 = "0.10"
+hex = "0.4"
+hmac = "0.12"
+jsonwebtoken = "9"
+# async traits & lifecycle
+async-trait = "0.1"
+tokio-util = "0.7"
+ulid = "1"
+chrono-tz = "0.9"
+regex = "1"
+croner = "1"
+# email & integrations
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio-rustls = "0.26"
+rustls = "0.23"
+rustls-native-certs = "0.8"
+base64 = "0.22"
+include_dir = "0.7"
+quoted_printable = "0.5"
+hostname = "0.4"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"

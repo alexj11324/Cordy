@@ -1,0 +1,14 @@
+[package]
+name = "cordy-config"
+description = "Configuration loading (TOML file + env overrides)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cordy-util = { path = "../cordy-util" }
+
+anyhow = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }

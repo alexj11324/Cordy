@@ -1,0 +1,23 @@
+[package]
+name = "cordy-metrics"
+description = "Prometheus metrics — port of server/internal/metrics"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+cordy-analytics = { path = "../cordy-analytics" }
+cordy-realtime = { path = "../cordy-realtime" }
+cordy-task-failure = { path = "../cordy-task-failure" }
+anyhow = { workspace = true }
+axum = { workspace = true }
+prometheus = { workspace = true }
+regex = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+async-trait = "0.1"
+tokio = { workspace = true }
