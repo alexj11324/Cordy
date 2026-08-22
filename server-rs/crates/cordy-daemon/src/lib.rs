@@ -11,6 +11,10 @@
 //!   local_worktree,codex_home,codex_sandbox,codex_memory,codex_shell_env,
 //!   codex_multi_agent,codex_user_skills,codex_skill_strip,cursor_mcp}
 //! - R  (repo lifecycle): repocache.rs, gc.rs
+//!
+//! All modules are ports awaiting daemon wiring (lanes A/B/D + S8); until
+//! then dead_code is expected and silenced crate-wide.
+#![allow(dead_code)]
 
 pub mod execenv;
 

@@ -3,7 +3,7 @@
 //! Symbol map:
 //! - RepoContextForEnv            → RepoContextForEnv
 //! - ProjectResourceForEnv        → ProjectResourceForEnv (custom Serialize keeps
-//!                                  resource_ref raw, defaulting to {})
+//!   resource_ref raw, defaulting to {})
 //! - PrepareParams                → PrepareParams
 //! - TaskContextForEnv            → TaskContextForEnv
 //! - SkillContextForEnv           → SkillContextForEnv
@@ -16,7 +16,7 @@
 //! - GCMetaKind / GCMeta          → GCMetaKind / GcMeta
 //! - WriteGCMeta / ReadGCMeta     → write_gc_meta / read_gc_meta
 //! - ManagedEnvProvenance (+ManagedBy const)
-//!                                → ManagedEnvProvenance (+ MANAGED_ENV_PROVENANCE_MANAGED_BY)
+//!   maps to ManagedEnvProvenance (+ MANAGED_ENV_PROVENANCE_MANAGED_BY)
 //! - WriteManagedEnvProvenance /
 //!   ReadManagedEnvProvenance     → write_managed_env_provenance / read_managed_env_provenance
 //! - Cleanup                      → Environment::cleanup
@@ -54,12 +54,10 @@ use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::codex_home::{
-    codex_session_store_key, prepare_codex_home_with_opts, CodexHomeOptions,
-};
+use super::codex_home::{codex_session_store_key, prepare_codex_home_with_opts, CodexHomeOptions};
 use super::context::{
     ensure_workspaces_root_marker, prepare_claude_skill_settings, roll_back_prepared_sidecars,
-    skills_dir_path, write_context_files, SidecarManifest,
+    write_context_files, SidecarManifest,
 };
 use super::cursor_mcp::prepare_cursor_mcp_config;
 use super::git::task_key;
@@ -178,7 +176,6 @@ pub(crate) fn user_home_dir() -> anyhow::Result<String> {
         std::env::var("HOME")
             .ok()
             .filter(|h| !h.is_empty())
-            .map(String::from)
             .ok_or_else(|| anyhow!("cannot resolve user home directory"))
     }
     #[cfg(windows)]
@@ -543,8 +540,11 @@ pub async fn prepare(params: PrepareParams) -> anyhow::Result<Environment> {
         bail!("execenv: task ID is required");
     }
 
-    let env_root =
-        predict_root_dir(&params.workspaces_root, &params.workspace_id, &params.task_id);
+    let env_root = predict_root_dir(
+        &params.workspaces_root,
+        &params.workspace_id,
+        &params.task_id,
+    );
 
     // Self-heal the root-level daemon marker on every task start so a marker
     // removed while the daemon runs is restored before the agent spawns.
@@ -560,11 +560,13 @@ pub async fn prepare(params: PrepareParams) -> anyhow::Result<Environment> {
     // (#7326). claim_env_root is atomic end to end: a read-then-delete would
     // let two same-key tasks both pass the check and one still delete the
     // other.
-    let fresh = claim_env_root(&env_root, &params.task_id).map_err(|e| anyhow!("execenv: {e:#}"))?;
+    let fresh =
+        claim_env_root(&env_root, &params.task_id).map_err(|e| anyhow!("execenv: {e:#}"))?;
     // Not fresh means this task already owned the directory — a rerun, which
     // is meant to start from a clean tree.
     if !fresh {
-        reset_env_root_contents(&env_root).map_err(|e| anyhow!("execenv: reset existing env: {e:#}"))?;
+        reset_env_root_contents(&env_root)
+            .map_err(|e| anyhow!("execenv: reset existing env: {e:#}"))?;
     }
 
     // Create directory tree. For the standard flow the agent's workdir is
@@ -619,7 +621,9 @@ pub async fn prepare(params: PrepareParams) -> anyhow::Result<Environment> {
             // Safe to discard unconditionally: no agent has run yet, so the
             // worktree holds only what Prepare itself put there.
             if let Some(wt) = &local_worktree {
-                wt.discard().await;
+                if let Err(discard_err) = wt.discard().await {
+                    tracing::warn!(error = %format!("{discard_err:#}"), "execenv: worktree discard on rollback failed");
+                }
             }
             // In place only: worktree mode discards the whole worktree above,
             // and a cloud envRoot is wiped wholesale by the GC — only the
@@ -841,7 +845,7 @@ pub(crate) fn hydrate_codex_skills(
     disabled_runtime_skills: &[super::context::RuntimeSkillRefForEnv],
 ) -> anyhow::Result<()> {
     let skills_dir = join_path(&[codex_home, "skills"]);
-    remove_all(&skills_dir).context("clear codex skills dir")?;
+    remove_tree(&skills_dir).context("clear codex skills dir")?;
     if let Err(err) = super::codex_user_skills::seed_user_codex_skills(codex_home, workspace_skills)
     {
         tracing::warn!(error = %format!("{err:#}"), "execenv: seed user codex skills failed");
@@ -887,13 +891,21 @@ pub enum GCMetaKind {
 pub struct GcMeta {
     #[serde(rename = "kind", skip_serializing_if = "Option::is_none")]
     pub kind: Option<GCMetaKind>,
-    #[serde(rename = "issue_id", skip_serializing_if = "String::is_empty")]
+    #[serde(rename = "issue_id", default, skip_serializing_if = "String::is_empty")]
     pub issue_id: String,
-    #[serde(rename = "chat_session_id", skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "chat_session_id",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub chat_session_id: String,
-    #[serde(rename = "autopilot_run_id", skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "autopilot_run_id",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub autopilot_run_id: String,
-    #[serde(rename = "task_id", skip_serializing_if = "String::is_empty")]
+    #[serde(rename = "task_id", default, skip_serializing_if = "String::is_empty")]
     pub task_id: String,
     #[serde(rename = "workspace_id")]
     pub workspace_id: String,
@@ -902,7 +914,11 @@ pub struct GcMeta {
     /// Marks tasks whose WorkDir pointed at a user-owned path rather than the
     /// synthesised envRoot/workdir. The GC loop honours this by never falling
     /// into the clean branch; pattern-based artifact cleanup is still allowed.
-    #[serde(rename = "local_directory", skip_serializing_if = "std::ops::Not::not")]
+    #[serde(
+        rename = "local_directory",
+        default,
+        skip_serializing_if = "std::ops::Not::not"
+    )]
     pub local_directory: bool,
 }
 
@@ -963,9 +979,13 @@ pub struct ManagedEnvProvenance {
     pub managed_by: String,
     #[serde(rename = "workspace_id")]
     pub workspace_id: String,
-    #[serde(rename = "issue_id", skip_serializing_if = "String::is_empty")]
+    #[serde(rename = "issue_id", default, skip_serializing_if = "String::is_empty")]
     pub issue_id: String,
-    #[serde(rename = "chat_session_id", skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "chat_session_id",
+        default,
+        skip_serializing_if = "String::is_empty"
+    )]
     pub chat_session_id: String,
     #[serde(rename = "agent_id")]
     pub agent_id: String,
@@ -975,7 +995,10 @@ pub struct ManagedEnvProvenance {
 /// root. Callers must only invoke it for non-local_directory resumable envs,
 /// since the file's presence is the non-local assertion. ManagedBy is stamped
 /// here so callers cannot forget the discriminator.
-pub fn write_managed_env_provenance(env_root: &str, mut p: ManagedEnvProvenance) -> anyhow::Result<()> {
+pub fn write_managed_env_provenance(
+    env_root: &str,
+    mut p: ManagedEnvProvenance,
+) -> anyhow::Result<()> {
     if env_root.is_empty() {
         return Ok(());
     }
@@ -1106,9 +1129,7 @@ pub(crate) fn claim_env_root(env_root: &str, task_id: &str) -> anyhow::Result<bo
             return Ok(true);
         }
         Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => {
-            return Err(
-                anyhow::Error::new(e).context(format!("create env root {env_root}"))
-            );
+            return Err(anyhow::Error::new(e).context(format!("create env root {env_root}")));
         }
         Err(_) => {}
     }
@@ -1160,9 +1181,7 @@ fn write_env_root_owner_exclusive(env_root: &str, task_id: &str) -> anyhow::Resu
             );
         }
         Err(e) => {
-            return Err(
-                anyhow::Error::new(e).context(format!("claim env root {env_root}"))
-            );
+            return Err(anyhow::Error::new(e).context(format!("claim env root {env_root}")));
         }
         Ok(mut f) => {
             f.write_all(task_id.as_bytes()).map_err(|e| {
@@ -1298,7 +1317,10 @@ fn prepare_hermes_home(
 }
 
 // S9-integration: qwenpaw_workspace.go lands in lane E2.
-fn prepare_qwenpaw_workspace(_workspace: &str, _skills: &[SkillContextForEnv]) -> anyhow::Result<()> {
+fn prepare_qwenpaw_workspace(
+    _workspace: &str,
+    _skills: &[SkillContextForEnv],
+) -> anyhow::Result<()> {
     bail!("execenv: qwenpaw provider family not yet ported (lane E2)")
 }
 

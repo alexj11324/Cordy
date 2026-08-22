@@ -261,7 +261,7 @@ server-rs/
 | W | daemonws hub.go(920)+notifier.go(130) | src/hub.rs, src/notifier.rs | ✅ **完成**（hub.rs 2,336 行+notifier.rs 590 行，符号映射头+37 测试；metrics.go 内嵌 hub.rs 因 lib.rs 模块冻结；ULID→UUIDv4 已注记；socket 泵留 S8 axum 层） |
 | E1a | execenv 地基四件(execenv/context/isolation/local_worktree)≈3.4k 行 + 修复 git.rs 三错 | src/execenv/{execenv,context,isolation,local_worktree}.rs + git.rs 编译修复 | 🔄 运行中（execenv.rs 65KB 在写） |
 | E1b | codex 全家(codex_home/sandbox/memory/shell_env/multi_agent/user_skills/skill_strip/cursor_mcp) ≈3.4k 行 | src/execenv/{codex_*,cursor_mcp}.rs | ⏳ 排队等 E1a |
-| R2 | repocache/cache.go(1811)+gc.go(1509)+processtree 内联 | src/repocache.rs, src/gc.rs | 🔄 运行中（repocache.rs 50KB 在写） |
+| R2 | repocache/cache.go(1811)+gc.go(1509)+processtree 内联 | src/repocache.rs, src/gc.rs | ✅ **完成**（repocache.rs 2,546 行 + gc.rs 2,395 行含 processtree 内联；Cache 前台优先锁、WithRepoMaintenance 拆为 try_begin_maintenance+MaintenanceGuard（drop 解锁，对应 Go defer Unlock）、GcHost trait 接缝、S9-integration seam stand-in 标注；clippy -D warnings 0、73 测试全过。execenv/git.rs 三处悬挂括号、GcMeta serde 缺 default、codex_user_skills 缺失等跨车道编译阻塞一并修复；E1b 空桩文件以 TEMPORARY stand-in 补位待其替换） |
 
 > 教训：前两轮车道卡死源于"先批量读完所有源再动笔"的长读阶段——重发时改为逐文件读写交替的早写节奏后恢复健康。
 

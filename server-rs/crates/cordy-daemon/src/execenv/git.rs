@@ -21,7 +21,8 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, bail};
+use crate::execenv::execenv::join_path;
+use anyhow::{bail, Context};
 use regex::Regex;
 use tokio::process::Command;
 use tracing::warn;
@@ -65,7 +66,11 @@ pub async fn fetch_origin(git_root: &str) -> anyhow::Result<()> {
             String::from_utf8_lossy(&out.stdout),
             String::from_utf8_lossy(&out.stderr)
         );
-        bail!("git fetch origin: {}: exit status {}", combined.trim(), out.status);
+        bail!(
+            "git fetch origin: {}: exit status {}",
+            combined.trim(),
+            out.status
+        );
     }
     Ok(())
 }
@@ -142,15 +147,11 @@ pub async fn setup_git_worktree(
                 // Branch name collision: append timestamp and retry once.
                 // Go reassigns branchName locally but returns only the error —
                 // the timestamped name is never reported back to callers.
-                let branch_name =
-                    format!("{branch_name}-{}", chrono::Utc::now().timestamp());
+                let branch_name = format!("{branch_name}-{}", chrono::Utc::now().timestamp());
                 run_git_worktree_add(git_root, worktree_path, &branch_name, base_ref).await
             } else {
                 Err(err)
             }
-        }
-    }
-}
         }
     }
 }
@@ -191,14 +192,17 @@ async fn run_git_worktree_add(
 }
 
 /// RemoveGitWorktree removes a worktree and its branch. Best-effort: logs errors.
-pub async fn remove_git_worktree(
-    git_root: &str,
-    worktree_path: &str,
-    branch_name: &str,
-) {
+pub async fn remove_git_worktree(git_root: &str, worktree_path: &str, branch_name: &str) {
     // Remove the worktree.
     if let Ok(out) = Command::new("git")
-        .args(["-C", git_root, "worktree", "remove", "--force", worktree_path])
+        .args([
+            "-C",
+            git_root,
+            "worktree",
+            "remove",
+            "--force",
+            worktree_path,
+        ])
         .output()
         .await
     {
@@ -424,7 +428,11 @@ mod tests {
             ("", "repo"),
         ];
         for (input, want) in cases {
-            assert_eq!(repo_name_from_url(input), want, "repoNameFromURL({input:?})");
+            assert_eq!(
+                repo_name_from_url(input),
+                want,
+                "repoNameFromURL({input:?})"
+            );
         }
     }
 

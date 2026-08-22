@@ -113,7 +113,7 @@ impl Ctx {
     /// Resolved cause: the recorded cause if any, otherwise plain cancelled
     /// (parent-initiated cancellation without a local cause).
     pub(crate) fn cause(&self) -> CancelCause {
-        *self.cause.lock().unwrap()
+        self.cause.lock().unwrap().unwrap_or(CancelCause::Cancelled)
     }
 
     /// Future resolving on cancellation (`<-ctx.Done()`).
@@ -153,7 +153,10 @@ fn git_env() -> Vec<(OsString, OsString)> {
     let idx = existing.to_string();
     base.push(("GIT_TERMINAL_PROMPT".into(), "0".into()));
     base.push(("GIT_CONFIG_COUNT".into(), (existing + 1).to_string().into()));
-    base.push((format!("GIT_CONFIG_KEY_{idx}").into(), "safe.directory".into()));
+    base.push((
+        format!("GIT_CONFIG_KEY_{idx}").into(),
+        "safe.directory".into(),
+    ));
     base.push((format!("GIT_CONFIG_VALUE_{idx}").into(), "*".into()));
     base
 }
@@ -177,7 +180,7 @@ const REPO_CACHE_GIT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// minute/second values (e.g. `10m0s`), used inside timeout error messages.
 fn go_duration(d: Duration) -> String {
     let secs = d.as_secs();
-    if secs >= 60 && secs % 60 == 0 {
+    if secs >= 60 && secs.is_multiple_of(60) {
         format!("{}m0s", secs / 60)
     } else if secs >= 60 {
         format!("{}m{}s", secs / 60, secs % 60)
@@ -240,10 +243,7 @@ fn git_deadline_error(timeout: Duration) -> anyhow::Error {
 }
 
 /// `runGitCombinedOutputContext` (cache.go:81–83).
-pub(crate) async fn run_git_combined_output(
-    ctx: &Ctx,
-    args: &[&str],
-) -> anyhow::Result<Vec<u8>> {
+pub(crate) async fn run_git_combined_output(ctx: &Ctx, args: &[&str]) -> anyhow::Result<Vec<u8>> {
     run_git_combined_output_with_timeout(ctx, REPO_CACHE_GIT_TIMEOUT, args).await
 }
 
@@ -254,12 +254,11 @@ pub(crate) async fn run_git_combined_output_with_timeout(
     args: &[&str],
 ) -> anyhow::Result<Vec<u8>> {
     // processtree.CombinedOutput(ctx, cmd, 5*time.Second)
-    let outcome =
-        with_git_deadline(ctx, timeout, |c| {
-            let cmd = new_git_command(args);
-            async move { processtree::combined_output(&c, cmd, Duration::from_secs(5)).await }
-        })
-        .await;
+    let outcome = with_git_deadline(ctx, timeout, |c| {
+        let cmd = new_git_command(args);
+        async move { processtree::combined_output(&c, cmd, Duration::from_secs(5)).await }
+    })
+    .await;
     match outcome {
         Ok((out, Ok(()))) => Ok(out),
         Ok((_out, Err(err))) => {
@@ -382,9 +381,11 @@ pub(crate) fn is_maintenance_preempted(err: &anyhow::Error) -> bool {
 /// True when `err`'s chain contains the repo-busy sentinel
 /// (`errors.Is(err, ErrRepoBusy)`).
 pub(crate) fn is_repo_busy(err: &anyhow::Error) -> bool {
-    err.chain().any(|c| c.downcast_ref::<RepoBusyError>().is_some())
+    err.chain()
+        .any(|c| c.downcast_ref::<RepoBusyError>().is_some())
 }
 
+#[derive(Default)]
 struct LockState {
     held: bool,
     maintenance: bool,
@@ -394,23 +395,24 @@ struct LockState {
     foreground_waiters: i32,
 }
 
-impl Default for LockState {
-    fn default() -> Self {
-        Self {
-            held: false,
-            maintenance: false,
-            maintenance_cancel: None,
-            foreground_waiters: 0,
-        }
-    }
-}
-
 /// `repoLock` (cache.go:190–197): a foreground-priority mutex. Ordinary cache
 /// mutations serialize exactly as they did with sync.Mutex. Low-priority
 /// maintenance only starts on an idle repository and receives a context that
 /// is cancelled as soon as a foreground operation queues. The maintenance
 /// holder remains responsible for stopping its Git process tree before
 /// unlocking.
+/// Unlocks the repo lock on drop — the Rust analogue of Go's
+/// `defer repoLock.Unlock()` inside WithRepoMaintenance.
+pub(crate) struct MaintenanceGuard {
+    repo_lock: Arc<RepoLock>,
+}
+
+impl Drop for MaintenanceGuard {
+    fn drop(&mut self) {
+        self.repo_lock.unlock();
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct RepoLock {
     state: Mutex<LockState>,
@@ -587,8 +589,7 @@ impl Cache {
     /// interrupted-maintenance lock cleanup completes before direct agent Git
     /// work can create its own lock files.
     pub(crate) async fn cancel_maintenance(&self) {
-        let locks: Vec<Arc<RepoLock>> =
-            self.repo_locks.lock().unwrap().values().cloned().collect();
+        let locks: Vec<Arc<RepoLock>> = self.repo_locks.lock().unwrap().values().cloned().collect();
         for lock in locks {
             lock.cancel_maintenance_and_wait().await;
         }
@@ -770,19 +771,17 @@ impl Cache {
     /// fn, then waits for fn to stop its process tree and release the
     /// repository. ran=false means maintenance was skipped because foreground
     /// work already owned or was waiting for the repository.
-    pub(crate) async fn with_repo_maintenance<T>(
+    // The maintenance closure borrows the per-call context; the boxed
+    // future is tied to that borrow via an explicit lifetime so callers can
+    // capture their own environment in it.
+    pub(crate) fn try_begin_maintenance(
         &self,
         ctx: &Ctx,
         bare_path: &Path,
-        f: impl AsyncFnOnce(&Ctx) -> anyhow::Result<T>,
-    ) -> anyhow::Result<(bool, Option<T>)> {
+    ) -> Option<(Ctx, MaintenanceGuard)> {
         let repo_lock = self.lock_for_repo(bare_path);
-        let Some(maintenance_ctx) = repo_lock.try_lock_maintenance(ctx) else {
-            return Ok((false, None));
-        };
-        let result = f(&maintenance_ctx).await;
-        repo_lock.unlock();
-        Ok((true, Some(result)))
+        let maintenance_ctx = repo_lock.try_lock_maintenance(ctx)?;
+        Some((maintenance_ctx, MaintenanceGuard { repo_lock }))
     }
 
     /// `Fetch` (cache.go:492–496): runs `git fetch origin` on a cached bare
@@ -864,7 +863,11 @@ fn split_host_and_path(raw_url: &str) -> (String, String) {
 fn parse_url_host_and_path(raw_url: &str) -> Option<(String, String)> {
     let scheme_end = raw_url.find("://")?;
     let scheme = &raw_url[..scheme_end];
-    if scheme.is_empty() || !scheme.chars().all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.') {
+    if scheme.is_empty()
+        || !scheme
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '-' || c == '.')
+    {
         return None;
     }
     let rest = &raw_url[scheme_end + 3..];
@@ -955,7 +958,14 @@ pub(crate) async fn git_fetch_ctx(ctx: &Ctx, bare_path: &Path) -> anyhow::Result
     // set-head --auto is lightweight and non-fatal.
     let _ = run_git(
         ctx,
-        &["-C", &bare_path.to_string_lossy(), "remote", "set-head", "origin", "--auto"],
+        &[
+            "-C",
+            &bare_path.to_string_lossy(),
+            "remote",
+            "set-head",
+            "origin",
+            "--auto",
+        ],
     )
     .await;
     Ok(())
@@ -995,7 +1005,14 @@ async fn ensure_remote_tracking_layout_ctx(ctx: &Ctx, bare_path: &Path) -> anyho
     // Non-fatal.
     let _ = run_git(
         ctx,
-        &["-C", &bare_path.to_string_lossy(), "remote", "set-head", "origin", "--auto"],
+        &[
+            "-C",
+            &bare_path.to_string_lossy(),
+            "remote",
+            "set-head",
+            "origin",
+            "--auto",
+        ],
     )
     .await;
     Ok(())
@@ -1007,7 +1024,13 @@ async fn ensure_remote_tracking_layout_ctx(ctx: &Ctx, bare_path: &Path) -> anyho
 async fn read_fetch_refspec_ctx(ctx: &Ctx, bare_path: &Path) -> anyhow::Result<String> {
     match run_git_output(
         ctx,
-        &["-C", &bare_path.to_string_lossy(), "config", "--get", "remote.origin.fetch"],
+        &[
+            "-C",
+            &bare_path.to_string_lossy(),
+            "config",
+            "--get",
+            "remote.origin.fetch",
+        ],
     )
     .await
     {
@@ -1025,10 +1048,10 @@ async fn read_fetch_refspec_ctx(ctx: &Ctx, bare_path: &Path) -> anyhow::Result<S
 /// (`exec.ExitError.ExitCode()` equivalent).
 pub(crate) fn exit_code_of(err: &anyhow::Error) -> Option<i32> {
     for cause in err.chain() {
-        if let Some(pe) = cause.downcast_ref::<processtree::ProcessError>() {
-            if let processtree::ProcessError::Exit(code) = pe {
-                return Some(*code);
-            }
+        if let Some(processtree::ProcessError::Exit(code)) =
+            cause.downcast_ref::<processtree::ProcessError>()
+        {
+            return Some(*code);
         }
     }
     None
@@ -1207,7 +1230,11 @@ impl Cache {
         }
 
         // Build branch name: agent/{sanitized-name}/{task-id} (cache.go:833).
-        let branch_name = format!("agent/{}/{}", sanitize_name(&params.agent_name), task_key(&params.task_id));
+        let branch_name = format!(
+            "agent/{}/{}",
+            sanitize_name(&params.agent_name),
+            task_key(&params.task_id)
+        );
 
         // Derive directory name from repo URL (cache.go:836–837).
         let dir_name = repo_name_from_url(&params.repo_url);
@@ -1255,16 +1282,20 @@ impl Cache {
                 base = %base_ref,
                 "repo checkout: isolated checkout ready"
             );
-            return Ok(WorktreeResult { path: worktree_path, branch_name: actual_branch });
+            return Ok(WorktreeResult {
+                path: worktree_path,
+                branch_name: actual_branch,
+            });
         }
 
         // If worktree already exists (reused environment from a prior task),
         // update it to the latest remote code instead of creating a new one
         // (cache.go:881–922).
         if is_git_worktree(&worktree_path) {
-            let actual_branch = update_existing_worktree_ctx(ctx, &worktree_path, &branch_name, &base_ref)
-                .await
-                .context("update existing worktree")?;
+            let actual_branch =
+                update_existing_worktree_ctx(ctx, &worktree_path, &branch_name, &base_ref)
+                    .await
+                    .context("update existing worktree")?;
 
             for pattern in AGENT_GIT_EXCLUDE_PATTERNS {
                 let _ = exclude_from_git_ctx(ctx, &worktree_path, pattern).await;
@@ -1295,15 +1326,19 @@ impl Cache {
                 "repo checkout: existing worktree updated"
             );
 
-            return Ok(WorktreeResult { path: worktree_path, branch_name: actual_branch });
+            return Ok(WorktreeResult {
+                path: worktree_path,
+                branch_name: actual_branch,
+            });
         }
 
         // Create a new worktree. createWorktree may rename the branch to
         // avoid collisions with stale per-task refs left over from previous
         // runs (cache.go:924–934).
-        let actual_branch = create_worktree_ctx(ctx, &bare_path, &worktree_path, &branch_name, &base_ref)
-            .await
-            .context("create worktree")?;
+        let actual_branch =
+            create_worktree_ctx(ctx, &bare_path, &worktree_path, &branch_name, &base_ref)
+                .await
+                .context("create worktree")?;
 
         // Exclude agent context files from git tracking.
         for pattern in AGENT_GIT_EXCLUDE_PATTERNS {
@@ -1335,7 +1370,10 @@ impl Cache {
             "repo checkout: worktree created"
         );
 
-        Ok(WorktreeResult { path: worktree_path, branch_name: actual_branch })
+        Ok(WorktreeResult {
+            path: worktree_path,
+            branch_name: actual_branch,
+        })
     }
 }
 
@@ -1428,7 +1466,12 @@ async fn remove_linked_worktree_ctx(
 ) -> anyhow::Result<()> {
     let out = run_git_output(
         ctx,
-        &["-C", &checkout_path.to_string_lossy(), "rev-parse", "--git-common-dir"],
+        &[
+            "-C",
+            &checkout_path.to_string_lossy(),
+            "rev-parse",
+            "--git-common-dir",
+        ],
     )
     .await
     .context("resolve linked worktree common dir")?;
@@ -1472,7 +1515,7 @@ pub(crate) fn same_resolved_path(a: &Path, b: &Path) -> bool {
             Err(_) => {
                 // Fall back to absolute + lexical clean when the target does
                 // not exist or cannot be resolved.
-                match std::fs::absolute(path) {
+                match std::path::absolute(path) {
                     Ok(abs) => normalize_lexically(&abs),
                     Err(_) => normalize_lexically(path),
                 }
@@ -1531,11 +1574,13 @@ async fn create_isolated_checkout_ctx(
     base_ref: &str,
     base_commit: &str,
 ) -> anyhow::Result<String> {
-    let goos = if cfg!(target_os = "windows") { "windows" } else { "unix" };
-    let clone_args: Vec<&str> = local_clone_args(goos, bare_path, checkout_path)
-        .iter()
-        .map(String::as_str)
-        .collect();
+    let goos = if cfg!(target_os = "windows") {
+        "windows"
+    } else {
+        "unix"
+    };
+    let clone_args_vec = local_clone_args(goos, bare_path, checkout_path);
+    let clone_args: Vec<&str> = clone_args_vec.iter().map(String::as_str).collect();
     if let Err(err) = run_git_combined_output(ctx, &clone_args).await {
         // Do not remove checkoutPath here. A different repository with the
         // same basename could have won the path race after our pre-check; Git
@@ -1556,7 +1601,10 @@ async fn create_isolated_checkout_ctx(
             }
         }
     }
-    let mut cleanup = CleanupOnDrop { path: checkout_path, active: true };
+    let mut cleanup = CleanupOnDrop {
+        path: checkout_path,
+        active: true,
+    };
 
     // The origin swap has to happen before the first checkout when the cache
     // is a partial clone. `git clone --local` hardlinks the objects it can
@@ -1565,7 +1613,13 @@ async fn create_isolated_checkout_ctx(
     // that as success with every file "deleted" rather than as an error.
     if let Err(err) = run_git_combined_output(
         ctx,
-        &["-C", &checkout_path.to_string_lossy(), "remote", "remove", ISOLATED_CACHE_REMOTE_NAME],
+        &[
+            "-C",
+            &checkout_path.to_string_lossy(),
+            "remote",
+            "remove",
+            ISOLATED_CACHE_REMOTE_NAME,
+        ],
     )
     .await
     {
@@ -1594,7 +1648,13 @@ async fn create_isolated_checkout_ctx(
 
     if let Err(err) = run_git_combined_output(
         ctx,
-        &["-C", &checkout_path.to_string_lossy(), "checkout", "--detach", base_commit],
+        &[
+            "-C",
+            &checkout_path.to_string_lossy(),
+            "checkout",
+            "--detach",
+            base_commit,
+        ],
     )
     .await
     {
@@ -1619,13 +1679,18 @@ async fn create_isolated_checkout_ctx(
         return Err(err.context(format!("mark isolated checkout: {}", out_text.trim())));
     }
 
-    let actual_branch = checkout_new_branch_ctx(ctx, checkout_path, branch_name, base_commit).await?;
+    let actual_branch =
+        checkout_new_branch_ctx(ctx, checkout_path, branch_name, base_commit).await?;
     cleanup.active = false;
     Ok(actual_branch)
 }
 
 /// `resolveCommitContext` (cache.go:1156–1166).
-async fn resolve_commit_ctx(ctx: &Ctx, repo_path: &Path, reference: &str) -> anyhow::Result<String> {
+async fn resolve_commit_ctx(
+    ctx: &Ctx,
+    repo_path: &Path,
+    reference: &str,
+) -> anyhow::Result<String> {
     let out = run_git_output(
         ctx,
         &[
@@ -1675,7 +1740,13 @@ async fn is_partial_clone_ctx(ctx: &Ctx, repo_path: &Path) -> bool {
         Duration::from_secs(30),
         run_git_output(
             ctx,
-            &["-C", &repo_path.to_string_lossy(), "config", "--get", "remote.origin.promisor"],
+            &[
+                "-C",
+                &repo_path.to_string_lossy(),
+                "config",
+                "--get",
+                "remote.origin.promisor",
+            ],
         ),
     )
     .await
@@ -1833,7 +1904,13 @@ async fn delete_local_branches_under_ctx(
         }
         if let Err(err) = run_git_combined_output(
             ctx,
-            &["-C", &repo_path.to_string_lossy(), "update-ref", "-d", reference],
+            &[
+                "-C",
+                &repo_path.to_string_lossy(),
+                "update-ref",
+                "-d",
+                reference,
+            ],
         )
         .await
         {
@@ -1857,7 +1934,14 @@ async fn checkout_new_branch_ctx(
 ) -> anyhow::Result<String> {
     if run_git_combined_output(
         ctx,
-        &["-C", &repo_path.to_string_lossy(), "checkout", "-b", branch_name, base_ref],
+        &[
+            "-C",
+            &repo_path.to_string_lossy(),
+            "checkout",
+            "-b",
+            branch_name,
+            base_ref,
+        ],
     )
     .await
     .is_ok()
@@ -1868,7 +1952,14 @@ async fn checkout_new_branch_ctx(
     let retried_name = format!("{}-{}", branch_name, chrono::Utc::now().timestamp());
     if let Err(err) = run_git_combined_output(
         ctx,
-        &["-C", &repo_path.to_string_lossy(), "checkout", "-b", &retried_name, base_ref],
+        &[
+            "-C",
+            &repo_path.to_string_lossy(),
+            "checkout",
+            "-b",
+            &retried_name,
+            base_ref,
+        ],
     )
     .await
     {
@@ -2048,7 +2139,14 @@ async fn update_existing_worktree_ctx(
     // startpoint.
     if run_git_combined_output(
         ctx,
-        &["-C", &worktree_path.to_string_lossy(), "checkout", "-b", branch_name, base_ref],
+        &[
+            "-C",
+            &worktree_path.to_string_lossy(),
+            "checkout",
+            "-b",
+            branch_name,
+            base_ref,
+        ],
     )
     .await
     .is_ok()
@@ -2060,7 +2158,14 @@ async fn update_existing_worktree_ctx(
     let retried_name = format!("{}-{}", branch_name, chrono::Utc::now().timestamp());
     if let Err(err) = run_git_combined_output(
         ctx,
-        &["-C", &worktree_path.to_string_lossy(), "checkout", "-b", &retried_name, base_ref],
+        &[
+            "-C",
+            &worktree_path.to_string_lossy(),
+            "checkout",
+            "-b",
+            &retried_name,
+            base_ref,
+        ],
     )
     .await
     {
@@ -2135,7 +2240,13 @@ async fn get_remote_default_branch_ctx(ctx: &Ctx, bare_path: &Path) -> String {
     let mut singleton = String::new();
     if let Ok(out) = run_git_output(
         ctx,
-        &["-C", &p, "for-each-ref", "--format=%(refname)", "refs/remotes/origin/"],
+        &[
+            "-C",
+            &p,
+            "for-each-ref",
+            "--format=%(refname)",
+            "refs/remotes/origin/",
+        ],
     )
     .await
     {
@@ -2234,7 +2345,12 @@ git interpret-trailers --in-place --trailer "$TRAILER" "$COMMIT_MSG_FILE"
 async fn resolve_git_common_dir(ctx: &Ctx, worktree_path: &Path) -> anyhow::Result<PathBuf> {
     let out = run_git_output(
         ctx,
-        &["-C", &worktree_path.to_string_lossy(), "rev-parse", "--git-common-dir"],
+        &[
+            "-C",
+            &worktree_path.to_string_lossy(),
+            "rev-parse",
+            "--git-common-dir",
+        ],
     )
     .await
     .context("resolve git common dir")?;
@@ -2250,18 +2366,14 @@ async fn resolve_git_common_dir(ctx: &Ctx, worktree_path: &Path) -> anyhow::Resu
 /// `installCoAuthoredByHookContext` (cache.go:1632–1652): installs a
 /// prepare-commit-msg git hook in the git common directory (the bare repo for
 /// worktrees) so it applies to all worktrees created from this cache.
-async fn install_co_authored_by_hook_ctx(
-    ctx: &Ctx,
-    worktree_path: &Path,
-) -> anyhow::Result<()> {
+async fn install_co_authored_by_hook_ctx(ctx: &Ctx, worktree_path: &Path) -> anyhow::Result<()> {
     let common_dir = resolve_git_common_dir(ctx, worktree_path).await?;
 
     let hooks_dir = common_dir.join("hooks");
     std::fs::create_dir_all(&hooks_dir).context("create hooks dir")?;
 
     let hook_path = hooks_dir.join("prepare-commit-msg");
-    std::fs::write(&hook_path, PREPARE_COMMIT_MSG_HOOK)
-        .context("write prepare-commit-msg hook")?;
+    std::fs::write(&hook_path, PREPARE_COMMIT_MSG_HOOK).context("write prepare-commit-msg hook")?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -2277,7 +2389,9 @@ async fn install_co_authored_by_hook_ctx(
 /// daemon signature, so a user-installed hook at the same path is left alone.
 fn is_daemon_installed_hook(contents: &[u8]) -> bool {
     let body = String::from_utf8_lossy(contents);
-    DAEMON_INSTALLED_HOOK_SIGNATURES.iter().any(|sig| body.contains(sig))
+    DAEMON_INSTALLED_HOOK_SIGNATURES
+        .iter()
+        .any(|sig| body.contains(sig))
 }
 
 /// `removeCoAuthoredByHookContext` (cache.go:1678–1704): removes the
@@ -2285,10 +2399,7 @@ fn is_daemon_installed_hook(contents: &[u8]) -> bool {
 /// the file when the content matches a known daemon signature, so a
 /// user-installed prepare-commit-msg hook is never touched. Returns Ok when
 /// no hook is present or an unrelated hook occupies the path.
-async fn remove_co_authored_by_hook_ctx(
-    ctx: &Ctx,
-    worktree_path: &Path,
-) -> anyhow::Result<()> {
+async fn remove_co_authored_by_hook_ctx(ctx: &Ctx, worktree_path: &Path) -> anyhow::Result<()> {
     let common_dir = resolve_git_common_dir(ctx, worktree_path).await?;
     let hook_path = common_dir.join("hooks").join("prepare-commit-msg");
     let contents = match std::fs::read(&hook_path) {
@@ -2309,10 +2420,19 @@ async fn remove_co_authored_by_hook_ctx(
 
 /// `excludeFromGitContext` (cache.go:1711–1743): adds a pattern to the
 /// worktree's .git/info/exclude file.
-async fn exclude_from_git_ctx(ctx: &Ctx, worktree_path: &Path, pattern: &str) -> anyhow::Result<()> {
+async fn exclude_from_git_ctx(
+    ctx: &Ctx,
+    worktree_path: &Path,
+    pattern: &str,
+) -> anyhow::Result<()> {
     let out = run_git_output(
         ctx,
-        &["-C", &worktree_path.to_string_lossy(), "rev-parse", "--git-dir"],
+        &[
+            "-C",
+            &worktree_path.to_string_lossy(),
+            "rev-parse",
+            "--git-dir",
+        ],
     )
     .await
     .context("resolve git dir")?;
@@ -2377,7 +2497,8 @@ pub(crate) fn repo_name_from_url(url: &str) -> String {
 /// a human-readable string.
 pub(crate) fn sanitize_name(name: &str) -> String {
     static NON_ALPHANUMERIC: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = NON_ALPHANUMERIC.get_or_init(|| regex::Regex::new(r"[^a-z0-9]+").expect("valid regex"));
+    let re =
+        NON_ALPHANUMERIC.get_or_init(|| regex::Regex::new(r"[^a-z0-9]+").expect("valid regex"));
     let s = name.trim().to_lowercase();
     let s = re.replace_all(&s, "-").to_string();
     let mut s = s.trim_matches('-').to_string();
