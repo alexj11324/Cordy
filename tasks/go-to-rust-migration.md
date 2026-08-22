@@ -261,6 +261,7 @@ server-rs/
 | W | daemonws hub.go(920)+notifier.go(130) | src/hub.rs, src/notifier.rs | ✅ **完成**（hub.rs 2,347 行+notifier.rs 590 行，符号映射头+37 测试；metrics.go 内嵌 hub.rs；ULID→UUIDv4 已注记；socket 泵留 S8 axum 层） |
 | E1a | execenv 地基四件≈3.4k 行 + git.rs 三错修复 | src/execenv/{execenv,context,isolation,local_worktree}.rs | ✅ **完成且超范围**——实际交付全部 16 文件 10,867 行：含 codex 全家(codex_home/sandbox/memory/shell_env/multi_agent/user_skills/skill_strip/cursor_mcp)；Prepare/Reuse 完整移植，hermes/openclaw/reasonix/qwenpaw 家族调用点留 `// S9-integration:` 错误桩待 E2 |
 | R2 | repocache/cache.go(1811)+gc.go(1509)+processtree 内联 | src/repocache.rs(2,826), src/gc.rs(2,573) | ✅ **完成**——Ctx/CancelCause 因果令牌对、前台优先 repoLock 状态机、GcHost trait 接缝、processtree 进程组控制内联 |
+| D | auto_update/local_directory/openclaw_runtime_config/plugin_hook_mcp/remote_mcp_broker/runtime_mcp（Go 2,324 行） | src/{auto_update,local_directory,openclaw_runtime_config,plugin_hook_mcp,remote_mcp_broker,runtime_mcp}.rs | ✅ **完成**——auto_update 用 AutoUpdateHost trait 接缝（cli/update.go 版本解析器暂驻本模块待 S10 CLI crate）；local_directory 含 tokio 版 LocalPathLocker（ctx 取消+幻影持锁清理）；runtime_mcp 含 JSONC stripper（等长输出）与 codex header 归一化，claude_plugins.go 三助手暂驻待 B 车道收编；broker/plugin_hook 双 axum 服务器 + McpUpstream 注入接缝（测试打本地 fixture）。crate 244 测试全过、clippy --all-targets -D warnings 0 错；全 workspace 870 测试 0 败。顺手修复：identity.rs 测试表元数注解缺 &str、client/wsrpc 空桩补齐（lane A 声明未建文件）（PR #6 `agent/kile/95e06ee3d4c2`） |
 
 **S9 第一批集成验收（20260822）：cordy-daemon 全 crate clippy --all-targets -D warnings 0 错误、144 测试全过；全 workspace clippy 0 错误、881 测试全过（737→881）。**
 

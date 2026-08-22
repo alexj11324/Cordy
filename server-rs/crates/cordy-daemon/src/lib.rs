@@ -43,3 +43,11 @@ pub mod prompt;
 pub mod runtime_config_sections;
 pub mod skill_cache;
 pub mod slash_skill;
+
+// Lane D (auto_update / local MCP / local_directory) — disjoint from lanes A/B.
+pub mod auto_update;
+pub mod local_directory;
+pub mod openclaw_runtime_config;
+pub mod plugin_hook_mcp;
+pub mod remote_mcp_broker;
+pub mod runtime_mcp;
