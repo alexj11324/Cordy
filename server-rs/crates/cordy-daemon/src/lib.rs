@@ -36,6 +36,7 @@ pub mod repocache;
 
 // Lane B (daemon.go core + surrounding surfaces) — S9-B.
 pub mod agents_probe;
+pub mod agents_refresh;
 pub mod artifact_matcher;
 pub mod claude_plugins;
 pub mod local_skills;

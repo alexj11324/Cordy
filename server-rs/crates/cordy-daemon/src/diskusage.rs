@@ -1,5 +1,6 @@
-//! Port of `server/internal/daemon/diskusage.go` (lines 1–514), including the
-//! `artifactMatcher` half of artifact_matcher.go it depends on.
+//! Port of `server/internal/daemon/diskusage.go` (lines 1–514). The
+//! `artifactMatcher` half it depends on lives in [`crate::artifact_matcher`]
+//! — the crate's single copy (CORD-12 consolidation).
 //!
 //! Symbol map (Go → Rust):
 //! - `TaskDiskUsage` / `WorkspaceDiskUsage` / `DiskUsageReport` /
@@ -8,12 +9,10 @@
 //! - `DiskUsageKindUnknown` → [`DISK_USAGE_KIND_UNKNOWN`]
 //! - `ScanDiskUsageRoots` → [`scan_disk_usage_roots`]
 //! - `ScanDiskUsage` → [`scan_disk_usage`]
-//! - `repoCacheSize` / `ratio` / `buildPatternSet` / `sortedKeys` /
-//!   `buildTaskUsage` / `parentIDForMeta` / `taskSize` / `ShortID` →
-//!   same-named fns
+//! - `repoCacheSize` / `ratio` / `buildTaskUsage` / `parentIDForMeta` /
+//!   `taskSize` / `ShortID` → same-named fns
 //! - `ParentStatusFetcher` → [`ParentStatusFetcher`] alias
 //! - `ResolveParentStatuses` → [`resolve_parent_statuses`]
-//! - `artifactMatcher` (artifact_matcher.go:11–94) → [`ArtifactMatcher`]
 //!
 //! Port notes:
 //! - `dirSize` and `ShortID` reuse gc.rs/repocache.rs equivalents (Go's
@@ -35,6 +34,7 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use crate::artifact_matcher::ArtifactMatcher;
 use crate::execenv::execenv::{read_gc_meta, GCMetaKind, GcMeta};
 use crate::gc::{dir_size, REPOS_DIR_NAME};
 use crate::repocache::short_id;
@@ -42,9 +42,6 @@ use crate::repocache::short_id;
 /// `issueGCBatchSize` (gc.go:195): same chunk size the GC loop uses so one
 /// oversized root cannot trip the server's batch cap.
 pub(crate) const ISSUE_GC_BATCH_SIZE: usize = 500;
-
-/// `managedArtifactPatternPrefix` (artifact_matcher.go:9).
-const MANAGED_ARTIFACT_PATTERN_PREFIX: &str = "managed:";
 
 /// `DiskUsageKindUnknown`: kind for task dirs whose .gc_meta.json is missing
 /// or unreadable — present on disk, but no parent record we can lock onto.
@@ -175,123 +172,6 @@ pub(crate) struct AggregateDiskUsageReport {
     pub total_repo_cache_count: i64,
 }
 
-// ---------------------------------------------------------------------------
-// artifactMatcher (artifact_matcher.go:11–94)
-// ---------------------------------------------------------------------------
-
-/// `artifactMatcher`: operator-configured basename matches plus exact
-/// daemon-managed paths. Exact paths take precedence so a broad basename such
-/// as .sandbox-bin cannot double-count a managed directory.
-#[derive(Debug, Clone, Default)]
-pub(crate) struct ArtifactMatcher {
-    basenames: BTreeSet<String>,
-    exact_paths: BTreeMap<String, String>,
-    exact_leaf_names: BTreeSet<String>,
-}
-
-impl ArtifactMatcher {
-    /// `newArtifactMatcher`.
-    pub(crate) fn new(patterns: &[String], managed_subpaths: &[String]) -> Self {
-        let mut m = ArtifactMatcher {
-            basenames: build_pattern_set(patterns),
-            ..Default::default()
-        };
-        for subpath in managed_subpaths {
-            let Some(cleaned) = safe_relative_path(subpath) else {
-                continue;
-            };
-            let display = cleaned.replace('\\', "/");
-            let leaf = Path::new(&cleaned)
-                .file_name()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            m.exact_paths.insert(
-                cleaned.clone(),
-                format!("{MANAGED_ARTIFACT_PATTERN_PREFIX}{display}"),
-            );
-            m.exact_leaf_names.insert(leaf);
-        }
-        m
-    }
-
-    /// `matchDirectory`: returns the matched label when the directory at
-    /// `path` is an artifact subtree.
-    fn match_directory(&self, abs_root: &Path, path: &Path) -> Option<String> {
-        let name = path.file_name()?.to_string_lossy();
-        let exact_candidate = self.exact_leaf_names.contains(name.as_ref());
-        let basename_match = self.basenames.contains(name.as_ref());
-        if !exact_candidate && !basename_match {
-            return None;
-        }
-        // Rel + containment validation only runs for leaves that could match.
-        let rel = path.strip_prefix(abs_root).ok()?;
-        let rel = safe_relative_path(&rel.to_string_lossy())?;
-        if let Some(label) = self.exact_paths.get(&rel) {
-            return Some(label.clone());
-        }
-        if basename_match {
-            return Some(name.into_owned());
-        }
-        None
-    }
-
-    /// `managedSubpaths`.
-    fn managed_subpaths(&self) -> Vec<String> {
-        self.exact_paths
-            .keys()
-            .map(|k| k.replace('\\', "/"))
-            .collect()
-    }
-}
-
-/// `safeRelativePath` (artifact_matcher.go:78–94).
-fn safe_relative_path(path: &str) -> Option<String> {
-    let trimmed = path.trim();
-    if trimmed.is_empty() || Path::new(trimmed).is_absolute() {
-        return None;
-    }
-    let cleaned = normalize_rel(trimmed);
-    if cleaned == "." || cleaned == ".." || cleaned.starts_with("../") {
-        return None;
-    }
-    Some(cleaned)
-}
-
-/// filepath.Clean equivalent for relative paths (lexical only).
-fn normalize_rel(path: &str) -> String {
-    let mut out: Vec<&str> = Vec::new();
-    for part in path.split('/') {
-        match part {
-            "" | "." => {}
-            ".." => {
-                out.pop();
-            }
-            p => out.push(p),
-        }
-    }
-    if out.is_empty() {
-        ".".to_string()
-    } else {
-        out.join("/")
-    }
-}
-
-/// `buildPatternSet` (diskusage.go:285).
-fn build_pattern_set(patterns: &[String]) -> BTreeSet<String> {
-    patterns
-        .iter()
-        .map(|p| p.trim())
-        .filter(|p| !p.is_empty() && !p.contains('/') && !p.contains('\\'))
-        .map(|p| p.to_string())
-        .collect()
-}
-
-/// `sortedKeys` (diskusage.go:297) — trivial over a BTreeSet but kept named
-/// for line-level traceability.
-fn sorted_keys(set: &BTreeSet<String>) -> Vec<String> {
-    set.iter().cloned().collect()
-}
-
 /// `ratio` (diskusage.go:278): maps any zero denominator to 0 instead of NaN.
 fn ratio(numerator: i64, denominator: i64) -> f64 {
     if denominator <= 0 {
@@ -341,7 +221,7 @@ pub(crate) fn scan_disk_usage_roots(
         artifact_patterns,
         &crate::execenv::reclaimable::managed_reclaimable_artifact_subpaths(),
     );
-    agg.artifact_patterns = sorted_keys(&matcher.basenames);
+    agg.artifact_patterns = matcher.basenames_sorted();
     agg.managed_artifact_subpaths = matcher.managed_subpaths();
 
     for r in roots {
@@ -383,7 +263,7 @@ pub(crate) fn scan_disk_usage(
         artifact_patterns,
         &crate::execenv::reclaimable::managed_reclaimable_artifact_subpaths(),
     );
-    report.artifact_patterns = sorted_keys(&matcher.basenames);
+    report.artifact_patterns = matcher.basenames_sorted();
     report.managed_artifact_subpaths = matcher.managed_subpaths();
 
     let Ok(ws_entries) = std::fs::read_dir(workspaces_root) else {
@@ -598,7 +478,11 @@ fn walk_task_size(
                 state.total_bytes += dir_size(&path);
                 continue;
             }
-            if let Some(_label) = matcher.match_directory(abs_root, &path) {
+            let matched = path
+                .file_name()
+                .map(|n| n.to_string_lossy())
+                .and_then(|name| matcher.match_directory(abs_root, &path, name.as_ref()));
+            if let Some(_label) = matched {
                 let size = dir_size(&path);
                 state.total_bytes += size;
                 state.artifact_bytes += size;
