@@ -27,7 +27,6 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
-use std::future::Future;
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -79,10 +78,7 @@ pub(crate) struct HealthResponse {
     #[serde(rename = "cli_version")]
     pub cli_version: String,
     /// "desktop" when the Electron app spawned this daemon, empty otherwise.
-    #[serde(
-        rename = "launched_by",
-        skip_serializing_if = "String::is_empty"
-    )]
+    #[serde(rename = "launched_by", skip_serializing_if = "String::is_empty")]
     pub launched_by: String,
     #[serde(rename = "active_task_count")]
     pub active_task_count: i64,
@@ -95,19 +91,13 @@ pub(crate) struct HealthResponse {
         skip_serializing_if = "is_zero_i32"
     )]
     pub repo_maintenance_active: i32,
-    #[serde(
-        rename = "repo_checkout_waiters",
-        skip_serializing_if = "is_zero_i32"
-    )]
+    #[serde(rename = "repo_checkout_waiters", skip_serializing_if = "is_zero_i32")]
     pub repo_checkout_waiters: i32,
     #[serde(rename = "agents")]
     pub agents: Vec<String>,
     /// Provider discovered locally but dropped by the last registration round
     /// → reason (MUL-5439). Omitted when empty.
-    #[serde(
-        rename = "skipped_agents",
-        skip_serializing_if = "HashMap::is_empty"
-    )]
+    #[serde(rename = "skipped_agents", skip_serializing_if = "HashMap::is_empty")]
     pub skipped_agents: HashMap<String, String>,
     /// Why a confirmed cordy version change hasn't restarted yet. Omitted when
     /// empty so older consumers see no change.
@@ -194,7 +184,10 @@ impl RepoCheckoutTasks {
 
     /// `activeRepoCheckoutTask` (health.go:139–153): resolve the Bearer token
     /// from an Authorization header value to its bound task.
-    pub(crate) fn lookup_bearer(&self, authorization_header: &str) -> Option<ActiveRepoCheckoutTask> {
+    pub(crate) fn lookup_bearer(
+        &self,
+        authorization_header: &str,
+    ) -> Option<ActiveRepoCheckoutTask> {
         const BEARER: &str = "Bearer ";
         let header = authorization_header.trim();
         let token = header.strip_prefix(BEARER)?.trim();
@@ -241,7 +234,11 @@ pub(crate) fn authorize_repo_checkout_work_dir(
 
     let root = eval(abs(active_root)?)?;
     let workdir = eval(abs(requested)?)?;
+    // Go's filepath.Rel(root, workdir) yields "." when the paths are equal;
+    // strip_prefix yields "". Map that across before the IsLocal check
+    // (filepath.IsLocal(".") == true).
     let rel = match workdir.strip_prefix(&root) {
+        Ok(rel) if rel.as_os_str().is_empty() => ".".to_string(),
         Ok(rel) => rel.to_string_lossy().into_owned(),
         Err(_) => String::new(),
     };
@@ -387,14 +384,19 @@ pub(crate) fn go_duration_string(total_seconds: i64) -> String {
 ///
 /// Status is "starting" until preflight completes, then "running" — callers
 /// gate readiness on this field, never on endpoint reachability.
-pub(crate) fn build_health_response(host: &dyn HealthHost, started_at: DateTime<Utc>) -> HealthResponse {
+pub(crate) fn build_health_response(
+    host: &dyn HealthHost,
+    started_at: DateTime<Utc>,
+) -> HealthResponse {
     let ws_list = host.workspaces_snapshot();
     let agents = host.agent_names();
 
-    let status = if host.is_ready() { "running" } else { "starting" };
-    let uptime_seconds = Utc::now()
-        .signed_duration_since(started_at)
-        .num_seconds();
+    let status = if host.is_ready() {
+        "running"
+    } else {
+        "starting"
+    };
+    let uptime_seconds = Utc::now().signed_duration_since(started_at).num_seconds();
 
     let mut resp = HealthResponse {
         status: status.to_string(),
@@ -528,7 +530,10 @@ pub(crate) async fn handle_repo_checkout(
     req.agent_name = active_task.agent_name.clone();
     req.work_dir = authorized_work_dir;
 
-    if let Err(err) = host.ensure_repo_ready(ctx, &req.workspace_id, &req.url).await {
+    if let Err(err) = host
+        .ensure_repo_ready(ctx, &req.workspace_id, &req.url)
+        .await
+    {
         if ctx.err().is_some() {
             tracing::debug!(
                 url = %req.url,
@@ -542,7 +547,11 @@ pub(crate) async fn handle_repo_checkout(
                 body: String::new(),
             };
         }
-        let status = if is_repo_not_configured(&err) { 400 } else { 500 };
+        let status = if is_repo_not_configured(&err) {
+            400
+        } else {
+            500
+        };
         tracing::error!(
             workspace_id = %req.workspace_id,
             url = %req.url,
@@ -662,6 +671,7 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
     impl HealthHost for FakeHost {
         fn profile(&self) -> &str {
             ""
@@ -731,7 +741,14 @@ mod tests {
             self.created.lock().unwrap().push(params.clone());
             match &self.create_result {
                 Some(Ok(result)) => Ok(result.clone()),
-                Some(Err(err)) => Err(anyhow::anyhow!("{err:#}")),
+                Some(Err(err)) => {
+                    // anyhow::Error is not Clone; re-mint sentinel errors so
+                    // the handler's errors.Is-style busy check still fires.
+                    if repocache::is_repo_busy(err) {
+                        return Err(repocache::err_repo_busy());
+                    }
+                    Err(anyhow::anyhow!("{err:#}"))
+                }
                 None => anyhow::bail!("no create result configured"),
             }
         }
@@ -768,7 +785,7 @@ mod tests {
     /// TestHealthHandlerReportsDeferredReload (health_test.go:102–140).
     #[test]
     fn health_reports_deferred_reload() {
-        let mut host = FakeHost::new();
+        let host = FakeHost::new();
         host.ready.store(true, Ordering::SeqCst);
 
         // Absent when nothing pending.
@@ -859,7 +876,7 @@ mod tests {
     // ---- /repo/checkout ---------------------------------------------------
 
     fn setup_checkout(
-        host: &FakeHost,
+        _host: &FakeHost,
         tasks: &RepoCheckoutTasks,
         work_dir: &std::path::Path,
     ) -> String {
@@ -890,7 +907,7 @@ mod tests {
     /// (health_test.go:317–340).
     #[tokio::test]
     async fn repo_checkout_uses_task_scoped_project_ref_by_default() {
-        let host = FakeHost::new();
+        let mut host = FakeHost::new();
         host.default_ref = "release/v2".into();
         let tasks = RepoCheckoutTasks::new();
         let work_dir = tempfile::tempdir().unwrap();
@@ -908,7 +925,10 @@ mod tests {
         assert_eq!(reply.status, 200, "{}", reply.body);
         let created = host.last_created().unwrap();
         assert_eq!(created.reference, "release/v2");
-        assert_eq!(created.agent_name, "Test Agent", "token-bound active agent wins");
+        assert_eq!(
+            created.agent_name, "Test Agent",
+            "token-bound active agent wins"
+        );
     }
 
     /// TestRepoCheckoutRejectsMissingTaskCredential (health_test.go:342–361).
@@ -928,7 +948,10 @@ mod tests {
         )
         .await;
         assert_eq!(reply.status, 401);
-        assert!(host.last_created().is_none(), "unauthorized checkout reached repo cache");
+        assert!(
+            host.last_created().is_none(),
+            "unauthorized checkout reached repo cache"
+        );
     }
 
     /// TestRepoCheckoutRejectsAnotherTaskWorkdir (health_test.go:363–383).
@@ -950,14 +973,17 @@ mod tests {
         )
         .await;
         assert_eq!(reply.status, 403);
-        assert!(host.last_created().is_none(), "cross-task workdir reached repo cache");
+        assert!(
+            host.last_created().is_none(),
+            "cross-task workdir reached repo cache"
+        );
     }
 
     /// TestRepoCheckoutExplicitRefOverridesProjectDefault
     /// (health_test.go:385–405).
     #[tokio::test]
     async fn repo_checkout_explicit_ref_overrides_project_default() {
-        let host = FakeHost::new();
+        let mut host = FakeHost::new();
         host.default_ref = "release/v2".into();
         let tasks = RepoCheckoutTasks::new();
         let work_dir = tempfile::tempdir().unwrap();
@@ -1015,14 +1041,17 @@ mod tests {
         )
         .await;
         assert_eq!(reply.status, 400);
-        assert!(host.last_created().is_none(), "invalid mode reached repo cache");
+        assert!(
+            host.last_created().is_none(),
+            "invalid mode reached repo cache"
+        );
     }
 
     /// TestRepoCheckoutReturnsRetryableBusyToCapableClient
     /// (health_test.go:449–474).
     #[tokio::test]
     async fn repo_checkout_returns_retryable_busy_to_capable_client() {
-        let host = FakeHost::new();
+        let mut host = FakeHost::new();
         host.create_result = Some(Err(repocache::err_repo_busy()));
         let tasks = RepoCheckoutTasks::new();
         let work_dir = tempfile::tempdir().unwrap();
@@ -1047,7 +1076,10 @@ mod tests {
                 .unwrap_or_default()
         };
         assert_eq!(header("Retry-After"), "2");
-        assert_eq!(header(REPO_CHECKOUT_RETRY_HEADER), REPO_CHECKOUT_RETRY_VALUE_BUSY);
+        assert_eq!(
+            header(REPO_CHECKOUT_RETRY_HEADER),
+            REPO_CHECKOUT_RETRY_VALUE_BUSY
+        );
         assert_eq!(
             host.last_created().unwrap().lock_wait_timeout,
             REPO_CHECKOUT_LOCK_WAIT_TIMEOUT
@@ -1072,16 +1104,17 @@ mod tests {
             root.path().to_str().unwrap(),
             outside.path().to_str().unwrap(),
         );
-        assert!(bad.is_err(), "workdir outside the active root must be rejected");
+        assert!(
+            bad.is_err(),
+            "workdir outside the active root must be rejected"
+        );
 
         // Symlink escape: a link inside the root pointing outside resolves to
         // the outside target and must be rejected.
         let link = root.path().join("escape");
         std::os::unix::fs::symlink(outside.path(), &link).unwrap();
-        let escaped = authorize_repo_checkout_work_dir(
-            root.path().to_str().unwrap(),
-            link.to_str().unwrap(),
-        );
+        let escaped =
+            authorize_repo_checkout_work_dir(root.path().to_str().unwrap(), link.to_str().unwrap());
         assert!(escaped.is_err(), "symlink escape must be rejected");
     }
 

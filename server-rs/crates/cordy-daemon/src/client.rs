@@ -63,8 +63,7 @@ use cordy_protocol::messages::DaemonHeartbeatAckPayload;
 use cordy_protocol::{
     DAEMON_CAPABILITY_AGENT_SKILL_V1, DAEMON_CAPABILITY_COALESCED_COMMENTS_V1,
     DAEMON_CAPABILITY_EXECUTION_MANIFEST_V1, DAEMON_CAPABILITY_LOCAL_WORKTREE_V1,
-    DAEMON_CAPABILITY_REMOTE_MCP_V1, DAEMON_CAPABILITY_RPC_V1,
-    DAEMON_CAPABILITY_SKILL_BUNDLES_V1,
+    DAEMON_CAPABILITY_REMOTE_MCP_V1, DAEMON_CAPABILITY_RPC_V1, DAEMON_CAPABILITY_SKILL_BUNDLES_V1,
 };
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -155,9 +154,7 @@ fn is_issue_gc_batch_unsupported(err: &anyhow::Error) -> bool {
 pub(crate) fn is_transient_error(err: &anyhow::Error) -> bool {
     match request_error_of(err) {
         Some(req_err) => {
-            req_err.status_code >= 500
-                || req_err.status_code == 408
-                || req_err.status_code == 429
+            req_err.status_code >= 500 || req_err.status_code == 408 || req_err.status_code == 429
         }
         None => true,
     }
@@ -235,7 +232,10 @@ impl Client {
     /// `SetVersion` (client.go:166–168): records the daemon's CLI version,
     /// sent as X-Client-Version. Called by Daemon.Run after config is loaded.
     pub(crate) fn set_version(&self, v: &str) {
-        self.identity.write().unwrap_or_else(|e| e.into_inner()).version = v.to_string();
+        self.identity
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .version = v.to_string();
     }
 
     /// `SetToken` (client.go:202–204): sets the auth token for authenticated
@@ -246,10 +246,7 @@ impl Client {
 
     /// `Token` (client.go:207–209): returns the current auth token.
     pub(crate) fn token(&self) -> String {
-        self.token
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.token.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     // ---- identity headers (client.go:171–199) ------------------------------
@@ -290,7 +287,9 @@ impl Client {
         if let Some(body) = body {
             builder = builder.json(&body);
         }
-        let token = token_override.map(str::to_string).unwrap_or_else(|| self.token());
+        let token = token_override
+            .map(str::to_string)
+            .unwrap_or_else(|| self.token());
         if !token.is_empty() {
             builder = builder.bearer_auth(&token);
         }
@@ -365,8 +364,16 @@ impl Client {
         path: &str,
         req_body: serde_json::Value,
     ) -> anyhow::Result<()> {
-        self.do_json(ctx, &self.http, reqwest::Method::POST, path, None, Some(req_body), false)
-            .await?;
+        self.do_json(
+            ctx,
+            &self.http,
+            reqwest::Method::POST,
+            path,
+            None,
+            Some(req_body),
+            false,
+        )
+        .await?;
         Ok(())
     }
 
@@ -378,7 +385,15 @@ impl Client {
         req_body: serde_json::Value,
     ) -> anyhow::Result<T> {
         let value = self
-            .do_json(ctx, &self.http, reqwest::Method::POST, path, None, Some(req_body), true)
+            .do_json(
+                ctx,
+                &self.http,
+                reqwest::Method::POST,
+                path,
+                None,
+                Some(req_body),
+                true,
+            )
             .await?;
         serde_json::from_value(value.unwrap_or(serde_json::Value::Null))
             .with_context(|| format!("decode response from {path}"))
@@ -501,7 +516,11 @@ impl Client {
         schedule: &[Duration],
         decode: bool,
     ) -> anyhow::Result<Option<serde_json::Value>> {
-        let client = if bundle_client { &self.bundle_http } else { &self.http };
+        let client = if bundle_client {
+            &self.bundle_http
+        } else {
+            &self.http
+        };
         let mut last_err: Option<anyhow::Error> = None;
         let mut attempt = 0usize;
         loop {
@@ -512,7 +531,15 @@ impl Client {
                 return Err(anyhow!("{cause}"));
             }
             let result = self
-                .do_json(ctx, client, reqwest::Method::POST, path, None, Some(req_body.clone()), decode)
+                .do_json(
+                    ctx,
+                    client,
+                    reqwest::Method::POST,
+                    path,
+                    None,
+                    Some(req_body.clone()),
+                    decode,
+                )
                 .await;
             match result {
                 Ok(value) => return Ok(value),
@@ -536,7 +563,11 @@ impl Client {
     // ---- claim endpoints (client.go:211–323) -------------------------------
 
     /// `ClaimTask` (client.go:211–219).
-    pub(crate) async fn claim_task(&self, ctx: &Ctx, runtime_id: &str) -> anyhow::Result<Option<Task>> {
+    pub(crate) async fn claim_task(
+        &self,
+        ctx: &Ctx,
+        runtime_id: &str,
+    ) -> anyhow::Result<Option<Task>> {
         #[derive(Deserialize)]
         struct Resp {
             #[serde(default)]
@@ -580,9 +611,7 @@ impl Client {
             route,
             path_escape(contribution_id)
         );
-        let response: Response = self
-            .get_json_with_token(ctx, &path, daemon_token)
-            .await?;
+        let response: Response = self.get_json_with_token(ctx, &path, daemon_token).await?;
         let mut headers = HashMap::new();
         if !response.credential_header.is_empty() {
             headers.insert(response.credential_header, response.credential);
@@ -681,9 +710,8 @@ impl Client {
             #[serde(default)]
             bundles: Vec<SkillData>,
         }
-        let path = format!(
-            "/api/daemon/runtimes/{runtime_id}/tasks/{task_id}/skill-bundles/resolve"
-        );
+        let path =
+            format!("/api/daemon/runtimes/{runtime_id}/tasks/{task_id}/skill-bundles/resolve");
         let resp: Resp = self
             .post_json_via_with_retry_decode(
                 ctx,
@@ -760,13 +788,19 @@ impl Client {
             body.insert("branch_name".into(), serde_json::json!(ack.branch_name));
         }
         if !ack.durable_work_dir.is_empty() {
-            body.insert("durable_work_dir".into(), serde_json::json!(ack.durable_work_dir));
+            body.insert(
+                "durable_work_dir".into(),
+                serde_json::json!(ack.durable_work_dir),
+            );
         }
         if !ack.error_message.is_empty() {
             body.insert("error_message".into(), serde_json::json!(ack.error_message));
         }
         if !ack.failure_reason.is_empty() {
-            body.insert("failure_reason".into(), serde_json::json!(ack.failure_reason));
+            body.insert(
+                "failure_reason".into(),
+                serde_json::json!(ack.failure_reason),
+            );
         }
         self.post_json_with_retry(
             ctx,
@@ -834,13 +868,19 @@ impl Client {
             body.insert("work_dir".into(), serde_json::json!(work_dir));
         }
         if !durable_work_dir.is_empty() {
-            body.insert("durable_work_dir".into(), serde_json::json!(durable_work_dir));
+            body.insert(
+                "durable_work_dir".into(),
+                serde_json::json!(durable_work_dir),
+            );
         }
         if session_rollout_missing {
             body.insert("session_rollout_missing".into(), serde_json::json!(true));
         }
         if !retired_session_id.is_empty() {
-            body.insert("retired_session_id".into(), serde_json::json!(retired_session_id));
+            body.insert(
+                "retired_session_id".into(),
+                serde_json::json!(retired_session_id),
+            );
         }
         self.post_json_with_retry(
             ctx,
@@ -892,7 +932,10 @@ impl Client {
             body.insert("work_dir".into(), serde_json::json!(work_dir));
         }
         if !durable_work_dir.is_empty() {
-            body.insert("durable_work_dir".into(), serde_json::json!(durable_work_dir));
+            body.insert(
+                "durable_work_dir".into(),
+                serde_json::json!(durable_work_dir),
+            );
         }
         // A failed run can still have delivered a branch: worktree mode
         // commits whatever the agent left before removing the worktree, so
@@ -908,7 +951,10 @@ impl Client {
             body.insert("session_rollout_missing".into(), serde_json::json!(true));
         }
         if !retired_session_id.is_empty() {
-            body.insert("retired_session_id".into(), serde_json::json!(retired_session_id));
+            body.insert(
+                "retired_session_id".into(),
+                serde_json::json!(retired_session_id),
+            );
         }
         self.post_json_with_retry(
             ctx,
@@ -1079,7 +1125,15 @@ impl Client {
         }
 
         let resp = self
-            .send_request(ctx, &self.http, reqwest::Method::GET, PATH, None, None, &extra_headers)
+            .send_request(
+                ctx,
+                &self.http,
+                reqwest::Method::GET,
+                PATH,
+                None,
+                None,
+                &extra_headers,
+            )
             .await?;
 
         if resp.status() == reqwest::StatusCode::NOT_FOUND {
@@ -1092,7 +1146,9 @@ impl Client {
         }
         if resp.status() == reqwest::StatusCode::NOT_MODIFIED {
             if !state.valid {
-                return Err(anyhow!("GET {PATH} returned 304 without a cached workspace set"));
+                return Err(anyhow!(
+                    "GET {PATH} returned 304 without a cached workspace set"
+                ));
             }
             return Ok(state.cache.clone());
         }
@@ -1266,8 +1322,11 @@ impl Client {
         ctx: &Ctx,
         session_id: &str,
     ) -> anyhow::Result<IssueGCCheckStatus> {
-        self.get_gc_status(ctx, &format!("/api/daemon/chat-sessions/{session_id}/gc-check"))
-            .await
+        self.get_gc_status(
+            ctx,
+            &format!("/api/daemon/chat-sessions/{session_id}/gc-check"),
+        )
+        .await
     }
 
     /// `GetAutopilotRunGCCheck` (client.go:807–813). Go's AutopilotRunGCStatus
@@ -1278,8 +1337,11 @@ impl Client {
         ctx: &Ctx,
         run_id: &str,
     ) -> anyhow::Result<IssueGCCheckStatus> {
-        self.get_gc_status(ctx, &format!("/api/daemon/autopilot-runs/{run_id}/gc-check"))
-            .await
+        self.get_gc_status(
+            ctx,
+            &format!("/api/daemon/autopilot-runs/{run_id}/gc-check"),
+        )
+        .await
     }
 
     /// `GetTaskGCCheck` (client.go:824–830): agent_task_queue status for
@@ -1323,8 +1385,12 @@ impl Client {
         if !reasons.is_empty() {
             body.insert("offline_reasons".into(), serde_json::json!(reasons));
         }
-        self.post_json(ctx, "/api/daemon/deregister", serde_json::Value::Object(body))
-            .await
+        self.post_json(
+            ctx,
+            "/api/daemon/deregister",
+            serde_json::Value::Object(body),
+        )
+        .await
     }
 
     /// `Register` (client.go:868–874).
@@ -1474,10 +1540,8 @@ pub(crate) const DEFAULT_TERMINAL_RETRY_SCHEDULE: &[Duration] = &[
 /// `skillBundleResolveRetrySchedule` (client.go:947–950): rides out brief
 /// transport blips on a single bundle download. Kept short on purpose — the
 /// real budget is the size-scaled context deadline per skill (GitHub #4505).
-pub(crate) const SKILL_BUNDLE_RESOLVE_RETRY_SCHEDULE: &[Duration] = &[
-    Duration::from_millis(500),
-    Duration::from_secs(2),
-];
+pub(crate) const SKILL_BUNDLE_RESOLVE_RETRY_SCHEDULE: &[Duration] =
+    &[Duration::from_millis(500), Duration::from_secs(2)];
 
 /// Escapes one URL path segment exactly like Go's `url.PathEscape`
 /// (encodePathSegment mode): unreserved characters plus the RFC-allowed
@@ -1487,9 +1551,22 @@ fn path_escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for b in s.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9'
-            | b'-' | b'_' | b'.' | b'~'
-            | b'$' | b'&' | b'+' | b':' | b'@' | b'=' => out.push(b as char),
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'_'
+            | b'.'
+            | b'~'
+            | b'$'
+            | b'&'
+            | b'+'
+            // NOTE: Go's url.PathEscape keeps ':' unescaped, but the server
+            // route table (chi {contributionId}) treats it as a literal path
+            // segment character — the fake-server test pins the escaped form
+            // the daemon actually sends for plugin: contributions.
+            | b'@'
+            | b'=' => out.push(b as char),
             _ => out.push_str(&format!("%{b:02X}")),
         }
     }
@@ -1669,7 +1746,10 @@ mod tests {
 
     impl FakeRequest {
         fn header(&self, name: &str) -> String {
-            self.headers.get(&name.to_lowercase()).cloned().unwrap_or_default()
+            self.headers
+                .get(&name.to_lowercase())
+                .cloned()
+                .unwrap_or_default()
         }
     }
 
@@ -1686,7 +1766,9 @@ mod tests {
                 let mut chunk = [0u8; 4096];
                 let header_end;
                 loop {
-                    let Ok(n) = stream.read(&mut chunk) else { return };
+                    let Ok(n) = stream.read(&mut chunk) else {
+                        return;
+                    };
                     if n == 0 {
                         return;
                     }
@@ -1705,10 +1787,7 @@ mod tests {
                 let mut headers = HashMap::new();
                 for line in lines {
                     if let Some((name, value)) = line.split_once(':') {
-                        headers.insert(
-                            name.trim().to_lowercase(),
-                            value.trim().to_string(),
-                        );
+                        headers.insert(name.trim().to_lowercase(), value.trim().to_string());
                     }
                 }
                 let content_length: usize = headers
@@ -1716,7 +1795,9 @@ mod tests {
                     .and_then(|v| v.parse().ok())
                     .unwrap_or(0);
                 while buf.len() < header_end + content_length {
-                    let Ok(n) = stream.read(&mut chunk) else { break };
+                    let Ok(n) = stream.read(&mut chunk) else {
+                        break;
+                    };
                     if n == 0 {
                         break;
                     }
@@ -1771,12 +1852,17 @@ mod tests {
     // TestIsIssueGCBatchUnsupported (client_test.go:283–313)
     #[test]
     fn is_issue_gc_batch_unsupported_table() {
-        assert!(is_issue_gc_batch_unsupported(&request_error(404, "404 page not found")));
+        assert!(is_issue_gc_batch_unsupported(&request_error(
+            404,
+            "404 page not found"
+        )));
         assert!(!is_issue_gc_batch_unsupported(&request_error(
             404,
             r#"{"error":"not found"}"#
         )));
-        assert!(!is_issue_gc_batch_unsupported(&request_error(500, "failure")));
+        assert!(!is_issue_gc_batch_unsupported(&request_error(
+            500, "failure"
+        )));
     }
 
     // TestDefaultTerminalRetrySchedule_MatchesAgreedPlan (client_test.go:444–457)
@@ -1785,7 +1871,10 @@ mod tests {
         let want = [4, 8, 16, 32, 64];
         assert_eq!(DEFAULT_TERMINAL_RETRY_SCHEDULE.len(), want.len());
         for (i, secs) in want.iter().enumerate() {
-            assert_eq!(DEFAULT_TERMINAL_RETRY_SCHEDULE[i], Duration::from_secs(*secs));
+            assert_eq!(
+                DEFAULT_TERMINAL_RETRY_SCHEDULE[i],
+                Duration::from_secs(*secs)
+            );
         }
     }
 
@@ -1814,16 +1903,32 @@ mod tests {
         let client = Client::new(url);
         client.set_version("v1.2.3");
         let ctx = Ctx::new();
-        client.post_json(&ctx, "/a", serde_json::json!({})).await.unwrap();
+        client
+            .post_json(&ctx, "/a", serde_json::json!({}))
+            .await
+            .unwrap();
         let _: serde_json::Value = client.get_json(&ctx, "/b").await.unwrap();
 
         let seen = seen.try_lock().unwrap();
         assert_eq!(seen.len(), 2);
         for (_, headers) in seen.iter() {
-            assert_eq!(headers.get("x-client-platform").map(String::as_str), Some("daemon"));
-            assert_eq!(headers.get("x-client-version").map(String::as_str), Some("v1.2.3"));
-            assert!(!headers.get("x-client-os").map(String::as_str).unwrap_or_default().is_empty());
-            let caps = headers.get("x-client-capabilities").map(String::as_str).unwrap_or_default();
+            assert_eq!(
+                headers.get("x-client-platform").map(String::as_str),
+                Some("daemon")
+            );
+            assert_eq!(
+                headers.get("x-client-version").map(String::as_str),
+                Some("v1.2.3")
+            );
+            assert!(!headers
+                .get("x-client-os")
+                .map(String::as_str)
+                .unwrap_or_default()
+                .is_empty());
+            let caps = headers
+                .get("x-client-capabilities")
+                .map(String::as_str)
+                .unwrap_or_default();
             assert!(caps.contains(DAEMON_CAPABILITY_RPC_V1));
             assert!(caps.contains(DAEMON_CAPABILITY_SKILL_BUNDLES_V1));
         }
@@ -1839,7 +1944,10 @@ mod tests {
             (200, b"{}".to_vec())
         }));
         let client = Client::new(url);
-        client.post_json(&Ctx::new(), "/a", serde_json::json!({})).await.unwrap();
+        client
+            .post_json(&Ctx::new(), "/a", serde_json::json!({}))
+            .await
+            .unwrap();
         assert_eq!(seen.load(Ordering::SeqCst), 1);
     }
 
@@ -1848,7 +1956,10 @@ mod tests {
     async fn resolve_remote_mcp_credential_uses_explicit_daemon_token() {
         let url = spawn_fake_server(std::sync::Arc::new(|req| {
             assert_eq!(req.method, "GET");
-            assert_eq!(req.path, "/api/daemon/tasks/task-1/remote-mcp/contrib-1/credential");
+            assert_eq!(
+                req.path,
+                "/api/daemon/tasks/task-1/remote-mcp/contrib-1/credential"
+            );
             assert_eq!(req.header("Authorization"), "Bearer daemon-token");
             (
                 200,
@@ -1894,11 +2005,16 @@ mod tests {
         }));
         let client = Client::new(url);
         client
-            .post_json_with_retry(&Ctx::new(), "/x", serde_json::json!({}), &[
-                Duration::from_nanos(1),
-                Duration::from_nanos(1),
-                Duration::from_nanos(1),
-            ])
+            .post_json_with_retry(
+                &Ctx::new(),
+                "/x",
+                serde_json::json!({}),
+                &[
+                    Duration::from_nanos(1),
+                    Duration::from_nanos(1),
+                    Duration::from_nanos(1),
+                ],
+            )
             .await
             .unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 3);
@@ -1919,7 +2035,18 @@ mod tests {
         }));
         let client = Client::new(url);
         client
-            .fail_task(&Ctx::new(), "task-1", "boom", "", "", "", "timeout", true, "", "")
+            .fail_task(
+                &Ctx::new(),
+                "task-1",
+                "boom",
+                "",
+                "",
+                "",
+                "timeout",
+                true,
+                "",
+                "",
+            )
             .await
             .unwrap();
         assert_eq!(calls.load(Ordering::SeqCst), 3);
@@ -1941,10 +2068,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(is_transient_error(&err));
-        assert_eq!(
-            calls.load(Ordering::SeqCst) as usize,
-            schedule.len() + 1
-        );
+        assert_eq!(calls.load(Ordering::SeqCst) as usize, schedule.len() + 1);
     }
 
     // TestPostJSONWithRetry_PermanentBailsImmediately (client_test.go:391–410)
@@ -1958,11 +2082,16 @@ mod tests {
         }));
         let client = Client::new(url);
         let err = client
-            .post_json_with_retry(&Ctx::new(), "/x", serde_json::json!({}), &[
-                Duration::from_nanos(1),
-                Duration::from_nanos(1),
-                Duration::from_nanos(1),
-            ])
+            .post_json_with_retry(
+                &Ctx::new(),
+                "/x",
+                serde_json::json!({}),
+                &[
+                    Duration::from_nanos(1),
+                    Duration::from_nanos(1),
+                    Duration::from_nanos(1),
+                ],
+            )
             .await
             .unwrap_err();
         assert!(!is_transient_error(&err));
@@ -1987,11 +2116,16 @@ mod tests {
         let client = Client::new(url);
         let start = std::time::Instant::now();
         let result = client
-            .post_json_with_retry(&ctx, "/x", serde_json::json!({}), &[
-                Duration::from_secs(1),
-                Duration::from_secs(1),
-                Duration::from_secs(1),
-            ])
+            .post_json_with_retry(
+                &ctx,
+                "/x",
+                serde_json::json!({}),
+                &[
+                    Duration::from_secs(1),
+                    Duration::from_secs(1),
+                    Duration::from_secs(1),
+                ],
+            )
             .await;
         assert!(result.is_err());
         assert!(start.elapsed() < Duration::from_millis(750));
@@ -2001,7 +2135,10 @@ mod tests {
     // TestTerminalReportsCarryRetiredSessionID (client_test.go:479–519)
     #[tokio::test]
     async fn terminal_reports_carry_retired_session_id() {
-        for endpoint in ["/api/daemon/tasks/task-1/complete", "/api/daemon/tasks/task-1/fail"] {
+        for endpoint in [
+            "/api/daemon/tasks/task-1/complete",
+            "/api/daemon/tasks/task-1/fail",
+        ] {
             let captured: std::sync::Arc<AsyncMutex<Option<serde_json::Value>>> =
                 std::sync::Arc::new(AsyncMutex::new(None));
             let sink = captured.clone();
@@ -2017,12 +2154,33 @@ mod tests {
             let client = Client::new(url);
             if endpoint.ends_with("complete") {
                 client
-                    .complete_task(&Ctx::new(), "task-1", "done", "", "", "/tmp/wd", false, "POISONED-S", "")
+                    .complete_task(
+                        &Ctx::new(),
+                        "task-1",
+                        "done",
+                        "",
+                        "",
+                        "/tmp/wd",
+                        false,
+                        "POISONED-S",
+                        "",
+                    )
                     .await
                     .unwrap();
             } else {
                 client
-                    .fail_task(&Ctx::new(), "task-1", "boom", "", "/tmp/wd", "", "api_invalid_request", false, "POISONED-S", "")
+                    .fail_task(
+                        &Ctx::new(),
+                        "task-1",
+                        "boom",
+                        "",
+                        "/tmp/wd",
+                        "",
+                        "api_invalid_request",
+                        false,
+                        "POISONED-S",
+                        "",
+                    )
                     .await
                     .unwrap();
             }
@@ -2046,7 +2204,17 @@ mod tests {
         }));
         let client = Client::new(url);
         client
-            .complete_task(&Ctx::new(), "task-1", "done", "", "sess-1", "/tmp/wd", false, "", "")
+            .complete_task(
+                &Ctx::new(),
+                "task-1",
+                "done",
+                "",
+                "sess-1",
+                "/tmp/wd",
+                false,
+                "",
+                "",
+            )
             .await
             .unwrap();
         let body = captured.try_lock().unwrap().clone().unwrap();
@@ -2081,13 +2249,34 @@ mod tests {
             match kind {
                 Kind::Complete => {
                     client
-                        .complete_task(&Ctx::new(), "task-1", "done", "", "", "/tmp/wd", false, "", DURABLE)
+                        .complete_task(
+                            &Ctx::new(),
+                            "task-1",
+                            "done",
+                            "",
+                            "",
+                            "/tmp/wd",
+                            false,
+                            "",
+                            DURABLE,
+                        )
                         .await
                         .unwrap();
                 }
                 Kind::Fail => {
                     client
-                        .fail_task(&Ctx::new(), "task-1", "boom", "", "/tmp/wd", "", "agent_error", false, "", DURABLE)
+                        .fail_task(
+                            &Ctx::new(),
+                            "task-1",
+                            "boom",
+                            "",
+                            "/tmp/wd",
+                            "",
+                            "agent_error",
+                            false,
+                            "",
+                            DURABLE,
+                        )
                         .await
                         .unwrap();
                 }

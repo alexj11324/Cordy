@@ -122,7 +122,12 @@ impl ReconcileBroadcaster {
             state.pending = false;
             return Snapshot::Ready;
         }
-        Snapshot::Live(self.tx.subscribe())
+        let mut rx = self.tx.subscribe();
+        // Snapshot the current generation as already seen: only broadcasts
+        // AFTER notify() may fire this snapshot, mirroring Go handing out the
+        // current pre-close channel.
+        rx.borrow_and_update();
+        Snapshot::Live(rx)
     }
 
     /// `broadcast` (reconcile.go:86–98): wake every current subscriber and
@@ -141,7 +146,7 @@ impl ReconcileBroadcaster {
         state.last_broadcast = Some(now);
         state.pending = true;
         // Wake all live receivers (those still holding the old generation).
-        let _ = self.tx.send_modify(|gen| *gen += 1);
+        self.tx.send_modify(|gen| *gen += 1);
         true
     }
 }
@@ -260,7 +265,10 @@ mod tests {
         // Second late subscriber must NOT see the same replay; it parks.
         let second = b.notify();
         let result = tokio::time::timeout(Duration::from_millis(50), second.fired()).await;
-        assert!(result.is_err(), "second late subscriber received a stale replay");
+        assert!(
+            result.is_err(),
+            "second late subscriber received a stale replay"
+        );
     }
 
     /// TestReconcileBroadcaster_ReplayPersistsAcrossSubscriberDelay
@@ -313,11 +321,17 @@ mod tests {
 
         // Exactly at the interval — must fire (>= boundary allowed).
         clock.advance(1000);
-        assert!(b.broadcast(), "broadcast at exact debounce boundary was suppressed");
+        assert!(
+            b.broadcast(),
+            "broadcast at exact debounce boundary was suppressed"
+        );
 
         // Just below the next boundary — must be suppressed.
         clock.advance(999);
-        assert!(!b.broadcast(), "broadcast at boundary-minus-1ms was not suppressed");
+        assert!(
+            !b.broadcast(),
+            "broadcast at boundary-minus-1ms was not suppressed"
+        );
     }
 
     /// TestReconcileBroadcaster_ReSubscribesEachWake
@@ -333,11 +347,10 @@ mod tests {
             .await
             .expect("first wake did not arrive");
 
-        // Broadcasting again must not panic; a stale snapshot stays drained.
+        // ch1 is now closed (fired) and consumed; broadcasting again must not
+        // panic. A fresh notify() observes the missed broadcast exactly once.
         b.broadcast();
-        let stale = b.notify(); // consumes the pending replay — fresh snapshot
-        let result = tokio::time::timeout(Duration::from_millis(50), stale.fired()).await;
-        assert!(result.is_err(), "post-broadcast notify should be edge-triggered after replay consumption");
+        assert!(matches!(b.notify(), Snapshot::Ready));
     }
 
     /// TestWorkspaceChangeSignalCoalescesUntilConsumed (reconcile_test.go:182–199).
@@ -345,16 +358,19 @@ mod tests {
     async fn workspace_change_signal_coalesces_until_consumed() {
         let s = WorkspaceChangeSignal::new();
         assert!(s.broadcast(), "first workspace change was not recorded");
-        assert!(!s.broadcast(), "duplicate workspace change should coalesce while dirty");
+        assert!(
+            !s.broadcast(),
+            "duplicate workspace change should coalesce while dirty"
+        );
 
         tokio::time::timeout(Duration::from_secs(1), s.wait())
             .await
             .expect("recorded workspace change was not delivered");
+        assert!(!s.try_wait(), "signal should be empty after consumption");
         assert!(
-            !s.try_wait(),
-            "signal should be empty after consumption"
+            s.broadcast(),
+            "workspace change after consumption was not recorded"
         );
-        assert!(s.broadcast(), "workspace change after consumption was not recorded");
     }
 
     /// TestReconcileBroadcaster_ConcurrentBroadcastAndNotify
@@ -404,8 +420,11 @@ mod tests {
         stop.notify_waiters();
 
         // Bound the join — deadlock surfaces as a timeout failure.
-        tokio::time::timeout(Duration::from_secs(2), futures_util::future::join_all(handles))
-            .await
-            .expect("concurrent broadcast/notify did not converge after stop");
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            futures_util::future::join_all(handles),
+        )
+        .await
+        .expect("concurrent broadcast/notify did not converge after stop");
     }
 }

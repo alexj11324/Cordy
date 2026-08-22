@@ -327,11 +327,9 @@ impl WsRpcClient {
         B: Serialize + ?Sized,
     {
         let raw_req = match req_body {
-            Some(body) => Some(
-                serde_json::to_value(body).map_err(|e| {
-                    WsRpcCallError::transport(anyhow!("ws rpc: marshal request: {}", e))
-                })?,
-            ),
+            Some(body) => Some(serde_json::to_value(body).map_err(|e| {
+                WsRpcCallError::transport(anyhow!("ws rpc: marshal request: {}", e))
+            })?),
             None => None,
         };
         let id = uuid::Uuid::now_v7().to_string();
@@ -352,7 +350,9 @@ impl WsRpcClient {
         let send = {
             let mut inner = lock_inner(&self.inner);
             if inner.send_frame.is_none() || (require_rpc_v1 && !inner.rpc_v1_supported) {
-                return Err(WsRpcCallError::transport(anyhow!(WsRpcSentinel::Unavailable)));
+                return Err(WsRpcCallError::transport(anyhow!(
+                    WsRpcSentinel::Unavailable
+                )));
             }
             let send = inner.send_frame.clone().expect("checked non-none above");
             inner.pending.insert(id.clone(), tx);
@@ -368,7 +368,10 @@ impl WsRpcClient {
         let item = match send(frame) {
             Ok(item) => item,
             Err(err) => {
-                return Err(WsRpcCallError::transport(anyhow!("ws rpc: send: {:#}", err)));
+                return Err(WsRpcCallError::transport(anyhow!(
+                    "ws rpc: send: {:#}",
+                    err
+                )));
             }
         };
 
@@ -426,14 +429,11 @@ impl WsRpcClient {
         };
         if (200..300).contains(&resp.status) {
             let body = match resp.body {
-                Some(body) if !body.is_null() => Some(
-                    serde_json::from_value::<T>(body).map_err(|e| {
-                        WsRpcCallError::at(
-                            resp.status,
-                            anyhow!("ws rpc: decode response: {}", e),
-                        )
-                    })?,
-                ),
+                Some(body) if !body.is_null() => {
+                    Some(serde_json::from_value::<T>(body).map_err(|e| {
+                        WsRpcCallError::at(resp.status, anyhow!("ws rpc: decode response: {}", e))
+                    })?)
+                }
                 _ => None,
             };
             return Ok((resp.status, body));
@@ -563,9 +563,7 @@ pub(crate) async fn claim_tasks_ws_first<H: WsClaimHost + ?Sized>(
         let now = SystemTime::now();
         match now.duration_since(retry_after) {
             Err(_) => {
-                let remaining = retry_after
-                    .duration_since(now)
-                    .unwrap_or(Duration::ZERO);
+                let remaining = retry_after.duration_since(now).unwrap_or(Duration::ZERO);
                 tracing::debug!(
                     retry_after = %go_duration_string_round_ms(remaining),
                     "ws claim outcome uncertain; delaying http fallback until safety window elapses"
@@ -612,8 +610,7 @@ pub(crate) async fn claim_tasks_ws_first<H: WsClaimHost + ?Sized>(
                     // recovery; if it did not, HTTP regains liveness for the
                     // queued task.
                     host.store_ws_claim_http_fallback_after_nanos(
-                        now_unix_nanos()
-                            + ws_claim_uncertain_fallback_delay().as_nanos() as i64,
+                        now_unix_nanos() + ws_claim_uncertain_fallback_delay().as_nanos() as i64,
                     );
                     tracing::debug!(
                         retry_after = ?ws_claim_uncertain_fallback_delay(),
@@ -688,7 +685,12 @@ mod tests {
         let client = WsRpcClient::new(WS_RPC_RESPONSE_GRACE);
         let ctx = Ctx::new();
         let err = client
-            .call::<serde_json::Value, _>(&ctx, "tasks.claim", Duration::from_secs(1), Some(&serde_json::json!({})))
+            .call::<serde_json::Value, _>(
+                &ctx,
+                "tasks.claim",
+                Duration::from_secs(1),
+                Some(&serde_json::json!({})),
+            )
             .await
             .unwrap_err();
         assert_eq!(err.status, 0);
@@ -732,8 +734,8 @@ mod tests {
     #[tokio::test]
     async fn detach_fails_pending_calls_as_unavailable() {
         let client = Arc::new(WsRpcClient::new(Duration::from_secs(5)));
-        let (tx, rx) = tokio::sync::mpsc::channel::<Arc<WsOutbound>>(4);
-        let send_client = client.clone();
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<Arc<WsOutbound>>(4);
+        let _send_client = client.clone();
         let gen = client.attach(Some(Arc::new(move |frame| {
             let out = Arc::new(WsOutbound::new(frame));
             let _ = tx.try_send(out.clone());
@@ -815,6 +817,22 @@ mod tests {
     impl WsRpcCallError {
         fn into_parts(self) -> (i32, anyhow::Error) {
             (self.status, self.source)
+        }
+    }
+
+    /// Test helper trait: unwraps an `Err` result into `(status, _)`,
+    /// mirroring the Go test's error unpacking while dropping the payload.
+    trait ResultErrParts {
+        fn unwrap_err_into_parts(self) -> (i32, Option<serde_json::Value>);
+    }
+
+    impl ResultErrParts for Result<(i32, Option<serde_json::Value>), WsRpcCallError> {
+        #[track_caller]
+        fn unwrap_err_into_parts(self) -> (i32, Option<serde_json::Value>) {
+            match self {
+                Ok(v) => panic!("expected error, got {:?}", v.0),
+                Err(e) => (e.status, None),
+            }
         }
     }
 }

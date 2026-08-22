@@ -63,10 +63,7 @@ pub(crate) struct TaskDiskUsage {
     pub path: String,
     #[serde(rename = "kind")]
     pub kind: String,
-    #[serde(
-        rename = "parent_id",
-        skip_serializing_if = "String::is_empty"
-    )]
+    #[serde(rename = "parent_id", skip_serializing_if = "String::is_empty")]
     pub parent_id: String,
     /// Stays empty until [`resolve_parent_statuses`] fills it in.
     #[serde(rename = "parent_status")]
@@ -150,7 +147,7 @@ pub(crate) struct RootDiskUsage {
 }
 
 /// `AggregateDiskUsageReport` (diskusage.go:93–105).
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 pub(crate) struct AggregateDiskUsageReport {
     #[serde(rename = "generated_at")]
     pub generated_at: DateTime<Utc>,
@@ -239,7 +236,7 @@ fn read_gc_meta(env_root: &Path) -> Option<DiskGcMeta> {
 fn gc_meta_file_age(task_dir: &Path) -> Option<chrono::Duration> {
     let info = std::fs::metadata(task_dir.join(".gc_meta.json")).ok()?;
     let modified = info.modified().ok()?;
-    Utc::now().signed_duration_since(DateTime::<Utc>::from(modified))
+    Some(Utc::now().signed_duration_since(DateTime::<Utc>::from(modified)))
 }
 
 // ---------------------------------------------------------------------------
@@ -329,7 +326,11 @@ impl ArtifactMatcher {
 
     /// `managedSubpaths` (artifact_matcher.go:65–72).
     fn managed_subpaths(&self) -> Vec<String> {
-        let mut out: Vec<String> = self.exact_paths.keys().map(|r| r.replace('\\', "/")).collect();
+        let mut out: Vec<String> = self
+            .exact_paths
+            .keys()
+            .map(|r| r.replace('\\', "/"))
+            .collect();
         out.sort();
         out
     }
@@ -412,10 +413,7 @@ pub(crate) fn scan_disk_usage(
     let ws_entries = match std::fs::read_dir(workspaces_root) {
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(report),
-        Err(e) => {
-            return Err(anyhow::Error::new(e)
-                .context("disk-usage: read workspaces root"))
-        }
+        Err(e) => return Err(anyhow::Error::new(e).context("disk-usage: read workspaces root")),
     };
 
     let mut ws_agg: HashMap<String, WorkspaceDiskUsage> = HashMap::new();
@@ -454,11 +452,13 @@ pub(crate) fn scan_disk_usage(
             report.total_size_bytes += usage.size_bytes;
             report.total_artifact_size_bytes += usage.artifact_size_bytes;
 
-            let ws = ws_agg.entry(ws_id.clone()).or_insert_with(|| WorkspaceDiskUsage {
-                workspace_id: ws_id.clone(),
-                workspace_short: short_id(&ws_id),
-                ..Default::default()
-            });
+            let ws = ws_agg
+                .entry(ws_id.clone())
+                .or_insert_with(|| WorkspaceDiskUsage {
+                    workspace_id: ws_id.clone(),
+                    workspace_short: short_id(&ws_id),
+                    ..Default::default()
+                });
             ws.task_count += 1;
             ws.size_bytes += usage.size_bytes;
             ws.artifact_size_bytes += usage.artifact_size_bytes;
@@ -470,9 +470,7 @@ pub(crate) fn scan_disk_usage(
         }
     }
 
-    report
-        .tasks
-        .sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+    report.tasks.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
 
     let mut workspaces: Vec<WorkspaceDiskUsage> = ws_agg.into_values().collect();
     for ws in &mut workspaces {
@@ -524,7 +522,12 @@ fn ratio(numerator: i64, denominator: i64) -> f64 {
 }
 
 /// `buildTaskUsage` (diskusage.go:306–337).
-fn build_task_usage(task_dir: &Path, ws_id: &str, task_short: &str, matcher: &ArtifactMatcher) -> TaskDiskUsage {
+fn build_task_usage(
+    task_dir: &Path,
+    ws_id: &str,
+    task_short: &str,
+    matcher: &ArtifactMatcher,
+) -> TaskDiskUsage {
     let mut usage = TaskDiskUsage {
         workspace_id: ws_id.to_string(),
         workspace_short: short_id(ws_id),
@@ -540,9 +543,7 @@ fn build_task_usage(task_dir: &Path, ws_id: &str, task_short: &str, matcher: &Ar
         usage.kind = meta.kind().to_string();
         usage.parent_id = parent_id_for_meta(&meta);
         if let Some(completed_at) = meta.completed_at {
-            usage.age_seconds = Utc::now()
-                .signed_duration_since(completed_at)
-                .num_seconds();
+            usage.age_seconds = Utc::now().signed_duration_since(completed_at).num_seconds();
         } else if let Some(age) = gc_meta_file_age(task_dir) {
             usage.age_seconds = age.num_seconds();
         }
@@ -552,8 +553,9 @@ fn build_task_usage(task_dir: &Path, ws_id: &str, task_short: &str, matcher: &Ar
     if usage.age_seconds <= 0 && !meta_present {
         if let Ok(info) = std::fs::metadata(task_dir) {
             if let Ok(modified) = info.modified() {
-                usage.age_seconds =
-                    Utc::now().signed_duration_since(DateTime::<Utc>::from(modified)).num_seconds();
+                usage.age_seconds = Utc::now()
+                    .signed_duration_since(DateTime::<Utc>::from(modified))
+                    .num_seconds();
             }
         }
     }
@@ -588,7 +590,13 @@ fn task_size(task_dir: &Path, matcher: &ArtifactMatcher) -> (i64, i64) {
     let abs_root = absolute(task_dir);
     let mut total_bytes = 0i64;
     let mut artifact_bytes = 0i64;
-    walk_task_dir(&abs_root, &abs_root, matcher, &mut total_bytes, &mut artifact_bytes);
+    walk_task_dir(
+        &abs_root,
+        &abs_root,
+        matcher,
+        &mut total_bytes,
+        &mut artifact_bytes,
+    );
     (total_bytes, artifact_bytes)
 }
 
@@ -780,11 +788,20 @@ mod tests {
             .as_secs() as i64;
         let target = now - seconds_ago;
         let times = [
-            libc::timespec { tv_sec: target, tv_nsec: 0 },
-            libc::timespec { tv_sec: target, tv_nsec: 0 },
+            libc::timespec {
+                tv_sec: target,
+                tv_nsec: 0,
+            },
+            libc::timespec {
+                tv_sec: target,
+                tv_nsec: 0,
+            },
         ];
         unsafe {
-            assert_eq!(libc::utimensat(libc::AT_FDCWD, c.as_ptr(), times.as_ptr(), 0), 0);
+            assert_eq!(
+                libc::utimensat(libc::AT_FDCWD, c.as_ptr(), times.as_ptr(), 0),
+                0
+            );
         }
     }
 
@@ -831,14 +848,19 @@ mod tests {
         // Backdate the dir mtime so the fallback produces a measurable age.
         backdate_mtime(&task_b1, 2 * 3600);
 
-        let report =
-            scan_disk_usage(root.to_str().unwrap(), &["node_modules".into(), ".next".into(), ".turbo".into()])
-                .unwrap();
+        let report = scan_disk_usage(
+            root.to_str().unwrap(),
+            &["node_modules".into(), ".next".into(), ".turbo".into()],
+        )
+        .unwrap();
 
         assert_eq!(report.tasks.len(), 3);
 
-        let by_short: HashMap<&str, &TaskDiskUsage> =
-            report.tasks.iter().map(|t| (t.task_short.as_str(), t)).collect();
+        let by_short: HashMap<&str, &TaskDiskUsage> = report
+            .tasks
+            .iter()
+            .map(|t| (t.task_short.as_str(), t))
+            .collect();
 
         let a1 = by_short["aaaaaaaa"];
         assert_eq!(a1.kind, "issue");
@@ -868,8 +890,11 @@ mod tests {
         );
         assert_eq!(report.total_artifact_size_bytes, 4000);
 
-        let ws_by_id: HashMap<&str, &WorkspaceDiskUsage> =
-            report.workspaces.iter().map(|w| (w.workspace_id.as_str(), w)).collect();
+        let ws_by_id: HashMap<&str, &WorkspaceDiskUsage> = report
+            .workspaces
+            .iter()
+            .map(|w| (w.workspace_id.as_str(), w))
+            .collect();
         assert_eq!(ws_by_id[ws_a].size_bytes, a1.size_bytes + a2.size_bytes);
         assert_eq!(ws_by_id[ws_a].artifact_size_bytes, 4000);
         assert_eq!(ws_by_id[ws_a].task_count, 2);
@@ -897,10 +922,17 @@ mod tests {
         // JSON round-trip guards the field names.
         let raw = serde_json::to_string(&report).unwrap();
         for want in [
-            "\"kind\"", "\"parent_status\"", "\"age_seconds\"", "\"size_bytes\"",
-            "\"artifact_size_bytes\"", "\"workspace_id\"", "\"task_short\"",
-            "\"artifact_ratio\"", "\"managed_artifact_subpaths\"",
-            "\"total_task_count\"", "\"total_workspace_count\"",
+            "\"kind\"",
+            "\"parent_status\"",
+            "\"age_seconds\"",
+            "\"size_bytes\"",
+            "\"artifact_size_bytes\"",
+            "\"workspace_id\"",
+            "\"task_short\"",
+            "\"artifact_ratio\"",
+            "\"managed_artifact_subpaths\"",
+            "\"total_task_count\"",
+            "\"total_workspace_count\"",
             "\"total_artifact_ratio\"",
         ] {
             assert!(raw.contains(want), "JSON missing required field {want}");
@@ -912,17 +944,30 @@ mod tests {
     #[test]
     fn managed_codex_sandbox_is_exact_and_deduplicated() {
         let root = tempfile::tempdir().unwrap();
-        let task_dir = root.path().join("mmmmmmmm-mmmm-mmmm-mmmm-mmmmmmmmmmmm").join("tttttttt");
+        let task_dir = root
+            .path()
+            .join("mmmmmmmm-mmmm-mmmm-mmmm-mmmmmmmmmmmm")
+            .join("tttttttt");
         write_file(&task_dir.join("codex-home/.sandbox-bin/codex.exe"), 300);
         write_file(&task_dir.join("workdir/repo/.sandbox-bin/cache"), 400);
 
         let report = scan_disk_usage(root.path().to_str().unwrap(), &[]).unwrap();
         assert_eq!(report.tasks[0].size_bytes, 700);
-        assert_eq!(report.tasks[0].artifact_size_bytes, 300, "exact managed only");
-        assert_eq!(report.managed_artifact_subpaths.join(","), "codex-home/.sandbox-bin");
+        assert_eq!(
+            report.tasks[0].artifact_size_bytes, 300,
+            "exact managed only"
+        );
+        assert_eq!(
+            report.managed_artifact_subpaths.join(","),
+            "codex-home/.sandbox-bin"
+        );
 
-        let report = scan_disk_usage(root.path().to_str().unwrap(), &[".sandbox-bin".into()]).unwrap();
-        assert_eq!(report.tasks[0].artifact_size_bytes, 700, "no double counting");
+        let report =
+            scan_disk_usage(root.path().to_str().unwrap(), &[".sandbox-bin".into()]).unwrap();
+        assert_eq!(
+            report.tasks[0].artifact_size_bytes, 700,
+            "no double counting"
+        );
     }
 
     /// TestScanDiskUsage_LegacyMetaAgeUsesMetaFileMTime
@@ -930,7 +975,10 @@ mod tests {
     #[test]
     fn legacy_meta_age_uses_meta_file_mtime() {
         let root = tempfile::tempdir().unwrap();
-        let task_dir = root.path().join("llllllll-llll-llll-llll-llllllllllll").join("tttttttt");
+        let task_dir = root
+            .path()
+            .join("llllllll-llll-llll-llll-llllllllllll")
+            .join("tttttttt");
         write_file(&task_dir.join("workdir/main.go"), 10);
         must_write_meta(
             &task_dir,
@@ -951,10 +999,14 @@ mod tests {
     #[test]
     fn empty_workspace_artifact_ratio() {
         let root = tempfile::tempdir().unwrap();
-        let task_dir = root.path().join("00000000-0000-0000-0000-000000000000").join("tttttttt");
+        let task_dir = root
+            .path()
+            .join("00000000-0000-0000-0000-000000000000")
+            .join("tttttttt");
         std::fs::create_dir_all(task_dir.join("workdir")).unwrap();
 
-        let report = scan_disk_usage(root.path().to_str().unwrap(), &["node_modules".into()]).unwrap();
+        let report =
+            scan_disk_usage(root.path().to_str().unwrap(), &["node_modules".into()]).unwrap();
         assert_eq!(report.workspaces.len(), 1);
         assert_eq!(report.workspaces[0].artifact_ratio, 0.0, "no NaN");
         assert_eq!(report.total_artifact_ratio, 0.0, "no NaN");
@@ -964,12 +1016,16 @@ mod tests {
     #[test]
     fn counts_git_but_never_as_artifact() {
         let root = tempfile::tempdir().unwrap();
-        let task_dir = root.path().join("wwwwwwww-wwww-wwww-wwww-wwwwwwwwwwww").join("tttttttt");
+        let task_dir = root
+            .path()
+            .join("wwwwwwww-wwww-wwww-wwww-wwwwwwwwwwww")
+            .join("tttttttt");
         write_file(&task_dir.join("workdir/.git/objects/pack"), 9999);
         write_file(&task_dir.join("workdir/.git/node_modules/x"), 5555);
         write_file(&task_dir.join("workdir/main.go"), 100);
 
-        let report = scan_disk_usage(root.path().to_str().unwrap(), &["node_modules".into()]).unwrap();
+        let report =
+            scan_disk_usage(root.path().to_str().unwrap(), &["node_modules".into()]).unwrap();
         assert_eq!(report.tasks.len(), 1);
         assert_eq!(report.tasks[0].size_bytes, 100 + 9999 + 5555);
         assert_eq!(report.tasks[0].artifact_size_bytes, 0);
@@ -983,15 +1039,25 @@ mod tests {
         let outside = tempfile::tempdir().unwrap();
         write_file(&outside.path().join("huge.bin"), 10000);
 
-        let task_dir = root.path().join("ssssssss-ssss-ssss-ssss-ssssssssssss").join("tttttttt");
+        let task_dir = root
+            .path()
+            .join("ssssssss-ssss-ssss-ssss-ssssssssssss")
+            .join("tttttttt");
         write_file(&task_dir.join("workdir/main.go"), 100);
         std::os::unix::fs::symlink(outside.path(), task_dir.join("workdir/node_modules")).unwrap();
-        std::os::unix::fs::symlink(outside.path().join("huge.bin"), task_dir.join("workdir/big-link"))
-            .unwrap();
+        std::os::unix::fs::symlink(
+            outside.path().join("huge.bin"),
+            task_dir.join("workdir/big-link"),
+        )
+        .unwrap();
 
-        let report = scan_disk_usage(root.path().to_str().unwrap(), &["node_modules".into()]).unwrap();
+        let report =
+            scan_disk_usage(root.path().to_str().unwrap(), &["node_modules".into()]).unwrap();
         assert_eq!(report.tasks.len(), 1);
-        assert_eq!(report.tasks[0].size_bytes, 100, "only main.go; symlinks ignored");
+        assert_eq!(
+            report.tasks[0].size_bytes, 100,
+            "only main.go; symlinks ignored"
+        );
         assert_eq!(report.tasks[0].artifact_size_bytes, 0);
     }
 
@@ -1008,7 +1074,10 @@ mod tests {
     #[test]
     fn rejects_patterns_with_separators() {
         let root = tempfile::tempdir().unwrap();
-        let task_dir = root.path().join("rrrrrrrr-rrrr-rrrr-rrrr-rrrrrrrrrrrr").join("tttttttt");
+        let task_dir = root
+            .path()
+            .join("rrrrrrrr-rrrr-rrrr-rrrr-rrrrrrrrrrrr")
+            .join("tttttttt");
         write_file(&task_dir.join("workdir/node_modules/x"), 1000);
 
         let report = scan_disk_usage(
@@ -1025,25 +1094,46 @@ mod tests {
     fn roots_sums_across_roots() {
         let root_a = tempfile::tempdir().unwrap();
         write_file(
-            &root_a.path().join("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").join("t1").join("workdir/main.go"),
+            &root_a
+                .path()
+                .join("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+                .join("t1")
+                .join("workdir/main.go"),
             100,
         );
         let root_b = tempfile::tempdir().unwrap();
         write_file(
-            &root_b.path().join("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").join("t1").join("workdir/big"),
+            &root_b
+                .path()
+                .join("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+                .join("t1")
+                .join("workdir/big"),
             300,
         );
         write_file(
-            &root_b.path().join("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").join("t2").join("workdir/main.go"),
+            &root_b
+                .path()
+                .join("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
+                .join("t2")
+                .join("workdir/main.go"),
             50,
         );
         let missing = tempfile::tempdir().unwrap().path().join("never-ran");
 
         let agg = scan_disk_usage_roots(
             &[
-                DiskUsageRoot { profile: String::new(), root: root_a.path().to_string_lossy().into_owned() },
-                DiskUsageRoot { profile: "desktop-host".into(), root: root_b.path().to_string_lossy().into_owned() },
-                DiskUsageRoot { profile: "never-ran".into(), root: missing.to_string_lossy().into_owned() },
+                DiskUsageRoot {
+                    profile: String::new(),
+                    root: root_a.path().to_string_lossy().into_owned(),
+                },
+                DiskUsageRoot {
+                    profile: "desktop-host".into(),
+                    root: root_b.path().to_string_lossy().into_owned(),
+                },
+                DiskUsageRoot {
+                    profile: "never-ran".into(),
+                    root: missing.to_string_lossy().into_owned(),
+                },
             ],
             &["node_modules".into()],
         )
@@ -1056,7 +1146,10 @@ mod tests {
         assert_eq!(agg.total_task_count, 3);
         assert_eq!(agg.total_size_bytes, 450);
         assert_eq!(agg.total_workspace_count, 2);
-        assert_eq!(agg.managed_artifact_subpaths.join(","), "codex-home/.sandbox-bin");
+        assert_eq!(
+            agg.managed_artifact_subpaths.join(","),
+            "codex-home/.sandbox-bin"
+        );
     }
 
     fn issue_task(ws_id: &str, task_short: &str, issue_id: &str) -> TaskDiskUsage {
@@ -1100,7 +1193,10 @@ mod tests {
         let mut asked: HashMap<String, Vec<String>> = HashMap::new();
         {
             let mut fetch = |workspace_id: &str, issue_ids: &[String]| {
-                asked.entry(workspace_id.to_string()).or_default().extend(issue_ids.iter().cloned());
+                asked
+                    .entry(workspace_id.to_string())
+                    .or_default()
+                    .extend(issue_ids.iter().cloned());
                 Ok(issue_ids
                     .iter()
                     .filter_map(|id| match id.as_str() {
@@ -1156,17 +1252,21 @@ mod tests {
         let ws_id = "11111111-1111-1111-1111-111111111111";
         let total = ISSUE_GC_BATCH_SIZE + 1;
         let tasks: Vec<TaskDiskUsage> = (0..total)
-            .map(|i| {
-                issue_task(ws_id, &format!("task{i:04}"), &format!("issue-{i:04}"))
-            })
+            .map(|i| issue_task(ws_id, &format!("task{i:04}"), &format!("issue-{i:04}")))
             .collect();
-        let mut report = DiskUsageReport { tasks, ..Default::default() };
+        let mut report = DiskUsageReport {
+            tasks,
+            ..Default::default()
+        };
 
         let mut chunk_sizes: Vec<usize> = Vec::new();
         {
             let mut fetch = |_: &str, ids: &[String]| {
                 chunk_sizes.push(ids.len());
-                Ok(ids.iter().map(|id| (id.clone(), "done".to_string())).collect())
+                Ok(ids
+                    .iter()
+                    .map(|id| (id.clone(), "done".to_string()))
+                    .collect())
             };
             resolve_parent_statuses(&mut report, Some(&mut fetch)).unwrap();
         }
@@ -1193,7 +1293,9 @@ mod tests {
             if workspace_id == ws_bad {
                 anyhow::bail!("boom");
             }
-            Ok([("issue-good".to_string(), "done".to_string())].into_iter().collect())
+            Ok([("issue-good".to_string(), "done".to_string())]
+                .into_iter()
+                .collect())
         };
         let err = resolve_parent_statuses(&mut report, Some(&mut fetch));
         assert!(err.is_err(), "failing workspace's error must surface");
@@ -1221,13 +1323,30 @@ mod tests {
     fn reports_repo_cache_separately() {
         let root = tempfile::tempdir().unwrap();
         let ws_id = "11111111-1111-1111-1111-111111111111";
-        write_file(&root.path().join(ws_id).join("aaaaaaaa").join("workdir/main.go"), 1000);
         write_file(
-            &root.path().join(".repos").join(ws_id).join("widgets.git").join("objects/pack/x"),
+            &root
+                .path()
+                .join(ws_id)
+                .join("aaaaaaaa")
+                .join("workdir/main.go"),
+            1000,
+        );
+        write_file(
+            &root
+                .path()
+                .join(".repos")
+                .join(ws_id)
+                .join("widgets.git")
+                .join("objects/pack/x"),
             4000,
         );
         write_file(
-            &root.path().join(".repos").join(ws_id).join("gadgets.git").join("objects/pack/y"),
+            &root
+                .path()
+                .join(".repos")
+                .join(ws_id)
+                .join("gadgets.git")
+                .join("objects/pack/y"),
             2000,
         );
 
@@ -1243,13 +1362,31 @@ mod tests {
     fn skips_daemon_internal_dot_dirs() {
         let root = tempfile::tempdir().unwrap();
         let ws_id = "11111111-1111-1111-1111-111111111111";
-        write_file(&root.path().join(ws_id).join("aaaaaaaa").join("workdir/main.go"), 1000);
-        write_file(&root.path().join(".skill-cache").join("v1").join("bundle").join("skill.md"), 500);
+        write_file(
+            &root
+                .path()
+                .join(ws_id)
+                .join("aaaaaaaa")
+                .join("workdir/main.go"),
+            1000,
+        );
+        write_file(
+            &root
+                .path()
+                .join(".skill-cache")
+                .join("v1")
+                .join("bundle")
+                .join("skill.md"),
+            500,
+        );
 
         let report = scan_disk_usage(root.path().to_str().unwrap(), &[]).unwrap();
         assert_eq!(report.total_workspace_count, 1);
         for ws in &report.workspaces {
-            assert!(!ws.workspace_id.starts_with('.'), "dot-directory reported as workspace");
+            assert!(
+                !ws.workspace_id.starts_with('.'),
+                "dot-directory reported as workspace"
+            );
         }
         assert_eq!(report.total_size_bytes, 1000);
     }
