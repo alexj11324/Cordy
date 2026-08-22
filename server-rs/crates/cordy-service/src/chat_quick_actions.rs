@@ -378,6 +378,81 @@ pub fn sanitize_chat_quick_actions(
     actions
 }
 
+/// Parses one suggestion pass's raw model output into sanitized actions.
+///
+/// Attempt order narrows from strict to desperate: the object the pass was
+/// asked for (or a bare array), then the inside of a code fence, then the
+/// outermost bracket span. The bracket scan runs last because leading prose
+/// may itself contain brackets ("here's [my] take: [...]"), which would
+/// misalign the slice if it were tried first. Anything unparseable degrades
+/// to no suggestions; this output never reaches the transcript.
+pub fn parse_chat_quick_actions_output(
+    raw: &str,
+) -> Vec<cordy_protocol::messages::ChatQuickAction> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Vec::new();
+    }
+    for candidate in [raw, inside_code_fence(raw).as_str()] {
+        if let Some(actions) = unmarshal_chat_quick_actions(candidate) {
+            return actions;
+        }
+    }
+    let start = raw.find('[');
+    let end = raw.rfind(']');
+    if let (Some(start), Some(end)) = (start, end) {
+        if end > start {
+            if let Some(actions) = unmarshal_chat_quick_actions(&raw[start..=end]) {
+                return actions;
+            }
+            return Vec::new();
+        }
+    }
+    Vec::new()
+}
+
+/// Content of the first fenced code block in `raw` (language tag tolerated),
+/// or empty when no complete fence exists.
+fn inside_code_fence(raw: &str) -> String {
+    let Some(open) = raw.find("```") else {
+        return String::new();
+    };
+    let rest = &raw[open + 3..];
+    let Some(nl) = rest.find('\n') else {
+        return String::new();
+    };
+    let rest = &rest[nl + 1..];
+    let Some(closing) = rest.find("```") else {
+        return String::new();
+    };
+    rest[..closing].trim().to_string()
+}
+
+/// The pass asks for {"actions":[...]} because response_format=json_object
+/// requires a top-level object. A bare array is still accepted so a model
+/// that drops the wrapper does not cost the user their suggestions.
+fn unmarshal_chat_quick_actions(
+    raw: &str,
+) -> Option<Vec<cordy_protocol::messages::ChatQuickAction>> {
+    use cordy_protocol::messages::ChatQuickAction;
+
+    if raw.is_empty() {
+        return None;
+    }
+    #[derive(serde::Deserialize)]
+    struct Wrapper {
+        #[serde(default)]
+        actions: Option<Vec<ChatQuickAction>>,
+    }
+    if let Ok(wrapper) = serde_json::from_str::<Wrapper>(raw) {
+        if let Some(actions) = wrapper.actions {
+            return Some(sanitize_chat_quick_actions(actions));
+        }
+    }
+    let candidates = serde_json::from_str::<Vec<ChatQuickAction>>(raw).ok()?;
+    Some(sanitize_chat_quick_actions(candidates))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

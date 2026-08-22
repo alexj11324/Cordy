@@ -162,7 +162,7 @@ where
 /// auto-triggered, or having its autopilot run finalized on a guess.
 pub async fn effective<'e, E>(executor: E, workspace_id: Uuid, status: &str) -> String
 where
-    E: Executor<'e, Database = sqlx::Postgres> + Copy,
+    E: Executor<'e, Database = sqlx::Postgres>,
 {
     if is_built_in(status) {
         return status.to_string();
@@ -203,7 +203,7 @@ pub async fn resolve<'e, E>(
     status: &str,
 ) -> Result<IssueStatus, UnknownStatus>
 where
-    E: Executor<'e, Database = sqlx::Postgres> + Copy,
+    E: Executor<'e, Database = sqlx::Postgres>,
 {
     let key = status.trim().to_lowercase();
     if key.is_empty() {

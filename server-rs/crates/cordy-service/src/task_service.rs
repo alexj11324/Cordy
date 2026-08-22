@@ -19,13 +19,14 @@ use cordy_db::models::{Agent, AgentTaskQueue, ChatMessage, ChatSession, Comment,
 use cordy_db::queries::agent::{
     cancel_agent_task, cancel_agent_task_by_user, cancel_agent_task_with_reason,
     cancel_agent_tasks_by_agent, cancel_agent_tasks_by_issue,
-    cancel_agent_tasks_by_trigger_comment, cancel_deferred_escalations_for_task,
-    cancel_queued_agent_task, cancel_queued_agent_tasks_for_session,
-    cancel_superseded_deferred_retries_for_runtimes, claim_agent_task,
-    claim_chat_finalize_deferred, count_running_tasks, create_agent_task,
+    cancel_agent_tasks_by_trigger_comment, cancel_deferred_escalations_for_issue_agent,
+    cancel_deferred_escalations_for_task, cancel_queued_agent_task,
+    cancel_queued_agent_tasks_for_session, cancel_superseded_deferred_retries_for_runtimes,
+    claim_agent_task, claim_chat_finalize_deferred, count_running_tasks, create_agent_task,
     create_deferred_agent_task, create_deferred_channel_issue_task, create_quick_create_task,
-    get_agent, get_agent_for_claim_update, get_agent_task, list_queued_claim_candidates_by_runtime,
-    list_queued_claim_candidates_by_runtimes, mark_chat_finalize_deferred,
+    extend_agent_task_prepare_lease, get_agent, get_agent_for_claim_update, get_agent_task,
+    list_queued_claim_candidates_by_runtime, list_queued_claim_candidates_by_runtimes,
+    mark_agent_task_waiting_local_directory, mark_chat_finalize_deferred,
     promote_deferred_channel_issue_task, promote_due_deferred_tasks_for_runtime,
     promote_due_deferred_tasks_for_runtimes, reclaim_stale_dispatched_task_for_runtime,
     reclaim_stale_dispatched_tasks_for_runtimes, refresh_agent_status_from_tasks,
@@ -124,7 +125,7 @@ pub fn is_duplicate_pending_task_err(err: &sqlx::Error) -> bool {
 /// Extracts the sqlx error from the anyhow error the generated query layer
 /// returns, so unique-violation classification keeps working through the
 /// wrapper.
-fn downcast_sqlx(err: anyhow::Error) -> sqlx::Error {
+pub(crate) fn downcast_sqlx(err: anyhow::Error) -> sqlx::Error {
     err.downcast::<sqlx::Error>()
         .unwrap_or(sqlx::Error::RowNotFound)
 }
@@ -177,6 +178,8 @@ pub enum TaskServiceError {
     ChatQuickActionsBusy,
     #[error("task is no longer queued")]
     NoLongerQueued(ErrTaskNoLongerQueued),
+    #[error("rerun: operator not allowed to invoke target agent")]
+    RerunInvokeNotAllowed(ErrRerunInvokeNotAllowed),
     #[error("{0}")]
     Internal(String),
     #[error(transparent)]
@@ -247,16 +250,9 @@ pub struct RuntimeMcpOverlayData {
     pub connected_apps: Option<serde_json::Value>,
 }
 
-/// LLM seam for chat follow-up suggestions. `None` (or a disabled client)
-/// turns the whole feature off.
-#[async_trait::async_trait]
-pub trait ChatQuickActionsLlm: Send + Sync {
-    async fn generate(
-        &self,
-        pool: &PgPool,
-        session_id: Uuid,
-    ) -> anyhow::Result<Vec<cordy_protocol::messages::ChatQuickAction>>;
-}
+// Go-shaped LLM seam lives with the rest of the quick-actions port; re-exported
+// here because the TaskService field is wired through this module's namespace.
+pub use crate::chat_quick_actions::ChatQuickActionsLlm;
 
 /// The task domain service. Field usage mirrors Go's TaskService; the dead
 /// Hub field from Go is omitted (task.go only ever publishes through Bus).
@@ -276,11 +272,28 @@ pub struct TaskService {
 
     /// chat session id -> admitted; one suggestion pass per session plus a
     /// process-wide ceiling. Zero values are usable.
-    quick_actions_in_flight: Mutex<HashMap<Uuid, ()>>,
-    quick_actions_running: AtomicI64,
+    pub(crate) quick_actions_in_flight: Mutex<HashMap<Uuid, ()>>,
+    pub(crate) quick_actions_running: AtomicI64,
 
     /// LRU-ish analytics context cache keyed by task identity columns.
     analytics_context: Mutex<AnalyticsContextCache>,
+}
+
+/// Everything the two issue-task INSERT shapes need, resolved by
+/// prepare_issue_enqueue.
+struct PreparedIssueEnqueue {
+    assignee_id: Uuid,
+    runtime_id: Uuid,
+    originator_user_id: Option<Uuid>,
+    accountable_user_id: Option<Uuid>,
+    rule_version_id: Option<Uuid>,
+    overlay: RuntimeMcpOverlayData,
+    attr_source: Option<String>,
+    attr_delegated_from: Option<Uuid>,
+    attr_evidence_kind: Option<String>,
+    attr_evidence_ref: Option<Uuid>,
+    trigger_summary: Option<String>,
+    head_sha: String,
 }
 
 #[derive(Default)]
@@ -591,7 +604,7 @@ impl TaskService {
     /// Computes the optional per-task Composio MCP overlay. Enqueue paths call
     /// this BEFORE inserting the queued row so the daemon cannot claim a task
     /// during the network round-trip and miss the overlay.
-    async fn build_runtime_mcp_overlay(
+    pub(crate) async fn build_runtime_mcp_overlay(
         &self,
         originator_user_id: Uuid,
         agent: &Agent,
@@ -1418,22 +1431,21 @@ impl TaskService {
         .await
     }
 
-    /// Shared implementation behind EnqueueTaskForIssue and the manual rerun
-    /// path. forceFreshSession marks the task so the daemon skips the
-    /// (agent_id, issue_id) resume lookup — the user already judged the prior
-    /// output bad.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn enqueue_issue_task_with_comment_plan(
+    /// Attribution/guard/metadata phase shared by every issue-task enqueue
+    /// shape (pool-backed or tx-scoped). Resolves everything the two INSERT
+    /// variants need; performs no writes itself.
+    ///
+    /// build_overlay gates Composio overlay resolution: the tx-scoped
+    /// deferred path keeps that network call out of the caller's transaction
+    /// (Go's txService trick carries a nil Composio there) because the task
+    /// cannot be claimed while deferred and the overlay hydrates post-commit.
+    async fn prepare_issue_enqueue(
         &self,
         issue: &Issue,
         trigger_comment_id: Option<Uuid>,
-        coalesced_comment_ids: Vec<Uuid>,
-        force_fresh_session: bool,
-        handoff_note: &str,
         actor_user_id: Option<Uuid>,
-        rerun_of_task_id: Option<Uuid>,
-        fire_at: Option<chrono::DateTime<chrono::Utc>>,
-    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        build_overlay: bool,
+    ) -> Result<PreparedIssueEnqueue, TaskServiceError> {
         let Some(assignee_id) = issue.assignee_id else {
             tracing::error!(issue_id = %issue.id, "task enqueue failed: issue has no assignee");
             return Err(TaskServiceError::NoAssignee);
@@ -1468,8 +1480,10 @@ impl TaskService {
         })?;
         let originator_user_id = attr.user_id;
         let runtime_mcp_overlay = match originator_user_id {
-            Some(originator) => self.build_runtime_mcp_overlay(originator, &agent).await,
-            None => RuntimeMcpOverlayData::default(),
+            Some(originator) if build_overlay => {
+                self.build_runtime_mcp_overlay(originator, &agent).await
+            }
+            _ => RuntimeMcpOverlayData::default(),
         };
         let (attr_source, attr_delegated_from, attr_evidence_kind, attr_evidence_ref) =
             attribution_create_params(&attr);
@@ -1479,31 +1493,63 @@ impl TaskService {
             .unwrap_or(None);
         let head_sha = self.resolve_issue_review_sha(issue.id).await;
 
+        Ok(PreparedIssueEnqueue {
+            assignee_id,
+            runtime_id,
+            originator_user_id,
+            accountable_user_id: attr.accountable_user_id,
+            rule_version_id: attr.rule_version_id,
+            overlay: runtime_mcp_overlay,
+            attr_source,
+            attr_delegated_from,
+            attr_evidence_kind,
+            attr_evidence_ref,
+            trigger_summary,
+            head_sha,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn enqueue_issue_task_with_comment_plan(
+        &self,
+        issue: &Issue,
+        trigger_comment_id: Option<Uuid>,
+        coalesced_comment_ids: Vec<Uuid>,
+        force_fresh_session: bool,
+        handoff_note: &str,
+        actor_user_id: Option<Uuid>,
+        rerun_of_task_id: Option<Uuid>,
+        fire_at: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        let prep = self
+            .prepare_issue_enqueue(issue, trigger_comment_id, actor_user_id, true)
+            .await?;
+
         let created = if fire_at.is_some() {
             create_deferred_channel_issue_task(
                 &self.pool,
-                assignee_id,
-                runtime_id,
+                prep.assignee_id,
+                prep.runtime_id,
                 issue.id,
                 priority_to_int(&issue.priority),
                 trigger_comment_id.unwrap_or_else(Uuid::nil),
                 coalesced_comment_ids,
-                trigger_summary.as_deref(),
+                prep.trigger_summary.as_deref(),
                 Some(force_fresh_session),
                 None,
                 opt_str(handoff_note),
                 Uuid::nil(),
-                opt_str(&head_sha),
-                originator_user_id.unwrap_or_else(Uuid::nil),
-                attr.accountable_user_id.unwrap_or_else(Uuid::nil),
-                &overlay_value_or_null(&runtime_mcp_overlay.overlay),
-                &overlay_value_or_null(&runtime_mcp_overlay.connected_apps),
-                attr_source.as_deref(),
-                attr_delegated_from.unwrap_or_else(Uuid::nil),
-                attr.rule_version_id.unwrap_or_else(Uuid::nil),
+                opt_str(&prep.head_sha),
+                prep.originator_user_id.unwrap_or_else(Uuid::nil),
+                prep.accountable_user_id.unwrap_or_else(Uuid::nil),
+                &overlay_value_or_null(&prep.overlay.overlay),
+                &overlay_value_or_null(&prep.overlay.connected_apps),
+                prep.attr_source.as_deref(),
+                prep.attr_delegated_from.unwrap_or_else(Uuid::nil),
+                prep.rule_version_id.unwrap_or_else(Uuid::nil),
                 rerun_of_task_id.unwrap_or_else(Uuid::nil),
-                attr_evidence_kind.as_deref(),
-                attr_evidence_ref.unwrap_or_else(Uuid::nil),
+                prep.attr_evidence_kind.as_deref(),
+                prep.attr_evidence_ref.unwrap_or_else(Uuid::nil),
                 fire_at,
                 new_v7(),
             )
@@ -1511,28 +1557,28 @@ impl TaskService {
         } else {
             create_agent_task(
                 &self.pool,
-                assignee_id,
-                runtime_id,
+                prep.assignee_id,
+                prep.runtime_id,
                 issue.id,
                 priority_to_int(&issue.priority),
                 trigger_comment_id.unwrap_or_else(Uuid::nil),
                 coalesced_comment_ids,
-                trigger_summary.as_deref(),
+                prep.trigger_summary.as_deref(),
                 Some(force_fresh_session),
                 None,
                 opt_str(handoff_note),
                 Uuid::nil(),
-                opt_str(&head_sha),
-                originator_user_id.unwrap_or_else(Uuid::nil),
-                attr.accountable_user_id.unwrap_or_else(Uuid::nil),
-                &overlay_value_or_null(&runtime_mcp_overlay.overlay),
-                &overlay_value_or_null(&runtime_mcp_overlay.connected_apps),
-                attr_source.as_deref(),
-                attr_delegated_from.unwrap_or_else(Uuid::nil),
-                attr.rule_version_id.unwrap_or_else(Uuid::nil),
+                opt_str(&prep.head_sha),
+                prep.originator_user_id.unwrap_or_else(Uuid::nil),
+                prep.accountable_user_id.unwrap_or_else(Uuid::nil),
+                &overlay_value_or_null(&prep.overlay.overlay),
+                &overlay_value_or_null(&prep.overlay.connected_apps),
+                prep.attr_source.as_deref(),
+                prep.attr_delegated_from.unwrap_or_else(Uuid::nil),
+                prep.rule_version_id.unwrap_or_else(Uuid::nil),
                 rerun_of_task_id.unwrap_or_else(Uuid::nil),
-                attr_evidence_kind.as_deref(),
-                attr_evidence_ref.unwrap_or_else(Uuid::nil),
+                prep.attr_evidence_kind.as_deref(),
+                prep.attr_evidence_ref.unwrap_or_else(Uuid::nil),
                 new_v7(),
             )
             .await
@@ -1549,7 +1595,7 @@ impl TaskService {
         tracing::info!(
             task_id = %task.id,
             issue_id = %issue.id,
-            agent_id = %assignee_id,
+            agent_id = %prep.assignee_id,
             force_fresh_session,
             "task enqueued"
         );
@@ -1561,6 +1607,57 @@ impl TaskService {
         self.broadcast_task_event(cordy_protocol::EVENT_TASK_QUEUED, &task, Default::default())
             .await;
         self.notify_task_enqueued(&task).await;
+        Ok(task)
+    }
+
+    /// Tx-scoped twin used by IssueService::create so a media-gated channel
+    /// issue commits atomically with its inert deferred task. Mirrors Go's
+    /// `txService := &TaskService{Queries: q}` trick: identical guards and
+    /// attribution run against the caller's transaction, while seams stay
+    /// dark — the overlay hydrates post-commit (never hold DB locks across a
+    /// network call) and deferred tasks return before any broadcast/notify
+    /// tail.
+    /// Consumed by IssueService::create's media-gated deferred-task path
+    /// (issue_service.rs lands next).
+    #[allow(dead_code)]
+    pub(crate) async fn create_deferred_channel_issue_task_tx(
+        &self,
+        tx: &mut sqlx::PgConnection,
+        issue: &Issue,
+        fire_at: chrono::DateTime<chrono::Utc>,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        let prep = self.prepare_issue_enqueue(issue, None, None, false).await?;
+
+        let task = create_deferred_channel_issue_task(
+            tx,
+            prep.assignee_id,
+            prep.runtime_id,
+            issue.id,
+            priority_to_int(&issue.priority),
+            Uuid::nil(),
+            vec![],
+            prep.trigger_summary.as_deref(),
+            Some(false),
+            None,
+            None,
+            Uuid::nil(),
+            opt_str(&prep.head_sha),
+            prep.originator_user_id.unwrap_or_else(Uuid::nil),
+            prep.accountable_user_id.unwrap_or_else(Uuid::nil),
+            &overlay_value_or_null(&prep.overlay.overlay),
+            &overlay_value_or_null(&prep.overlay.connected_apps),
+            prep.attr_source.as_deref(),
+            prep.attr_delegated_from.unwrap_or_else(Uuid::nil),
+            prep.rule_version_id.unwrap_or_else(Uuid::nil),
+            Uuid::nil(),
+            prep.attr_evidence_kind.as_deref(),
+            prep.attr_evidence_ref.unwrap_or_else(Uuid::nil),
+            Some(fire_at),
+            new_v7(),
+        )
+        .await
+        .map_err(|e| TaskServiceError::Sql(downcast_sqlx(e)))?
+        .ok_or(TaskServiceError::AgentNoRuntime)?;
         Ok(task)
     }
 
@@ -1662,7 +1759,7 @@ impl TaskService {
     /// thread-parent / squad-leader hop from an agent-authored comment is a
     /// delegation; a member mention is direct_human.
     #[allow(clippy::too_many_arguments)]
-    async fn enqueue_mention_task(
+    pub(crate) async fn enqueue_mention_task(
         &self,
         issue: &Issue,
         agent_id: Uuid,
@@ -2536,7 +2633,7 @@ fn attribution_create_params(
     )
 }
 
-fn opt_str(s: &str) -> Option<&str> {
+pub(crate) fn opt_str(s: &str) -> Option<&str> {
     if s.is_empty() {
         None
     } else {
@@ -2544,7 +2641,7 @@ fn opt_str(s: &str) -> Option<&str> {
     }
 }
 
-fn overlay_value_or_null(v: &Option<serde_json::Value>) -> serde_json::Value {
+pub(crate) fn overlay_value_or_null(v: &Option<serde_json::Value>) -> serde_json::Value {
     v.clone().unwrap_or(serde_json::Value::Null)
 }
 
@@ -2601,6 +2698,14 @@ pub struct CancelTaskResult {
 #[error("task is no longer queued")]
 pub struct ErrTaskNoLongerQueued;
 
+/// RerunIssue refused because the current operator may not invoke the
+/// resolved target agent (MUL-4525); the handler maps it to a structured 403.
+#[derive(Debug, Clone, Copy)]
+pub struct ErrRerunInvokeNotAllowed;
+
+/// Sentinel value of the rerun invoke-not-allowed error.
+pub const ERR_RERUN_INVOKE_NOT_ALLOWED: ErrRerunInvokeNotAllowed = ErrRerunInvokeNotAllowed;
+
 /// Parameters for persisting a task-scoped agent token (Go
 /// db.CreateTaskTokenParams).
 #[derive(Debug, Clone)]
@@ -2654,7 +2759,7 @@ impl TaskService {
         self.publish_agent_status(&agent).await;
     }
 
-    async fn publish_agent_status(&self, agent: &Agent) {
+    pub(crate) async fn publish_agent_status(&self, agent: &Agent) {
         self.bus.publish(&cordy_events::Event {
             event_type: cordy_protocol::EVENT_AGENT_STATUS.to_string(),
             workspace_id: agent.workspace_id.to_string(),
@@ -2981,12 +3086,14 @@ impl TaskService {
             })?
             .unwrap_or(false);
         if channel_ingested {
-            create_assistant_chat_message(
+            create_assistant_chat_message_typed(
                 tx,
                 chat_session_id,
                 "Stopped.",
                 task.id,
                 compute_chat_elapsed_ms(task.completed_at, task.created_at),
+                None,
+                None,
             )
             .await?;
             return Ok(None);
@@ -3135,12 +3242,14 @@ impl TaskService {
                 });
                 return Ok(());
             }
-            create_assistant_chat_message(
+            create_assistant_chat_message_typed(
                 &mut tx,
                 chat_session_id,
                 "Stopped.",
                 task.id,
                 compute_chat_elapsed_ms(task.completed_at, task.created_at),
+                None,
+                None,
             )
             .await?;
             Ok(())
@@ -3300,12 +3409,14 @@ impl TaskService {
                 payload.message_id = deleted.id.to_string();
                 return Ok(());
             }
-            let row = create_assistant_chat_message(
+            let row = create_assistant_chat_message_typed(
                 &mut tx,
                 chat_session_id,
                 "Stopped.",
                 claimed.id,
                 compute_chat_elapsed_ms(claimed.completed_at, claimed.created_at),
+                None,
+                None,
             )
             .await?;
             payload.outcome = cordy_protocol::CHAT_CANCEL_OUTCOME_STOPPED.to_string();
@@ -3857,44 +3968,6 @@ impl TaskService {
         tx.commit().await.map_err(TaskServiceError::Sql)?;
         Ok(receipt)
     }
-
-    /// Transitions a dispatched task to running. Issue status is NOT changed
-    /// here — the agent manages it via the CLI.
-    pub async fn start_task(&self, task_id: Uuid) -> Result<AgentTaskQueue, TaskServiceError> {
-        let task = start_agent_task(&self.pool, task_id)
-            .await
-            .map_err(|e| TaskServiceError::Internal(format!("start task: {e}")))?
-            .ok_or(TaskServiceError::AgentNoRuntime)?;
-        self.cancel_deferred_escalations_for_task(task.id).await;
-
-        tracing::info!(task_id = %task.id, issue_id = ?task.issue_id, "task started");
-        self.capture_task_started(&task).await;
-        self.broadcast_task_event(
-            cordy_protocol::EVENT_TASK_RUNNING,
-            &task,
-            Default::default(),
-        )
-        .await;
-        Ok(task)
-    }
-
-    /// Cancels the deferred fallback (escalation) tasks waiting behind a task
-    /// that just started — the primary acknowledged the work. Best-effort.
-    async fn cancel_deferred_escalations_for_task(&self, escalation_for_task_id: Uuid) {
-        let Ok(cancelled) =
-            cancel_deferred_escalations_for_task(&self.pool, escalation_for_task_id).await
-        else {
-            return;
-        };
-        for task in cancelled {
-            tracing::info!(
-                task_id = %task.id,
-                primary_task_id = %escalation_for_task_id,
-                reason = "primary_acknowledged",
-                "deferred fallback task cancelled"
-            );
-        }
-    }
 }
 
 /// Cell carrying the claim outcome label for the slow-log path.
@@ -3919,12 +3992,14 @@ fn is_no_rows(err: &anyhow::Error) -> bool {
 /// Writes an assistant outcome and reanchors the newly-visible queued direct
 /// head in the caller's transaction — the transcript-order boundary. Callers
 /// MUST observe the settling task outside the visible-head status set first.
-async fn create_assistant_chat_message(
+pub(crate) async fn create_assistant_chat_message_typed(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     chat_session_id: Uuid,
     content: &str,
     task_id: Uuid,
     elapsed_ms: Option<i64>,
+    message_kind: Option<&str>,
+    failure_reason: Option<&str>,
 ) -> Result<ChatMessage, TaskServiceError> {
     let row = create_chat_message(
         &mut **tx,
@@ -3932,9 +4007,9 @@ async fn create_assistant_chat_message(
         "assistant",
         content,
         task_id,
-        None,
+        failure_reason,
         elapsed_ms,
-        Some(cordy_protocol::CHAT_MESSAGE_KIND_MESSAGE),
+        Some(message_kind.unwrap_or(cordy_protocol::CHAT_MESSAGE_KIND_MESSAGE)),
         &serde_json::Value::Array(vec![]),
         None,
         None,
@@ -3949,6 +4024,140 @@ async fn create_assistant_chat_message(
             TaskServiceError::Internal(format!("reanchor next queued direct chat input: {e}"))
         })?;
     Ok(row)
+}
+
+// ---------------------------------------------------------------------------
+// Slice4a — task.go 3579-3694 (start / escalation-cancel / prepare-lease /
+// waiting_local_directory). CompleteTask and beyond live in task_terminal.rs.
+// ---------------------------------------------------------------------------
+
+impl TaskService {
+    /// StartTask transitions a dispatched task to running
+    /// (task.go 3579-3601). Issue status is NOT changed here — the agent
+    /// manages it via the CLI.
+    pub async fn start_task(&self, task_id: Uuid) -> Result<AgentTaskQueue, TaskServiceError> {
+        let task = start_agent_task(&self.pool, task_id)
+            .await
+            .map_err(downcast_sqlx)
+            .map_err(|e| TaskServiceError::Internal(format!("start task: {e}")))?
+            .ok_or_else(|| TaskServiceError::Internal("start task: no row written".into()))?;
+        self.cancel_deferred_escalations_for_task(task.id).await;
+
+        tracing::info!(task_id = %task.id, issue_id = ?task.issue_id, "task started");
+        self.capture_task_started(&task).await;
+        // A local-directory waiter was reconciled out of the persisted working
+        // status while parked. Restore working as soon as it enters running;
+        // the normal dispatched -> running path is already working, so this is
+        // intentionally idempotent there.
+        self.reconcile_agent_status(task.agent_id).await;
+        self.broadcast_task_event(
+            cordy_protocol::EVENT_TASK_RUNNING,
+            &task,
+            Default::default(),
+        )
+        .await;
+        Ok(task)
+    }
+
+    /// cancelDeferredEscalationsForTask cancels the deferred fallback
+    /// (escalation) tasks waiting behind a task that just started — the
+    /// primary acknowledged the work. Best-effort.
+    async fn cancel_deferred_escalations_for_task(&self, primary_task_id: Uuid) {
+        let Ok(cancelled) = cancel_deferred_escalations_for_task(&self.pool, primary_task_id).await
+        else {
+            return;
+        };
+        for task in cancelled {
+            tracing::info!(
+                task_id = %task.id,
+                primary_task_id = %primary_task_id,
+                reason = "primary_acknowledged",
+                "deferred fallback task cancelled"
+            );
+        }
+    }
+
+    /// CancelDeferredEscalationsForIssueAgent (task.go 3618-3638).
+    pub async fn cancel_deferred_escalations_for_issue_agent(
+        &self,
+        issue_id: Uuid,
+        agent_id: Uuid,
+    ) {
+        match cancel_deferred_escalations_for_issue_agent(&self.pool, issue_id, agent_id).await {
+            Ok(cancelled) => {
+                for task in cancelled {
+                    tracing::info!(
+                        task_id = ?task.id,
+                        issue_id = %issue_id,
+                        agent_id = %agent_id,
+                        reason = "agent_comment_acknowledged",
+                        "deferred fallback task cancelled"
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!(%issue_id, %agent_id, error = %e, "cancel deferred escalations for issue agent failed")
+            }
+        }
+    }
+
+    /// ExtendTaskPrepareLease keeps a claimed-but-not-started task protected
+    /// while the daemon resolves cached inputs and prepares the execution
+    /// environment (task.go 3642-3652).
+    pub async fn extend_task_prepare_lease(
+        &self,
+        task_id: Uuid,
+        runtime_id: Uuid,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        extend_agent_task_prepare_lease(
+            &self.pool,
+            task_id,
+            runtime_id,
+            PREPARE_LEASE_DURATION.as_secs_f64(),
+        )
+        .await
+        .map_err(downcast_sqlx)
+        .map_err(|e| TaskServiceError::Internal(format!("extend task prepare lease: {e}")))?
+        .ok_or_else(|| TaskServiceError::Internal("extend task prepare lease: no row".to_string()))
+    }
+
+    /// MarkTaskWaitingLocalDirectory parks a dispatched task in the
+    /// waiting_local_directory state while the daemon waits for another
+    /// in-flight task to release the project_resource path lock
+    /// (task.go 3660-3683).
+    pub async fn mark_task_waiting_local_directory(
+        &self,
+        task_id: Uuid,
+        reason: &str,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        let reason = reason.trim();
+        let task = mark_agent_task_waiting_local_directory(
+            &self.pool,
+            task_id,
+            (!reason.is_empty()).then_some(reason),
+            PREPARE_LEASE_DURATION.as_secs_f64(),
+        )
+        .await
+        .map_err(downcast_sqlx)
+        .map_err(|e| TaskServiceError::Internal(format!("mark task waiting_local_directory: {e}")))?
+        .ok_or_else(|| {
+            TaskServiceError::Internal("mark task waiting_local_directory: no row".into())
+        })?;
+
+        tracing::info!(task_id = %task.id, issue_id = ?task.issue_id, reason, "task waiting_local_directory");
+        // waiting_local_directory is owned/queued work, not executing work. The
+        // claim path marked the agent working while the row was dispatched, so
+        // reconcile immediately when it parks instead of leaving that persisted
+        // status stale until a terminal transition.
+        self.reconcile_agent_status(task.agent_id).await;
+        self.broadcast_task_event(
+            cordy_protocol::EVENT_TASK_WAITING_LOCAL_DIRECTORY,
+            &task,
+            Default::default(),
+        )
+        .await;
+        Ok(task)
+    }
 }
 
 #[cfg(test)]

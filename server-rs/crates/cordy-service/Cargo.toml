@@ -15,11 +15,16 @@ cordy-analytics = { path = "../cordy-analytics" }
 cordy-db = { path = "../cordy-db" }
 cordy-events = { path = "../cordy-events" }
 cordy-metrics = { path = "../cordy-metrics" }
+cordy-plugincontract = { path = "../cordy-plugincontract" }
 cordy-protocol = { path = "../cordy-protocol" }
+cordy-remotemcp = { path = "../cordy-remotemcp" }
 cordy-task-failure = { path = "../cordy-task-failure" }
+cordy-util = { path = "../cordy-util" }
 sqlx = { workspace = true }
 uuid = { workspace = true }
 sha2 = { workspace = true }
+hmac = { workspace = true }
+url = { workspace = true }
 hex = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
@@ -35,3 +40,8 @@ hostname = { workspace = true }
 include_dir = { workspace = true }
 tracing = { workspace = true }
 regex = { workspace = true }
+redis = { workspace = true }
+serde_yaml = "0.9"
+rand = { workspace = true }
+http = { workspace = true }
+tokio-util = { workspace = true }

@@ -1,0 +1,35 @@
+[package]
+name = "cordy-remotemcp"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+bytes = "1"
+hex = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+hyper = { workspace = true }
+# Pinned directly instead of workspace-inherited: the workspace table requests
+# a `runtime` feature this toolchain's hyper-util does not provide; these are
+# the equivalent features on the locked 0.1 line.
+hyper-util = { version = "0.1.20", default-features = false, features = [
+    "client-legacy",
+    "http1",
+    "tokio",
+] }
+rustls = { workspace = true }
+rustls-native-certs = { workspace = true }
+rustls-pemfile = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-rustls = { workspace = true }
+# Direct pin, version-matched to hyper-util's own tower-service dependency:
+# the legacy client requires connectors implementing tower_service::Service<Uri>
+# and the trait must resolve to the SAME crate instance.
+tower-service = "0.3"
+url = { workspace = true }

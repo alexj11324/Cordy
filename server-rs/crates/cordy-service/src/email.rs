@@ -337,7 +337,13 @@ impl ServerCertVerifier for AcceptAnyCert {
 }
 
 fn tls_connector(insecure: bool) -> anyhow::Result<TlsConnector> {
-    let builder = rustls::ClientConfig::builder();
+    // Both crypto providers land in the graph (aws-lc-rs via rustls defaults,
+    // ring via reqwest's hyper-rustls); the builder must be told which to use.
+    let builder = rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("default protocol versions are always supported");
     let config = if insecure {
         builder
             .dangerous()
