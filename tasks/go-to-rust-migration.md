@@ -284,7 +284,7 @@ server-rs/
 - [ ] **S7-c slack**(3,877)：history/media_ingest/resolvers——空脚手架（另一并行会话认领）
 - [ ] **S7-e dingtalk**(3,918)：resolvers——空脚手架（另一并行会话认领）
 - [ ] **S7-f lark**(10,060 最大域)：http_client/registration/inbound_enricher/outbound/ws_connector/media_ingest/channel_store/outcome_replier——空脚手架（另一并行会话认领）
-- [ ] **S7-g wecom**(7,525)：wecom_channel/ws_frame/outbound_media/installation/media_ingest/markdown/media_download/media_upload——空脚手架（另一并行会话认领）
+- [x] **S7-g wecom**(7,525)：wecom_channel/ws_frame/outbound_media/installation/media_ingest/markdown/media_download/media_upload——8 个范围内模块全量落地 cordy-wecom（19 模块 9,581 行，111 测试，clippy -D warnings/fmt 干净）。**范围外遗留**：wecom_resolvers.go/binding.go/replier.go/outbound.go(文本半区)/inbox_message.go（~1,474 行 ResolverSet 装配+绑定 token+回复文案）未移植——随 S8 handler 接线切片落地
 
 ### S7 九域盘点表
 
