@@ -190,10 +190,9 @@ fn strip_user_memory_directives(content: &str) -> String {
             continue;
         }
         match current_table {
-            ""
-                if root_dotted_features_memories_re().is_match(trimmed)
-                    || root_dotted_memories_generate_re().is_match(trimmed)
-                    || root_dotted_memories_use_re().is_match(trimmed) =>
+            "" if root_dotted_features_memories_re().is_match(trimmed)
+                || root_dotted_memories_generate_re().is_match(trimmed)
+                || root_dotted_memories_use_re().is_match(trimmed) =>
             {
                 continue;
             }

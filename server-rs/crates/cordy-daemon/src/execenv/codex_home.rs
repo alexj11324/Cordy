@@ -2,9 +2,9 @@
 //!
 //! Symbol map:
 //! - codexSymlinkedFiles / codexCopiedFiles
-//!    → CODEX_SYMLINKED_FILES / CODEX_COPIED_FILES
+//!   → CODEX_SYMLINKED_FILES / CODEX_COPIED_FILES
 //! - codexModelsCacheFile / codexModelsCacheBindingFile
-//!    → CODEX_MODELS_CACHE_FILE / CODEX_MODELS_CACHE_BINDING_FILE
+//!   → CODEX_MODELS_CACHE_FILE / CODEX_MODELS_CACHE_BINDING_FILE
 //! - CodexHomeOptions               → CodexHomeOptions
 //! - prepareCodexHomeWithOpts       → prepare_codex_home_with_opts
 //! - resolveSharedCodexHome         → resolve_shared_codex_home
@@ -24,37 +24,37 @@
 //! - resetCodexSessionState         → reset_codex_session_state
 //! - ensureCodexSessionsLink        → ensure_codex_sessions_link
 //! - codexRolloutGlobs / findCodexRollouts
-//!    → codex_rollout_globs / find_codex_rollouts
+//!   → codex_rollout_globs / find_codex_rollouts
 //! - CodexResumeRolloutPresent      → codex_resume_rollout_present
 //! - exposeResumeRollout            → expose_resume_rollout
 //! - linkCodexRollout               → link_codex_rollout
 //! - syncCodexReferencedFiles /
-//!    syncCodexReferencedFile        → sync_codex_referenced_files / _file
+//!   syncCodexReferencedFile        → sync_codex_referenced_files / _file
 //! - openVerifiedCodexHomeRoot      → (folded into materialise_in_codex_home;
-//!    std has no os.Root; see Deviations)
+//!   std has no os.Root; see Deviations)
 //! - materialiseInCodexHome         → materialise_in_codex_home
 //! - syncCodexModelsCache           → sync_codex_models_cache
 //! - codexModelsCacheConfigFingerprint → codex_models_cache_config_fingerprint
 //! - readCodexModelsCacheBinding /
-//!    writeCodexModelsCacheBinding    → read/write_codex_models_cache_binding
+//!   writeCodexModelsCacheBinding    → read/write_codex_models_cache_binding
 //! - resolveCodexConfigPath         → resolve_codex_config_path
 //! - exposeSharedCodexPluginCache   → expose_shared_codex_plugin_cache
 //! - ensureSymlink                  → ensure_symlink
 //! - logCodexAuthState              → log_codex_auth_state
 //! - syncCopiedFile / seedCopiedFile → sync_copied_file / seed_copied_file
 //! - sharedConfigPresence /
-//!    statSharedCodexConfig           → SharedConfigPresence / stat_shared_codex_config
+//!   statSharedCodexConfig           → SharedConfigPresence / stat_shared_codex_config
 //! - resolveWindowsSandboxState /
-//!    classifyPerTaskWindowsSandbox   → resolve_windows_sandbox_state /
-//!    classify_per_task_windows_sandbox
+//!   classifyPerTaskWindowsSandbox   → resolve_windows_sandbox_state /
+//!   classify_per_task_windows_sandbox
 //!
 //! Deviations:
 //! - slog logger parameters dropped; tracing macros used directly.
 //! - go-toml struct decode → toml crate Value navigation.
 //! - os.Root root-scoped writes have no stable std equivalent; the symlink
-//!    identity check of openVerifiedCodexHomeRoot is preserved lexically
-//!    (refuse when the task home is a symlink, verify dir-ness before each
-//!    write) and the residual TOCTOU window is documented as Go's MUL-5647.
+//!   identity check of openVerifiedCodexHomeRoot is preserved lexically
+//!   (refuse when the task home is a symlink, verify dir-ness before each
+//!   write) and the residual TOCTOU window is documented as Go's MUL-5647.
 //! - filepath.Glob → walkdir-based matching (std glob semantics differ).
 
 use std::collections::HashSet;
@@ -1075,6 +1075,27 @@ fn materialise_in_codex_home(
         bail!("stat codex home {codex_home}");
     }
 
+    // os.Root also refuses any symlink on the way down, so a reused task home
+    // cannot redirect the write through an intermediate link. Walk every
+    // component before creating or writing anything; ".." is rejected for the
+    // same reason Go's root-scoped calls refuse it.
+    let components: Vec<&str> = rel_path
+        .split(['/', '\\'])
+        .filter(|c| !c.is_empty() && *c != ".")
+        .collect();
+    if components.contains(&"..") {
+        bail!("{key} {rel_path:?} must not traverse outside the task home");
+    }
+    let mut walked = codex_home.to_string();
+    for comp in &components {
+        walked = join_path(&[&walked, comp]);
+        if let Ok(md) = Path::new(&walked).symlink_metadata() {
+            if md.file_type().is_symlink() {
+                bail!("{key} path component {walked} is a symlink; refusing to write through it");
+            }
+        }
+    }
+
     let full = join_path(&[codex_home, rel_path]);
     let dir = super::context::dir_of(&full);
     std::fs::create_dir_all(&dir).with_context(|| format!("create {key} directory {dir}"))?;
@@ -1398,9 +1419,11 @@ mod tests {
     // issue ids; missing identifiers yield "".
     #[test]
     fn test_codex_session_store_key() {
-        let mut task = super::super::execenv::TaskContextForEnv::default();
-        task.issue_id = "ISSUE-1".into();
-        task.agent_id = "AGENT-9".into();
+        let mut task = super::super::execenv::TaskContextForEnv {
+            issue_id: "ISSUE-1".into(),
+            agent_id: "AGENT-9".into(),
+            ..Default::default()
+        };
         assert_eq!(
             codex_session_store_key("", &task),
             "default/AGENT-9/ISSUE-1"
@@ -1543,7 +1566,7 @@ mod tests {
         // Non-regular dst is replaced.
         #[cfg(unix)]
         {
-            std::os::unix::fs::symlink(&src, &dst.replace("models_cache", "mc_link")).ok();
+            std::os::unix::fs::symlink(&src, dst.replace("models_cache", "mc_link")).ok();
         }
         std::fs::remove_file(&dst).unwrap();
         std::fs::create_dir(&dst).unwrap();
@@ -1648,5 +1671,58 @@ mod tests {
             Some(v) => unsafe { std::env::set_var("CODEX_HOME", v) },
             None => unsafe { std::env::remove_var("CODEX_HOME") },
         }
+    }
+
+    // A symlinked intermediate component must abort the write; a plain nested
+    // path still materialises.
+    #[test]
+    fn test_materialise_in_codex_home_rejects_symlinked_component() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let src = tmp.path().join("src.toml");
+        std::fs::write(&src, "model = \"x\"\n").unwrap();
+
+        // Plain nested path works.
+        materialise_in_codex_home(
+            home.to_str().unwrap(),
+            "plugins/cache/installed.json",
+            src.to_str().unwrap(),
+            "test-plugin",
+        )
+        .expect("plain nested path");
+        let dst = home.join("plugins/cache/installed.json");
+        assert_eq!(std::fs::read_to_string(&dst).unwrap(), "model = \"x\"\n");
+
+        // Symlinked intermediate directory refused.
+        #[cfg(unix)]
+        {
+            let outside = tempfile::tempdir_in(&tmp).unwrap();
+            std::fs::create_dir_all(home.join("evil")).unwrap();
+            std::os::unix::fs::symlink(outside.path(), home.join("plugins").join("link")).unwrap();
+            let err = materialise_in_codex_home(
+                home.to_str().unwrap(),
+                "plugins/link/config.json",
+                src.to_str().unwrap(),
+                "test-escape",
+            )
+            .unwrap_err();
+            let msg = format!("{err:#}");
+            assert!(msg.contains("symlink"), "expected symlink refusal: {msg}");
+            assert!(
+                !outside.path().join("config.json").exists(),
+                "write must not land through the link"
+            );
+        }
+
+        // ".." traversal refused.
+        let err = materialise_in_codex_home(
+            home.to_str().unwrap(),
+            "../escape.toml",
+            src.to_str().unwrap(),
+            "test-dotdot",
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("outside the task home"));
     }
 }

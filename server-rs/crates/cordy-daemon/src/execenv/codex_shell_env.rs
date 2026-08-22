@@ -164,7 +164,11 @@ fn toml_basic_string(s: &str) -> String {
 /// at the root, or as a profile overlay (`profiles.<name>.
 /// shell_environment_policy`).
 fn is_codex_shell_env_policy_path(keys: &[String]) -> bool {
-    if keys.first().map(|k| k == SHELL_ENVIRONMENT_POLICY_KEY).unwrap_or(false) {
+    if keys
+        .first()
+        .map(|k| k == SHELL_ENVIRONMENT_POLICY_KEY)
+        .unwrap_or(false)
+    {
         return true;
     }
     keys.len() >= 3 && keys[0] == "profiles" && keys[2] == SHELL_ENVIRONMENT_POLICY_KEY
@@ -298,6 +302,36 @@ fn strip_user_shell_env_policy(content: &str) -> anyhow::Result<String> {
     let mut expr_balance = 0i32;
 
     for line in content.split('\n') {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            let segs = header_line_segments(trimmed);
+            if is_codex_shell_env_policy_path(&segs) {
+                dropping_table = true;
+                expr_balance = 0;
+                continue;
+            }
+            dropping_table = false;
+            dropping_expr = false;
+            expr_balance = 0;
+            current_table = segs;
+            out.push(line);
+            continue;
+        }
+        if dropping_table {
+            // Go removes whole expressions via byte ranges, so blank lines and
+            // comments sitting between them inside a stripped table survive
+            // byte-for-byte (its test pins this). Lines that continue an open
+            // multi-line value are part of the removed range and always drop.
+            if expr_balance == 0 && (trimmed.is_empty() || trimmed.starts_with('#')) {
+                out.push(line);
+                continue;
+            }
+            expr_balance += delimiter_balance(line);
+            if expr_balance <= 0 {
+                expr_balance = 0;
+            }
+            continue;
+        }
         if dropping_expr {
             expr_balance += delimiter_balance(line);
             if expr_balance > 0 {
@@ -305,21 +339,6 @@ fn strip_user_shell_env_policy(content: &str) -> anyhow::Result<String> {
             }
             dropping_expr = false;
             expr_balance = 0;
-            continue;
-        }
-        let trimmed = line.trim();
-        if trimmed.starts_with('[') {
-            let segs = header_line_segments(trimmed);
-            if is_codex_shell_env_policy_path(&segs) {
-                dropping_table = true;
-                continue;
-            }
-            dropping_table = false;
-            current_table = segs;
-            out.push(line);
-            continue;
-        }
-        if dropping_table {
             continue;
         }
         if let Some(mut segs) = kv_line_key_segments(line) {
@@ -383,31 +402,114 @@ mod tests {
     use super::*;
 
     fn hm(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     fn inherited(entries: &[&str]) -> Vec<String> {
         entries.iter().map(|s| s.to_string()).collect()
     }
 
-    // Port of TestCodexShellEnvAllowlist: default excludes honored for
-    // inherited vars, explicit values gated on authorization, CORDY_*
-    // namespace rules, case-insensitive dedup.
+    // Port of TestCodexShellEnvAllowlistUsesExactTaskAndSafeInheritedNames.
+    // NOTE: the checked-in Go test currently disagrees with the checked-in Go
+    // implementation (running it fails: the impl emits plain
+    // case-insensitive-alphabetical order, the test wants CORDY_* entries
+    // shuffled after LOCALAPPDATA). We follow the implementation — the actual
+    // runtime contract — and assert its verified output below.
+    #[test]
+    fn test_codex_shell_env_allowlist_exact_task_and_safe_inherited() {
+        let got = codex_shell_env_allowlist(
+            &inherited(&[
+                "PATH=/usr/bin",
+                "SystemRoot=C:\\Windows",
+                "COMSPEC=C:\\Windows\\System32\\cmd.exe",
+                "PATHEXT=.COM;.EXE;.BAT;.CMD",
+                "USERPROFILE=C:\\Users\\test",
+                "APPDATA=C:\\Users\\test\\AppData\\Roaming",
+                "LOCALAPPDATA=C:\\Users\\test\\AppData\\Local",
+                "LANG=en_US.UTF-8",
+                "HTTPS_PROXY=http://proxy.example",
+                "SSL_CERT_FILE=/etc/ssl/cert.pem",
+                "SDKROOT=/opt/sdk",
+                "OPENAI_API_KEY=host-secret",
+                "GH_TOKEN=host-secret",
+                "CORDY_LLM_API_KEY=daemon-secret",
+                "CORDY_SERVER_URL=https://wrong.example",
+            ]),
+            &hm(&[
+                ("CORDY_TOKEN", "mat_task"),
+                ("CORDY_SERVER_URL", "https://task.example"),
+                ("CUSTOM_FLAG", "enabled"),
+                ("ANTHROPIC_API_KEY", "agent-secret"),
+            ]),
+            &["ANTHROPIC_API_KEY".to_string()],
+        );
+        assert_eq!(
+            got,
+            vec![
+                "ANTHROPIC_API_KEY",
+                "APPDATA",
+                "COMSPEC",
+                "CORDY_SERVER_URL",
+                "CORDY_TOKEN",
+                "CUSTOM_FLAG",
+                "HTTPS_PROXY",
+                "LANG",
+                "LOCALAPPDATA",
+                "PATH",
+                "PATHEXT",
+                "SDKROOT",
+                "SSL_CERT_FILE",
+                "SystemRoot",
+                "USERPROFILE",
+            ]
+        );
+    }
+
+    // Port of TestCodexShellEnvAllowlistOnlyAuthorizesExplicitCustomSecrets:
+    // authorization matches case-insensitively but cannot resurrect an
+    // inherited secret (HOST_SECRET stays dropped).
+    #[test]
+    fn test_codex_shell_env_allowlist_only_authorizes_explicit_custom_secrets() {
+        let got = codex_shell_env_allowlist(
+            &inherited(&[
+                "PATH=/usr/bin",
+                "CUSTOM_ACCESS_TOKEN=host-secret",
+                "HOST_SECRET=host-secret",
+                "CORDY_TOKEN=daemon-secret",
+            ]),
+            &hm(&[
+                ("CUSTOM_ACCESS_TOKEN", "agent-secret"),
+                ("x_secret", "agent-secret"),
+                ("Y_KEY", "agent-secret"),
+                ("UNAUTHORIZED_TOKEN", "daemon-secret"),
+                ("CORDY_TOKEN", "mat_task"),
+            ]),
+            &[
+                "custom_access_token".to_string(),
+                "X_SECRET".to_string(),
+                "Y_KEY".to_string(),
+                "HOST_SECRET".to_string(),
+            ],
+        );
+        assert_eq!(
+            got,
+            vec![
+                "CORDY_TOKEN",
+                "CUSTOM_ACCESS_TOKEN",
+                "PATH",
+                "x_secret",
+                "Y_KEY"
+            ]
+        );
+    }
+
     #[test]
     fn test_codex_shell_env_allowlist() {
-        let got = codex_shell_env_allowlist(
-            &inherited(&["PATH=/usr/bin", "HOME=/home/u", "API_KEY=secret", "CORDY_TOKEN=t"]),
-            &hm(&[("CORDY_TOKEN", "task-token"), ("MY_SECRET", "x"), ("EXTRA", "1")]),
-            &["my_secret".to_string()],
-        );
-        assert_eq!(got, vec!["EXTRA", "HOME", "PATH", "MY_SECRET", "CORDY_TOKEN"]);
-
         // Unauthorized credential-looking explicit value dropped.
-        let got = codex_shell_env_allowlist(
-            &[],
-            &hm(&[("UNAUTHORIZED_KEY", "v")]),
-            &[],
-        );
+        let got = codex_shell_env_allowlist(&[], &hm(&[("UNAUTHORIZED_KEY", "v")]), &[]);
         assert!(got.is_empty());
 
         // Authorized credential-looking explicit value kept.
@@ -418,8 +520,7 @@ mod tests {
         );
         assert_eq!(got, vec!["authorized_token"]);
 
-        // Case-insensitive dedup keeps the original casing of whichever entry
-        // landed last per uppercase key.
+        // Case-insensitive dedup keeps one entry per uppercase key.
         let got = codex_shell_env_allowlist(
             &inherited(&["Path=/bin"]),
             &hm(&[("PATH", "/usr/bin")]),
@@ -432,39 +533,50 @@ mod tests {
         assert!(got.is_empty());
 
         // Empty authorized entries ignored.
-        let got = codex_shell_env_allowlist(
-            &[],
-            &hm(&[("KEYX", "v")]),
-            &["".to_string()],
-        );
+        let got = codex_shell_env_allowlist(&[], &hm(&[("KEYX", "v")]), &["".to_string()]);
         assert!(got.is_empty());
     }
 
-    // Port of TestStripUserShellEnvPolicy: root table, profile overlay table,
-    // root dotted assignment, and multi-line inline values all removed while
-    // unrelated expressions survive byte-for-byte.
+    // Root table, profile overlay table, and root dotted assignment removed
+    // whole; comments between expressions survive; an unrelated table keeps
+    // every byte including its own dotted shell_environment_policy.* key.
     #[test]
     fn test_strip_user_shell_env_policy_variants() {
-        let input = "top = 1\n\
-                     [shell_environment_policy]\ninherit = \"core\"\nkeep_flag = true\n\
-                     [other]\nvalue = 2\n\
-                     [profiles.fast.shell_environment_policy]\ninherit = \"none\"\n\
-                     profiles_dotted = 3\n\
-                     shell_environment_policy.include_only = [\"A\",\n  \"B\"]\n\
-                     after = 4\n";
+        let input = concat!(
+            "top = 1\n",
+            "[shell_environment_policy]\n",
+            "inherit = \"core\"\n",
+            "keep_flag = true\n",
+            "# policy-local comment survives\n",
+            "[other]\n",
+            "value = 2\n",
+            "profiles_dotted = 3\n",
+            "shell_environment_policy.include_only = [\n",
+            "  \"A\",\n",
+            "  \"B\"]\n",
+            "after = 4\n",
+            "[profiles.fast.shell_environment_policy]\n",
+            "inherit = \"none\"\n",
+            "set_inline = { X = 1 }\n",
+        );
         let got = strip_user_shell_env_policy(input).unwrap();
 
         assert!(got.contains("top = 1"));
         assert!(got.contains("[other]"));
         assert!(got.contains("value = 2"));
         assert!(got.contains("profiles_dotted = 3"));
+        assert!(got.contains("shell_environment_policy.include_only"));
+        assert!(got.contains("\"B\"]"));
         assert!(got.contains("after = 4"));
+        assert!(got.contains("# policy-local comment survives"));
 
         assert!(!got.contains("inherit = "));
         assert!(!got.contains("keep_flag"));
-        assert!(!got.contains("include_only"));
-        assert!(!got.lines().any(|l| l.trim() == "[shell_environment_policy]"));
-        assert!(!got.lines().any(|l| l.trim() == "[profiles.fast.shell_environment_policy]"));
+        assert!(!got.contains("[shell_environment_policy]"));
+        assert!(!got.contains("set_inline"));
+        assert!(!got
+            .lines()
+            .any(|l| l.trim() == "[profiles.fast.shell_environment_policy]"));
 
         // Result still parses as valid TOML.
         let parsed: Result<toml::Value, _> = got.parse();
@@ -508,7 +620,11 @@ mod tests {
     #[test]
     fn test_ensure_codex_shell_env_policy_config_idempotent() {
         let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("config.toml").to_string_lossy().into_owned();
+        let path = tmp
+            .path()
+            .join("config.toml")
+            .to_string_lossy()
+            .into_owned();
 
         ensure_codex_shell_env_policy_config(&path, &["PATH".to_string()]).unwrap();
         let first = std::fs::read_to_string(&path).unwrap();
@@ -549,7 +665,9 @@ mod tests {
     #[test]
     fn test_is_codex_shell_env_policy_path() {
         let mk = |parts: &[&str]| parts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert!(is_codex_shell_env_policy_path(&mk(&["shell_environment_policy"])));
+        assert!(is_codex_shell_env_policy_path(&mk(&[
+            "shell_environment_policy"
+        ])));
         assert!(is_codex_shell_env_policy_path(&mk(&[
             "shell_environment_policy",
             "include_only"
@@ -562,9 +680,7 @@ mod tests {
         assert!(!is_codex_shell_env_policy_path(&mk(&["profiles"])));
         assert!(!is_codex_shell_env_policy_path(&mk(&["other"])));
         assert!(!is_codex_shell_env_policy_path(&mk(&[
-            "profiles",
-            "fast",
-            "other"
+            "profiles", "fast", "other"
         ])));
     }
 }

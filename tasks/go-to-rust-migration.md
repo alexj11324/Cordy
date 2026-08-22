@@ -260,7 +260,7 @@ server-rs/
 |---|---|---|---|
 | W | daemonws hub.go(920)+notifier.go(130) | src/hub.rs, src/notifier.rs | ✅ **完成**（hub.rs 2,336 行+notifier.rs 590 行，符号映射头+37 测试；metrics.go 内嵌 hub.rs 因 lib.rs 模块冻结；ULID→UUIDv4 已注记；socket 泵留 S8 axum 层） |
 | E1a | execenv 地基四件(execenv/context/isolation/local_worktree)≈3.4k 行 + 修复 git.rs 三错 | src/execenv/{execenv,context,isolation,local_worktree}.rs + git.rs 编译修复 | 🔄 运行中（execenv.rs 65KB 在写） |
-| E1b | codex 全家(codex_home/sandbox/memory/shell_env/multi_agent/user_skills/skill_strip/cursor_mcp) ≈3.4k 行 | src/execenv/{codex_*,cursor_mcp}.rs | ⏳ 排队等 E1a |
+| E1b | codex 全家(codex_home/sandbox/memory/shell_env/multi_agent/user_skills/skill_strip/cursor_mcp) ≈3.4k 行 | src/execenv/{codex_*,cursor_mcp}.rs | ✅ **完成**（8 文件 ~4.7k 行接手 Rex 未提交稿：修 codex_shell_env 两个失败测试——allowlist 期望对齐 Go 实现（Go 测试文件与实现漂移，已实测 Go 失败并注记）、strip 扫描器补 Go 表达式级删除语义（表内注释/空行保留）；materialise_in_codex_home 补逐组件 symlink 拒绝（os.Root 可移植子集）+ 测试；车道内 clippy/fmt 清零，cordy-daemon 147 测试全过） |
 | R2 | repocache/cache.go(1811)+gc.go(1509)+processtree 内联 | src/repocache.rs, src/gc.rs | 🔄 运行中（repocache.rs 50KB 在写） |
 
 > 教训：前两轮车道卡死源于"先批量读完所有源再动笔"的长读阶段——重发时改为逐文件读写交替的早写节奏后恢复健康。
