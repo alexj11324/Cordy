@@ -983,7 +983,7 @@ fn is_supported_login_shell(shell_base: &str) -> bool {
 /// processes don't inherit interactive PATH additions (fnm/nvm/volta,
 /// native installers). Only outputs that still pass a fresh LookPath are
 /// trusted.
-fn resolve_agents_via_login_shell(names: &[String]) -> BTreeMap<String, String> {
+pub(crate) fn resolve_agents_via_login_shell(names: &[String]) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     if names.is_empty() {
         return out;
@@ -1043,7 +1043,7 @@ fn resolve_agents_via_login_shell(names: &[String]) -> BTreeMap<String, String> 
     out
 }
 
-fn wait_with_timeout(
+pub(crate) fn wait_with_timeout(
     child: &mut std::process::Child,
     timeout: Duration,
 ) -> std::io::Result<String> {
