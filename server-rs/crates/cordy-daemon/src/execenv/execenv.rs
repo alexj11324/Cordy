@@ -3,7 +3,7 @@
 //! Symbol map:
 //! - RepoContextForEnv            → RepoContextForEnv
 //! - ProjectResourceForEnv        → ProjectResourceForEnv (custom Serialize keeps
-//!                                  resource_ref raw, defaulting to {})
+//!   resource_ref raw, defaulting to {})
 //! - PrepareParams                → PrepareParams
 //! - TaskContextForEnv            → TaskContextForEnv
 //! - SkillContextForEnv           → SkillContextForEnv
@@ -16,7 +16,7 @@
 //! - GCMetaKind / GCMeta          → GCMetaKind / GcMeta
 //! - WriteGCMeta / ReadGCMeta     → write_gc_meta / read_gc_meta
 //! - ManagedEnvProvenance (+ManagedBy const)
-//!                                → ManagedEnvProvenance (+ MANAGED_ENV_PROVENANCE_MANAGED_BY)
+//!   → ManagedEnvProvenance (+ MANAGED_ENV_PROVENANCE_MANAGED_BY)
 //! - WriteManagedEnvProvenance /
 //!   ReadManagedEnvProvenance     → write_managed_env_provenance / read_managed_env_provenance
 //! - Cleanup                      → Environment::cleanup
@@ -54,12 +54,10 @@ use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::codex_home::{
-    codex_session_store_key, prepare_codex_home_with_opts, CodexHomeOptions,
-};
+use super::codex_home::{codex_session_store_key, prepare_codex_home_with_opts, CodexHomeOptions};
 use super::context::{
     ensure_workspaces_root_marker, prepare_claude_skill_settings, roll_back_prepared_sidecars,
-    skills_dir_path, write_context_files, SidecarManifest,
+    write_context_files, SidecarManifest,
 };
 use super::cursor_mcp::prepare_cursor_mcp_config;
 use super::git::task_key;
@@ -178,7 +176,6 @@ pub(crate) fn user_home_dir() -> anyhow::Result<String> {
         std::env::var("HOME")
             .ok()
             .filter(|h| !h.is_empty())
-            .map(String::from)
             .ok_or_else(|| anyhow!("cannot resolve user home directory"))
     }
     #[cfg(windows)]
@@ -543,8 +540,11 @@ pub async fn prepare(params: PrepareParams) -> anyhow::Result<Environment> {
         bail!("execenv: task ID is required");
     }
 
-    let env_root =
-        predict_root_dir(&params.workspaces_root, &params.workspace_id, &params.task_id);
+    let env_root = predict_root_dir(
+        &params.workspaces_root,
+        &params.workspace_id,
+        &params.task_id,
+    );
 
     // Self-heal the root-level daemon marker on every task start so a marker
     // removed while the daemon runs is restored before the agent spawns.
@@ -560,11 +560,13 @@ pub async fn prepare(params: PrepareParams) -> anyhow::Result<Environment> {
     // (#7326). claim_env_root is atomic end to end: a read-then-delete would
     // let two same-key tasks both pass the check and one still delete the
     // other.
-    let fresh = claim_env_root(&env_root, &params.task_id).map_err(|e| anyhow!("execenv: {e:#}"))?;
+    let fresh =
+        claim_env_root(&env_root, &params.task_id).map_err(|e| anyhow!("execenv: {e:#}"))?;
     // Not fresh means this task already owned the directory — a rerun, which
     // is meant to start from a clean tree.
     if !fresh {
-        reset_env_root_contents(&env_root).map_err(|e| anyhow!("execenv: reset existing env: {e:#}"))?;
+        reset_env_root_contents(&env_root)
+            .map_err(|e| anyhow!("execenv: reset existing env: {e:#}"))?;
     }
 
     // Create directory tree. For the standard flow the agent's workdir is
@@ -676,8 +678,13 @@ async fn prepare_body(
     }
 
     // Write context files into workdir (skills go to provider-native paths).
-    write_context_files(work_dir, &params.provider, &params.task, Some(manifest))
-        .map_err(|e| anyhow!("execenv: write context files: {e:#}"))?;
+    write_context_files(
+        work_dir,
+        &params.provider,
+        &params.task,
+        Some(&mut *manifest),
+    )
+    .map_err(|e| anyhow!("execenv: write context files: {e:#}"))?;
 
     // Persist managed-env provenance for non-local resumable envs at Prepare
     // time (not on completion, where .gc_meta.json is written) — MUL-4886.
@@ -773,7 +780,7 @@ async fn prepare_body(
     // the backend's fail-closed question handling.
     if params.provider == "reasonix" {
         if let Err(err) =
-            write_reasonix_project_config(work_dir, &params.reasonix_env, Some(manifest))
+            write_reasonix_project_config(work_dir, &params.reasonix_env, Some(&mut *manifest))
         {
             tracing::warn!(error = %format!("{err:#}"), "execenv: write reasonix project config failed");
         }
@@ -787,7 +794,7 @@ async fn prepare_body(
             work_dir,
             params.mcp_config.as_ref(),
             &params.cursor_mcp_auth_source,
-            Some(manifest),
+            Some(&mut *manifest),
         )
         .map_err(|e| anyhow!("execenv: prepare cursor mcp config: {e:#}"))?;
         env.cursor_data_dir = cursor_data_dir;
@@ -827,6 +834,308 @@ async fn prepare_body(
     Ok(env)
 }
 
+/// ReuseParams describes the inputs to reuse. It mirrors PrepareParams for
+/// the per-provider knobs so callers can pass the same resolved binary path on
+/// both first-run and reuse paths.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase", default)]
+pub struct ReuseParams {
+    /// Daemon-owned root under which all task envs live. Passed on reuse so
+    /// the root-level fail-closed marker is self-healed here too.
+    pub workspaces_root: String,
+    pub work_dir: String,
+    pub provider: String,
+    /// Only used when provider == "codex".
+    pub codex_version: String,
+    /// Prior Codex thread/session ID this reused task intends to resume;
+    /// consulted while migrating a legacy per-task home whose sessions/ still
+    /// symlinks the shared ~/.codex/sessions (MUL-4424).
+    pub resume_session_id: String,
+    /// Only used when provider == "openclaw"; empty = PATH lookup.
+    pub openclaw_bin: String,
+    /// Agent's saved `mcp_config` JSON re-materialised into the wrapper.
+    pub mcp_config: Option<Value>,
+    /// Mirrors PrepareParams.cursor_mcp_auth_source on reuse.
+    pub cursor_mcp_auth_source: String,
+    /// Per-task Gateway pin re-applied on reuse.
+    pub openclaw_gateway: OpenclawGatewayPin,
+    /// Profile name mirroring PrepareParams.profile (MUL-4424).
+    pub profile: String,
+    /// True when the reused work_dir is a user-supplied directory; propagated
+    /// into the returned Environment so downstream callers keep the "never
+    /// delete the user's directory" invariant on reuse paths.
+    pub local_directory: bool,
+    /// Hermes mirrors of PrepareParams on reuse.
+    pub hermes_source_home: String,
+    pub hermes_source_must_exist: bool,
+    pub hermes_env: HashMap<String, String>,
+    pub hermes_memory_store: String,
+    pub hermes_session_store: String,
+    /// Reasonix mirror of PrepareParams.reasonix_env on reuse.
+    pub reasonix_env: HashMap<String, String>,
+    /// Windows sandbox decision input mirrored on reuse (MUL-4957).
+    pub codex_custom_args: Vec<String>,
+    /// Refreshed context files / skills.
+    pub task: TaskContextForEnv,
+}
+
+/// Reuse wraps an existing workdir into an Environment and refreshes context
+/// files. Returns None if the workdir does not exist (caller should fall back
+/// to prepare) or when a refresh failure forces a fresh prepare.
+///
+/// Sync like Go: no git subprocesses run on this path.
+pub fn reuse(params: ReuseParams) -> Option<Environment> {
+    if let Err(_e) = std::fs::metadata(&params.work_dir) {
+        return None;
+    }
+
+    // Self-heal the root-level daemon marker on the reuse path too. Non-fatal:
+    // the per-workdir marker still protects the common case, and an empty
+    // workspaces_root (legacy callers) simply skips this.
+    if !params.workspaces_root.is_empty() {
+        if let Err(err) = ensure_workspaces_root_marker(&params.workspaces_root) {
+            tracing::warn!(
+                error = %format!("{err:#}"),
+                "execenv: workspaces root marker not written on reuse; fail-closed guard limited to the task workdir"
+            );
+        }
+    }
+
+    let mut root_dir = super::context::dir_of(&params.work_dir);
+    if params.local_directory {
+        // For local_directory tasks the user's work_dir is unrelated to
+        // envRoot, so reading it from dir_of(work_dir) would point at the
+        // parent of the user's directory. v1 only ever reuses local_directory
+        // workdirs after a fresh Prepare in the same task lifetime, so the
+        // empty root_dir on reuse is fine for current callers.
+        root_dir = String::new();
+    }
+    let mut env = Environment {
+        root_dir: root_dir.clone(),
+        work_dir: params.work_dir.clone(),
+        local_directory: params.local_directory,
+        ..Default::default()
+    };
+    if !env.root_dir.is_empty() {
+        env.cordy_config_root = join_path(&[&env.root_dir, "cordy-config"]);
+        if let Err(err) = std::fs::create_dir_all(&env.cordy_config_root) {
+            tracing::warn!(
+                error = %format!("{err:#}"),
+                "execenv: restore task-local Cordy config directory failed; forcing fresh prepare"
+            );
+            return None;
+        }
+        if restrict_permissions(&env.cordy_config_root).is_err() {
+            tracing::warn!(
+                "execenv: restrict task-local Cordy config directory failed; forcing fresh prepare"
+            );
+            return None;
+        }
+    }
+
+    // Roll back the previous dispatch's sidecar writes before refreshing:
+    // without clearing them first, write_skill_files sees its own earlier
+    // output occupying the canonical slug and falls back to a collision-free
+    // sibling, accumulating a fresh duplicate on every re-dispatch (#3684).
+    //
+    // Two steps, in order: remove_reused_managed_skill_dirs reclaims the
+    // platform's own skill directories even when a prior-run agent left a file
+    // inside one; cleanup_sidecars rolls back the remaining sidecar files and
+    // the manifest itself. No-op when root_dir is empty or no prior manifest
+    // exists.
+    if !env.root_dir.is_empty() {
+        if let Err(err) = super::context::remove_reused_managed_skill_dirs(
+            &env.root_dir,
+            &super::context::skills_dir_path(&params.work_dir, &params.provider),
+        ) {
+            tracing::warn!(error = %format!("{err:#}"), "execenv: reclaim managed skill dirs on reuse failed");
+        }
+        if let Err(err) = super::context::cleanup_sidecars(&env.root_dir) {
+            tracing::warn!(error = %format!("{err:#}"), "execenv: roll back prior sidecars on reuse failed");
+        }
+    }
+
+    // Refresh context files (issue_context.md, skills), tracking a fresh
+    // manifest under env.root_dir so a later cleanup sees the up-to-date list
+    // of writes.
+    let mut manifest = SidecarManifest::default();
+    if let Err(err) = write_context_files(
+        &params.work_dir,
+        &params.provider,
+        &params.task,
+        Some(&mut manifest),
+    ) {
+        tracing::warn!(error = %format!("{err:#}"), "execenv: refresh context files failed");
+    }
+
+    // Restore CodexHome for Codex provider — re-run prepare_codex_home_with_opts
+    // to ensure config (especially sandbox/network access) is up to date.
+    if params.provider == "codex" {
+        let codex_home = join_path(&[&env.root_dir, CODEX_HOME_DIR_NAME]);
+        match prepare_codex_home_with_opts(
+            &codex_home,
+            CodexHomeOptions {
+                codex_version: params.codex_version.clone(),
+                resume_session_id: params.resume_session_id.clone(),
+                is_local_directory: params.local_directory,
+                session_store_key: codex_session_store_key(&params.profile, &params.task),
+                codex_custom_args: params.codex_custom_args.clone(),
+                ..Default::default()
+            },
+        ) {
+            Ok(()) => {
+                if let Err(err) = hydrate_codex_skills(
+                    &codex_home,
+                    &params.task.agent_skills,
+                    &params.task.disabled_runtime_skills,
+                ) {
+                    tracing::warn!(error = %format!("{err:#}"), "execenv: refresh codex skills failed");
+                }
+                env.codex_home = codex_home;
+            }
+            Err(err) => {
+                tracing::warn!(error = %format!("{err:#}"), "execenv: refresh codex-home failed");
+            }
+        }
+    }
+
+    if params.provider == "claude" && !env.root_dir.is_empty() {
+        match prepare_claude_skill_settings(
+            &env.root_dir,
+            &params.task.disabled_runtime_skills,
+            &params.task.agent_skills,
+        ) {
+            Ok(settings_path) => env.claude_settings_path = settings_path,
+            Err(err) => {
+                tracing::warn!(error = %format!("{err:#}"), "execenv: refresh claude skill settings failed");
+            }
+        }
+    }
+
+    // Re-deny Reasonix's `ask` tool on reuse: cleanup_sidecars above removed
+    // the prior run's reasonix.toml.
+    if params.provider == "reasonix" {
+        if let Err(err) = write_reasonix_project_config(
+            &params.work_dir,
+            &params.reasonix_env,
+            Some(&mut manifest),
+        ) {
+            tracing::warn!(error = %format!("{err:#}"), "execenv: refresh reasonix project config failed");
+        }
+    }
+
+    // Refresh (or tear down) the per-task QwenPaw workspace on reuse.
+    if params.provider == "qwenpaw" && !env.root_dir.is_empty() {
+        let qwenpaw_workspace = join_path(&[&env.root_dir, "qwenpaw-workspace"]);
+        if let Err(err) = prepare_qwenpaw_workspace(&qwenpaw_workspace, &params.task.agent_skills) {
+            tracing::warn!(
+                error = %format!("{err:#}"),
+                "execenv: refresh qwenpaw workspace failed; forcing fresh prepare"
+            );
+            return None;
+        }
+        env.qwenpaw_workspace = qwenpaw_workspace;
+    }
+
+    // Refresh (or tear down) the per-task HERMES_HOME on reuse. With skills
+    // bound, rebuild the overlay; with none, drop the redirect entirely so the
+    // task reverts to the user's real home.
+    if params.provider == "hermes" && !env.root_dir.is_empty() {
+        let hermes_home = join_path(&[&env.root_dir, "hermes-home"]);
+        if !params.task.agent_skills.is_empty() {
+            match prepare_hermes_home(
+                &hermes_home,
+                &params.hermes_source_home,
+                params.hermes_source_must_exist,
+                &params.task.agent_skills,
+                &params.hermes_env,
+                &params.hermes_memory_store,
+                &params.hermes_session_store,
+            ) {
+                Ok(sessions) => {
+                    env.hermes_home = hermes_home;
+                    env.hermes_session_store = String::new();
+                    env.hermes_session_history_present = false;
+                    if sessions.mounted {
+                        env.hermes_session_store = params.hermes_session_store.clone();
+                        env.hermes_session_history_present = sessions.history_present;
+                    }
+                }
+                Err(err) => {
+                    // Fail closed: a half-built overlay must not run. None
+                    // makes the daemon fall back to a fresh prepare.
+                    tracing::warn!(
+                        error = %format!("{err:#}"),
+                        "execenv: refresh hermes-home failed; forcing fresh prepare"
+                    );
+                    return None;
+                }
+            }
+        } else {
+            env.hermes_home = String::new();
+            env.hermes_session_store = String::new();
+            env.hermes_session_history_present = false;
+            if let Err(err) = remove_tree(&hermes_home) {
+                tracing::warn!(error = %format!("{err:#}"), "execenv: remove stale hermes-home failed");
+            }
+        }
+    }
+
+    // Refresh Cursor's managed MCP sidecars on reuse.
+    if params.provider == "cursor" && !env.root_dir.is_empty() {
+        match prepare_cursor_mcp_config(
+            &env.root_dir,
+            &params.work_dir,
+            params.mcp_config.as_ref(),
+            &params.cursor_mcp_auth_source,
+            Some(&mut manifest),
+        ) {
+            Ok(cursor_data_dir) => env.cursor_data_dir = cursor_data_dir,
+            Err(err) => {
+                tracing::warn!(
+                    error = %format!("{err:#}"),
+                    "execenv: refresh cursor mcp config failed"
+                );
+                return None;
+            }
+        }
+    }
+
+    if !env.root_dir.is_empty() {
+        if let Err(err) = super::context::write_sidecar_manifest(&env.root_dir, &manifest) {
+            tracing::warn!(error = %format!("{err:#}"), "execenv: refresh sidecar manifest failed");
+        }
+    }
+
+    // Refresh the per-task OpenClaw config on reuse. Fail closed.
+    if params.provider == "openclaw" {
+        match prepare_openclaw_config(
+            &env.root_dir,
+            &params.work_dir,
+            &OpenclawConfigPrep {
+                openclaw_bin: params.openclaw_bin.clone(),
+                mcp_config: params.mcp_config.clone(),
+                gateway: params.openclaw_gateway.clone(),
+            },
+        ) {
+            Ok(result) => {
+                env.openclaw_config_path = result.config_path;
+                env.openclaw_include_root = result.include_root;
+            }
+            Err(err) => {
+                tracing::warn!(
+                    error = %format!("{err:#}"),
+                    "execenv: refresh openclaw config failed"
+                );
+                return None;
+            }
+        }
+    }
+
+    tracing::info!(workdir = %params.work_dir, "execenv: reusing env");
+    Some(env)
+}
+
 /// hydrateCodexSkills populates the per-task CODEX_HOME/skills directory with
 /// both user-installed skills (from the shared ~/.codex/skills/) and
 /// workspace-assigned skills. Workspace skills win on name conflict.
@@ -841,7 +1150,7 @@ pub(crate) fn hydrate_codex_skills(
     disabled_runtime_skills: &[super::context::RuntimeSkillRefForEnv],
 ) -> anyhow::Result<()> {
     let skills_dir = join_path(&[codex_home, "skills"]);
-    remove_all(&skills_dir).context("clear codex skills dir")?;
+    remove_tree(&skills_dir).context("clear codex skills dir")?;
     if let Err(err) = super::codex_user_skills::seed_user_codex_skills(codex_home, workspace_skills)
     {
         tracing::warn!(error = %format!("{err:#}"), "execenv: seed user codex skills failed");
@@ -884,6 +1193,7 @@ pub enum GCMetaKind {
 /// Older meta files (pre-v2) lack the Kind field; readers must default empty
 /// Kind to Issue for backward compatibility.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct GcMeta {
     #[serde(rename = "kind", skip_serializing_if = "Option::is_none")]
     pub kind: Option<GCMetaKind>,
@@ -958,6 +1268,7 @@ pub const MANAGED_ENV_PROVENANCE_MANAGED_BY: &str = "cordy-daemon-managed-env";
 /// presence is itself the "safe to reuse, not a user local_directory"
 /// assertion.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ManagedEnvProvenance {
     #[serde(rename = "managed_by")]
     pub managed_by: String,
@@ -975,7 +1286,10 @@ pub struct ManagedEnvProvenance {
 /// root. Callers must only invoke it for non-local_directory resumable envs,
 /// since the file's presence is the non-local assertion. ManagedBy is stamped
 /// here so callers cannot forget the discriminator.
-pub fn write_managed_env_provenance(env_root: &str, mut p: ManagedEnvProvenance) -> anyhow::Result<()> {
+pub fn write_managed_env_provenance(
+    env_root: &str,
+    mut p: ManagedEnvProvenance,
+) -> anyhow::Result<()> {
     if env_root.is_empty() {
         return Ok(());
     }
@@ -1106,9 +1420,7 @@ pub(crate) fn claim_env_root(env_root: &str, task_id: &str) -> anyhow::Result<bo
             return Ok(true);
         }
         Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => {
-            return Err(
-                anyhow::Error::new(e).context(format!("create env root {env_root}"))
-            );
+            return Err(anyhow::Error::new(e).context(format!("create env root {env_root}")));
         }
         Err(_) => {}
     }
@@ -1160,9 +1472,7 @@ fn write_env_root_owner_exclusive(env_root: &str, task_id: &str) -> anyhow::Resu
             );
         }
         Err(e) => {
-            return Err(
-                anyhow::Error::new(e).context(format!("claim env root {env_root}"))
-            );
+            return Err(anyhow::Error::new(e).context(format!("claim env root {env_root}")));
         }
         Ok(mut f) => {
             f.write_all(task_id.as_bytes()).map_err(|e| {
@@ -1298,7 +1608,10 @@ fn prepare_hermes_home(
 }
 
 // S9-integration: qwenpaw_workspace.go lands in lane E2.
-fn prepare_qwenpaw_workspace(_workspace: &str, _skills: &[SkillContextForEnv]) -> anyhow::Result<()> {
+fn prepare_qwenpaw_workspace(
+    _workspace: &str,
+    _skills: &[SkillContextForEnv],
+) -> anyhow::Result<()> {
     bail!("execenv: qwenpaw provider family not yet ported (lane E2)")
 }
 
