@@ -302,9 +302,16 @@ mod tests {
         with_home(|home| {
             let default_id = ensure_daemon_id("").unwrap();
             let staging_id = ensure_daemon_id("staging").unwrap();
-            assert_eq!(default_id, staging_id, "profiles should share one machine id");
+            assert_eq!(
+                default_id, staging_id,
+                "profiles should share one machine id"
+            );
 
-            let profile_file = home.join(".cordy").join("profiles").join("staging").join("daemon.id");
+            let profile_file = home
+                .join(".cordy")
+                .join("profiles")
+                .join("staging")
+                .join("daemon.id");
             assert!(
                 matches!(fs::metadata(&profile_file), Err(e) if e.kind() == io::ErrorKind::NotFound),
                 "profile-scoped daemon.id should not be created"
@@ -385,7 +392,12 @@ mod tests {
     #[test]
     fn legacy_daemon_ids_table() {
         let cases: &[(&str, &str, &str, Vec<&str>)] = &[
-            ("plain hostname, no profile", "MacBook-Pro", "", vec!["MacBook-Pro", "MacBook-Pro.local"]),
+            (
+                "plain hostname, no profile",
+                "MacBook-Pro",
+                "",
+                vec!["MacBook-Pro", "MacBook-Pro.local"],
+            ),
             (
                 "dot-local hostname, no profile",
                 "MacBook-Pro.local",
