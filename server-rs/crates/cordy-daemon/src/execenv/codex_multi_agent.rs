@@ -235,6 +235,10 @@ mod tests {
         std::env::set_var(key, value);
     }
 
+    // Tests that mutate CORDY_CODEX_MULTI_AGENT share one process env, so
+    // they must not run concurrently.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     // Port of TestRenderCordyMultiAgentBlock: table vs dotted-key forms.
     #[test]
     fn test_render_cordy_multi_agent_block() {
@@ -276,6 +280,7 @@ mod tests {
     // root-form ↔ in-table rewrites stay byte-stable and never duplicate keys.
     #[test]
     fn test_ensure_codex_multi_agent_config_idempotent_and_layout_aware() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp
             .path()
@@ -319,6 +324,7 @@ mod tests {
     // the feature on (config left untouched).
     #[test]
     fn test_codex_multi_agent_escape_hatch() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp
             .path()
