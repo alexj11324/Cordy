@@ -151,9 +151,6 @@ pub async fn setup_git_worktree(
         }
     }
 }
-        }
-    }
-}
 
 async fn run_git_worktree_add(
     git_root: &str,
