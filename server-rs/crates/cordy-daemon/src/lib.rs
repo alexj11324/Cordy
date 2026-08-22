@@ -33,3 +33,20 @@ pub mod gc;
 pub mod hub;
 pub mod notifier;
 pub mod repocache;
+
+// Final S9 batch (lanes B/C2/D) — stubs pre-declared.
+pub mod agents_probe;
+pub mod agents_refresh;
+pub mod artifact_matcher;
+pub mod auto_update;
+pub mod claude_plugins;
+pub mod local_directory;
+pub mod local_skills;
+pub mod manager;
+pub mod openclaw_runtime_config;
+pub mod plugin_hook_mcp;
+pub mod prompt;
+pub mod remote_mcp_broker;
+pub mod runtime_mcp;
+pub mod skill_cache;
+pub mod slash_skill;
