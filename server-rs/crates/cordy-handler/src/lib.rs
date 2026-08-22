@@ -5,9 +5,13 @@
 //! on axum. Routes are ported domain-by-domain; each domain module exposes a
 //! `router()` merged into the app router in this file.
 
+pub mod daemon;
 pub mod error;
 pub mod health;
+pub mod profile_json;
 pub mod state;
+pub mod task_json;
+pub mod timefmt;
 pub mod workspace;
 pub mod ws;
 
