@@ -189,6 +189,25 @@ impl Hub {
         (id, rx)
     }
 
+    /// [`Hub::register`] variant that also returns the client handle — the WS
+    /// pump layer needs it to dispatch subscribe frames without a hub lookup.
+    pub fn register_with_handle(
+        &self,
+        user_id: &str,
+        workspace_id: &str,
+    ) -> (
+        ClientId,
+        tokio::sync::mpsc::Receiver<Vec<u8>>,
+        Option<std::sync::Arc<ClientHandle>>,
+    ) {
+        let (id, rx) = self.register(user_id, workspace_id);
+        let handle = {
+            let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
+            inner.clients.get(&id).cloned()
+        };
+        (id, rx, handle)
+    }
+
     /// Drops a client from all rooms and the global set, firing
     /// on-last-subscriber callbacks for any rooms drained as a side effect.
     pub fn unregister(&self, id: ClientId) {

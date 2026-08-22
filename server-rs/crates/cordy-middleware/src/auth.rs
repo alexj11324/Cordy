@@ -300,7 +300,7 @@ fn csrf_ok(req: &Request, auth_token: &str) -> bool {
 }
 
 /// HS256-only decode with Go-compatible claim requirements.
-pub(crate) fn decode_jwt_claims(token: &str) -> Option<serde_json::Map<String, serde_json::Value>> {
+pub fn decode_jwt_claims(token: &str) -> Option<serde_json::Map<String, serde_json::Value>> {
     use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 
     let mut validation = Validation::new(Algorithm::HS256);
