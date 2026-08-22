@@ -293,7 +293,7 @@ server-rs/
 | channel(+engine) | 4,329 | cordy-channel(1,146)+channel-engine(5,077) | ✅ 引擎清零（S7-a0..b） |
 | composio | 1,050 | cordy-composio(2,889) | ✅ 四模块 |
 | vcs | 649 | cordy-vcs(1,233) | ✅ 三平台 |
-| ghsnapshot | 1,115 | cordy-ghsnapshot(911) | 🟡 client+snapshot 在位；**Manager 编排层(~430 行)未移植**——refresh.go 的 Enqueue/worker/process/rateLimitPause/applySnapshot/scheduleRetry/sweepLoop 全链 |
+| ghsnapshot | 1,115 | cordy-ghsnapshot(2,360) | ✅ client+snapshot+Manager 编排层全链（refresh.go 的 Address/Enqueue/worker/process/rateLimitPause/deferActive/finish/applySnapshot/scheduleChase/scheduleRetry/sweepLoop；13 测试，DB 组需 DATABASE_URL） |
 | lark | 10,060 | cordy-lark(3) 空脚手架 | ⬜ 最大单域 |
 | wecom | 7,525 | cordy-wecom(3) 空脚手架 | ⬜ |
 | dingtalk | 3,918 | cordy-dingtalk(3) 空脚手架 | ⬜ |
