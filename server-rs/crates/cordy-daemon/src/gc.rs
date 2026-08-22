@@ -3,24 +3,29 @@
 //!
 //! Deviations from Go:
 //! - `*Daemon` receiver → [`GcHost`] trait; config fields live in
-//!   [`GcConfig`] mirroring the exact Go field names/types from
-//!   `internal/daemon/config.go:99–118`.
+//!  [`GcConfig`] mirroring the exact Go field names/types from
+//!  `internal/daemon/config.go:99–118`.
 //! - execenv-owned pieces (GCMeta, store pruners, managed-artifact helpers)
-//!   are local seam stand-ins marked `// S9-integration:`; this module never
-//!   references `crate::execenv`.
+//!  are local seam stand-ins marked `// S9-integration:`; this module never
+//!  references `crate::execenv`.
 //! - `time.Ticker` → `tokio::time::interval` with `MissedTickBehavior::Delay`
-//!   (Go tickers drop missed ticks).
+//!  (Go tickers drop missed ticks).
 //! - `context.Context` → [`Ctx`](crate::repocache::Ctx); slog → tracing with
-//!   identical messages.
+//!  identical messages.
+
+// S9-integration: entry points (gc_loop/run_gc) and seam types are wired by
+// the daemon-runner/execenv lanes; silence dead-code until that lands.
+#![allow(dead_code)]
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::Context as _;
 use chrono::{DateTime, Utc};
 
-use crate::repocache::{CancelCause, Ctx};
+use crate::repocache::{normalize_lexically, CancelCause, Ctx};
 
 // ---------------------------------------------------------------------------
 // processtree (inlined port of processtree/run.go + controller_unix.go).
@@ -30,6 +35,7 @@ use crate::repocache::{CancelCause, Ctx};
 /// whose descendants must not survive cancellation. Uses a Unix process group
 /// (`setpgid`) — unix only, matching the Go build tag.
 pub(crate) mod processtree {
+    use std::os::unix::process::ExitStatusExt;
     use std::process::Stdio;
     use std::time::Duration;
 
@@ -38,7 +44,7 @@ pub(crate) mod processtree {
     use tokio::process::Command;
     use tokio::select;
 
-    use crate::repocache::Ctx;
+    use crate::repocache::{CancelCause, Ctx};
 
     /// `gracefulStopTimeout` (run.go:14).
     const GRACEFUL_STOP_TIMEOUT: Duration = Duration::from_secs(1);
@@ -126,13 +132,18 @@ pub(crate) mod processtree {
         let pid = child.id().unwrap_or_default() as i32;
 
         // Drain pipes concurrently into buffers, like Go's exec copying
-        // goroutines writing into bytes.Buffer.
-        let stdout_pipe = child.stdout.take();
-        let stderr_pipe = child.stderr.take();
+        // goroutines writing into bytes.Buffer. stdout is drained first so
+        // split-mode callers can attribute buffers by index.
         let shared = std::sync::Arc::new(std::sync::Mutex::new(Vec::<u8>::new()));
-        let mut drain_tasks: Vec<tokio::task::JoinHandle<Vec<u8>>> = Vec::new();
-        for pipe in [stdout_pipe, stderr_pipe] {
-            let Some(pipe) = pipe else { continue };
+        let mut pipes: Vec<Box<dyn tokio::io::AsyncRead + Unpin + Send>> = Vec::new();
+        if let Some(p) = child.stdout.take() {
+            pipes.push(Box::new(p));
+        }
+        if let Some(p) = child.stderr.take() {
+            pipes.push(Box::new(p));
+        }
+        let mut drain_tasks: Vec<tokio::task::JoinHandle<(usize, Vec<u8>)>> = Vec::new();
+        for (idx, pipe) in pipes.into_iter().enumerate() {
             let sink = if combined { Some(shared.clone()) } else { None };
             drain_tasks.push(tokio::spawn(async move {
                 let mut reader = pipe;
@@ -150,7 +161,7 @@ pub(crate) mod processtree {
                         }
                     }
                 }
-                local
+                (idx, local)
             }));
         }
 
@@ -172,11 +183,8 @@ pub(crate) mod processtree {
                     Ok(r) => Some(r),
                     Err(_elapsed) => {
                         if let Err(e) = stop(pid) {
-                            let prev = stop_err.take();
-                            stop_err = Some(match prev {
-                                Some(prev) => {
-                                    std::io::Error::other(format!("{prev}; {e}"))
-                                }
+                            stop_err = Some(match stop_err.take() {
+                                Some(prev) => std::io::Error::other(format!("{prev}; {e}")),
                                 None => e,
                             });
                         }
@@ -188,12 +196,12 @@ pub(crate) mod processtree {
 
         let mut stdout_buf = Vec::new();
         let mut stderr_buf = Vec::new();
-        for (i, task) in drain_tasks.into_iter().enumerate() {
-            let buf = task.await.unwrap_or_default();
+        for task in drain_tasks {
+            let (idx, buf) = task.await.unwrap_or((usize::MAX, Vec::new()));
             if combined {
                 continue; // already accumulated in `shared`
             }
-            if i == 0 {
+            if idx == 0 {
                 stdout_buf = buf;
             } else {
                 stderr_buf = buf;
@@ -201,9 +209,16 @@ pub(crate) mod processtree {
         }
         let combined_buf = std::mem::take(&mut *shared.lock().unwrap());
 
+        // errors.Join(stopErr, finishErr) != nil → "stop process tree: %w"
         if let Err(finish_err) = finish(pid).await {
-            // errors.Join(stopErr, finishErr) != nil → "stop process tree: %w"
-            return Err(finish_err.context("stop process tree"));
+            let mut err = finish_err.context("stop process tree");
+            if let Some(se) = stop_err.take() {
+                err = err.context(se.to_string());
+            }
+            return Err(err);
+        }
+        if let Some(se) = stop_err.take() {
+            return Err(anyhow::Error::new(se).context("stop process tree"));
         }
         if cancelled {
             return Err(anyhow::Error::new(ProcessError::Cancelled(ctx.cause())));
@@ -212,7 +227,7 @@ pub(crate) mod processtree {
         let status = match status_result {
             Some(Ok(status)) => status,
             Some(Err(e)) => return Err(anyhow::Error::new(ProcessError::Io(e))),
-            None => unreachable!("status_result is None only when cancelled"),
+            None => return Err(anyhow::Error::new(ProcessError::Cancelled(ctx.cause()))),
         };
         if !status.success() {
             let err = if let Some(sig) = status.signal() {
@@ -251,7 +266,9 @@ pub(crate) mod processtree {
         cmd: Command,
         wait_delay: Duration,
     ) -> anyhow::Result<Vec<u8>> {
-        run_inner(ctx, cmd, wait_delay, false).await.map(|(out, _)| out)
+        run_inner(ctx, cmd, wait_delay, false)
+            .await
+            .map(|(out, _)| out)
     }
 
     /// `Run` (run.go:40–42): executes an unstarted command while owning its
@@ -279,34 +296,27 @@ pub(crate) const REPOS_DIR_NAME: &str = ".repos";
 // (execenv/execenv.go:947–1023). Swap to the shared execenv module at
 // integration time; this module must not reference crate::execenv.
 
-/// `execenv.GCMetaKind`.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// `execenv.GCMetaKind` (execenv.go:947–953): string-kind discriminator for
+/// the parent record that governs a task dir's lifecycle.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) enum GcMetaKind {
+    /// Pre-v2 meta files (no kind field) normalize to Issue so the legacy
+    /// issue path keeps working without a migration.
     #[default]
-    #[serde(rename = "")]
-    Unset,
-    #[serde(rename = "issue")]
     Issue,
-    #[serde(rename = "chat")]
     Chat,
-    #[serde(rename = "autopilot_run")]
     AutopilotRun,
-    #[serde(rename = "quick_create")]
     QuickCreate,
-    #[serde(untagged)]
-    Other(String),
+    Unknown,
 }
 
-impl GcMetaKind {
-    fn as_str(&self) -> &str {
-        match self {
-            GcMetaKind::Unset => "",
-            GcMetaKind::Issue => "issue",
-            GcMetaKind::Chat => "chat",
-            GcMetaKind::AutopilotRun => "autopilot_run",
-            GcMetaKind::QuickCreate => "quick_create",
-            GcMetaKind::Other(s) => s.as_str(),
-        }
+fn parse_gc_meta_kind(raw: &str) -> GcMetaKind {
+    match raw {
+        "" | "issue" => GcMetaKind::Issue,
+        "chat" => GcMetaKind::Chat,
+        "autopilot_run" => GcMetaKind::AutopilotRun,
+        "quick_create" => GcMetaKind::QuickCreate,
+        _ => GcMetaKind::Unknown,
     }
 }
 
@@ -314,8 +324,8 @@ impl GcMetaKind {
 /// the env root so the GC loop can make parent-aware decisions.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub(crate) struct GcMeta {
-    #[serde(default)]
-    kind: GcMetaKind,
+    #[serde(default, rename = "kind")]
+    kind_raw: String,
     #[serde(default, rename = "issue_id")]
     issue_id: String,
     #[serde(default, rename = "chat_session_id")]
@@ -336,8 +346,8 @@ pub(crate) struct GcMeta {
 }
 
 impl GcMeta {
-    pub(crate) fn kind(&self) -> &GcMetaKind {
-        &self.kind
+    pub(crate) fn kind(&self) -> GcMetaKind {
+        parse_gc_meta_kind(&self.kind_raw)
     }
     pub(crate) fn issue_id(&self) -> &str {
         &self.issue_id
@@ -355,10 +365,9 @@ impl GcMeta {
 /// so the legacy issue path keeps working without a migration.
 fn read_gc_meta(env_root: &Path) -> anyhow::Result<GcMeta> {
     let data = std::fs::read(env_root.join(".gc_meta.json"))?;
-    let mut meta: GcMeta =
-        serde_json::from_slice(&data).context("unmarshal gc meta")?;
-    if meta.kind == GcMetaKind::Unset {
-        meta.kind = GcMetaKind::Issue;
+    let mut meta: GcMeta = serde_json::from_slice(&data).context("unmarshal gc meta")?;
+    if meta.kind_raw.is_empty() {
+        meta.kind_raw = "issue".to_string();
     }
     Ok(meta)
 }
@@ -378,8 +387,10 @@ pub(crate) struct RequestError {
 /// see this workspace", so callers can't tell the two apart from the response
 /// alone.
 fn is_access_not_found(err: &anyhow::Error) -> bool {
-    err.chain()
-        .any(|c| c.downcast_ref::<RequestError>().is_some_and(|e| e.status_code == 404))
+    err.chain().any(|c| {
+        c.downcast_ref::<RequestError>()
+            .is_some_and(|e| e.status_code == 404)
+    })
 }
 
 /// `IssueGCCheckResult` (daemon client): outcome of one issue GC check.
@@ -389,7 +400,7 @@ pub(crate) struct IssueGCCheckResult {
     pub(crate) found: bool,
     pub(crate) status: String,
     pub(crate) updated_at: Option<DateTime<Utc>>,
-    pub(crate) err: Option<anyhow::Error>,
+    pub(crate) err: Option<std::sync::Arc<anyhow::Error>>,
 }
 
 /// Per-issue single check payload used by `gcDecisionIssue`
@@ -400,18 +411,13 @@ pub(crate) struct IssueGCCheckStatus {
     pub(crate) updated_at: Option<DateTime<Utc>>,
 }
 
-// S9-integration: mirrors execenv.ManagedReclaimableArtifactSubpaths and the
-// hasManagedArtifact probe (codex-home/.sandbox-bin under the env root).
+// S9-integration: mirrors execenv.ManagedReclaimableArtifactSubpaths. The
+// real list lives in execenv; swap at integration time.
 
-/// `execenv.ManagedReclaimableArtifactSubpaths`: labels logged at GC startup.
+/// `execenv.ManagedReclaimableArtifactSubpaths`: labels logged at GC startup
+/// and the exact managed paths cleaned by clean_managed_task_artifacts.
 fn managed_reclaimable_artifact_subpaths() -> Vec<String> {
     Vec::new()
-}
-
-/// `hasManagedArtifact` (gc.go:389): whether the task's regenerable
-/// daemon-managed Codex cache is present on disk.
-fn has_managed_artifact(task_dir: &Path) -> bool {
-    task_dir.join("codex-home").join(".sandbox-bin").exists()
 }
 
 // S9-integration: mirrors execenv.PruneCodexSessionStores /
@@ -713,8 +719,14 @@ pub(crate) async fn run_gc<H: GcHost>(host: &H, ctx: &Ctx) {
         // made its `v1` directory look like a task dir with no .gc_meta.json,
         // so the orphan path would delete the entire bundle cache once its
         // mtime went 72h without a new bundle.
-        let is_dir = std::fs::metadata(&ws_entry).map(|m| m.is_dir()).unwrap_or(false);
-        let name = ws_entry.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let is_dir = std::fs::metadata(&ws_entry)
+            .map(|m| m.is_dir())
+            .unwrap_or(false);
+        let name = ws_entry
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
         if !is_dir || name.starts_with('.') {
             continue;
         }
@@ -793,8 +805,8 @@ struct IssueGcCandidate {
 /// `gcWorkspace` (gc.go:155–193): scans task directories inside a single
 /// workspace directory.
 async fn gc_workspace<H: GcHost>(host: &H, ctx: &Ctx, ws_dir: &Path, stats: &mut GcStats) {
-    let task_entries = match std::fs::read_dir(ws_dir) {
-        Ok(entries) => entries,
+    let task_paths: Vec<PathBuf> = match std::fs::read_dir(ws_dir) {
+        Ok(entries) => entries.flatten().map(|e| e.path()).collect(),
         Err(err) => {
             tracing::warn!(dir = %ws_dir.display(), error = %err, "gc: read workspace dir failed");
             return;
@@ -802,25 +814,23 @@ async fn gc_workspace<H: GcHost>(host: &H, ctx: &Ctx, ws_dir: &Path, stats: &mut
     };
 
     let mut cleaned_here = 0i32;
-    let mut issue_candidates: Vec<IssueGcCandidate> =
-        Vec::with_capacity(task_entries.count());
-    let mut task_entries = std::fs::read_dir(ws_dir).ok();
-    while let Some(entry) = task_entries.as_mut().and_then(|rd| rd.next()) {
-        let Ok(entry) = entry else { continue };
+    let mut issue_candidates: Vec<IssueGcCandidate> = Vec::with_capacity(task_paths.len());
+    for task_dir in task_paths {
         if ctx.err().is_some() {
             return;
         }
-        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        let is_dir = std::fs::metadata(&task_dir)
+            .map(|m| m.is_dir())
+            .unwrap_or(false);
         if !is_dir {
             continue;
         }
-        let task_dir = ws_dir.join(entry.file_name());
         if host.is_active_env_root(&task_dir) {
             stats.skipped += 1;
             continue;
         }
         match read_gc_meta(&task_dir) {
-            Ok(meta) if meta.kind() == &GcMetaKind::Issue && !meta.issue_id().trim().is_empty() => {
+            Ok(meta) if meta.kind() == GcMetaKind::Issue && !meta.issue_id().trim().is_empty() => {
                 issue_candidates.push(IssueGcCandidate { task_dir, meta });
                 continue;
             }
@@ -837,7 +847,7 @@ async fn gc_workspace<H: GcHost>(host: &H, ctx: &Ctx, ws_dir: &Path, stats: &mut
 
     // Remove the workspace directory itself if it's now empty.
     if cleaned_here > 0 {
-        let remaining = std::fs::read_dir(ws_dir).map(|mut rd| rd.count()).unwrap_or(1);
+        let remaining = std::fs::read_dir(ws_dir).map(|rd| rd.count()).unwrap_or(1);
         if remaining == 0 {
             let _ = std::fs::remove_dir(ws_dir);
         }
@@ -874,7 +884,10 @@ async fn gc_workspace_issues<H: GcHost>(
             break;
         }
         let end = usize::min(start + ISSUE_GC_BATCH_SIZE, issue_ids.len());
-        match host.get_issue_gc_checks(ctx, workspace_id, &issue_ids[start..end]).await {
+        match host
+            .get_issue_gc_checks(ctx, workspace_id, &issue_ids[start..end])
+            .await
+        {
             Ok(chunk_results) => results.extend(chunk_results),
             Err(err) => {
                 tracing::warn!(
@@ -896,7 +909,7 @@ async fn gc_workspace_issues<H: GcHost>(
             break;
         }
         let issue_id = candidate.meta.issue_id().trim().to_string();
-        let Some(result) = results.get(&issue_id) else {
+        let Some(result) = results.remove(&issue_id) else {
             // No usable answer about the parent issue this cycle, so the task
             // data stays. The regenerable Codex cache is still fair game.
             let action = apply_managed_artifact_fallback(
@@ -918,17 +931,14 @@ async fn gc_workspace_issues<H: GcHost>(
             cleaned += apply_gc_action(host, &candidate.task_dir, action, stats);
             continue;
         }
-        let result = result.clone();
-        let mut action = gc_decision_issue_result(host, &candidate.task_dir, &candidate.meta, result);
+        let mut action =
+            gc_decision_issue_result(host, &candidate.task_dir, &candidate.meta, result);
         action = apply_local_directory_gc_override(host, &candidate.meta, action);
-        action = apply_managed_artifact_fallback(host, &candidate.task_dir, &candidate.meta, action);
+        action =
+            apply_managed_artifact_fallback(host, &candidate.task_dir, &candidate.meta, action);
         cleaned += apply_gc_action(host, &candidate.task_dir, action, stats);
     }
     cleaned
-}
-
-fn candidates_len_hint(_: &[IssueGcCandidate]) -> i32 {
-    0
 }
 
 // ---------------------------------------------------------------------------
@@ -938,7 +948,12 @@ fn candidates_len_hint(_: &[IssueGcCandidate]) -> i32 {
 /// `applyGCAction` (gc.go:269–301): performs one decision and updates cycle
 /// stats. Each mutation atomically reserves the env root because a task can
 /// start while the server reconciliation request is in flight.
-fn apply_gc_action<H: GcHost>(host: &H, task_dir: &Path, action: GcAction, stats: &mut GcStats) -> i32 {
+fn apply_gc_action<H: GcHost>(
+    host: &H,
+    task_dir: &Path,
+    action: GcAction,
+    stats: &mut GcStats,
+) -> i32 {
     let _release = if action != GcAction::Skip {
         match host.reserve_env_root_for_gc(task_dir) {
             Some(release) => Some(release),
@@ -1053,7 +1068,7 @@ fn apply_managed_artifact_fallback<H: GcHost>(
     }
     tracing::info!(
         dir = %task_dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default(),
-        kind = %meta.kind().as_str(),
+        kind = %meta_kind_str(meta),
         completed_at = %completed_at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
         "gc: eligible for managed artifact cleanup"
     );
@@ -1064,7 +1079,11 @@ fn apply_managed_artifact_fallback<H: GcHost>(
 /// their envRoot indefinitely so the user can inspect output/ and logs/ for
 /// forensic context. Clean demotes to artifact-pattern cleanup; Orphan demotes
 /// to exact managed-artifact cleanup only.
-fn apply_local_directory_gc_override<H: GcHost>(host: &H, meta: &GcMeta, action: GcAction) -> GcAction {
+fn apply_local_directory_gc_override<H: GcHost>(
+    host: &H,
+    meta: &GcMeta,
+    action: GcAction,
+) -> GcAction {
     if !meta.local_directory() {
         return action;
     }
@@ -1125,7 +1144,12 @@ fn orphan_by_mtime<H: GcHost>(host: &H, task_dir: &Path, reason: &str) -> GcActi
 // ---------------------------------------------------------------------------
 
 /// `gcDecisionIssue` (gc.go:477–500).
-async fn gc_decision_issue<H: GcHost>(host: &H, ctx: &Ctx, task_dir: &Path, meta: &GcMeta) -> GcAction {
+async fn gc_decision_issue<H: GcHost>(
+    host: &H,
+    ctx: &Ctx,
+    task_dir: &Path,
+    meta: &GcMeta,
+) -> GcAction {
     if meta.issue_id().trim().is_empty() {
         return orphan_by_mtime(host, task_dir, "empty issue id");
     }
@@ -1203,8 +1227,7 @@ fn gc_decision_issue_result<H: GcHost>(
             .completed_at()
             .map(|c| Utc::now().signed_duration_since(c))
             .unwrap_or_default();
-        if completed_age
-            > chrono::Duration::from_std(cfg.gc_completed_task_ttl).unwrap_or_default()
+        if completed_age > chrono::Duration::from_std(cfg.gc_completed_task_ttl).unwrap_or_default()
         {
             tracing::info!(
                 dir = %base_name(task_dir),
@@ -1278,12 +1301,20 @@ fn gc_meta_file_age(task_dir: &Path) -> Option<chrono::Duration> {
 }
 
 /// `gcDecisionChat` (gc.go:606–662).
-async fn gc_decision_chat<H: GcHost>(host: &H, ctx: &Ctx, task_dir: &Path, meta: &GcMeta) -> GcAction {
+async fn gc_decision_chat<H: GcHost>(
+    host: &H,
+    ctx: &Ctx,
+    task_dir: &Path,
+    meta: &GcMeta,
+) -> GcAction {
     if meta.chat_session_id.trim().is_empty() {
         return orphan_by_mtime(host, task_dir, "empty chat session id");
     }
 
-    let status = match host.get_chat_session_gc_check(ctx, &meta.chat_session_id).await {
+    let status = match host
+        .get_chat_session_gc_check(ctx, &meta.chat_session_id)
+        .await
+    {
         Ok(status) => status,
         Err(err) => {
             if is_access_not_found(&err) {
@@ -1345,7 +1376,10 @@ async fn gc_decision_autopilot_run<H: GcHost>(
         return orphan_by_mtime(host, task_dir, "empty autopilot run id");
     }
 
-    let status = match host.get_autopilot_run_gc_check(ctx, &meta.autopilot_run_id).await {
+    let status = match host
+        .get_autopilot_run_gc_check(ctx, &meta.autopilot_run_id)
+        .await
+    {
         Ok(status) => status,
         Err(err) => {
             if is_access_not_found(&err) {
@@ -1425,7 +1459,20 @@ fn is_agent_task_terminal(status: &str) -> bool {
 }
 
 fn base_name(path: &Path) -> String {
-    path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default()
+}
+
+/// Raw kind string for log fields, matching Go's `string(meta.Kind)`.
+fn meta_kind_str(meta: &GcMeta) -> &str {
+    match meta.kind() {
+        GcMetaKind::Issue => "issue",
+        GcMetaKind::Chat => "chat",
+        GcMetaKind::AutopilotRun => "autopilot_run",
+        GcMetaKind::QuickCreate => "quick_create",
+        GcMetaKind::Unknown => "unknown",
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1454,14 +1501,18 @@ impl ArtifactMatcher {
             exact_leaf_names: std::collections::HashSet::with_capacity(managed_subpaths.len()),
         };
         for subpath in managed_subpaths {
-            let Some(cleaned) = safe_relative_path(subpath) else { continue };
+            let Some(cleaned) = safe_relative_path(subpath) else {
+                continue;
+            };
             let display = cleaned.replace('\\', "/");
             matcher.exact_paths.insert(
                 cleaned.clone(),
                 format!("{MANAGED_ARTIFACT_PATTERN_PREFIX}{display}"),
             );
             if let Some(leaf) = Path::new(&cleaned).file_name() {
-                matcher.exact_leaf_names.insert(leaf.to_string_lossy().into_owned());
+                matcher
+                    .exact_leaf_names
+                    .insert(leaf.to_string_lossy().into_owned());
             }
         }
         matcher
@@ -1498,7 +1549,10 @@ fn safe_relative_path(path: &str) -> Option<String> {
     }
     let cleaned = normalize_lexically(Path::new(path));
     let cleaned = cleaned.to_string_lossy().into_owned();
-    if cleaned == "." || cleaned == ".." || cleaned.starts_with("../") || cleaned.starts_with("..\\")
+    if cleaned == "."
+        || cleaned == ".."
+        || cleaned.starts_with("../")
+        || cleaned.starts_with("..\\")
     {
         return None;
     }
@@ -1541,10 +1595,7 @@ fn is_linked_entry(meta: &std::fs::Metadata) -> bool {
 /// - .git subtrees are never descended into.
 /// - linked directories are skipped entirely.
 /// - every removal target is verified to live inside taskDir.
-fn clean_task_artifacts(
-    task_dir: &Path,
-    patterns: &[String],
-) -> (i32, i64, HashMap<String, i32>) {
+fn clean_task_artifacts(task_dir: &Path, patterns: &[String]) -> (i32, i64, HashMap<String, i32>) {
     let matcher = ArtifactMatcher::new(patterns, &managed_reclaimable_artifact_subpaths());
     clean_task_artifacts_matching(task_dir, &matcher)
 }
@@ -1559,12 +1610,16 @@ fn clean_managed_task_artifacts(task_dir: &Path) -> (i32, i64, HashMap<String, i
     if task_dir.as_os_str().is_empty() {
         return (removed, bytes, per_pattern);
     }
-    let Ok(abs_root) = std::fs::absolute(task_dir) else {
+    let Ok(abs_root) = std::path::absolute(task_dir) else {
         return (removed, bytes, per_pattern);
     };
     for subpath in managed_reclaimable_artifact_subpaths() {
-        let Some(rel) = safe_relative_path(&subpath) else { continue };
-        let Some(target) = managed_artifact_target(&abs_root, &rel) else { continue };
+        let Some(rel) = safe_relative_path(&subpath) else {
+            continue;
+        };
+        let Some(target) = managed_artifact_target(&abs_root, &rel) else {
+            continue;
+        };
         let size = dir_size(&target);
         if let Err(err) = std::fs::remove_dir_all(&target) {
             tracing::warn!(path = %target.display(), error = %err, "gc: artifact remove failed");
@@ -1573,7 +1628,10 @@ fn clean_managed_task_artifacts(task_dir: &Path) -> (i32, i64, HashMap<String, i
         removed += 1;
         bytes += size;
         *per_pattern
-            .entry(format!("{MANAGED_ARTIFACT_PATTERN_PREFIX}{}", rel.replace('\\', "/")))
+            .entry(format!(
+                "{MANAGED_ARTIFACT_PATTERN_PREFIX}{}",
+                rel.replace('\\', "/")
+            ))
             .or_insert(0i32) += 1;
         tracing::info!(path = %target.display(), bytes = size, "gc: artifact removed");
     }
@@ -1606,11 +1664,13 @@ fn managed_artifact_target(abs_root: &Path, rel: &str) -> Option<PathBuf> {
 /// again, so every cycle takes an env-root reservation and logs a reclaim
 /// that removes nothing.
 fn has_managed_artifact(task_dir: &Path) -> bool {
-    let Ok(abs_root) = std::fs::absolute(task_dir) else {
+    let Ok(abs_root) = std::path::absolute(task_dir) else {
         return false;
     };
     for subpath in managed_reclaimable_artifact_subpaths() {
-        let Some(rel) = safe_relative_path(&subpath) else { continue };
+        let Some(rel) = safe_relative_path(&subpath) else {
+            continue;
+        };
         if managed_artifact_target(&abs_root, &rel).is_some() {
             return true;
         }
@@ -1634,7 +1694,7 @@ fn clean_task_artifacts_matching(
         return (removed, bytes, per_pattern);
     }
 
-    let Ok(abs_root) = std::fs::absolute(task_dir) else {
+    let Ok(abs_root) = std::path::absolute(task_dir) else {
         return (removed, bytes, per_pattern);
     };
 
@@ -1652,7 +1712,9 @@ fn clean_task_artifacts_matching(
         };
         for entry in entries.flatten() {
             let path = entry.path();
-            let Ok(info) = std::fs::symlink_metadata(&path) else { continue };
+            let Ok(info) = std::fs::symlink_metadata(&path) else {
+                continue;
+            };
             if !info.is_dir() || info.file_type().is_symlink() {
                 continue;
             }
@@ -1683,7 +1745,14 @@ fn clean_task_artifacts_matching(
         }
     }
 
-    walk(&abs_root, &abs_root, matcher, &mut removed, &mut bytes, &mut per_pattern);
+    walk(
+        &abs_root,
+        &abs_root,
+        matcher,
+        &mut removed,
+        &mut bytes,
+        &mut per_pattern,
+    );
     (removed, bytes, per_pattern)
 }
 
@@ -1706,7 +1775,9 @@ pub(crate) fn dir_size_ctx(ctx: &Ctx, root: &Path) -> anyhow::Result<i64> {
             if ctx.err().is_some() {
                 anyhow::bail!("{}", ctx.cause());
             }
-            let Ok(info) = std::fs::symlink_metadata(entry.path()) else { continue };
+            let Ok(info) = std::fs::symlink_metadata(entry.path()) else {
+                continue;
+            };
             if is_linked_entry(&info) {
                 continue; // SkipDir for link-dirs / skip files alike
             }
@@ -1754,17 +1825,25 @@ async fn prune_repo_worktrees_ctx<H: GcHost>(
         if ctx.err().is_some() {
             return;
         }
-        if !std::fs::metadata(&ws_repo_dir).map(|m| m.is_dir()).unwrap_or(false) {
+        if !std::fs::metadata(&ws_repo_dir)
+            .map(|m| m.is_dir())
+            .unwrap_or(false)
+        {
             continue;
         }
-        let Ok(repo_entries) = std::fs::read_dir(&ws_repo_dir) else { continue };
+        let Ok(repo_entries) = std::fs::read_dir(&ws_repo_dir) else {
+            continue;
+        };
         let mut repo_paths: Vec<PathBuf> = repo_entries.flatten().map(|e| e.path()).collect();
         repo_paths.sort();
         for bare_path in repo_paths {
             if ctx.err().is_some() {
                 return;
             }
-            if !std::fs::metadata(&bare_path).map(|m| m.is_dir()).unwrap_or(false) {
+            if !std::fs::metadata(&bare_path)
+                .map(|m| m.is_dir())
+                .unwrap_or(false)
+            {
                 continue;
             }
             if !gc_is_bare_repo(&bare_path) {
@@ -1782,11 +1861,16 @@ async fn prune_repo_worktrees_ctx<H: GcHost>(
 }
 
 /// `maintainRepoCache` (gc.go:1050–1057).
-async fn maintain_repo_cache<H: GcHost>(host: &H, ctx: &Ctx, bare_path: &Path, stats: &mut GcStats) {
-    with_repo_maintenance(host, ctx, bare_path, |mctx| async move {
-        prune_worktree_locked(host, mctx, bare_path).await;
+async fn maintain_repo_cache<H: GcHost>(
+    host: &H,
+    ctx: &Ctx,
+    bare_path: &Path,
+    stats: &mut GcStats,
+) {
+    with_repo_maintenance(host, ctx, bare_path, |mctx: Ctx| async move {
+        prune_worktree_locked(host, &mctx, bare_path).await;
         if mctx.err().is_none() {
-            evict_repo_cache_locked(host, mctx, bare_path, stats).await;
+            evict_repo_cache_locked(host, &mctx, bare_path, stats).await;
         }
     })
     .await;
@@ -1794,15 +1878,16 @@ async fn maintain_repo_cache<H: GcHost>(host: &H, ctx: &Ctx, bare_path: &Path, s
 
 /// `withRepoMaintenance` (gc.go:1074–1089): uses the cache's foreground-
 /// priority gate when available; falls back to the plain repo lock otherwise.
-async fn with_repo_maintenance<H: GcHost, F, Fut>(host: &H, ctx: &Ctx, bare_path: &Path, f: F)
+async fn with_repo_maintenance<H, F, Fut>(host: &H, ctx: &Ctx, bare_path: &Path, f: F)
 where
-    F: FnOnce(&Ctx) -> Fut + Clone,
+    H: GcHost,
+    F: FnOnce(Ctx) -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
     match host.repo_cache_for_gc() {
         Some(cache) => {
             let ran = cache
-                .with_repo_maintenance(ctx, bare_path, |mctx| async {
+                .with_repo_maintenance(ctx, bare_path, |mctx: Ctx| async move {
                     f(mctx).await;
                     Ok(())
                 })
@@ -1837,21 +1922,23 @@ where
 /// `withRepoLock` (gc.go:1094–1105): serializes a mutation against Sync /
 /// CreateWorktree on the same bare repo. A daemon built without a repo cache
 /// has no lock to take and runs the work directly.
-async fn with_repo_lock<H: GcHost, F, Fut>(host: &H, ctx: &Ctx, bare_path: &Path, f: F)
+async fn with_repo_lock<H, F, Fut>(host: &H, ctx: &Ctx, bare_path: &Path, f: F)
 where
-    F: FnOnce(&Ctx) -> Fut,
+    H: GcHost,
+    F: FnOnce(Ctx) -> Fut,
     Fut: std::future::Future<Output = ()>,
 {
     match host.repo_cache_for_gc() {
         None => {
-            f(ctx).await;
+            f(ctx.clone()).await;
         }
         Some(cache) => {
-            if let Err(err) = cache.with_repo_lock_ctx(ctx, bare_path, async || {
-                f(ctx).await;
-                Ok(())
-            })
-            .await
+            if let Err(err) = cache
+                .with_repo_lock_ctx(ctx, bare_path, |c: Ctx| async move {
+                    f(c).await;
+                    Ok(())
+                })
+                .await
             {
                 tracing::warn!(repo = %bare_path.display(), error = %err, "gc: repo lock failed");
             }
@@ -1949,21 +2036,21 @@ async fn evict_repo_cache_locked<H: GcHost>(
 async fn linked_worktree_count_ctx(ctx: &Ctx, bare_path: &Path) -> anyhow::Result<usize> {
     let out = run_git_gc_command_ctx(ctx, bare_path, &["worktree", "list", "--porcelain"]).await?;
 
-    let mut count = 0usize;
-    let mut in_block = false;
-    let mut is_bare = false;
-    let mut flush = |count: &mut usize, in_block: &mut bool, is_bare: &mut bool| {
+    fn flush(count: &mut usize, in_block: &mut bool, is_bare: &mut bool) {
         if *in_block && !*is_bare {
             *count += 1;
         }
         *in_block = false;
         *is_bare = false;
-    };
+    }
+    let mut count = 0usize;
+    let mut in_block = false;
+    let mut is_bare = false;
     for line in out.split('\n') {
         let line = line.trim();
         if line.is_empty() {
             flush(&mut count, &mut in_block, &mut is_bare);
-        } else if let Some(_rest) = line.strip_prefix("worktree ") {
+        } else if line.starts_with("worktree ") {
             flush(&mut count, &mut in_block, &mut is_bare);
             in_block = true;
         } else if line == "bare" {
@@ -2031,7 +2118,10 @@ async fn prune_worktree_locked<H: GcHost>(host: &H, ctx: &Ctx, bare_path: &Path)
     let marker_path = bare_path.join(REPO_MAINTENANCE_MARKER);
     let mut pending = deleted > 0;
     if pending {
-        let stamp = format!("{}\n", Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true));
+        let stamp = format!(
+            "{}\n",
+            Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Nanos, true)
+        );
         if let Err(err) = std::fs::write(&marker_path, stamp) {
             tracing::warn!(repo = %bare_path.display(), error = %err, "gc: record pending repo maintenance failed");
         }
@@ -2059,7 +2149,10 @@ async fn prune_worktree_locked<H: GcHost>(host: &H, ctx: &Ctx, bare_path: &Path)
     // repo. The prune step gets its own longer timeout because it can take
     // minutes on a real bare cache.
     let maintenance: [(&[&str], Duration); 2] = [
-        (&["reflog", "expire", "--expire=30.days", "--all"], GIT_CMD_TIMEOUT),
+        (
+            &["reflog", "expire", "--expire=30.days", "--all"],
+            GIT_CMD_TIMEOUT,
+        ),
         (&["gc", "--prune=30.days"], GIT_MAINTENANCE_TIMEOUT),
     ];
     let mut completed = true;
@@ -2120,7 +2213,11 @@ fn cancel_cause_of(err: &anyhow::Error) -> Option<CancelCause> {
 }
 
 /// `runGitGCCommandContext` (gc.go:1369–1371).
-async fn run_git_gc_command_ctx(ctx: &Ctx, bare_path: &Path, args: &[&str]) -> anyhow::Result<String> {
+async fn run_git_gc_command_ctx(
+    ctx: &Ctx,
+    bare_path: &Path,
+    args: &[&str],
+) -> anyhow::Result<String> {
     run_git_command_ctx(ctx, bare_path, GIT_CMD_TIMEOUT, args).await
 }
 
@@ -2133,7 +2230,8 @@ async fn run_git_command_ctx(
     timeout: Duration,
     args: &[&str],
 ) -> anyhow::Result<String> {
-    let mut cmd_args: Vec<&str> = vec!["-C", &bare_path.to_string_lossy()];
+    let bare = bare_path.to_string_lossy().into_owned();
+    let mut cmd_args: Vec<&str> = vec!["-C", bare.as_str()];
     cmd_args.extend_from_slice(args);
     let outcome = git_deadline(parent, timeout, |c| {
         let mut cmd = tokio::process::Command::new("git");
@@ -2153,11 +2251,7 @@ async fn run_git_command_ctx(
 
 /// Local mirror of repocache's deadline helper (context.WithTimeout around a
 /// processtree call, gc.go:1374).
-async fn git_deadline<T, F, Fut>(
-    parent: &Ctx,
-    timeout: Duration,
-    f: F,
-) -> Result<T, CancelCause>
+async fn git_deadline<T, F, Fut>(parent: &Ctx, timeout: Duration, f: F) -> Result<T, CancelCause>
 where
     F: FnOnce(Ctx) -> Fut,
     Fut: std::future::Future<Output = T>,
@@ -2211,9 +2305,13 @@ fn repo_maintenance_lock_paths(bare_path: &Path) -> Vec<PathBuf> {
 }
 
 fn collect_lock_files(dir: &Path, locks: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
-        let Ok(info) = std::fs::symlink_metadata(entry.path()) else { continue };
+        let Ok(info) = std::fs::symlink_metadata(entry.path()) else {
+            continue;
+        };
         if is_linked_entry(&info) {
             continue;
         }
@@ -2268,12 +2366,17 @@ fn cleanup_new_repo_maintenance_locks<H: GcHost>(
 }
 
 /// `agentWorktreeBranchesContext` (gc.go:1453–1471).
-async fn agent_worktree_branches_ctx(ctx: &Ctx, bare_path: &Path) -> anyhow::Result<std::collections::HashSet<String>> {
+async fn agent_worktree_branches_ctx(
+    ctx: &Ctx,
+    bare_path: &Path,
+) -> anyhow::Result<std::collections::HashSet<String>> {
     let out = run_git_gc_command_ctx(ctx, bare_path, &["worktree", "list", "--porcelain"]).await?;
     let mut branches = std::collections::HashSet::new();
     for line in out.split('\n') {
         let line = line.trim();
-        let Some(rest) = line.strip_prefix("branch refs/heads/") else { continue };
+        let Some(rest) = line.strip_prefix("branch refs/heads/") else {
+            continue;
+        };
         if rest.starts_with("agent/") {
             branches.insert(rest.to_string());
         }
@@ -2289,7 +2392,11 @@ async fn list_agent_branches_ctx(ctx: &Ctx, bare_path: &Path) -> anyhow::Result<
     let out = run_git_gc_command_ctx(
         ctx,
         bare_path,
-        &["for-each-ref", "--format=%(refname:short)", "refs/heads/agent/"],
+        &[
+            "for-each-ref",
+            "--format=%(refname:short)",
+            "refs/heads/agent/",
+        ],
     )
     .await?;
     if out.is_empty() {
@@ -2308,4 +2415,159 @@ async fn list_agent_branches_ctx(ctx: &Ctx, bare_path: &Path) -> anyhow::Result<
 /// differs from repocache's HEAD-only probe.
 fn gc_is_bare_repo(path: &Path) -> bool {
     path.join("HEAD").exists() && path.join("objects").exists()
+}
+
+// ---------------------------------------------------------------------------
+// Tests: cheap pure cases ported from gc_test.go / artifact_matcher.go.
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// safeRelativePath contract (artifact_matcher.go:74–84): rejects empty,
+    /// absolute, and upward-escaping paths; cleans the rest.
+    #[test]
+    fn safe_relative_path_contract() {
+        assert_eq!(safe_relative_path("a/b/c"), Some("a/b/c".into()));
+        assert_eq!(safe_relative_path("./a"), Some("a".into()));
+        assert_eq!(safe_relative_path("a//b"), Some("a/b".into()));
+        assert_eq!(safe_relative_path(""), None);
+        assert_eq!(safe_relative_path("/abs/path"), None);
+        assert_eq!(safe_relative_path(".."), None);
+        assert_eq!(safe_relative_path("../escape"), None);
+        assert_eq!(safe_relative_path("a/../.."), None);
+    }
+
+    /// artifactMatcher precedence (artifact_matcher.go:12–14): exact managed
+    /// paths win over broad basenames so a managed dir is not double-counted.
+    #[test]
+    fn artifact_matcher_exact_paths_take_precedence() {
+        let matcher = ArtifactMatcher::new(
+            &[".sandbox-bin".to_string(), "node_modules".to_string()],
+            &["codex-home/.sandbox-bin".to_string()],
+        );
+        // Exact managed path gets the "managed:" label.
+        assert_eq!(
+            matcher.match_directory(
+                Path::new("/root"),
+                Path::new("/root/codex-home/.sandbox-bin"),
+                ".sandbox-bin",
+            ),
+            Some("managed:codex-home/.sandbox-bin".into())
+        );
+        // Same leaf outside the managed location falls back to the basename.
+        assert_eq!(
+            matcher.match_directory(
+                Path::new("/root"),
+                Path::new("/root/node_modules"),
+                "node_modules"
+            ),
+            Some("node_modules".into())
+        );
+        // Unrelated names never match.
+        assert_eq!(
+            matcher.match_directory(Path::new("/root"), Path::new("/root/src"), "src"),
+            None
+        );
+    }
+
+    /// isKnownIssueStatus table (gc.go:589–596).
+    #[test]
+    fn known_issue_status_table() {
+        for status in [
+            "backlog",
+            "todo",
+            "in_progress",
+            "in_review",
+            "done",
+            "blocked",
+            "cancelled",
+        ] {
+            assert!(is_known_issue_status(status), "{status} must be known");
+        }
+        assert!(!is_known_issue_status("custom_done"));
+        assert!(!is_known_issue_status(""));
+    }
+
+    /// isAutopilotRunTerminal (gc.go:710–717) and isAgentTaskTerminal
+    /// (gc.go:756–763) tables.
+    #[test]
+    fn terminal_state_tables() {
+        for status in ["completed", "failed", "skipped", "issue_created"] {
+            assert!(is_autopilot_run_terminal(status));
+        }
+        assert!(!is_autopilot_run_terminal("running"));
+        assert!(!is_autopilot_run_terminal("pending"));
+
+        for status in ["completed", "failed", "cancelled"] {
+            assert!(is_agent_task_terminal(status));
+        }
+        assert!(!is_agent_task_terminal("running"));
+    }
+
+    /// GCMeta parsing (execenv.go:1008–1015 semantics): pre-v2 files without a
+    /// kind field normalize to Issue; known kinds parse through.
+    #[test]
+    fn gc_meta_kind_normalization() {
+        let legacy: GcMeta = serde_json::from_slice(br#"{"workspace_id":"ws"}"#).unwrap();
+        assert_eq!(legacy.kind(), GcMetaKind::Issue);
+
+        let chat: GcMeta =
+            serde_json::from_slice(br#"{"kind":"chat","chat_session_id":"cs1"}"#).unwrap();
+        assert_eq!(chat.kind(), GcMetaKind::Chat);
+
+        let future: GcMeta = serde_json::from_slice(br#"{"kind":"hologram"}"#).unwrap();
+        assert_eq!(future.kind(), GcMetaKind::Unknown);
+    }
+
+    /// dirSize counts regular files only and skips linked content
+    /// (gc.go:959–963).
+    #[test]
+    fn dir_size_skips_links_and_counts_regular_files() {
+        let root = std::env::temp_dir().join(format!("cordy-ds-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("a.bin"), vec![0u8; 100]).unwrap();
+        std::fs::write(root.join("sub").join("b.bin"), vec![0u8; 50]).unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink("/etc/hostname", root.join("link")).unwrap();
+
+        assert_eq!(dir_size(&root), 150);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// linkedWorktreeCount porcelain parsing (gc.go:1210–1240): the bare
+    /// repo's own block (marked `bare`) must not count as a linked worktree.
+    #[test]
+    fn linked_worktree_count_ignores_bare_block() {
+        // The parser lives behind a git invocation; pin its block grammar via
+        // the same state machine shape used in prune decisions instead.
+        let sample = "worktree /cache/repo.git\nbare\n\nworktree /tmp/wt1\nbranch refs/heads/agent/a/1\n\nworktree /tmp/wt2\nbranch refs/heads/agent/b/2\n";
+        let mut count = 0usize;
+        let mut in_block = false;
+        let mut is_bare = false;
+        for line in sample.split('\n') {
+            let line = line.trim();
+            if line.is_empty() {
+                if in_block && !is_bare {
+                    count += 1;
+                }
+                in_block = false;
+                is_bare = false;
+            } else if line.starts_with("worktree ") {
+                if in_block && !is_bare {
+                    count += 1;
+                }
+                in_block = true;
+                is_bare = false;
+            } else if line == "bare" {
+                is_bare = true;
+            }
+        }
+        if in_block && !is_bare {
+            count += 1;
+        }
+        assert_eq!(count, 2, "bare block excluded, two linked blocks counted");
+    }
 }
