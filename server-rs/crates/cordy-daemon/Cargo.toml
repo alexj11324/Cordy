@@ -39,5 +39,4 @@ cordy-config = { path = "../cordy-config" }
 axum = { workspace = true }
 http = { workspace = true }
 http-body-util = { workspace = true }
-url = { workspace = true }
 cordy-remotemcp = { path = "../cordy-remotemcp" }
