@@ -282,7 +282,7 @@ server-rs/
 - [x] **S7-j vcs**：vcs.rs+forgejo.rs+gitlab.rs（Go 649 行→Rust 1,233 行；Provider trait+事件解析+签名验证+token 校验三平台全量）
 - [x] **S7-d telegram**(3,470→Rust ~1,900)：api.rs（Bot API envelope/50s long-poll/409 Conflict/429 Retry-After 单次重试）+ config.rs（加密 token 解码、bot id 校验）+ markdown.rs（code/link 占位符先于 escape、粗斜删/标题/列表/fence、Go html.EscapeString 五字符对齐）+ inbound.rs（UTF-16 实体偏移、@mention 边界 @botfan 不误伤、quoted-human 增强、/new fresh、媒体分类表）+ sender.rs（4096 UTF-16 分块 newline 偏好、HTML 失败回退纯文本、首块才引用）+ resolvers.rs（bot_id→installation、binding+membership 身份、两阶段 dedup、topic 分会话路由 ResolverSet 装配）（8de1c4a+8c49f1e，25 测试）。**outbound.go（1,117 行流式编辑/终端回复队列/backoff 日历）未移植**——随 S8 handler 接线切片落地
 - [ ] **S7-c slack**(3,877)：history/media_ingest/resolvers——空脚手架（另一并行会话认领）
-- [ ] **S7-e dingtalk**(3,918)：resolvers——空脚手架（另一并行会话认领）
+- [x] **S7-e dingtalk**(3,918)：full domain（Owen/CORD-4，20260822）。19 个 Go 文件→同名 .rs 全对照清零：resolvers（ResolverSet 六件套+3 次重试路由仲裁循环、append 前 FOR SHARE 路由锁——Go 的 BeforeWrite 事务内钩子在共享 session 服务未暴露，锁移到 append 前池上执行并注记放宽了与 append 的原子性）、ack（5s 合并窗+prune）、binding（SHA-256 hash、消费+绑定单事务、跨 adapter token 回滚）、byo_install、client/token（access_token 缓存+401 单次失效重试）、config（加密凭证解码）、dingtalk_channel（Supervisor 接缝+dispatch 串行队列）、dispatch（per-conversation FIFO）、inbound（rich text 布局/媒体占位符/fresh /issue）、install、markdown（fence 续行/字节预算分块）、media、outbound（事件→会话回复）、outbound_send、replier（绑定提示/issue 结果文案）、ws_connector/ws_endpoint/ws_frame（Stream 协议握手+SYSTEM ping/disconnect）。**本轮补齐唯一缺口：media.go 的 publicDownloadDialer SSRF 拨号守卫**——is_public_download_address（Go netip IsGlobalUnicast/IsPrivate 语义逐条对齐 + 18 条非公开前缀表含 ::/96、64:ff9b:1::/48、6to4、Teredo、ORCHID 等 IPv6 过渡段；NAT64 64:ff9b::/96 内嵌 IPv4 递归复检）经 reqwest dns_resolver 钉死解析结果（resolve-check-dial 同序，消 DNS rebinding 窗口），字面 IP 主机在 hyper-util 跳过自定义 resolver 的路径上单独预检。46 测试全过（新增地址矩阵 ~70 断言 + 字面 URL 拒绝表）。验证基线：workspace（除 cordy-daemon——E1a 车道基线内语法损坏，未越界修复）clippy --all-targets -D warnings 干净、fmt 干净；cordy-wecom fake_ip_range_is_reopenable_for_proxy_deployments 为基线内既有并发 flake（全局 prefix static 竞态，隔离/重跑 3/3 通过），未动他车道
 - [ ] **S7-f lark**(10,060 最大域)：http_client/registration/inbound_enricher/outbound/ws_connector/media_ingest/channel_store/outcome_replier——空脚手架（另一并行会话认领）
 - [ ] **S7-g wecom**(7,525)：wecom_channel/ws_frame/outbound_media/installation/media_ingest/markdown/media_download/media_upload——空脚手架（另一并行会话认领）
 
@@ -296,7 +296,7 @@ server-rs/
 | ghsnapshot | 1,115 | cordy-ghsnapshot(911) | 🟡 client+snapshot 在位；**Manager 编排层(~430 行)未移植**——refresh.go 的 Enqueue/worker/process/rateLimitPause/applySnapshot/scheduleRetry/sweepLoop 全链 |
 | lark | 10,060 | cordy-lark(3) 空脚手架 | ⬜ 最大单域 |
 | wecom | 7,525 | cordy-wecom(3) 空脚手架 | ⬜ |
-| dingtalk | 3,918 | cordy-dingtalk(3) 空脚手架 | ⬜ |
+| dingtalk | 3,918 | cordy-dingtalk(~5,600) | ✅ 全域清零（S7-e，含 SSRF 拨号守卫补齐） |
 | slack | 3,877 | cordy-slack(3) 空脚手架 | ⬜ |
 | telegram | 3,470 | cordy-telegram(3) 空脚手架 | ⬜ 最小起步点 |
 
