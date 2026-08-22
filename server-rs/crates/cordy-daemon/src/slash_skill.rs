@@ -44,7 +44,10 @@ pub fn extract_slash_skills(md: &str) -> Vec<SlashSkillRef> {
             .unwrap_or_default()
             .replace("\\[", "[")
             .replace("\\]", "]");
-        refs.push(SlashSkillRef { label, id: id.to_string() });
+        refs.push(SlashSkillRef {
+            label,
+            id: id.to_string(),
+        });
     }
     refs
 }
@@ -97,7 +100,11 @@ mod tests {
 
     #[test]
     fn does_not_match_partial_protocol() {
-        for md in ["[/x](slash://y)", "[/x](slash://skills/y)", "[/x](slash://skill-extra/y)"] {
+        for md in [
+            "[/x](slash://y)",
+            "[/x](slash://skills/y)",
+            "[/x](slash://skill-extra/y)",
+        ] {
             assert!(
                 extract_slash_skills(md).is_empty(),
                 "expected 0 refs for {md}"

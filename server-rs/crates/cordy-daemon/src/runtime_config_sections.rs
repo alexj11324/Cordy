@@ -347,7 +347,10 @@ mod tests {
         assert!(noemail.contains("**Bohan**, a member"));
         // Markdown escaping collapses newlines and escapes structural chars.
         let escaped = build_task_initiator_block("member", "a\n#b*c", "");
-        assert!(escaped.contains("a #b\\*c") || escaped.contains("\\*"), "{escaped}");
+        assert!(
+            escaped.contains("a #b\\*c") || escaped.contains("\\*"),
+            "{escaped}"
+        );
         assert!(!escaped.contains('\n') || true);
         assert!(!escaped.contains("**#b*c**"));
     }
@@ -413,8 +416,14 @@ mod tests {
         }];
         assert!(build_multi_thread_comment_reply_instructions("i", &one, false).is_empty());
         let two = vec![
-            ThreadReplyTarget { thread_id: "a".into(), parent_id: "pa".into() },
-            ThreadReplyTarget { thread_id: "b".into(), parent_id: "pb".into() },
+            ThreadReplyTarget {
+                thread_id: "a".into(),
+                parent_id: "pa".into(),
+            },
+            ThreadReplyTarget {
+                thread_id: "b".into(),
+                parent_id: "pb".into(),
+            },
         ];
         let out = build_multi_thread_comment_reply_instructions("i", &two, false);
         assert!(out.contains("2 DISTINCT threads"));

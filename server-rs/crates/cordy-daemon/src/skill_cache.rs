@@ -30,7 +30,7 @@ pub(crate) const SOURCE_PLUGIN: &str = "plugin";
 
 pub(crate) struct SkillBundleCache {
     root: String,
-    locks: Mutex<HashMap<String, Arc<Mutex<()>>>,>
+    locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
 }
 
 impl SkillBundleCache {
@@ -96,11 +96,17 @@ impl SkillBundleCache {
                 if PathBuf::from(p).is_file() {
                     std::fs::remove_file(p)
                 } else {
-                    std::fs::remove_dir_all(p)
-                        .or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(e) })
+                    std::fs::remove_dir_all(p).or_else(|e| {
+                        if e.kind() == std::io::ErrorKind::NotFound {
+                            Ok(())
+                        } else {
+                            Err(e)
+                        }
+                    })
                 }
             };
-            let rename = |old: &str, new: &str| -> std::io::Result<()> { std::fs::rename(old, new) };
+            let rename =
+                |old: &str, new: &str| -> std::io::Result<()> { std::fs::rename(old, new) };
 
             remove_all(&dir_parent)?;
             if let Err(err) = rename(&tmp_str, &dir_parent) {
@@ -279,7 +285,10 @@ pub(crate) fn build_manifest(skill: &SkillBundleSkill) -> SkillManifestSize {
     let mut size = skill.content.len() as i64;
     let mut refs = Vec::with_capacity(files.len());
     for file in &files {
-        let digest = format!("sha256:{}", hex::encode(Sha256::digest(file.content.as_bytes())));
+        let digest = format!(
+            "sha256:{}",
+            hex::encode(Sha256::digest(file.content.as_bytes()))
+        );
         write_hash_part(&mut h, &file.path);
         write_hash_part(&mut h, &digest);
         write_hash_part(&mut h, &file.content);
