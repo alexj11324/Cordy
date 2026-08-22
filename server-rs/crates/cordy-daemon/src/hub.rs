@@ -465,7 +465,10 @@ impl DaemonHub {
     }
 
     fn rpc_handler(&self) -> Option<Arc<dyn RpcHandler>> {
-        self.rpc_slot.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.rpc_slot
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     /// Installs an optional callback fired exactly once per inbound daemon
@@ -747,8 +750,7 @@ impl DaemonHub {
                     M.wakeup_delivered_miss.fetch_add(1, Ordering::Relaxed);
                     return;
                 };
-                let (delivered, deduped) =
-                    self.notify_frame(&payload.runtime_id, frame, event_id);
+                let (delivered, deduped) = self.notify_frame(&payload.runtime_id, frame, event_id);
                 if delivered {
                     M.wakeup_delivered_hit.fetch_add(1, Ordering::Relaxed);
                 } else if !deduped {
@@ -796,8 +798,7 @@ impl DaemonHub {
                     M.wakeup_delivered_miss.fetch_add(1, Ordering::Relaxed);
                     return;
                 };
-                let (delivered, deduped) =
-                    self.notify_frame(&payload.runtime_id, frame, event_id);
+                let (delivered, deduped) = self.notify_frame(&payload.runtime_id, frame, event_id);
                 if delivered {
                     M.wakeup_delivered_hit.fetch_add(1, Ordering::Relaxed);
                 } else if !deduped {
@@ -966,11 +967,7 @@ impl DaemonHub {
     /// echoing the request id. A missing handler or a full in-flight slot yields
     /// a non-2xx response so the daemon falls back to HTTP. Called by the read
     /// pump (axum lane).
-    pub async fn handle_rpc_frame(
-        &self,
-        client: &Arc<DaemonClient>,
-        payload: &Value,
-    ) {
+    pub async fn handle_rpc_frame(&self, client: &Arc<DaemonClient>, payload: &Value) {
         let Ok(req) = serde_json::from_value::<RpcRequestPayload>(payload.clone()) else {
             tracing::debug!(
                 daemon_id = %client.identity.daemon_id,
@@ -1025,12 +1022,7 @@ impl DaemonHub {
             // daemon has already timed out and fallen back to HTTP (MUL-4257).
             // The daemon waits a grace period beyond this budget, so a claim
             // that DID commit before the deadline still reports back in time.
-            let call = handler.handle_rpc(
-                &ctx,
-                &client.identity,
-                &method,
-                body.as_ref(),
-            );
+            let call = handler.handle_rpc(&ctx, &client.identity, &method, body.as_ref());
             let outcome = if timeout_ms > 0 {
                 tokio::time::timeout(Duration::from_millis(timeout_ms as u64), call)
                     .await
@@ -1129,11 +1121,7 @@ impl DaemonHub {
     /// un-run if cancelled mid-script. The natural bound is the read pump's
     /// lifetime plus Redis's own server-side limits. Called by the read pump
     /// (axum lane).
-    pub async fn handle_heartbeat_frame(
-        &self,
-        client: &DaemonClient,
-        payload: &Value,
-    ) {
+    pub async fn handle_heartbeat_frame(&self, client: &DaemonClient, payload: &Value) {
         let Some(handler) = self.heartbeat_handler() else {
             // Server doesn't have a heartbeat handler wired — daemon will time
             // out waiting for an ack and fall back to HTTP heartbeat.
@@ -1167,11 +1155,7 @@ impl DaemonHub {
         }
 
         let ack = handler
-            .handle_heartbeat(
-                &client.identity,
-                &req.runtime_id,
-                req.supports_batch_import,
-            )
+            .handle_heartbeat(&client.identity, &req.runtime_id, req.supports_batch_import)
             .await;
         let ack = match ack {
             Ok(Some(ack)) => ack,
@@ -1270,12 +1254,10 @@ pub(crate) fn pending_work_frame(runtime_id: &str, kind: &str) -> Option<Vec<u8>
 pub(crate) mod test_support {
     //! Shared by hub.rs AND notifier.rs tests: both assert on the global [`M`]
     //! counters, so all such tests must serialise on this one mutex.
-    use std::sync::Mutex as StdMutex;
+    static METRICS_GUARD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-    static METRICS_GUARD: StdMutex<()> = StdMutex::new(());
-
-    pub(crate) fn lock_metrics() -> std::sync::MutexGuard<'static, ()> {
-        METRICS_GUARD.lock().unwrap_or_else(|e| e.into_inner())
+    pub(crate) async fn lock_metrics() -> tokio::sync::MutexGuard<'static, ()> {
+        METRICS_GUARD.lock().await
     }
 
     pub(crate) fn reset_metrics() {
@@ -1285,8 +1267,8 @@ pub(crate) mod test_support {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::test_support::{lock_metrics, reset_metrics};
+    use super::*;
     use cordy_protocol::PENDING_WORK_KIND_MODEL_LIST;
     use std::sync::Mutex as StdMutex;
 
@@ -1425,9 +1407,9 @@ mod tests {
 
     // ---- routing tables (WS-dial tests from hub_test.go, minus the socket) --
 
-    #[test]
-    fn notify_task_available_reaches_runtime_room() {
-        let _guard = lock_metrics();
+    #[tokio::test]
+    async fn notify_task_available_reaches_runtime_room() {
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = DaemonHub::new();
@@ -1453,9 +1435,9 @@ mod tests {
         drop(client);
     }
 
-    #[test]
-    fn notify_runtime_profiles_changed_reaches_workspace_room() {
-        let _guard = lock_metrics();
+    #[tokio::test]
+    async fn notify_runtime_profiles_changed_reaches_workspace_room() {
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = DaemonHub::new();
@@ -1479,9 +1461,9 @@ mod tests {
         assert_eq!(payload["runtime_profile_id"], "profile-1");
     }
 
-    #[test]
-    fn notify_workspaces_changed_supports_account_only_connection() {
-        let _guard = lock_metrics();
+    #[tokio::test]
+    async fn notify_workspaces_changed_supports_account_only_connection() {
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = DaemonHub::new();
@@ -1502,9 +1484,9 @@ mod tests {
         assert_eq!(r#type, EVENT_DAEMON_WORKSPACES_CHANGED);
     }
 
-    #[test]
-    fn notify_pending_work_carries_kind_and_dedups_duplicate_event() {
-        let _guard = lock_metrics();
+    #[tokio::test]
+    async fn notify_pending_work_carries_kind_and_dedups_duplicate_event() {
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = DaemonHub::new();
@@ -1518,8 +1500,8 @@ mod tests {
             Scope::Runtime("runtime-1"),
         );
 
-        let frame = pending_work_frame("runtime-1", PENDING_WORK_KIND_MODEL_LIST)
-            .expect("frame builds");
+        let frame =
+            pending_work_frame("runtime-1", PENDING_WORK_KIND_MODEL_LIST).expect("frame builds");
         hub.deliver_daemon_runtime("runtime-1", &frame, "event-1");
 
         let got = rx.try_recv().expect("pending work queued");
@@ -1540,9 +1522,9 @@ mod tests {
         assert_eq!(M.wakeup_delivered_miss.load(Ordering::Relaxed), 0);
     }
 
-    #[test]
-    fn notify_pending_work_ignores_empty_runtime() {
-        let _guard = lock_metrics();
+    #[tokio::test]
+    async fn notify_pending_work_ignores_empty_runtime() {
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = DaemonHub::new();
@@ -1563,9 +1545,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn deliver_daemon_runtime_routes_by_payload_not_shard_key() {
-        let _guard = lock_metrics();
+    #[tokio::test]
+    async fn deliver_daemon_runtime_routes_by_payload_not_shard_key() {
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = DaemonHub::new();
@@ -1581,10 +1563,13 @@ mod tests {
 
         // Shard key deliberately wrong: pending_work routes by payload
         // runtime_id, not by the relay shard key.
-        let frame = pending_work_frame("runtime-1", PENDING_WORK_KIND_MODEL_LIST)
-            .expect("frame builds");
+        let frame =
+            pending_work_frame("runtime-1", PENDING_WORK_KIND_MODEL_LIST).expect("frame builds");
         hub.deliver_daemon_runtime("some-other-shard", &frame, "event-2");
-        assert!(rx.try_recv().is_ok(), "payload runtime_id wins over shard key");
+        assert!(
+            rx.try_recv().is_ok(),
+            "payload runtime_id wins over shard key"
+        );
 
         // Malformed payloads count as misses, never panic.
         hub.deliver_daemon_runtime("x", b"{not json", "event-3");
@@ -1627,9 +1612,9 @@ mod tests {
         hub.unregister(client.id);
     }
 
-    #[test]
-    fn slow_clients_are_evicted_and_counted() {
-        let _guard = lock_metrics();
+    #[tokio::test]
+    async fn slow_clients_are_evicted_and_counted() {
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = DaemonHub::new();
@@ -1654,7 +1639,10 @@ mod tests {
         }
         assert!(rx.try_recv().is_ok(), "first buffered frame survives");
         assert_eq!(hub.runtime_connection_count("runtime-1"), 0);
-        assert!(client.conn_cancel.is_cancelled(), "eviction cancels the conn");
+        assert!(
+            client.conn_cancel.is_cancelled(),
+            "eviction cancels the conn"
+        );
         assert_eq!(M.slow_evictions_total.load(Ordering::Relaxed), 1);
     }
 
@@ -1752,7 +1740,11 @@ mod tests {
             "expected no ack for unauthorized runtime"
         );
         assert!(
-            handler.calls.lock().unwrap_or_else(|e| e.into_inner()).is_empty(),
+            handler
+                .calls
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_empty(),
             "handler invoked for unauthorized runtime"
         );
     }
@@ -1790,12 +1782,17 @@ mod tests {
         ) -> Result<RpcOutcome, RpcHandlerError> {
             Ok(RpcOutcome {
                 status: 200,
-                body: Some(serde_json::json!({"ok": true, "method": method, "daemon": identity.daemon_id})),
+                body: Some(
+                    serde_json::json!({"ok": true, "method": method, "daemon": identity.daemon_id}),
+                ),
             })
         }
     }
 
-    async fn recv_rpc_response(rx: &mut mpsc::Receiver<Vec<u8>>, request_id: &str) -> RpcResponsePayload {
+    async fn recv_rpc_response(
+        rx: &mut mpsc::Receiver<Vec<u8>>,
+        request_id: &str,
+    ) -> RpcResponsePayload {
         loop {
             let frame = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
                 .await
@@ -1833,7 +1830,10 @@ mod tests {
 
         let resp = recv_rpc_response(&mut rx, "req-1").await;
         assert_eq!(resp.status, 200);
-        assert_eq!(resp.body.as_ref().and_then(|b| b.get("ok")).cloned(), Some(serde_json::json!(true)));
+        assert_eq!(
+            resp.body.as_ref().and_then(|b| b.get("ok")).cloned(),
+            Some(serde_json::json!(true))
+        );
         assert_eq!(
             resp.body.and_then(|b| b.get("daemon").cloned()),
             Some(serde_json::json!("daemon-1"))
@@ -1986,10 +1986,7 @@ mod tests {
             ) -> Result<RpcOutcome, RpcHandlerError> {
                 // Park until cancelled (connection teardown or TimeoutMs).
                 ctx.cancelled().await;
-                Err(RpcHandlerError::new(
-                    0,
-                    anyhow::anyhow!("context canceled"),
-                ))
+                Err(RpcHandlerError::new(0, anyhow::anyhow!("context canceled")))
             }
         }
 
@@ -2078,7 +2075,10 @@ mod tests {
 
     impl MessageKindRecorder for KindLog {
         fn record_daemon_ws_message_received(&self, kind: &str) {
-            self.0.lock().unwrap_or_else(|e| e.into_inner()).push(kind.to_string());
+            self.0
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(kind.to_string());
         }
     }
 
@@ -2125,8 +2125,8 @@ mod tests {
 
     // ---- metrics snapshot shape ----------------------------------------------
 
-    #[test]
-    fn metrics_snapshot_keys_match_go() {
+    #[tokio::test]
+    async fn metrics_snapshot_keys_match_go() {
         let m = Metrics::new();
         m.connects_total.store(1, Ordering::Relaxed);
         m.wakeup_delivered_hit.store(2, Ordering::Relaxed);
@@ -2150,12 +2150,15 @@ mod tests {
     // first, publishes to the relay with the same event id, and the loopback
     // delivery through deliver_daemon_runtime must be deduped.
 
+    /// One recorded relay publish: (scope_type, scope_id, frame, event_id).
+    type RecordedPublish = (String, String, Vec<u8>, String);
+
     /// Port of localFirstDaemonRelayPublisher: records the publish and asserts
     /// the local fanout already queued a frame before the relay publish ran.
     struct LocalFirstRelayPublisher {
         rx: Arc<StdMutex<mpsc::Receiver<Vec<u8>>>>,
         called: StdMutex<bool>,
-        record: StdMutex<Option<(String, String, Vec<u8>, String)>>,
+        record: StdMutex<Option<RecordedPublish>>,
     }
 
     #[async_trait]
@@ -2186,13 +2189,16 @@ mod tests {
         }
     }
 
+    /// (shared rx handle, publisher) pair for loopback-dedup assertions.
+    type LoopbackRelay = (
+        Arc<StdMutex<mpsc::Receiver<Vec<u8>>>>,
+        Arc<LocalFirstRelayPublisher>,
+    );
+
     fn attach_loopback_relay(
         client: &Arc<DaemonClient>,
         rx: mpsc::Receiver<Vec<u8>>,
-    ) -> (
-        Arc<StdMutex<mpsc::Receiver<Vec<u8>>>>,
-        Arc<LocalFirstRelayPublisher>,
-    ) {
+    ) -> LoopbackRelay {
         let rx = Arc::new(StdMutex::new(rx));
         let relay = Arc::new(LocalFirstRelayPublisher {
             rx: rx.clone(),
@@ -2205,7 +2211,7 @@ mod tests {
 
     #[tokio::test]
     async fn relay_notifier_dedups_local_redis_loopback() {
-        let _guard = lock_metrics();
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = Arc::new(DaemonHub::new());
@@ -2240,7 +2246,10 @@ mod tests {
         hub.deliver_daemon_runtime(&scope_id, &frame, &event_id);
 
         assert!(
-            rx.lock().unwrap_or_else(|e| e.into_inner()).try_recv().is_err(),
+            rx.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .try_recv()
+                .is_err(),
             "expected redis loopback to be deduped"
         );
         assert_eq!(M.wakeup_delivered_hit.load(Ordering::Relaxed), 1);
@@ -2249,7 +2258,7 @@ mod tests {
 
     #[tokio::test]
     async fn relay_notifier_dedups_runtime_profiles_changed_loopback() {
-        let _guard = lock_metrics();
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = Arc::new(DaemonHub::new());
@@ -2290,7 +2299,10 @@ mod tests {
         hub.deliver_daemon_runtime(&scope_id, &frame, &event_id);
 
         assert!(
-            rx.lock().unwrap_or_else(|e| e.into_inner()).try_recv().is_err(),
+            rx.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .try_recv()
+                .is_err(),
             "expected redis loopback to be deduped"
         );
         assert_eq!(M.wakeup_delivered_hit.load(Ordering::Relaxed), 0);
@@ -2299,7 +2311,7 @@ mod tests {
 
     #[tokio::test]
     async fn relay_notifier_dedups_workspaces_changed_loopback() {
-        let _guard = lock_metrics();
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = Arc::new(DaemonHub::new());
@@ -2329,7 +2341,10 @@ mod tests {
 
         hub.deliver_daemon_runtime(&scope_id, &frame, &event_id);
         assert!(
-            rx.lock().unwrap_or_else(|e| e.into_inner()).try_recv().is_err(),
+            rx.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .try_recv()
+                .is_err(),
             "expected redis loopback to be deduped"
         );
     }

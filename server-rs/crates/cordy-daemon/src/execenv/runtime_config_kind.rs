@@ -2,7 +2,7 @@
 //!
 //! Symbol map:
 //! - taskKind (+kindIssue/kindAutopilotRunOnly/kindQuickCreate/kindChat)
-//!                                          → TaskKind enum
+//!   → TaskKind enum
 //! - classifyTask                           → classify_task
 //! - taskKind.hasIssueContext               → TaskKind::has_issue_context
 
@@ -87,7 +87,11 @@ mod tests {
     #[test]
     fn test_classify_task() {
         let cases: Vec<(&str, TaskContextForEnv, TaskKind)> = vec![
-            ("empty context", TaskContextForEnv::default(), TaskKind::Issue),
+            (
+                "empty context",
+                TaskContextForEnv::default(),
+                TaskKind::Issue,
+            ),
             (
                 "issue",
                 TaskContextForEnv {
