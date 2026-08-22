@@ -75,7 +75,7 @@ const REGISTRATION_HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Configures the device-flow client. All fields are optional; the zero value
 /// targets accounts.feishu.cn over a standard reqwest client.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct RegistrationConfig {
     /// The initial polling host. Default "https://accounts.feishu.cn";
     /// staging deployments can point this at a mock or at the Lark beta
@@ -94,17 +94,6 @@ pub struct RegistrationConfig {
     /// Labels the QR-code URL's `source` query param so Lark's telemetry can
     /// attribute installs back to Cordy. Empty defaults to "cordy".
     pub source: String,
-}
-
-impl Default for RegistrationConfig {
-    fn default() -> Self {
-        Self {
-            domain: String::new(),
-            lark_domain: String::new(),
-            http_client: None,
-            source: String::new(),
-        }
-    }
 }
 
 impl RegistrationConfig {
@@ -139,7 +128,7 @@ impl RegistrationConfig {
 /// stable user-facing reason so the UI can render the right copy without
 /// parsing prose.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-#[error("registration: {}{}", .code, .description.as_ref().map(|d| format!(": {d}")).unwrap_or_default())]
+#[error("registration: {}{}", .code, if .description.is_empty() { String::new() } else { format!(": {}", .description) })]
 pub struct RegistrationError {
     pub code: String,
     pub description: String,
@@ -274,11 +263,7 @@ impl RegistrationClient {
     /// "{用户姓名}的智能助手". It is a user-editable default (the user can
     /// still change it on the form), and it rides on the QR URL — not the
     /// begin POST body, which has no name field. Empty omits the pre-fill.
-    pub async fn begin(
-        &self,
-        name_preset: &str,
-        region: Region,
-    ) -> anyhow::Result<BeginResult> {
+    pub async fn begin(&self, name_preset: &str, region: Region) -> anyhow::Result<BeginResult> {
         let domain = self.begin_domain(region);
         let resp: BeginResponse = self
             .do_form(
@@ -304,11 +289,7 @@ impl RegistrationClient {
             return Err(RegistrationError::new(resp.error, resp.error_description).into());
         }
         if resp.device_code.is_empty() {
-            return Err(RegistrationError::new(
-                "invalid_response",
-                "device_code is empty",
-            )
-            .into());
+            return Err(RegistrationError::new("invalid_response", "device_code is empty").into());
         }
         if resp.verification_uri_complete.is_empty() {
             return Err(RegistrationError::new(
@@ -317,13 +298,17 @@ impl RegistrationClient {
             )
             .into());
         }
-        let qr = decorate_qr_code_url(&resp.verification_uri_complete, &self.cfg.source, name_preset)
-            .map_err(|e| {
-                RegistrationError::new(
-                    "invalid_response",
-                    format!("verification_uri_complete is not a URL: {e}"),
-                )
-            })?;
+        let qr = decorate_qr_code_url(
+            &resp.verification_uri_complete,
+            &self.cfg.source,
+            name_preset,
+        )
+        .map_err(|e| {
+            RegistrationError::new(
+                "invalid_response",
+                format!("verification_uri_complete is not a URL: {e}"),
+            )
+        })?;
         let interval_secs = if resp.interval > 0 {
             resp.interval as u64
         } else {
@@ -400,14 +385,12 @@ impl RegistrationClient {
                         };
                     }
                 }
-                REGISTRATION_TENANT_BRAND_FEISHU => {
-                    if !domain.starts_with(&self.cfg.domain) {
-                        return PollResult {
-                            switched_domain: self.cfg.domain.clone(),
-                            switched_region: Some(Region::Feishu),
-                            ..PollResult::default()
-                        };
-                    }
+                REGISTRATION_TENANT_BRAND_FEISHU if !domain.starts_with(&self.cfg.domain) => {
+                    return PollResult {
+                        switched_domain: self.cfg.domain.clone(),
+                        switched_region: Some(Region::Feishu),
+                        ..PollResult::default()
+                    };
                 }
                 _ => {}
             }
@@ -481,9 +464,14 @@ impl RegistrationClient {
             .await
             .map_err(|e| anyhow::anyhow!("registration: http do: {e}"))?;
         let status = resp.status();
-        let body = resp.bytes().await.map_err(|e| anyhow::anyhow!("registration: read body: {e}"))?;
+        let body = resp
+            .bytes()
+            .await
+            .map_err(|e| anyhow::anyhow!("registration: read body: {e}"))?;
         if body.is_empty() {
-            return Err(RegistrationError::new(format!("http_{}", status.as_u16()), "empty body").into());
+            return Err(
+                RegistrationError::new(format!("http_{}", status.as_u16()), "empty body").into(),
+            );
         }
         // RFC 8628 device-flow servers return non-2xx with a JSON body whose
         // `error` field is the actual signal — `authorization_pending` and
@@ -659,7 +647,9 @@ mod tests {
                 "",
             )
             .unwrap_err();
-        assert!(err.to_string().contains("verification_uri_complete is empty"));
+        assert!(err
+            .to_string()
+            .contains("verification_uri_complete is empty"));
 
         let err = c
             .process_begin_response(
@@ -801,7 +791,9 @@ mod tests {
 
     /// Minimal block-on helper so the argument-validation path (which never
     /// touches the network) can be asserted in a sync test.
-    fn futures_executor_block(fut: impl std::future::Future<Output = anyhow::Result<PollResult>>) -> anyhow::Result<PollResult> {
+    fn futures_executor_block(
+        fut: impl std::future::Future<Output = anyhow::Result<PollResult>>,
+    ) -> anyhow::Result<PollResult> {
         tokio::runtime::Builder::new_current_thread()
             .build()
             .unwrap()

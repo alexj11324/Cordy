@@ -23,7 +23,7 @@
 
 use serde::Deserialize;
 
-use crate::content_flatten::{flatten_content, extract_text_body};
+use crate::content_flatten::flatten_content;
 use crate::feishu_types::InboundMessage;
 use crate::store::Installation;
 use crate::types::{chat_type_group, chat_type_p2p, ChatId, ChatType, OpenId};
@@ -55,8 +55,8 @@ impl FrameDecoder for LarkJsonFrameDecoder {
         if payload.is_empty() {
             return Ok(None);
         }
-        let env: LarkEventEnvelope = serde_json::from_slice(payload)
-            .map_err(|e| anyhow::anyhow!("envelope: {e}"))?;
+        let env: LarkEventEnvelope =
+            serde_json::from_slice(payload).map_err(|e| anyhow::anyhow!("envelope: {e}"))?;
 
         // Lark long-conn data frames are always v2 event envelopes (schema
         // "2.0"). The legacy webhook v1 "type":"event_callback" shape is not
@@ -258,9 +258,8 @@ pub fn resolve_mentions(
     }
     // Filter empty keys and sort longest first so `@_user_10` is matched
     // before `@_user_1` at any scan position.
-    let mut sorted: Vec<&LarkMention> =
-        mentions.iter().filter(|m| !m.key.is_empty()).collect();
-    sorted.sort_by(|a, b| b.key.len().cmp(&a.key.len()));
+    let mut sorted: Vec<&LarkMention> = mentions.iter().filter(|m| !m.key.is_empty()).collect();
+    sorted.sort_by_key(|m| std::cmp::Reverse(m.key.len()));
 
     let bytes = text.as_bytes();
     let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
@@ -318,7 +317,7 @@ pub(crate) fn normalize_chat_type(t: &str) -> ChatType {
     match t.to_lowercase().as_str() {
         "p2p" => chat_type_p2p(),
         "group" => chat_type_group(),
-        _ => ChatType(t.to_string()),
+        _ => cordy_channel::message::ChatType(t.to_string()),
     }
 }
 
@@ -361,6 +360,7 @@ pub fn contains_mention(mentions: &[LarkMention], bot_open_id: &str, bot_union_i
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::content_flatten::extract_text_body;
     use crate::store::Installation;
     use uuid::Uuid;
 
@@ -385,12 +385,19 @@ mod tests {
         }
     }
 
-    fn decode_json(json: serde_json::Value, inst: &Installation) -> anyhow::Result<Option<InboundMessage>> {
+    fn decode_json(
+        json: serde_json::Value,
+        inst: &Installation,
+    ) -> anyhow::Result<Option<InboundMessage>> {
         let d = LarkJsonFrameDecoder::new();
         d.decode(json.to_string().as_bytes(), inst)
     }
 
-    fn text_event(chat_type: &str, content: &str, mentions: serde_json::Value) -> serde_json::Value {
+    fn text_event(
+        chat_type: &str,
+        content: &str,
+        mentions: serde_json::Value,
+    ) -> serde_json::Value {
         serde_json::json!({
             "schema": "2.0",
             "header": {
@@ -465,9 +472,12 @@ mod tests {
     #[test]
     fn p2p_messages_are_always_addressed() {
         let inst = installation("ou_bot", None);
-        let msg = decode_json(text_event("p2p", r#"{"text":"hello"}"#, serde_json::json!([])), &inst)
-            .unwrap()
-            .unwrap();
+        let msg = decode_json(
+            text_event("p2p", r#"{"text":"hello"}"#, serde_json::json!([])),
+            &inst,
+        )
+        .unwrap()
+        .unwrap();
         assert_eq!(msg.chat_type, chat_type_p2p());
         assert!(!msg.addressed_to_bot); // flag is group-only
         assert_eq!(msg.body, "hello");
@@ -572,7 +582,10 @@ mod tests {
             key: "@_user_2".into(),
             ..Default::default()
         }];
-        assert_eq!(resolve_mentions("hey @_user_2!", &ms, "", ""), "hey @_user_2!");
+        assert_eq!(
+            resolve_mentions("hey @_user_2!", &ms, "", ""),
+            "hey @_user_2!"
+        );
     }
 
     #[test]
@@ -606,7 +619,10 @@ mod tests {
     fn normalize_chat_type_maps_known_values() {
         assert_eq!(normalize_chat_type("p2p"), chat_type_p2p());
         assert_eq!(normalize_chat_type("GROUP"), chat_type_group());
-        assert_eq!(normalize_chat_type("weird"), ChatType("weird".into()));
+        assert_eq!(
+            normalize_chat_type("weird"),
+            cordy_channel::message::ChatType("weird".into())
+        );
     }
 
     #[test]

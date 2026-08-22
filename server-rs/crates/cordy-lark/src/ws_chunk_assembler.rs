@@ -65,7 +65,13 @@ impl ChunkAssembler {
     /// never fire because Lark enforces them server-side, but the function
     /// stays defensive — one malformed header must not corrupt the buffer for
     /// the next event.
-    pub fn admit(&self, message_id: &str, sum: usize, seq: usize, payload: &[u8]) -> Option<Vec<u8>> {
+    pub fn admit(
+        &self,
+        message_id: &str,
+        sum: usize,
+        seq: usize,
+        payload: &[u8],
+    ) -> Option<Vec<u8>> {
         if message_id.is_empty() || sum == 0 || seq >= sum {
             return None;
         }
@@ -103,7 +109,13 @@ impl ChunkAssembler {
             return None;
         }
 
-        let mut out = Vec::with_capacity(entry.chunks.iter().map(|c| c.as_ref().map_or(0, |v| v.len())).sum());
+        let mut out = Vec::with_capacity(
+            entry
+                .chunks
+                .iter()
+                .map(|c| c.as_ref().map_or(0, |v| v.len()))
+                .sum(),
+        );
         for c in &entry.chunks {
             out.extend_from_slice(c.as_deref().unwrap_or(&[]));
         }
@@ -140,10 +152,16 @@ impl ChunkAssembler {
 pub fn parse_chunk_headers(f: &crate::ws_frame::Frame) -> (usize, usize, String) {
     let mut sum = 0usize;
     let mut seq = 0usize;
-    if let Ok(n) = f.header_value(crate::ws_frame::FRAME_HEADER_SUM_KEY).parse::<usize>() {
+    if let Ok(n) = f
+        .header_value(crate::ws_frame::FRAME_HEADER_SUM_KEY)
+        .parse::<usize>()
+    {
         sum = n;
     }
-    if let Ok(n) = f.header_value(crate::ws_frame::FRAME_HEADER_SEQ_KEY).parse::<usize>() {
+    if let Ok(n) = f
+        .header_value(crate::ws_frame::FRAME_HEADER_SEQ_KEY)
+        .parse::<usize>()
+    {
         seq = n;
     }
     let message_id = f
