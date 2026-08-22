@@ -18,6 +18,10 @@
 //! call site feeds a timeout/floor that Go code would immediately misuse
 //! anyway (documented deviation).
 
+// S9-integration: several helpers only gain callers when the daemon
+// bootstrap lands; silence dead-code until then.
+#![allow(dead_code)]
+
 use std::time::Duration;
 
 use anyhow::anyhow;
@@ -43,8 +47,7 @@ pub(crate) fn duration_from_env(key: &str, fallback: Duration) -> anyhow::Result
     if value.is_empty() {
         return Ok(fallback);
     }
-    parse_flex_duration(value)
-        .map_err(|e| anyhow!("{}: invalid duration {:?}: {}", key, value, e))
+    parse_flex_duration(value).map_err(|e| anyhow!("{}: invalid duration {:?}: {}", key, value, e))
 }
 
 /// `dayUnit` (helpers.go:35): matches a decimal number (with optional leading
@@ -224,14 +227,9 @@ pub(crate) fn int_from_env(key: &str, fallback: i64) -> anyhow::Result<i64> {
     if value.is_empty() {
         return Ok(fallback);
     }
-    value.parse::<i64>().map_err(|e| {
-        anyhow!(
-            "{}: invalid integer {:?}: {}",
-            key,
-            value,
-            e
-        )
-    })
+    value
+        .parse::<i64>()
+        .map_err(|e| anyhow!("{}: invalid integer {:?}: {}", key, value, e))
 }
 
 /// `sleepWithContext` (helpers.go:83–93): sleeps for `d`, returning the
@@ -270,16 +268,34 @@ mod tests {
 
     #[test]
     fn parse_flex_duration_days() {
-        assert_eq!(parse_flex_duration("5d").unwrap(), Duration::from_secs(120 * 3600));
-        assert_eq!(parse_flex_duration("1d12h").unwrap(), Duration::from_secs(36 * 3600));
-        assert_eq!(parse_flex_duration("0.5d").unwrap(), Duration::from_secs(12 * 3600));
+        assert_eq!(
+            parse_flex_duration("5d").unwrap(),
+            Duration::from_secs(120 * 3600)
+        );
+        assert_eq!(
+            parse_flex_duration("1d12h").unwrap(),
+            Duration::from_secs(36 * 3600)
+        );
+        assert_eq!(
+            parse_flex_duration("0.5d").unwrap(),
+            Duration::from_secs(12 * 3600)
+        );
     }
 
     #[test]
     fn parse_flex_duration_stdlib_syntax() {
-        assert_eq!(parse_flex_duration("300ms").unwrap(), Duration::from_millis(300));
-        assert_eq!(parse_flex_duration("2h45m").unwrap(), Duration::from_secs(2 * 3600 + 45 * 60));
-        assert_eq!(parse_flex_duration("1.5h").unwrap(), Duration::from_millis(5_400_000));
+        assert_eq!(
+            parse_flex_duration("300ms").unwrap(),
+            Duration::from_millis(300)
+        );
+        assert_eq!(
+            parse_flex_duration("2h45m").unwrap(),
+            Duration::from_secs(2 * 3600 + 45 * 60)
+        );
+        assert_eq!(
+            parse_flex_duration("1.5h").unwrap(),
+            Duration::from_millis(5_400_000)
+        );
         assert_eq!(parse_flex_duration("0").unwrap(), Duration::ZERO);
     }
 
@@ -328,14 +344,18 @@ mod tests {
     #[tokio::test]
     async fn sleep_with_context_completes() {
         let ctx = Ctx::new();
-        sleep_with_context(&ctx, Duration::from_millis(1)).await.unwrap();
+        sleep_with_context(&ctx, Duration::from_millis(1))
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
     async fn sleep_with_context_cancelled() {
         let ctx = Ctx::new();
         ctx.cancel_with(CancelCause::Shutdown);
-        let err = sleep_with_context(&ctx, Duration::from_secs(60)).await.unwrap_err();
+        let err = sleep_with_context(&ctx, Duration::from_secs(60))
+            .await
+            .unwrap_err();
         assert_eq!(err, CancelCause::Shutdown);
     }
 

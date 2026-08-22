@@ -60,7 +60,7 @@ pub(crate) fn discovered_executable_path(path: &str) -> String {
         Ok(abs) => abs,
         Err(_) => return real,
     };
-    let real_dir = match abs.parent().map(|d| std::fs::canonicalize(d)) {
+    let real_dir = match abs.parent().map(std::fs::canonicalize) {
         Some(Ok(dir)) => dir,
         _ => return abs.to_string_lossy().into_owned(),
     };
@@ -146,10 +146,7 @@ fn normalize_dots(path: &Path) -> PathBuf {
                 // Only pop when the tail is an ordinary component; keep
                 // leading ParentDirs on relative paths verbatim.
                 if out.components().next_back() == Some(Component::RootDir)
-                    || !matches!(
-                        out.components().next_back(),
-                        Some(Component::Normal(_))
-                    )
+                    || !matches!(out.components().next_back(), Some(Component::Normal(_)))
                 {
                     out.push("..");
                 } else {
@@ -250,12 +247,12 @@ mod tests {
 
     #[test]
     fn normalize_dots_matches_filepath_abs_shapes() {
-        assert_eq!(normalize_dots(Path::new("/a/b/../c")), PathBuf::from("/a/c"));
-        assert_eq!(normalize_dots(Path::new("/a/./b/")), PathBuf::from("/a/b"));
         assert_eq!(
-            normalize_dots(Path::new("rel/../x")),
-            PathBuf::from("x")
+            normalize_dots(Path::new("/a/b/../c")),
+            PathBuf::from("/a/c")
         );
+        assert_eq!(normalize_dots(Path::new("/a/./b/")), PathBuf::from("/a/b"));
+        assert_eq!(normalize_dots(Path::new("rel/../x")), PathBuf::from("x"));
     }
 
     #[cfg(windows)]
