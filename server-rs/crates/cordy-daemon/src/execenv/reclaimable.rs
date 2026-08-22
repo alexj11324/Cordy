@@ -15,7 +15,10 @@ pub const CODEX_SANDBOX_BIN_DIR_NAME: &str = ".sandbox-bin";
 /// relative paths rather than basenames: a repository may legitimately contain
 /// a directory with the same leaf name.
 pub fn managed_reclaimable_artifact_subpaths() -> Vec<String> {
-    vec![join_path(&[CODEX_HOME_DIR_NAME, CODEX_SANDBOX_BIN_DIR_NAME])]
+    vec![join_path(&[
+        CODEX_HOME_DIR_NAME,
+        CODEX_SANDBOX_BIN_DIR_NAME,
+    ])]
 }
 
 #[cfg(test)]
