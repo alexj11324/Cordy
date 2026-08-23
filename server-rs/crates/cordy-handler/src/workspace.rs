@@ -7,29 +7,23 @@
 
 use axum::body::Bytes;
 use axum::extract::{Extension, Path, State};
-use axum::http::{header, HeaderValue, StatusCode};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
-use base64::Engine;
 use cordy_db::models::{Agent, AgentTaskQueue, Member, User, Workspace};
 use cordy_db::queries::{member, share_link, user, workspace};
 use cordy_middleware::workspace::WorkspaceContext;
-use hmac::{Hmac, Mac};
 use rand::RngCore;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::path::Path as FilePath;
 use uuid::Uuid;
 
 use crate::error::error_response;
 use crate::state::HandlerState;
 
 pub fn public_router() -> Router<HandlerState> {
-    Router::new()
-        .route("/api/share-links/{code}", get(get_share_link_info))
-        .route("/api/avatars/{signature}/{*key}", get(get_avatar))
+    Router::new().route("/api/share-links/{code}", get(get_share_link_info))
 }
 
 /// Authenticated workspace routes from router.go. The collection is user
@@ -78,158 +72,18 @@ pub fn admin_router() -> Router<HandlerState> {
         )
 }
 
-type HmacSha256 = Hmac<Sha256>;
-
-fn avatar_signature(key: &str) -> String {
-    let derived = Sha256::digest(
-        [
-            b"avatar-url:".as_slice(),
-            cordy_auth::jwt::jwt_secret().as_bytes(),
-        ]
-        .concat(),
-    );
-    let mut mac = HmacSha256::new_from_slice(&derived).expect("SHA-256 is a valid HMAC key");
-    mac.update(key.as_bytes());
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
-}
-
-fn avatar_key_from_served_url(raw: &str) -> Option<String> {
-    let parsed_path;
-    let path = if raw.starts_with('/') {
-        raw
-    } else {
-        parsed_path = url::Url::parse(raw).ok()?.path().to_string();
-        &parsed_path
-    };
-    let rest = path.strip_prefix("/api/avatars/")?;
-    let (signature, key) = rest.split_once('/')?;
-    (!key.is_empty() && avatar_signature(key) == signature).then(|| key.to_string())
-}
-
-fn avatar_content_type(key: &str) -> Option<&'static str> {
-    match FilePath::new(key)
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("png") => Some("image/png"),
-        Some("jpg" | "jpeg") => Some("image/jpeg"),
-        Some("gif") => Some("image/gif"),
-        Some("webp") => Some("image/webp"),
-        Some("avif") => Some("image/avif"),
-        Some("bmp") => Some("image/bmp"),
-        Some("ico") => Some("image/x-icon"),
-        _ => None,
-    }
-}
-
-async fn avatar_key_publishable(state: &HandlerState, key: &str) -> bool {
-    if avatar_content_type(key).is_none() {
-        return false;
-    }
-    if !key.starts_with("workspaces/") {
-        return true;
-    }
-    let Some(id) = FilePath::new(key)
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .and_then(|value| Uuid::parse_str(value).ok())
-    else {
-        return false;
-    };
-    matches!(
-        cordy_db::queries::attachment::get_attachment_by_id_only(&state.pool, id).await,
-        Ok(Some(attachment))
-            if attachment.content_type.to_ascii_lowercase().starts_with("image/")
-                && attachment.issue_id.is_none()
-                && attachment.comment_id.is_none()
-                && attachment.chat_session_id.is_none()
-                && attachment.chat_message_id.is_none()
-                && attachment.task_id.is_none()
-    )
-}
-
 async fn accept_avatar_url(
     state: &HandlerState,
     raw: &str,
     current: &str,
 ) -> Result<String, Response> {
-    let mut value = raw.trim().to_string();
-    let Some(storage) = state.attachment_storage.as_ref() else {
-        return Ok(value);
-    };
-    if let Some(key) = avatar_key_from_served_url(&value) {
-        value = storage.object_url(&key);
-    }
-    if value == current.trim() {
-        return Ok(value);
-    }
-    let Some(key) = storage.key_from_url(&value) else {
-        return Ok(value);
-    };
-    if !avatar_key_publishable(state, &key).await {
-        return Err(error_response(
-            StatusCode::FORBIDDEN,
-            "avatar_url must reference a standalone image upload, not a file attached to an issue, comment, or chat",
-        ));
-    }
-    Ok(value)
+    crate::avatar::accept_url(state, raw, Some(current))
+        .await
+        .map_err(|message| error_response(StatusCode::FORBIDDEN, message))
 }
 
 fn resolve_avatar_url(state: &HandlerState, raw: Option<String>) -> Option<String> {
-    let value = raw?;
-    let Some(storage) = state.attachment_storage.as_ref() else {
-        return Some(value);
-    };
-    let Some(key) = storage.key_from_url(&value) else {
-        return Some(value);
-    };
-    if avatar_content_type(&key).is_none() {
-        return Some(value);
-    }
-    if storage.is_local() {
-        return Some(value);
-    }
-    let path = format!("/api/avatars/{}/{}", avatar_signature(&key), key);
-    let base = std::env::var("CORDY_PUBLIC_URL")
-        .unwrap_or_default()
-        .trim()
-        .trim_end_matches('/')
-        .to_string();
-    Some(if base.is_empty() {
-        path
-    } else {
-        format!("{base}{path}")
-    })
-}
-
-async fn get_avatar(
-    State(state): State<HandlerState>,
-    Path((signature, key)): Path<(String, String)>,
-) -> Response {
-    if signature != avatar_signature(&key) || !avatar_key_publishable(&state, &key).await {
-        return error_response(StatusCode::NOT_FOUND, "avatar not found");
-    }
-    let Some(storage) = state.attachment_storage.as_ref() else {
-        return error_response(StatusCode::NOT_FOUND, "avatar not found");
-    };
-    let object = match storage.get(&key, None).await {
-        Ok(object) => object,
-        Err(_) => return error_response(StatusCode::NOT_FOUND, "avatar not found"),
-    };
-    let mut response = Response::new(object.body);
-    *response.status_mut() = object.status;
-    if let Some(content_type) = avatar_content_type(&key) {
-        response
-            .headers_mut()
-            .insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
-    }
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=300"),
-    );
-    response
+    raw.map(|value| crate::avatar::resolve_url(state, &value))
 }
 
 /// GET /api/share-links/{code} — public preview of a workspace share link.
@@ -1948,16 +1802,6 @@ mod tests {
         assert_eq!(normalized_member_role("", true), Some("member"));
         assert_eq!(normalized_member_role("owner", false), Some("owner"));
         assert_eq!(normalized_member_role(" OWNER ", false), None);
-    }
-
-    #[test]
-    fn avatar_signatures_round_trip_and_reject_tampering() {
-        let key = "workspaces/ws/avatar/018f03a0-c4d2-7a37-ae4d-5aa45de12f11.png";
-        let served = format!("/api/avatars/{}/{}", avatar_signature(key), key);
-        assert_eq!(avatar_key_from_served_url(&served).as_deref(), Some(key));
-        assert!(avatar_key_from_served_url(&served.replace(".png", ".jpg")).is_none());
-        assert_eq!(avatar_content_type(key), Some("image/png"));
-        assert_eq!(avatar_content_type("avatar.svg"), None);
     }
 
     #[tokio::test]

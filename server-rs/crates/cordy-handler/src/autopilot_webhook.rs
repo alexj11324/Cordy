@@ -4,7 +4,7 @@
 
 use axum::body::Body;
 use axum::extract::{Path, State};
-use axum::http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
@@ -306,7 +306,7 @@ async fn webhook(
         )
         .await
         {
-            spawn_delivery_drain(state.clone());
+            state.notify_webhook_delivery();
             return duplicate_response(&state, existing).await;
         }
     }
@@ -347,7 +347,10 @@ async fn webhook(
             )
             .await
             {
-                Ok(Some(existing)) => return duplicate_response(&state, existing).await,
+                Ok(Some(existing)) => {
+                    state.notify_webhook_delivery();
+                    return duplicate_response(&state, existing).await;
+                }
                 _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
             }
         }
@@ -409,7 +412,7 @@ async fn webhook(
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, delivery_id = %delivery.id, "autopilot webhook admission failed");
-            spawn_delivery_drain(state);
+            state.notify_webhook_delivery();
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to admit autopilot",
@@ -428,171 +431,8 @@ async fn webhook(
         Some(&response.to_string()),
     )
     .await;
-    spawn_delivery_drain(state);
+    state.notify_webhook_delivery();
     Json(response).into_response()
-}
-
-fn spawn_delivery_drain(state: HandlerState) {
-    tokio::spawn(async move {
-        loop {
-            let delivery = match webhook_delivery::claim_queued_webhook_delivery(&state.pool).await
-            {
-                Ok(Some(value)) => value,
-                _ => break,
-            };
-            let Some(lease) = delivery.lease_token else {
-                break;
-            };
-            let trigger_id = delivery.trigger_id;
-            let trigger = match autopilot::get_autopilot_trigger(&state.pool, trigger_id).await {
-                Ok(Some(value)) if value.autopilot_id == delivery.autopilot_id => value,
-                _ => {
-                    let _ = webhook_delivery::complete_claimed_webhook_delivery(
-                        &state.pool,
-                        delivery.id,
-                        lease,
-                        "failed",
-                        Uuid::nil(),
-                        Some("delivery ownership mismatch"),
-                        Some("ownership_mismatch"),
-                    )
-                    .await;
-                    continue;
-                }
-            };
-            let rule = match autopilot::get_autopilot(&state.pool, delivery.autopilot_id).await {
-                Ok(Some(value)) if value.workspace_id == delivery.workspace_id => value,
-                _ => {
-                    let _ = webhook_delivery::complete_claimed_webhook_delivery(
-                        &state.pool,
-                        delivery.id,
-                        lease,
-                        "failed",
-                        Uuid::nil(),
-                        Some("autopilot not found"),
-                        Some("autopilot_not_found"),
-                    )
-                    .await;
-                    continue;
-                }
-            };
-            let service = cordy_service::autopilot::AutopilotService::new(
-                state.pool.clone(),
-                state.bus.clone(),
-                state.tasks.clone(),
-            );
-            let payload = match stored_envelope(&delivery) {
-                Ok(value) => value,
-                Err(error) => {
-                    let _ = webhook_delivery::complete_claimed_webhook_delivery(
-                        &state.pool,
-                        delivery.id,
-                        lease,
-                        "failed",
-                        Uuid::nil(),
-                        Some(error),
-                        Some("normalize_failed"),
-                    )
-                    .await;
-                    continue;
-                }
-            };
-            let admitted =
-                autopilot::get_autopilot_run_by_webhook_delivery(&state.pool, delivery.id)
-                    .await
-                    .ok()
-                    .flatten()
-                    .is_some();
-            if !admitted {
-                let ignored = if !trigger.enabled {
-                    Some("trigger_disabled")
-                } else if rule.status == "archived" {
-                    Some("autopilot_archived")
-                } else if rule.status != "active" {
-                    Some("autopilot_paused")
-                } else if !event_allowed(trigger.event_filters.as_ref(), &payload) {
-                    Some("event_filtered")
-                } else {
-                    None
-                };
-                if let Some(reason) = ignored {
-                    let _ = webhook_delivery::complete_claimed_webhook_delivery(
-                        &state.pool,
-                        delivery.id,
-                        lease,
-                        "ignored",
-                        Uuid::nil(),
-                        Some(reason),
-                        Some(reason),
-                    )
-                    .await;
-                    continue;
-                }
-            }
-            match service
-                .dispatch_autopilot_for_webhook_delivery(&rule, trigger_id, &payload, delivery.id)
-                .await
-            {
-                Ok(run) => {
-                    let _ = webhook_delivery::complete_claimed_webhook_delivery(
-                        &state.pool,
-                        delivery.id,
-                        lease,
-                        "dispatched",
-                        run.id,
-                        None,
-                        run.reason_code.as_deref(),
-                    )
-                    .await;
-                    let _ =
-                        autopilot::touch_autopilot_trigger_fired_at(&state.pool, trigger_id).await;
-                }
-                Err(error) => {
-                    tracing::warn!(%error, delivery_id = %delivery.id, "autopilot webhook dispatch failed");
-                    let _ = webhook_delivery::complete_claimed_webhook_delivery(
-                        &state.pool,
-                        delivery.id,
-                        lease,
-                        "failed",
-                        Uuid::nil(),
-                        Some("dispatch failed"),
-                        Some("dispatch_failed"),
-                    )
-                    .await;
-                }
-            }
-        }
-    });
-}
-
-fn stored_envelope(delivery: &cordy_db::models::WebhookDelivery) -> Result<Value, &'static str> {
-    let mut headers = HeaderMap::new();
-    if let Some(values) = delivery.selected_headers.as_object() {
-        for (name, value) in values {
-            let Some(value) = value.as_str() else {
-                continue;
-            };
-            let (Ok(name), Ok(value)) = (
-                HeaderName::from_bytes(name.as_bytes()),
-                HeaderValue::from_bytes(value.as_bytes()),
-            ) else {
-                continue;
-            };
-            headers.insert(name, value);
-        }
-    }
-    if let Some(content_type) = delivery.content_type.as_deref() {
-        if let Ok(value) = content_type.parse() {
-            headers.insert(header::CONTENT_TYPE, value);
-        }
-    }
-    let mut envelope = normalize(delivery.raw_body.as_deref().unwrap_or_default(), &headers)?;
-    envelope["request"]["receivedAt"] = Value::String(
-        delivery
-            .received_at
-            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-    );
-    Ok(envelope)
 }
 
 #[cfg(test)]
