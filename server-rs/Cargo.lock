@@ -961,6 +961,7 @@ dependencies = [
  "redis",
  "reqwest",
  "rsa",
+ "regex",
  "serde",
  "serde_json",
  "sha1",

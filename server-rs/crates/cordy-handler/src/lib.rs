@@ -21,6 +21,7 @@ pub mod comment;
 pub mod daemon;
 pub mod daemon_ws;
 pub mod error;
+pub mod feedback;
 pub mod health;
 pub mod issue;
 pub mod issue_status;
@@ -191,6 +192,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
     ));
     let authenticated = workspace::authenticated_router()
         .merge(cli_token::router())
+        .merge(feedback::router())
         .merge(me::router())
         .merge(pat::router())
         .merge(attachment_access::authenticated_router())
@@ -337,6 +339,9 @@ mod tests {
                 .unwrap(),
             Request::post("/api/share-links/join")
                 .body(Body::from(r#"{"code":"invite"}"#))
+                .unwrap(),
+            Request::post("/api/feedback")
+                .body(Body::from(r#"{"message":"feedback"}"#))
                 .unwrap(),
             Request::post("/api/comments/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/resolve")
                 .body(Body::empty())
