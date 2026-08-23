@@ -18,13 +18,15 @@ fn build_production_router(
     hub: Arc<cordy_realtime::hub::Hub>,
     business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
+    github_client: Option<cordy_ghsnapshot::Client>,
 ) -> Router {
     let state = cordy_handler::HandlerState::new(
         db,
         cordy_auth::pat_cache::PatCache::disabled(),
         Some(hub),
     )
-    .with_observability(business_metrics, http_metrics);
+    .with_observability(business_metrics, http_metrics)
+    .with_github_snapshots(github_client);
     cordy_handler::build_router_from_state(state)
 }
 
@@ -81,7 +83,8 @@ async fn main() -> anyhow::Result<()> {
     } else {
         (None, None)
     };
-    let app = build_production_router(db, hub, business_metrics, http_metrics);
+    let github_client = cordy_ghsnapshot::Client::new_from_env()?;
+    let app = build_production_router(db, hub, business_metrics, http_metrics, github_client);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;

@@ -43,6 +43,8 @@ pub struct HandlerState {
     pub business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     /// HTTP request metrics. None when METRICS_ADDR is disabled.
     pub http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
+    /// GitHub GraphQL snapshot refresh pipeline. Disabled in lightweight tests.
+    pub github_snapshots: Arc<cordy_ghsnapshot::Manager>,
     /// Feature flag source. `None` fails closed for rollout-gated writes.
     pub feature_flags: Option<Arc<dyn cordy_service::feature_flags::FlagSource>>,
     /// Task domain service (Go h.TaskService).
@@ -93,6 +95,7 @@ impl HandlerState {
             bus,
             business_metrics: None,
             http_metrics: None,
+            github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
             feature_flags: None,
             tasks,
             issues,
@@ -124,6 +127,57 @@ impl HandlerState {
         }
         self.business_metrics = business_metrics;
         self.http_metrics = http_metrics;
+        self
+    }
+
+    /// Installs and starts the S7 GitHub snapshot manager. Applied snapshots
+    /// are broadcast with the same weakest-role PR payload as the Go handler.
+    pub fn with_github_snapshots(mut self, client: Option<cordy_ghsnapshot::Client>) -> Self {
+        let pool = self.pool.clone();
+        let event_pool = pool.clone();
+        let bus = self.bus.clone();
+        let on_applied: cordy_ghsnapshot::OnApplied = Arc::new(move |pull_request_id| {
+            let pool = event_pool.clone();
+            let bus = bus.clone();
+            tokio::spawn(async move {
+                let Ok(Some(pull_request)) =
+                    cordy_db::queries::github_snapshot::get_git_hub_pull_request_by_id(
+                        &pool,
+                        pull_request_id,
+                    )
+                    .await
+                else {
+                    return;
+                };
+                let Ok(issue_ids) = cordy_db::queries::github::list_issue_i_ds_for_pull_request(
+                    &pool,
+                    pull_request_id,
+                )
+                .await
+                else {
+                    return;
+                };
+                let payload =
+                    crate::issue_pull_request::github_model_response(pull_request.clone(), true);
+                bus.publish(&cordy_events::Event {
+                    event_type: cordy_protocol::EVENT_PULL_REQUEST_UPDATED.into(),
+                    workspace_id: pull_request.workspace_id.to_string(),
+                    actor_type: "system".into(),
+                    payload: serde_json::json!({
+                        "pull_request": payload,
+                        "linked_issue_ids": issue_ids.into_iter().flatten().map(|id| id.to_string()).collect::<Vec<_>>(),
+                    }),
+                    ..Default::default()
+                });
+            });
+        });
+        let manager = Arc::new(cordy_ghsnapshot::Manager::new(
+            client,
+            Some(pool),
+            Some(on_applied),
+        ));
+        manager.start();
+        self.github_snapshots = manager;
         self
     }
 
