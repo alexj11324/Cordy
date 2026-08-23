@@ -366,6 +366,7 @@ mod tests {
             "/api/projects",
             "/api/projects/search?q=migration",
             "/api/projects/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
+            "/api/projects/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/resources",
             "/api/working-agents",
         ] {
             let response = build_router(None, None)
@@ -410,6 +411,9 @@ mod tests {
                 .body(Body::from(r#"{"status":"in_progress"}"#))
                 .unwrap(),
             Request::delete("/api/projects/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::empty())
+                .unwrap(),
+            Request::delete("/api/projects/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/resources/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
                 .body(Body::empty())
                 .unwrap(),
             Request::post("/api/issue-views")
