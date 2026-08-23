@@ -15,6 +15,7 @@ chrono-tz = { workspace = true }
 cordy-analytics = { path = "../cordy-analytics" }
 cordy-auth = { path = "../cordy-auth" }
 cordy-config = { path = "../cordy-config" }
+cordy-composio = { path = "../cordy-composio" }
 cordy-db = { path = "../cordy-db" }
 cordy-daemon = { path = "../cordy-daemon" }
 cordy-events = { path = "../cordy-events" }

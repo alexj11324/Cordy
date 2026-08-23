@@ -25,6 +25,7 @@ pub mod cloud_billing;
 pub mod cloud_runtime;
 pub mod comment;
 pub mod comment_list;
+pub mod composio;
 pub mod config;
 pub mod contact_sales;
 pub mod daemon;
@@ -222,7 +223,9 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
     ));
     let cloud_runtime_proxy: Arc<dyn cloud_runtime::CloudRuntimeProxy> =
         Arc::new(cloud_runtime::HttpCloudRuntimeProxy::from_env());
+    let composio_state = composio::ComposioState::from_handler(&state);
     let authenticated = workspace::authenticated_router()
+        .merge(composio::authenticated_router().with_state::<HandlerState>(composio_state.clone()))
         .merge(
             binding_redeem::router()
                 .with_state(binding_redeem::BindingRedeemState::from_handler(&state)),
@@ -473,6 +476,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(config::router())
         .merge(contact_sales)
         .merge(vcs_webhook::router())
+        .merge(composio::public_router().with_state::<HandlerState>(composio_state))
         .merge(plugin_action)
         .merge(authenticated)
         .merge(daemon)
@@ -524,6 +528,20 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn composio_callback_is_public_but_disabled_without_configuration() {
+        let response = build_router(None, None)
+            .oneshot(
+                Request::get("/api/integrations/composio/callback")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     }
 
     #[tokio::test]
@@ -609,6 +627,8 @@ mod tests {
             "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/mcp-servers",
             "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runtime-profiles",
             "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runtime-profiles/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
+            "/api/integrations/composio/toolkits",
+            "/api/integrations/composio/connections",
         ] {
             let response = build_router(None, None)
                 .oneshot(Request::get(uri).body(Body::empty()).unwrap())
@@ -889,6 +909,14 @@ mod tests {
             Request::post("/api/lark/binding/redeem")
                 .body(Body::from(r#"{"token":"binding-token"}"#))
                 .unwrap(),
+            Request::post("/api/integrations/composio/connect/init")
+                .body(Body::from(r#"{"toolkit_slug":"github"}"#))
+                .unwrap(),
+            Request::delete(
+                "/api/integrations/composio/connections/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
+            )
+            .body(Body::empty())
+            .unwrap(),
             Request::post("/api/slack/binding/redeem")
                 .body(Body::from(r#"{"token":"binding-token"}"#))
                 .unwrap(),
