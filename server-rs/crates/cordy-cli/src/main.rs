@@ -12,7 +12,10 @@ async fn main() {
         }
     };
     match run(&cli, &environment).await {
-        Ok(output) => print!("{}", output.stdout),
+        Ok(output) => {
+            print!("{}", output.stdout);
+            eprint!("{}", output.stderr);
+        }
         Err(cause) => {
             eprintln!(
                 "{}",

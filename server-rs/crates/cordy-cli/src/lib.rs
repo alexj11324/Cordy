@@ -12,6 +12,7 @@ use anyhow::{bail, Context, Result};
 use api::{http_timeout, ApiClient};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use config::Environment;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::Write;
 use std::fs;
@@ -57,6 +58,8 @@ pub struct Cli {
 enum Command {
     #[command(about = "Work with your user account")]
     User(UserArgs),
+    #[command(about = "Work with workspaces")]
+    Workspace(WorkspaceArgs),
 }
 
 #[derive(Debug, Args)]
@@ -75,6 +78,23 @@ enum UserCommand {
 struct ProfileArgs {
     #[command(subcommand)]
     command: ProfileCommand,
+}
+
+#[derive(Debug, Args)]
+struct WorkspaceArgs {
+    #[command(subcommand)]
+    command: WorkspaceCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum WorkspaceCommand {
+    #[command(about = "List all workspaces you belong to")]
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+        #[arg(long, help = "Show full UUIDs in table output")]
+        full_id: bool,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -133,6 +153,7 @@ enum OutputFormat {
 #[derive(Debug)]
 pub struct RunOutput {
     pub stdout: String,
+    pub stderr: String,
 }
 
 impl Cli {
@@ -171,6 +192,9 @@ async fn run_with_input<R: Read>(
                     command: ProfileCommand::Update(args),
                 }),
         }) => run_user_profile_update(cli, environment, args, input).await,
+        Command::Workspace(WorkspaceArgs {
+            command: WorkspaceCommand::List { output, full_id },
+        }) => run_workspace_list(cli, environment, *output, *full_id).await,
     }
 }
 
@@ -188,7 +212,10 @@ async fn run_user_profile_get(
         OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&profile)?),
         OutputFormat::Table => format_user_profile_table(&profile),
     };
-    Ok(RunOutput { stdout })
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
 }
 
 async fn run_user_profile_update<R: Read>(
@@ -210,7 +237,103 @@ async fn run_user_profile_update<R: Read>(
         OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&profile)?),
         OutputFormat::Table => format_user_profile_table(&profile),
     };
-    Ok(RunOutput { stdout })
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct WorkspaceSummary {
+    id: String,
+    name: String,
+    slug: String,
+}
+
+async fn run_workspace_list(
+    cli: &Cli,
+    environment: &Environment,
+    output: OutputFormat,
+    full_id: bool,
+) -> Result<RunOutput> {
+    let client = new_unscoped_authenticated_api_client(cli, environment)?;
+    let workspaces: Vec<WorkspaceSummary> = client
+        .get_json("/api/workspaces")
+        .await
+        .context("list workspaces")?;
+    if output == OutputFormat::Json {
+        return Ok(RunOutput {
+            stdout: format!("{}\n", serde_json::to_string_pretty(&workspaces)?),
+            stderr: String::new(),
+        });
+    }
+    if workspaces.is_empty() {
+        return Ok(RunOutput {
+            stdout: String::new(),
+            stderr: "No workspaces found.\n".into(),
+        });
+    }
+
+    let current_id = resolve_current_workspace_id(cli, environment);
+    let stdout = format_workspace_table(&workspaces, &current_id, full_id);
+    let current_hint = if current_id.is_empty() {
+        "\nNo default workspace set. Use 'cordy workspace switch <id|slug|prefix>' to pick one.\n"
+    } else {
+        "\n* = current default workspace (use 'cordy workspace switch <id|slug|prefix>' to change)\n"
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: format!(
+            "{current_hint}Tip: pass the ID column, SLUG, or full UUID (--full-id) to 'workspace get/update/switch'.\n"
+        ),
+    })
+}
+
+fn format_workspace_table(
+    workspaces: &[WorkspaceSummary],
+    current_id: &str,
+    full_id: bool,
+) -> String {
+    let mut rows = Vec::with_capacity(workspaces.len() + 1);
+    rows.push([String::new(), "ID".into(), "NAME".into(), "SLUG".into()]);
+    rows.extend(workspaces.iter().map(|workspace| {
+        [
+            (if workspace.id == current_id { "*" } else { " " }).into(),
+            display_id(&workspace.id, full_id),
+            workspace.name.clone(),
+            workspace.slug.clone(),
+        ]
+    }));
+    let widths: [usize; 3] = std::array::from_fn(|column| {
+        rows.iter()
+            .map(|row| row[column].chars().count())
+            .max()
+            .unwrap_or_default()
+            + 2
+    });
+    let mut output = String::new();
+    for row in rows {
+        let _ = writeln!(
+            output,
+            "{:<marker_width$}{:<id_width$}{:<name_width$}{}",
+            row[0],
+            row[1],
+            row[2],
+            row[3],
+            marker_width = widths[0],
+            id_width = widths[1],
+            name_width = widths[2]
+        );
+    }
+    output
+}
+
+fn display_id(id: &str, full: bool) -> String {
+    if full {
+        id.into()
+    } else {
+        id.chars().take(8).collect()
+    }
 }
 
 fn resolve_profile_description<R: Read>(
@@ -360,6 +483,23 @@ fn lexical_normalize(path: &Path) -> PathBuf {
 }
 
 fn new_api_client(cli: &Cli, environment: &Environment) -> Result<ApiClient> {
+    new_api_client_with_options(cli, environment, true, false, true)
+}
+
+fn new_unscoped_authenticated_api_client(
+    cli: &Cli,
+    environment: &Environment,
+) -> Result<ApiClient> {
+    new_api_client_with_options(cli, environment, false, true, false)
+}
+
+fn new_api_client_with_options(
+    cli: &Cli,
+    environment: &Environment,
+    include_workspace: bool,
+    require_token: bool,
+    include_execution_context: bool,
+) -> Result<ApiClient> {
     let task_context = environment.in_daemon_managed_execution_context();
     // A daemon task with no private config root must not even read the owner's
     // global profile. This mirrors the Go resolver's fail-closed boundary, not
@@ -384,7 +524,6 @@ fn new_api_client(cli: &Cli, environment: &Environment) -> Result<ApiClient> {
             "agent execution context requires CORDY_TOKEN to be a task-scoped mat_ token{suffix}"
         );
     }
-
     let explicit_server_url = cli
         .server_url
         .as_deref()
@@ -395,7 +534,7 @@ fn new_api_client(cli: &Cli, environment: &Environment) -> Result<ApiClient> {
         if config.server_url.is_empty() {
             String::new()
         } else {
-            normalize_api_base_url(&config.server_url).unwrap_or(config.server_url)
+            normalize_api_base_url(&config.server_url).unwrap_or_else(|_| config.server_url.clone())
         }
     } else {
         String::new()
@@ -406,8 +545,58 @@ fn new_api_client(cli: &Cli, environment: &Environment) -> Result<ApiClient> {
             environment.daemon_port_only_context_hint()
         );
     }
+    if require_token && token.is_empty() {
+        bail!(
+            "not authenticated: run 'cordy login' first{}",
+            environment.daemon_port_only_context_hint()
+        );
+    }
 
-    let workspace_id = match cli.workspace_id.as_deref() {
+    let workspace_id = if include_workspace {
+        resolve_workspace_id(cli, environment, task_context, &config)
+    } else {
+        String::new()
+    };
+    ApiClient::new(
+        server_url,
+        workspace_id,
+        token,
+        if include_execution_context {
+            environment.raw("CORDY_AGENT_ID").unwrap_or_default()
+        } else {
+            ""
+        }
+        .into(),
+        if include_execution_context {
+            environment.raw("CORDY_TASK_ID").unwrap_or_default()
+        } else {
+            ""
+        }
+        .into(),
+        http_timeout(environment.raw("CORDY_HTTP_TIMEOUT")),
+        CLIENT_VERSION,
+    )
+}
+
+fn resolve_current_workspace_id(cli: &Cli, environment: &Environment) -> String {
+    let task_context = environment.in_daemon_managed_execution_context();
+    let may_read_config =
+        !task_context || environment.trimmed(config::TASK_CONFIG_ROOT_ENV).is_some();
+    let config = if may_read_config {
+        environment.load_config(&cli.profile).unwrap_or_default()
+    } else {
+        config::CliConfig::default()
+    };
+    resolve_workspace_id(cli, environment, task_context, &config)
+}
+
+fn resolve_workspace_id(
+    cli: &Cli,
+    environment: &Environment,
+    task_context: bool,
+    config: &config::CliConfig,
+) -> String {
+    match cli.workspace_id.as_deref() {
         Some(value) if !value.is_empty() => value.into(),
         // An explicitly empty flag suppresses the environment, just like
         // Cobra's Changed branch, then falls through to profile config.
@@ -423,16 +612,7 @@ fn new_api_client(cli: &Cli, environment: &Environment) -> Result<ApiClient> {
             .map(Into::into)
             .or_else(|| (!task_context).then(|| config.workspace_id.clone()))
             .unwrap_or_default(),
-    };
-    ApiClient::new(
-        server_url,
-        workspace_id,
-        token,
-        environment.raw("CORDY_AGENT_ID").unwrap_or_default().into(),
-        environment.raw("CORDY_TASK_ID").unwrap_or_default().into(),
-        http_timeout(environment.raw("CORDY_HTTP_TIMEOUT")),
-        CLIENT_VERSION,
-    )
+    }
 }
 
 fn normalize_api_base_url(raw: &str) -> Result<String> {
@@ -820,6 +1000,100 @@ mod tests {
         .expect_err("escaping symlink rejected")
         .to_string()
         .contains("--allow-external-file"));
+    }
+
+    #[tokio::test]
+    async fn workspace_list_authenticates_without_workspace_scope() {
+        let app = Router::new().route(
+            "/api/workspaces",
+            get(|request: Request| async move {
+                assert_eq!(request.headers()["authorization"], "Bearer workspace-token");
+                assert!(request.headers().get("x-workspace-id").is_none());
+                Json(serde_json::json!([
+                    {"id":"11111111-1111-1111-1111-111111111111","name":"Alpha","slug":"alpha"},
+                    {"id":"22222222-2222-2222-2222-222222222222","name":"Beta","slug":"beta"}
+                ]))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "workspace-token");
+        environment.set("CORDY_WORKSPACE_ID", "22222222-2222-2222-2222-222222222222");
+        let cli = Cli::try_parse_from(["cordy", "workspace", "list", "--output", "json"])
+            .expect("workspace list CLI");
+
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("workspace list");
+
+        let workspaces: Value = serde_json::from_str(&output.stdout).expect("JSON output");
+        assert_eq!(workspaces.as_array().expect("workspace array").len(), 2);
+        assert!(output.stderr.is_empty());
+        server.abort();
+    }
+
+    #[test]
+    fn workspace_table_marks_current_and_honors_full_id() {
+        let workspaces = vec![
+            WorkspaceSummary {
+                id: "11111111-1111-1111-1111-111111111111".into(),
+                name: "Alpha".into(),
+                slug: "alpha".into(),
+            },
+            WorkspaceSummary {
+                id: "22222222-2222-2222-2222-222222222222".into(),
+                name: "Beta".into(),
+                slug: "beta".into(),
+            },
+        ];
+        assert_eq!(
+            format_workspace_table(&workspaces, "22222222-2222-2222-2222-222222222222", false),
+            "   ID        NAME   SLUG\n   11111111  Alpha  alpha\n*  22222222  Beta   beta\n"
+        );
+        let full = format_workspace_table(&workspaces, "", true);
+        assert!(full.contains("11111111-1111-1111-1111-111111111111"));
+        assert!(!full.contains("*  "));
+    }
+
+    #[tokio::test]
+    async fn workspace_list_empty_and_missing_auth_match_go_messages() {
+        let app = Router::new().route(
+            "/api/workspaces",
+            get(|| async { Json(serde_json::json!([])) }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "workspace-token");
+        let cli = Cli::try_parse_from(["cordy", "workspace", "list"]).expect("workspace list CLI");
+
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("empty workspace list");
+        assert!(output.stdout.is_empty());
+        assert_eq!(output.stderr, "No workspaces found.\n");
+
+        environment.set("CORDY_TOKEN", "");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("missing token");
+        assert!(error
+            .to_string()
+            .contains("not authenticated: run 'cordy login' first"));
+        server.abort();
     }
 
     #[test]
