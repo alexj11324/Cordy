@@ -21,6 +21,7 @@ pub mod claim_comments;
 pub mod claim_response;
 pub mod cli_token;
 pub mod client_usage;
+pub mod cloud_billing;
 pub mod cloud_runtime;
 pub mod comment;
 pub mod comment_list;
@@ -219,6 +220,8 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         WorkspaceGuardState::member_only(state.pool.clone()),
         issue::require_issue_workspace,
     ));
+    let cloud_runtime_proxy: Arc<dyn cloud_runtime::CloudRuntimeProxy> =
+        Arc::new(cloud_runtime::HttpCloudRuntimeProxy::from_env());
     let authenticated = workspace::authenticated_router()
         .merge(
             binding_redeem::router()
@@ -313,11 +316,32 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .merge(
-            cloud_runtime::router(Arc::new(cloud_runtime::HttpCloudRuntimeProxy::from_env()))
-                .route_layer(middleware::from_fn_with_state(
+            cloud_runtime::router(cloud_runtime_proxy.clone()).route_layer(
+                middleware::from_fn_with_state(
                     WorkspaceGuardState::member_only(state.pool.clone()),
                     cordy_middleware::workspace::require_workspace,
-                )),
+                ),
+            ),
+        )
+        .merge(cloud_billing::billing_router(cloud_runtime_proxy.clone()))
+        .merge(
+            cloud_billing::subscription_member_router(cloud_runtime_proxy.clone()).route_layer(
+                middleware::from_fn_with_state(
+                    WorkspaceGuardState::member_only(state.pool.clone()),
+                    cordy_middleware::workspace::require_workspace,
+                ),
+            ),
+        )
+        .merge(
+            cloud_billing::subscription_admin_router(cloud_runtime_proxy).route_layer(
+                middleware::from_fn_with_state(
+                    WorkspaceGuardState::with_roles(
+                        state.pool.clone(),
+                        vec!["owner".into(), "admin".into()],
+                    ),
+                    cordy_middleware::workspace::require_workspace,
+                ),
+            ),
         )
         .merge(
             runtime_requests::router().route_layer(middleware::from_fn_with_state(
@@ -564,6 +588,15 @@ mod tests {
             "/api/cloud-runtime/healthz",
             "/api/cloud-runtime/readyz",
             "/api/cloud-runtime/nodes?limit=10",
+            "/api/cloud-billing/balance",
+            "/api/cloud-billing/transactions?page=2",
+            "/api/cloud-billing/batches?page=2",
+            "/api/cloud-billing/topups?page=2",
+            "/api/cloud-billing/price-tiers",
+            "/api/cloud-billing/checkout-sessions/cs_test",
+            "/api/cloud-subscriptions/entitlements",
+            "/api/cloud-subscriptions/summary",
+            "/api/cloud-subscriptions/prices",
             "/api/working-agents",
             "/api/v1/plugin/context",
             "/api/v1/plugin/issues/CORD-14",
@@ -719,6 +752,24 @@ mod tests {
                 .unwrap(),
             Request::post("/api/cloud-runtime/nodes/exec")
                 .body(Body::from(r#"{"node_id":"node-1","command":"true"}"#))
+                .unwrap(),
+            Request::post("/api/cloud-billing/checkout-sessions")
+                .body(Body::from(r#"{"tier_id":"starter"}"#))
+                .unwrap(),
+            Request::post("/api/cloud-billing/portal-sessions")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/cloud-subscriptions/checkout-sessions")
+                .body(Body::from(
+                    r#"{"interval":"month","idempotency_key":"request-1"}"#,
+                ))
+                .unwrap(),
+            Request::post("/api/cloud-subscriptions/seats/reconcile")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/cloud-subscriptions/portal-sessions")
+                .header("idempotency-key", "request-1")
+                .body(Body::empty())
                 .unwrap(),
             Request::post("/api/agent-builder/sessions")
                 .header("content-type", "application/json")

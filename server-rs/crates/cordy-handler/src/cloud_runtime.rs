@@ -27,9 +27,10 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(35);
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CloudRuntimeRequest {
     pub method: Method,
-    pub path: &'static str,
+    pub path: String,
     pub query: Option<String>,
     pub body: Vec<u8>,
+    pub headers: HeaderMap,
     pub user_id: String,
     pub request_id: String,
 }
@@ -139,23 +140,34 @@ impl CloudRuntimeProxy for HttpCloudRuntimeProxy {
         &self,
         request: CloudRuntimeRequest,
     ) -> Result<CloudRuntimeResponse, CloudRuntimeError> {
-        let url = self.target_url(request.path, request.query.as_deref())?;
+        let url = self.target_url(&request.path, request.query.as_deref())?;
         let has_body = !request.body.is_empty();
+        let mut forwarded_headers = request.headers;
+        forwarded_headers
+            .entry(header::ACCEPT)
+            .or_insert(HeaderValue::from_static("application/json"));
+        if has_body {
+            forwarded_headers
+                .entry(header::CONTENT_TYPE)
+                .or_insert(HeaderValue::from_static("application/json"));
+        }
+        if !request.user_id.is_empty() {
+            if let Ok(user_id) = HeaderValue::from_str(&request.user_id) {
+                forwarded_headers.insert("x-user-id", user_id);
+            }
+        }
+        if !request.request_id.is_empty() {
+            if let Ok(request_id) = HeaderValue::from_str(&request.request_id) {
+                forwarded_headers.insert("x-request-id", request_id);
+            }
+        }
         let mut upstream = self
             .client
             .request(request.method, url)
             .timeout(self.timeout)
-            .header(header::ACCEPT, "application/json");
+            .headers(forwarded_headers);
         if has_body {
-            upstream = upstream
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(request.body);
-        }
-        if !request.user_id.is_empty() {
-            upstream = upstream.header("X-User-ID", request.user_id);
-        }
-        if !request.request_id.is_empty() {
-            upstream = upstream.header("X-Request-ID", request.request_id);
+            upstream = upstream.body(request.body);
         }
 
         let response = upstream.send().await.map_err(|error| {
@@ -343,9 +355,10 @@ async fn execute(
     match proxy
         .execute(CloudRuntimeRequest {
             method,
-            path,
+            path: path.to_string(),
             query,
             body,
+            headers: HeaderMap::new(),
             user_id,
             request_id,
         })
