@@ -248,7 +248,7 @@ struct GlUser {
 /// Unrecognized input returns "" so the handler falls back to ingestion
 /// time.
 pub(crate) fn normalize_gitlab_time(s: &str) -> String {
-    use chrono::{NaiveDateTime, TimeZone, Utc};
+    use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
     if s.is_empty() {
         return String::new();
     }
@@ -265,6 +265,18 @@ pub(crate) fn normalize_gitlab_time(s: &str) -> String {
             .to_utc()
             .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
     }
+    for layout in [
+        "%Y-%m-%d %H:%M:%S %z",
+        "%Y-%m-%d %H:%M:%S %:z",
+        "%Y-%m-%d %H:%M:%S%.f %z",
+        "%Y-%m-%d %H:%M:%S%.f %:z",
+    ] {
+        if let Ok(t) = DateTime::parse_from_str(s, layout) {
+            return t
+                .to_utc()
+                .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
+        }
+    }
     for layout in FORMATS.iter().skip(1) {
         // Named zones like "UTC" are not accepted by chrono's %Z parsing;
         // special-case the trailing-UTC shape before falling back.
@@ -277,13 +289,6 @@ pub(crate) fn normalize_gitlab_time(s: &str) -> String {
                     .from_utc_datetime(&naive)
                     .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
             }
-            if let Ok(naive) = NaiveDateTime::parse_from_str(stripped, "%Y-%m-%d %H:%M:%S") {
-                return Utc
-                    .from_utc_datetime(&naive)
-                    .to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
-            }
-        }
-        if let Some(stripped) = s.strip_suffix(" +0000") {
             if let Ok(naive) = NaiveDateTime::parse_from_str(stripped, "%Y-%m-%d %H:%M:%S") {
                 return Utc
                     .from_utc_datetime(&naive)
@@ -470,6 +475,14 @@ mod tests {
         assert_eq!(
             normalize_gitlab_time("2017-09-20 08:31:45 +0000"),
             "2017-09-20T08:31:45.000000000Z"
+        );
+        assert_eq!(
+            normalize_gitlab_time("2017-09-20 08:31:45 +0200"),
+            "2017-09-20T06:31:45.000000000Z"
+        );
+        assert_eq!(
+            normalize_gitlab_time("2017-09-20 08:31:45 +08:00"),
+            "2017-09-20T00:31:45.000000000Z"
         );
         assert_eq!(
             normalize_gitlab_time("2017-09-20T08:31:45Z"),
