@@ -487,6 +487,11 @@ async fn deregister(
             tracing::warn!(error = %e, runtime_id = %rid, "deregister: failed to set offline");
             continue;
         }
+        if let Some(liveness) = state.runtime_liveness.as_ref() {
+            if let Err(error) = liveness.forget(&rt.id.to_string()).await {
+                tracing::warn!(%error, runtime_id = %rt.id, "deregister: liveness forget failed");
+            }
+        }
         if !affected.contains(&ws_id) {
             affected.push(ws_id);
         }
@@ -708,10 +713,32 @@ async fn heartbeat(
     Json(resp).into_response()
 }
 
-/// Passthrough liveness write (Go PassthroughHeartbeatScheduler.Schedule):
-/// touch last_seen_at on online rows, flip offline→online otherwise. The
-/// Redis TTL layer and batched coalescing land with the redis slice.
+/// Redis absorbs the heartbeat hot path while the DB remains authoritative:
+/// offline transitions and a bounded 60-second last-seen refresh always hit
+/// Postgres. A missing or failed Redis store degrades to the original DB write
+/// on every beat.
 async fn record_heartbeat(state: &HandlerState, rt: &AgentRuntime) {
+    let mut need_db_write = crate::runtime_liveness::heartbeat_needs_db_write(
+        state.runtime_liveness.is_some(),
+        &rt.status,
+        rt.last_seen_at.as_ref().cloned(),
+        chrono::Utc::now(),
+    );
+    if let Some(liveness) = state.runtime_liveness.as_ref() {
+        if let Err(error) = liveness
+            .touch(
+                &rt.id.to_string(),
+                crate::runtime_liveness::RUNTIME_LIVENESS_TTL,
+            )
+            .await
+        {
+            tracing::warn!(%error, runtime_id = %rt.id, "liveness touch failed; falling back to DB heartbeat");
+            need_db_write = true;
+        }
+    }
+    if !need_db_write {
+        return;
+    }
     if rt.status == "online" && rt.last_seen_at.is_some() {
         match runtime::touch_agent_runtime_last_seen(&state.pool, rt.id).await {
             Ok(n) if n > 0 => return,

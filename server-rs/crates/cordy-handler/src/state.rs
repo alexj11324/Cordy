@@ -260,6 +260,7 @@ pub struct HandlerState {
     pub update_store: Option<Arc<crate::pending_store::UpdateStore>>,
     pub model_list_store: Option<Arc<crate::pending_store::ModelListStore>>,
     pub model_catalog_cache: Option<Arc<crate::pending_store::ModelCatalogCache>>,
+    pub runtime_liveness: Option<Arc<dyn crate::runtime_liveness::RuntimeLivenessStore>>,
     pub local_skill_list_store: Option<Arc<crate::pending_store::LocalSkillListStore>>,
     pub local_skill_import_store: Option<Arc<crate::pending_store::LocalSkillImportStore>>,
     /// Shared Redis connection for per-IP public-route rate limiting. None is
@@ -355,6 +356,7 @@ impl HandlerState {
             update_store: None,
             model_list_store: None,
             model_catalog_cache: None,
+            runtime_liveness: None,
             local_skill_list_store: None,
             local_skill_import_store: None,
             rate_limit_client: None,
@@ -630,9 +632,10 @@ impl HandlerState {
     }
 
     /// Builds all handler/service Redis dependencies from the production
-    /// client: auth/member caches, empty-claim cache, rate limits, and pending
-    /// request stores. Callers without Redis keep the explicit disabled
-    /// implementations and preserve the Go nil-store behavior.
+    /// client: auth/member caches, empty-claim cache, runtime liveness, rate
+    /// limits, and pending request stores. Callers without Redis keep the
+    /// explicit disabled implementations and preserve the Go nil-store
+    /// behavior.
     pub async fn with_redis(mut self, client: redis::Client) -> Result<Self, redis::RedisError> {
         self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
         self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client.clone());
@@ -652,6 +655,9 @@ impl HandlerState {
         self.model_catalog_cache = Some(Arc::new(crate::pending_store::ModelCatalogCache::new(
             conn.clone(),
         )));
+        self.runtime_liveness = Some(Arc::new(
+            crate::runtime_liveness::RedisRuntimeLivenessStore::new(conn.clone()),
+        ));
         self.local_skill_list_store = Some(Arc::new(
             crate::pending_store::LocalSkillListStore::new(conn.clone()),
         ));
