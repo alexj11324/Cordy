@@ -62,7 +62,11 @@ impl RelayNotifier {
             M.wakeup_publish_errors.fetch_add(1, Ordering::Relaxed);
             return;
         };
-        let shard_key = if task_id.is_empty() { &event_id } else { task_id };
+        let shard_key = if task_id.is_empty() {
+            &event_id
+        } else {
+            task_id
+        };
         if let Err(err) = relay
             .publish_with_id(SCOPE_DAEMON_RUNTIME, shard_key, "", &frame, &event_id)
             .await
@@ -439,10 +443,7 @@ mod tests {
         notifier.notify_workspaces_changed("").await;
         notifier.notify_pending_work("", "model_list").await;
 
-        assert!(
-            relay.records().is_empty(),
-            "no publish for empty keys"
-        );
+        assert!(relay.records().is_empty(), "no publish for empty keys");
         assert_eq!(M.wakeup_published_total.load(Ordering::Relaxed), 0);
         assert_eq!(M.wakeup_publish_errors.load(Ordering::Relaxed), 0);
     }

@@ -17,6 +17,8 @@
 //! ResolverSet", not "edit the Router".
 
 use std::collections::HashMap;
+use std::future::Future;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -83,18 +85,41 @@ struct MediaQueueEntry {
     tail: Arc<tokio::sync::Notify>,
 }
 
-/// Per-process media queue map. Port note: Go hangs the map off the Router
-/// struct; the detached job needs an owned handle, so the queue lives in a
-/// process-wide registry keyed by Router identity (the Router is a
-/// singleton per process in every wiring). Keyed by router id.
-static MEDIA_QUEUES: Mutex<Option<HashMap<String, Arc<MediaQueueEntry>>>> = Mutex::new(None);
+#[derive(Default)]
+struct TrackedJobs {
+    active: AtomicUsize,
+    zero: tokio::sync::Notify,
+}
 
-fn media_queues() -> std::sync::MutexGuard<'static, Option<HashMap<String, Arc<MediaQueueEntry>>>> {
-    let g = MEDIA_QUEUES.lock().unwrap_or_else(|e| e.into_inner());
-    if g.is_none() {
-        panic!("media queues not initialized");
+struct TrackedJobGuard(Arc<TrackedJobs>);
+
+impl Drop for TrackedJobGuard {
+    fn drop(&mut self) {
+        if self.0.active.fetch_sub(1, Ordering::SeqCst) == 1 {
+            self.0.zero.notify_waiters();
+        }
     }
-    g
+}
+
+impl TrackedJobs {
+    fn spawn(self: &Arc<Self>, future: impl Future<Output = ()> + Send + 'static) {
+        self.active.fetch_add(1, Ordering::SeqCst);
+        let tracker = Arc::clone(self);
+        tokio::spawn(async move {
+            let _guard = TrackedJobGuard(tracker);
+            future.await;
+        });
+    }
+
+    async fn wait(&self) {
+        loop {
+            let notified = self.zero.notified();
+            if self.active.load(Ordering::SeqCst) == 0 {
+                return;
+            }
+            notified.await;
+        }
+    }
 }
 
 /// Builds a resolver-facing token that cancels at the media deadline.
@@ -129,6 +154,8 @@ pub struct Router {
     media_ctx: CancellationToken,
     /// Global media concurrency slots.
     media_sem: Arc<tokio::sync::Semaphore>,
+    media_queues: Arc<Mutex<HashMap<String, Arc<MediaQueueEntry>>>>,
+    jobs: Arc<TrackedJobs>,
     stopping: Mutex<bool>,
 }
 
@@ -168,6 +195,8 @@ impl Router {
             media_timeout,
             media_ctx: CancellationToken::new(),
             media_sem: Arc::new(tokio::sync::Semaphore::new(media_concurrency)),
+            media_queues: Arc::new(Mutex::new(HashMap::new())),
+            jobs: Arc::new(TrackedJobs::default()),
             stopping: Mutex::new(false),
         })
     }
@@ -225,6 +254,7 @@ impl Router {
             if let Some(b) = batcher {
                 b.flush_all().await;
             }
+            self.jobs.wait().await;
         };
         tokio::select! {
             _ = flush => true,
@@ -273,7 +303,7 @@ impl Router {
             anyhow::bail!("channel router: no resolver set for channel type");
         };
 
-        let (res, inst) = self.dispatch(&set, msg.clone(), bare_fresh).await;
+        let (res, inst) = self.dispatch(&set, msg.clone(), bare_fresh).await?;
         let default_inst = ResolvedInstallation::default();
         tracing::debug!(
             channel_type = %msg.source.channel_type,
@@ -292,7 +322,7 @@ impl Router {
                 let msg = msg.clone();
                 let session_id = res.chat_session_id;
                 let timeout = self.reply_timeout;
-                tokio::spawn(async move {
+                self.jobs.spawn(async move {
                     let _ = tokio::time::timeout(
                         timeout,
                         typing.on_ingested(
@@ -320,7 +350,7 @@ impl Router {
         set: &Arc<ResolverSet>,
         msg: InboundMessage,
         bare_fresh: bool,
-    ) -> (Result, Option<ResolvedInstallation>) {
+    ) -> anyhow::Result<(Result, Option<ResolvedInstallation>)> {
         // 1. Route to installation. The adapter maps the platform routing
         //    key (carried on the message) to its installation row. These
         //    drop branches run BEFORE the dedup claim because they have no
@@ -343,25 +373,24 @@ impl Router {
                         .record_drop(Uuid::nil(), &msg, &DropReason::invalid_event())
                         .await;
                 }
-                return (
+                return Ok((
                     Result {
                         outcome: Some(Outcome::dropped()),
                         drop_reason: Some(DropReason::invalid_event()),
                         ..Default::default()
                     },
                     None,
-                );
+                ));
             }
             Err(err) => {
-                tracing::error!(error = %err, "resolve installation");
-                return (Result::default(), None);
+                return Err(err.context("resolve installation"));
             }
         };
         if !inst.active {
             let res = self
                 .drop(set, &msg, inst.id, DropReason::revoked_installation())
                 .await;
-            return (res, Some(inst));
+            return Ok((res, Some(inst)));
         }
 
         // 2. Two-phase dedup claim with owner fencing — before group
@@ -385,11 +414,10 @@ impl Router {
                         .is_some_and(|e| *e == ResolverError::Duplicate) =>
                 {
                     let res = self.drop(set, &msg, inst.id, DropReason::duplicate()).await;
-                    return (res, Some(inst));
+                    return Ok((res, Some(inst)));
                 }
                 Err(err) => {
-                    tracing::error!(error = %err, "dedup claim");
-                    return (Result::default(), Some(inst));
+                    return Err(err.context("dedup claim"));
                 }
             }
         }
@@ -414,9 +442,9 @@ impl Router {
             res = self.drop(set, &msg, inst.id, DropReason::duplicate()).await;
         }
         if let Some(e) = err {
-            tracing::error!(error = %e, "channel router: dispatch error");
+            return Err(e.context("channel router: dispatch"));
         }
-        (res, Some(inst))
+        Ok((res, Some(inst)))
     }
 
     /// Runs the post-dedup pipeline. Mirrors lark.Dispatcher.
@@ -905,19 +933,24 @@ impl Router {
         deadline: std::time::Instant,
     ) {
         let key = session_id.to_string();
-        let notify = {
+        let (predecessor, completion) = {
             let stopping = *self.stopping.lock().unwrap_or_else(|e| e.into_inner());
             if stopping {
                 return;
             }
-            let mut queues = media_queues();
-            let map = queues.get_or_insert_with(HashMap::new);
-            let entry = map.entry(key.clone()).or_insert_with(|| {
-                Arc::new(MediaQueueEntry {
-                    tail: Arc::new(tokio::sync::Notify::new()),
-                })
-            });
-            entry.tail.clone()
+            let completion = Arc::new(tokio::sync::Notify::new());
+            let predecessor = self
+                .media_queues
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(
+                    key.clone(),
+                    Arc::new(MediaQueueEntry {
+                        tail: completion.clone(),
+                    }),
+                )
+                .map(|entry| entry.tail.clone());
+            (predecessor, completion)
         };
 
         let router_media_ctx = self.media_ctx.clone();
@@ -930,8 +963,9 @@ impl Router {
         let _ = media_timeout;
         let issues = self.issues.clone();
         let tasks = self.tasks.clone();
+        let media_queues = self.media_queues.clone();
 
-        tokio::spawn(async move {
+        self.jobs.spawn(async move {
             // Both queue waits are bounded by the message's own deadline:
             // in a media burst an already-expired job must skip straight
             // to the empty finalize (marker clear + promotion), which also
@@ -940,10 +974,12 @@ impl Router {
             tokio::pin!(expiry);
             let mut expired = false;
             // Wait behind the previous job for this session.
-            tokio::select! {
-                _ = notify.notified() => {}
-                _ = router_media_ctx.cancelled() => {}
-                _ = &mut expiry => expired = true,
+            if let Some(predecessor) = predecessor {
+                tokio::select! {
+                    _ = predecessor.notified() => {}
+                    _ = router_media_ctx.cancelled() => {}
+                    _ = &mut expiry => expired = true,
+                }
             }
             let mut resolved = msg.clone();
             if !expired && resolve_remote {
@@ -959,9 +995,10 @@ impl Router {
                     if !router_media_ctx.is_cancelled() {
                         if let (Some(media), Some(chat_message_id)) = (&set.media, chat_message_id)
                         {
+                            let media_deadline_ctx = deadline_token(&router_media_ctx, deadline);
                             resolved = media
                                 .resolve_media(
-                                    deadline_token(&router_media_ctx, deadline),
+                                    media_deadline_ctx.clone(),
                                     &inst,
                                     &identity,
                                     session_id,
@@ -969,6 +1006,8 @@ impl Router {
                                     resolved,
                                 )
                                 .await;
+                            expired = media_deadline_ctx.is_cancelled()
+                                || std::time::Instant::now() >= deadline;
                         }
                     }
                 }
@@ -1061,12 +1100,11 @@ impl Router {
             // Wake the next queued job for this session and drop the queue
             // entry when this job is its tail (finishMediaQueue). Arc
             // pointer-equality identifies the tail.
-            notify.notify_one();
-            let mut queues = media_queues();
-            let map = queues.get_or_insert_with(HashMap::new);
+            completion.notify_waiters();
+            let mut map = media_queues.lock().unwrap_or_else(|e| e.into_inner());
             let is_tail = map
                 .get(&session_id.to_string())
-                .is_some_and(|e| Arc::ptr_eq(&e.tail, &notify));
+                .is_some_and(|e| Arc::ptr_eq(&e.tail, &completion));
             if is_tail {
                 map.remove(&session_id.to_string());
             }
@@ -1090,7 +1128,7 @@ impl Router {
             .unwrap_or_else(|e| e.into_inner())
             .clone();
         let Some(batcher) = batcher else {
-            tokio::spawn(flush_chat_run(FlushJob {
+            self.jobs.spawn(flush_chat_run(FlushJob {
                 reader: self.reader.clone(),
                 tasks: self.tasks.clone(),
                 set: Arc::clone(set),
@@ -1107,6 +1145,7 @@ impl Router {
         let msg2 = msg.clone();
         let reader = self.reader.clone();
         let tasks = self.tasks.clone();
+        let jobs = self.jobs.clone();
         batcher.schedule(&session_id.to_string(), move || {
             // A later message may replace this closure inside the debounce
             // window. AppendMessage persists ForceFresh on the channel
@@ -1117,7 +1156,7 @@ impl Router {
             let msg = msg2.clone();
             let reader = reader.clone();
             let tasks = tasks.clone();
-            tokio::spawn(async move {
+            jobs.spawn(async move {
                 flush_chat_run(FlushJob {
                     reader,
                     tasks,
@@ -1152,7 +1191,7 @@ impl Router {
         let msg = msg.clone();
         let res = res.clone();
         let timeout = self.reply_timeout;
-        tokio::spawn(async move {
+        self.jobs.spawn(async move {
             let _ = tokio::time::timeout(
                 timeout,
                 replier.reply(CancellationToken::new(), &inst, &msg, &res),

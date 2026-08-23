@@ -278,12 +278,37 @@ pub fn new_media_http_client(guard: MediaGuard) -> anyhow::Result<reqwest::Clien
         .map_err(|e| anyhow::anyhow!("wecom: build media http client: {e}"))
 }
 
+/// Rejects numeric hosts before reqwest can bypass DNS resolution and connect
+/// directly. Hostnames remain protected by [`GuardedResolve`].
+pub fn validate_media_url(raw: &str) -> anyhow::Result<()> {
+    let url =
+        reqwest::Url::parse(raw).map_err(|e| anyhow::anyhow!("wecom: invalid media url: {e}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        anyhow::bail!("wecom: media url scheme refused");
+    }
+    if url
+        .host_str()
+        .and_then(|host| host.parse::<IpAddr>().ok())
+        .is_some()
+    {
+        return Err(anyhow::Error::new(MediaAddrBlocked));
+    }
+    Ok(())
+}
+
 fn redirect_policy() -> reqwest::redirect::Policy {
     reqwest::redirect::Policy::custom(|attempt| {
         if attempt.previous().len() >= 5 {
             attempt.error("wecom: media download: too many redirects")
         } else {
-            if !matches!(attempt.url().scheme(), "http" | "https") {
+            if attempt
+                .url()
+                .host_str()
+                .and_then(|host| host.parse::<IpAddr>().ok())
+                .is_some()
+            {
+                attempt.error(MediaAddrBlocked)
+            } else if !matches!(attempt.url().scheme(), "http" | "https") {
                 let scheme = attempt.url().scheme().to_string();
                 attempt.error(format!(
                     "wecom: media redirect to scheme {scheme:?} refused"
@@ -366,6 +391,13 @@ mod tests {
         assert!(public_addr_only(IpAddr::from(Ipv6Addr::new(
             0x2606, 0x4700, 0, 0, 0, 0, 0, 0x1111
         ))));
+    }
+
+    #[test]
+    fn numeric_url_hosts_are_refused_before_dns() {
+        assert!(validate_media_url("http://127.0.0.1/file").is_err());
+        assert!(validate_media_url("https://[::1]/file").is_err());
+        assert!(validate_media_url("https://files.example.com/file").is_ok());
     }
 
     #[test]
