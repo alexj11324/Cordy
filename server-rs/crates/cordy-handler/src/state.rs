@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use cordy_auth::pat_cache::PatCache;
 use cordy_realtime::hub::Hub;
+use cordy_service::autopilot::{AutopilotService, EntitlementProvider};
 use cordy_service::email::EmailService;
 use cordy_service::issue_service::IssueService;
 use cordy_service::plugin::PluginService;
@@ -58,6 +59,9 @@ pub struct HandlerState {
     pub feature_flags: Option<Arc<dyn cordy_service::feature_flags::FlagSource>>,
     /// Task domain service (Go h.TaskService).
     pub tasks: Arc<TaskService>,
+    /// Shared Autopilot service. It must be reused by HTTP paths and durable
+    /// workers so entitlement/quota configuration cannot disappear per request.
+    pub autopilots: Arc<AutopilotService>,
     /// Issue domain service (Go h.IssueService).
     pub issues: Arc<IssueService>,
     /// Plugin service (Go h.PluginService).
@@ -98,6 +102,9 @@ pub struct HandlerState {
     /// Server-internal assist LLM. An unconfigured client is deliberately
     /// inert and guarantees that private chat content produces no egress.
     pub llm: Arc<cordy_llm::Client>,
+    /// Low-latency hint for the durable webhook worker. PostgreSQL polling is
+    /// authoritative and recovers missed notifications or process restarts.
+    webhook_delivery_notify: Option<Arc<tokio::sync::Notify>>,
     /// Keeps the weak notifier installed in `TaskService` alive.
     _task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier>,
 }
@@ -113,6 +120,11 @@ impl HandlerState {
         let mut task_service = TaskService::new(pool.clone(), bus.clone());
         task_service.wakeup = Some(Arc::downgrade(&task_wakeup));
         let tasks = Arc::new(task_service);
+        let autopilots = Arc::new(AutopilotService::new(
+            pool.clone(),
+            bus.clone(),
+            tasks.clone(),
+        ));
         let issues = Arc::new(IssueService::new(pool.clone(), bus.clone(), tasks.clone()));
         let plugins = Arc::new(PluginService::with_pool(pool.clone()));
         let trusted_proxies = cordy_middleware::ratelimit::parse_trusted_proxies(
@@ -145,6 +157,7 @@ impl HandlerState {
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
             feature_flags: None,
             tasks,
+            autopilots,
             issues,
             plugins,
             callbacks: Some(Arc::new(CallbackTokens::new())),
@@ -166,6 +179,7 @@ impl HandlerState {
             attachment_frame_ancestors: Vec::new(),
             slack_history: None,
             llm: Arc::new(llm),
+            webhook_delivery_notify: None,
             _task_wakeup: task_wakeup,
         }
     }
@@ -279,6 +293,74 @@ impl HandlerState {
         self.business_metrics = business_metrics;
         self.http_metrics = http_metrics;
         self
+    }
+
+    /// Installs the production entitlement provider on the one shared
+    /// Autopilot service. `None` is the self-hosted/off policy and deliberately
+    /// avoids all quota-table reads.
+    pub fn with_autopilot_entitlements(
+        mut self,
+        entitlements: Option<Arc<dyn EntitlementProvider>>,
+    ) -> Self {
+        let mut service =
+            AutopilotService::new(self.pool.clone(), self.bus.clone(), self.tasks.clone());
+        service.entitlements = entitlements;
+        service.quota_metrics = self
+            .business_metrics
+            .clone()
+            .map(|metrics| metrics as Arc<dyn cordy_service::autopilot::AutopilotQuotaMetrics>);
+        self.autopilots = Arc::new(service);
+        self
+    }
+
+    /// Starts the bounded PostgreSQL-leased webhook worker pool. Call only
+    /// from production startup after all Autopilot service wiring is complete.
+    pub fn start_webhook_delivery_worker(mut self) -> Self {
+        let notify = Arc::new(tokio::sync::Notify::new());
+        crate::webhook_delivery_worker::WebhookDeliveryWorker::new(
+            self.pool.clone(),
+            self.autopilots.clone(),
+            notify.clone(),
+        )
+        .start();
+        self.webhook_delivery_notify = Some(notify);
+        self
+    }
+
+    pub fn start_autopilot_quota_reconciler(self) -> Self {
+        if !self.autopilots.quota_enabled() {
+            return self;
+        }
+        let service = self.autopilots.clone();
+        tokio::spawn(async move {
+            loop {
+                let now = chrono::Utc::now();
+                match service
+                    .reconcile_quota_reservations(
+                        now - chrono::Duration::minutes(10),
+                        now - chrono::Duration::hours(6),
+                        100,
+                    )
+                    .await
+                {
+                    Ok(settled) if settled > 0 => {
+                        tracing::info!(settled, "autopilot quota reconciler settled reservations");
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, "autopilot quota reconciler failed");
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            }
+        });
+        self
+    }
+
+    pub fn notify_webhook_delivery(&self) {
+        if let Some(notify) = &self.webhook_delivery_notify {
+            notify.notify_one();
+        }
     }
 
     pub fn with_analytics(mut self, analytics: Arc<dyn cordy_analytics::AnalyticsClient>) -> Self {

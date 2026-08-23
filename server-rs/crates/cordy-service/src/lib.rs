@@ -11,6 +11,7 @@ pub mod cron;
 pub mod dispatch_reason;
 pub mod email;
 pub mod empty_claim_cache;
+pub mod entitlement;
 pub mod feature_flags;
 pub mod issue_guard;
 pub mod issue_position;

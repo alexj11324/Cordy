@@ -73,6 +73,7 @@ pub mod task;
 pub mod task_json;
 pub mod timefmt;
 pub mod vcs_webhook;
+pub mod webhook_delivery_worker;
 pub mod workspace;
 pub mod workspace_mcp;
 pub mod ws;

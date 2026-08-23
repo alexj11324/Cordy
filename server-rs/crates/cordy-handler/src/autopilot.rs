@@ -100,7 +100,7 @@ fn decode_first<T: for<'de> Deserialize<'de>>(body: &[u8]) -> Result<T, Response
 }
 
 fn service(state: &HandlerState) -> AutopilotService {
-    AutopilotService::new(state.pool.clone(), state.bus.clone(), state.tasks.clone())
+    state.autopilots.as_ref().clone()
 }
 
 fn publish(state: &HandlerState, event_type: &str, context: &WorkspaceContext, payload: Value) {
@@ -175,6 +175,26 @@ fn collaborator_entry(collaborator: &AutopilotCollaborator) -> Value {
         "granted_by": collaborator.granted_by.to_string(),
         "created_at": crate::timefmt::rfc3339(collaborator.created_at),
     })
+}
+
+async fn collaborators_response(
+    state: &HandlerState,
+    autopilot_id: Uuid,
+    status: StatusCode,
+) -> Response {
+    match autopilot_q::list_autopilot_collaborators(&state.pool, autopilot_id).await {
+        Ok(collaborators) => (
+            status,
+            Json(json!({
+                "collaborators": collaborators.iter().map(collaborator_entry).collect::<Vec<_>>()
+            })),
+        )
+            .into_response(),
+        Err(_) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to load collaborators",
+        ),
+    }
 }
 
 fn autopilot_map(autopilot: &Autopilot, subscribers: &[AutopilotSubscriber]) -> Map<String, Value> {
@@ -277,11 +297,10 @@ fn trigger_map(trigger: &AutopilotTrigger, public_url: &str, expose_token: bool)
         .clone()
         .and_then(|value| value.as_array().cloned())
         .unwrap_or_default();
-    let hint = trigger
-        .signing_secret
-        .as_deref()
-        .filter(|secret| secret.len() >= 4)
-        .map(|secret| secret[secret.len() - 4..].to_string());
+    let hint = trigger.signing_secret.as_deref().and_then(|secret| {
+        let suffix = secret.chars().rev().take(4).collect::<Vec<_>>();
+        (suffix.len() == 4).then(|| suffix.into_iter().rev().collect::<String>())
+    });
     let mut value = json!({
         "id": trigger.id.to_string(),
         "autopilot_id": trigger.autopilot_id.to_string(),
@@ -822,13 +841,21 @@ async fn update_autopilot(
             return error_response(StatusCode::BAD_REQUEST, &m);
         }
     }
-    let project_id = if let Some(value) = raw.get("project_id") {
-        match validate_project(&state, previous.workspace_id, value.as_str()).await {
-            Ok(v) => Some(v),
-            Err(r) => return r,
+    let project_id = match raw.get("project_id") {
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(Value::String(value)) => {
+            match validate_project(&state, previous.workspace_id, Some(value)).await {
+                Ok(value) => Some(value),
+                Err(response) => return response,
+            }
         }
-    } else {
-        None
+        Some(_) => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "project_id must be a string or null",
+            )
+        }
     };
     let type_sent = raw.contains_key("assignee_type");
     let id_sent = raw.contains_key("assignee_id");
@@ -1055,7 +1082,6 @@ async fn delete_autopilot(
 
 #[derive(Deserialize)]
 struct CollaboratorRequest {
-    user_type: String,
     user_id: String,
 }
 async fn add_collaborator(
@@ -1075,9 +1101,9 @@ async fn add_collaborator(
         Ok(v) => v,
         Err(r) => return r,
     };
-    if req.user_type != "member" {
-        return error_response(StatusCode::BAD_REQUEST, "user_type must be 'member'");
-    };
+    if req.user_id.trim().is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "user_id is required");
+    }
     let uid = match parse_id(&req.user_id, "user_id") {
         Ok(v) => v,
         Err(r) => return r,
@@ -1088,7 +1114,7 @@ async fn add_collaborator(
     ) {
         return error_response(
             StatusCode::BAD_REQUEST,
-            "user is not a member of this workspace",
+            "user_id must be a member of this workspace",
         );
     }
     match autopilot_q::add_autopilot_collaborator(
@@ -1100,11 +1126,16 @@ async fn add_collaborator(
     )
     .await
     {
-        Ok(Some(v)) => (StatusCode::CREATED, Json(collaborator_entry(&v))).into_response(),
-        _ => error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to add collaborator",
-        ),
+        Ok(Some(_)) => {
+            publish(
+                &state,
+                EVENT_AUTOPILOT_UPDATED,
+                &context,
+                json!({"autopilot_id": ap.id.to_string()}),
+            );
+            collaborators_response(&state, ap.id, StatusCode::CREATED).await
+        }
+        _ => error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to grant access"),
     }
 }
 async fn remove_collaborator(
@@ -1119,17 +1150,21 @@ async fn remove_collaborator(
     if !ownership_write(&ap, &context) {
         return error_response(StatusCode::FORBIDDEN, ACCESS_DENIED);
     }
-    let uid = match parse_id(&raw_user, "user_id") {
+    let uid = match parse_id(&raw_user, "user id") {
         Ok(v) => v,
         Err(r) => return r,
     };
     match autopilot_q::delete_autopilot_collaborator(&state.pool, ap.id, "member", uid).await {
-        Ok(0) => error_response(StatusCode::NOT_FOUND, "collaborator not found"),
-        Ok(_) => StatusCode::NO_CONTENT.into_response(),
-        Err(_) => error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to remove collaborator",
-        ),
+        Ok(_) => {
+            publish(
+                &state,
+                EVENT_AUTOPILOT_UPDATED,
+                &context,
+                json!({"autopilot_id": ap.id.to_string()}),
+            );
+            collaborators_response(&state, ap.id, StatusCode::OK).await
+        }
+        Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to revoke access"),
     }
 }
 
@@ -1160,6 +1195,10 @@ fn new_webhook_token() -> String {
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
     )
 }
+
+fn valid_trigger_kind(kind: &str) -> bool {
+    matches!(kind, "schedule" | "webhook")
+}
 async fn owned_trigger(
     state: &HandlerState,
     ap: &Autopilot,
@@ -1168,10 +1207,7 @@ async fn owned_trigger(
     let id = parse_id(raw, "trigger id")?;
     match autopilot_q::get_autopilot_trigger(&state.pool, id).await {
         Ok(Some(t)) if t.autopilot_id == ap.id => Ok(t),
-        _ => Err(error_response(
-            StatusCode::NOT_FOUND,
-            "autopilot trigger not found",
-        )),
+        _ => Err(error_response(StatusCode::NOT_FOUND, "trigger not found")),
     }
 }
 
@@ -1192,10 +1228,18 @@ async fn create_trigger(
         Ok(v) => v,
         Err(r) => return r,
     };
-    if !matches!(req.kind.as_str(), "schedule" | "webhook" | "api") {
+    if !valid_trigger_kind(&req.kind) {
+        return error_response(StatusCode::BAD_REQUEST, "kind must be schedule or webhook");
+    }
+    if req.kind == "webhook"
+        && req
+            .timezone
+            .as_deref()
+            .is_some_and(|timezone| !timezone.is_empty())
+    {
         return error_response(
             StatusCode::BAD_REQUEST,
-            "kind must be schedule, webhook, or api",
+            "timezone is not valid for webhook triggers",
         );
     }
     if let Err(r) = validate_event_filters(&req.event_filters) {
@@ -1204,7 +1248,18 @@ async fn create_trigger(
     if req.kind != "webhook" && !req.event_filters.is_empty() {
         return error_response(
             StatusCode::BAD_REQUEST,
-            "event_filters are only valid for webhook triggers",
+            "event_filters is only valid for webhook triggers",
+        );
+    }
+    if req.kind != "webhook"
+        && req
+            .provider
+            .as_deref()
+            .is_some_and(|provider| !provider.is_empty())
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "provider is only valid for webhook triggers",
         );
     }
     let provider = req.provider.as_deref().unwrap_or("generic");
@@ -1241,7 +1296,13 @@ async fn create_trigger(
             Ok(v) => v,
             Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid cron expression"),
         };
-        (Some(c), Some(t), Some(next))
+        (
+            Some(c),
+            req.timezone
+                .as_deref()
+                .filter(|timezone| !timezone.is_empty()),
+            Some(next),
+        )
     } else {
         (None, None, None)
     };
@@ -1267,7 +1328,7 @@ async fn create_trigger(
             next,
             token.as_deref(),
             req.label.as_deref(),
-            Some(provider),
+            (req.kind == "webhook").then_some(provider),
             &filters,
             Some("member"),
             context.member.user_id,
@@ -1488,6 +1549,12 @@ async fn delete_trigger(
             "failed to delete trigger",
         );
     }
+    publish(
+        &state,
+        EVENT_AUTOPILOT_UPDATED,
+        &context,
+        json!({"autopilot_id": ap.id.to_string(), "trigger_id": t.id.to_string()}),
+    );
     StatusCode::NO_CONTENT.into_response()
 }
 async fn rotate_webhook_token(
@@ -1507,7 +1574,7 @@ async fn rotate_webhook_token(
         Err(r) => return r,
     };
     if t.kind != "webhook" {
-        return error_response(StatusCode::BAD_REQUEST, "only webhook triggers have tokens");
+        return error_response(StatusCode::BAD_REQUEST, "trigger is not a webhook trigger");
     }
     for _ in 0..5 {
         let token = new_webhook_token();
@@ -1515,16 +1582,20 @@ async fn rotate_webhook_token(
             .await
         {
             Ok(Some(v)) => {
-                return Json(trigger_map(
+                let value = trigger_map(
                     &v,
                     &std::env::var("CORDY_PUBLIC_URL").unwrap_or_default(),
                     true,
-                ))
-                .into_response()
+                );
+                publish(
+                    &state,
+                    EVENT_AUTOPILOT_UPDATED,
+                    &context,
+                    json!({"autopilot_id": ap.id.to_string(), "trigger": value}),
+                );
+                return Json(value).into_response();
             }
-            Ok(None) => {
-                return error_response(StatusCode::NOT_FOUND, "autopilot trigger not found")
-            }
+            Ok(None) => return error_response(StatusCode::NOT_FOUND, "trigger not found"),
             Err(_) => continue,
         }
     }
@@ -1555,10 +1626,7 @@ async fn set_signing_secret(
         Err(r) => return r,
     };
     if t.kind != "webhook" {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "signing secrets are only valid for webhook triggers",
-        );
+        return error_response(StatusCode::BAD_REQUEST, "trigger is not a webhook trigger");
     }
     let req: SigningSecretRequest = match decode_first(&body) {
         Ok(v) => v,
@@ -1578,15 +1646,23 @@ async fn set_signing_secret(
     )
     .await
     {
-        Ok(Some(v)) => Json(trigger_map(
-            &v,
-            &std::env::var("CORDY_PUBLIC_URL").unwrap_or_default(),
-            true,
-        ))
-        .into_response(),
+        Ok(Some(v)) => {
+            let value = trigger_map(
+                &v,
+                &std::env::var("CORDY_PUBLIC_URL").unwrap_or_default(),
+                true,
+            );
+            publish(
+                &state,
+                EVENT_AUTOPILOT_UPDATED,
+                &context,
+                json!({"autopilot_id": ap.id.to_string(), "trigger": value}),
+            );
+            Json(value).into_response()
+        }
         _ => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to set signing secret",
+            "failed to update signing secret",
         ),
     }
 }
@@ -1681,10 +1757,7 @@ async fn list_runs(
                 .collect::<Vec<_>>();
             Json(json!({"runs": values, "total": values.len()})).into_response()
         }
-        Err(_) => error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to list autopilot runs",
-        ),
+        Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to list runs"),
     }
 }
 async fn get_run(
@@ -1702,7 +1775,7 @@ async fn get_run(
     };
     match autopilot_q::get_autopilot_run(&state.pool, id).await {
         Ok(Some(run)) if run.autopilot_id == ap.id => Json(run_map(&run, true)).into_response(),
-        _ => error_response(StatusCode::NOT_FOUND, "autopilot run not found"),
+        _ => error_response(StatusCode::NOT_FOUND, "run not found"),
     }
 }
 async fn trigger_autopilot(
@@ -1729,19 +1802,11 @@ async fn trigger_autopilot(
         .map(str::to_owned)
         .unwrap_or_else(new_request_idempotency_key);
     if key.len() > 255 {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "Idempotency-Key must be at most 255 characters",
-        );
+        return error_response(StatusCode::BAD_REQUEST, "Idempotency-Key is too long");
     };
+    let actor_user_id = manual_actor_user_id(&headers, context.member.user_id);
     match service(&state)
-        .dispatch_autopilot_manual_with_key(
-            &ap,
-            Uuid::nil(),
-            &Value::Null,
-            Some(context.member.user_id),
-            &key,
-        )
+        .dispatch_autopilot_manual_with_key(&ap, Uuid::nil(), &Value::Null, actor_user_id, &key)
         .await
     {
         Ok(outcome) => {
@@ -1780,6 +1845,14 @@ async fn trigger_autopilot(
             "failed to trigger autopilot",
         ),
     }
+}
+
+fn manual_actor_user_id(headers: &HeaderMap, member_id: Uuid) -> Option<Uuid> {
+    (headers
+        .get("x-actor-source")
+        .and_then(|value| value.to_str().ok())
+        != Some("task_token"))
+    .then_some(member_id)
 }
 
 fn delivery_map(d: &WebhookDelivery, detail: bool) -> Value {
@@ -1840,6 +1913,11 @@ fn replay_event(raw: &[u8], headers: &Value) -> Result<String, ()> {
     }
     Ok("webhook.received".into())
 }
+
+fn replay_rejected(delivery: &WebhookDelivery) -> bool {
+    delivery.status == "rejected"
+        || matches!(delivery.signature_status.as_str(), "invalid" | "rejected")
+}
 async fn list_deliveries(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -1866,7 +1944,7 @@ async fn list_deliveries(
         }
         Err(_) => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to list webhook deliveries",
+            "failed to list deliveries",
         ),
     }
 }
@@ -1914,15 +1992,20 @@ async fn replay_delivery(
             Ok(Some(v)) if v.autopilot_id == ap.id => v,
             _ => return error_response(StatusCode::NOT_FOUND, "webhook delivery not found"),
         };
-    if matches!(original.signature_status.as_str(), "invalid" | "rejected") {
+    if replay_rejected(&original) {
         return error_response(
-            StatusCode::CONFLICT,
-            "delivery with rejected signature cannot be replayed",
+            StatusCode::BAD_REQUEST,
+            "cannot replay a delivery that failed signature verification",
         );
     }
     let raw = match original.raw_body.clone() {
         Some(v) => v,
-        None => return error_response(StatusCode::CONFLICT, "delivery has no raw body to replay"),
+        None => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "original delivery has no raw body to replay",
+            )
+        }
     };
     let event = match replay_event(&raw, &original.selected_headers) {
         Ok(event) => event,
@@ -1934,11 +2017,12 @@ async fn replay_delivery(
         }
     };
     if ap.status != "active" {
-        return error_response(StatusCode::CONFLICT, "autopilot is not active");
+        return error_response(StatusCode::BAD_REQUEST, "autopilot is not active");
     }
     let trigger = match autopilot_q::get_autopilot_trigger(&state.pool, original.trigger_id).await {
         Ok(Some(v)) if v.autopilot_id == ap.id && v.enabled => v,
-        _ => return error_response(StatusCode::CONFLICT, "webhook trigger is disabled"),
+        Ok(Some(_)) => return error_response(StatusCode::BAD_REQUEST, "trigger is disabled"),
+        _ => return error_response(StatusCode::NOT_FOUND, "trigger not found"),
     };
     let key = headers
         .get("idempotency-key")
@@ -1948,19 +2032,25 @@ async fn replay_delivery(
         .map(str::to_owned)
         .unwrap_or_else(new_request_idempotency_key);
     if key.len() > 255 {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "Idempotency-Key must be at most 255 characters",
-        );
+        return error_response(StatusCode::BAD_REQUEST, "Idempotency-Key is too long");
     }
-    if let Ok(Some(existing)) = webhook_delivery::get_webhook_replay_by_idempotency_key(
+    match webhook_delivery::get_webhook_replay_by_idempotency_key(
         &state.pool,
         original.id,
         Some(&key),
     )
     .await
     {
-        return Json(delivery_map(&existing, true)).into_response();
+        Ok(Some(existing)) => {
+            return (StatusCode::ACCEPTED, Json(delivery_map(&existing, true))).into_response()
+        }
+        Ok(None) => {}
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to inspect replay request",
+            )
+        }
     }
     let inserted = sqlx::query_as::<_, WebhookDelivery>(
         r#"INSERT INTO webhook_delivery
@@ -1983,12 +2073,40 @@ async fn replay_delivery(
     .fetch_one(&state.pool)
     .await;
     match inserted {
-        Ok(v) => (StatusCode::ACCEPTED, Json(delivery_map(&v, true))).into_response(),
+        Ok(v) => {
+            state.notify_webhook_delivery();
+            (StatusCode::ACCEPTED, Json(delivery_map(&v, true))).into_response()
+        }
+        Err(error) if is_unique_violation(&error) => {
+            match webhook_delivery::get_webhook_replay_by_idempotency_key(
+                &state.pool,
+                original.id,
+                Some(&key),
+            )
+            .await
+            {
+                Ok(Some(existing)) => {
+                    state.notify_webhook_delivery();
+                    (StatusCode::ACCEPTED, Json(delivery_map(&existing, true))).into_response()
+                }
+                _ => error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to create replay delivery",
+                ),
+            }
+        }
         Err(_) => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to replay webhook delivery",
+            "failed to create replay delivery",
         ),
     }
+}
+
+fn is_unique_violation(error: &sqlx::Error) -> bool {
+    error
+        .as_database_error()
+        .and_then(|error| error.code())
+        .is_some_and(|code| code == "23505")
 }
 
 #[cfg(test)]
@@ -2059,5 +2177,74 @@ mod tests {
         assert!(!encoded.contains("super-secret-value"));
         assert_eq!(value["has_signing_secret"], true);
         assert_eq!(value["signing_secret_hint"], "alue");
+    }
+
+    #[test]
+    fn signing_secret_hint_is_utf8_safe() {
+        let mut trigger = webhook_trigger();
+        trigger.signing_secret = Some("前缀安全密钥".into());
+        let value = trigger_map(&trigger, "", true);
+        assert_eq!(value["signing_secret_hint"], "安全密钥");
+    }
+
+    #[test]
+    fn collaborator_request_only_requires_user_id() {
+        let request: CollaboratorRequest = serde_json::from_value(json!({
+            "user_id": Uuid::new_v4().to_string()
+        }))
+        .unwrap();
+        assert!(!request.user_id.is_empty());
+    }
+
+    #[test]
+    fn task_token_manual_trigger_has_no_human_attribution() {
+        let member_id = Uuid::new_v4();
+        let mut headers = HeaderMap::new();
+        assert_eq!(manual_actor_user_id(&headers, member_id), Some(member_id));
+        headers.insert("x-actor-source", "task_token".parse().unwrap());
+        assert_eq!(manual_actor_user_id(&headers, member_id), None);
+    }
+
+    #[test]
+    fn api_trigger_kind_is_rejected() {
+        assert!(valid_trigger_kind("schedule"));
+        assert!(valid_trigger_kind("webhook"));
+        assert!(!valid_trigger_kind("api"));
+    }
+
+    #[test]
+    fn replay_rejects_terminal_signature_rejection_status() {
+        let now = Utc::now();
+        let delivery = WebhookDelivery {
+            id: Uuid::new_v4(),
+            workspace_id: Uuid::new_v4(),
+            autopilot_id: Uuid::new_v4(),
+            trigger_id: Uuid::new_v4(),
+            provider: "generic".into(),
+            event: "webhook.received".into(),
+            dedupe_key: None,
+            dedupe_source: None,
+            signature_status: "not_required".into(),
+            status: "rejected".into(),
+            attempt_count: 1,
+            selected_headers: json!({}),
+            content_type: Some("application/json".into()),
+            raw_body: Some(b"{}".to_vec()),
+            response_status: None,
+            response_body: None,
+            autopilot_run_id: None,
+            replayed_from_delivery_id: None,
+            error: None,
+            received_at: now,
+            last_attempt_at: now,
+            created_at: now,
+            available_at: now,
+            lease_token: None,
+            lease_expires_at: None,
+            dispatch_attempts: 0,
+            reason_code: None,
+            replay_idempotency_key: None,
+        };
+        assert!(replay_rejected(&delivery));
     }
 }
