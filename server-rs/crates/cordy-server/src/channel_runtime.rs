@@ -4,6 +4,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context as _;
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -53,6 +54,7 @@ impl ChannelRuntime {
         configure_dingtalk(state, cfg, &router, storage.as_ref(), &registry);
         configure_telegram(state, cfg, &router, &registry, &cancel);
         configure_wecom(state, cfg, &router, storage.as_ref(), &registry);
+        configure_lark(state, cfg, &router, storage.as_ref(), &registry)?;
 
         let channel_types = registry.types();
         if channel_types.is_empty() {
@@ -441,6 +443,129 @@ fn configure_wecom(
     }
 }
 
+fn configure_lark(
+    state: &cordy_handler::HandlerState,
+    cfg: &cordy_config::Config,
+    router: &Arc<ChannelRouter>,
+    storage: Option<&Arc<ChannelStorage>>,
+    registry: &Arc<cordy_channel::Registry>,
+) -> anyhow::Result<()> {
+    let secret_box = match channel_secret_box("CORDY_LARK_SECRET_KEY") {
+        Ok(Some(secret_box)) => secret_box,
+        Ok(None) => {
+            tracing::info!("lark channel runtime disabled: CORDY_LARK_SECRET_KEY not set");
+            return Ok(());
+        }
+        Err(error) => return Err(error.context("lark channel runtime: invalid secret key")),
+    };
+    let store = Arc::new(cordy_lark::channel_store::ChannelStore::new(
+        state.pool.clone(),
+    ));
+    let installations = Arc::new(cordy_lark::installation::InstallationService::new(
+        store.as_ref().clone(),
+        Arc::new(secret_box),
+    ));
+    let api: Arc<dyn cordy_lark::client::ApiClient> = Arc::new(
+        cordy_lark::http_client::HttpApiClient::new(cordy_lark::http_client::HttpClientConfig {
+            base_url: std::env::var("CORDY_LARK_HTTP_BASE_URL").unwrap_or_default(),
+            ..Default::default()
+        }),
+    );
+    let endpoint = Arc::new(cordy_lark::ws_endpoint::HttpConnectionTokenFetcher::new(
+        cordy_lark::ws_endpoint::HttpConnectionTokenConfig {
+            base_url: std::env::var("CORDY_LARK_CALLBACK_BASE_URL").unwrap_or_default(),
+            http_client: None,
+        },
+    ));
+    let enricher = Arc::new(cordy_lark::inbound_enricher::InboundEnricher::new(
+        api.clone(),
+        cordy_lark::inbound_enricher::InboundEnricherConfig::default(),
+    ));
+    let connector: Arc<dyn cordy_lark::connector::EventConnector> = Arc::new(
+        cordy_lark::ws_connector::WsLongConnConnector::new(
+            cordy_lark::ws_connector::WsConnectorConfig {
+                dialer: Some(Arc::new(cordy_lark::ws_connector::TungsteniteDialer::new())),
+                endpoint_fetcher: Some(endpoint),
+                frame_decoder: Some(Arc::new(
+                    cordy_lark::frame_decoder::LarkJsonFrameDecoder::new(),
+                )),
+                enricher: Some(enricher),
+                credentials_provider: Some(installations.clone()),
+                ..Default::default()
+            },
+        )
+        .context("build lark production WebSocket connector")?,
+    );
+
+    let binding = Arc::new(cordy_lark::binding_token::BindingTokenService::new(
+        store.as_ref().clone(),
+    ));
+    let replier = cordy_lark::outcome_replier::new_lark_outcome_replier(
+        cordy_lark::outcome_replier::OutcomeReplierConfig {
+            api_client: Some(api.clone()),
+            binding_svc: Some(binding),
+            credentials: Some(installations.clone()),
+            queries: Some(store.clone()),
+            app_url: app_url(cfg),
+            binding_path: String::new(),
+        },
+    );
+    let typing = Arc::new(cordy_lark::typing_indicator::TypingIndicatorManager::new(
+        api.clone(),
+        installations.clone(),
+        store.clone(),
+    ));
+    let patcher = Arc::new(cordy_lark::outbound::LarkPatcher::new(
+        state.pool.clone(),
+        Some(installations.clone()),
+        api.clone(),
+        cordy_lark::outbound::PatcherConfig { renderer: None },
+    ));
+    patcher.set_typing_indicator_manager(Some(typing.clone()));
+    patcher.register(&state.bus);
+
+    let media = storage.map(|storage| {
+        Arc::new(cordy_lark::media_ingest::FeishuMediaResolver::new(
+            api.clone(),
+            installations.clone(),
+            storage.clone(),
+            Arc::new(cordy_channel_engine::resolvers::DbMediaIntentLedger::new(
+                state.pool.clone(),
+            )),
+        )) as Arc<dyn cordy_channel_engine::resolvers::MediaResolver>
+    });
+    let session = Arc::new(cordy_channel_engine::session::ChatSession::new(
+        state.pool.clone(),
+        cordy_channel::Type::feishu(),
+        cordy_channel_engine::session::SessionTitles {
+            group: "Lark group chat".into(),
+            direct: "Lark direct message".into(),
+            fallback: "Lark chat".into(),
+        },
+    ));
+    router.register(
+        cordy_channel::Type::feishu(),
+        cordy_lark::resolvers::new_feishu_resolver_set(
+            store,
+            session,
+            Arc::new(cordy_lark::audit::DbAuditLogger::new(state.pool.clone())),
+            Some(replier),
+            Some(typing),
+            media,
+        ),
+    );
+    cordy_lark::channel::register_feishu(
+        registry,
+        cordy_lark::channel::FeishuChannelDeps {
+            connector,
+            api,
+            credentials: installations,
+        },
+    );
+    tracing::info!("lark production channel runtime wired");
+    Ok(())
+}
+
 fn channel_secret_box(env_name: &str) -> anyhow::Result<Option<cordy_util::secretbox::SecretBox>> {
     if std::env::var(env_name)
         .unwrap_or_default()
@@ -626,6 +751,30 @@ impl cordy_wecom::media_ingest::MediaStorage for ChannelStorage {
         filename: &str,
     ) -> anyhow::Result<String> {
         self.inner.upload(key, data, content_type, filename).await
+    }
+
+    fn object_url(&self, key: &str) -> String {
+        self.inner.object_url(key)
+    }
+}
+
+impl cordy_lark::media_ingest::MediaStorage for ChannelStorage {
+    fn upload(
+        &self,
+        key: &str,
+        data: Vec<u8>,
+        content_type: &str,
+        filename: &str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + '_>> {
+        let key = key.to_string();
+        let content_type = content_type.to_string();
+        let filename = filename.to_string();
+        Box::pin(async move {
+            self.inner
+                .upload(&key, data, &content_type, &filename)
+                .await
+                .map(|_| ())
+        })
     }
 
     fn object_url(&self, key: &str) -> String {

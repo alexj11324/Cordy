@@ -816,6 +816,7 @@ dependencies = [
  "cordy-dingtalk",
  "cordy-ghsnapshot",
  "cordy-handler",
+ "cordy-lark",
  "cordy-metrics",
  "cordy-realtime",
  "cordy-service",
