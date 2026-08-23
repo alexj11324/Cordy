@@ -185,6 +185,7 @@ async fn build_production_router(
     business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
     channel_lease_metrics: Option<Arc<cordy_metrics::ChannelLeaseMetrics>>,
+    channel_media_metrics: Option<Arc<cordy_metrics::ChannelMediaReconcilerMetrics>>,
     github_client: Option<cordy_ghsnapshot::Client>,
     cfg: &cordy_config::Config,
     attachment_storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
@@ -246,8 +247,13 @@ async fn build_production_router(
         .await
         .start_autopilot_quota_reconciler()
         .start_webhook_delivery_worker();
-    let channel_runtime =
-        channel_runtime::ChannelRuntime::start(&state, cfg, channel_lease_metrics).await?;
+    let channel_runtime = channel_runtime::ChannelRuntime::start(
+        &state,
+        cfg,
+        channel_lease_metrics,
+        channel_media_metrics,
+    )
+    .await?;
     Ok((
         cordy_handler::build_router_from_state(state),
         channel_runtime,
@@ -281,34 +287,41 @@ async fn main() -> anyhow::Result<()> {
     let db = cordy_db::connect(&cfg.database).await?;
     let hub = Arc::new(cordy_realtime::hub::Hub::new());
     let metrics_config = cordy_metrics::Config::from_env();
-    let (business_metrics, http_metrics, channel_lease_metrics) = if metrics_config.enabled() {
-        let registry = cordy_metrics::Registry::new(cordy_metrics::registry::RegistryOptions {
-            pool: Some(Arc::new(db.clone())),
-            realtime: Some(&cordy_realtime::M),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            commit: option_env!("CORDY_GIT_COMMIT")
-                .unwrap_or("unknown")
-                .to_string(),
-            sampler: None,
-        });
-        let business = registry.business.clone();
-        let http = registry.http.clone();
-        let channel_lease = registry.channel_lease.clone();
-        let gatherer = Arc::new(registry.gatherer.clone());
-        let metrics_addr = metrics_config.addr.clone();
-        let effective_metrics_addr = cordy_metrics::server::normalized_bind_addr(&metrics_addr);
-        if !cordy_metrics::is_loopback_addr(&effective_metrics_addr) {
-            tracing::warn!(addr = %metrics_addr, "metrics listener is not loopback-only; restrict access with private networking, allowlists, or proxy auth");
-        }
-        tokio::spawn(async move {
-            if let Err(error) = cordy_metrics::server::serve(metrics_addr, gatherer).await {
-                tracing::error!(%error, "metrics server stopped");
+    let (business_metrics, http_metrics, channel_lease_metrics, channel_media_metrics) =
+        if metrics_config.enabled() {
+            let registry = cordy_metrics::Registry::new(cordy_metrics::registry::RegistryOptions {
+                pool: Some(Arc::new(db.clone())),
+                realtime: Some(&cordy_realtime::M),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                commit: option_env!("CORDY_GIT_COMMIT")
+                    .unwrap_or("unknown")
+                    .to_string(),
+                sampler: None,
+            });
+            let business = registry.business.clone();
+            let http = registry.http.clone();
+            let channel_lease = registry.channel_lease.clone();
+            let channel_media = registry.channel_media.clone();
+            let gatherer = Arc::new(registry.gatherer.clone());
+            let metrics_addr = metrics_config.addr.clone();
+            let effective_metrics_addr = cordy_metrics::server::normalized_bind_addr(&metrics_addr);
+            if !cordy_metrics::is_loopback_addr(&effective_metrics_addr) {
+                tracing::warn!(addr = %metrics_addr, "metrics listener is not loopback-only; restrict access with private networking, allowlists, or proxy auth");
             }
-        });
-        (Some(business), Some(http), Some(channel_lease))
-    } else {
-        (None, None, None)
-    };
+            tokio::spawn(async move {
+                if let Err(error) = cordy_metrics::server::serve(metrics_addr, gatherer).await {
+                    tracing::error!(%error, "metrics server stopped");
+                }
+            });
+            (
+                Some(business),
+                Some(http),
+                Some(channel_lease),
+                Some(channel_media),
+            )
+        } else {
+            (None, None, None, None)
+        };
     let github_client = cordy_ghsnapshot::Client::new_from_env()?;
     let attachment_storage = cordy_handler::attachment_storage::from_env(
         cfg.storage.local_upload_dir.as_deref(),
@@ -335,6 +348,7 @@ async fn main() -> anyhow::Result<()> {
         business_metrics,
         http_metrics,
         channel_lease_metrics,
+        channel_media_metrics,
         github_client,
         &cfg,
         attachment_storage,
@@ -433,6 +447,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             &cfg,
             test_attachment_storage(),
             Vec::new(),
@@ -474,6 +489,7 @@ mod tests {
         let (router, _runtime) = build_production_router(
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
             None,
             None,
             None,
@@ -556,6 +572,7 @@ mod tests {
         let (_router, _runtime) = build_production_router(
             pool,
             Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
             None,
             None,
             None,

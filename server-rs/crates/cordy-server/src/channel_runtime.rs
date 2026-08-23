@@ -33,6 +33,7 @@ impl ChannelRuntime {
         state: &cordy_handler::HandlerState,
         cfg: &cordy_config::Config,
         lease_metrics: Option<Arc<cordy_metrics::ChannelLeaseMetrics>>,
+        media_metrics: Option<Arc<cordy_metrics::ChannelMediaReconcilerMetrics>>,
     ) -> anyhow::Result<Option<Self>> {
         let services = Arc::new(ChannelServices {
             pool: state.pool.clone(),
@@ -109,7 +110,7 @@ impl ChannelRuntime {
             let reconciler = cordy_service::channel_media_reconciler::ChannelMediaReconciler {
                 pool: state.pool.clone(),
                 storage: Some(storage),
-                metrics: None,
+                metrics: media_metrics,
                 delete_timeout: None,
             };
             let run_cancel = cancel.clone();
