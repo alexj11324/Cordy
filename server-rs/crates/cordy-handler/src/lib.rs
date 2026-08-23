@@ -28,6 +28,7 @@ pub mod profile_json;
 pub mod quick_action;
 pub mod squad_briefing;
 pub mod state;
+pub mod task;
 pub mod task_json;
 pub mod timefmt;
 pub mod workspace;
@@ -160,9 +161,14 @@ pub fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<Hub>>) -> Router {
         WorkspaceGuardState::member_only(state.pool.clone()),
         issue::require_issue_workspace,
     ));
+    let task_routes = task::router().route_layer(middleware::from_fn_with_state(
+        WorkspaceGuardState::member_only(state.pool.clone()),
+        issue::require_issue_workspace,
+    ));
     let authenticated = workspace::authenticated_router()
         .merge(pat::router())
         .merge(issue_routes)
+        .merge(task_routes)
         .merge(label::router().route_layer(middleware::from_fn_with_state(
             WorkspaceGuardState::member_only(state.pool.clone()),
             issue::require_issue_workspace,
@@ -247,6 +253,7 @@ mod tests {
             "/api/issues/CORD-14/attachments",
             "/api/issues/CORD-14/active-task",
             "/api/issues/CORD-14/task-runs",
+            "/api/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/messages",
         ] {
             let response = build_router(None, None)
                 .oneshot(Request::get(uri).body(Body::empty()).unwrap())
