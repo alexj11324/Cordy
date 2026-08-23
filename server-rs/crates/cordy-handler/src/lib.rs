@@ -54,6 +54,7 @@ pub mod project;
 pub mod property;
 pub mod quick_action;
 pub mod runtime;
+pub mod runtime_profile;
 pub mod runtime_requests;
 pub mod runtime_usage;
 pub mod session;
@@ -229,6 +230,22 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         issue::require_issue_workspace,
     ));
     let authenticated = workspace::authenticated_router()
+        .merge(
+            runtime_profile::member_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(state.pool.clone(), "id"),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            runtime_profile::admin_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url_with_roles(
+                    state.pool.clone(),
+                    "id",
+                    vec!["owner".into(), "admin".into()],
+                ),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
         .merge(
             workspace_mcp::member_router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url(state.pool.clone(), "id"),
@@ -549,6 +566,8 @@ mod tests {
             "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/plugins/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/invocations",
             "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/plugins/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/mcp/search/tools",
             "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/mcp-servers",
+            "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runtime-profiles",
+            "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runtime-profiles/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
         ] {
             let response = build_router(None, None)
                 .oneshot(Request::get(uri).body(Body::empty()).unwrap())
@@ -851,6 +870,26 @@ mod tests {
             .unwrap(),
             Request::delete(
                 "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/mcp-servers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
+            )
+            .body(Body::empty())
+            .unwrap(),
+            Request::post(
+                "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runtime-profiles",
+            )
+            .body(Body::from(r#"{"name":"Codex","protocol":"codex","command_name":"codex"}"#))
+            .unwrap(),
+            Request::put(
+                "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runtime-profiles/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
+            )
+            .body(Body::from(r#"{"name":"Codex CLI"}"#))
+            .unwrap(),
+            Request::patch(
+                "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runtime-profiles/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
+            )
+            .body(Body::from(r#"{"name":"Codex CLI"}"#))
+            .unwrap(),
+            Request::delete(
+                "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runtime-profiles/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
             )
             .body(Body::empty())
             .unwrap(),
