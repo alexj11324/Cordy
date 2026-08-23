@@ -68,11 +68,9 @@ pub(crate) fn prepare_cursor_mcp_config(
     super::context::record_mkdir_all(&cursor_dir, manifest.as_deref_mut())
         .context("create .cursor dir")?;
     let config_data = marshal_cursor_mcp_config(&servers)?;
-    if let Err(err) = super::context::record_write_file(
-        &join(&cursor_dir, "mcp.json"),
-        config_data.as_bytes(),
-        manifest,
-    ) {
+    let mcp_config_path = join(&cursor_dir, "mcp.json");
+    if let Err(err) = record_write_private_file(&mcp_config_path, config_data.as_bytes(), manifest)
+    {
         if err
             .downcast_ref::<super::context::ErrPathPreExists>()
             .is_some()
@@ -89,12 +87,13 @@ pub(crate) fn prepare_cursor_mcp_config(
         &cursor_slugify_path(&project_root),
     );
     std::fs::create_dir_all(&project_data_dir).context("create cursor project data dir")?;
+    set_private_dir_mode(&project_data_dir).context("chmod cursor project data dir")?;
     remove_cursor_mcp_auth_file(&project_data_dir)?;
     let approvals = cursor_mcp_approval_keys(&project_root, &servers)?;
     let approval_data =
         serde_json::to_string_pretty(&approvals).context("marshal cursor mcp approvals")?;
-    std::fs::write(
-        join(&project_data_dir, "mcp-approvals.json"),
+    write_private_file(
+        &join(&project_data_dir, "mcp-approvals.json"),
         approval_data.as_bytes(),
     )
     .context("write cursor mcp approvals")?;
@@ -104,7 +103,7 @@ pub(crate) fn prepare_cursor_mcp_config(
         "trustMethod": "cordy-managed",
     }))
     .context("marshal cursor workspace trust")?;
-    std::fs::write(
+    write_private_file(
         join(&project_data_dir, CURSOR_WORKSPACE_TRUSTED_FILE),
         trust_data.as_bytes(),
     )
@@ -214,12 +213,124 @@ fn clean_lexical(path: &str) -> String {
 
 fn copy_cursor_mcp_auth_file(target: &str, source: &str) -> anyhow::Result<()> {
     let data = std::fs::read(source)?;
-    let result = std::fs::write(target, &data);
+    let result = write_private_file(target, &data);
     if let Err(e) = result {
         let _ = std::fs::remove_file(target);
         return Err(e.into());
     }
     Ok(())
+}
+
+fn write_private_file(path: impl AsRef<Path>, data: &[u8]) -> anyhow::Result<()> {
+    let path = path.as_ref();
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if !metadata.file_type().is_file() => {
+            bail!(
+                "refuse to write non-regular private file {}",
+                path.display()
+            );
+        }
+        Ok(_) => set_private_file_mode(path)?,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => return Err(err.into()),
+    }
+    #[cfg(unix)]
+    {
+        use std::io::Write as _;
+        use std::os::unix::fs::OpenOptionsExt as _;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(path)?;
+        file.write_all(data)?;
+    }
+    #[cfg(not(unix))]
+    std::fs::write(path, data)?;
+    if let Err(err) = set_private_file_mode(path) {
+        let _ = std::fs::remove_file(path);
+        return Err(err.into());
+    }
+    Ok(())
+}
+
+fn record_write_private_file(
+    path: &str,
+    data: &[u8],
+    manifest: Option<&mut SidecarManifest>,
+) -> anyhow::Result<()> {
+    let Some(manifest) = manifest else {
+        return write_private_file(path, data);
+    };
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => {
+            return Err(anyhow::Error::new(super::context::ErrPathPreExists)
+                .context(format!("path exists: {path}")));
+        }
+        Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
+            return Err(anyhow::Error::new(err).context(format!("stat target {path}")));
+        }
+        Err(_) => {}
+    }
+
+    #[cfg(unix)]
+    let opened = {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .open(path)
+    };
+    #[cfg(not(unix))]
+    let opened = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path);
+
+    let mut file = opened?;
+    if let Err(err) = {
+        use std::io::Write as _;
+        file.write_all(data)
+    } {
+        let _ = std::fs::remove_file(path);
+        return Err(err.into());
+    }
+    drop(file);
+    if let Err(err) = set_private_file_mode(path) {
+        let _ = std::fs::remove_file(path);
+        return Err(err.into());
+    }
+    manifest.files.push(path.to_string());
+    Ok(())
+}
+
+fn set_private_file_mode(path: impl AsRef<Path>) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        Ok(())
+    }
+}
+
+fn set_private_dir_mode(path: impl AsRef<Path>) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        Ok(())
+    }
 }
 
 fn has_managed_cursor_mcp_config(raw: Option<&Value>) -> bool {
@@ -588,6 +699,42 @@ mod tests {
         let trust =
             std::fs::read_to_string(join(&proj_data, CURSOR_WORKSPACE_TRUSTED_FILE)).unwrap();
         assert!(trust.contains("cordy-managed"), "{trust}");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = |path: &str| std::fs::metadata(path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(
+                mode(&join(
+                    &join(work_dir.to_str().unwrap(), ".cursor"),
+                    "mcp.json"
+                )),
+                0o600
+            );
+            assert_eq!(mode(&proj_data), 0o700);
+            assert_eq!(mode(&join(&proj_data, "mcp-approvals.json")), 0o600);
+            assert_eq!(
+                mode(&join(&proj_data, CURSOR_WORKSPACE_TRUSTED_FILE)),
+                0o600
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_copy_cursor_mcp_auth_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt as _;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let source = tmp.path().join("source.json");
+        let target = tmp.path().join(CURSOR_MCP_AUTH_FILE);
+        std::fs::write(&source, br#"{"token":"secret"}"#).unwrap();
+        copy_cursor_mcp_auth_file(target.to_str().unwrap(), source.to_str().unwrap()).unwrap();
+
+        assert_eq!(
+            std::fs::metadata(target).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
     }
 
     // Port of TestPrepareCursorMcpConfigRefusesExistingSidecar.

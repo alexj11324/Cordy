@@ -358,22 +358,29 @@ pub async fn prepare_local_worktree(params: LocalWorktreeParams) -> anyhow::Resu
     // behind a branch the agent never touched. The baseline also makes the
     // delivered branch readable — `git diff <baseline>..<branch>` is precisely
     // the agent's work, with the user's WIP as its own labelled commit.
-    let dirty = worktree_is_dirty(&worktree_path).await.map_err(|e| {
-        anyhow!(
-            "execenv: could not inspect the prepared worktree for {:?}: {e:#}",
-            git_root
-        )
-    })?;
-    if dirty {
-        let baseline = commit_baseline(&worktree_path).await.map_err(|e| {
-            // Without a baseline the task cannot tell the user's work from the
-            // agent's, so it would later commit the user's files as if the agent
-            // had produced them. Refuse rather than deliver a misleading branch.
-            anyhow!(
-                "execenv: could not record a baseline commit for the replayed state of {:?}: {e:#}",
+    let dirty = match worktree_is_dirty(&worktree_path).await {
+        Ok(dirty) => dirty,
+        Err(e) => {
+            let _ = remove_local_worktree_dir(&git_root, &worktree_path).await;
+            let _ = delete_branch(&git_root, &actual_branch).await;
+            return Err(anyhow!(
+                "execenv: could not inspect the prepared worktree for {:?}: {e:#}",
                 git_root
-            )
-        })?;
+            ));
+        }
+    };
+    if dirty {
+        let baseline = match commit_baseline(&worktree_path).await {
+            Ok(baseline) => baseline,
+            Err(e) => {
+                let _ = remove_local_worktree_dir(&git_root, &worktree_path).await;
+                let _ = delete_branch(&git_root, &actual_branch).await;
+                return Err(anyhow!(
+                    "execenv: could not record a baseline commit for the replayed state of {:?}: {e:#}",
+                    git_root
+                ));
+            }
+        };
         wt.base_commit = baseline;
     }
 
@@ -679,8 +686,12 @@ async fn remove_local_worktree_dir(git_root: &str, worktree_path: &str) -> anyho
     }
     // Lstat verifies the path entry itself is gone. Stat would treat a broken
     // symlink as absent even though a stale entry still occupies the handoff path.
-    if Path::new(worktree_path).symlink_metadata().is_err() {
-        return Ok(());
+    match Path::new(worktree_path).symlink_metadata() {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => {
+            bail!("could not confirm worktree removal for {worktree_path:?}: {e}")
+        }
+        Ok(_) => {}
     }
     if let Some(remove_err) = remove_err {
         bail!("worktree directory still exists after removal fallback: {remove_err}");
@@ -992,6 +1003,7 @@ where
     I: IntoIterator<Item: AsRef<str>>,
 {
     let mut cmd = Command::new("git");
+    cmd.kill_on_drop(true);
     cmd.arg("-C").arg(dir);
     for a in args {
         cmd.arg(a.as_ref());

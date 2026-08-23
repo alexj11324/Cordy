@@ -124,7 +124,12 @@ pub struct Runtime {
     /// back to the profile so the daemon can resolve the profile's command_name
     /// to the executable to launch. Built-in (provider-detected) runtimes
     /// leave this empty.
-    #[serde(rename = "profile_id", skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "profile_id",
+        default,
+        deserialize_with = "deserialize_null_string",
+        skip_serializing_if = "String::is_empty"
+    )]
     pub profile_id: String,
 }
 
@@ -183,6 +188,7 @@ pub struct ActiveSiblingRunData {
 /// Task represents a claimed task from the server (types.go:72–169). Agent data
 /// (name, skills) is populated by the claim endpoint.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Task {
     #[serde(rename = "id")]
     pub id: String,
@@ -216,15 +222,9 @@ pub struct Task {
     /// prompt set in Settings → General). Server populates this on every claim
     /// regardless of task kind so the daemon can inject `## Workspace Context`
     /// into the brief. Empty when the owner hasn't set one.
-    #[serde(
-        rename = "workspace_context",
-        skip_serializing_if = "String::is_empty"
-    )]
+    #[serde(rename = "workspace_context", skip_serializing_if = "String::is_empty")]
     pub workspace_context: String,
-    #[serde(
-        rename = "active_sibling_runs",
-        skip_serializing_if = "Vec::is_empty"
-    )]
+    #[serde(rename = "active_sibling_runs", skip_serializing_if = "Vec::is_empty")]
     pub active_sibling_runs: Vec<ActiveSiblingRunData>,
     /// Semantic title for provider-native session/thread history.
     #[serde(rename = "thread_name", skip_serializing_if = "String::is_empty")]
@@ -249,10 +249,7 @@ pub struct Task {
     )]
     pub project_description: String,
     /// Project-scoped resources to expose to the agent.
-    #[serde(
-        rename = "project_resources",
-        skip_serializing_if = "Vec::is_empty"
-    )]
+    #[serde(rename = "project_resources", skip_serializing_if = "Vec::is_empty")]
     pub project_resources: Vec<ProjectResourceData>,
     /// True when executing in the squad-leader coordinator role.
     #[serde(rename = "is_leader_task", skip_serializing_if = "std::ops::Not::not")]
@@ -269,10 +266,7 @@ pub struct Task {
     )]
     pub leader_role_resolved: bool,
     /// Claude session ID from a previous task on this issue.
-    #[serde(
-        rename = "prior_session_id",
-        skip_serializing_if = "String::is_empty"
-    )]
+    #[serde(rename = "prior_session_id", skip_serializing_if = "String::is_empty")]
     pub prior_session_id: String,
     /// work_dir from a previous task on this issue.
     #[serde(rename = "prior_work_dir", skip_serializing_if = "String::is_empty")]
@@ -305,17 +299,11 @@ pub struct Task {
     /// (thread_id/author/created_at/content) so the prompt can address each
     /// without assuming a shared thread. Empty for old servers / non-merged
     /// runs.
-    #[serde(
-        rename = "coalesced_comments",
-        skip_serializing_if = "Vec::is_empty"
-    )]
+    #[serde(rename = "coalesced_comments", skip_serializing_if = "Vec::is_empty")]
     pub coalesced_comments: Vec<CoalescedCommentData>,
     /// Root comment ID for the triggering thread; falls back to
     /// trigger_comment_id on old servers.
-    #[serde(
-        rename = "trigger_thread_id",
-        skip_serializing_if = "String::is_empty"
-    )]
+    #[serde(rename = "trigger_thread_id", skip_serializing_if = "String::is_empty")]
     pub trigger_thread_id: String,
     /// Content of the triggering comment.
     #[serde(
@@ -351,10 +339,7 @@ pub struct Task {
     pub chat_session_id: String,
     /// "slack" when the chat session is backed by an IM channel; empty for a
     /// web-only chat. Drives the channel-awareness block in the prompt.
-    #[serde(
-        rename = "chat_channel_type",
-        skip_serializing_if = "String::is_empty"
-    )]
+    #[serde(rename = "chat_channel_type", skip_serializing_if = "String::is_empty")]
     pub chat_channel_type: String,
     /// Server capability: this deployment carries a file the agent produces
     /// the last hop into this conversation. Absent on a server predating it,
@@ -416,10 +401,7 @@ pub struct Task {
     )]
     pub autopilot_description: String,
     /// Manual, schedule, webhook, or api.
-    #[serde(
-        rename = "autopilot_source",
-        skip_serializing_if = "String::is_empty"
-    )]
+    #[serde(rename = "autopilot_source", skip_serializing_if = "String::is_empty")]
     pub autopilot_source: String,
     /// Optional trigger payload for webhook/api runs.
     #[serde(
@@ -524,6 +506,38 @@ fn is_zero_i64(v: &i64) -> bool {
     *v == 0
 }
 
+fn deserialize_null_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_accepts_omitted_compatibility_fields() {
+        let task: Task = serde_json::from_str(r#"{"id":"task-1"}"#).unwrap();
+
+        assert_eq!(task.id, "task-1");
+        assert!(task.thread_name.is_empty());
+        assert!(task.remote_mcp_connections.is_empty());
+        assert!(task.agent.is_none());
+    }
+
+    #[test]
+    fn runtime_accepts_null_profile_id() {
+        let runtime: Runtime = serde_json::from_str(
+            r#"{"id":"runtime-1","name":"local","provider":"codex","status":"online","profile_id":null}"#,
+        )
+        .unwrap();
+
+        assert!(runtime.profile_id.is_empty());
+    }
+}
+
 /// ChatAttachmentMeta is the structured attachment metadata the daemon hands
 /// to the agent for chat tasks (types.go:172–180). We pass id + filename +
 /// content_type so the chat prompt can list them explicitly and instruct the
@@ -621,6 +635,7 @@ pub struct DisabledRuntimeSkillData {
 /// SkillData represents a structured skill for task execution
 /// (types.go:228–237).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SkillData {
     #[serde(rename = "id")]
     pub id: String,

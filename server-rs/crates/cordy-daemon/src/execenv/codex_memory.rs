@@ -355,6 +355,10 @@ pub(crate) fn ensure_codex_memory_config(config_path: &str) -> anyhow::Result<()
 mod tests {
     use super::*;
 
+    // Tests that mutate CORDY_CODEX_MEMORY share one process env, so they
+    // must not run concurrently.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     // Port of TestRenderCordyMemoryBlocks: table vs dotted-key forms for both
     // managed blocks.
     #[test]
@@ -432,16 +436,11 @@ mod tests {
         assert!(injected.ends_with("body = 1\n"));
     }
 
-    // Serializes tests that read/mutate CORDY_CODEX_MEMORY: ensure_codex_
-    // memory_config consults the env var, so parallel mutation from the
-    // escape-hatch test would flip a concurrent run into a no-op mid-test.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
     // Port of TestEnsureCodexMemoryConfigIdempotent + layout transitions:
     // both blocks adapt to existing tables and stay byte-stable across reruns.
     #[test]
     fn test_ensure_codex_memory_config_idempotent_and_layout_aware() {
-        let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp
             .path()
@@ -498,7 +497,7 @@ mod tests {
     // feature on (config left untouched).
     #[test]
     fn test_codex_memory_escape_hatch() {
-        let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp
             .path()
