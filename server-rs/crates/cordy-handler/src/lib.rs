@@ -47,6 +47,7 @@ pub mod profile_json;
 pub mod project;
 pub mod property;
 pub mod quick_action;
+pub mod runtime;
 pub mod runtime_usage;
 pub mod session;
 pub mod squad;
@@ -252,6 +253,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             cordy_middleware::workspace::require_workspace,
         )))
         .merge(
+            runtime::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
             runtime_usage::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 cordy_middleware::workspace::require_workspace,
@@ -426,6 +433,7 @@ mod tests {
             "/api/dashboard/runtime/daily",
             "/api/dashboard/failures/daily",
             "/api/dashboard/failures/by-agent",
+            "/api/runtimes",
             "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/usage",
             "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/usage/by-agent",
             "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/usage/by-hour",
@@ -625,6 +633,10 @@ mod tests {
             Request::delete("/api/comments/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/reactions")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"emoji":"👍"}"#))
+                .unwrap(),
+            Request::patch("/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"custom_name":"Prod Box"}"#))
                 .unwrap(),
         ] {
             let response = build_router(None, None).oneshot(request).await.unwrap();

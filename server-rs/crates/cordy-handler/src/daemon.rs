@@ -1356,7 +1356,7 @@ fn runtime_to_json(rt: &AgentRuntime) -> Value {
 
 /// Port of pkg/agent.LaunchHeader's static map + omp descriptor lookup.
 #[allow(dead_code)]
-fn launch_header(agent_type: &str) -> &'static str {
+pub(crate) fn launch_header(agent_type: &str) -> &'static str {
     match agent_type {
         "antigravity" => "agy -p (non-interactive)",
         "claude" => "claude (stream-json)",
