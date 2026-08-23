@@ -321,7 +321,7 @@ server-rs/
 - [ ] **S8. handler + router**：475 条路由分域移植
 - [ ] **S9. daemon + daemonws**
 - [ ] **S10. CLI bins**：cordy/migrate/backfill×3
-  - [x] CLI foundation 首批真实切片：新增 `cordy-cli`（clap）与独立 Make 运行/构建入口；迁移所需的 profile/task-local config 解析、API 请求身份头/超时/错误与退出码，并交付 `user profile get/update`（table/json，update 支持安全的 inline/stdin/file description 输入）和 `workspace list/get/create`（workspace-free鉴权枚举、UUID/slug/短前缀解析、安全 inline/stdin 创建输入、table/json与默认标记），不注册未实现命令。生产 release workflow 保持 Go CLI，待命令面与 update/release 链闭环后切换。
+  - [x] CLI foundation 首批真实切片：新增 `cordy-cli`（clap）与独立 Make 运行/构建入口；迁移所需的 profile/task-local config 解析、API 请求身份头/超时/错误与退出码，并交付 `user profile get/update`（table/json，update 支持安全的 inline/stdin/file description 输入）和 `workspace list/get/create/update`（workspace-free鉴权枚举、UUID/slug/短前缀解析、安全 inline/stdin/file 文本输入、table/json与默认标记），不注册未实现命令。生产 release workflow 保持 Go CLI，待命令面与 update/release 链闭环后切换。
 - [ ] **S11. 测试移植**：807 个测试文件按域同步移植
 - [ ] **S12. 切换演练**：双跑对比 → 流量切换 → Go 目录归档
 

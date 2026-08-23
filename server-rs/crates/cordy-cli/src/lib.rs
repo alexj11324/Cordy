@@ -107,6 +107,8 @@ enum WorkspaceCommand {
         long_about = "Creates a new workspace and adds you as its owner. Both --name and --slug are required; the slug is permanent (lowercase letters, digits, and hyphens) and cannot be changed after creation.\n\nCreating a workspace does NOT change the current default workspace for this profile — run 'cordy workspace switch <slug>' afterward if you want subsequent commands to target the new workspace."
     )]
     Create(CreateWorkspaceArgs),
+    #[command(about = "Update workspace metadata (admin/owner only)")]
+    Update(UpdateWorkspaceArgs),
 }
 
 #[derive(Debug, Args)]
@@ -136,6 +138,47 @@ struct CreateWorkspaceArgs {
     )]
     context_stdin: bool,
     #[arg(long, help = "Issue prefix (uppercased server-side)")]
+    issue_prefix: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct UpdateWorkspaceArgs {
+    #[arg(value_name = "WORKSPACE-ID|SLUG|PREFIX")]
+    workspace: Option<String>,
+    #[arg(long, help = "New workspace name")]
+    name: Option<String>,
+    #[arg(
+        long,
+        help = "New description; pass an empty value to clear (decodes \\n, \\r, \\t, \\\\; use stdin/file to preserve literal backslashes)"
+    )]
+    description: Option<String>,
+    #[arg(
+        long,
+        help = "Read description from stdin (preserves multi-line content verbatim)"
+    )]
+    description_stdin: bool,
+    #[arg(long, value_name = "PATH", help = "Read description from a UTF-8 file")]
+    description_file: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "New context; pass an empty value to clear (decodes \\n, \\r, \\t, \\\\; use stdin/file to preserve literal backslashes)"
+    )]
+    context: Option<String>,
+    #[arg(
+        long,
+        help = "Read context from stdin (preserves multi-line content verbatim)"
+    )]
+    context_stdin: bool,
+    #[arg(long, value_name = "PATH", help = "Read context from a UTF-8 file")]
+    context_file: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "Allow description/context files outside the current working directory"
+    )]
+    allow_external_file: bool,
+    #[arg(long, help = "New issue prefix (uppercased server-side)")]
     issue_prefix: Option<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
@@ -245,6 +288,9 @@ async fn run_with_input<R: Read>(
         Command::Workspace(WorkspaceArgs {
             command: WorkspaceCommand::Create(args),
         }) => run_workspace_create(cli, environment, args, input).await,
+        Command::Workspace(WorkspaceArgs {
+            command: WorkspaceCommand::Update(args),
+        }) => run_workspace_update(cli, environment, args, input).await,
     }
 }
 
@@ -473,6 +519,126 @@ fn resolve_optional_text_input<R: Read>(
     Ok(inline.map(unescape_backslash_escapes))
 }
 
+async fn run_workspace_update<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &UpdateWorkspaceArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let workspace_id = resolve_workspace_arg(cli, environment, args.workspace.as_deref()).await?;
+    if workspace_id.is_empty() {
+        bail!(
+            "workspace ID is required: pass an id/slug/prefix as argument or set CORDY_WORKSPACE_ID"
+        );
+    }
+    let body = build_workspace_update_body(args, environment, input)?;
+    if body.is_empty() {
+        bail!("no fields to update; use --name, --description, --context, or --issue-prefix");
+    }
+    let client = new_api_client(cli, environment)?;
+    let workspace: Value = client
+        .patch_json(&format!("/api/workspaces/{workspace_id}"), &body)
+        .await
+        .context("update workspace")?;
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&workspace)?),
+            OutputFormat::Table => format_workspace_details_table(&workspace),
+        },
+        stderr: String::new(),
+    })
+}
+
+fn build_workspace_update_body<R: Read>(
+    args: &UpdateWorkspaceArgs,
+    environment: &Environment,
+    input: &mut R,
+) -> Result<serde_json::Map<String, Value>> {
+    if args.description_stdin && args.context_stdin {
+        bail!(
+            "--description-stdin and --context-stdin cannot be combined; a single stdin cannot feed both fields — pass one of them inline or by file"
+        );
+    }
+    let mut body = serde_json::Map::new();
+    if let Some(name) = &args.name {
+        body.insert("name".into(), Value::String(name.clone()));
+    }
+    if let Some(description) = resolve_update_text_input(
+        args.description.as_deref(),
+        args.description_stdin,
+        args.description_file.as_deref(),
+        args.allow_external_file,
+        "description",
+        environment,
+        input,
+    )? {
+        body.insert("description".into(), Value::String(description));
+    }
+    if let Some(context) = resolve_update_text_input(
+        args.context.as_deref(),
+        args.context_stdin,
+        args.context_file.as_deref(),
+        args.allow_external_file,
+        "context",
+        environment,
+        input,
+    )? {
+        body.insert("context".into(), Value::String(context));
+    }
+    if let Some(issue_prefix) = &args.issue_prefix {
+        if issue_prefix.trim().is_empty() {
+            bail!("--issue-prefix cannot be empty; clearing the prefix is not supported");
+        }
+        body.insert("issue_prefix".into(), Value::String(issue_prefix.clone()));
+    }
+    Ok(body)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn resolve_update_text_input<R: Read>(
+    inline: Option<&str>,
+    use_stdin: bool,
+    file: Option<&Path>,
+    allow_external_file: bool,
+    field: &str,
+    environment: &Environment,
+    input: &mut R,
+) -> Result<Option<String>> {
+    let sources = [use_stdin, inline.is_some(), file.is_some()]
+        .into_iter()
+        .filter(|source| *source)
+        .count();
+    if sources > 1 {
+        bail!("--{field}, --{field}-stdin, and --{field}-file are mutually exclusive");
+    }
+    if use_stdin {
+        let mut bytes = Vec::new();
+        input
+            .read_to_end(&mut bytes)
+            .with_context(|| format!("read stdin for --{field}-stdin"))?;
+        let body = trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned());
+        if body.is_empty() {
+            bail!("stdin content for --{field}-stdin is empty");
+        }
+        return Ok(Some(body));
+    }
+    if let Some(path) = file {
+        ensure_file_within_workdir(path, environment.current_dir(), allow_external_file, field)?;
+        let read_path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            environment.current_dir().join(path)
+        };
+        let bytes = fs::read(read_path).with_context(|| format!("read file for --{field}-file"))?;
+        let body = trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned());
+        if body.is_empty() {
+            bail!("file content for --{field}-file is empty");
+        }
+        return Ok(Some(body));
+    }
+    Ok(inline.map(unescape_backslash_escapes))
+}
+
 async fn resolve_workspace_arg(
     cli: &Cli,
     environment: &Environment,
@@ -693,7 +859,12 @@ fn resolve_profile_description<R: Read>(
         }
         (body, true)
     } else if let Some(path) = &args.description_file {
-        ensure_file_within_workdir(path, environment.current_dir(), args.allow_external_file)?;
+        ensure_file_within_workdir(
+            path,
+            environment.current_dir(),
+            args.allow_external_file,
+            "description",
+        )?;
         let read_path = if path.is_absolute() {
             path.clone()
         } else {
@@ -770,6 +941,7 @@ fn ensure_file_within_workdir(
     file_path: &Path,
     current_dir: &Path,
     allow_external_file: bool,
+    field: &str,
 ) -> Result<()> {
     if allow_external_file {
         return Ok(());
@@ -789,8 +961,8 @@ fn ensure_file_within_workdir(
     });
     if !candidate.starts_with(&base) {
         bail!(
-            "--description-file path {:?} resolves outside the current working directory; write agent temp files inside the task workdir (e.g. ./description.md) rather than machine-shared paths like /tmp, where another run's stale file can be read by mistake. Pass --allow-external-file to override.",
-            file_path
+            "--{field}-file path {:?} resolves outside the current working directory; write agent temp files inside the task workdir (e.g. ./{field}.md) rather than machine-shared paths like /tmp, where another run's stale file can be read by mistake. Pass --allow-external-file to override.",
+            file_path,
         );
     }
     Ok(())
@@ -1089,6 +1261,15 @@ mod tests {
                 command: WorkspaceCommand::Create(args),
             }) => args,
             _ => panic!("expected workspace create"),
+        }
+    }
+
+    fn update_workspace_args(cli: &Cli) -> &UpdateWorkspaceArgs {
+        match &cli.command {
+            Command::Workspace(WorkspaceArgs {
+                command: WorkspaceCommand::Update(args),
+            }) => args,
+            _ => panic!("expected workspace update"),
         }
     }
 
@@ -1685,6 +1866,188 @@ mod tests {
         .expect_err("empty issue prefix")
         .to_string()
         .contains("omit it to use the server-generated prefix"));
+    }
+
+    #[tokio::test]
+    async fn workspace_update_resolves_slug_and_patches_without_switching_default() {
+        let captured = Arc::new(Mutex::new(None));
+        let captured_by_handler = Arc::clone(&captured);
+        let workspace_id = "44444444-4444-4444-4444-444444444444";
+        let app = Router::new()
+            .route(
+                "/api/workspaces",
+                get(|| async {
+                    Json(serde_json::json!([{
+                        "id":"44444444-4444-4444-4444-444444444444",
+                        "name":"Before",
+                        "slug":"delivery"
+                    }]))
+                }),
+            )
+            .route(
+                "/api/workspaces/44444444-4444-4444-4444-444444444444",
+                patch(move |headers: HeaderMap, Json(body): Json<Value>| {
+                    let captured = Arc::clone(&captured_by_handler);
+                    async move {
+                        assert_eq!(headers["x-workspace-id"], "original-default");
+                        *captured.lock().expect("capture body") = Some(body.clone());
+                        Json(serde_json::json!({
+                            "id":"44444444-4444-4444-4444-444444444444",
+                            "name":body["name"],
+                            "slug":"delivery",
+                            "description":body["description"],
+                            "context":"Existing context"
+                        }))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let config_dir = home.path().join(".cordy");
+        fs::create_dir_all(&config_dir).expect("config dir");
+        fs::write(
+            config_dir.join("config.json"),
+            format!(
+                r#"{{"server_url":"http://{address}","token":"workspace-token","workspace_id":"original-default"}}"#
+            ),
+        )
+        .expect("config");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "workspace",
+            "update",
+            "delivery",
+            "--name",
+            "After",
+            "--description",
+            "",
+            "--output",
+            "json",
+        ])
+        .expect("workspace update CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("update workspace");
+
+        let body = captured
+            .lock()
+            .expect("captured body")
+            .clone()
+            .expect("request body");
+        assert_eq!(body["name"], "After");
+        assert_eq!(body["description"], "");
+        assert_eq!(
+            serde_json::from_str::<Value>(&output.stdout).expect("JSON")["id"],
+            workspace_id
+        );
+        assert_eq!(
+            environment
+                .load_config("")
+                .expect("config after update")
+                .workspace_id,
+            "original-default"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn workspace_update_rejects_no_changes_before_api_setup() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "workspace",
+            "update",
+            "55555555-5555-5555-5555-555555555555",
+        ])
+        .expect("empty workspace update CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("no changes");
+        assert_eq!(
+            error.to_string(),
+            "no fields to update; use --name, --description, --context, or --issue-prefix"
+        );
+    }
+
+    #[test]
+    fn workspace_update_supports_safe_files_and_rejects_ambiguous_or_empty_changes() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        fs::write(cwd.path().join("context.md"), "First\nSecond \\n literal\n")
+            .expect("context file");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let file_cli = Cli::try_parse_from([
+            "cordy",
+            "workspace",
+            "update",
+            "workspace-id",
+            "--context-file",
+            "context.md",
+        ])
+        .expect("file CLI");
+        let body = build_workspace_update_body(
+            update_workspace_args(&file_cli),
+            &environment,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .expect("file body");
+        assert_eq!(body["context"], "First\nSecond \\n literal");
+
+        let ambiguous = Cli::try_parse_from([
+            "cordy",
+            "workspace",
+            "update",
+            "workspace-id",
+            "--description",
+            "inline",
+            "--description-file",
+            "context.md",
+        ])
+        .expect("ambiguous CLI");
+        assert!(build_workspace_update_body(
+            update_workspace_args(&ambiguous),
+            &environment,
+            &mut Cursor::new(Vec::<u8>::new())
+        )
+        .expect_err("ambiguous description")
+        .to_string()
+        .contains("mutually exclusive"));
+
+        let empty = Cli::try_parse_from(["cordy", "workspace", "update", "workspace-id"])
+            .expect("empty CLI");
+        assert!(build_workspace_update_body(
+            update_workspace_args(&empty),
+            &environment,
+            &mut Cursor::new(Vec::<u8>::new())
+        )
+        .expect("empty body")
+        .is_empty());
+
+        let empty_prefix = Cli::try_parse_from([
+            "cordy",
+            "workspace",
+            "update",
+            "workspace-id",
+            "--issue-prefix",
+            " ",
+        ])
+        .expect("empty prefix CLI");
+        assert!(build_workspace_update_body(
+            update_workspace_args(&empty_prefix),
+            &environment,
+            &mut Cursor::new(Vec::<u8>::new())
+        )
+        .expect_err("empty issue prefix")
+        .to_string()
+        .contains("clearing the prefix is not supported"));
     }
 
     #[test]
