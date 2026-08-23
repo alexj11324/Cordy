@@ -854,7 +854,7 @@ fn push_table_filters(
                 } else {
                     builder
                         .push("i.properties @> ")
-                        .push_bind(json!({definition_id: value}));
+                        .push_bind(json!({(definition_id): value}));
                 }
             }
             builder.push(")");
@@ -1376,10 +1376,11 @@ async fn table_facets(
                 }
                 "property" => {
                     if let Some(id) = facet.get("property_id").and_then(Value::as_str) {
-                        filters
-                            .get_mut("properties")
-                            .and_then(Value::as_object_mut)
-                            .map(|properties| properties.remove(id));
+                        if let Some(properties) =
+                            filters.get_mut("properties").and_then(Value::as_object_mut)
+                        {
+                            properties.remove(id);
+                        }
                     }
                 }
                 _ => {}
