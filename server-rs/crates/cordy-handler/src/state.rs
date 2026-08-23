@@ -240,6 +240,8 @@ pub struct HandlerState {
     pub email_service: Arc<EmailService>,
     pub auth_rate_limit: cordy_middleware::ratelimit::RateLimitState,
     pub auth_verify_rate_limit: cordy_middleware::ratelimit::RateLimitState,
+    /// Anonymous frontend capability/configuration response.
+    pub public_config: crate::config::PublicConfigSettings,
     /// GitHub GraphQL snapshot refresh pipeline. Disabled in lightweight tests.
     pub github_snapshots: Arc<cordy_ghsnapshot::Manager>,
     /// Feature flag source. `None` fails closed for rollout-gated writes.
@@ -324,6 +326,7 @@ impl HandlerState {
             email_service: Arc::new(EmailService::new()),
             auth_rate_limit,
             auth_verify_rate_limit,
+            public_config: crate::config::PublicConfigSettings::default(),
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
             feature_flags: None,
             tasks,
@@ -371,6 +374,11 @@ impl HandlerState {
     /// tests, while production uses the already-loaded config snapshot.
     pub fn with_realtime_metrics_token(mut self, raw: Option<&str>) -> Self {
         self.realtime_metrics_token = raw.unwrap_or_default().trim().to_string();
+        self
+    }
+
+    pub fn with_public_config(mut self, settings: crate::config::PublicConfigSettings) -> Self {
+        self.public_config = settings;
         self
     }
 

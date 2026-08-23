@@ -24,6 +24,7 @@ pub mod client_usage;
 pub mod cloudfront;
 pub mod comment;
 pub mod comment_list;
+pub mod config;
 pub mod contact_sales;
 pub mod daemon;
 pub mod daemon_ws;
@@ -383,6 +384,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(workspace::public_router())
         .merge(attachment_access::public_router())
         .merge(avatar::router())
+        .merge(config::router())
         .merge(contact_sales)
         .merge(vcs_webhook::router())
         .merge(authenticated)
