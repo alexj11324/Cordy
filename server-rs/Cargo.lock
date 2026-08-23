@@ -593,6 +593,7 @@ dependencies = [
  "chrono-tz",
  "cordy-analytics",
  "cordy-auth",
+ "cordy-config",
  "cordy-daemon",
  "cordy-db",
  "cordy-events",
@@ -776,6 +777,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "cordy-analytics",
  "cordy-auth",
  "cordy-config",
  "cordy-db",
@@ -783,6 +785,7 @@ dependencies = [
  "cordy-handler",
  "cordy-metrics",
  "cordy-realtime",
+ "cordy-service",
  "cordy-util",
  "redis",
  "serde_json",

@@ -12,6 +12,7 @@
 
 pub mod agent_aggregation;
 pub mod agent_builder;
+pub mod auth;
 pub mod claim_comments;
 pub mod claim_response;
 pub mod cli_token;
@@ -190,6 +191,10 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         pat_cache: state.pat_cache.clone(),
         daemon_cache: DaemonTokenCache::disabled(),
     };
+    let public_auth = auth::public_router(
+        state.auth_rate_limit.clone(),
+        state.auth_verify_rate_limit.clone(),
+    );
 
     let issue_routes = issue::router().route_layer(middleware::from_fn_with_state(
         WorkspaceGuardState::member_only(state.pool.clone()),
@@ -353,6 +358,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
     let http_metrics = state.http_metrics.clone();
     let app = Router::new()
         .merge(health::router())
+        .merge(public_auth)
         .merge(session::public_router())
         .merge(workspace::public_router())
         .merge(contact_sales)
