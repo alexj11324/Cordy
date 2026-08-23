@@ -1626,7 +1626,79 @@ impl TaskService {
         issue: &Issue,
         fire_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
-        let prep = self.prepare_issue_enqueue(issue, None, None, false).await?;
+        let assignee_id = issue.assignee_id.ok_or(TaskServiceError::NoAssignee)?;
+        let agent = get_agent(&mut *tx, assignee_id)
+            .await
+            .map_err(|e| TaskServiceError::LoadAgent(downcast_sqlx(e)))?
+            .ok_or(TaskServiceError::LoadAgent(sqlx::Error::RowNotFound))?;
+        if agent.archived_at.is_some() {
+            return Err(TaskServiceError::AgentArchived);
+        }
+        let runtime_id = agent.runtime_id.ok_or(TaskServiceError::AgentNoRuntime)?;
+
+        // This path is entered only by a channel `/issue` create and has no
+        // trigger comment or actor override. Resolve its direct provenance
+        // against the caller's connection so the surrounding transaction
+        // never waits for a second pool lease.
+        let mut facts = DirectFacts {
+            issue_id: Some(issue.id),
+            creator_type: issue.creator_type.clone(),
+            creator_id: Some(issue.creator_id),
+            ..Default::default()
+        };
+        if issue.creator_type != "member"
+            && matches!(
+                issue.origin_type.as_deref(),
+                Some("quick_create") | Some("agent_create")
+            )
+        {
+            if let Some(origin_id) = issue.origin_id {
+                facts.origin_type = issue.origin_type.clone().unwrap_or_default();
+                facts.origin_task_id = Some(origin_id);
+                if let Ok(Some(task)) = get_agent_task(&mut *tx, origin_id).await {
+                    facts.origin_originator = task.originator_user_id;
+                    facts.origin_accountable = task.accountable_user_id;
+                }
+            }
+        }
+        let mut attr = classify_direct(facts);
+        if attr.source.as_ref().map(|source| source.as_str()) == Some("unattributed") {
+            let fail_closed = get_workspace_attribution_fail_closed(&mut *tx, agent.workspace_id)
+                .await
+                .map_err(|e| {
+                    TaskServiceError::FailClosedPolicyRead(ErrAttributionFailClosed, e.to_string())
+                })?;
+            if fail_closed != Some(false) {
+                return Err(TaskServiceError::FailClosed(ErrAttributionFailClosed));
+            }
+            attr = owner_fallback(attr, agent.owner_id);
+            if attr.source.as_ref().map(|source| source.as_str()) == Some("unattributed") {
+                return Err(TaskServiceError::FailClosedNoOwner(
+                    ErrAttributionFailClosed,
+                ));
+            }
+        }
+        let (attr_source, attr_delegated_from, attr_evidence_kind, attr_evidence_ref) =
+            attribution_create_params(&attr);
+        let head_sha = get_issue_review_head_sha(&mut *tx, issue.id)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        let prep = PreparedIssueEnqueue {
+            assignee_id,
+            runtime_id,
+            originator_user_id: attr.user_id,
+            accountable_user_id: attr.accountable_user_id,
+            rule_version_id: attr.rule_version_id,
+            overlay: RuntimeMcpOverlayData::default(),
+            attr_source,
+            attr_delegated_from,
+            attr_evidence_kind,
+            attr_evidence_ref,
+            trigger_summary: None,
+            head_sha,
+        };
 
         let task = create_deferred_channel_issue_task(
             tx,
@@ -2408,7 +2480,7 @@ impl TaskService {
             session.id,
             "user",
             content,
-            task.id,
+            Some(task.id),
             None,
             None,
             Some(cordy_protocol::CHAT_MESSAGE_KIND_MESSAGE),
@@ -2492,7 +2564,7 @@ impl TaskService {
             session.id,
             "user",
             kickoff,
-            Uuid::nil(),
+            None,
             None,
             None,
             Some(cordy_protocol::CHAT_MESSAGE_KIND_ONBOARDING_KICKOFF),
@@ -4006,7 +4078,7 @@ pub(crate) async fn create_assistant_chat_message_typed(
         chat_session_id,
         "assistant",
         content,
-        task_id,
+        Some(task_id),
         failure_reason,
         elapsed_ms,
         Some(message_kind.unwrap_or(cordy_protocol::CHAT_MESSAGE_KIND_MESSAGE)),

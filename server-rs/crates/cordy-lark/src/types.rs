@@ -10,7 +10,8 @@ use std::time::Duration;
 /// cross-installation identity merging would need union_id (Phase 2).
 /// Typed alias instead of plain String so callers can't accidentally pass
 /// a Cordy user UUID where a Lark open_id is expected.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct OpenId(pub String);
 
 impl OpenId {
@@ -27,7 +28,8 @@ impl std::fmt::Display for OpenId {
 
 /// Identifies a Lark conversation (p2p or group). One ChatID maps to one
 /// Cordy chat_session via channel_chat_session_binding.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
 pub struct ChatId(pub String);
 
 impl ChatId {
@@ -147,7 +149,7 @@ pub fn region_or_default(s: &str) -> Region {
 ///
 /// All drop_reason values are recorded WITHOUT message body — see
 /// MUL-2671 §4.7 (drop-audit policy).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DropReason(pub String);
 
 impl DropReason {

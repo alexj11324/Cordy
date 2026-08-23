@@ -450,14 +450,18 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "axum",
  "base64",
  "chrono",
  "cordy-config",
  "cordy-db",
  "cordy-protocol",
  "cordy-realtime",
+ "cordy-remotemcp",
  "futures-util",
  "hex",
+ "http",
+ "http-body-util",
  "libc",
  "rand 0.8.7",
  "redis",
@@ -474,8 +478,10 @@ dependencies = [
  "tokio-util",
  "toml",
  "tracing",
+ "url",
  "uuid",
  "walkdir",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -545,6 +551,7 @@ dependencies = [
  "async-trait",
  "base64",
  "chrono",
+ "cordy-db",
  "jsonwebtoken",
  "rand 0.8.7",
  "reqwest",

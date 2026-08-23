@@ -356,6 +356,8 @@ mod tests {
     }
 
     #[tokio::test]
+    // Serial metrics lock is intentionally held across awaits in this test.
+    #[allow(clippy::await_holding_lock)]
     async fn publishes_task_available_with_task_shard_key() {
         let _guard = lock_metrics().await;
         reset_metrics();
@@ -382,6 +384,8 @@ mod tests {
     }
 
     #[tokio::test]
+    // Serial metrics lock is intentionally held across awaits in this test.
+    #[allow(clippy::await_holding_lock)]
     async fn publishes_runtime_profiles_changed_with_workspace_shard_key() {
         let _guard = lock_metrics().await;
         reset_metrics();
@@ -408,6 +412,8 @@ mod tests {
     }
 
     #[tokio::test]
+    // Serial metrics lock is intentionally held across awaits in this test.
+    #[allow(clippy::await_holding_lock)]
     async fn publishes_workspaces_changed_with_user_shard_key() {
         let _guard = lock_metrics().await;
         reset_metrics();
@@ -429,6 +435,8 @@ mod tests {
     }
 
     #[tokio::test]
+    // Serial metrics lock is intentionally held across awaits in this test.
+    #[allow(clippy::await_holding_lock)]
     async fn empty_keys_are_noops() {
         let _guard = lock_metrics().await;
         reset_metrics();
@@ -449,6 +457,8 @@ mod tests {
     }
 
     #[tokio::test]
+    // Serial metrics lock is intentionally held across awaits in this test.
+    #[allow(clippy::await_holding_lock)]
     async fn publish_failure_counts_errors_and_skips_published_total() {
         let _guard = lock_metrics().await;
         reset_metrics();
@@ -463,6 +473,8 @@ mod tests {
     }
 
     #[tokio::test]
+    // Serial metrics lock is intentionally held across awaits in this test.
+    #[allow(clippy::await_holding_lock)]
     async fn task_shard_key_falls_back_to_event_id_when_task_missing() {
         let _guard = lock_metrics().await;
         reset_metrics();
@@ -483,6 +495,8 @@ mod tests {
     // ---- local/Redis loopback dedup (TestRelayNotifierDedups*Loopback) ------
 
     #[tokio::test]
+    // Serial metrics lock is intentionally held across awaits in this test.
+    #[allow(clippy::await_holding_lock)]
     async fn dedups_local_redis_loopback_for_task_available() {
         let _guard = lock_metrics().await;
         reset_metrics();
@@ -515,6 +529,8 @@ mod tests {
     }
 
     #[tokio::test]
+    // Serial metrics lock is intentionally held across awaits in this test.
+    #[allow(clippy::await_holding_lock)]
     async fn dedups_local_redis_loopback_for_runtime_profiles_changed() {
         let _guard = lock_metrics().await;
         reset_metrics();
@@ -548,6 +564,8 @@ mod tests {
     }
 
     #[tokio::test]
+    // Serial metrics lock is intentionally held across awaits in this test.
+    #[allow(clippy::await_holding_lock)]
     async fn dedups_local_redis_loopback_for_workspaces_changed() {
         let _guard = lock_metrics().await;
         reset_metrics();

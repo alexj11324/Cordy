@@ -124,7 +124,12 @@ pub struct Runtime {
     /// back to the profile so the daemon can resolve the profile's command_name
     /// to the executable to launch. Built-in (provider-detected) runtimes
     /// leave this empty.
-    #[serde(rename = "profile_id", skip_serializing_if = "String::is_empty")]
+    #[serde(
+        rename = "profile_id",
+        default,
+        deserialize_with = "deserialize_null_string",
+        skip_serializing_if = "String::is_empty"
+    )]
     pub profile_id: String,
 }
 
@@ -183,6 +188,7 @@ pub struct ActiveSiblingRunData {
 /// Task represents a claimed task from the server (types.go:72–169). Agent data
 /// (name, skills) is populated by the claim endpoint.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct Task {
     #[serde(rename = "id")]
     pub id: String,
@@ -500,6 +506,38 @@ fn is_zero_i64(v: &i64) -> bool {
     *v == 0
 }
 
+fn deserialize_null_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn task_accepts_omitted_compatibility_fields() {
+        let task: Task = serde_json::from_str(r#"{"id":"task-1"}"#).unwrap();
+
+        assert_eq!(task.id, "task-1");
+        assert!(task.thread_name.is_empty());
+        assert!(task.remote_mcp_connections.is_empty());
+        assert!(task.agent.is_none());
+    }
+
+    #[test]
+    fn runtime_accepts_null_profile_id() {
+        let runtime: Runtime = serde_json::from_str(
+            r#"{"id":"runtime-1","name":"local","provider":"codex","status":"online","profile_id":null}"#,
+        )
+        .unwrap();
+
+        assert!(runtime.profile_id.is_empty());
+    }
+}
+
 /// ChatAttachmentMeta is the structured attachment metadata the daemon hands
 /// to the agent for chat tasks (types.go:172–180). We pass id + filename +
 /// content_type so the chat prompt can list them explicitly and instruct the
@@ -597,6 +635,7 @@ pub struct DisabledRuntimeSkillData {
 /// SkillData represents a structured skill for task execution
 /// (types.go:228–237).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SkillData {
     #[serde(rename = "id")]
     pub id: String,

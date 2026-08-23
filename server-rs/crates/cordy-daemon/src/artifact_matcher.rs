@@ -1,45 +1,39 @@
-//! Port of `server/internal/daemon/artifact_matcher.go` (84 lines).
+#![allow(dead_code)] // S9-integration: consumed by daemon.go core wiring (S8)
+//! Port of `server/internal/daemon/artifact_matcher.go` — combines
+//! operator-configured basename matches with exact daemon-managed paths.
+//! Exact paths take precedence so a broad basename such as `.sandbox-bin`
+//! cannot double-count a managed directory.
 //!
-//! Deviations from Go:
-//! - `filepath.Clean` → [`crate::repocache::normalize_lexically`] (same
-//!   lexical semantics, already used by the gc.rs inline copy).
-//! - `os.DirEntry` → the entry's leaf `name: &str` (callers walk with
-//!   `walkdir`/`std::fs` and pass `file_name()`), matching the seam shape
-//!   already established in gc.rs.
-//! - `filepath.VolumeName` is a no-op on unix; the absolute-path check covers
-//!   it (Go's own unix behavior).
+//! This is the crate's SINGLE copy of the matcher: the inline duplicates that
+//! used to live in diskusage.rs (lane A) and gc.rs (lane R2) were retired into
+//! this module (CORD-12 review item). `buildPatternSet` moved here with them —
+//! Go defines it in diskusage.go but its only caller is `newArtifactMatcher`.
 //!
-//! NOTE: gc.rs and diskusage.rs currently carry private inline copies of this
-//! logic from earlier lanes; this module is the canonical standalone port.
-
-// S9-integration: canonical matcher consumed by diskusage/gc wiring that
-// lands with integration; silence dead-code until then.
-#![allow(dead_code)]
+//! Symbol map:
+//! - `artifactMatcher` → [`ArtifactMatcher`]
+//! - `newArtifactMatcher` → [`ArtifactMatcher::new`]
+//! - `matchDirectory` → [`ArtifactMatcher::match_directory`]
+//! - `managedSubpaths` → [`ArtifactMatcher::managed_subpaths`]
+//! - `safeRelativePath` → [`safe_relative_path`]
+//! - `buildPatternSet` (diskusage.go:285) → [`build_pattern_set`]
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
-use crate::repocache::normalize_lexically;
+pub(crate) const MANAGED_ARTIFACT_PATTERN_PREFIX: &str = "managed:";
 
-/// `managedArtifactPatternPrefix` (artifact_matcher.go:10).
-const MANAGED_ARTIFACT_PATTERN_PREFIX: &str = "managed:";
-
-/// `artifactMatcher` (artifact_matcher.go:15–19): combines operator-configured
-/// basename matches with exact daemon-managed paths. Exact paths take
-/// precedence so a broad basename such as .sandbox-bin cannot double-count a
-/// managed directory.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct ArtifactMatcher {
     basenames: HashSet<String>,
-    exact_paths: HashMap<String, String>,
+    /// rel path (OS separators) → `managed:<slash display path>`
+    exact_paths: HashMap<PathBuf, String>,
     exact_leaf_names: HashSet<String>,
 }
 
 impl ArtifactMatcher {
-    /// `newArtifactMatcher` (artifact_matcher.go:21–37).
     pub(crate) fn new(patterns: &[String], managed_subpaths: &[String]) -> Self {
-        let mut matcher = ArtifactMatcher {
-            basenames: patterns.iter().cloned().collect(),
+        let mut m = ArtifactMatcher {
+            basenames: build_pattern_set(patterns),
             exact_paths: HashMap::with_capacity(managed_subpaths.len()),
             exact_leaf_names: HashSet::with_capacity(managed_subpaths.len()),
         };
@@ -47,159 +41,203 @@ impl ArtifactMatcher {
             let Some(cleaned) = safe_relative_path(subpath) else {
                 continue;
             };
-            let display = cleaned.replace('\\', "/");
-            matcher.exact_paths.insert(
+            let display = cleaned.to_string_lossy().replace('\\', "/");
+            m.exact_paths.insert(
                 cleaned.clone(),
                 format!("{MANAGED_ARTIFACT_PATTERN_PREFIX}{display}"),
             );
-            if let Some(leaf) = Path::new(&cleaned).file_name() {
-                matcher
-                    .exact_leaf_names
+            if let Some(leaf) = cleaned.file_name() {
+                m.exact_leaf_names
                     .insert(leaf.to_string_lossy().into_owned());
             }
         }
-        matcher
+        m
     }
 
-    /// `matchDirectory` (artifact_matcher.go:39–63): returns the artifact
-    /// label when `path` (a directory under `abs_root` whose leaf name is
-    /// `name`) matches either an exact managed subpath or a configured
-    /// basename.
-    pub(crate) fn match_directory(&self, abs_root: &Path, path: &Path, name: &str) -> Option<String> {
-        let exact_candidate = self.exact_leaf_names.contains(name);
-        let basename_match = self.basenames.contains(name);
+    /// `matchDirectory`: `path` is the absolute directory being visited and
+    /// `entry_name` its leaf name. Returns the matched artifact pattern.
+    pub(crate) fn match_directory(
+        &self,
+        abs_root: &Path,
+        path: &Path,
+        entry_name: &str,
+    ) -> Option<String> {
+        let exact_candidate = self.exact_leaf_names.contains(entry_name);
+        let basename_match = self.basenames.contains(entry_name);
         if !exact_candidate && !basename_match {
             return None;
         }
-
-        // Rel and containment validation are only needed for a directory
-        // whose leaf could actually match. Most workdir entries avoid this
-        // path entirely.
-        let rel = path.strip_prefix(abs_root).ok()?;
-        let rel = safe_relative_path(&rel.to_string_lossy())?;
+        // Rel and containment validation are only needed for a directory whose
+        // leaf could actually match. Most workdir entries avoid this entirely.
+        let Ok(rel) = path.strip_prefix(abs_root) else {
+            return None;
+        };
+        let rel = safe_relative_path(rel.to_string_lossy().as_ref())?;
         if let Some(label) = self.exact_paths.get(&rel) {
             return Some(label.clone());
         }
         if basename_match {
-            return Some(name.to_string());
+            return Some(entry_name.to_string());
         }
         None
     }
 
-    /// `managedSubpaths` (artifact_matcher.go:65–72): slash-normalized,
-    /// sorted exact managed paths.
     pub(crate) fn managed_subpaths(&self) -> Vec<String> {
         let mut out: Vec<String> = self
             .exact_paths
             .keys()
-            .map(|rel| rel.replace('\\', "/"))
+            .map(|rel| rel.to_string_lossy().replace('\\', "/"))
             .collect();
+        out.sort();
+        out
+    }
+
+    /// `len(matcher.basenames) == 0 && len(matcher.exactPaths) == 0`
+    /// (gc.go:905): nothing can match, so the walk is skipped entirely.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.basenames.is_empty() && self.exact_paths.is_empty()
+    }
+
+    /// `sortedKeys(m.basenames)` at the diskusage.go call sites: the report's
+    /// artifact_patterns field.
+    pub(crate) fn basenames_sorted(&self) -> Vec<String> {
+        let mut out: Vec<String> = self.basenames.iter().cloned().collect();
         out.sort();
         out
     }
 }
 
-/// `safeRelativePath` (artifact_matcher.go:74–84): trims, rejects empty /
-/// absolute / escaping paths, and returns the lexically-cleaned form.
-pub(crate) fn safe_relative_path(path: &str) -> Option<String> {
-    let path = path.trim();
-    if path.is_empty() || Path::new(path).is_absolute() {
-        return None;
-    }
-    let cleaned = normalize_lexically(Path::new(path));
-    let cleaned = cleaned.to_string_lossy().into_owned();
-    if cleaned == "."
-        || cleaned == ".."
-        || cleaned.starts_with("../")
-        || cleaned.starts_with("..\\")
+/// `buildPatternSet` (diskusage.go:285): basename-only patterns. Trims each
+/// entry and drops empties and anything carrying a path separator — a pattern
+/// with a separator could never match a walk entry's leaf name.
+pub(crate) fn build_pattern_set(patterns: &[String]) -> HashSet<String> {
+    patterns
+        .iter()
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty() && !p.contains('/') && !p.contains('\\'))
+        .map(|p| p.to_string())
+        .collect()
+}
+
+/// `safeRelativePath`: trims whitespace, rejects absolute paths (and Windows
+/// volume prefixes), rejects ".", ".." and anything escaping upward after
+/// cleaning; returns the cleaned path otherwise.
+pub(crate) fn safe_relative_path(path: &str) -> Option<PathBuf> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() || Path::new(trimmed).is_absolute() || has_windows_volume_prefix(trimmed)
     {
         return None;
     }
+    let cleaned = clean_path(trimmed);
+    if cleaned.as_os_str() == "." {
+        return None;
+    }
+    if is_parent_escape(&cleaned) {
+        return None;
+    }
     Some(cleaned)
+}
+
+fn has_windows_volume_prefix(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
+}
+
+/// Mirrors Go's `filepath.Clean` semantics on slash-separated input (the
+/// callers pass either native or slash paths; Rust's `Path` components give
+/// the same normalization for both).
+fn clean_path(path: &str) -> PathBuf {
+    let p = Path::new(path);
+    let mut out = PathBuf::new();
+    let mut absolute = false;
+    for comp in p.components() {
+        match comp {
+            Component::RootDir => absolute = true,
+            Component::CurDir => {}
+            Component::ParentDir => {
+                // Keep leading .. components (like Clean does).
+                match out.file_name() {
+                    Some(name) if name != ".." => {
+                        out.pop();
+                    }
+                    _ => out.push(".."),
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    if out.as_os_str().is_empty() {
+        out.push(".");
+    }
+    if absolute && !out.starts_with("/") {
+        let mut abs = PathBuf::from("/");
+        abs.push(out);
+        abs
+    } else {
+        out
+    }
+}
+
+/// True when the cleaned path escapes upward (".." or "../…").
+fn is_parent_escape(cleaned: &Path) -> bool {
+    let s = cleaned.to_string_lossy();
+    s == ".." || s.starts_with("../") || s.starts_with("..\\")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Semantics of newArtifactMatcher + matchDirectory
-    /// (artifact_matcher.go:21–63): an exact managed subpath wins over a
-    /// same-named operator basename and carries the `managed:` prefix.
-    #[test]
-    fn exact_managed_path_takes_precedence() {
-        let m = ArtifactMatcher::new(
+    fn matcher() -> ArtifactMatcher {
+        ArtifactMatcher::new(
             &[".sandbox-bin".to_string()],
-            &[".sandbox-bin".to_string()],
-        );
-        let root = Path::new("/tmp/task");
+            &["workdir/.managed".to_string(), "../escape".to_string()],
+        )
+    }
+
+    #[test]
+    fn builds_exact_paths_from_managed_subpaths() {
+        let m = matcher();
+        assert_eq!(m.managed_subpaths(), vec!["workdir/.managed".to_string()]);
+        assert!(m.exact_leaf_names.contains(".managed"));
+    }
+
+    #[test]
+    fn exact_managed_path_wins_over_basename() {
+        let m = matcher();
+        let root = Path::new("/root");
         assert_eq!(
-            m.match_directory(root, &root.join(".sandbox-bin"), ".sandbox-bin"),
-            Some("managed:.sandbox-bin".to_string())
+            m.match_directory(root, &root.join("workdir/.managed"), ".managed"),
+            Some("managed:workdir/.managed".to_string())
         );
     }
 
-    /// A basename-only pattern (not a managed subpath) labels by leaf name
-    /// (artifact_matcher.go:59–61).
     #[test]
-    fn basename_pattern_labels_by_leaf() {
-        let m = ArtifactMatcher::new(&["caches".to_string()], &[]);
-        let root = Path::new("/tmp/task");
+    fn plain_basename_match_returns_leaf_name() {
+        let m = matcher();
+        let root = Path::new("/root");
         assert_eq!(
-            m.match_directory(root, &root.join("nested/caches"), "caches"),
-            Some("caches".to_string())
+            m.match_directory(root, &root.join("a/b/.sandbox-bin"), ".sandbox-bin"),
+            Some(".sandbox-bin".to_string())
         );
     }
 
-    /// A leaf that is only a managed-subpath candidate but not at the exact
-    /// relative location does not match (artifact_matcher.go:56–62).
     #[test]
-    fn wrong_location_managed_leaf_does_not_match() {
-        let m = ArtifactMatcher::new(&[], &[".codex/sandbox-bin".to_string()]);
-        let root = Path::new("/tmp/task");
-        assert_eq!(
-            m.match_directory(root, &root.join("sandbox-bin"), "sandbox-bin"),
-            None
-        );
-        assert_eq!(
-            m.match_directory(root, &root.join(".codex/sandbox-bin"), "sandbox-bin"),
-            Some("managed:.codex/sandbox-bin".to_string())
-        );
+    fn non_matching_entries_return_none() {
+        let m = matcher();
+        let root = Path::new("/root");
+        assert_eq!(m.match_directory(root, &root.join("other"), "other"), None);
     }
 
-    /// Non-matching leaves short-circuit before any Rel work
-    /// (artifact_matcher.go:40–44).
     #[test]
-    fn non_matching_leaf_is_none() {
-        let m = ArtifactMatcher::new(&["caches".to_string()], &[".sandbox-bin".to_string()]);
-        let root = Path::new("/tmp/task");
-        assert_eq!(m.match_directory(root, &root.join("src"), "src"), None);
-    }
-
-    /// managedSubpaths returns slash-normalized sorted rels
-    /// (artifact_matcher.go:65–72).
-    #[test]
-    fn managed_subpaths_sorted_and_slashed() {
-        let m = ArtifactMatcher::new(
-            &[],
-            &["b/dir2".to_string(), "a/dir1".to_string()],
-        );
-        assert_eq!(m.managed_subpaths(), vec!["a/dir1", "b/dir2"]);
-    }
-
-    /// safeRelativePath contract (artifact_matcher.go:74–84): trims spaces,
-    /// cleans dots, rejects empty/absolute/escaping inputs. Mirrors the
-    /// contract test in gc.rs (gc_junction_windows_test.go coverage lives on
-    /// the windows lane; these are the platform-neutral cases).
-    #[test]
-    fn safe_relative_path_contract() {
-        assert_eq!(safe_relative_path("  a/b  "), Some("a/b".to_string()));
-        assert_eq!(safe_relative_path("./a/./b"), Some("a/b".to_string()));
-        assert_eq!(safe_relative_path("a/../b"), Some("b".to_string()));
+    fn safe_relative_path_rejects_escapes_and_absolutes() {
         assert_eq!(safe_relative_path(""), None);
-        assert_eq!(safe_relative_path("   "), None);
-        assert_eq!(safe_relative_path("/abs/path"), None);
+        assert_eq!(safe_relative_path("  "), None);
+        assert_eq!(safe_relative_path("/abs"), None);
+        assert_eq!(safe_relative_path("C:/x"), None);
         assert_eq!(safe_relative_path("."), None);
         assert_eq!(safe_relative_path(".."), None);
-        assert_eq!(safe_relative_path("../escape"), None);
+        assert_eq!(safe_relative_path("../x"), None);
+        assert_eq!(safe_relative_path("./a/../b"), Some(PathBuf::from("b")));
     }
 }
