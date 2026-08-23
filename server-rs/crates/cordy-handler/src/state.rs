@@ -83,6 +83,9 @@ pub struct HandlerState {
     /// Guards subscriber/activity listener registration against duplicate
     /// side effects when startup builders are composed more than once.
     subscriber_activity_listeners_started: bool,
+    /// Guards production notification listener registration against duplicate
+    /// inbox rows when startup builders are composed more than once.
+    notification_listeners_started: bool,
     /// Boot-time bearer token for `/health/realtime`. Empty enables the
     /// direct-loopback-only development policy.
     pub realtime_metrics_token: String,
@@ -180,6 +183,7 @@ impl HandlerState {
             plugin_events: None,
             autopilot_listeners_started: false,
             subscriber_activity_listeners_started: false,
+            notification_listeners_started: false,
             realtime_metrics_token: std::env::var("REALTIME_METRICS_TOKEN")
                 .unwrap_or_default()
                 .trim()
@@ -360,6 +364,17 @@ impl HandlerState {
         }
         crate::subscriber_activity_listeners::register(self.bus.clone(), self.pool.clone());
         self.subscriber_activity_listeners_started = true;
+        self
+    }
+
+    /// Wires inbox notification side effects after subscriber and activity
+    /// listeners, matching the Go production registration order.
+    pub fn start_notification_event_listeners(mut self) -> Self {
+        if self.notification_listeners_started {
+            return self;
+        }
+        crate::notification_listeners::register(self.bus.clone(), self.pool.clone());
+        self.notification_listeners_started = true;
         self
     }
 

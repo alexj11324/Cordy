@@ -2782,7 +2782,7 @@ async fn add_issue_reaction(
             };
             if reaction.issue_revision > 0 {
                 state.bus.publish(&cordy_events::Event {
-                    event_type: "issue:reaction_added".into(),
+                    event_type: cordy_protocol::EVENT_ISSUE_REACTION_ADDED.into(),
                     workspace_id: context.workspace_id.clone(),
                     actor_type: actor_type.into(),
                     actor_id: actor_id.to_string(),

@@ -55,6 +55,7 @@ pub mod label;
 pub mod mcp_merge;
 pub mod me;
 pub mod notification;
+mod notification_listeners;
 pub mod onboarding_shim;
 pub mod pat;
 pub mod pending_store;
