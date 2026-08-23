@@ -18,6 +18,7 @@ pub mod cli_token;
 pub mod client_usage;
 pub mod comment;
 pub mod comment_list;
+pub mod contact_sales;
 pub mod daemon;
 pub mod daemon_ws;
 pub mod dashboard;
@@ -318,12 +319,30 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         daemon_auth_state,
         daemon_auth_middleware,
     ));
+    let contact_sales_limit = std::env::var("RATE_LIMIT_CONTACT_SALES")
+        .ok()
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(5);
+    let contact_sales = contact_sales::router().route_layer(middleware::from_fn_with_state(
+        cordy_middleware::ratelimit::RateLimitState {
+            client: state.rate_limit_client.clone(),
+            conn: Arc::new(tokio::sync::Mutex::new(None)),
+            limit: contact_sales_limit,
+            window_secs: 60 * 60,
+            trusted_proxies: cordy_middleware::ratelimit::parse_trusted_proxies(
+                &std::env::var("RATE_LIMIT_TRUSTED_PROXIES").unwrap_or_default(),
+            ),
+        },
+        cordy_middleware::ratelimit::rate_limit,
+    ));
 
     let http_metrics = state.http_metrics.clone();
     let app = Router::new()
         .merge(health::router())
         .merge(session::public_router())
         .merge(workspace::public_router())
+        .merge(contact_sales)
         .merge(authenticated)
         .merge(daemon)
         .route("/ws", get(ws::ws_handler))

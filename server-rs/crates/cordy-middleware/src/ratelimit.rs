@@ -8,6 +8,9 @@ use axum::response::Response;
 use ipnetwork::IpNetwork;
 use redis::aio::ConnectionManager;
 use std::net::IpAddr;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::Mutex;
 
 /// Atomically increments the counter and sets the TTL on first access. The
 /// Lua script ensures INCR and EXPIRE cannot be split by a network failure —
@@ -20,6 +23,7 @@ if count == 1 then
 end
 return count
 "#;
+const REDIS_OPERATION_TIMEOUT: Duration = Duration::from_millis(250);
 
 /// Parses a comma-separated list of CIDRs. Invalid entries are warned and
 /// skipped. Empty when raw is blank (default: never trust X-Forwarded-For).
@@ -46,11 +50,12 @@ pub fn parse_trusted_proxies(raw: &str) -> Vec<IpNetwork> {
 
 /// Configuration for the rate-limit middleware.
 ///
-/// `conn: None` makes the middleware a no-op (fail-open), mirroring Go's nil
+/// `client: None` makes the middleware a no-op (fail-open), mirroring Go's nil
 /// `*redis.Client`.
 #[derive(Clone)]
 pub struct RateLimitState {
-    pub conn: Option<ConnectionManager>,
+    pub client: Option<redis::Client>,
+    pub conn: Arc<Mutex<Option<ConnectionManager>>>,
     pub limit: i64,
     pub window_secs: i64,
     pub trusted_proxies: Vec<IpNetwork>,
@@ -60,7 +65,8 @@ impl RateLimitState {
     /// Fail-open limiter used when REDIS_URL is unset.
     pub fn disabled(limit: i64, window_secs: i64) -> Self {
         Self {
-            conn: None,
+            client: None,
+            conn: Arc::new(Mutex::new(None)),
             limit,
             window_secs,
             trusted_proxies: Vec::new(),
@@ -70,23 +76,55 @@ impl RateLimitState {
 
 /// Per-IP fixed-window rate limiter backed by Redis.
 pub async fn rate_limit(State(state): State<RateLimitState>, req: Request, next: Next) -> Response {
-    let Some(mut conn) = state.conn.clone() else {
+    let Some(client) = state.client.clone() else {
         return next.run(req).await;
+    };
+
+    let cached = state.conn.lock().await.clone();
+    let mut conn = match cached {
+        Some(conn) => conn,
+        None => {
+            match tokio::time::timeout(REDIS_OPERATION_TIMEOUT, client.get_connection_manager())
+                .await
+            {
+                Ok(Ok(conn)) => {
+                    *state.conn.lock().await = Some(conn.clone());
+                    conn
+                }
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, "ratelimit: redis unavailable; allowing request");
+                    return next.run(req).await;
+                }
+                Err(_) => {
+                    tracing::warn!("ratelimit: redis connection timed out; allowing request");
+                    return next.run(req).await;
+                }
+            }
+        }
     };
 
     let ip = extract_ip(&req, &state.trusted_proxies);
     let key = rate_limit_key(req.uri().path(), &ip);
 
     let script = redis::Script::new(RATE_LIMIT_SCRIPT);
-    let count = match script
-        .key(key)
-        .arg(state.window_secs)
-        .invoke_async::<i64>(&mut conn)
-        .await
+    let count = match tokio::time::timeout(
+        REDIS_OPERATION_TIMEOUT,
+        script
+            .key(key)
+            .arg(state.window_secs)
+            .invoke_async::<i64>(&mut conn),
+    )
+    .await
     {
-        Ok(c) => c,
-        Err(e) => {
+        Ok(Ok(c)) => c,
+        Ok(Err(e)) => {
+            *state.conn.lock().await = None;
             tracing::warn!(error = %e, ip = %ip, "ratelimit: redis error; allowing request");
+            return next.run(req).await;
+        }
+        Err(_) => {
+            *state.conn.lock().await = None;
+            tracing::warn!(ip = %ip, "ratelimit: redis command timed out; allowing request");
             return next.run(req).await;
         }
     };

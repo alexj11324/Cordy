@@ -19,14 +19,23 @@ fn build_production_router(
     business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
     github_client: Option<cordy_ghsnapshot::Client>,
+    redis_url: Option<&str>,
 ) -> Router {
-    let state = cordy_handler::HandlerState::new(
+    let mut state = cordy_handler::HandlerState::new(
         db,
         cordy_auth::pat_cache::PatCache::disabled(),
         Some(hub),
     )
     .with_observability(business_metrics, http_metrics)
     .with_github_snapshots(github_client);
+    if let Some(redis_url) = redis_url.filter(|value| !value.trim().is_empty()) {
+        match redis::Client::open(redis_url) {
+            Ok(client) => state = state.with_rate_limit_redis(client),
+            Err(error) => {
+                tracing::warn!(%error, "contact-sales rate limiter configuration invalid; allowing requests");
+            }
+        }
+    }
     cordy_handler::build_router_from_state(state)
 }
 
@@ -84,7 +93,14 @@ async fn main() -> anyhow::Result<()> {
         (None, None)
     };
     let github_client = cordy_ghsnapshot::Client::new_from_env()?;
-    let app = build_production_router(db, hub, business_metrics, http_metrics, github_client);
+    let app = build_production_router(
+        db,
+        hub,
+        business_metrics,
+        http_metrics,
+        github_client,
+        cfg.redis.url.as_deref(),
+    );
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -122,6 +138,72 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn unavailable_rate_limit_redis_fails_open() {
+        let db = sqlx::PgPool::connect_lazy("postgres://invalid/invalid")
+            .unwrap_or_else(|_| unreachable!("static test URL is valid"));
+        let router = build_production_router(
+            db,
+            Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
+            None,
+            None,
+            Some("redis://127.0.0.1:1/"),
+        );
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            router.oneshot(
+                Request::post("/api/contact-sales")
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .expect("request"),
+            ),
+        )
+        .await
+        .expect("unavailable Redis must not block the request")
+        .expect("response");
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn unresponsive_rate_limit_redis_fails_open() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind black-hole Redis");
+        let address = listener.local_addr().expect("listener address");
+        let black_hole = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.expect("accept Redis client");
+            std::future::pending::<()>().await;
+        });
+        let db = sqlx::PgPool::connect_lazy("postgres://invalid/invalid")
+            .unwrap_or_else(|_| unreachable!("static test URL is valid"));
+        let redis_url = format!("redis://{address}/");
+        let router = build_production_router(
+            db,
+            Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
+            None,
+            None,
+            Some(&redis_url),
+        );
+        let response = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            router.oneshot(
+                Request::post("/api/contact-sales")
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .expect("request"),
+            ),
+        )
+        .await
+        .expect("unresponsive Redis must not block the request")
+        .expect("response");
+        black_hole.abort();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[test]
