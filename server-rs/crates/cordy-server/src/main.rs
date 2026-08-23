@@ -16,6 +16,11 @@ struct VcsWebhookConfig {
     secret_box: Option<cordy_util::secretbox::SecretBox>,
 }
 
+struct ProductionApp {
+    router: Router,
+    runtime_sweeper: cordy_handler::runtime_sweeper::RuntimeSweeperHandle,
+}
+
 impl VcsWebhookConfig {
     #[cfg(test)]
     fn disabled() -> Self {
@@ -187,7 +192,7 @@ async fn build_production_router(
     attachment_storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
     attachment_frame_ancestors: Vec<String>,
     vcs: VcsWebhookConfig,
-) -> anyhow::Result<Router> {
+) -> anyhow::Result<ProductionApp> {
     let feature_flags = Arc::new(cordy_service::feature_flags::ConfiguredFlags::from_env()?);
     let entitlements = autopilot_entitlements(cfg);
     let attachment_download =
@@ -248,7 +253,28 @@ async fn build_production_router(
         .await
         .start_autopilot_quota_reconciler()
         .start_webhook_delivery_worker();
-    Ok(cordy_handler::build_router_from_state(state))
+    let configured_reconnect_grace = duration_env(
+        "CORDY_RUNTIME_RECONNECT_GRACE",
+        cordy_handler::runtime_sweeper::DEFAULT_RECONNECT_GRACE,
+        false,
+    );
+    let minimum_reconnect_grace = cordy_handler::runtime_sweeper::MINIMUM_RECONNECT_GRACE;
+    if configured_reconnect_grace < minimum_reconnect_grace {
+        tracing::warn!(
+            configured = ?configured_reconnect_grace,
+            minimum = ?minimum_reconnect_grace,
+            "runtime reconnect grace is shorter than heartbeat freshness; clamping"
+        );
+    }
+    let runtime_sweeper = cordy_handler::runtime_sweeper::RuntimeSweeper::from_state(
+        state.clone(),
+        configured_reconnect_grace.max(minimum_reconnect_grace),
+    )
+    .start();
+    Ok(ProductionApp {
+        router: cordy_handler::build_router_from_state(state),
+        runtime_sweeper,
+    })
 }
 
 fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
@@ -345,11 +371,20 @@ async fn main() -> anyhow::Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, "listening");
+    let sweeper_cancel = app.runtime_sweeper.cancellation();
     axum::serve(
         listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
+        app.router
+            .into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(async move {
+        match tokio::signal::ctrl_c().await {
+            Ok(()) => sweeper_cancel.cancel(),
+            Err(error) => tracing::error!(%error, "failed to install shutdown signal"),
+        }
+    })
     .await?;
+    app.runtime_sweeper.shutdown(Duration::from_secs(5)).await;
     Ok(())
 }
 
@@ -411,7 +446,7 @@ mod tests {
         .unwrap();
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(1),
-            router.oneshot(
+            router.router.oneshot(
                 Request::post("/api/contact-sales")
                     .header("content-type", "application/json")
                     .body(Body::from("{}"))
@@ -455,7 +490,7 @@ mod tests {
         .unwrap();
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(1),
-            router.oneshot(
+            router.router.oneshot(
                 Request::post("/api/contact-sales")
                     .header("content-type", "application/json")
                     .body(Body::from("{}"))
