@@ -22,6 +22,7 @@ pub mod claim_response;
 pub mod cli_token;
 pub mod client_usage;
 pub mod cloudfront;
+pub mod cloud_runtime;
 pub mod comment;
 pub mod comment_list;
 pub mod config;
@@ -312,6 +313,13 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .merge(
+            cloud_runtime::router(Arc::new(cloud_runtime::HttpCloudRuntimeProxy::from_env()))
+                .route_layer(middleware::from_fn_with_state(
+                    WorkspaceGuardState::member_only(state.pool.clone()),
+                    cordy_middleware::workspace::require_workspace,
+                )),
+        )
+        .merge(
             runtime_requests::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 cordy_middleware::workspace::require_workspace,
@@ -556,6 +564,10 @@ mod tests {
             "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/models/request-1",
             "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/local-skills/request-1",
             "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/local-skills/import/request-1",
+            "/api/cloud-runtime",
+            "/api/cloud-runtime/healthz",
+            "/api/cloud-runtime/readyz",
+            "/api/cloud-runtime/nodes?limit=10",
             "/api/working-agents",
             "/api/v1/plugin/context",
             "/api/v1/plugin/issues/CORD-14",
@@ -690,6 +702,27 @@ mod tests {
             Request::post("/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/local-skills/import")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"skill_key":"review-helper"}"#))
+                .unwrap(),
+            Request::post("/api/cloud-runtime/nodes")
+                .body(Body::from(r#"{"region":"us-east-1"}"#))
+                .unwrap(),
+            Request::delete("/api/cloud-runtime/nodes")
+                .body(Body::from(r#"{"node_id":"node-1"}"#))
+                .unwrap(),
+            Request::post("/api/cloud-runtime/nodes/start")
+                .body(Body::from(r#"{"node_id":"node-1"}"#))
+                .unwrap(),
+            Request::post("/api/cloud-runtime/nodes/stop")
+                .body(Body::from(r#"{"node_id":"node-1"}"#))
+                .unwrap(),
+            Request::post("/api/cloud-runtime/nodes/reboot")
+                .body(Body::from(r#"{"node_id":"node-1"}"#))
+                .unwrap(),
+            Request::post("/api/cloud-runtime/nodes/status")
+                .body(Body::from(r#"{"node_id":"node-1"}"#))
+                .unwrap(),
+            Request::post("/api/cloud-runtime/nodes/exec")
+                .body(Body::from(r#"{"node_id":"node-1","command":"true"}"#))
                 .unwrap(),
             Request::post("/api/agent-builder/sessions")
                 .header("content-type", "application/json")
