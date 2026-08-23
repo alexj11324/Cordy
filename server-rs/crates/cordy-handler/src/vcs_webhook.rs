@@ -277,7 +277,7 @@ async fn mirror_ci_status(state: &HandlerState, connection: &VcsConnection, even
     }
 }
 
-async fn maybe_complete_issue(state: &HandlerState, issue: Issue) {
+pub(crate) async fn maybe_complete_issue(state: &HandlerState, issue: Issue) {
     let category =
         cordy_service::issue_status::effective(&state.pool, issue.workspace_id, &issue.status)
             .await;
@@ -319,7 +319,7 @@ fn publish_pull_request(
     });
 }
 
-async fn lookup_issue(
+pub(crate) async fn lookup_issue(
     state: &HandlerState,
     workspace_id: Uuid,
     prefix: &str,
@@ -336,11 +336,13 @@ async fn lookup_issue(
         .flatten()
 }
 
-fn extract_identifiers<'a>(texts: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+pub(crate) fn extract_identifiers<'a>(texts: impl IntoIterator<Item = &'a str>) -> Vec<String> {
     extract_with(&IDENTIFIER, texts)
 }
 
-fn extract_closing_identifiers<'a>(texts: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+pub(crate) fn extract_closing_identifiers<'a>(
+    texts: impl IntoIterator<Item = &'a str>,
+) -> Vec<String> {
     extract_with(&CLOSING_IDENTIFIER, texts)
 }
 

@@ -242,7 +242,7 @@ pub async fn create_webhook_delivery(
     dedupe_key: Option<&str>,
     dedupe_source: Option<&str>,
     content_type: Option<&str>,
-    raw_body: &serde_json::Value,
+    raw_body: Option<&[u8]>,
     replayed_from_delivery_id: Uuid,
     replay_idempotency_key: Option<&str>,
     reason_code: Option<&str>,

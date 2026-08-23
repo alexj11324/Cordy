@@ -52,6 +52,33 @@ pub struct PullRequestMetadata {
     pub changed_files: i32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct InstallationAccount {
+    pub login: String,
+    #[serde(rename = "type")]
+    pub account_type: String,
+    pub avatar_url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, serde::Serialize)]
+pub struct InstallationRepository {
+    pub id: i64,
+    pub full_name: String,
+    pub html_url: String,
+    pub clone_url: String,
+    pub description: Option<String>,
+    pub private: bool,
+    pub archived: bool,
+    pub default_branch: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct InstallationRepositories {
+    pub repositories: Vec<InstallationRepository>,
+    pub total_count: i64,
+    pub next_page: Option<i32>,
+}
+
 struct CachedToken {
     token: String,
     expiry: SystemTime,
@@ -201,6 +228,155 @@ impl Client {
             return Ok(tok);
         }
         self.mint_installation_token(installation_id).await
+    }
+
+    /// Reads the display identity for setup callbacks. Failures never include
+    /// response bodies or credentials.
+    pub async fn installation_account(&self, installation_id: i64) -> Result<InstallationAccount> {
+        #[derive(Deserialize)]
+        struct Envelope {
+            account: InstallationAccount,
+        }
+        let jwt = self.sign_app_jwt((self.now)())?;
+        let response = self
+            .http
+            .get(format!(
+                "{}/app/installations/{installation_id}",
+                self.api_base.trim_end_matches('/')
+            ))
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", format!("Bearer {jwt}"))
+            .send()
+            .await?;
+        if response.status() != reqwest::StatusCode::OK {
+            anyhow::bail!(
+                "github installation account: unexpected status {}",
+                response.status().as_u16()
+            );
+        }
+        Ok(response.json::<Envelope>().await?.account)
+    }
+
+    pub async fn installation_repositories(
+        &self,
+        installation_id: i64,
+        page: i32,
+        per_page: i32,
+    ) -> Result<InstallationRepositories> {
+        #[derive(Deserialize)]
+        struct Envelope {
+            total_count: i64,
+            repositories: Vec<InstallationRepository>,
+        }
+        let token = self.installation_token(installation_id).await?;
+        let response = self
+            .http
+            .get(format!(
+                "{}/installation/repositories",
+                self.api_base.trim_end_matches('/')
+            ))
+            .query(&[("page", page), ("per_page", per_page)])
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", format!("Bearer {token}"))
+            .send()
+            .await?;
+        if response.status() != reqwest::StatusCode::OK {
+            anyhow::bail!(
+                "github repositories: unexpected status {}",
+                response.status().as_u16()
+            );
+        }
+        let body = response.json::<Envelope>().await?;
+        Ok(InstallationRepositories {
+            next_page: (i64::from(page) * i64::from(per_page) < body.total_count)
+                .then_some(page + 1),
+            repositories: body.repositories,
+            total_count: body.total_count,
+        })
+    }
+
+    /// Lists installation repositories with a least-privilege, single-use
+    /// metadata token. Unlike snapshot refresh tokens this credential is not
+    /// cached and is revoked before returning, matching the settings browse
+    /// endpoint's stricter credential lifecycle.
+    pub async fn installation_repositories_once(
+        &self,
+        installation_id: i64,
+        page: i32,
+        per_page: i32,
+    ) -> Result<InstallationRepositories> {
+        #[derive(Deserialize)]
+        struct Envelope {
+            total_count: i64,
+            repositories: Vec<InstallationRepository>,
+        }
+        let jwt = self.sign_app_jwt((self.now)())?;
+        let token_response = self
+            .http
+            .post(format!(
+                "{}/app/installations/{installation_id}/access_tokens",
+                self.api_base.trim_end_matches('/')
+            ))
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", format!("Bearer {jwt}"))
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .json(&serde_json::json!({"permissions": {"metadata": "read"}}))
+            .send()
+            .await?;
+        if token_response.status() != reqwest::StatusCode::CREATED {
+            anyhow::bail!(
+                "github installation token: unexpected status {}",
+                token_response.status().as_u16()
+            );
+        }
+        let token = token_response
+            .json::<InstallationTokenResponse>()
+            .await
+            .map_err(|_| anyhow!("github installation token: malformed response"))?
+            .token;
+        if token.is_empty() {
+            anyhow::bail!("github installation token: empty token");
+        }
+        let result = async {
+            let response = self
+                .http
+                .get(format!(
+                    "{}/installation/repositories",
+                    self.api_base.trim_end_matches('/')
+                ))
+                .query(&[("page", page), ("per_page", per_page)])
+                .header("Accept", "application/vnd.github+json")
+                .header("Authorization", format!("Bearer {token}"))
+                .header("X-GitHub-Api-Version", "2022-11-28")
+                .send()
+                .await?;
+            if response.status() != reqwest::StatusCode::OK {
+                anyhow::bail!(
+                    "github repositories: unexpected status {}",
+                    response.status().as_u16()
+                );
+            }
+            let body = response.json::<Envelope>().await?;
+            Ok(InstallationRepositories {
+                next_page: (i64::from(page) * i64::from(per_page) < body.total_count)
+                    .then_some(page + 1),
+                repositories: body.repositories,
+                total_count: body.total_count,
+            })
+        }
+        .await;
+        let _ = self
+            .http
+            .delete(format!(
+                "{}/installation/token",
+                self.api_base.trim_end_matches('/')
+            ))
+            .header("Accept", "application/vnd.github+json")
+            .header("Authorization", format!("Bearer {token}"))
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .send()
+            .await;
+        result
     }
 
     /// Exchanges the App JWT for a fresh installation token and caches it.

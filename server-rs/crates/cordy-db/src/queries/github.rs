@@ -16,7 +16,7 @@ pub async fn create_git_hub_installation(
     account_login: &str,
     account_type: &str,
     account_avatar_url: Option<&str>,
-    connected_by_id: Uuid,
+    connected_by_id: Option<Uuid>,
 ) -> anyhow::Result<Option<GithubInstallation>> {
     let row = sqlx::query(
         r#"INSERT INTO github_installation (
