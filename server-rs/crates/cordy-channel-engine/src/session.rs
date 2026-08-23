@@ -17,6 +17,11 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+#[async_trait::async_trait]
+pub trait AppendFence: Send + Sync {
+    async fn before_write(&self, tx: &mut sqlx::PgConnection) -> anyhow::Result<()>;
+}
+
 use cordy_channel::{ChatType, MediaRef, MsgType};
 use cordy_db::dbid;
 use cordy_db::queries::attachment::{create_attachment, link_attachments_to_chat_message};
@@ -263,6 +268,14 @@ impl ChatSession {
     /// dedup token mid-flight, in which case the whole transaction rolls
     /// back (no chat_message lands).
     pub async fn append_user_message(&self, input: &AppendInput) -> anyhow::Result<AppendResult> {
+        self.append_user_message_fenced(input, None).await
+    }
+
+    pub async fn append_user_message_fenced(
+        &self,
+        input: &AppendInput,
+        fence: Option<&dyn AppendFence>,
+    ) -> anyhow::Result<AppendResult> {
         let mut tx = self
             .pool
             .begin()
@@ -275,6 +288,9 @@ impl ChatSession {
         lock_chat_session_for_append(&mut *tx, input.session_id)
             .await
             .map_err(|e| anyhow::anyhow!("lock chat session for append: {e:#}"))?;
+        if let Some(fence) = fence {
+            fence.before_write(&mut tx).await?;
+        }
 
         let command_source = if input.command_text.is_empty() {
             input.body.as_str()
@@ -292,7 +308,7 @@ impl ChatSession {
             "user",
             &input.body,
             // task_id: user turns are unowned at write time.
-            Uuid::nil(),
+            None,
             None,
             None,
             cmd.as_ref().map(|_| CHANNEL_COMMAND_MESSAGE_KIND),

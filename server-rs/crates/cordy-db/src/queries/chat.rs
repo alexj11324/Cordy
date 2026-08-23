@@ -169,7 +169,7 @@ pub async fn create_chat_message(
     chat_session_id: Uuid,
     role: &str,
     content: &str,
-    task_id: Uuid,
+    task_id: Option<Uuid>,
     failure_reason: Option<&str>,
     elapsed_ms: Option<i64>,
     message_kind: Option<&str>,
