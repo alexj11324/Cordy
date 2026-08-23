@@ -34,8 +34,6 @@ hmac = { workspace = true }
 ipnetwork = { workspace = true }
 percent-encoding = { workspace = true }
 rand = { workspace = true }
-percent-encoding = { workspace = true }
-reqwest = { workspace = true }
 redis = { workspace = true }
 reqwest = { workspace = true }
 regex = { workspace = true }

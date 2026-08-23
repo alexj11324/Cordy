@@ -12,9 +12,9 @@
 
 pub mod agent_aggregation;
 pub mod agent_builder;
-pub mod auth;
 pub mod attachment;
 pub mod attachment_storage;
+pub mod auth;
 pub mod claim_comments;
 pub mod claim_response;
 pub mod cli_token;
