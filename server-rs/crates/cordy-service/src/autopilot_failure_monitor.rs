@@ -658,7 +658,7 @@ impl Drop for FailureMonitorRuntime {
     }
 }
 
-fn classify_error(error: &anyhow::Error) -> FailureClass {
+pub(crate) fn classify_error(error: &anyhow::Error) -> FailureClass {
     let Some(sqlx_error) = error.downcast_ref::<sqlx::Error>() else {
         return FailureClass::Permanent;
     };

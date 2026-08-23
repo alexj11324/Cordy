@@ -16,6 +16,7 @@ struct ProductionApp {
     router: Router,
     root_cancel: CancellationToken,
     failure_monitor: cordy_service::autopilot_failure_monitor::FailureMonitorRuntime,
+    quota_reconciler: cordy_service::autopilot_quota_reconciler::QuotaReconcilerRuntime,
 }
 
 struct VcsWebhookConfig {
@@ -252,7 +253,6 @@ async fn build_production_router(
         .start_notification_event_listeners()
         .start_autopilot_event_listeners()
         .start_plugin_event_dispatcher()
-        .start_autopilot_quota_reconciler()
         .start_webhook_delivery_worker();
     let root_cancel = CancellationToken::new();
     let failure_metrics = state.business_metrics.clone().map(|metrics| {
@@ -265,10 +265,20 @@ async fn build_production_router(
         cordy_service::autopilot_failure_monitor::FailureMonitorConfig::from_env(),
     )
     .start(root_cancel.child_token());
+    let quota_metrics = state.business_metrics.clone().map(|metrics| {
+        metrics as Arc<dyn cordy_service::autopilot_quota_reconciler::QuotaReconcilerMetrics>
+    });
+    let quota_reconciler =
+        cordy_service::autopilot_quota_reconciler::AutopilotQuotaReconciler::new(
+            state.autopilots.clone(),
+            quota_metrics,
+        )
+        .start(root_cancel.child_token());
     Ok(ProductionApp {
         router: cordy_handler::build_router_from_state(state),
         root_cancel,
         failure_monitor,
+        quota_reconciler,
     })
 }
 
@@ -391,6 +401,7 @@ async fn main() -> anyhow::Result<()> {
         router,
         root_cancel,
         failure_monitor,
+        quota_reconciler,
     } = app;
     let serve_result = axum::serve(
         listener,
@@ -399,15 +410,27 @@ async fn main() -> anyhow::Result<()> {
     .with_graceful_shutdown(shutdown_signal(root_cancel.clone()))
     .await;
     root_cancel.cancel();
-    let shutdown = failure_monitor
-        .shutdown(cordy_service::autopilot_failure_monitor::DEFAULT_SHUTDOWN_TIMEOUT)
-        .await;
-    match shutdown {
+    let (failure_shutdown, quota_shutdown) = tokio::join!(
+        failure_monitor
+            .shutdown(cordy_service::autopilot_failure_monitor::DEFAULT_SHUTDOWN_TIMEOUT),
+        quota_reconciler
+            .shutdown(cordy_service::autopilot_quota_reconciler::DEFAULT_SHUTDOWN_TIMEOUT),
+    );
+    match failure_shutdown {
         cordy_service::autopilot_failure_monitor::ShutdownOutcome::TimedOut => {
             tracing::warn!("autopilot failure monitor exceeded shutdown deadline and was aborted");
         }
         cordy_service::autopilot_failure_monitor::ShutdownOutcome::Panicked => {
             tracing::error!("autopilot failure monitor task panicked during shutdown");
+        }
+        _ => {}
+    }
+    match quota_shutdown {
+        cordy_service::autopilot_failure_monitor::ShutdownOutcome::TimedOut => {
+            tracing::warn!("autopilot quota reconciler exceeded shutdown deadline and was aborted");
+        }
+        cordy_service::autopilot_failure_monitor::ShutdownOutcome::Panicked => {
+            tracing::error!("autopilot quota reconciler task panicked during shutdown");
         }
         _ => {}
     }

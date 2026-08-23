@@ -4,6 +4,7 @@ pub mod agent_ready;
 pub mod attribution;
 pub mod autopilot;
 pub mod autopilot_failure_monitor;
+pub mod autopilot_quota_reconciler;
 pub mod builtin_agents;
 pub mod builtin_skills;
 pub mod channel_media_reconciler;

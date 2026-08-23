@@ -410,36 +410,6 @@ impl HandlerState {
         self
     }
 
-    pub fn start_autopilot_quota_reconciler(self) -> Self {
-        if !self.autopilots.quota_enabled() {
-            return self;
-        }
-        let service = self.autopilots.clone();
-        tokio::spawn(async move {
-            loop {
-                let now = chrono::Utc::now();
-                match service
-                    .reconcile_quota_reservations(
-                        now - chrono::Duration::minutes(10),
-                        now - chrono::Duration::hours(6),
-                        100,
-                    )
-                    .await
-                {
-                    Ok(settled) if settled > 0 => {
-                        tracing::info!(settled, "autopilot quota reconciler settled reservations");
-                    }
-                    Ok(_) => {}
-                    Err(error) => {
-                        tracing::warn!(%error, "autopilot quota reconciler failed");
-                    }
-                }
-                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
-            }
-        });
-        self
-    }
-
     pub fn notify_webhook_delivery(&self) {
         if let Some(notify) = &self.webhook_delivery_notify {
             notify.notify_one();
