@@ -30,6 +30,7 @@ pub mod issue;
 pub mod issue_property_value;
 pub mod issue_pull_request;
 pub mod issue_status;
+pub mod issue_view;
 pub mod issue_view_preference;
 pub mod label;
 pub mod mcp_merge;
@@ -227,6 +228,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .merge(
+            issue_view::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                issue::require_issue_workspace,
+            )),
+        )
+        .merge(
             issue_view_preference::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 issue::require_issue_workspace,
@@ -334,6 +341,8 @@ mod tests {
             "/api/issues/CORD-14/pull-requests",
             "/api/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/messages",
             "/api/me",
+            "/api/issue-views?scope_type=workspace",
+            "/api/issue-views/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/issue-view-preferences?scope_type=workspace",
             "/api/agent-activity-30d",
             "/api/agent-run-counts",
@@ -378,6 +387,19 @@ mod tests {
             Request::patch("/api/properties/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"name":"Impact"}"#))
+                .unwrap(),
+            Request::post("/api/issue-views")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"name":"Assigned","scope_type":"my","scope_variant":"assigned","query":{}}"#,
+                ))
+                .unwrap(),
+            Request::patch("/api/issue-views/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"name":"Mine","expected_revision":1}"#))
+                .unwrap(),
+            Request::delete("/api/issue-views/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::empty())
                 .unwrap(),
             Request::delete("/api/issues/CORD-14/properties/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
                 .body(Body::empty())
