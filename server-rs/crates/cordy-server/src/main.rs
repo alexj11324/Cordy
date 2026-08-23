@@ -11,6 +11,21 @@ use std::time::Duration;
 
 const PENDING_STORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
+struct VcsWebhookConfig {
+    enabled: bool,
+    secret_box: Option<cordy_util::secretbox::SecretBox>,
+}
+
+impl VcsWebhookConfig {
+    #[cfg(test)]
+    fn disabled() -> Self {
+        Self {
+            enabled: false,
+            secret_box: None,
+        }
+    }
+}
+
 #[cfg(test)]
 fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<cordy_realtime::hub::Hub>>) -> Router {
     cordy_handler::build_router(db, hub)
@@ -54,6 +69,7 @@ async fn build_production_router(
     cfg: &cordy_config::Config,
     attachment_storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
     attachment_frame_ancestors: Vec<String>,
+    vcs: VcsWebhookConfig,
 ) -> Router {
     let mut state = cordy_handler::HandlerState::new(
         db,
@@ -71,7 +87,8 @@ async fn build_production_router(
         ),
     ))
     .with_rate_limit_trusted_proxies(cfg.urls.rate_limit_trusted_proxies.as_deref())
-    .with_attachment_storage(attachment_storage, attachment_frame_ancestors);
+    .with_attachment_storage(attachment_storage, attachment_frame_ancestors)
+    .with_vcs_webhooks(vcs.enabled, vcs.secret_box);
     let redis_url = cfg
         .redis
         .url
@@ -165,6 +182,10 @@ async fn main() -> anyhow::Result<()> {
         .filter(|value| !value.is_empty())
         .map(str::to_string)
         .collect();
+    let vcs_enabled = cfg.integrations.vcs_integration_enabled.as_deref() == Some("true");
+    let vcs_secret_box = cordy_util::secretbox::load_key("CORDY_VCS_SECRET_KEY")
+        .ok()
+        .and_then(|key| cordy_util::secretbox::SecretBox::new(&key).ok());
     let app = build_production_router(
         db,
         hub,
@@ -174,6 +195,10 @@ async fn main() -> anyhow::Result<()> {
         &cfg,
         attachment_storage,
         attachment_frame_ancestors,
+        VcsWebhookConfig {
+            enabled: vcs_enabled,
+            secret_box: vcs_secret_box,
+        },
     )
     .await;
 
@@ -240,6 +265,7 @@ mod tests {
             &cfg,
             test_attachment_storage(),
             Vec::new(),
+            VcsWebhookConfig::disabled(),
         )
         .await;
         let response = tokio::time::timeout(
@@ -282,6 +308,7 @@ mod tests {
             &cfg,
             test_attachment_storage(),
             Vec::new(),
+            VcsWebhookConfig::disabled(),
         )
         .await;
         let response = tokio::time::timeout(
@@ -361,6 +388,7 @@ mod tests {
             &cfg,
             test_attachment_storage(),
             Vec::new(),
+            VcsWebhookConfig::disabled(),
         )
         .await;
     }

@@ -2934,6 +2934,66 @@ async fn publish_issue_updated(
     });
 }
 
+/// Applies the PR-merge auto-completion path without bypassing issue-domain
+/// side effects. Both GitHub and token-based VCS webhooks use the same
+/// combined sibling barrier before calling this helper.
+pub(crate) async fn advance_issue_to_done_from_pr(
+    state: &HandlerState,
+    previous: &Issue,
+    source: &str,
+) -> Option<Issue> {
+    let current_category = cordy_service::issue_status::effective(
+        &state.pool,
+        previous.workspace_id,
+        &previous.status,
+    )
+    .await;
+    if terminal_category(&current_category) {
+        return None;
+    }
+    let updated = match issue_q::update_issue_status(
+        &state.pool,
+        previous.id,
+        "done",
+        previous.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(issue)) => issue,
+        Ok(None) => return None,
+        Err(error) => {
+            tracing::warn!(%error, issue_id = %previous.id, "failed to complete issue from pull request");
+            return None;
+        }
+    };
+    notify_parent_of_child_done(state, previous, &updated).await;
+    let prefix = issue_prefix(state, updated.workspace_id).await;
+    let mut response = IssueResponse::from_issue(&updated, &prefix);
+    response.status_category = Some("done".into());
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::EVENT_ISSUE_UPDATED.into(),
+        workspace_id: updated.workspace_id.to_string(),
+        actor_type: "system".into(),
+        payload: pr_completion_event_payload(previous, response, source),
+        ..Default::default()
+    });
+    Some(updated)
+}
+
+fn pr_completion_event_payload(previous: &Issue, response: IssueResponse, source: &str) -> Value {
+    json!({
+        "issue": response,
+        "assignee_changed": false,
+        "status_changed": true,
+        "priority_changed": false,
+        "project_changed": false,
+        "prev_status": previous.status,
+        "creator_type": previous.creator_type,
+        "creator_id": previous.creator_id.to_string(),
+        "source": source,
+    })
+}
+
 fn publish_issue_attachments_changed(
     state: &HandlerState,
     issue: &Issue,
@@ -4389,6 +4449,32 @@ mod tests {
         assert_eq!(value["metadata"], json!({}));
         assert_eq!(value["properties"], json!({}));
         assert!(value.get("labels").is_none());
+    }
+
+    #[test]
+    fn pr_completion_event_matches_go_wire_shape() {
+        let previous = fixture_issue();
+        let mut updated = previous.clone();
+        updated.status = "done".into();
+        updated.revision += 1;
+        let mut response = IssueResponse::from_issue(&updated, "CORD");
+        response.status_category = Some("done".into());
+        let issue = serde_json::to_value(&response).expect("issue response");
+
+        assert_eq!(
+            pr_completion_event_payload(&previous, response, "github_pr_merged"),
+            json!({
+                "issue": issue,
+                "assignee_changed": false,
+                "status_changed": true,
+                "priority_changed": false,
+                "project_changed": false,
+                "prev_status": "in_progress",
+                "creator_type": "member",
+                "creator_id": "018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
+                "source": "github_pr_merged",
+            })
+        );
     }
 
     #[test]
