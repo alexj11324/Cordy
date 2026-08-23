@@ -162,12 +162,15 @@ async fn install_pending_stores(
             return state;
         }
     };
-    match tokio::time::timeout(
-        PENDING_STORE_CONNECT_TIMEOUT,
-        state.clone().with_redis(client),
-    )
-    .await
-    {
+    let wiring = async {
+        state
+            .clone()
+            .with_redis(client.clone())
+            .await?
+            .with_daemon_relay(client)
+            .await
+    };
+    match tokio::time::timeout(PENDING_STORE_CONNECT_TIMEOUT, wiring).await {
         Ok(Ok(wired)) => wired,
         Ok(Err(_)) | Err(_) => {
             tracing::warn!("Redis is unavailable; runtime pending requests are disabled");

@@ -12,8 +12,8 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use cordy_db::models::{Agent, AgentTaskQueue, Autopilot, RuntimeProfile};
 use cordy_db::queries::{
-    agent, agent_invocation_target, autopilot, channel, chat, chat_pinned_agent, issue_label,
-    runtime, runtime_profile,
+    agent, agent_builder, agent_invocation_target, autopilot, channel, chat, chat_pinned_agent,
+    issue_label, runtime, runtime_profile,
 };
 use cordy_middleware::workspace::WorkspaceContext;
 use cordy_protocol::{EVENT_AGENT_STATUS, EVENT_AUTOPILOT_UPDATED, EVENT_DAEMON_REGISTER};
@@ -147,10 +147,11 @@ fn profile_response(profile: &RuntimeProfile) -> Value {
     crate::profile_json::profile_to_map(profile)
 }
 
-fn notify_profile_changed(state: &HandlerState, workspace_id: Uuid, profile_id: Uuid) {
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_runtime_profiles_changed(&workspace_id.to_string(), &profile_id.to_string());
-    }
+async fn notify_profile_changed(state: &HandlerState, workspace_id: Uuid, profile_id: Uuid) {
+    state
+        .daemon_notifier
+        .notify_runtime_profiles_changed(&workspace_id.to_string(), &profile_id.to_string())
+        .await;
 }
 
 fn publish_daemon_register(
@@ -277,7 +278,7 @@ async fn create(
     .await
     {
         Ok(Some(profile)) => {
-            notify_profile_changed(&state, workspace_id, profile.id);
+            notify_profile_changed(&state, workspace_id, profile.id).await;
             publish_daemon_register(
                 &state,
                 workspace_id,
@@ -381,7 +382,7 @@ RETURNING command_name, created_at, created_by, description, display_name,
 
     match updated {
         Ok(Some(profile)) => {
-            notify_profile_changed(&state, workspace_id, profile.id);
+            notify_profile_changed(&state, workspace_id, profile.id).await;
             publish_daemon_register(
                 &state,
                 workspace_id,
@@ -461,6 +462,11 @@ pub(crate) async fn teardown_runtime(
     .await?;
     chat::delete_chat_draft_restores_by_system_runtime_agents(&mut **transaction, runtime_id)
         .await?;
+    agent_builder::delete_agent_builder_drafts_by_system_runtime_agents(
+        &mut **transaction,
+        runtime_id,
+    )
+    .await?;
     runtime::delete_system_agents_by_runtime(&mut **transaction, runtime_id).await?;
     Ok(Teardown {
         unbound_agents,
@@ -481,7 +487,14 @@ pub(crate) fn publish_teardown(
             workspace_id: workspace_id.to_string(),
             actor_type: "member".into(),
             actor_id: user_id.to_string(),
-            payload: json!({ "agent": agent }),
+            payload: json!({
+                "agent": crate::agent_api::agent_response(
+                    Some(state),
+                    agent.clone(),
+                    false,
+                    false,
+                )
+            }),
             ..Default::default()
         });
     }
@@ -643,7 +656,7 @@ async fn delete_profile(
             .await;
         publish_teardown(&state, workspace_id, context.member.user_id, teardown);
     }
-    notify_profile_changed(&state, workspace_id, profile_id);
+    notify_profile_changed(&state, workspace_id, profile_id).await;
     publish_daemon_register(
         &state,
         workspace_id,

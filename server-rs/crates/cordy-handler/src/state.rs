@@ -197,6 +197,9 @@ pub struct HandlerState {
     /// Daemon WebSocket hub (cordy-daemon). `None` only in tests — the WS
     /// endpoint reports 503 and daemons fall back to HTTP polling.
     pub daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
+    /// Relay-aware daemon notifier. It always targets the local hub and, when
+    /// Redis is configured, publishes the same hint for other API replicas.
+    pub daemon_notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
     /// Attachment object store. None is the explicit unconfigured test path.
     pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
     pub attachment_frame_ancestors: Vec<String>,
@@ -283,7 +286,11 @@ impl HandlerState {
             rate_limit_client: None,
             vcs_integration_enabled: false,
             vcs_secret_box: None,
-            daemon_hub: Some(daemon_hub),
+            daemon_hub: Some(daemon_hub.clone()),
+            daemon_notifier: Arc::new(cordy_daemon::notifier::RelayNotifier::new(
+                Some(daemon_hub.clone()),
+                None,
+            )),
             attachment_storage: None,
             attachment_frame_ancestors: Vec::new(),
             attachment_download: AttachmentDownloadSettings::default(),
@@ -572,6 +579,34 @@ impl HandlerState {
         ));
         self.local_skill_import_store = Some(Arc::new(
             crate::pending_store::LocalSkillImportStore::new(conn.clone()),
+        ));
+        Ok(self)
+    }
+
+    /// Starts the shared Redis relay and upgrades daemon notifications from
+    /// local-only delivery to local-plus-cross-replica delivery.
+    pub async fn with_daemon_relay(mut self, client: redis::Client) -> anyhow::Result<Self> {
+        let Some(realtime_hub) = self.hub.clone() else {
+            return Ok(self);
+        };
+        let Some(daemon_hub) = self.daemon_hub.clone() else {
+            return Ok(self);
+        };
+        let relay = Arc::new(
+            cordy_realtime::sharded_stream_relay::ShardedStreamRelay::new(
+                realtime_hub,
+                client,
+                None,
+                cordy_realtime::sharded_stream_relay::ShardedStreamRelayConfig::default(),
+            )
+            .await?,
+        );
+        relay.set_daemon_runtime_deliverer(daemon_hub.clone());
+        relay.start();
+        let publisher: Arc<dyn cordy_realtime::RelayPublisher> = relay;
+        self.daemon_notifier = Arc::new(cordy_daemon::notifier::RelayNotifier::new(
+            Some(daemon_hub),
+            Some(publisher),
         ));
         Ok(self)
     }

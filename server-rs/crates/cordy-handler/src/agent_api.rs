@@ -370,7 +370,7 @@ fn system_instructions_for(system_key: Option<&str>, display_name: &str) -> Stri
     }
 }
 
-fn agent_response(
+pub(crate) fn agent_response(
     state: Option<&HandlerState>,
     target: Agent,
     reveal_secrets: bool,
