@@ -3,7 +3,7 @@
 //! Symbol map:
 //! - RepoContextForEnv            → RepoContextForEnv
 //! - ProjectResourceForEnv        → ProjectResourceForEnv (custom Serialize keeps
-//!    resource_ref raw, defaulting to {})
+//!   resource_ref raw, defaulting to {})
 //! - PrepareParams                → PrepareParams
 //! - TaskContextForEnv            → TaskContextForEnv
 //! - SkillContextForEnv           → SkillContextForEnv
@@ -16,9 +16,9 @@
 //! - GCMetaKind / GCMeta          → GCMetaKind / GcMeta
 //! - WriteGCMeta / ReadGCMeta     → write_gc_meta / read_gc_meta
 //! - ManagedEnvProvenance (+ManagedBy const)
-//!    → ManagedEnvProvenance (+ MANAGED_ENV_PROVENANCE_MANAGED_BY)
+//!   → ManagedEnvProvenance (+ MANAGED_ENV_PROVENANCE_MANAGED_BY)
 //! - WriteManagedEnvProvenance /
-//!    ReadManagedEnvProvenance     → write_managed_env_provenance / read_managed_env_provenance
+//!   ReadManagedEnvProvenance     → write_managed_env_provenance / read_managed_env_provenance
 //! - Cleanup                      → Environment::cleanup
 //! - envRootOwnerFile             → ENV_ROOT_OWNER_FILE
 //! - claimEnvRoot                 → claim_env_root
@@ -29,22 +29,22 @@
 //!
 //! Shared package helpers hosted here:
 //! - filepath.Join / filepath.Clean → join_path / clean_path (lexical Go
-//!    semantics; std::path does not eliminate `..` the way Go's Clean does)
+//!   semantics; std::path does not eliminate `..` the way Go's Clean does)
 //! - copyFile (codex_home.go)     → copy_file
 //!
 //! Deviations:
 //! - slog logger parameter dropped; tracing macros used directly.
 //! - Prepare is async: the worktree branch shells out to git through
-//!    tokio::process with timeouts (local_worktree.rs).
+//!   tokio::process with timeouts (local_worktree.rs).
 //! - Provider families owned by lane E2 (hermes/qwenpaw/reasonix/openclaw)
-//!    are represented by fail-closed stand-ins at the bottom of this file,
-//!    each marked `// S9-integration:`. Their call sites in prepare are
-//!    already wired exactly as in Go, so E2 replaces the stub bodies only.
+//!   are represented by fail-closed stand-ins at the bottom of this file,
+//!   each marked `// S9-integration:`. Their call sites in prepare are
+//!   already wired exactly as in Go, so E2 replaces the stub bodies only.
 //! - OpenclawGatewayPin is a structural stand-in for openclaw_config.go's
-//!    type. Go's public type masks Token via MarshalJSON/Stringer; the
-//!    stand-in serializes plainly (the isolation helper protocol needs the
-//!    real token anyway) and masks only in Display. When E2 lands the real
-//!    port it replaces this definition wholesale.
+//!   type. Go's public type masks Token via MarshalJSON/Stringer; the
+//!   stand-in serializes plainly (the isolation helper protocol needs the
+//!   real token anyway) and masks only in Display. When E2 lands the real
+//!   port it replaces this definition wholesale.
 
 use std::collections::HashMap;
 use std::io::Write as _;

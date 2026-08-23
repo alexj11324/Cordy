@@ -20,9 +20,7 @@ use chrono::{DateTime, Utc};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::channel_store::{
-    create_lark_user_binding_with, is_no_rows, ChannelStore, ErrNoRows,
-};
+use crate::channel_store::{create_lark_user_binding_with, is_no_rows, ChannelStore, ErrNoRows};
 use crate::params::CreateUserBindingParams;
 use crate::store::{BindingTokenRow, UserBinding};
 use crate::types::{OpenId, BINDING_TOKEN_TTL};
@@ -193,24 +191,21 @@ impl BindingTokenService {
             .await
             .map_err(|e| anyhow::anyhow!("begin tx: {e:#}"))?;
 
-        let row = match crate::channel_store::consume_lark_binding_token_with(
-            &mut *tx,
-            &hash_token(raw),
-        )
-        .await
-        {
-            Ok(row) => row,
-            Err(err) if is_no_rows(&err) => return Err(ErrBindingTokenInvalid.into()),
-            Err(err) => return Err(anyhow::anyhow!("consume token: {err:#}")),
-        };
+        let row =
+            match crate::channel_store::consume_lark_binding_token_with(&mut *tx, &hash_token(raw))
+                .await
+            {
+                Ok(row) => row,
+                Err(err) if is_no_rows(&err) => return Err(ErrBindingTokenInvalid.into()),
+                Err(err) => return Err(anyhow::anyhow!("consume token: {err:#}")),
+            };
 
         // Explicit membership gate. The binding → member FK that used to
         // reject a non-member redeemer is gone (MUL-3515 §4), so we check it
         // here. Returning before Commit rolls the consume back, so a
         // non-member's attempt does not burn the token — same outcome the FK
         // violation produced.
-        let is_member =
-            is_workspace_member_on(&mut *tx, row.workspace_id, cordy_user_id).await?;
+        let is_member = is_workspace_member_on(&mut *tx, row.workspace_id, cordy_user_id).await?;
         if !is_member {
             return Err(ErrBindingNotWorkspaceMember.into());
         }
@@ -297,7 +292,7 @@ impl InstallerBinder for BindingTokenService {
         // Explicit membership gate, replacing the removed member FK
         // (MUL-3515 §4): the installer must be a member of the workspace they
         // are binding into.
-        let is_member = is_workspace_member_on(executor, p.workspace_id, p.cordy_user_id)
+        let is_member = is_workspace_member_on(&mut *executor, p.workspace_id, p.cordy_user_id)
             .await
             .map_err(|e| anyhow::anyhow!("check membership: {e:#}"))?;
         if !is_member {
@@ -324,19 +319,20 @@ impl InstallerBinder for BindingTokenService {
 
 /// Executor-generic membership check mirroring
 /// ChannelStore::is_workspace_member for use inside transactions.
-async fn is_workspace_member_on<E>(
-    executor: E,
+async fn is_workspace_member_on(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
     user_id: Uuid,
-) -> anyhow::Result<bool>
-where
-    E: sqlx::Executor<'_, Database = sqlx::Postgres>,
-{
-    Ok(cordy_db::queries::member::get_member_by_user_and_workspace(
-        executor, user_id, workspace_id,
+) -> anyhow::Result<bool> {
+    Ok(
+        cordy_db::queries::member::get_member_by_user_and_workspace(
+            executor,
+            user_id,
+            workspace_id,
+        )
+        .await?
+        .is_some(),
     )
-    .await?
-    .is_some())
 }
 
 /// URL-safe so the token embeds cleanly in the binding URL without escaping.
