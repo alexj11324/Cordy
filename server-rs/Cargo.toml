@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/cordy-agent",
     "crates/cordy-analytics",
     "crates/cordy-auth",
     "crates/cordy-channel",
