@@ -18,8 +18,8 @@ use axum::routing::get;
 use axum::{Json, Router};
 use cordy_db::models::AgentRuntime;
 use cordy_db::queries::{
-    agent, autopilot, chat, issue, member, runtime, runtime_profile, task_message, task_token,
-    workspace,
+    agent, autopilot, chat, comment as comment_q, issue, member, runtime, runtime_profile,
+    task_message, task_token, workspace,
 };
 use cordy_middleware::daemon_auth::DaemonContext;
 use cordy_protocol::EVENT_DAEMON_REGISTER;
@@ -848,7 +848,7 @@ async fn register(
             "version": rt_req.version,
             "cli_version": req.cli_version,
             "launched_by": req.launched_by,
-            "client_capabilities": capabilities,
+            "capabilities": capabilities,
         });
         let is_custom = !rt_req.profile_id.trim().is_empty();
 
@@ -1049,7 +1049,7 @@ async fn register(
             "runtime_profile_registration_error": true,
             "runtime_profile_failure_reason": reason,
             "command_name": resolved_command,
-            "client_capabilities": capabilities,
+            "capabilities": capabilities,
         });
         let up = runtime::upsert_agent_runtime_with_profile(
             &mut *tx,
@@ -1559,7 +1559,7 @@ async fn claim_tasks_by_runtime(
             let _ = state.tasks.cancel_task(task.id).await;
             continue;
         };
-        match finalize_claim_enriched(&state, &task, owner, &built).await {
+        match finalize_claim_enriched_with_runtime(&state, &task, owner, &built, Some(rt)).await {
             Ok((auth_token, remote_mcp_token, receipt)) => {
                 let mut payload = built.payload;
                 if let Some(obj) = payload.as_object_mut() {
@@ -1649,18 +1649,57 @@ async fn repair_stale_comment_plan(
             "task workspace isolation check failed",
         )));
     }
+    let mut survivors = Vec::with_capacity(task.coalesced_comment_ids.len());
+    for comment_id in &task.coalesced_comment_ids {
+        match comment_q::get_comment_in_workspace(&state.pool, *comment_id, issue.workspace_id)
+            .await
+        {
+            Ok(Some(comment)) if comment.issue_id == issue.id => survivors.push(comment),
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(error = %e, %comment_id, task_id = %task.id, "claim: load stale-plan survivor failed");
+            }
+        }
+    }
+    survivors.sort_by(|a, b| {
+        a.created_at
+            .cmp(&b.created_at)
+            .then_with(|| a.id.cmp(&b.id))
+    });
+
     match state.tasks.cancel_task(task.id).await {
-        Ok(cancelled) => {
-            // Replay surviving comments: promote the newest survivor as the
-            // trigger of a replacement task via the service's rerun path.
-            let mut planned: Vec<Uuid> = task.coalesced_comment_ids.clone();
-            planned.retain(|id| *id != cancelled.id);
-            let _ = planned;
-            let _ = &cancelled;
+        Ok(_) => {
+            if let Some(trigger) = survivors.pop() {
+                let coalesced = survivors.into_iter().map(|comment| comment.id).collect();
+                let replayed = state
+                    .tasks
+                    .enqueue_mention_task(
+                        &issue,
+                        task.agent_id,
+                        Some(trigger.id),
+                        coalesced,
+                        task.is_leader_task,
+                        task.squad_id,
+                        task.force_fresh_session,
+                        task.handoff_note.as_deref().unwrap_or(""),
+                        None,
+                        Some(task.id),
+                    )
+                    .await;
+                if let Err(e) = replayed {
+                    if !cordy_service::task_service::pending_slot_taken_err(&e) {
+                        tracing::error!(error = %e, task_id = %task.id, "claim: replay stale-plan survivors failed");
+                        return RepairOutcome::Failed(Box::new(error_response(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "failed to repair stale comment task",
+                        )));
+                    }
+                }
+            }
             tracing::info!(
                 task_id = %task.id,
                 issue_id = %issue_id,
-                "claim: repaired stale comment plan; survivors requeued through reconcile"
+                "claim: repaired stale comment plan; survivors requeued"
             );
             RepairOutcome::RepairedClean
         }
@@ -1679,15 +1718,6 @@ async fn repair_stale_comment_plan(
 /// remoteMCPDaemonTokenForClaim + FinalizeTaskClaim), recording the exact
 /// comment-delivery receipt for comment-backed tasks.
 /// Returns (raw task token, optional raw daemon token, persisted receipt).
-async fn finalize_claim_enriched(
-    state: &HandlerState,
-    task: &cordy_db::models::AgentTaskQueue,
-    owner_id: Uuid,
-    built: &crate::claim_response::BuiltClaim,
-) -> Result<(String, Option<String>, Vec<Uuid>), bool> {
-    finalize_claim_enriched_with_runtime(state, task, owner_id, built, None).await
-}
-
 /// Runtime-aware variant used by the per-runtime claim path so the Remote MCP
 /// daemon token can be bound to the claiming runtime's daemon.
 #[allow(clippy::too_many_arguments)]
@@ -1790,10 +1820,16 @@ async fn finalize_claim_enriched_with_runtime(
 fn set_claim_tokens(
     obj: &mut Map<String, Value>,
     auth_token: &str,
-    _remote_mcp_daemon_token: Option<&str>,
+    remote_mcp_daemon_token: Option<&str>,
     receipt: &[Uuid],
 ) {
     obj.insert("auth_token".into(), Value::String(auth_token.to_string()));
+    if let Some(token) = remote_mcp_daemon_token {
+        obj.insert(
+            "remote_mcp_daemon_token".into(),
+            Value::String(token.to_string()),
+        );
+    }
     if !receipt.is_empty() {
         obj.insert(
             "delivered_comment_ids".into(),
@@ -1888,7 +1924,7 @@ async fn claim_task_by_runtime(
             "runtime owner required to mint task token",
         );
     };
-    match finalize_claim_enriched(&state, &task, owner, &built).await {
+    match finalize_claim_enriched_with_runtime(&state, &task, owner, &built, Some(&rt)).await {
         Ok((token, remote_mcp_token, receipt)) => {
             let mut payload = built.payload;
             if let Some(obj) = payload.as_object_mut() {
@@ -3546,13 +3582,10 @@ async fn report_local_skill_import_result(
         .await;
     };
 
-    // Persist the imported skill (Go createSkillWithFiles / overwrite path),
-    // then mark the store terminal. A same-name conflict resolves to the
-    // structured conflict state when the client opted in; legacy clients keep
-    // the `failed` behavior. The full create/overwrite transactional port lands
-    // with the skills domain slice — until then a completed report is recorded
-    // with the raw skill payload so the UI can render it, and the DB write is
-    // deferred rather than silently skipped.
+    // Persist the imported skill and every supporting file in one Postgres
+    // transaction. Redis completion is intentionally outside that transaction;
+    // create rolls the inserted skill back on a completion failure, while
+    // overwrite is idempotent and is retried without deleting prior state.
     let creator_uuid = match Uuid::parse_str(existing.creator_id.trim()) {
         Ok(u) => u,
         Err(_) => {
@@ -3597,135 +3630,299 @@ async fn report_local_skill_import_result(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    let config = json!({
+        "origin": {
+            "type": "runtime_local",
+            "runtime_id": runtime_id,
+            "provider": skill.get("provider").and_then(|v| v.as_str()).unwrap_or(""),
+            "source_path": skill.get("source_path").and_then(|v| v.as_str()).unwrap_or(""),
+        }
+    });
+    let files: Vec<(String, String)> = skill
+        .get("files")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|file| {
+            let path = file.get("path").and_then(Value::as_str).unwrap_or("");
+            validate_file_path(path).then(|| {
+                (
+                    sanitize_null_bytes(path),
+                    sanitize_null_bytes(file.get("content").and_then(Value::as_str).unwrap_or("")),
+                )
+            })
+        })
+        .collect();
+    let sanitized_name = sanitize_null_bytes(&name);
+    let sanitized_description = sanitize_null_bytes(&description);
+    let sanitized_content = sanitize_null_bytes(&content);
+    let is_overwrite = existing.action == "overwrite";
 
     // Create path: detect a same-name conflict before writing.
-    match cordy_db::queries::skill::get_skill_by_workspace_and_name(
-        &state.pool,
-        rt.workspace_id,
-        name.trim(),
-    )
-    .await
-    {
-        Ok(Some(_existing_skill)) => {
-            let conflict = crate::pending_store::LocalSkillImportConflict {
-                can_overwrite: false,
-                ..Default::default()
-            };
-            if let Err(e) = store.conflict(request_id.trim(), conflict).await {
-                tracing::error!(error = %e, request_id = %request_id, "local skill import Conflict failed");
-                return error_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to persist conflict",
-                );
+    if !is_overwrite {
+        match cordy_db::queries::skill::get_skill_by_workspace_and_name(
+            &state.pool,
+            rt.workspace_id,
+            sanitized_name.trim(),
+        )
+        .await
+        {
+            Ok(Some(conflicting)) => {
+                let conflict = crate::pending_store::LocalSkillImportConflict {
+                    existing_skill_id: conflicting.id.to_string(),
+                    existing_created_by: conflicting
+                        .created_by
+                        .map(|id| id.to_string())
+                        .unwrap_or_default(),
+                    can_overwrite: conflicting.created_by == Some(creator_uuid),
+                };
+                if let Err(e) = store.conflict(request_id.trim(), conflict).await {
+                    tracing::error!(error = %e, request_id = %request_id, "local skill import Conflict failed");
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to persist conflict",
+                    );
+                }
+                return Json(json!({ "status": "ok" })).into_response();
             }
-            return Json(json!({ "status": "ok" })).into_response();
+            Ok(None) => {}
+            Err(e) => {
+                return fail_import(
+                    store,
+                    request_id.trim(),
+                    &format!("failed to check for existing skill: {e}"),
+                )
+                .await;
+            }
         }
-        Ok(None) => {}
+    }
+
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
         Err(e) => {
             return fail_import(
                 store,
                 request_id.trim(),
-                &format!("failed to check for existing skill: {e}"),
+                &format!("failed to begin skill import: {e}"),
             )
-            .await;
+            .await
         }
-    }
-
-    let created = cordy_db::queries::skill::create_skill(
-        &state.pool,
-        rt.workspace_id,
-        &sanitize_null_bytes(&name),
-        &sanitize_null_bytes(&description),
-        &sanitize_null_bytes(&content),
-        &json!({
-            "origin": {
-                "type": "runtime_local",
-                "runtime_id": runtime_id,
-                "provider": skill.get("provider").and_then(|v| v.as_str()).unwrap_or(""),
-                "source_path": skill.get("source_path").and_then(|v| v.as_str()).unwrap_or(""),
+    };
+    let persisted = if is_overwrite {
+        let target_id = match Uuid::parse_str(existing.target_skill_id.trim()) {
+            Ok(id) => id,
+            Err(_) => {
+                return fail_import(
+                    store,
+                    request_id.trim(),
+                    "stored target_skill_id is invalid",
+                )
+                .await
             }
-        }),
-        creator_uuid,
-    )
-    .await;
-    let created = match created {
-        Ok(Some(s)) => s,
-        Ok(None) | Err(_) => {
+        };
+        let target = match cordy_db::queries::skill::get_skill_in_workspace(
+            &mut *tx,
+            target_id,
+            rt.workspace_id,
+        )
+        .await
+        {
+            Ok(Some(target)) => target,
+            Ok(None) => {
+                return fail_import(store, request_id.trim(), "target skill no longer exists").await
+            }
+            Err(e) => {
+                return fail_import(
+                    store,
+                    request_id.trim(),
+                    &format!("failed to load target skill: {e}"),
+                )
+                .await
+            }
+        };
+        if target.created_by != Some(creator_uuid) {
             return fail_import(
                 store,
                 request_id.trim(),
-                "a skill with this name already exists",
+                "you no longer have permission to overwrite this skill",
             )
             .await;
         }
+        if target.name != sanitized_name {
+            return fail_import(
+                store,
+                request_id.trim(),
+                "target skill name no longer matches the imported skill",
+            )
+            .await;
+        }
+        if let Err(e) =
+            cordy_db::queries::skill::delete_skill_files_by_skill(&mut *tx, target.id).await
+        {
+            return fail_import(
+                store,
+                request_id.trim(),
+                &format!("failed to replace skill files: {e}"),
+            )
+            .await;
+        }
+        match cordy_db::queries::skill::update_skill(
+            &mut *tx,
+            target.id,
+            Some(&sanitized_name),
+            Some(&sanitized_description),
+            Some(&sanitized_content),
+            &config,
+        )
+        .await
+        {
+            Ok(Some(updated)) => updated,
+            Ok(None) => {
+                return fail_import(store, request_id.trim(), "target skill no longer exists").await
+            }
+            Err(e) => {
+                return fail_import(
+                    store,
+                    request_id.trim(),
+                    &format!("failed to overwrite skill: {e}"),
+                )
+                .await
+            }
+        }
+    } else {
+        match cordy_db::queries::skill::create_skill(
+            &mut *tx,
+            rt.workspace_id,
+            &sanitized_name,
+            &sanitized_description,
+            &sanitized_content,
+            &config,
+            creator_uuid,
+        )
+        .await
+        {
+            Ok(Some(created)) => created,
+            Ok(None) => {
+                return fail_import(
+                    store,
+                    request_id.trim(),
+                    "a skill with this name already exists",
+                )
+                .await
+            }
+            Err(e) if is_unique_violation(&e) => {
+                return fail_import(
+                    store,
+                    request_id.trim(),
+                    "a skill with this name already exists",
+                )
+                .await
+            }
+            Err(e) => {
+                return fail_import(
+                    store,
+                    request_id.trim(),
+                    &format!("failed to create skill: {e}"),
+                )
+                .await
+            }
+        }
     };
 
-    // Supporting files (SKILL.md reserved for primary content).
-    if let Some(files) = skill.get("files").and_then(|v| v.as_array()) {
-        for f in files {
-            let path = f.get("path").and_then(|v| v.as_str()).unwrap_or("");
-            let file_content = f.get("content").and_then(|v| v.as_str()).unwrap_or("");
-            if !validate_file_path(path) {
-                continue;
+    let mut persisted_files = Vec::with_capacity(files.len());
+    for (path, file_content) in &files {
+        match cordy_db::queries::skill::upsert_skill_file(
+            &mut *tx,
+            persisted.id,
+            path,
+            file_content,
+        )
+        .await
+        {
+            Ok(Some(file)) => persisted_files.push(file),
+            Ok(None) => {
+                return fail_import(store, request_id.trim(), "failed to persist skill file").await
             }
-            if let Err(e) = cordy_db::queries::skill::upsert_skill_file(
-                &state.pool,
-                created.id,
-                &sanitize_null_bytes(path),
-                &sanitize_null_bytes(file_content),
-            )
-            .await
-            {
-                tracing::warn!(error = %e, skill_id = %created.id, "import supporting file write failed");
+            Err(e) => {
+                return fail_import(
+                    store,
+                    request_id.trim(),
+                    &format!("failed to persist skill file: {e}"),
+                )
+                .await
             }
         }
     }
+    if let Err(e) = tx.commit().await {
+        return fail_import(
+            store,
+            request_id.trim(),
+            &format!("failed to commit skill import: {e}"),
+        )
+        .await;
+    }
 
     let resp_skill = json!({
-        "id": created.id.to_string(),
-        "workspace_id": created.workspace_id.to_string(),
-        "name": created.name,
-        "description": created.description,
-        "content": created.content,
-        "config": created.config,
-        "created_by": created.created_by.map(|u| u.to_string()),
-        "created_at": crate::timefmt::rfc3339(created.created_at),
-        "updated_at": crate::timefmt::rfc3339(created.updated_at),
-        "files": [],
+        "id": persisted.id.to_string(),
+        "workspace_id": persisted.workspace_id.to_string(),
+        "name": persisted.name,
+        "description": persisted.description,
+        "content": persisted.content,
+        "config": persisted.config,
+        "created_by": persisted.created_by.map(|u| u.to_string()),
+        "created_at": crate::timefmt::rfc3339(persisted.created_at),
+        "updated_at": crate::timefmt::rfc3339(persisted.updated_at),
+        "files": persisted_files,
     });
-    if let Err(e) = store.complete(request_id.trim(), resp_skill).await {
+    if let Err(e) = store.complete(request_id.trim(), resp_skill.clone()).await {
         // The skill already landed in Postgres; roll it back so the daemon's
         // retry lands on a clean slate instead of hitting the unique-name
         // constraint forever.
         tracing::error!(
             error = %e,
             request_id = %request_id,
-            skill_id = %created.id,
+            skill_id = %persisted.id,
             "local skill import Complete failed — rolling back created skill"
         );
-        let _ =
-            cordy_db::queries::skill::delete_skill(&state.pool, created.id, rt.workspace_id).await;
+        if !is_overwrite {
+            let _ =
+                cordy_db::queries::skill::delete_skill(&state.pool, persisted.id, rt.workspace_id)
+                    .await;
+        }
         return error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to persist import completion",
         );
     }
     state.bus.publish(&cordy_events::Event {
-        event_type: cordy_protocol::EVENT_SKILL_CREATED.to_string(),
+        event_type: if is_overwrite {
+            cordy_protocol::EVENT_SKILL_UPDATED
+        } else {
+            cordy_protocol::EVENT_SKILL_CREATED
+        }
+        .to_string(),
         workspace_id: rt.workspace_id.to_string(),
         actor_type: "member".to_string(),
         actor_id: existing.creator_id.clone(),
-        payload: json!({}),
+        payload: json!({ "skill": resp_skill }),
         task_id: String::new(),
         ..Default::default()
     });
-    tracing::debug!(runtime_id = %runtime_id, request_id = %request_id, skill_id = %created.id, "runtime local skill imported");
+    tracing::debug!(runtime_id = %runtime_id, request_id = %request_id, skill_id = %persisted.id, "runtime local skill imported");
     Json(json!({ "status": "ok" })).into_response()
 }
 
 /// Go sanitizeNullBytes → util.SanitizeTextForPostgres.
 fn sanitize_null_bytes(s: &str) -> String {
     s.replace('\0', "")
+}
+
+fn is_unique_violation(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<sqlx::Error>()
+        .and_then(|error| error.as_database_error())
+        .and_then(|error| error.code())
+        .is_some_and(|code| code == "23505")
 }
 
 fn sanitize_json_for_postgres(value: Value) -> Value {
@@ -3839,6 +4036,14 @@ mod tests {
                 "number": 7,
             })
         );
+    }
+
+    #[test]
+    fn set_claim_tokens_includes_remote_mcp_credential() {
+        let mut payload = Map::new();
+        set_claim_tokens(&mut payload, "task-token", Some("mcp-token"), &[]);
+        assert_eq!(payload["auth_token"], json!("task-token"));
+        assert_eq!(payload["remote_mcp_daemon_token"], json!("mcp-token"));
     }
 
     // Contract: a missing runtime row maps to 404 (daemon drops + re-registers)
