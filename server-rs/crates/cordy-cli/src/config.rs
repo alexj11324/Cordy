@@ -3,8 +3,10 @@
 
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
+use serde_json::Value;
 use std::collections::HashMap;
-use std::fs;
+use std::fs::{self, File, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub const TASK_CONFIG_ROOT_ENV: &str = "CORDY_TASK_CONFIG_ROOT";
@@ -110,6 +112,43 @@ impl Environment {
         serde_json::from_slice(&data).context("parse CLI config")
     }
 
+    pub fn clear_profile_token(&self, profile: &str) -> Result<bool> {
+        let path = self.config_path(profile)?;
+        let directory = path.parent().context("resolve CLI config directory")?;
+        if !directory.exists() {
+            return Ok(false);
+        }
+        let lock_path = directory.join(".config.lock");
+        let lock = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .context("open CLI config lock")?;
+        restrict_file_permissions(&lock_path)?;
+        lock.lock().context("lock CLI config")?;
+
+        let data = match fs::read(&path) {
+            Ok(data) => data,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error).context("read CLI config"),
+        };
+        let mut document: Value = serde_json::from_slice(&data).context("parse CLI config")?;
+        let object = document
+            .as_object_mut()
+            .context("parse CLI config: expected a JSON object")?;
+        let has_token = object
+            .get("token")
+            .and_then(Value::as_str)
+            .is_some_and(|token| !token.is_empty());
+        if !has_token {
+            return Ok(false);
+        }
+        object.remove("token");
+        write_json_atomically(&path, &document)?;
+        Ok(true)
+    }
+
     pub fn in_agent_execution_context(&self) -> bool {
         self.raw("CORDY_AGENT_ID")
             .is_some_and(|value| !value.is_empty())
@@ -123,6 +162,12 @@ impl Environment {
             || self
                 .raw("CORDY_DAEMON_PORT")
                 .is_some_and(|value| !value.is_empty())
+            || self.daemon_task_context_marker().is_some()
+    }
+
+    pub fn in_daemon_task_identity_context(&self) -> bool {
+        self.in_agent_execution_context()
+            || self.trimmed(TASK_CONFIG_ROOT_ENV).is_some()
             || self.daemon_task_context_marker().is_some()
     }
 
@@ -165,6 +210,70 @@ impl Environment {
             (marker.managed_by == TASK_CONTEXT_MARKER_MANAGED_BY).then_some(path)
         })
     }
+}
+
+fn write_json_atomically(path: &Path, document: &Value) -> Result<()> {
+    let directory = path.parent().context("resolve CLI config directory")?;
+    let mut data = serde_json::to_vec_pretty(document).context("encode CLI config")?;
+    data.push(b'\n');
+    let (mut temporary, temporary_path) = create_config_temp_file(directory)?;
+    let result = (|| -> Result<()> {
+        temporary
+            .write_all(&data)
+            .context("write temp config file")?;
+        temporary.sync_all().context("sync temp config file")?;
+        drop(temporary);
+        restrict_file_permissions(&temporary_path)?;
+        fs::rename(&temporary_path, path).context("rename config file")?;
+        sync_directory(directory)?;
+        Ok(())
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary_path);
+    }
+    result
+}
+
+fn create_config_temp_file(directory: &Path) -> Result<(File, PathBuf)> {
+    for attempt in 0..100_u8 {
+        let path = directory.join(format!(".config-{}-{attempt}.json.tmp", std::process::id()));
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        match options.open(&path) {
+            Ok(file) => return Ok((file, path)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error).context("create temp config file"),
+        }
+    }
+    bail!("create temp config file: exhausted unique names")
+}
+
+#[cfg(unix)]
+fn restrict_file_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600)).context("chmod CLI config file")
+}
+
+#[cfg(not(unix))]
+fn restrict_file_permissions(_path: &Path) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(unix)]
+fn sync_directory(directory: &Path) -> Result<()> {
+    File::open(directory)
+        .and_then(|file| file.sync_all())
+        .context("sync CLI config directory")
+}
+
+#[cfg(not(unix))]
+fn sync_directory(_directory: &Path) -> Result<()> {
+    Ok(())
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -252,5 +361,51 @@ mod tests {
 
         fs::write(&marker_path, r#"{"managed_by":"cordy-daemon-task"}"#).expect("root marker");
         assert!(env.leftover_marker_suffix().is_none());
+    }
+
+    #[test]
+    fn clear_profile_token_is_locked_atomic_and_preserves_other_fields() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let profile_dir = home.path().join(".cordy/profiles/dev");
+        fs::create_dir_all(&profile_dir).expect("profile dir");
+        fs::write(
+            profile_dir.join("config.json"),
+            r#"{"server_url":"https://dev.example","token":"mul_dev","future":{"enabled":true}}"#,
+        )
+        .expect("profile config");
+        let default_path = home.path().join(".cordy/config.json");
+        fs::create_dir_all(default_path.parent().expect("default dir")).expect("default dir");
+        let default_bytes = br#"{"token":"mul_default","workspace_id":"default-workspace"}"#;
+        fs::write(&default_path, default_bytes).expect("default config");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+
+        let outcomes = std::thread::scope(|scope| {
+            let first = environment.clone();
+            let second = environment.clone();
+            let first = scope.spawn(move || first.clear_profile_token("dev").expect("first clear"));
+            let second =
+                scope.spawn(move || second.clear_profile_token("dev").expect("second clear"));
+            [
+                first.join().expect("first thread"),
+                second.join().expect("second thread"),
+            ]
+        });
+        assert_eq!(outcomes.into_iter().filter(|removed| *removed).count(), 1);
+
+        let saved: Value = serde_json::from_slice(
+            &fs::read(profile_dir.join("config.json")).expect("saved profile"),
+        )
+        .expect("saved JSON");
+        assert!(saved.get("token").is_none());
+        assert_eq!(saved["server_url"], "https://dev.example");
+        assert_eq!(saved["future"]["enabled"], true);
+        assert_eq!(
+            fs::read(&default_path).expect("default unchanged"),
+            default_bytes
+        );
+        assert!(!environment
+            .clear_profile_token("missing")
+            .expect("missing profile is idempotent"));
     }
 }
