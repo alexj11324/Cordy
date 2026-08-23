@@ -2530,17 +2530,34 @@ struct TaskMessageBatchRequest {
     messages: Vec<TaskMessageRequest>,
 }
 
-fn task_message_payload(m: &cordy_db::models::TaskMessage) -> Value {
-    json!({
-        "task_id": m.task_id.to_string(),
-        "seq": m.seq,
-        "type": m.type_,
-        "tool": m.tool.clone().unwrap_or_default(),
-        "content": m.content.clone().unwrap_or_default(),
-        "input": m.input.clone(),
-        "output": m.output.clone().unwrap_or_default(),
-        "created_at": crate::timefmt::rfc3339_nano(m.created_at),
-    })
+pub(crate) fn task_message_payload(
+    m: &cordy_db::models::TaskMessage,
+    issue_id: Option<Uuid>,
+) -> Value {
+    let mut payload = serde_json::Map::new();
+    payload.insert("task_id".into(), Value::String(m.task_id.to_string()));
+    payload.insert("seq".into(), json!(m.seq));
+    payload.insert("type".into(), Value::String(m.type_.clone()));
+    if let Some(issue_id) = issue_id {
+        payload.insert("issue_id".into(), Value::String(issue_id.to_string()));
+    }
+    if let Some(tool) = m.tool.as_deref().filter(|value| !value.is_empty()) {
+        payload.insert("tool".into(), Value::String(tool.into()));
+    }
+    if let Some(content) = m.content.as_deref().filter(|value| !value.is_empty()) {
+        payload.insert("content".into(), Value::String(content.into()));
+    }
+    if let Some(input) = m.input.as_ref().filter(|value| value.is_object()) {
+        payload.insert("input".into(), input.clone());
+    }
+    if let Some(output) = m.output.as_deref().filter(|value| !value.is_empty()) {
+        payload.insert("output".into(), Value::String(output.into()));
+    }
+    payload.insert(
+        "created_at".into(),
+        Value::String(crate::timefmt::rfc3339_nano(m.created_at)),
+    );
+    Value::Object(payload)
 }
 
 async fn report_task_messages(
@@ -2607,7 +2624,7 @@ async fn report_task_messages(
                         actor_type: "system".to_string(),
                         actor_id: String::new(),
                         payload: json!({
-                            "task_message": task_message_payload(&created),
+                            "task_message": task_message_payload(&created, task.issue_id),
                             "issue_id": task.issue_id.map(|u| u.to_string()).unwrap_or_default(),
                         }),
                         task_id: task_id.to_string(),
@@ -2645,8 +2662,7 @@ async fn list_task_messages_impl(
     headers: HeaderMap,
 ) -> Response {
     let access = Access::new(&state, &headers);
-    let (_task, _) = match require_daemon_task_access_with_workspace(&access, None, &task_id).await
-    {
+    let (task, _) = match require_daemon_task_access_with_workspace(&access, None, &task_id).await {
         Ok(v) => v,
         Err(res) => return res,
     };
@@ -2661,7 +2677,12 @@ async fn list_task_messages_impl(
         None => task_message::list_task_messages(&state.pool, task_uuid).await,
     };
     match messages {
-        Ok(rows) => Json(rows.iter().map(task_message_payload).collect::<Vec<_>>()).into_response(),
+        Ok(rows) => Json(
+            rows.iter()
+                .map(|message| task_message_payload(message, task.issue_id))
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
         Err(_) => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to list task messages",
@@ -4033,6 +4054,35 @@ mod tests {
                 "number": 7,
             })
         );
+    }
+
+    #[test]
+    fn task_message_payload_matches_go_omitempty_contract() {
+        let task_id = Uuid::parse_str("018f946a-1234-7890-abcd-1234567890ab").unwrap();
+        let issue_id = Uuid::parse_str("018f946a-5678-7890-abcd-1234567890ab").unwrap();
+        let message = cordy_db::models::TaskMessage {
+            content: None,
+            created_at: "2026-08-23T12:34:56.123Z".parse().unwrap(),
+            id: Uuid::parse_str("018f946a-9abc-7890-abcd-1234567890ab").unwrap(),
+            input: Some(json!({"path": "README.md"})),
+            output: Some(String::new()),
+            seq: 7,
+            task_id,
+            tool: None,
+            type_: "tool_call".into(),
+        };
+
+        let payload = task_message_payload(&message, Some(issue_id));
+
+        assert_eq!(payload["task_id"], json!(task_id.to_string()));
+        assert_eq!(payload["issue_id"], json!(issue_id.to_string()));
+        assert_eq!(payload["seq"], json!(7));
+        assert_eq!(payload["type"], json!("tool_call"));
+        assert_eq!(payload["input"], json!({"path": "README.md"}));
+        assert_eq!(payload["created_at"], json!("2026-08-23T12:34:56.123Z"));
+        assert!(payload.get("tool").is_none());
+        assert!(payload.get("content").is_none());
+        assert!(payload.get("output").is_none());
     }
 
     #[test]
