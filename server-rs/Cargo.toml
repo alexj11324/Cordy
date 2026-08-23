@@ -6,6 +6,7 @@ members = [
     "crates/cordy-channel",
     "crates/cordy-daemon",
     "crates/cordy-channel-engine",
+    "crates/cordy-cli",
     "crates/cordy-composio",
     "crates/cordy-config",
     "crates/cordy-db",
@@ -40,6 +41,7 @@ license = "UNLICENSED"
 [workspace.dependencies]
 # async runtime & web
 tokio = { version = "1", features = ["full"] }
+clap = { version = "4", features = ["derive"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "multipart", "ws", "matched-path", "original-uri", "tower-log", "tracing"] }
 tower-http = { version = "0.6", features = ["cors"] }
 percent-encoding = "2.3"
@@ -105,6 +107,7 @@ hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "runtime", "service", "tokio"] }
 http-body-util = "0.1"
 url = "2"
+dirs = "6"
 rustls-pemfile = "2"
 # secretbox config-secret encryption (AES-256-GCM, nonce-prefixed layout)
 aes-gcm = { version = "0.10", features = ["std", "getrandom"] }
