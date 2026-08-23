@@ -718,7 +718,7 @@ fn format_config_table(path: &Path, profile: &str, values: &[(&str, Value)]) -> 
     for (key, value) in values {
         let rendered = match (*key, value) {
             ("agent_timeout", Value::String(value))
-                if parse_go_duration(value).is_ok_and(|duration| duration == 0.0) =>
+                if parse_go_duration(value).is_some_and(|duration| duration == 0.0) =>
             {
                 format!("{value} (disabled)")
             }
@@ -1918,6 +1918,23 @@ mod tests {
             }) => args,
             _ => panic!("expected workspace update"),
         }
+    }
+
+    #[test]
+    fn config_agent_timeout_display_preserves_three_states() {
+        let path = Path::new("/tmp/config.json");
+
+        let disabled =
+            format_config_table(path, "", &[("agent_timeout", Value::String("0s".into()))]);
+        assert!(disabled.contains("0s (disabled)"));
+
+        let positive =
+            format_config_table(path, "", &[("agent_timeout", Value::String("30m".into()))]);
+        assert!(positive.contains("30m"));
+        assert!(!positive.contains("disabled"));
+
+        let unset = format_config_table(path, "", &[("agent_timeout", Value::Null)]);
+        assert!(unset.contains("(not set)"));
     }
 
     #[tokio::test]
