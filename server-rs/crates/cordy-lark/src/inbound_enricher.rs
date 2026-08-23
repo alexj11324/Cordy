@@ -23,7 +23,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 
 use crate::client::{
-    ApiClient, InstallationCredentials, ListMessagesParams, LarkMessage, LarkMessageMention,
+    ApiClient, InstallationCredentials, LarkMessage, LarkMessageMention, ListMessagesParams,
 };
 use crate::content_flatten::{flatten_content, LARK_MSG_TYPE_MERGE_FORWARD};
 use crate::feishu_types::InboundMessage;
@@ -107,8 +107,7 @@ pub trait Enricher: Send + Sync {
     /// never creates its own session row, and is only ever surfaced as read-
     /// context attached to a turn a workspace member explicitly directed at
     /// the Bot.
-    async fn enrich(&self, msg: InboundMessage, creds: InstallationCredentials)
-        -> InboundMessage;
+    async fn enrich(&self, msg: InboundMessage, creds: InstallationCredentials) -> InboundMessage;
 }
 
 /// Tunes the enricher. All fields default.
@@ -206,7 +205,11 @@ impl InboundEnricher {
         let mut items: Vec<LarkMessage> = Vec::new();
         let mut last_err: Option<anyhow::Error> = None;
         for attempt in 1..=RECENT_CONTEXT_MAX_FETCH_ATTEMPTS {
-            match self.client.list_chat_messages(creds.clone(), params.clone()).await {
+            match self
+                .client
+                .list_chat_messages(creds.clone(), params.clone())
+                .await
+            {
                 Ok(found) => {
                     items = found;
                     if attempt > 1 {
@@ -429,9 +432,7 @@ impl InboundEnricher {
         if truncated > 0 {
             body.push_str(&format!("\n... ({truncated} more truncated)"));
         }
-        format!(
-            "<forwarded_messages count=\"{total}\">\n{body}\n</forwarded_messages>"
-        )
+        format!("<forwarded_messages count=\"{total}\">\n{body}\n</forwarded_messages>")
     }
 
     /// Turns one fetched message into plain text: structural flatten by
@@ -471,8 +472,9 @@ impl Enricher for InboundEnricher {
         }
 
         let is_forward = msg.message_type == LARK_MSG_TYPE_MERGE_FORWARD;
-        let want_recent =
-            self.recent_context_size > 0 && msg.chat_type == chat_type_group() && msg.addressed_to_bot;
+        let want_recent = self.recent_context_size > 0
+            && msg.chat_type == chat_type_group()
+            && msg.addressed_to_bot;
         if msg.parent_id.is_empty() && !is_forward && !want_recent {
             // Nothing to expand and no group prefetch wanted — no network call.
             return msg;
@@ -501,7 +503,11 @@ impl Enricher for InboundEnricher {
             None
         };
         let forward = if is_forward {
-            Some(self.client.get_message(creds.clone(), &msg.message_id).await)
+            Some(
+                self.client
+                    .get_message(creds.clone(), &msg.message_id)
+                    .await,
+            )
         } else {
             None
         };
@@ -552,8 +558,11 @@ impl Enricher for InboundEnricher {
             }
             b.push_str(&self.render_quoted_block(
                 &msg.parent_id,
-                quoted.as_deref().unwrap_or(&[]),
-                quoted.as_ref().err(),
+                match &quoted {
+                    Some(Ok(items)) => items,
+                    _ => &[],
+                },
+                quoted.as_ref().map(|r| r.as_ref().err()).unwrap_or(None),
                 &names,
             ));
         }
@@ -682,8 +691,13 @@ pub struct RecentContextFetchClassification {
     pub retryable: bool,
 }
 
-pub fn classify_recent_context_fetch_error(err: &anyhow::Error) -> RecentContextFetchClassification {
-    if err.downcast_ref::<ErrRecentContextChannelUnbound>().is_some() {
+pub fn classify_recent_context_fetch_error(
+    err: &anyhow::Error,
+) -> RecentContextFetchClassification {
+    if err
+        .downcast_ref::<ErrRecentContextChannelUnbound>()
+        .is_some()
+    {
         return RecentContextFetchClassification {
             category: RECENT_CONTEXT_FAILURE_CHANNEL_UNBOUND,
             retryable: false,
@@ -761,7 +775,10 @@ fn classify_by_message(raw: &str) -> RecentContextFetchClassification {
     if contains_any(&msg, &["code=99991663", "code=99991664"]) {
         return r(RECENT_CONTEXT_FAILURE_TOKEN_EXPIRED, true);
     }
-    if contains_any(&msg, &["code=230020", "rate limit", "rate_limit", "http 429"]) {
+    if contains_any(
+        &msg,
+        &["code=230020", "rate limit", "rate_limit", "http 429"],
+    ) {
         // Not retryable: the client drops Retry-After, and an immediate second
         // call within the same budget almost always re-hits the limit while
         // doubling list load on an already-throttled tenant.
@@ -905,7 +922,12 @@ impl<'a> SpeakerLabeler<'a> {
 mod tests {
     use super::*;
 
-    fn lark_message(id: &str, sender_id: &str, sender_type: &str, create_time: &str) -> LarkMessage {
+    fn lark_message(
+        id: &str,
+        sender_id: &str,
+        sender_type: &str,
+        create_time: &str,
+    ) -> LarkMessage {
         LarkMessage {
             message_id: id.into(),
             sender_id: sender_id.into(),
@@ -924,7 +946,10 @@ mod tests {
             lark_message("om_4", "ou_app", "app", "4"),
             lark_message("om_5", "ou_2", "user", "5"),
         ];
-        assert_eq!(sender_open_ids(&msgs), vec!["ou_1".to_string(), "ou_2".to_string()]);
+        assert_eq!(
+            sender_open_ids(&msgs),
+            vec!["ou_1".to_string(), "ou_2".to_string()]
+        );
     }
 
     #[test]
@@ -966,19 +991,42 @@ mod tests {
     #[test]
     fn classification_maps_transport_strings() {
         let cases = [
-            ("http do: connection reset", RECENT_CONTEXT_FAILURE_TEMPORARY, true),
-            ("http 500 while listing", RECENT_CONTEXT_FAILURE_TEMPORARY, true),
+            (
+                "http do: connection reset",
+                RECENT_CONTEXT_FAILURE_TEMPORARY,
+                true,
+            ),
+            (
+                "http 500 while listing",
+                RECENT_CONTEXT_FAILURE_TEMPORARY,
+                true,
+            ),
             ("request timeout", RECENT_CONTEXT_FAILURE_TIMEOUT, true),
-            ("http 403 from lark", RECENT_CONTEXT_FAILURE_PERMISSION_DENIED, false),
-            ("message was recalled", RECENT_CONTEXT_FAILURE_MESSAGE_DELETED, false),
-            ("code=99991664 invalid token", RECENT_CONTEXT_FAILURE_TOKEN_EXPIRED, true),
+            (
+                "http 403 from lark",
+                RECENT_CONTEXT_FAILURE_PERMISSION_DENIED,
+                false,
+            ),
+            (
+                "message was recalled",
+                RECENT_CONTEXT_FAILURE_MESSAGE_DELETED,
+                false,
+            ),
+            (
+                "code=99991664 invalid token",
+                RECENT_CONTEXT_FAILURE_TOKEN_EXPIRED,
+                true,
+            ),
             ("something odd", RECENT_CONTEXT_FAILURE_UNKNOWN, false),
         ];
         for (text, category, retryable) in cases {
             let got = classify_recent_context_fetch_error(&anyhow::anyhow!("{text}"));
             assert_eq!(
                 got,
-                RecentContextFetchClassification { category, retryable },
+                RecentContextFetchClassification {
+                    category,
+                    retryable
+                },
                 "input: {text}"
             );
         }
@@ -1055,10 +1103,7 @@ mod tests {
         assert_eq!(adapted[0].name, "Zoe");
 
         // Resolution through the shared implementation renders the name.
-        assert_eq!(
-            resolve_mentions("hi @_user_1", &adapted, "", ""),
-            "hi @Zoe"
-        );
+        assert_eq!(resolve_mentions("hi @_user_1", &adapted, "", ""), "hi @Zoe");
     }
 
     #[test]
