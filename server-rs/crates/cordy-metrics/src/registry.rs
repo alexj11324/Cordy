@@ -18,7 +18,7 @@ use crate::wecom::WecomMetrics;
 
 pub struct RegistryOptions {
     pub pool: Option<Arc<sqlx::PgPool>>,
-    pub realtime: Option<Arc<cordy_realtime::Metrics>>,
+    pub realtime: Option<&'static cordy_realtime::Metrics>,
     pub version: String,
     pub commit: String,
     /// When `Some`, opts the registry into the scrape-time SQL sampler

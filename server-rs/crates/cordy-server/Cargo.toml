@@ -14,6 +14,7 @@ cordy-config = { path = "../cordy-config" }
 cordy-auth = { path = "../cordy-auth" }
 cordy-db = { path = "../cordy-db" }
 cordy-handler = { path = "../cordy-handler" }
+cordy-metrics = { path = "../cordy-metrics" }
 cordy-realtime = { path = "../cordy-realtime" }
 cordy-util = { path = "../cordy-util" }
 

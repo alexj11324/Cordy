@@ -1,6 +1,5 @@
 //! Standalone /metrics HTTP server — port of `server/internal/metrics/server.go`.
 
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 use axum::routing::get;
@@ -9,7 +8,7 @@ use prometheus::Encoder;
 /// Serves the gathered metric families in Prometheus text format. The Go
 /// version's http.Server timeouts (read/write/idle) have no direct axum
 /// equivalent; connection hygiene is delegated to the surrounding runtime.
-pub async fn serve(addr: SocketAddr, registry: Arc<prometheus::Registry>) -> anyhow::Result<()> {
+pub async fn serve(addr: String, registry: Arc<prometheus::Registry>) -> anyhow::Result<()> {
     let app = axum::Router::new().route(
         "/metrics",
         get(move || async move {
@@ -35,7 +34,28 @@ pub async fn serve(addr: SocketAddr, registry: Arc<prometheus::Registry>) -> any
         }),
     );
 
-    let listener = tokio::net::TcpListener::bind(addr).await?;
+    let bind_addr = normalized_bind_addr(&addr);
+    let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
     tracing::info!(%addr, "metrics server listening");
     Ok(axum::serve(listener, app).await?)
+}
+
+pub fn normalized_bind_addr(addr: &str) -> String {
+    if addr.starts_with(':') {
+        format!("127.0.0.1{addr}")
+    } else {
+        addr.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn go_style_bare_port_is_narrowed_to_loopback() {
+        assert_eq!(normalized_bind_addr(":9091"), "127.0.0.1:9091");
+        assert_eq!(normalized_bind_addr("127.0.0.1:9091"), "127.0.0.1:9091");
+        assert_eq!(normalized_bind_addr("0.0.0.0:9091"), "0.0.0.0:9091");
+    }
 }

@@ -8,8 +8,24 @@ use axum::Router;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+#[cfg(test)]
 fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<cordy_realtime::hub::Hub>>) -> Router {
     cordy_handler::build_router(db, hub)
+}
+
+fn build_production_router(
+    db: sqlx::PgPool,
+    hub: Arc<cordy_realtime::hub::Hub>,
+    business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
+    http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
+) -> Router {
+    let state = cordy_handler::HandlerState::new(
+        db,
+        cordy_auth::pat_cache::PatCache::disabled(),
+        Some(hub),
+    )
+    .with_observability(business_metrics, http_metrics);
+    cordy_handler::build_router_from_state(state)
 }
 
 fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
@@ -36,7 +52,36 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(port = cfg.server.port, "starting cordy-server");
 
     let db = cordy_db::connect(&cfg.database).await?;
-    let app = build_router(Some(db), Some(Arc::new(cordy_realtime::hub::Hub::new())));
+    let hub = Arc::new(cordy_realtime::hub::Hub::new());
+    let metrics_config = cordy_metrics::Config::from_env();
+    let (business_metrics, http_metrics) = if metrics_config.enabled() {
+        let registry = cordy_metrics::Registry::new(cordy_metrics::registry::RegistryOptions {
+            pool: Some(Arc::new(db.clone())),
+            realtime: Some(&cordy_realtime::M),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            commit: option_env!("CORDY_GIT_COMMIT")
+                .unwrap_or("unknown")
+                .to_string(),
+            sampler: None,
+        });
+        let business = registry.business.clone();
+        let http = registry.http.clone();
+        let gatherer = Arc::new(registry.gatherer.clone());
+        let metrics_addr = metrics_config.addr.clone();
+        let effective_metrics_addr = cordy_metrics::server::normalized_bind_addr(&metrics_addr);
+        if !cordy_metrics::is_loopback_addr(&effective_metrics_addr) {
+            tracing::warn!(addr = %metrics_addr, "metrics listener is not loopback-only; restrict access with private networking, allowlists, or proxy auth");
+        }
+        tokio::spawn(async move {
+            if let Err(error) = cordy_metrics::server::serve(metrics_addr, gatherer).await {
+                tracing::error!(%error, "metrics server stopped");
+            }
+        });
+        (Some(business), Some(http))
+    } else {
+        (None, None)
+    };
+    let app = build_production_router(db, hub, business_metrics, http_metrics);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;

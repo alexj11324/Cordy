@@ -10,11 +10,13 @@ anyhow = { workspace = true }
 axum = { workspace = true, features = ["ws"] }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
+cordy-analytics = { path = "../cordy-analytics" }
 cordy-auth = { path = "../cordy-auth" }
 cordy-db = { path = "../cordy-db" }
 cordy-daemon = { path = "../cordy-daemon" }
 cordy-events = { path = "../cordy-events" }
 cordy-middleware = { path = "../cordy-middleware" }
+cordy-metrics = { path = "../cordy-metrics" }
 cordy-plugincontract = { path = "../cordy-plugincontract" }
 cordy-protocol = { path = "../cordy-protocol" }
 cordy-realtime = { path = "../cordy-realtime" }
