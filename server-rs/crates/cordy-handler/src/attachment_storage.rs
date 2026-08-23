@@ -28,6 +28,20 @@ pub trait AttachmentStorage: Send + Sync {
     ) -> anyhow::Result<String>;
     async fn get(&self, key: &str, range: Option<&str>) -> anyhow::Result<StoredObject>;
     async fn delete(&self, key: &str) -> anyhow::Result<()>;
+    async fn presign_get(&self, _key: &str, _ttl: std::time::Duration) -> anyhow::Result<String> {
+        anyhow::bail!("attachment storage does not support presigned downloads")
+    }
+    async fn presign_get_with_content_disposition(
+        &self,
+        _key: &str,
+        _ttl: std::time::Duration,
+        _content_disposition: &str,
+    ) -> anyhow::Result<String> {
+        anyhow::bail!("attachment storage does not support presigned downloads")
+    }
+    fn supports_presigned_downloads(&self) -> bool {
+        false
+    }
     fn key_from_url(&self, raw: &str) -> Option<String>;
     fn object_url(&self, key: &str) -> String;
     fn is_local(&self) -> bool {
@@ -206,6 +220,14 @@ impl S3Storage {
                 .as_deref()
                 .unwrap_or(&format!("https://s3.{region}.amazonaws.com")),
         )?;
+        anyhow::ensure!(
+            matches!(endpoint.scheme(), "http" | "https")
+                && endpoint.host_str().is_some()
+                && endpoint.username().is_empty()
+                && endpoint.password().is_none()
+                && endpoint.fragment().is_none(),
+            "AWS_ENDPOINT_URL must be an HTTP(S) origin without credentials or a fragment"
+        );
         let path_style = s3_use_path_style(
             std::env::var("S3_USE_PATH_STYLE").ok().as_deref(),
             custom.is_some(),
@@ -233,7 +255,8 @@ impl S3Storage {
         }
         let mut url = self.endpoint.clone();
         let base_path = url.path().trim_end_matches('/').to_string();
-        if self.path_style {
+        let path_style = self.path_style || (!self.custom_endpoint && self.bucket.contains('.'));
+        if path_style {
             url.set_path(&format!("{base_path}/{}/{key}", self.bucket));
         } else {
             let host = self
@@ -350,6 +373,90 @@ impl S3Storage {
         }
         Ok(response)
     }
+
+    async fn presigned_get(
+        &self,
+        key: &str,
+        ttl: std::time::Duration,
+        content_disposition: &str,
+    ) -> anyhow::Result<String> {
+        let expires = if ttl.is_zero() {
+            30 * 60
+        } else {
+            ttl.as_secs()
+        };
+        anyhow::ensure!(
+            (1..=7 * 24 * 60 * 60).contains(&expires),
+            "S3 presigned download TTL must be between 1 second and 7 days"
+        );
+        let mut url = self.request_url(key)?;
+        let credentials = self
+            .credentials
+            .provide_credentials()
+            .await
+            .map_err(|error| anyhow::anyhow!("resolve AWS credentials: {error}"))?;
+        let now = chrono::Utc::now();
+        let date = now.format("%Y%m%d").to_string();
+        let timestamp = now.format("%Y%m%dT%H%M%SZ").to_string();
+        let scope = format!("{date}/{}/s3/aws4_request", self.region);
+        let hostname = url
+            .host_str()
+            .ok_or_else(|| anyhow::anyhow!("S3 endpoint has no host"))?;
+        let host = url
+            .port()
+            .map_or_else(|| hostname.to_string(), |port| format!("{hostname}:{port}"));
+        let mut query = url
+            .query_pairs()
+            .map(|(name, value)| (name.into_owned(), value.into_owned()))
+            .collect::<Vec<_>>();
+        query.retain(|(name, _)| {
+            !name.to_ascii_lowercase().starts_with("x-amz-")
+                && !name.eq_ignore_ascii_case("response-content-disposition")
+        });
+        if !content_disposition.is_empty() {
+            query.push((
+                "response-content-disposition".to_string(),
+                content_disposition.to_string(),
+            ));
+        }
+        query.extend([
+            (
+                "X-Amz-Algorithm".to_string(),
+                "AWS4-HMAC-SHA256".to_string(),
+            ),
+            (
+                "X-Amz-Credential".to_string(),
+                format!("{}/{scope}", credentials.access_key_id()),
+            ),
+            ("X-Amz-Date".to_string(), timestamp.clone()),
+            ("X-Amz-Expires".to_string(), expires.to_string()),
+            ("X-Amz-SignedHeaders".to_string(), "host".to_string()),
+        ]);
+        if let Some(token) = credentials.session_token() {
+            query.push(("X-Amz-Security-Token".to_string(), token.to_string()));
+        }
+        let canonical_query = canonical_query(&query);
+        let canonical_request = format!(
+            "GET\n{}\n{canonical_query}\nhost:{host}\n\nhost\nUNSIGNED-PAYLOAD",
+            url.path()
+        );
+        let to_sign = format!(
+            "AWS4-HMAC-SHA256\n{timestamp}\n{scope}\n{}",
+            hex::encode(Sha256::digest(canonical_request.as_bytes()))
+        );
+        let k_date = hmac_bytes(
+            format!("AWS4{}", credentials.secret_access_key()).as_bytes(),
+            date.as_bytes(),
+        )?;
+        let k_region = hmac_bytes(&k_date, self.region.as_bytes())?;
+        let k_service = hmac_bytes(&k_region, b"s3")?;
+        let k_signing = hmac_bytes(&k_service, b"aws4_request")?;
+        let signature = hex::encode(hmac_bytes(&k_signing, to_sign.as_bytes())?);
+        url.set_query(Some(&format!(
+            "{canonical_query}&X-Amz-Signature={signature}"
+        )));
+        Ok(url.to_string())
+    }
 }
 
 #[async_trait]
@@ -420,24 +527,45 @@ impl AttachmentStorage for S3Storage {
             .await
             .map(|_| ())
     }
+    async fn presign_get(&self, key: &str, ttl: std::time::Duration) -> anyhow::Result<String> {
+        self.presigned_get(key, ttl, "").await
+    }
+    async fn presign_get_with_content_disposition(
+        &self,
+        key: &str,
+        ttl: std::time::Duration,
+        content_disposition: &str,
+    ) -> anyhow::Result<String> {
+        self.presigned_get(key, ttl, content_disposition).await
+    }
+    fn supports_presigned_downloads(&self) -> bool {
+        true
+    }
     fn key_from_url(&self, raw: &str) -> Option<String> {
         let url = Url::parse(raw).ok()?;
-        let decoded = url
-            .path_segments()?
-            .map(|part| {
-                percent_encoding::percent_decode_str(part)
-                    .decode_utf8()
-                    .ok()
-                    .map(|v| v.into_owned())
-            })
-            .collect::<Option<Vec<_>>>()?
-            .join("/");
-        let mut path = decoded.trim_start_matches('/');
-        if self.path_style && path.starts_with(&format!("{}/", self.bucket)) {
-            path = &path[self.bucket.len() + 1..];
+        if !url.username().is_empty()
+            || url.password().is_some()
+            || url.query().is_some()
+            || url.fragment().is_some()
+        {
+            return None;
         }
-        (!path.is_empty() && !path.split('/').any(|p| p == "." || p == ".."))
-            .then(|| path.to_string())
+        const MARKER: &str = "__cordy_object_scope__";
+        let mut expected = Vec::new();
+        if let Ok(url) = Url::parse(&self.object_url(MARKER)) {
+            expected.push(url);
+        }
+        if let Ok(url) = self.request_url(MARKER) {
+            expected.push(url);
+        }
+        expected.into_iter().find_map(|candidate| {
+            if !same_origin(&url, &candidate) {
+                return None;
+            }
+            let prefix = candidate.path().strip_suffix(MARKER)?;
+            let encoded = url.path().strip_prefix(prefix)?;
+            decode_storage_key(encoded)
+        })
     }
     fn object_url(&self, key: &str) -> String {
         if let Some(domain) = &self.cdn_domain {
@@ -501,6 +629,50 @@ fn hmac_bytes(key: &[u8], body: &[u8]) -> anyhow::Result<Vec<u8>> {
         HmacSha256::new_from_slice(key).map_err(|_| anyhow::anyhow!("invalid HMAC key"))?;
     mac.update(body);
     Ok(mac.finalize().into_bytes().to_vec())
+}
+fn canonical_query(pairs: &[(String, String)]) -> String {
+    let mut encoded = pairs
+        .iter()
+        .map(|(name, value)| (aws_encode(name), aws_encode(value)))
+        .collect::<Vec<_>>();
+    encoded.sort_unstable();
+    encoded
+        .into_iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+fn same_origin(left: &Url, right: &Url) -> bool {
+    left.scheme().eq_ignore_ascii_case(right.scheme())
+        && left.host_str().map(str::to_ascii_lowercase)
+            == right.host_str().map(str::to_ascii_lowercase)
+        && left.port_or_known_default() == right.port_or_known_default()
+}
+fn decode_storage_key(encoded: &str) -> Option<String> {
+    let segments = encoded
+        .split('/')
+        .map(|part| {
+            percent_encoding::percent_decode_str(part)
+                .decode_utf8()
+                .ok()
+        })
+        .collect::<Option<Vec<_>>>()?;
+    if segments.is_empty()
+        || segments.iter().any(|part| {
+            part.is_empty()
+                || matches!(part.as_ref(), "." | "..")
+                || part.contains(['/', '\\', '\0'])
+        })
+    {
+        return None;
+    }
+    Some(
+        segments
+            .into_iter()
+            .map(|part| part.into_owned())
+            .collect::<Vec<_>>()
+            .join("/"),
+    )
 }
 fn aws_encode(value: &str) -> String {
     value
@@ -768,6 +940,80 @@ mod tests {
             .await
             .unwrap_err();
         assert!(error.to_string().starts_with("resolve AWS credentials:"));
+    }
+
+    #[tokio::test]
+    async fn s3_presign_get_covers_ttl_base_path_and_session_token() {
+        let mut store = test_s3("https://objects.example.test/base", true, true);
+        store.credentials = SharedCredentialsProvider::new(test_credentials(Some("session/token")));
+        let signed = store
+            .presign_get(
+                "workspaces/w/a file.txt",
+                std::time::Duration::from_secs(300),
+            )
+            .await
+            .unwrap();
+        let url = Url::parse(&signed).unwrap();
+        assert_eq!(url.path(), "/base/bucket/workspaces/w/a%20file.txt");
+        let query = url
+            .query_pairs()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(
+            query.get("X-Amz-Expires").map(|value| value.as_ref()),
+            Some("300")
+        );
+        assert_eq!(
+            query
+                .get("X-Amz-Security-Token")
+                .map(|value| value.as_ref()),
+            Some("session/token")
+        );
+        assert!(!query.get("X-Amz-Signature").unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn s3_presign_binds_content_disposition_and_virtual_host_scope() {
+        let store = test_s3("https://objects.example.test/base", true, false);
+        let signed = store
+            .presign_get_with_content_disposition(
+                "workspaces/w/report.txt",
+                std::time::Duration::from_secs(60),
+                "attachment; filename=\"report 1.txt\"",
+            )
+            .await
+            .unwrap();
+        let url = Url::parse(&signed).unwrap();
+        assert_eq!(url.host_str(), Some("bucket.objects.example.test"));
+        assert_eq!(url.path(), "/base/workspaces/w/report.txt");
+        assert_eq!(
+            url.query_pairs()
+                .find(|(name, _)| name == "response-content-disposition")
+                .map(|(_, value)| value.into_owned())
+                .as_deref(),
+            Some("attachment; filename=\"report 1.txt\"")
+        );
+    }
+
+    #[test]
+    fn s3_key_scope_rejects_foreign_or_credential_bearing_urls() {
+        let store = test_s3("https://objects.example.test/base", true, true);
+        assert_eq!(
+            store
+                .key_from_url("https://objects.example.test/base/bucket/workspaces/w/file.txt")
+                .as_deref(),
+            Some("workspaces/w/file.txt")
+        );
+        assert!(store
+            .key_from_url("https://attacker.example/base/bucket/workspaces/w/file.txt")
+            .is_none());
+        assert!(store
+            .key_from_url(
+                "https://objects.example.test/base/bucket/workspaces/w/file.txt?X-Amz-Signature=x"
+            )
+            .is_none());
+        assert!(store
+            .key_from_url("https://objects.example.test/base/bucket/workspaces%2Fw/file.txt")
+            .is_none());
     }
 
     #[test]

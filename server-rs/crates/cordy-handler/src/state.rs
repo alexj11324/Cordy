@@ -100,13 +100,93 @@ impl AttachmentDownloadSettings {
         })
     }
 
-    pub fn cloudfront_active(&self) -> bool {
-        self.cloudfront_signer.is_some()
-            && matches!(
-                self.mode,
-                AttachmentDownloadMode::Auto | AttachmentDownloadMode::CloudFront
-            )
+    pub fn resolve_mode(
+        &self,
+        storage: Option<&dyn crate::attachment_storage::AttachmentStorage>,
+        raw_url: &str,
+    ) -> AttachmentDownloadMode {
+        match self.mode {
+            AttachmentDownloadMode::CloudFront => return AttachmentDownloadMode::CloudFront,
+            AttachmentDownloadMode::Presign => return AttachmentDownloadMode::Presign,
+            AttachmentDownloadMode::Proxy => return AttachmentDownloadMode::Proxy,
+            AttachmentDownloadMode::Auto => {}
+        }
+        if self.cloudfront_signer.is_some() {
+            return AttachmentDownloadMode::CloudFront;
+        }
+        if should_proxy_attachment_url(raw_url) {
+            return AttachmentDownloadMode::Proxy;
+        }
+        if storage.is_some_and(|storage| storage.supports_presigned_downloads()) {
+            return AttachmentDownloadMode::Presign;
+        }
+        AttachmentDownloadMode::Proxy
     }
+}
+
+#[cfg(test)]
+mod attachment_download_tests {
+    use super::should_proxy_attachment_url;
+
+    #[test]
+    fn auto_mode_keeps_internal_object_urls_on_the_proxy() {
+        for url in [
+            "http://localhost:9000/bucket/object",
+            "https://objects.internal/object",
+            "https://10.0.0.8/object",
+            "https://[::1]/object",
+            "/uploads/object",
+        ] {
+            assert!(should_proxy_attachment_url(url), "{url}");
+        }
+        assert!(!should_proxy_attachment_url(
+            "https://bucket.s3.us-west-2.amazonaws.com/object"
+        ));
+    }
+}
+
+fn should_proxy_attachment_url(raw: &str) -> bool {
+    let Ok(url) = url::Url::parse(raw) else {
+        return true;
+    };
+    let Some(host) = url.host_str() else {
+        return true;
+    };
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    if host.is_empty()
+        || host == "localhost"
+        || host.ends_with(".localhost")
+        || !host.contains('.')
+        || [
+            ".local",
+            ".localdomain",
+            ".internal",
+            ".lan",
+            ".home",
+            ".docker",
+        ]
+        .iter()
+        .any(|suffix| host.ends_with(suffix))
+    {
+        return true;
+    }
+    host.parse::<std::net::IpAddr>()
+        .is_ok_and(|address| match address {
+            std::net::IpAddr::V4(address) => {
+                address.is_loopback()
+                    || address.is_private()
+                    || address.is_link_local()
+                    || address.is_multicast()
+                    || address.is_unspecified()
+            }
+            std::net::IpAddr::V6(address) => {
+                address.is_loopback()
+                    || address.is_unique_local()
+                    || address.is_unicast_link_local()
+                    || address.is_multicast()
+                    || address.is_unspecified()
+            }
+        })
 }
 
 struct DaemonTaskWakeup {
