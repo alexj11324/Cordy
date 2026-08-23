@@ -65,6 +65,21 @@ Resolves MUL-123
 
 A reference-only mention in the body, such as `Related to MUL-123`, is not shown as a working PR for that issue. Commit messages and PR comments don't trigger linking either.
 
+### Attaching at creation time (CLI / agents)
+
+Identifier scanning runs on GitHub webhooks, so it needs the GitHub App connected. There is a second path that works everywhere: whoever opens a PR already knows its URL and can attach it to the issue immediately.
+
+```bash
+cordy issue pull-request attach MUL-123 --url https://github.com/acme/api/pull/6
+```
+
+- Works without any GitHub App installation — the sidebar then shows at least the PR number and a clickable URL.
+- With an installation present, Cordy pulls the full metadata (title, state, branch, head) through the App API itself; you don't need `--url` extras.
+- Optional flags (`--title`, `--state`, `--branch`, `--head-sha`) accept what `gh pr view --json` prints when no installation exists.
+- Attaching never records close intent: merging still auto-closes only via `Closes` / `Fixes` / `Resolves` in the title or body.
+
+Both paths coexist and are idempotent: an attached PR later matched by the webhook keeps one card, and the webhook backfills or refreshes its metadata (including the installation link). Keeping the identifier in the title/branch remains recommended as the fallback, but it's no longer the only way the sidebar lights up.
+
 ## View PRs on an issue
 
 Once linked, PRs appear in the **Pull requests** block of issue detail. Each entry shows:

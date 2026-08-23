@@ -10,12 +10,38 @@ at the bottom before relying on an exact line.
 
 | Behavior | File:line | Drifted from |
 |---|---|---|
-| CLI command `pull-requests <id>` (alias `prs`) | `server/cmd/cordy/cmd_issue.go:105` | `:104` |
-| `runIssuePullRequests` handler | `server/cmd/cordy/cmd_issue.go:507` | new citation |
-| Calls `GET /api/issues/<id>/pull-requests` | `server/cmd/cordy/cmd_issue.go:522` | `:522` (unchanged) |
-| API route registration | `server/cmd/server/router.go:480` | `:480` (unchanged) |
-| Handler `ListPullRequestsForIssue` → `Queries.ListPullRequestsByIssue` | `server/internal/handler/github.go:687,692` | `:466` |
-| Row → response mapper `issuePullRequestRowToResponse` | `server/internal/handler/github.go:205` | `:149` |
+| CLI command `pull-requests <id>` (alias `prs`) | `server/cmd/cordy/cmd_issue.go:185` | `:104` |
+| `runIssuePullRequests` handler | `server/cmd/cordy/cmd_issue.go:802` | `:507` |
+| Calls `GET /api/issues/<id>/pull-requests` | `server/cmd/cordy/cmd_issue.go:817` | `:522` |
+| API route registration (GET + POST) | `server/cmd/server/router.go:1769-1770` | `:480` |
+| Handler `ListPullRequestsForIssue` → `Queries.ListPullRequestsByIssue` | `server/internal/handler/github.go:976,981` | `:687,692` |
+| Row → response mapper `issuePullRequestRowToResponse` | `server/internal/handler/github.go:229` | `:205` |
+
+## `cordy issue pull-request attach` — write back the PR at creation time
+
+CORD-24: the agent (or member) that opened a PR already knows its URL and links
+it to the issue immediately, instead of waiting for the webhook identifier scan.
+Both paths write the same tables and are idempotent against each other.
+
+| Behavior | File:line |
+|---|---|
+| CLI group + command `pull-request attach <issue-id> --url …` | `server/cmd/cordy/cmd_issue.go:191-208` (`issuePullRequestCmd`, `issuePullRequestAttachCmd`) |
+| `runIssuePullRequestAttach` — POSTs `{url, title?, state?, branch?, head_sha?}` | `server/cmd/cordy/cmd_issue.go:839` (endpoint at `:884`) |
+| API route `POST /api/issues/{id}/pull-requests` | `server/cmd/server/router.go:1770` |
+| Handler `AttachPullRequestToIssue` — same auth as list (`loadIssueForUser`) | `server/internal/handler/github.go:1183` |
+| URL parser `parseGitHubPRURL` / regex `githubPRURLRe` | `server/internal/handler/github.go:1010-1027` |
+| Optional metadata accepted from `gh pr view --json` fields | `server/internal/handler/github.go:1042` (`AttachPullRequestToIssueRequest`) |
+| App metadata fetch when an installation exists (`fetchGitHubPullRequestMeta`) | `server/internal/handler/github.go:1066` |
+| Upsert into `github_pull_request`; NULL installation allowed without an App | `server/internal/handler/github.go:1279` (+ migration `server/migrations/377_github_pr_installation_nullable.up.sql`) |
+| Link row written with `reference_only=false`, `close_intent=false` | `server/internal/handler/github.go:1317` |
+| Realtime broadcast `pull_request:updated` after linking | `github.go` (end of `AttachPullRequestToIssue`, ~`:1340`) |
+
+Attach never sets close intent: merge-time auto-close still requires a literal
+`Closes/Fixes/Resolves PREFIX-N` parsed only by the webhook path
+(`mirrorPullRequestForWorkspace`). Re-running attach on an already-linked PR
+returns 200 with the existing row; a later webhook ON CONFLICT upserts over the
+same `(workspace_id, repo_owner, repo_name, pr_number)` row and backfills
+installation_id when the attach landed without an App.
 
 The CLI resolves the issue ref, GETs the endpoint, and (for `--output json`)
 prints the raw `{"pull_requests": [...]}` body. Only `--output` is accepted; the
@@ -23,7 +49,7 @@ default `table` shows `NUMBER STATE TITLE URL`.
 
 ## PR response shape
 
-`GitHubPullRequestResponse` struct: `server/internal/handler/github.go:58`. JSON
+`GitHubPullRequestResponse` struct: `server/internal/handler/github.go:65`. JSON
 fields the agent can read off each element of `pull_requests`:
 
 - `provider` (`json:"provider"`, line 63)
@@ -49,7 +75,7 @@ fields the agent can read off each element of `pull_requests`:
 
 There is **no** standalone `draft` or `merged` boolean in the response. The
 PR lifecycle is encoded in the single `state` string by `derivePRState`
-(`server/internal/handler/github.go:1317`):
+(`server/internal/handler/github.go:2084`):
 
 ```
 merged   → if PullRequest.Merged
@@ -59,26 +85,28 @@ open     → otherwise
 ```
 
 `derivePRState` is called when the webhook upserts the row
-(`server/internal/handler/github.go:1115`), so `state` is what the list endpoint
-returns. "Is it merged?" = `state == "merged"` (or `merged_at != null`); "is it a
-draft?" = `state == "draft"`. Combine with `checks_conclusion` for CI status.
+(`server/internal/handler/github.go:1875`) and by the attach path's App fetch,
+so `state` is what the list endpoint returns. "Is it merged?" =
+`state == "merged"` (or `merged_at != null`); "is it a draft?" =
+`state == "draft"`. Combine with `checks_conclusion` for CI status.
 
 ## Two distinct webhook paths: link vs close-intent
 
 Both run inside the `pull_request` webhook handler, gated by the workspace
-auto-link flag (`workspaceAutoLinkPRsEnabled`, `github.go:1074`).
+auto-link flag (`workspaceAutoLinkPRsEnabled`, `github.go:2187`; gate at
+`:1917`).
 
 ### Path 1 — link (title OR body OR branch)
 
-- `extractIdentifiers` regex helper: `server/internal/handler/github.go:1028`
+- `extractIdentifiers` regex helper: `server/internal/handler/github.go:2118`
 - driving regex `identifierRe` (`\b([a-z][a-z0-9]{1,9})-(\d+)\b`, case-insensitive):
-  `server/internal/handler/github.go:490`
-- call site: `server/internal/handler/github.go:727` —
+  `server/internal/handler/github.go:1374`
+- call site: `server/internal/handler/github.go:1918` —
   `extractIdentifiers(p.PullRequest.Title, p.PullRequest.Body, p.PullRequest.Head.Ref)`
 
 Every `PREFIX-NUMBER` mention in **title, body, or branch** resolves to an issue
-in the workspace and writes a link row (`LinkIssueToPullRequest`, ~`github.go:762`).
-This is what `cordy issue pull-requests` later reads back.
+in the workspace and writes a link row (`LinkIssueToPullRequest`,
+~`github.go:1978`). This is what `cordy issue pull-requests` later reads back.
 
 **Reference-only flag (MUL-3739).** The link row carries a `reference_only`
 boolean (`migrations/127_issue_pull_request_reference_only.up.sql`). The handler
@@ -98,18 +126,18 @@ call-site location for the link logic.
 
 ### Path 2 — close intent (title OR body only, keyword-adjacent)
 
-- `extractClosingIdentifiers` regex helper: `server/internal/handler/github.go:1051`
+- `extractClosingIdentifiers` regex helper: `server/internal/handler/github.go:2141`
 - driving regex `closingIdentifierRe`
   (`\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)[:\s]+([a-z][a-z0-9]{1,9})-(\d+)\b`):
-  `server/internal/handler/github.go:501`
-- call site: `server/internal/handler/github.go:736` —
+  `server/internal/handler/github.go:1385`
+- call site: `server/internal/handler/github.go:1927` —
   `extractClosingIdentifiers(p.PullRequest.Title, p.PullRequest.Body)` (no branch arg)
 
 Only a `PREFIX-NUMBER` immediately after a closing keyword
 (`Closes`/`Fixes`/`Resolves`, optional `:` then whitespace) sets the link row's
 `close_intent` flag — the gate that auto-advances the issue to `done` on merge.
 `Fix MUL-1` closes; `Fix login MUL-1` does not (adjacency). Branch names are
-deliberately excluded (function doc, `github.go:1044-1050`): a branch like
+deliberately excluded (function doc, `github.go:2134-2140`): a branch like
 `mul-1/fix-login` links but must never declare close intent.
 
 Drifted from the prior skill's `github.go:736` citation.
@@ -211,7 +239,8 @@ Re-derive any line above before depending on it:
 ```bash
 cd server
 grep -n 'pull-requests <id>'                 cmd/cordy/cmd_issue.go
-grep -n 'ListPullRequestsForIssue'           cmd/server/router.go internal/handler/github.go
+grep -n 'pull-request attach'                cmd/cordy/cmd_issue.go
+grep -n 'ListPullRequestsForIssue\|AttachPullRequestToIssue' cmd/server/router.go internal/handler/github.go
 grep -n 'func issuePullRequestRowToResponse\|type GitHubPullRequestResponse struct\|func derivePRState\|func extractIdentifiers\|func extractClosingIdentifiers\|closingIdentifierRe' internal/handler/github.go
 grep -n 'extractIdentifiers(\|extractClosingIdentifiers(\|derivePRState(' internal/handler/github.go
 grep -n 'qualifyingIdents\|reference_only\|ReferenceOnly' internal/handler/github.go pkg/db/queries/github.sql

@@ -54,6 +54,10 @@ WITH candidates AS (
     SELECT installation_id, repo_owner, repo_name, pr_number
     FROM github_pull_request AS pr
     WHERE state IN ('open', 'draft')
+      -- App-less rows (CORD-24 attach without any GitHub installation) have
+      -- no token to refresh with; they leave the sweep until a webhook
+      -- backfills installation_id.
+      AND installation_id IS NOT NULL
       AND (snapshot_fetched_at IS NULL OR snapshot_fetched_at < sqlc.arg('older_than'))
       AND (
           snapshot_fetched_at IS NULL

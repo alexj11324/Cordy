@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 // TxBeginner is the subset of a pgx pool the manager needs to open the
@@ -147,6 +147,11 @@ func (m *Manager) Enqueue(installationID int64, owner, repo string, number int32
 	if !m.Enabled() {
 		return
 	}
+	// App-less PR rows (CORD-24) carry no installation; there is no token to
+	// fetch a snapshot with, so they never enter the pipeline.
+	if installationID <= 0 {
+		return
+	}
 	addr := address{InstallationID: installationID, Owner: owner, Repo: repo, Number: number}
 	m.mu.Lock()
 	if m.active[addr] {
@@ -235,7 +240,7 @@ func (m *Manager) process(ctx context.Context, addr address) {
 	}
 
 	rows, err := m.queries.ListGitHubPRRowsByAddress(ctx, db.ListGitHubPRRowsByAddressParams{
-		InstallationID: addr.InstallationID,
+		InstallationID: pgtype.Int8{Int64: addr.InstallationID, Valid: true},
 		RepoOwner:      addr.Owner,
 		RepoName:       addr.Repo,
 		PrNumber:       addr.Number,
@@ -484,7 +489,7 @@ func (m *Manager) sweepOnce(ctx context.Context) {
 		last := rows[len(rows)-1]
 		m.mu.Lock()
 		m.sweepAfter = address{
-			InstallationID: last.InstallationID,
+			InstallationID: last.InstallationID.Int64,
 			Owner:          last.RepoOwner,
 			Repo:           last.RepoName,
 			Number:         last.PrNumber,
@@ -492,7 +497,10 @@ func (m *Manager) sweepOnce(ctx context.Context) {
 		m.mu.Unlock()
 	}
 	for _, r := range rows {
-		m.Enqueue(r.InstallationID, r.RepoOwner, r.RepoName, r.PrNumber)
+		if !r.InstallationID.Valid {
+			continue
+		}
+		m.Enqueue(r.InstallationID.Int64, r.RepoOwner, r.RepoName, r.PrNumber)
 	}
 }
 

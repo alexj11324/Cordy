@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
-	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 )
 
 func testDBPool(t *testing.T) *pgxpool.Pool {
@@ -71,7 +71,7 @@ func seedPRAt(t *testing.T, pool *pgxpool.Pool, q *db.Queries, installationID in
 	ts := pgtype.Timestamptz{Time: time.Unix(1_700_000_000, 0), Valid: true}
 	pr, err := q.UpsertGitHubPullRequest(context.Background(), db.UpsertGitHubPullRequestParams{
 		WorkspaceID:    seedWorkspace(t, pool),
-		InstallationID: installationID,
+		InstallationID: pgtype.Int8{Int64: installationID, Valid: true},
 		RepoOwner:      "o",
 		RepoName:       repoName,
 		PrNumber:       prNumber,
@@ -183,7 +183,7 @@ func TestListStaleUndecidedGitHubPRsExcludesDecidedAndRotatesCursor(t *testing.T
 	// Even a perpetually failing first address cannot pin the LIMIT forever.
 	second, err := q.ListStaleUndecidedGitHubPRs(ctx, db.ListStaleUndecidedGitHubPRsParams{
 		OlderThan:           tsFromTime(now.Add(-10 * time.Minute)),
-		AfterInstallationID: first[0].InstallationID,
+		AfterInstallationID: first[0].InstallationID.Int64,
 		AfterRepoOwner:      first[0].RepoOwner,
 		AfterRepoName:       first[0].RepoName,
 		AfterPrNumber:       first[0].PrNumber,
@@ -322,7 +322,7 @@ func TestInFlightOldHeadKeepsTrailingRefresh(t *testing.T) {
 	}
 
 	m.Start(ctx)
-	m.Enqueue(pr.InstallationID, pr.RepoOwner, pr.RepoName, pr.PrNumber)
+	m.Enqueue(pr.InstallationID.Int64, pr.RepoOwner, pr.RepoName, pr.PrNumber)
 	select {
 	case <-firstStarted:
 	case <-time.After(2 * time.Second):
@@ -332,7 +332,7 @@ func TestInFlightOldHeadKeepsTrailingRefresh(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE github_pull_request SET head_sha='B' WHERE id=$1`, pr.ID); err != nil {
 		t.Fatal(err)
 	}
-	m.Enqueue(pr.InstallationID, pr.RepoOwner, pr.RepoName, pr.PrNumber)
+	m.Enqueue(pr.InstallationID.Int64, pr.RepoOwner, pr.RepoName, pr.PrNumber)
 
 	select {
 	case <-secondFetched:
