@@ -342,6 +342,9 @@ mod tests {
             Request::post("/api/me/onboarding/complete")
                 .body(Body::empty())
                 .unwrap(),
+            Request::post("/api/me/onboarding/cloud-waitlist")
+                .body(Body::from(r#"{"email":"alex@example.com"}"#))
+                .unwrap(),
             Request::post("/api/share-links/join")
                 .body(Body::from(r#"{"code":"invite"}"#))
                 .unwrap(),
