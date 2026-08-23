@@ -39,9 +39,9 @@ struct TokenResponse {
     id: Uuid,
     name: String,
     token_prefix: String,
-    expires_at: Option<chrono::DateTime<Utc>>,
-    last_used_at: Option<chrono::DateTime<Utc>>,
-    created_at: chrono::DateTime<Utc>,
+    expires_at: Option<String>,
+    last_used_at: Option<String>,
+    created_at: String,
 }
 
 impl From<PersonalAccessToken> for TokenResponse {
@@ -50,9 +50,9 @@ impl From<PersonalAccessToken> for TokenResponse {
             id: token.id,
             name: token.name,
             token_prefix: token.token_prefix,
-            expires_at: token.expires_at,
-            last_used_at: token.last_used_at,
-            created_at: token.created_at,
+            expires_at: token.expires_at.map(crate::timefmt::rfc3339),
+            last_used_at: token.last_used_at.map(crate::timefmt::rfc3339),
+            created_at: crate::timefmt::rfc3339(token.created_at),
         }
     }
 }
@@ -162,7 +162,10 @@ async fn renew(State(state): State<HandlerState>, headers: HeaderMap) -> Respons
     let hash = hash_token(raw);
     let token = match pat_q::get_personal_access_token_by_hash(&state.pool, &hash).await {
         Ok(Some(token)) if token.user_id == user_id => token,
-        Ok(_) => return error_response(StatusCode::UNAUTHORIZED, "token is no longer valid"),
+        Ok(Some(_)) => {
+            return error_response(StatusCode::UNAUTHORIZED, "token does not belong to caller")
+        }
+        Ok(None) => return error_response(StatusCode::UNAUTHORIZED, "token is no longer valid"),
         Err(error) => {
             tracing::warn!(%error, "failed to lookup PAT");
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to look up token");
@@ -173,7 +176,7 @@ async fn renew(State(state): State<HandlerState>, headers: HeaderMap) -> Respons
     };
     let now = Utc::now();
     if expires_at - now > Duration::days(RENEW_THRESHOLD_DAYS) {
-        return Json(serde_json::json!({ "expires_at": expires_at, "renewed": false }))
+        return Json(serde_json::json!({ "expires_at": crate::timefmt::rfc3339(expires_at), "renewed": false }))
             .into_response();
     }
     let new_expiry = now + Duration::days(RENEW_EXTENSION_DAYS);
@@ -186,11 +189,11 @@ async fn renew(State(state): State<HandlerState>, headers: HeaderMap) -> Respons
     .await
     {
         Ok(Some(expiry)) => {
-            Json(serde_json::json!({ "expires_at": expiry, "renewed": true })).into_response()
+            Json(serde_json::json!({ "expires_at": expiry.map(crate::timefmt::rfc3339).unwrap_or_default(), "renewed": true })).into_response()
         }
         Ok(None) => match pat_q::get_personal_access_token_by_hash(&state.pool, &hash).await {
             Ok(Some(current)) => {
-                Json(serde_json::json!({ "expires_at": current.expires_at, "renewed": false }))
+                Json(serde_json::json!({ "expires_at": current.expires_at.map(crate::timefmt::rfc3339).unwrap_or_default(), "renewed": false }))
                     .into_response()
             }
             _ => error_response(StatusCode::UNAUTHORIZED, "token is no longer valid"),
@@ -224,5 +227,34 @@ async fn revoke(
             tracing::warn!(%error, "failed to revoke PAT");
             error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to revoke token")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_response_matches_go_timestamp_contract() {
+        let created_at = chrono::DateTime::parse_from_rfc3339("2026-08-23T12:34:56.789Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let response = TokenResponse::from(PersonalAccessToken {
+            created_at,
+            expires_at: Some(created_at),
+            id: Uuid::nil(),
+            last_used_at: None,
+            name: "local".into(),
+            revoked: false,
+            token_hash: "hidden".into(),
+            token_prefix: "mul_example".into(),
+            user_id: Uuid::nil(),
+        });
+        let value = serde_json::to_value(response).unwrap();
+        assert_eq!(value["created_at"], "2026-08-23T12:34:56Z");
+        assert_eq!(value["expires_at"], "2026-08-23T12:34:56Z");
+        assert!(value["last_used_at"].is_null());
+        assert!(value.get("token_hash").is_none());
+        assert!(value.get("user_id").is_none());
     }
 }

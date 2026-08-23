@@ -29,6 +29,8 @@ pub struct HandlerState {
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
     pub bus: Arc<cordy_events::Bus>,
+    /// Feature flag source. `None` fails closed for rollout-gated writes.
+    pub feature_flags: Option<Arc<dyn cordy_service::feature_flags::FlagSource>>,
     /// Task domain service (Go h.TaskService).
     pub tasks: Arc<TaskService>,
     /// Issue domain service (Go h.IssueService).
@@ -72,6 +74,7 @@ impl HandlerState {
             pat_cache,
             hub,
             bus,
+            feature_flags: None,
             tasks,
             issues,
             plugins,

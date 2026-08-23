@@ -7,10 +7,11 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch};
 use axum::{Json, Router};
+use cordy_db::models::IssueStatus;
 use cordy_db::queries::issue_status as status_q;
 use cordy_middleware::workspace::WorkspaceContext;
 use cordy_service::issue_status;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
@@ -26,6 +27,41 @@ const CATEGORIES: [&str; 7] = [
     "blocked",
     "cancelled",
 ];
+
+#[derive(Debug, Serialize)]
+struct IssueStatusResponse {
+    id: Uuid,
+    workspace_id: Uuid,
+    key: String,
+    name: String,
+    description: String,
+    category: String,
+    color: String,
+    is_system: bool,
+    position: f64,
+    archived_at: Option<String>,
+    created_at: String,
+    updated_at: String,
+}
+
+impl From<IssueStatus> for IssueStatusResponse {
+    fn from(status: IssueStatus) -> Self {
+        Self {
+            id: status.id,
+            workspace_id: status.workspace_id,
+            key: status.key,
+            name: status.name,
+            description: status.description,
+            category: status.category,
+            color: status.color,
+            is_system: status.is_system,
+            position: status.position,
+            archived_at: status.archived_at.map(crate::timefmt::rfc3339),
+            created_at: crate::timefmt::rfc3339(status.created_at),
+            updated_at: crate::timefmt::rfc3339(status.updated_at),
+        }
+    }
+}
 
 pub fn router() -> Router<HandlerState> {
     Router::new()
@@ -115,7 +151,7 @@ async fn list(
     {
         Ok(statuses) => Json(json!({
             "total": statuses.len(),
-            "statuses": statuses,
+            "statuses": statuses.into_iter().map(IssueStatusResponse::from).collect::<Vec<_>>(),
             "categories": CATEGORIES,
         }))
         .into_response(),
@@ -141,6 +177,16 @@ async fn create(
 ) -> Response {
     if let Err(response) = require_admin(&context) {
         return response;
+    }
+    if !state
+        .feature_flags
+        .as_deref()
+        .is_some_and(cordy_service::feature_flags::custom_issue_statuses_enabled)
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "custom issue statuses are not enabled for this deployment",
+        );
     }
     let workspace_id = match workspace_id(&context) {
         Ok(id) => id,
@@ -188,7 +234,7 @@ async fn create(
     {
         Ok(Some(status)) => {
             publish(&state, &context, "created");
-            (StatusCode::CREATED, Json(status)).into_response()
+            (StatusCode::CREATED, Json(IssueStatusResponse::from(status))).into_response()
         }
         Ok(None) => db_error(
             anyhow::anyhow!("missing returned row"),
@@ -277,7 +323,7 @@ async fn update(
     {
         Ok(Some(status)) => {
             publish(&state, &context, "updated");
-            Json(status).into_response()
+            Json(IssueStatusResponse::from(status)).into_response()
         }
         Ok(None) => error_response(StatusCode::NOT_FOUND, "issue status not found"),
         Err(error) if unique_violation(&error) => error_response(
@@ -318,7 +364,7 @@ async fn archive(
         );
     }
     if current.archived_at.is_some() {
-        return Json(current).into_response();
+        return Json(IssueStatusResponse::from(current)).into_response();
     }
     let mut transaction = match state.pool.begin().await {
         Ok(value) => value,
@@ -335,7 +381,7 @@ async fn archive(
     match result {
         Ok(Some(status)) => {
             publish(&state, &context, "archived");
-            Json(status).into_response()
+            Json(IssueStatusResponse::from(status)).into_response()
         }
         Ok(None) => error_response(StatusCode::CONFLICT, "status is no longer archivable"),
         Err(error) => db_error(error, "failed to archive issue status"),
@@ -401,7 +447,7 @@ async fn reorder(
     match result {
         Ok(statuses) => {
             publish(&state, &context, "reordered");
-            Json(json!({ "total": statuses.len(), "statuses": statuses, "categories": CATEGORIES }))
+            Json(json!({ "total": statuses.len(), "statuses": statuses.into_iter().map(IssueStatusResponse::from).collect::<Vec<_>>(), "categories": CATEGORIES }))
                 .into_response()
         }
         Err(error) if error.to_string() == "catalog_changed" => error_response(

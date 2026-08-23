@@ -17,7 +17,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{NaiveDate, SecondsFormat};
-use cordy_db::models::{Attachment, Issue, IssueLabel, IssueReaction};
+use cordy_db::models::{Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber};
+use cordy_db::queries::issue_reaction::AddIssueReactionRow;
 use cordy_db::queries::{
     agent, agent_invocation_target, attachment, issue as issue_q, issue_label, issue_reaction,
     member, squad, subscriber, workspace,
@@ -127,6 +128,7 @@ async fn move_issue(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Response {
     let current = match resolve_issue(&state, &context, &id).await {
@@ -206,7 +208,7 @@ async fn move_issue(
     fields.remove("before_id");
     fields.remove("after_id");
     fields.insert("position".into(), json!(position));
-    match apply_issue_update(&state, &context, current, &fields).await {
+    match apply_issue_update(&state, &context, &headers, current, &fields, true).await {
         Ok(issue) => issue_response(&state, issue).await,
         Err(response) => response,
     }
@@ -222,7 +224,13 @@ async fn list_issue_subscribers(
         Err(response) => return response,
     };
     match subscriber::list_issue_subscribers(&state.pool, issue.id).await {
-        Ok(subscribers) => Json(subscribers).into_response(),
+        Ok(subscribers) => Json(
+            subscribers
+                .iter()
+                .map(SubscriberResponse::from)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
         Err(error) => {
             tracing::warn!(%error, "failed to list subscribers");
             error_response(
@@ -396,6 +404,26 @@ async fn unsubscribe(
             tracing::warn!(%error, "failed to lock subscriber writes");
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to unsubscribe");
         }
+        if user_type == "member" {
+            match subscriber::lock_active_member(&mut *transaction, user_id, issue.workspace_id)
+                .await
+            {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    return error_response(
+                        StatusCode::FORBIDDEN,
+                        "target user is not a member of this workspace",
+                    )
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "failed to recheck subscriber membership");
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to unsubscribe",
+                    );
+                }
+            }
+        }
         match subscriber::unsubscribe_from_issue_subtree(
             &mut *transaction,
             issue.id,
@@ -443,11 +471,20 @@ async fn unsubscribe(
 }
 
 fn request_actor(headers: &HeaderMap, context: &WorkspaceContext) -> (&'static str, Uuid) {
-    headers
-        .get("x-agent-id")
+    if headers
+        .get("x-actor-source")
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| Uuid::parse_str(value).ok())
-        .map_or(("member", context.member.user_id), |id| ("agent", id))
+        == Some("task_token")
+    {
+        if let Some(id) = headers
+            .get("x-agent-id")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| Uuid::parse_str(value).ok())
+        {
+            return ("agent", id);
+        }
+    }
+    ("member", context.member.user_id)
 }
 
 #[derive(Deserialize)]
@@ -481,6 +518,9 @@ async fn add_issue_reaction(
     .await
     {
         Ok(Some(reaction)) => {
+            let Some(response) = IssueReactionResponse::from_added(&reaction) else {
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to add reaction");
+            };
             if reaction.issue_revision > 0 {
                 state.bus.publish(&cordy_events::Event {
                     event_type: "issue:reaction_added".into(),
@@ -488,7 +528,7 @@ async fn add_issue_reaction(
                     actor_type: actor_type.into(),
                     actor_id: actor_id.to_string(),
                     payload: json!({
-                        "reaction": reaction,
+                        "reaction": response,
                         "issue_id": issue.id,
                         "issue_title": issue.title,
                         "issue_status": issue.status,
@@ -499,7 +539,7 @@ async fn add_issue_reaction(
                     ..Default::default()
                 });
             }
-            (StatusCode::CREATED, Json(reaction)).into_response()
+            (StatusCode::CREATED, Json(response)).into_response()
         }
         Ok(None) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to add reaction"),
         Err(error) => {
@@ -3660,6 +3700,8 @@ struct IssueReactionResponse {
     actor_id: String,
     emoji: String,
     created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    issue_revision: Option<i64>,
 }
 
 impl From<&IssueReaction> for IssueReactionResponse {
@@ -3671,6 +3713,42 @@ impl From<&IssueReaction> for IssueReactionResponse {
             actor_id: reaction.actor_id.to_string(),
             emoji: reaction.emoji.clone(),
             created_at: timestamp(reaction.created_at),
+            issue_revision: None,
+        }
+    }
+}
+
+impl IssueReactionResponse {
+    fn from_added(reaction: &AddIssueReactionRow) -> Option<Self> {
+        Some(Self {
+            id: reaction.id?.to_string(),
+            issue_id: reaction.issue_id?.to_string(),
+            actor_type: reaction.actor_type.clone(),
+            actor_id: reaction.actor_id?.to_string(),
+            emoji: reaction.emoji.clone(),
+            created_at: timestamp(reaction.created_at?),
+            issue_revision: (reaction.issue_revision > 0).then_some(reaction.issue_revision),
+        })
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct SubscriberResponse {
+    issue_id: String,
+    user_type: String,
+    user_id: String,
+    reason: String,
+    created_at: String,
+}
+
+impl From<&IssueSubscriber> for SubscriberResponse {
+    fn from(subscriber: &IssueSubscriber) -> Self {
+        Self {
+            issue_id: subscriber.issue_id.to_string(),
+            user_type: subscriber.user_type.clone(),
+            user_id: subscriber.user_id.to_string(),
+            reason: subscriber.reason.clone(),
+            created_at: timestamp(subscriber.created_at),
         }
     }
 }
@@ -3964,5 +4042,66 @@ mod tests {
         refresh_untouched_fields(&mut next, &current, &fields);
         assert_eq!(next.title, "local title");
         assert_eq!(next.priority, "urgent");
+    }
+
+    #[test]
+    fn reaction_and_subscriber_responses_match_go_wire_contracts() {
+        let id = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f11").unwrap();
+        let actor_id = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f12").unwrap();
+        let created_at = chrono::DateTime::parse_from_rfc3339("2026-08-23T12:34:56.789Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc);
+        let reaction = IssueReactionResponse::from_added(&AddIssueReactionRow {
+            id: Some(id),
+            issue_id: Some(id),
+            workspace_id: Some(id),
+            actor_type: "member".into(),
+            actor_id: Some(actor_id),
+            emoji: "👍".into(),
+            created_at: Some(created_at),
+            issue_revision: 7,
+        })
+        .unwrap();
+        let reaction = serde_json::to_value(reaction).unwrap();
+        assert_eq!(reaction["created_at"], "2026-08-23T12:34:56Z");
+        assert_eq!(reaction["issue_revision"], 7);
+        assert!(reaction.get("workspace_id").is_none());
+
+        let subscriber = serde_json::to_value(SubscriberResponse::from(&IssueSubscriber {
+            created_at,
+            issue_id: id,
+            opt_out_scope: Some("subtree".into()),
+            reason: "manual".into(),
+            unsubscribed_at: Some(created_at),
+            user_id: actor_id,
+            user_type: "member".into(),
+        }))
+        .unwrap();
+        assert_eq!(subscriber["created_at"], "2026-08-23T12:34:56Z");
+        assert!(subscriber.get("opt_out_scope").is_none());
+        assert!(subscriber.get("unsubscribed_at").is_none());
+    }
+
+    #[test]
+    fn actor_headers_require_server_stamped_task_token_source() {
+        let user_id = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f11").unwrap();
+        let agent_id = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f12").unwrap();
+        let workspace_id = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f13").unwrap();
+        let context = WorkspaceContext {
+            workspace_id: workspace_id.to_string(),
+            member: cordy_db::models::Member {
+                created_at: chrono::Utc::now(),
+                id: Uuid::nil(),
+                role: "member".into(),
+                user_id,
+                workspace_id,
+            },
+        };
+        let mut headers = HeaderMap::new();
+        headers.insert("x-agent-id", agent_id.to_string().parse().unwrap());
+        assert_eq!(request_actor(&headers, &context), ("member", user_id));
+
+        headers.insert("x-actor-source", "task_token".parse().unwrap());
+        assert_eq!(request_actor(&headers, &context), ("agent", agent_id));
     }
 }

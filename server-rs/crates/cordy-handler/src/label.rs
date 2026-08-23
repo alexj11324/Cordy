@@ -38,8 +38,8 @@ struct LabelResponse {
     description: String,
     color: String,
     usage_count: i64,
-    created_at: chrono::DateTime<chrono::Utc>,
-    updated_at: chrono::DateTime<chrono::Utc>,
+    created_at: String,
+    updated_at: String,
 }
 
 impl From<IssueLabel> for LabelResponse {
@@ -52,8 +52,8 @@ impl From<IssueLabel> for LabelResponse {
             description: value.description,
             color: value.color,
             usage_count: 0,
-            created_at: value.created_at,
-            updated_at: value.updated_at,
+            created_at: crate::timefmt::rfc3339(value.created_at),
+            updated_at: crate::timefmt::rfc3339(value.updated_at),
         }
     }
 }
@@ -152,8 +152,8 @@ async fn list_labels(
                         description: label.description,
                         color: label.color,
                         usage_count: label.usage_count,
-                        created_at: label.created_at?,
-                        updated_at: label.updated_at?,
+                        created_at: crate::timefmt::rfc3339(label.created_at?),
+                        updated_at: crate::timefmt::rfc3339(label.updated_at?),
                     })
                 })
                 .collect::<Vec<_>>();

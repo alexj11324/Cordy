@@ -32,8 +32,20 @@ pub fn router() -> Router<HandlerState> {
 
 #[derive(Debug, Serialize)]
 struct QuickActionResponse {
-    #[serde(flatten)]
-    action: QuickAction,
+    id: Uuid,
+    workspace_id: Uuid,
+    name: String,
+    description: String,
+    assignee_type: String,
+    assignee_id: Uuid,
+    prompt: String,
+    visibility: String,
+    status: String,
+    last_used_at: Option<String>,
+    use_count: i64,
+    created_by_id: Uuid,
+    created_at: String,
+    updated_at: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     target_name: String,
     target_public: bool,
@@ -221,26 +233,35 @@ async fn target(
 }
 
 async fn response_for(state: &HandlerState, action: QuickAction) -> QuickActionResponse {
-    match target(
+    let target = target(
         state,
         action.workspace_id,
         &action.assignee_type,
         action.assignee_id,
     )
-    .await
-    {
-        Ok((name, _, is_public)) => QuickActionResponse {
-            action,
-            target_name: name,
-            target_public: is_public,
-            target_missing: false,
-        },
-        Err(_) => QuickActionResponse {
-            action,
-            target_name: String::new(),
-            target_public: false,
-            target_missing: true,
-        },
+    .await;
+    let (target_name, target_public, target_missing) = match target {
+        Ok((name, _, is_public)) => (name, is_public, false),
+        Err(_) => (String::new(), false, true),
+    };
+    QuickActionResponse {
+        id: action.id,
+        workspace_id: action.workspace_id,
+        name: action.name,
+        description: action.description,
+        assignee_type: action.assignee_type,
+        assignee_id: action.assignee_id,
+        prompt: action.prompt,
+        visibility: action.visibility,
+        status: action.status,
+        last_used_at: action.last_used_at.map(crate::timefmt::rfc3339),
+        use_count: action.use_count,
+        created_by_id: action.created_by_id,
+        created_at: crate::timefmt::rfc3339(action.created_at),
+        updated_at: crate::timefmt::rfc3339(action.updated_at),
+        target_name,
+        target_public,
+        target_missing,
     }
 }
 

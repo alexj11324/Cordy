@@ -5,6 +5,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+use cordy_db::models::PinnedItem;
 use cordy_db::queries::pinned_item;
 use cordy_middleware::workspace::WorkspaceContext;
 use serde::{Deserialize, Serialize};
@@ -13,6 +14,31 @@ use uuid::Uuid;
 
 use crate::error::error_response;
 use crate::state::HandlerState;
+
+#[derive(Debug, Serialize)]
+struct PinnedItemResponse {
+    id: Uuid,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    item_type: String,
+    item_id: Uuid,
+    position: f64,
+    created_at: String,
+}
+
+impl From<PinnedItem> for PinnedItemResponse {
+    fn from(pin: PinnedItem) -> Self {
+        Self {
+            id: pin.id,
+            workspace_id: pin.workspace_id,
+            user_id: pin.user_id,
+            item_type: pin.item_type,
+            item_id: pin.item_id,
+            position: pin.position,
+            created_at: crate::timefmt::rfc3339(pin.created_at),
+        }
+    }
+}
 
 pub fn router() -> Router<HandlerState> {
     Router::new()
@@ -70,7 +96,12 @@ async fn list(
             if !query.include.as_deref().unwrap_or("").contains("view") {
                 pins.retain(|pin| pin.item_type != "view");
             }
-            Json(pins).into_response()
+            Json(
+                pins.into_iter()
+                    .map(PinnedItemResponse::from)
+                    .collect::<Vec<_>>(),
+            )
+            .into_response()
         }
         Err(error) => db_error(error, "failed to list pins"),
     }
@@ -136,8 +167,9 @@ async fn create(
     .await
     {
         Ok(Some(pin)) => {
-            publish(&state, &context, "pin:created", json!({ "pin": pin }));
-            (StatusCode::CREATED, Json(pin)).into_response()
+            let response = PinnedItemResponse::from(pin);
+            publish(&state, &context, "pin:created", json!({ "pin": &response }));
+            (StatusCode::CREATED, Json(response)).into_response()
         }
         Ok(None) => db_error(
             anyhow::anyhow!("missing returned row"),
