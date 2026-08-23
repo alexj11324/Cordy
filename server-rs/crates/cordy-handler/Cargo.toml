@@ -32,6 +32,7 @@ cordy-service = { path = "../cordy-service" }
 cordy-slack = { path = "../cordy-slack" }
 cordy-task-failure = { path = "../cordy-task-failure" }
 cordy-util = { path = "../cordy-util" }
+cordy-vcs = { path = "../cordy-vcs" }
 futures-util = { workspace = true }
 hex = { workspace = true }
 hmac = { workspace = true }

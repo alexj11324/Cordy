@@ -12,6 +12,21 @@ use std::time::Duration;
 
 const PENDING_STORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
+struct VcsWebhookConfig {
+    enabled: bool,
+    secret_box: Option<cordy_util::secretbox::SecretBox>,
+}
+
+impl VcsWebhookConfig {
+    #[cfg(test)]
+    fn disabled() -> Self {
+        Self {
+            enabled: false,
+            secret_box: None,
+        }
+    }
+}
+
 #[cfg(test)]
 fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<cordy_realtime::hub::Hub>>) -> Router {
     cordy_handler::build_router(db, hub)
@@ -55,6 +70,7 @@ async fn build_production_router(
     realtime_metrics_token: Option<&str>,
     github_client: Option<cordy_ghsnapshot::Client>,
     cfg: &cordy_config::Config,
+    vcs: VcsWebhookConfig,
 ) -> Router {
     let analytics: Arc<dyn cordy_analytics::AnalyticsClient> =
         Arc::from(cordy_analytics::new_from_env());
@@ -87,7 +103,8 @@ async fn build_production_router(
             cfg.email.smtp_host.as_deref(),
         ),
     ))
-    .with_rate_limit_trusted_proxies(cfg.urls.rate_limit_trusted_proxies.as_deref());
+    .with_rate_limit_trusted_proxies(cfg.urls.rate_limit_trusted_proxies.as_deref())
+    .with_vcs_webhooks(vcs.enabled, vcs.secret_box);
     let redis_url = cfg
         .redis
         .url
@@ -179,6 +196,10 @@ async fn main() -> anyhow::Result<()> {
             None
         }
     };
+    let vcs_enabled = cfg.integrations.vcs_integration_enabled.as_deref() == Some("true");
+    let vcs_secret_box = cordy_util::secretbox::load_key("CORDY_VCS_SECRET_KEY")
+        .ok()
+        .and_then(|key| cordy_util::secretbox::SecretBox::new(&key).ok());
     let app = build_production_router(
         db,
         hub,
@@ -189,6 +210,10 @@ async fn main() -> anyhow::Result<()> {
         cfg.redis.realtime_metrics_token.as_deref(),
         github_client,
         &cfg,
+        VcsWebhookConfig {
+            enabled: vcs_enabled,
+            secret_box: vcs_secret_box,
+        },
     )
     .await;
 
@@ -256,6 +281,7 @@ mod tests {
             None,
             None,
             &cfg,
+            VcsWebhookConfig::disabled(),
         )
         .await;
         let response = tokio::time::timeout(
@@ -299,6 +325,7 @@ mod tests {
             None,
             None,
             &cfg,
+            VcsWebhookConfig::disabled(),
         )
         .await;
         let response = tokio::time::timeout(
@@ -379,6 +406,7 @@ mod tests {
             None,
             None,
             &cfg,
+            VcsWebhookConfig::disabled(),
         )
         .await;
     }

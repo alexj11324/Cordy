@@ -269,6 +269,11 @@ pub struct HandlerState {
     /// Shared Redis connection for per-IP public-route rate limiting. None is
     /// the Go nil-client path and deliberately fails open.
     pub rate_limit_client: Option<redis::Client>,
+    /// Public VCS webhook gate and at-rest secret decryptor. The feature is
+    /// deliberately invisible when disabled and 503s when enabled without a
+    /// usable key, matching Go's deployment boundary.
+    pub vcs_integration_enabled: bool,
+    pub vcs_secret_box: Option<cordy_util::secretbox::SecretBox>,
     /// Daemon WebSocket hub (cordy-daemon). `None` only in tests — the WS
     /// endpoint reports 503 and daemons fall back to HTTP polling.
     pub daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
@@ -336,6 +341,8 @@ impl HandlerState {
             local_skill_list_store: None,
             local_skill_import_store: None,
             rate_limit_client: None,
+            vcs_integration_enabled: false,
+            vcs_secret_box: None,
             daemon_hub: Some(daemon_hub),
             attachment_storage: None,
             attachment_download: AttachmentDownloadSettings::default(),
@@ -504,6 +511,16 @@ impl HandlerState {
     pub fn with_auth_redis(mut self, client: redis::Client) -> Self {
         self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
         self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client);
+        self
+    }
+
+    pub fn with_vcs_webhooks(
+        mut self,
+        enabled: bool,
+        secret_box: Option<cordy_util::secretbox::SecretBox>,
+    ) -> Self {
+        self.vcs_integration_enabled = enabled;
+        self.vcs_secret_box = secret_box;
         self
     }
 }

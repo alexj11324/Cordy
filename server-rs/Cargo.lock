@@ -980,6 +980,7 @@ dependencies = [
  "cordy-slack",
  "cordy-task-failure",
  "cordy-util",
+ "cordy-vcs",
  "futures-util",
  "hex",
  "hmac 0.12.1",

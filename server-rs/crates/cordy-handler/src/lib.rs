@@ -62,6 +62,7 @@ pub mod state;
 pub mod task;
 pub mod task_json;
 pub mod timefmt;
+pub mod vcs_webhook;
 pub mod workspace;
 pub mod ws;
 
@@ -383,6 +384,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(attachment_access::public_router())
         .merge(avatar::router())
         .merge(contact_sales)
+        .merge(vcs_webhook::router())
         .merge(authenticated)
         .merge(daemon)
         .route("/ws", get(ws::ws_handler))
