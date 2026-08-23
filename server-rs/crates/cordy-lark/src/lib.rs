@@ -3,6 +3,7 @@
 //! Port of the Go integration package. Modules land slice by slice.
 
 pub mod audit;
+pub mod backfill;
 pub mod binding_token;
 pub mod channel;
 pub mod channel_store;

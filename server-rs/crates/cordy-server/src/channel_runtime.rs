@@ -23,6 +23,7 @@ pub struct ChannelRuntime {
     cancel: CancellationToken,
     supervisor: Option<tokio::task::JoinHandle<()>>,
     media_reconciler: Option<tokio::task::JoinHandle<()>>,
+    maintenance: Vec<tokio::task::JoinHandle<()>>,
     router: Arc<ChannelRouter>,
 }
 
@@ -54,7 +55,12 @@ impl ChannelRuntime {
         configure_dingtalk(state, cfg, &router, storage.as_ref(), &registry);
         configure_telegram(state, cfg, &router, &registry, &cancel);
         configure_wecom(state, cfg, &router, storage.as_ref(), &registry);
-        configure_lark(state, cfg, &router, storage.as_ref(), &registry)?;
+        let mut maintenance = Vec::new();
+        if let Some(handle) =
+            configure_lark(state, cfg, &router, storage.as_ref(), &registry, &cancel)?
+        {
+            maintenance.push(handle);
+        }
 
         let channel_types = registry.types();
         if channel_types.is_empty() {
@@ -116,6 +122,7 @@ impl ChannelRuntime {
             cancel,
             supervisor,
             media_reconciler,
+            maintenance,
             router,
         }))
     }
@@ -126,6 +133,9 @@ impl ChannelRuntime {
             let _ = handle.await;
         }
         if let Some(handle) = self.media_reconciler.take() {
+            let _ = handle.await;
+        }
+        for handle in self.maintenance.drain(..) {
             let _ = handle.await;
         }
         let drain = CancellationToken::new();
@@ -449,12 +459,13 @@ fn configure_lark(
     router: &Arc<ChannelRouter>,
     storage: Option<&Arc<ChannelStorage>>,
     registry: &Arc<cordy_channel::Registry>,
-) -> anyhow::Result<()> {
+    cancel: &CancellationToken,
+) -> anyhow::Result<Option<tokio::task::JoinHandle<()>>> {
     let secret_box = match channel_secret_box("CORDY_LARK_SECRET_KEY") {
         Ok(Some(secret_box)) => secret_box,
         Ok(None) => {
             tracing::info!("lark channel runtime disabled: CORDY_LARK_SECRET_KEY not set");
-            return Ok(());
+            return Ok(None);
         }
         Err(error) => return Err(error.context("lark channel runtime: invalid secret key")),
     };
@@ -496,6 +507,32 @@ fn configure_lark(
         )
         .context("build lark production WebSocket connector")?,
     );
+
+    let backfill = cordy_lark::backfill::InstallationBackfill::new(
+        store.clone(),
+        api.clone(),
+        installations.clone(),
+        std::env::var("CORDY_LARK_HTTP_BASE_URL").unwrap_or_default(),
+        std::env::var("CORDY_LARK_CALLBACK_BASE_URL").unwrap_or_default(),
+    )?;
+    let backfill_cancel = cancel.clone();
+    let backfill_handle = tokio::spawn(async move {
+        match backfill.run_once(backfill_cancel).await {
+            Ok(report) => tracing::info!(
+                region_relabelled = report.region_relabelled,
+                region_errors = report.region_errors,
+                pages = report.pages,
+                attempted = report.attempted,
+                filled = report.filled,
+                missed = report.missed,
+                errored = report.errored,
+                raced = report.raced,
+                cancelled = report.cancelled,
+                "lark installation backfill pass complete"
+            ),
+            Err(error) => tracing::warn!(%error, "lark installation backfill pass failed"),
+        }
+    });
 
     let binding = Arc::new(cordy_lark::binding_token::BindingTokenService::new(
         store.as_ref().clone(),
@@ -563,7 +600,7 @@ fn configure_lark(
         },
     );
     tracing::info!("lark production channel runtime wired");
-    Ok(())
+    Ok(Some(backfill_handle))
 }
 
 fn channel_secret_box(env_name: &str) -> anyhow::Result<Option<cordy_util::secretbox::SecretBox>> {
