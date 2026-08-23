@@ -17,6 +17,7 @@ pub mod agent_mcp;
 pub mod attachment;
 pub mod attachment_storage;
 pub mod auth;
+pub mod autopilot;
 pub mod binding_redeem;
 pub mod chat_api;
 mod chat_title;
@@ -292,6 +293,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         )
         .merge(
             chat_api::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            autopilot::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 cordy_middleware::workspace::require_workspace,
             )),
@@ -600,6 +607,14 @@ mod tests {
             "/api/chat/pinned-agents",
             "/api/chat/history?session_id=018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/chat/thread?session_id=018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
+            "/api/autopilots",
+            "/api/autopilots/cron-preview?expression=0+9+*+*+*",
+            "/api/autopilots/usage",
+            "/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
+            "/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runs",
+            "/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runs/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
+            "/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/deliveries",
+            "/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/deliveries/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
             "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/mcp-servers",
             "/api/skills",
             "/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
@@ -919,6 +934,42 @@ mod tests {
                 .body(Body::from(r#"{"agent_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f11"}"#))
                 .unwrap(),
             Request::delete("/api/chat/pinned-agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/autopilots")
+                .body(Body::from(r#"{"name":"Daily triage"}"#))
+                .unwrap(),
+            Request::patch("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::from(r#"{"name":"Daily review"}"#))
+                .unwrap(),
+            Request::delete("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/trigger")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/deliveries/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/replay")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers")
+                .body(Body::from(r#"{"type":"manual"}"#))
+                .unwrap(),
+            Request::patch("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
+                .body(Body::from(r#"{"enabled":true}"#))
+                .unwrap(),
+            Request::delete("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/rotate-webhook-token")
+                .body(Body::empty())
+                .unwrap(),
+            Request::put("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/signing-secret")
+                .body(Body::from(r#"{"secret":"secret"}"#))
+                .unwrap(),
+            Request::post("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/collaborators")
+                .body(Body::from(r#"{"user_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12"}"#))
+                .unwrap(),
+            Request::delete("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/collaborators/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
                 .body(Body::empty())
                 .unwrap(),
             Request::post(
