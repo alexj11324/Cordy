@@ -13,7 +13,7 @@ use serde_json::{Map, Value};
 
 /// The two top-level keys an mcp_config document may declare servers under
 /// (Go `mcpServerContainers`).
-const MCP_SERVER_CONTAINERS: [&str; 2] = ["mcpServers", "mcp"];
+const MCP_SERVER_CONTAINERS: [&str; 2] = ["mcp", "mcpServers"];
 
 /// Go `hasManagedJSON`: reports whether a raw JSON column carries an actual
 /// managed payload (non-empty and not the literal `null`).
@@ -249,6 +249,19 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(out2["top"], json!(true));
+    }
+
+    #[test]
+    fn canonical_container_wins_when_both_spellings_define_the_same_server() {
+        let bound = vec![binding("bound", json!({"command": "bound"}))];
+        let agent = json!({
+            "mcp": {"same": {"command": "legacy"}},
+            "mcpServers": {"same": {"command": "canonical"}}
+        });
+        let out = resolve_agent_mcp_config(&bound, Some(&agent))
+            .unwrap()
+            .unwrap();
+        assert_eq!(out["mcpServers"]["same"], json!({"command": "canonical"}));
     }
 
     #[test]

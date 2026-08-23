@@ -1114,75 +1114,68 @@ pub async fn build_claimed_task_response(
                 }
             };
 
-            if !task.force_fresh_session {
-                let mut parts: Vec<String> = Vec::with_capacity(unanswered.len());
-                for m in &unanswered {
-                    if !m.content.trim().is_empty() {
-                        parts.push(m.content.clone());
-                    }
-                    if let Ok(atts) =
-                        cordy_db::queries::attachment::list_attachments_by_chat_message(
-                            &state.pool,
-                            m.id,
-                            cs.workspace_id,
-                        )
-                        .await
-                    {
-                        let mut metas = Vec::with_capacity(atts.len());
-                        for a in atts {
-                            let mut meta =
-                                json!({ "id": a.id.to_string(), "filename": a.filename });
-                            if !a.content_type.is_empty() {
-                                meta["content_type"] = Value::String(a.content_type.clone());
-                            }
-                            metas.push(meta);
-                        }
-                        if !metas.is_empty() {
-                            let entry = obj
-                                .entry("chat_message_attachments")
-                                .or_insert_with(|| Value::Array(Vec::new()));
-                            if let Value::Array(arr) = entry {
-                                arr.append(&mut metas);
-                            }
-                        }
-                    }
+            let mut parts: Vec<String> = Vec::with_capacity(unanswered.len());
+            for m in &unanswered {
+                if !m.content.trim().is_empty() {
+                    parts.push(m.content.clone());
                 }
-                let chat_message = parts.join("\n\n");
-                if !chat_message.is_empty() {
-                    obj.insert("chat_message".into(), Value::String(chat_message.clone()));
-                }
-
-                // Fail closed on empty task-owned input (MUL-4351).
-                let chat_intro = obj
-                    .get("chat_intro")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                if task.chat_input_task_id.is_some()
-                    && !chat_intro
-                    && chat_message.trim().is_empty()
+                if let Ok(atts) = cordy_db::queries::attachment::list_attachments_by_chat_message(
+                    &state.pool,
+                    m.id,
+                    cs.workspace_id,
+                )
+                .await
                 {
-                    tracing::error!(
-                        task_id = %task.id,
-                        chat_session_id = %cs.id,
-                        "chat claim: task-owned direct task has no user input; cancelling"
-                    );
-                    if let Err(e) = state.tasks.cancel_task(task.id).await {
-                        tracing::error!(error = %e, task_id = %task.id, "chat claim: cancel after empty input failed");
+                    let mut metas = Vec::with_capacity(atts.len());
+                    for a in atts {
+                        let mut meta = json!({ "id": a.id.to_string(), "filename": a.filename });
+                        if !a.content_type.is_empty() {
+                            meta["content_type"] = Value::String(a.content_type.clone());
+                        }
+                        metas.push(meta);
                     }
-                    return Err(ClaimBuildFailure::new(
-                        "error_empty_chat_input",
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "chat task has no user input",
-                    ));
+                    if !metas.is_empty() {
+                        let entry = obj
+                            .entry("chat_message_attachments")
+                            .or_insert_with(|| Value::Array(Vec::new()));
+                        if let Value::Array(arr) = entry {
+                            arr.append(&mut metas);
+                        }
+                    }
                 }
+            }
+            let chat_message = parts.join("\n\n");
+            if !chat_message.is_empty() {
+                obj.insert("chat_message".into(), Value::String(chat_message.clone()));
+            }
 
-                let thread_name = obj
-                    .get("thread_name")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-                if thread_name.trim().is_empty() && !chat_message.is_empty() {
-                    obj.insert("thread_name".into(), Value::String(chat_message.clone()));
+            // Fail closed on empty task-owned input (MUL-4351).
+            let chat_intro = obj
+                .get("chat_intro")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            if task.chat_input_task_id.is_some() && !chat_intro && chat_message.trim().is_empty() {
+                tracing::error!(
+                    task_id = %task.id,
+                    chat_session_id = %cs.id,
+                    "chat claim: task-owned direct task has no user input; cancelling"
+                );
+                if let Err(e) = state.tasks.cancel_task(task.id).await {
+                    tracing::error!(error = %e, task_id = %task.id, "chat claim: cancel after empty input failed");
                 }
+                return Err(ClaimBuildFailure::new(
+                    "error_empty_chat_input",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "chat task has no user input",
+                ));
+            }
+
+            let thread_name = obj
+                .get("thread_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if thread_name.trim().is_empty() && !chat_message.is_empty() {
+                obj.insert("thread_name".into(), Value::String(chat_message.clone()));
             }
         }
     }

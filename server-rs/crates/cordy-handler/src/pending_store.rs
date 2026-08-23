@@ -283,6 +283,7 @@ impl UpdateStore {
         let (): () = redis::cmd("SET")
             .arg(update_key(&req.id))
             .arg(data)
+            .arg("EX")
             .arg(UPDATE_STORE_RETENTION_SECS)
             .query_async(&mut self.conn.clone())
             .await
@@ -327,6 +328,7 @@ impl UpdateStore {
         let ok: Option<String> = redis::cmd("SET")
             .arg(&active_key)
             .arg(&req.id)
+            .arg("EX")
             .arg(UPDATE_STORE_RETENTION_SECS)
             .arg("NX")
             .query_async(&mut self.conn.clone())
@@ -341,6 +343,7 @@ impl UpdateStore {
             .cmd("SET")
             .arg(update_key(&req.id))
             .arg(&data)
+            .arg("EX")
             .arg(UPDATE_STORE_RETENTION_SECS)
             .ignore()
             .cmd("ZADD")
@@ -613,6 +616,7 @@ impl ModelListStore {
         let (): () = redis::cmd("SET")
             .arg(model_list_key(&req.id))
             .arg(data)
+            .arg("EX")
             .arg(MODEL_LIST_STORE_RETENTION_SECS)
             .query_async(&mut self.conn.clone())
             .await
@@ -638,6 +642,7 @@ impl ModelListStore {
             .cmd("SET")
             .arg(model_list_key(&req.id))
             .arg(&data)
+            .arg("EX")
             .arg(MODEL_LIST_STORE_RETENTION_SECS)
             .ignore()
             .cmd("ZADD")
@@ -794,6 +799,12 @@ pub struct RuntimeLocalSkillSummary {
     pub source_path: String,
     pub provider: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub plugin: String,
+    #[serde(default)]
+    pub can_disable: bool,
+    #[serde(default)]
+    pub file_count: i32,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub root: String,
 }
 
@@ -889,14 +900,6 @@ pub struct LocalSkillImportConflict {
 }
 
 #[derive(Serialize, Deserialize)]
-struct LocalSkillListEnvelope {
-    #[serde(rename = "r")]
-    public: RuntimeLocalSkillListRequest,
-    #[serde(rename = "s", skip_serializing_if = "Option::is_none")]
-    run_started_at: Option<DateTime<Utc>>,
-}
-
-#[derive(Serialize, Deserialize)]
 struct LocalSkillImportEnvelope {
     #[serde(rename = "r")]
     public: RuntimeLocalSkillImportRequest,
@@ -907,17 +910,11 @@ struct LocalSkillImportEnvelope {
 }
 
 fn marshal_skill_list(req: &RuntimeLocalSkillListRequest) -> anyhow::Result<String> {
-    Ok(serde_json::to_string(&LocalSkillListEnvelope {
-        public: req.clone(),
-        run_started_at: req.run_started_at,
-    })?)
+    Ok(serde_json::to_string(req)?)
 }
 
 fn unmarshal_skill_list(raw: &[u8]) -> anyhow::Result<RuntimeLocalSkillListRequest> {
-    let env: LocalSkillListEnvelope = serde_json::from_slice(raw)?;
-    let mut req = env.public;
-    req.run_started_at = env.run_started_at;
-    Ok(req)
+    Ok(serde_json::from_slice(raw)?)
 }
 
 fn marshal_skill_import(req: &RuntimeLocalSkillImportRequest) -> anyhow::Result<String> {
@@ -991,6 +988,7 @@ impl LocalSkillListStore {
         let (): () = redis::cmd("SET")
             .arg(local_skill_list_key(&req.id))
             .arg(data)
+            .arg("EX")
             .arg(LOCAL_SKILL_STORE_RETENTION_SECS)
             .query_async(&mut self.conn.clone())
             .await
@@ -1016,6 +1014,7 @@ impl LocalSkillListStore {
             .cmd("SET")
             .arg(local_skill_list_key(&req.id))
             .arg(&data)
+            .arg("EX")
             .arg(LOCAL_SKILL_STORE_RETENTION_SECS)
             .ignore()
             .cmd("ZADD")
@@ -1183,6 +1182,7 @@ impl LocalSkillImportStore {
         let (): () = redis::cmd("SET")
             .arg(local_skill_import_key(&req.id))
             .arg(data)
+            .arg("EX")
             .arg(LOCAL_SKILL_STORE_RETENTION_SECS)
             .query_async(&mut self.conn.clone())
             .await
@@ -1226,6 +1226,7 @@ impl LocalSkillImportStore {
             .cmd("SET")
             .arg(local_skill_import_key(&req.id))
             .arg(&data)
+            .arg("EX")
             .arg(LOCAL_SKILL_STORE_RETENTION_SECS)
             .ignore()
             .cmd("ZADD")
@@ -1406,5 +1407,44 @@ async fn load_local_skill_import(
     match get_bytes(conn, &local_skill_import_key(id)).await? {
         Some(raw) => Ok(Some(unmarshal_skill_import(&raw)?)),
         None => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_skill_list_uses_the_direct_go_wire_shape() {
+        let request = RuntimeLocalSkillListRequest {
+            id: "request-1".into(),
+            runtime_id: "runtime-1".into(),
+            status: LocalSkillRequestStatus::Pending,
+            supported: true,
+            ..Default::default()
+        };
+        let encoded = marshal_skill_list(&request).unwrap();
+        let value: Value = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(value["id"], "request-1");
+        assert_eq!(value["runtime_id"], "runtime-1");
+        assert!(value.get("r").is_none());
+        assert!(value.get("s").is_none());
+    }
+
+    #[test]
+    fn local_skill_summary_preserves_extended_runtime_fields() {
+        let summary: RuntimeLocalSkillSummary = serde_json::from_value(serde_json::json!({
+            "key": "review",
+            "name": "Review",
+            "source_path": "/skills/review",
+            "provider": "codex",
+            "plugin": "quality",
+            "can_disable": true,
+            "file_count": 3
+        }))
+        .unwrap();
+        assert_eq!(summary.plugin, "quality");
+        assert!(summary.can_disable);
+        assert_eq!(summary.file_count, 3);
     }
 }
