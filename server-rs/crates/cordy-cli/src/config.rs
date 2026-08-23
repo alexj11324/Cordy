@@ -61,6 +61,10 @@ impl Environment {
         self.values.get(key).map(String::as_str)
     }
 
+    pub(crate) fn current_dir(&self) -> &Path {
+        &self.current_dir
+    }
+
     pub fn trimmed(&self, key: &str) -> Option<&str> {
         self.raw(key)
             .map(str::trim)

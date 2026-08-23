@@ -1,8 +1,8 @@
 //! HTTP client foundation ported from `server/internal/cli/client.go`.
 
 use anyhow::{Context, Result};
-use reqwest::{Client, Method, Response};
-use serde::de::DeserializeOwned;
+use reqwest::{Client, Method, RequestBuilder, Response};
+use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
 use std::time::Duration;
 use thiserror::Error;
@@ -97,9 +97,27 @@ impl ApiClient {
     }
 
     pub async fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
+        self.send_json(Method::GET, path, self.request(Method::GET, path))
+            .await
+    }
+
+    pub async fn patch_json<B: Serialize + ?Sized, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        self.send_json(
+            Method::PATCH,
+            path,
+            self.request(Method::PATCH, path).json(body),
+        )
+        .await
+    }
+
+    fn request(&self, method: Method, path: &str) -> RequestBuilder {
         let mut request = self
             .client
-            .get(format!("{}{path}", self.base_url))
+            .request(method, format!("{}{path}", self.base_url))
             .header("X-Client-Capabilities", CLIENT_CAPABILITIES)
             .header("X-Client-Platform", "cli")
             .header("X-Client-Version", self.version)
@@ -117,13 +135,22 @@ impl ApiClient {
             request = request.header("X-Task-ID", &self.task_id);
         }
 
+        request
+    }
+
+    async fn send_json<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        request: RequestBuilder,
+    ) -> Result<T> {
         let response = request.send().await.map_err(|source| NetworkError {
             kind: classify_network_error(&source),
-            op: format!("GET {path}"),
+            op: format!("{method} {path}"),
             source,
         })?;
         if response.status().is_client_error() || response.status().is_server_error() {
-            return Err(read_http_error(Method::GET, path, response).await.into());
+            return Err(read_http_error(method, path, response).await.into());
         }
         response.json().await.context("decode API response")
     }
