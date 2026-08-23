@@ -19,6 +19,7 @@ pub mod comment;
 pub mod comment_list;
 pub mod daemon;
 pub mod daemon_ws;
+pub mod dashboard;
 pub mod error;
 pub mod feedback;
 pub mod health;
@@ -223,6 +224,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .merge(me::router())
+        .merge(
+            dashboard::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
         .merge(inbox::router().route_layer(middleware::from_fn_with_state(
             WorkspaceGuardState::member_only(state.pool.clone()),
             cordy_middleware::workspace::require_workspace,
@@ -385,6 +392,12 @@ mod tests {
             "/api/inbox/archived",
             "/api/inbox/unread-count",
             "/api/inbox/unread-summary",
+            "/api/dashboard/usage/daily",
+            "/api/dashboard/usage/by-agent",
+            "/api/dashboard/agent-runtime",
+            "/api/dashboard/runtime/daily",
+            "/api/dashboard/failures/daily",
+            "/api/dashboard/failures/by-agent",
             "/api/working-agents",
         ] {
             let response = build_router(None, None)
