@@ -18,8 +18,7 @@
 //! call site feeds a timeout/floor that Go code would immediately misuse
 //! anyway (documented deviation).
 
-// S9-integration: several helpers only gain callers when the daemon
-// bootstrap lands; silence dead-code until then.
+// S9-integration: consumed by daemon.go core (lane B); silence dead-code.
 #![allow(dead_code)]
 
 use std::time::Duration;
