@@ -459,7 +459,7 @@ impl Auditor for AuditorImpl {
             crate::TYPE_DINGTALK,
             "message",
             &reason.0,
-            inst_id,
+            Some(inst_id),
             opt_str(&msg.source.chat_id),
             opt_str(&msg.event_id),
             opt_str(&msg.message_id),

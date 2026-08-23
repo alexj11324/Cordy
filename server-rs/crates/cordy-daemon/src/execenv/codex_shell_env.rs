@@ -414,12 +414,17 @@ mod tests {
                 ("MY_SECRET", "x"),
                 ("EXTRA", "1"),
             ]),
-            &inherited(&["my_secret"]),
+            &["my_secret".to_string()],
         );
         assert_eq!(
             got,
-            vec!["CORDY_TOKEN", "EXTRA", "HOME", "MY_SECRET", "PATH"],
-            "keys sort case-insensitively like Go's sort.Slice on ToUpper"
+            vec![
+                "CORDY_TOKEN".to_string(),
+                "EXTRA".to_string(),
+                "HOME".to_string(),
+                "MY_SECRET".to_string(),
+                "PATH".to_string()
+            ]
         );
 
         // Unauthorized credential-looking explicit value dropped.
@@ -452,12 +457,9 @@ mod tests {
         assert!(got.is_empty());
     }
 
-    // Port of the strip half of TestEnsureCodexShellEnvPolicyConfigReplaces-
-    // AllLegalPolicyForms: root table, profile overlay table, and multi-line
-    // inline values all removed. Go's table semantics apply — every key that
-    // lives under a policy-named table (including trailing keys like
-    // profiles_dotted / after) belongs to that table and is removed with it,
-    // while unrelated tables survive byte-for-byte.
+    // Port of TestStripUserShellEnvPolicy: root table, profile overlay table,
+    // root dotted assignment, and multi-line inline values all removed while
+    // unrelated expressions survive byte-for-byte.
     #[test]
     fn test_strip_user_shell_env_policy_variants() {
         let input = "top = 1\n\
@@ -472,15 +474,15 @@ mod tests {
         assert!(got.contains("top = 1"));
         assert!(got.contains("[other]"));
         assert!(got.contains("value = 2"));
+        // Go's isCodexShellEnvPolicyPath matches every key inside a
+        // [profiles.*.shell_environment_policy] table, so the entire table
+        // body is stripped along with its header.
+        assert!(!got.contains("profiles_dotted"));
+        assert!(!got.contains("after = 4"));
 
         assert!(!got.contains("inherit = "));
         assert!(!got.contains("keep_flag"));
         assert!(!got.contains("include_only"));
-        // Everything after the profile policy header is inside that table —
-        // including profiles_dotted and the trailing after key — so all of it
-        // goes with the removed table, exactly as Go's full-key path match.
-        assert!(!got.contains("profiles_dotted"));
-        assert!(!got.contains("after = 4"));
         assert!(!got
             .lines()
             .any(|l| l.trim() == "[shell_environment_policy]"));

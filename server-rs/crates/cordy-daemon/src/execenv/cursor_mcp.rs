@@ -3,7 +3,7 @@
 //! Symbol map:
 //! - CursorMcpAuthSourceEnv        → CURSOR_MCP_AUTH_SOURCE_ENV
 //! - cursorWorkspaceTrustedFile /
-//!    cursorMcpAuthFile             → CURSOR_WORKSPACE_TRUSTED_FILE / CURSOR_MCP_AUTH_FILE
+//!   cursorMcpAuthFile             → CURSOR_WORKSPACE_TRUSTED_FILE / CURSOR_MCP_AUTH_FILE
 //! - prepareCursorMcpConfig        → prepare_cursor_mcp_config
 //! - seedCursorMcpAuthFile         → seed_cursor_mcp_auth_file
 //! - removeCursorMcpAuthFile       → remove_cursor_mcp_auth_file
@@ -15,15 +15,15 @@
 //! - cursorMcpApprovalKeys         → cursor_mcp_approval_keys
 //! - marshalCursorMcpApprovalServer → marshal_cursor_mcp_approval_server
 //! - marshalJSONStringifyCompatible → (serde_json does not HTML-escape; the
-//!    Go workaround is unnecessary — plain
-//!    compact serialization matches
-//!    JSON.stringify output)
+//!   Go workaround is unnecessary — plain
+//!   compact serialization matches
+//!   JSON.stringify output)
 //! - cursorProjectRoot             → cursor_project_root
 //! - cursorSlugifyPath             → cursor_slugify_path
 //!
 //! Deviations:
 //! - Go's ordered-struct normalization for approval hashing is reproduced with
-//!    serde_json preserve_order + explicit field insertion order.
+//!   serde_json preserve_order + explicit field insertion order.
 //! - slog logger parameters dropped.
 
 use std::collections::BTreeMap;
@@ -71,7 +71,7 @@ pub(crate) fn prepare_cursor_mcp_config(
     if let Err(err) = super::context::record_write_file(
         &join(&cursor_dir, "mcp.json"),
         config_data.as_bytes(),
-        manifest.as_deref_mut(),
+        manifest,
     ) {
         if err
             .downcast_ref::<super::context::ErrPathPreExists>()
