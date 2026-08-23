@@ -23,6 +23,7 @@ pub const UPDATE_PENDING_PREFIX: &str = "mul:{runtime_pending}:update:pending:";
 pub const UPDATE_ACTIVE_PREFIX: &str = "mul:{runtime_pending}:update:active:";
 pub const MODEL_LIST_KEY_PREFIX: &str = "mul:{runtime_pending}:model_list:req:";
 pub const MODEL_LIST_PENDING_PREFIX: &str = "mul:{runtime_pending}:model_list:pending:";
+pub const MODEL_CATALOG_KEY_PREFIX: &str = "mul:runtime_model_catalog:";
 pub const LOCAL_SKILL_LIST_KEY_PREFIX: &str = "mul:{runtime_pending}:local_skill:list:";
 pub const LOCAL_SKILL_LIST_PENDING_PREFIX: &str = "mul:{runtime_pending}:local_skill:list:pending:";
 pub const LOCAL_SKILL_IMPORT_KEY_PREFIX: &str = "mul:{runtime_pending}:local_skill:import:";
@@ -44,6 +45,9 @@ fn model_list_key(id: &str) -> String {
 fn model_list_pending_key(runtime_id: &str) -> String {
     format!("{MODEL_LIST_PENDING_PREFIX}{runtime_id}")
 }
+fn model_catalog_key(runtime_id: &str) -> String {
+    format!("{MODEL_CATALOG_KEY_PREFIX}{runtime_id}")
+}
 fn local_skill_list_key(id: &str) -> String {
     format!("{LOCAL_SKILL_LIST_KEY_PREFIX}{id}")
 }
@@ -64,6 +68,8 @@ const UPDATE_STORE_RETENTION_SECS: i64 = 5 * 60;
 const MODEL_LIST_PENDING_TIMEOUT_SECS: i64 = 30;
 const MODEL_LIST_RUNNING_TIMEOUT_SECS: i64 = 60;
 const MODEL_LIST_STORE_RETENTION_SECS: i64 = 2 * 60;
+pub const MODEL_CATALOG_REVALIDATE_AFTER_SECS: i64 = 60;
+const MODEL_CATALOG_SERVE_WINDOW_SECS: i64 = 24 * 60 * 60;
 const LOCAL_SKILL_PENDING_TIMEOUT_SECS: i64 = 3 * 60;
 const LOCAL_SKILL_RUNNING_TIMEOUT_SECS: i64 = 60;
 const LOCAL_SKILL_STORE_RETENTION_SECS: i64 = 5 * 60;
@@ -498,20 +504,84 @@ impl ModelListStatus {
 /// One model entry in a completed catalog (Go `ModelEntry`).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ModelEntry {
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub id: String,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub label: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub provider: String,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub default: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thinking: Option<Value>,
     #[serde(
         default,
+        deserialize_with = "deserialize_null_default",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub provider: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_null_default",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub default: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<ModelThinking>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_null_default",
         rename = "service_tiers",
         skip_serializing_if = "Vec::is_empty"
     )]
-    pub service_tiers: Vec<Value>,
+    pub service_tiers: Vec<ModelServiceTier>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ModelServiceTier {
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub id: String,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub name: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_null_default",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ModelThinking {
+    #[serde(
+        default,
+        deserialize_with = "deserialize_null_default",
+        rename = "supported_levels"
+    )]
+    pub supported_levels: Vec<ThinkingLevel>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_null_default",
+        rename = "default_level",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub default_level: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ThinkingLevel {
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub value: String,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub label: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_null_default",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub description: String,
+}
+
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Option::<T>::deserialize(deserializer).map(Option::unwrap_or_default)
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -532,6 +602,123 @@ pub struct ModelListRequest {
     pub updated_at: DateTime<Utc>,
     #[serde(skip)]
     pub run_started_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cached: bool,
+    #[serde(default, rename = "cached_at", skip_serializing_if = "Option::is_none")]
+    pub cached_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelCatalogSnapshot {
+    #[serde(rename = "runtime_id")]
+    pub runtime_id: String,
+    pub models: Vec<ModelEntry>,
+    pub supported: bool,
+    #[serde(rename = "stored_at")]
+    pub stored_at: DateTime<Utc>,
+}
+
+pub(crate) fn cacheable_model_catalog(models: &[ModelEntry], supported: bool) -> bool {
+    supported && !models.is_empty()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModelCatalogCacheAction {
+    Store,
+    Drop,
+    Keep,
+}
+
+pub(crate) fn model_catalog_cache_action(
+    models: &[ModelEntry],
+    supported: bool,
+    fallback: bool,
+) -> ModelCatalogCacheAction {
+    if fallback {
+        ModelCatalogCacheAction::Keep
+    } else if cacheable_model_catalog(models, supported) {
+        ModelCatalogCacheAction::Store
+    } else {
+        ModelCatalogCacheAction::Drop
+    }
+}
+
+pub struct ModelCatalogCache {
+    conn: ConnectionManager,
+}
+
+impl ModelCatalogCache {
+    pub fn new(conn: ConnectionManager) -> Self {
+        Self { conn }
+    }
+
+    pub async fn get(&self, runtime_id: &str) -> anyhow::Result<Option<ModelCatalogSnapshot>> {
+        if runtime_id.is_empty() {
+            return Ok(None);
+        }
+        let key = model_catalog_key(runtime_id);
+        let Some(raw) = get_bytes(&mut self.conn.clone(), &key).await? else {
+            return Ok(None);
+        };
+        let snapshot: ModelCatalogSnapshot = match serde_json::from_slice(&raw) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                let _: Result<i64, _> = redis::cmd("DEL")
+                    .arg(&key)
+                    .query_async(&mut self.conn.clone())
+                    .await;
+                return Err(anyhow::anyhow!("decode model catalog: {error}"));
+            }
+        };
+        if Utc::now()
+            .signed_duration_since(snapshot.stored_at)
+            .num_seconds()
+            > MODEL_CATALOG_SERVE_WINDOW_SECS
+        {
+            return Ok(None);
+        }
+        Ok(Some(snapshot))
+    }
+
+    pub async fn put(
+        &self,
+        runtime_id: &str,
+        models: &[ModelEntry],
+        supported: bool,
+    ) -> anyhow::Result<()> {
+        if runtime_id.is_empty() || !cacheable_model_catalog(models, supported) {
+            return Ok(());
+        }
+        let snapshot = ModelCatalogSnapshot {
+            runtime_id: runtime_id.to_string(),
+            models: models.to_vec(),
+            supported,
+            stored_at: Utc::now(),
+        };
+        let data = serde_json::to_string(&snapshot)
+            .map_err(|error| anyhow::anyhow!("marshal model catalog: {error}"))?;
+        let (): () = redis::cmd("SET")
+            .arg(model_catalog_key(runtime_id))
+            .arg(data)
+            .arg("EX")
+            .arg(MODEL_CATALOG_SERVE_WINDOW_SECS)
+            .query_async(&mut self.conn.clone())
+            .await
+            .map_err(|error| anyhow::anyhow!("persist model catalog: {error}"))?;
+        Ok(())
+    }
+
+    pub async fn invalidate(&self, runtime_id: &str) -> anyhow::Result<()> {
+        if runtime_id.is_empty() {
+            return Ok(());
+        }
+        let _: i64 = redis::cmd("DEL")
+            .arg(model_catalog_key(runtime_id))
+            .query_async(&mut self.conn.clone())
+            .await
+            .map_err(|error| anyhow::anyhow!("invalidate model catalog: {error}"))?;
+        Ok(())
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -1446,5 +1633,61 @@ mod tests {
         assert_eq!(summary.plugin, "quality");
         assert!(summary.can_disable);
         assert_eq!(summary.file_count, 3);
+    }
+
+    #[test]
+    fn model_catalog_cache_action_preserves_last_known_good_semantics() {
+        let models = vec![ModelEntry {
+            id: "model-1".into(),
+            label: "Model 1".into(),
+            ..Default::default()
+        }];
+        assert_eq!(
+            model_catalog_cache_action(&models, true, false),
+            ModelCatalogCacheAction::Store
+        );
+        assert_eq!(
+            model_catalog_cache_action(&[], true, false),
+            ModelCatalogCacheAction::Drop
+        );
+        assert_eq!(
+            model_catalog_cache_action(&models, false, false),
+            ModelCatalogCacheAction::Drop
+        );
+        assert_eq!(
+            model_catalog_cache_action(&models, true, true),
+            ModelCatalogCacheAction::Keep
+        );
+    }
+
+    #[test]
+    fn cached_model_list_wire_marks_only_cache_hits() {
+        let stored_at = Utc::now();
+        let cached = ModelListRequest {
+            id: "synthetic".into(),
+            runtime_id: "runtime-1".into(),
+            status: ModelListStatus::Completed,
+            supported: true,
+            created_at: stored_at,
+            updated_at: stored_at,
+            cached: true,
+            cached_at: Some(stored_at),
+            ..Default::default()
+        };
+        let cached_json = serde_json::to_value(&cached).unwrap();
+        assert_eq!(cached_json["cached"], true);
+        assert_eq!(cached_json["cached_at"], serde_json::json!(stored_at));
+
+        let live = ModelListRequest {
+            id: "live".into(),
+            runtime_id: "runtime-1".into(),
+            status: ModelListStatus::Pending,
+            created_at: stored_at,
+            updated_at: stored_at,
+            ..Default::default()
+        };
+        let live_json = serde_json::to_value(&live).unwrap();
+        assert!(live_json.get("cached").is_none());
+        assert!(live_json.get("cached_at").is_none());
     }
 }

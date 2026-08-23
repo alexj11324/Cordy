@@ -257,6 +257,7 @@ pub struct HandlerState {
     /// dropped one-shot report.
     pub update_store: Option<Arc<crate::pending_store::UpdateStore>>,
     pub model_list_store: Option<Arc<crate::pending_store::ModelListStore>>,
+    pub model_catalog_cache: Option<Arc<crate::pending_store::ModelCatalogCache>>,
     pub local_skill_list_store: Option<Arc<crate::pending_store::LocalSkillListStore>>,
     pub local_skill_import_store: Option<Arc<crate::pending_store::LocalSkillImportStore>>,
     /// Shared Redis connection for per-IP public-route rate limiting. None is
@@ -307,6 +308,7 @@ impl HandlerState {
                 .to_string(),
             update_store: None,
             model_list_store: None,
+            model_catalog_cache: None,
             local_skill_list_store: None,
             local_skill_import_store: None,
             rate_limit_client: None,
@@ -425,6 +427,9 @@ impl HandlerState {
             conn.clone(),
         )));
         self.model_list_store = Some(Arc::new(crate::pending_store::ModelListStore::new(
+            conn.clone(),
+        )));
+        self.model_catalog_cache = Some(Arc::new(crate::pending_store::ModelCatalogCache::new(
             conn.clone(),
         )));
         self.local_skill_list_store = Some(Arc::new(
