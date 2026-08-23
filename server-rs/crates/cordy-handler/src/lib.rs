@@ -41,6 +41,7 @@ pub mod pat;
 pub mod pending_store;
 pub mod pin;
 pub mod profile_json;
+pub mod project;
 pub mod property;
 pub mod quick_action;
 pub mod session;
@@ -232,6 +233,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(pat::router())
         .merge(attachment_access::authenticated_router())
         .merge(attachment_routes)
+        .merge(
+            project::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
         .merge(issue_routes)
         .merge(task_routes)
         .merge(comment_routes)
@@ -369,6 +376,9 @@ mod tests {
             "/api/agent-task-snapshot",
             "/api/properties",
             "/api/properties/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
+            "/api/projects",
+            "/api/projects/search?q=migration",
+            "/api/projects/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/working-agents",
         ] {
             let response = build_router(None, None)
