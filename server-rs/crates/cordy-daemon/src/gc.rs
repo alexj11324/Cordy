@@ -3,15 +3,19 @@
 //!
 //! Deviations from Go:
 //! - `*Daemon` receiver → [`GcHost`] trait; config fields live in
-//!   [`GcConfig`] mirroring the exact Go field names/types from
-//!   `internal/daemon/config.go:99–118`.
+//!  [`GcConfig`] mirroring the exact Go field names/types from
+//!  `internal/daemon/config.go:99–118`.
 //! - execenv-owned pieces (GCMeta, store pruners, managed-artifact helpers)
-//!   are local seam stand-ins marked `// S9-integration:`; this module never
-//!   references `crate::execenv`.
+//!  are local seam stand-ins marked `// S9-integration:`; this module never
+//!  references `crate::execenv`.
 //! - `time.Ticker` → `tokio::time::interval` with `MissedTickBehavior::Delay`
-//!   (Go tickers drop missed ticks).
+//!  (Go tickers drop missed ticks).
 //! - `context.Context` → [`Ctx`](crate::repocache::Ctx); slog → tracing with
-//!   identical messages.
+//!  identical messages.
+
+// S9-integration: entry points (gc_loop/run_gc) and seam types are wired by
+// the daemon-runner/execenv lanes; silence dead-code until that lands.
+#![allow(dead_code)]
 
 // S9-integration: entry points (gc_loop/run_gc) and seam types are wired by
 // the daemon-runner/execenv lanes; silence dead-code until that lands.

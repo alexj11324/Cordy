@@ -865,7 +865,9 @@ fn humantime_secs(d: Duration) -> String {
 pub(crate) fn resolve_agent_executable_path(cmd: &str) -> anyhow::Result<String> {
     let resolved = look_path(cmd)?;
     if cmd.contains('/') || cmd.contains('\\') {
-        return Ok(canonical_executable_path(&resolved));
+        return Ok(crate::canonical_path::canonical_configured_executable_path(
+            &resolved,
+        ));
     }
     if is_in_cordy_hooks_dir(&resolved) {
         if let Ok(unshadowed) = look_path_excluding_cordy_hooks(cmd) {
@@ -907,20 +909,47 @@ pub(crate) fn reresolve_agent_command(cmd: &str) -> Option<String> {
 /// requires an executable match for paths containing separators).
 fn look_path(cmd: &str) -> anyhow::Result<String> {
     if cmd.contains('/') || cmd.contains('\\') {
-        if is_executable_file_cmd(cmd) {
-            return Ok(cmd.to_string());
+        for candidate in executable_candidates(PathBuf::from(cmd)) {
+            if is_executable_file_cmd(&candidate.to_string_lossy()) {
+                return Ok(candidate.to_string_lossy().into_owned());
+            }
         }
         anyhow::bail!("exec: {}: not found", cmd);
     }
-    let path = std::env::var("PATH").unwrap_or_default();
-    for dir in path.split(':') {
-        let dir = if dir.is_empty() { "." } else { dir };
-        let candidate = format!("{dir}/{cmd}");
-        if is_executable_file_cmd(&candidate) {
-            return Ok(candidate);
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    for dir in std::env::split_paths(&path) {
+        let dir = if dir.as_os_str().is_empty() {
+            PathBuf::from(".")
+        } else {
+            dir
+        };
+        for candidate in executable_candidates(dir.join(cmd)) {
+            if is_executable_file_cmd(&candidate.to_string_lossy()) {
+                return Ok(candidate.to_string_lossy().into_owned());
+            }
         }
     }
     anyhow::bail!("exec: {}: not found", cmd)
+}
+
+#[cfg(not(windows))]
+fn executable_candidates(path: PathBuf) -> Vec<PathBuf> {
+    vec![path]
+}
+
+#[cfg(windows)]
+fn executable_candidates(path: PathBuf) -> Vec<PathBuf> {
+    if path.extension().is_some() {
+        return vec![path];
+    }
+    let extensions = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
+    extensions
+        .split(';')
+        .filter_map(|ext| {
+            let ext = ext.trim().trim_start_matches('.');
+            (!ext.is_empty()).then(|| path.with_extension(ext))
+        })
+        .collect()
 }
 
 fn is_executable_file_cmd(path: &str) -> bool {
@@ -929,18 +958,21 @@ fn is_executable_file_cmd(path: &str) -> bool {
 
 /// `lookPathExcludingCordyHooks` (config.go:784).
 fn look_path_excluding_cordy_hooks(cmd: &str) -> anyhow::Result<String> {
-    let path = std::env::var("PATH").unwrap_or_default();
-    for dir in path.split(':') {
-        let mut dir = dir;
-        if dir.is_empty() {
-            dir = ".";
-        }
-        if is_cordy_hooks_dir(dir) {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    for dir in std::env::split_paths(&path) {
+        let dir = if dir.as_os_str().is_empty() {
+            PathBuf::from(".")
+        } else {
+            dir
+        };
+        if is_cordy_hooks_dir(&dir.to_string_lossy()) {
             continue;
         }
-        let candidate = format!("{dir}/{cmd}");
-        if crate::config::is_executable_file(&candidate) {
-            return Ok(discovered_executable_path(&candidate));
+        for candidate in executable_candidates(dir.join(cmd)) {
+            let candidate = candidate.to_string_lossy().into_owned();
+            if crate::config::is_executable_file(&candidate) {
+                return Ok(discovered_executable_path(&candidate));
+            }
         }
     }
     Err(anyhow::anyhow!("exec: not found"))
@@ -994,7 +1026,7 @@ fn is_supported_login_shell(shell_base: &str) -> bool {
 /// processes don't inherit interactive PATH additions (fnm/nvm/volta,
 /// native installers). Only outputs that still pass a fresh LookPath are
 /// trusted.
-pub(crate) fn resolve_agents_via_login_shell(names: &[String]) -> BTreeMap<String, String> {
+fn resolve_agents_via_login_shell(names: &[String]) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     if names.is_empty() {
         return out;
@@ -1054,7 +1086,7 @@ pub(crate) fn resolve_agents_via_login_shell(names: &[String]) -> BTreeMap<Strin
     out
 }
 
-pub(crate) fn wait_with_timeout(
+fn wait_with_timeout(
     child: &mut std::process::Child,
     timeout: Duration,
 ) -> std::io::Result<String> {
@@ -1062,8 +1094,8 @@ pub(crate) fn wait_with_timeout(
     use std::sync::mpsc::{self, TryRecvError};
 
     let deadline = std::time::Instant::now() + timeout;
-    // Read stdout on a helper thread so a quiet child cannot block the
-    // timeout poll in `Read::read`.
+    // Read stdout on a helper thread so a quiet shell (or a descendant that
+    // inherits stdout) cannot block the timeout poll in `Read::read`.
     let mut stdout = child.stdout.take().expect("piped");
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || loop {
@@ -1099,6 +1131,7 @@ pub(crate) fn wait_with_timeout(
                 }
             }
         }
+
         if !child_exited {
             child_exited = child.try_wait()?.is_some();
         }
@@ -1295,7 +1328,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn child_stdout_wait_is_bounded() {
+    fn login_shell_stdout_wait_is_bounded() {
         let mut child = std::process::Command::new("sh")
             .args(["-c", "sleep 2"])
             .stdout(std::process::Stdio::piped())
