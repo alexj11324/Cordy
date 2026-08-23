@@ -99,23 +99,22 @@ fn recent_autopilot_lock_key(
 ///
 /// Returns `(duplicate, found)`; `found == true` means the caller must abort
 /// the create (the transaction-scoped lock stays held until rollback).
-pub async fn lock_and_find_active_duplicate<'e, E>(
-    executor: E,
+// Concrete connection signature: the advisory xact lock only holds inside a
+// transaction, so a bare pool would silently degrade the guard.
+pub async fn lock_and_find_active_duplicate(
+    executor: &mut sqlx::PgConnection,
     workspace_id: Uuid,
     project_id: Option<Uuid>,
     parent_issue_id: Option<Uuid>,
     title: &str,
     allow_duplicate: bool,
-) -> anyhow::Result<(Option<cordy_db::models::Issue>, bool)>
-where
-    E: sqlx::Executor<'e, Database = sqlx::Postgres> + Copy,
-{
+) -> anyhow::Result<(Option<cordy_db::models::Issue>, bool)> {
     let normalized_title = normalize_title(title);
     if normalized_title.is_empty() {
         return Ok((None, false));
     }
     cordy_db::queries::issue::lock_issue_duplicate_key(
-        executor,
+        &mut *executor,
         &lock_key(workspace_id, project_id, parent_issue_id, &normalized_title),
     )
     .await?;
@@ -124,7 +123,7 @@ where
     }
 
     let duplicate = cordy_db::queries::issue::find_active_duplicate_issue(
-        executor,
+        &mut *executor,
         workspace_id,
         project_id,
         parent_issue_id,
@@ -138,17 +137,16 @@ where
 /// Autopilot variant: blocks re-creating an issue with the same normalized
 /// title that this autopilot already created inside `window`. Empty titles,
 /// invalid autopilot ids and non-positive windows are no-ops.
-pub async fn lock_and_find_recent_autopilot_duplicate<'e, E>(
-    executor: E,
+// Concrete connection signature: the advisory xact lock only holds inside a
+// transaction, so a bare pool would silently degrade the guard.
+pub async fn lock_and_find_recent_autopilot_duplicate(
+    executor: &mut sqlx::PgConnection,
     workspace_id: Uuid,
     autopilot_id: Option<Uuid>,
     project_id: Option<Uuid>,
     title: &str,
     window: chrono::Duration,
-) -> anyhow::Result<(Option<cordy_db::models::Issue>, bool)>
-where
-    E: sqlx::Executor<'e, Database = sqlx::Postgres> + Copy,
-{
+) -> anyhow::Result<(Option<cordy_db::models::Issue>, bool)> {
     let Some(autopilot_id) = autopilot_id else {
         return Ok((None, false));
     };
@@ -157,14 +155,14 @@ where
         return Ok((None, false));
     }
     cordy_db::queries::issue::lock_issue_duplicate_key(
-        executor,
+        &mut *executor,
         &recent_autopilot_lock_key(workspace_id, autopilot_id, project_id, &normalized_title),
     )
     .await?;
 
     let created_after = Utc::now() - window;
     let duplicate = cordy_db::queries::issue::find_recent_autopilot_duplicate_issue(
-        executor,
+        &mut *executor,
         workspace_id,
         autopilot_id,
         project_id,

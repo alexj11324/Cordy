@@ -800,7 +800,9 @@ pub async fn upsert_plugin_secret(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     installation_id: Uuid,
     key: &str,
-    ciphertext: &serde_json::Value,
+    // plugin_secret.ciphertext is BYTEA; the generator could not see the
+    // column type through the sqlc param and defaulted to JSON.
+    ciphertext: &[u8],
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
         r#"INSERT INTO plugin_secret (installation_id, key, ciphertext)

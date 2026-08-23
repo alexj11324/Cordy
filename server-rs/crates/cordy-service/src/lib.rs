@@ -1,19 +1,37 @@
 //! Domain services — port of `server/internal/service`.
 
+pub mod agent_ready;
 pub mod attribution;
+pub mod autopilot;
 pub mod builtin_agents;
 pub mod builtin_skills;
+pub mod channel_media_reconciler;
 pub mod chat_quick_actions;
 pub mod cron;
 pub mod dispatch_reason;
 pub mod email;
+pub mod empty_claim_cache;
 pub mod feature_flags;
 pub mod issue_guard;
 pub mod issue_position;
+pub mod issue_service;
 pub mod issue_status;
+pub mod plugin;
+pub mod plugin_action;
+pub mod plugin_agent_tools;
+pub mod plugin_event_dispatch;
+pub mod plugin_hook;
+pub mod plugin_mcp_transport;
+pub mod plugin_skill;
+pub mod plugin_storage;
+pub mod plugin_token;
 pub mod redact;
 pub mod runtime_apps;
 pub mod skill_bundle;
 pub mod task_failure;
 pub mod task_helpers;
+pub mod task_notify;
+pub mod task_quick_actions;
+pub mod task_recovery;
 pub mod task_service;
+pub mod task_terminal;

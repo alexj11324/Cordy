@@ -195,10 +195,10 @@ pub async fn create_comment(
     author_id: Uuid,
     content: &str,
     type_: &str,
-    parent_id: Uuid,
-    source_task_id: Uuid,
-    quick_action_id: Uuid,
-    via_plugin_id: Uuid,
+    parent_id: Option<Uuid>,
+    source_task_id: Option<Uuid>,
+    quick_action_id: Option<Uuid>,
+    via_plugin_id: Option<Uuid>,
     id: Uuid,
 ) -> anyhow::Result<Option<CreateCommentRow>> {
     let row = sqlx::query(

@@ -1,0 +1,23 @@
+[package]
+name = "cordy-telegram"
+description = "Telegram adapter (port of server/internal/integrations/telegram): long-poll link, resolver set, markdown conversion, outbound"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+base64 = "0.22"
+serde = { workspace = true }
+serde_json = { workspace = true }
+sqlx = { workspace = true }
+thiserror = "2"
+tracing = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio-util = { workspace = true }
+uuid = { workspace = true }
+reqwest = { workspace = true }
+cordy-channel = { path = "../cordy-channel" }
+cordy-channel-engine = { path = "../cordy-channel-engine" }
+cordy-db = { path = "../cordy-db" }

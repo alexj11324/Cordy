@@ -1,0 +1,30 @@
+[package]
+name = "cordy-composio"
+description = "Composio integration (port of server/internal/integrations/composio): dispatch, service, state"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+base64 = "0.22"
+chrono = { workspace = true }
+hmac = { workspace = true }
+http = { workspace = true }
+rand = { workspace = true }
+reqwest = { workspace = true }
+rsa = { version = "0.9", features = ["pem"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = "2"
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+cordy-channel = { path = "../cordy-channel" }
+cordy-channel-engine = { path = "../cordy-channel-engine" }
+cordy-db = { path = "../cordy-db" }

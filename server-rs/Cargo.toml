@@ -3,15 +3,28 @@ resolver = "2"
 members = [
     "crates/cordy-analytics",
     "crates/cordy-auth",
+    "crates/cordy-channel",
+    "crates/cordy-daemon",
+    "crates/cordy-channel-engine",
+    "crates/cordy-composio",
     "crates/cordy-config",
     "crates/cordy-db",
+    "crates/cordy-dingtalk",
     "crates/cordy-events",
+    "crates/cordy-ghsnapshot",
+    "crates/cordy-lark",
     "crates/cordy-metrics",
     "crates/cordy-protocol",
     "crates/cordy-realtime",
     "crates/cordy-service",
+    "crates/cordy-slack",
     "crates/cordy-task-failure",
+    "crates/cordy-plugincontract",
+    "crates/cordy-remotemcp",
+    "crates/cordy-telegram",
     "crates/cordy-util",
+    "crates/cordy-vcs",
+    "crates/cordy-wecom",
     "crates/cordy-migrate",
     "crates/cordy-middleware",
     "crates/cordy-server",
@@ -66,15 +79,34 @@ ulid = "1"
 chrono-tz = "0.9"
 regex = "1"
 croner = "1"
+serde_yaml = "0.9"
 # email & integrations
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-tokio-rustls = "0.26"
-rustls = "0.23"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+# ring is the single crypto provider across the graph (sqlx/reqwest/jsonwebtoken
+# all enable rustls/ring); default features would also pull aws-lc-rs, and two
+# compiled-in providers make ClientConfig::builder() ambiguous (panic).
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "logging", "std", "tls12"] }
 rustls-native-certs = "0.8"
 base64 = "0.22"
 include_dir = "0.7"
 quoted_printable = "0.5"
 hostname = "0.4"
+# remotemcp secure HTTP stack (hyper legacy client with a custom pinned connector)
+http = "1"
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "runtime", "service", "tokio"] }
+http-body-util = "0.1"
+url = "2"
+rustls-pemfile = "2"
+# secretbox config-secret encryption (AES-256-GCM, nonce-prefixed layout)
+aes-gcm = { version = "0.10", features = ["std", "getrandom"] }
+
+# daemon manager (S9): filesystem walking, temp files, process control
+futures-util = "0.3"
+walkdir = "2"
+tempfile = "3"
+libc = "0.2"
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }

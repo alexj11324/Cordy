@@ -114,7 +114,7 @@ pub async fn clear_chat_session_session_if_matches(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
     session_id: Option<&str>,
-    runtime_id: Uuid,
+    runtime_id: Option<Uuid>,
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
         r#"UPDATE chat_session
@@ -2527,7 +2527,7 @@ pub async fn update_chat_session_session(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     session_id: Option<&str>,
     work_dir: Option<&str>,
-    runtime_id: Uuid,
+    runtime_id: Option<Uuid>,
     id: Uuid,
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
