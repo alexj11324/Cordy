@@ -10,7 +10,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
 use cordy_db::models::{Squad, SquadMember};
-use cordy_db::queries::{squad, workspace};
+use cordy_db::queries::{agent, member, squad, workspace};
 use cordy_middleware::workspace::WorkspaceContext;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -27,11 +27,11 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/squads/{id}/", get(get_one))
         .route(
             "/api/squads/{id}/members",
-            get(list_members).delete(remove_member),
+            get(list_members).post(add_member).delete(remove_member),
         )
         .route(
             "/api/squads/{id}/members/",
-            get(list_members).delete(remove_member),
+            get(list_members).post(add_member).delete(remove_member),
         )
         .route(
             "/api/squads/{id}/members/role",
@@ -361,6 +361,113 @@ fn publish_squad_updated(state: &HandlerState, context: &WorkspaceContext, squad
         payload: json!({ "squad_id": squad_id }),
         ..Default::default()
     });
+}
+
+fn unique_violation(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<sqlx::Error>()
+        .and_then(sqlx::Error::as_database_error)
+        .and_then(|error| error.code())
+        .is_some_and(|code| code == "23505")
+}
+
+async fn add_member(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(raw_id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let found = match load_squad(&state, &context, &raw_id).await {
+        Ok(squad) => squad,
+        Err(response) => return response,
+    };
+    if !can_manage(&context, &found) {
+        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
+    }
+    let request = match decode_first::<MemberMutationRequest>(&body) {
+        Ok(request) => request,
+        Err(()) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    if request.member_type != "agent" && request.member_type != "member" {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "member_type must be 'agent' or 'member'",
+        );
+    }
+    if request.member_id.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "member_id is required");
+    }
+    let member_id = match Uuid::parse_str(&request.member_id) {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid member_id"),
+    };
+    if request.member_type == "agent" {
+        let target = match agent::get_agent_in_workspace(
+            &state.pool,
+            member_id,
+            context.member.workspace_id,
+        )
+        .await
+        {
+            Ok(Some(agent)) => agent,
+            Ok(None) | Err(_) => {
+                return error_response(StatusCode::BAD_REQUEST, "agent not found in this workspace")
+            }
+        };
+        if !crate::task::can_access_agent(
+            &state,
+            &context,
+            &target,
+            "member",
+            context.member.user_id,
+        )
+        .await
+        {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "you can only add an agent you have access to",
+            );
+        }
+    } else if member::get_member_by_user_and_workspace(
+        &state.pool,
+        member_id,
+        context.member.workspace_id,
+    )
+    .await
+    .ok()
+    .flatten()
+    .is_none()
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "member not found in this workspace",
+        );
+    }
+    match squad::add_squad_member(
+        &state.pool,
+        found.id,
+        &request.member_type,
+        member_id,
+        &request.role,
+    )
+    .await
+    {
+        Ok(Some(squad_member)) => {
+            publish_squad_updated(&state, &context, found.id);
+            (
+                StatusCode::CREATED,
+                Json(SquadMemberResponse::from(squad_member)),
+            )
+                .into_response()
+        }
+        Err(error) if unique_violation(&error) => {
+            error_response(StatusCode::CONFLICT, "member already in squad")
+        }
+        Ok(None) | Err(_) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to add squad member",
+        ),
+    }
 }
 
 async fn remove_member(
