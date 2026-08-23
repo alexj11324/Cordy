@@ -110,6 +110,7 @@ async fn build_production_router(
         ),
     ))
     .with_rate_limit_trusted_proxies(cfg.urls.rate_limit_trusted_proxies.as_deref())
+    .with_plugins_from_env()
     .with_public_config(cordy_handler::config::PublicConfigSettings {
         cdn_domain: cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
         cdn_signed: cfg.storage.cloudfront_key_pair_id.is_some()
@@ -139,7 +140,7 @@ async fn build_production_router(
         tracing::warn!("public-route rate limiting disabled: REDIS_URL not configured");
     }
     let state = install_pending_stores(state, redis_url).await;
-    cordy_handler::build_router_from_state(state)
+    Ok(cordy_handler::build_router_from_state(state))
 }
 
 fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
@@ -229,7 +230,7 @@ async fn main() -> anyhow::Result<()> {
             secret_box: vcs_secret_box,
         },
     )
-    .await;
+    .await?;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
