@@ -39,6 +39,7 @@ pub mod pat;
 pub mod pending_store;
 pub mod pin;
 pub mod profile_json;
+pub mod property;
 pub mod quick_action;
 pub mod session;
 pub mod squad_briefing;
@@ -236,6 +237,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             issue::require_issue_workspace,
         )))
         .merge(
+            property::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                issue::require_issue_workspace,
+            )),
+        )
+        .merge(
             quick_action::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 issue::require_issue_workspace,
@@ -331,6 +338,8 @@ mod tests {
             "/api/agent-activity-30d",
             "/api/agent-run-counts",
             "/api/agent-task-snapshot",
+            "/api/properties",
+            "/api/properties/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/working-agents",
         ] {
             let response = build_router(None, None)
