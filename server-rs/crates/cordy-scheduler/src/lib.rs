@@ -6,7 +6,11 @@ mod jobs;
 mod manager;
 mod spec;
 
-pub use jobs::{task_usage_hourly_job, TASK_USAGE_ADVISORY_LOCK_ID, TASK_USAGE_HOURLY_JOB};
+pub use jobs::{
+    autopilot_schedule_dispatch_job, task_usage_hourly_job, AutopilotScheduleDispatcher,
+    AUTOPILOT_SCHEDULE_DISPATCH_JOB, AUTOPILOT_TRIGGER_SCOPE, DEFAULT_AUTOPILOT_SCHEDULE_TIMEZONE,
+    TASK_USAGE_ADVISORY_LOCK_ID, TASK_USAGE_HOURLY_JOB,
+};
 pub use manager::{
     DbClock, Manager, ManagerOptions, ManagerRuntime, ProcessOutcome, RunReport, SchedulerClock,
     ShutdownOutcome,
