@@ -86,11 +86,17 @@ fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
         .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid workspace id"))
 }
 
-fn reject_agent(headers: &HeaderMap) -> Result<(), Response> {
-    if headers
-        .get("x-actor-source")
-        .and_then(|value| value.to_str().ok())
-        == Some("task_token")
+async fn reject_agent(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    headers: &HeaderMap,
+) -> Result<(), Response> {
+    let (actor_type, _, _) = crate::issue::mutation_actor(state, context, headers).await;
+    if actor_type == "agent"
+        || headers
+            .get("x-actor-source")
+            .and_then(|value| value.to_str().ok())
+            == Some("task_token")
     {
         Err(error_response(
             StatusCode::FORBIDDEN,
@@ -182,7 +188,7 @@ async fn create_server(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Err(response) = reject_agent(&headers) {
+    if let Err(response) = reject_agent(&state, &context, &headers).await {
         return response;
     }
     let workspace_id = match workspace_id(&context) {
@@ -253,7 +259,15 @@ async fn create_server(
 struct UpdateRequest {
     #[serde(default)]
     name: String,
-    config: Option<Value>,
+    #[serde(default, deserialize_with = "deserialize_config_patch")]
+    config: Option<Option<Value>>,
+}
+
+fn deserialize_config_patch<'de, D>(deserializer: D) -> Result<Option<Option<Value>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<Value>::deserialize(deserializer).map(Some)
 }
 
 async fn update_server(
@@ -263,7 +277,7 @@ async fn update_server(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Err(response) = reject_agent(&headers) {
+    if let Err(response) = reject_agent(&state, &context, &headers).await {
         return response;
     }
     let workspace_id = match workspace_id(&context) {
@@ -286,17 +300,27 @@ async fn update_server(
             Err(response) => return response,
         }
     };
-    if let Some(config) = request.config.as_ref() {
-        if let Err(response) = validate_config(config) {
-            return response;
+    let config = match request.config.as_ref() {
+        Some(Some(config)) => {
+            if let Err(response) = validate_config(config) {
+                return response;
+            }
+            Some(config)
         }
-    }
+        Some(None) => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "config must be a non-empty JSON object",
+            )
+        }
+        None => None,
+    };
     match workspace_mcp::update_workspace_mcp_server(
         &state.pool,
         server_id,
         workspace_id,
         name.as_deref(),
-        request.config.as_ref(),
+        config,
     )
     .await
     {
@@ -315,7 +339,7 @@ async fn delete_server(
     Path((_workspace, raw_server_id)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(response) = reject_agent(&headers) {
+    if let Err(response) = reject_agent(&state, &context, &headers).await {
         return response;
     }
     let workspace_id = match workspace_id(&context) {
@@ -394,5 +418,19 @@ mod tests {
     fn validation_never_echoes_config_contents() {
         let response = validate_config(&Value::String("secret-token".into())).unwrap_err();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[test]
+    fn update_config_distinguishes_omitted_null_and_object() {
+        let omitted: UpdateRequest = serde_json::from_value(serde_json::json!({})).unwrap();
+        assert!(omitted.config.is_none());
+
+        let null: UpdateRequest =
+            serde_json::from_value(serde_json::json!({"config": null})).unwrap();
+        assert!(matches!(null.config, Some(None)));
+
+        let object: UpdateRequest =
+            serde_json::from_value(serde_json::json!({"config": {"url": "https://x"}})).unwrap();
+        assert!(matches!(object.config, Some(Some(_))));
     }
 }
