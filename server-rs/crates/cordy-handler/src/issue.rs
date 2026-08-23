@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use axum::body::Bytes;
 use axum::extract::rejection::JsonRejection;
-use axum::extract::{Extension, Path, Query, Request, State};
+use axum::extract::{DefaultBodyLimit, Extension, Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
@@ -58,7 +58,9 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/issues/{id}/task-runs", get(list_task_runs))
         .route(
             "/api/issues/{id}/pull-requests",
-            get(crate::issue_pull_request::list),
+            get(crate::issue_pull_request::list)
+                .post(crate::issue_pull_request::attach)
+                .layer(DefaultBodyLimit::max(4 << 20)),
         )
         .route("/api/issues/{id}/tasks/{task_id}/cancel", post(cancel_task))
         .route("/api/issues/{id}/metadata", get(list_issue_metadata))
