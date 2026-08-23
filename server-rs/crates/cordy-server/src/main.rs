@@ -190,6 +190,8 @@ async fn build_production_router(
 ) -> anyhow::Result<Router> {
     let feature_flags = Arc::new(cordy_service::feature_flags::ConfiguredFlags::from_env()?);
     let entitlements = autopilot_entitlements(cfg);
+    let attachment_download =
+        cordy_handler::state::AttachmentDownloadSettings::from_config(cfg).await?;
     let mut state = cordy_handler::HandlerState::new(
         db,
         cordy_auth::pat_cache::PatCache::disabled(),
@@ -207,7 +209,11 @@ async fn build_production_router(
         ),
     ))
     .with_rate_limit_trusted_proxies(cfg.urls.rate_limit_trusted_proxies.as_deref())
-    .with_attachment_storage(attachment_storage, attachment_frame_ancestors)
+    .with_attachment_storage(
+        attachment_storage,
+        attachment_frame_ancestors,
+        attachment_download,
+    )
     .with_plugins_from_env()
     .with_slack_history_from_env()
     .with_llm_from_env()?
@@ -304,18 +310,9 @@ async fn main() -> anyhow::Result<()> {
     let attachment_storage = cordy_handler::attachment_storage::from_env(
         cfg.storage.local_upload_dir.as_deref(),
         cfg.storage.local_upload_base_url.as_deref(),
-    )?;
-    let attachment_frame_ancestors = cfg
-        .urls
-        .cors_allowed_origins
-        .as_deref()
-        .unwrap_or_default()
-        .split(',')
-        .chain(cfg.urls.frontend_origin.as_deref())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(str::to_string)
-        .collect();
+    )
+    .await?;
+    let attachment_frame_ancestors = cordy_handler::allowed_origins();
     let vcs_enabled = cfg.integrations.vcs_integration_enabled.as_deref() == Some("true");
     let vcs_secret_box = cordy_util::secretbox::load_key("CORDY_VCS_SECRET_KEY")
         .ok()

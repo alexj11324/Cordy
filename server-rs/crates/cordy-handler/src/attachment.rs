@@ -19,7 +19,11 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::{attachment_storage::content_disposition, error::error_response, state::HandlerState};
+use crate::{
+    attachment_storage::{content_disposition, StorageGetError},
+    error::error_response,
+    state::{AttachmentDownloadMode, HandlerState},
+};
 
 const MAX_UPLOAD: usize = 100 << 20;
 const MAX_PREVIEW: usize = 2 << 20;
@@ -84,15 +88,73 @@ async fn load(
         .ok_or_else(|| error_response(StatusCode::NOT_FOUND, "attachment not found"))
 }
 
-fn response_json(att: &Attachment, capability: bool) -> Value {
+async fn response_json(state: &HandlerState, att: &Attachment, capability: bool) -> Value {
     let stable = format!("/api/attachments/{}/download", att.id);
     let mut download_url = stable.clone();
     let mut attachment_download_url = None;
-    if capability {
-        download_url = capability_path(att.id, false);
-        attachment_download_url = Some(capability_path(att.id, true));
+    let mode = resolved_download_mode(state);
+    match mode {
+        AttachmentDownloadMode::CloudFront => {
+            if let Some(signer) = &state.attachment_download.cloudfront_signer {
+                match signer.signed_url(&att.url, state.attachment_download.ttl, None) {
+                    Ok(url) => download_url = url,
+                    Err(error) => {
+                        tracing::warn!(%error, attachment_id = %att.id, "failed to sign CloudFront attachment URL")
+                    }
+                }
+                if capability {
+                    match signer.signed_url(
+                        &att.url,
+                        state.attachment_download.ttl,
+                        Some(&content_disposition(&att.content_type, &att.filename, true)),
+                    ) {
+                        Ok(url) => attachment_download_url = Some(url),
+                        Err(error) => {
+                            tracing::warn!(%error, attachment_id = %att.id, "failed to sign CloudFront attachment download URL")
+                        }
+                    }
+                }
+            }
+        }
+        AttachmentDownloadMode::Presign if capability => {
+            if let Some(storage) = &state.attachment_storage {
+                let key = storage.key_from_url(&att.url);
+                if let Some(key) = key {
+                    match storage
+                        .presign_get(&key, state.attachment_download.ttl, None)
+                        .await
+                    {
+                        Ok(Some(url)) => download_url = url,
+                        Ok(None) => {}
+                        Err(error) => {
+                            tracing::warn!(%error, attachment_id = %att.id, "failed to presign attachment URL")
+                        }
+                    }
+                    match storage
+                        .presign_get(
+                            &key,
+                            state.attachment_download.ttl,
+                            Some(&content_disposition(&att.content_type, &att.filename, true)),
+                        )
+                        .await
+                    {
+                        Ok(Some(url)) => attachment_download_url = Some(url),
+                        Ok(None) => {}
+                        Err(error) => {
+                            tracing::warn!(%error, attachment_id = %att.id, "failed to presign attachment download URL")
+                        }
+                    }
+                }
+            }
+        }
+        AttachmentDownloadMode::Proxy if capability => {
+            download_url = capability_path(att.id, false);
+            attachment_download_url = Some(capability_path(att.id, true));
+        }
+        _ => {}
     }
-    let mut value = json!({"id":att.id,"workspace_id":att.workspace_id,"issue_id":att.issue_id,"comment_id":att.comment_id,"chat_session_id":att.chat_session_id,"chat_message_id":att.chat_message_id,"uploader_type":att.uploader_type,"uploader_id":att.uploader_id,"filename":att.filename,"url":att.url,"download_url":download_url,"markdown_url":stable,"content_type":att.content_type,"size_bytes":att.size_bytes,"created_at":crate::timefmt::rfc3339(att.created_at)});
+    let markdown_url = markdown_url(state, att, &stable);
+    let mut value = json!({"id":att.id,"workspace_id":att.workspace_id,"issue_id":att.issue_id,"comment_id":att.comment_id,"chat_session_id":att.chat_session_id,"chat_message_id":att.chat_message_id,"uploader_type":att.uploader_type,"uploader_id":att.uploader_id,"filename":att.filename,"url":att.url,"download_url":download_url,"markdown_url":markdown_url,"content_type":att.content_type,"size_bytes":att.size_bytes,"created_at":crate::timefmt::rfc3339(att.created_at)});
     if let Some(url) = attachment_download_url {
         value
             .as_object_mut()
@@ -102,13 +164,67 @@ fn response_json(att: &Attachment, capability: bool) -> Value {
     value
 }
 
+fn resolved_download_mode(state: &HandlerState) -> AttachmentDownloadMode {
+    match state.attachment_download.mode {
+        AttachmentDownloadMode::Auto => {
+            if state.attachment_download.cloudfront_signer.is_some() {
+                AttachmentDownloadMode::CloudFront
+            } else if state
+                .attachment_storage
+                .as_ref()
+                .is_some_and(|storage| storage.supports_presign())
+            {
+                AttachmentDownloadMode::Presign
+            } else {
+                AttachmentDownloadMode::Proxy
+            }
+        }
+        mode => mode,
+    }
+}
+
+fn markdown_url(state: &HandlerState, att: &Attachment, stable: &str) -> String {
+    let publicly_readable = state
+        .attachment_storage
+        .as_ref()
+        .is_some_and(|storage| storage.has_public_base_url())
+        && state.attachment_download.cloudfront_signer.is_none()
+        && durable_public_url(&att.url);
+    if publicly_readable {
+        return att.url.clone();
+    }
+    if state.attachment_download.public_url.is_empty() {
+        stable.to_string()
+    } else {
+        format!("{}{}", state.attachment_download.public_url, stable)
+    }
+}
+
+fn durable_public_url(raw: &str) -> bool {
+    let Ok(url) = url::Url::parse(raw) else {
+        return false;
+    };
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return false;
+    }
+    ![
+        "Signature",
+        "X-Amz-Signature",
+        "Key-Pair-Id",
+        "Expires",
+        "X-Amz-Expires",
+    ]
+    .iter()
+    .any(|key| url.query_pairs().any(|(candidate, _)| candidate == *key))
+}
+
 async fn metadata(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
 ) -> Response {
     match load(&state, &context, &id).await {
-        Ok(att) => Json(response_json(&att, true)).into_response(),
+        Ok(att) => Json(response_json(&state, &att, true).await).into_response(),
         Err(r) => r,
     }
 }
@@ -341,7 +457,7 @@ async fn upload(
         )
         .await;
         let _ = mem;
-        return Json(response_json(&att, false)).into_response();
+        return Json(response_json(&state, &att, false).await).into_response();
     }
     let url = match storage
         .upload(&key, form.bytes, &content_type, &form.filename)
@@ -518,13 +634,72 @@ async fn download(
     {
         return error_response(StatusCode::NOT_FOUND, "attachment not found");
     }
-    stream(
-        &state,
-        &att,
-        headers.get(header::RANGE).and_then(|v| v.to_str().ok()),
-        false,
-    )
-    .await
+    match resolved_download_mode(&state) {
+        AttachmentDownloadMode::CloudFront => {
+            let Some(signer) = &state.attachment_download.cloudfront_signer else {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "cloudfront attachment downloads are not configured",
+                );
+            };
+            match signer.signed_url(
+                &att.url,
+                state.attachment_download.ttl,
+                Some(&content_disposition(&att.content_type, &att.filename, true)),
+            ) {
+                Ok(url) => attachment_redirect(&state, &url),
+                Err(error) => {
+                    tracing::error!(%error, attachment_id = %att.id, "failed to sign CloudFront attachment download");
+                    error_response(StatusCode::BAD_GATEWAY, "failed to create download URL")
+                }
+            }
+        }
+        AttachmentDownloadMode::Presign => {
+            let Some(storage) = &state.attachment_storage else {
+                return error_response(StatusCode::SERVICE_UNAVAILABLE, "storage not configured");
+            };
+            let Some(key) = storage.key_from_url(&att.url) else {
+                return error_response(StatusCode::NOT_FOUND, "attachment object not found");
+            };
+            match storage
+                .presign_get(
+                    &key,
+                    state.attachment_download.ttl,
+                    Some(&content_disposition(&att.content_type, &att.filename, true)),
+                )
+                .await
+            {
+                Ok(Some(url)) => attachment_redirect(&state, &url),
+                Ok(None) => error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "attachment storage does not support presigned downloads",
+                ),
+                Err(error) => {
+                    tracing::error!(%error, attachment_id = %att.id, "failed to presign attachment download");
+                    error_response(StatusCode::BAD_GATEWAY, "failed to create download URL")
+                }
+            }
+        }
+        AttachmentDownloadMode::Proxy | AttachmentDownloadMode::Auto => {
+            stream(
+                &state,
+                &att,
+                headers.get(header::RANGE).and_then(|v| v.to_str().ok()),
+                false,
+            )
+            .await
+        }
+    }
+}
+
+fn attachment_redirect(state: &HandlerState, url: &str) -> Response {
+    let Ok(location) = HeaderValue::from_str(url) else {
+        return error_response(StatusCode::BAD_GATEWAY, "invalid attachment download URL");
+    };
+    let mut response = StatusCode::FOUND.into_response();
+    response.headers_mut().insert(header::LOCATION, location);
+    preview_headers(response.headers_mut(), &state.attachment_frame_ancestors);
+    response
 }
 async fn signed_download(
     State(state): State<HandlerState>,
@@ -581,19 +756,32 @@ async fn stream(
     };
     let object = match storage.get(&key, range).await {
         Ok(v) => v,
-        Err(_) => {
-            if range.is_some() {
+        Err(error) => {
+            if let Some(StorageGetError::InvalidRange { total }) =
+                error.downcast_ref::<StorageGetError>()
+            {
                 let mut r = error_response(
                     StatusCode::RANGE_NOT_SATISFIABLE,
                     "requested range not satisfiable",
                 );
                 r.headers_mut().insert(
                     header::CONTENT_RANGE,
-                    HeaderValue::from_str(&format!("bytes */{}", att.size_bytes.max(0))).unwrap(),
+                    HeaderValue::from_str(&format!(
+                        "bytes */{}",
+                        total.unwrap_or_else(|| att.size_bytes.max(0) as u64)
+                    ))
+                    .unwrap(),
                 );
                 return r;
             }
-            return error_response(StatusCode::NOT_FOUND, "attachment object not found");
+            if matches!(
+                error.downcast_ref::<StorageGetError>(),
+                Some(StorageGetError::NotFound)
+            ) {
+                return error_response(StatusCode::NOT_FOUND, "attachment object not found");
+            }
+            tracing::error!(%error, attachment_id = %att.id, %key, "attachment storage read failed");
+            return error_response(StatusCode::BAD_GATEWAY, "attachment storage unavailable");
         }
     };
     let content_type = object
@@ -884,6 +1072,7 @@ fn preview_headers(h: &mut HeaderMap, origins: &[String]) {
     }
 }
 fn sniff(body: &[u8], filename: &str) -> String {
+    let detected = infer::get(body).map(|kind| kind.mime_type());
     let ext = std::path::Path::new(filename)
         .extension()
         .and_then(|v| v.to_str())
@@ -900,9 +1089,7 @@ fn sniff(body: &[u8], filename: &str) -> String {
         "gif" => "image/gif",
         "pdf" => "application/pdf",
         "txt" | "md" => "text/plain; charset=utf-8",
-        _ if body.starts_with(b"\x89PNG\r\n\x1a\n") => "image/png",
-        _ if body.starts_with(b"%PDF-") => "application/pdf",
-        _ => "application/octet-stream",
+        _ => detected.unwrap_or("application/octet-stream"),
     }
     .into()
 }
@@ -982,7 +1169,10 @@ fn text_previewable(content_type: &str, filename: &str) -> bool {
             | "dockerfile"
             | "makefile"
             | "gitignore"
-    ) || matches!(name.as_str(), "dockerfile" | "makefile" | ".env")
+    ) || matches!(
+        name.as_str(),
+        "dockerfile" | "makefile" | ".env" | ".gitignore"
+    )
 }
 
 #[cfg(test)]
@@ -1009,5 +1199,24 @@ mod tests {
         assert!(!got.contains('\r'));
         assert!(!got.contains('\n'));
         assert!(got.contains("filename*=UTF-8''"));
+    }
+
+    #[test]
+    fn sniffer_recognizes_media_outside_the_extension_overrides() {
+        let webp = b"RIFF\x00\x00\x00\x00WEBPVP8 ";
+        assert_eq!(sniff(webp, "upload.bin"), "image/webp");
+    }
+
+    #[test]
+    fn gitignore_is_previewable_without_an_extension() {
+        assert!(text_previewable("application/octet-stream", ".gitignore"));
+    }
+
+    #[test]
+    fn durable_url_rejects_expiring_signatures() {
+        assert!(durable_public_url("https://static.example/file.png"));
+        assert!(!durable_public_url(
+            "https://static.example/file.png?X-Amz-Signature=secret"
+        ));
     }
 }

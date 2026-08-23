@@ -125,6 +125,8 @@ pub struct UrlsConfig {
 pub struct StorageConfig {
     /// `ATTACHMENT_DOWNLOAD_MODE`.
     pub attachment_download_mode: Option<String>,
+    /// `ATTACHMENT_DOWNLOAD_URL_TTL` (for example `30m`).
+    pub attachment_download_url_ttl: Option<String>,
     /// `LOCAL_UPLOAD_DIR` / `LOCAL_UPLOAD_BASE_URL` (local storage driver).
     pub local_upload_dir: Option<String>,
     pub local_upload_base_url: Option<String>,
@@ -300,6 +302,10 @@ impl Config {
         env_str(
             &mut self.storage.attachment_download_mode,
             "ATTACHMENT_DOWNLOAD_MODE",
+        );
+        env_str(
+            &mut self.storage.attachment_download_url_ttl,
+            "ATTACHMENT_DOWNLOAD_URL_TTL",
         );
         env_str(&mut self.storage.local_upload_dir, "LOCAL_UPLOAD_DIR");
         env_str(

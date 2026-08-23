@@ -29,6 +29,7 @@ pub mod cli_token;
 pub mod client_usage;
 pub mod cloud_billing;
 pub mod cloud_runtime;
+pub mod cloudfront;
 pub mod comment;
 pub mod comment_list;
 pub mod composio;
@@ -98,7 +99,7 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 
 pub use state::HandlerState;
 
-pub(crate) fn allowed_origins() -> Vec<String> {
+pub fn allowed_origins() -> Vec<String> {
     let raw = ["CORS_ALLOWED_ORIGINS", "FRONTEND_ORIGIN"]
         .into_iter()
         .find_map(|name| {

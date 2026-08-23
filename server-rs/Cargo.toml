@@ -73,18 +73,24 @@ chrono = { version = "0.4", features = ["serde"] }
 # crypto & tokens
 rand = "0.8"
 sha2 = "0.10"
+sha1 = { version = "0.10", features = ["oid"] }
 hex = "0.4"
 hmac = "0.12"
+rsa = { version = "0.9", features = ["pem"] }
 jsonwebtoken = "9"
 # async traits & lifecycle
 async-trait = "0.1"
 tokio-util = "0.7"
+aws-config = { version = "1", default-features = false, features = ["legacy-client", "rt-tokio"] }
+aws-credential-types = "1"
+aws-types = "1"
 ulid = "1"
 chrono-tz = "0.9"
 regex = "1"
 croner = "1"
 serde_yaml = "0.9"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+infer = "0.19"
 # email & integrations
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 httpdate = "1"
