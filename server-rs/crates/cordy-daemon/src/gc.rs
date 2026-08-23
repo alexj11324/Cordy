@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context as _;
@@ -22,6 +23,7 @@ use chrono::{DateTime, Utc};
 use futures_util::Future;
 use sha2::{Digest, Sha256};
 
+use crate::activity::DaemonActivity;
 use crate::artifact_matcher::{
     safe_relative_path, ArtifactMatcher, MANAGED_ARTIFACT_PATTERN_PREFIX,
 };
@@ -776,12 +778,9 @@ pub(crate) trait GcHost: Send + Sync {
         task_id: &str,
     ) -> impl Future<Output = anyhow::Result<IssueGCCheckStatus>> + Send;
 
-    /// `d.isActiveEnvRoot`: true while a task is running on this env root.
-    fn is_active_env_root(&self, task_dir: &Path) -> bool;
-
-    /// `d.reserveEnvRootForGC`: atomically reserves an env root for deletion;
-    /// returns the release closure, or None when reservation failed.
-    fn reserve_env_root_for_gc(&self, task_dir: &Path) -> Option<Box<dyn FnOnce() + Send>>;
+    /// Shared task/root state used for active checks and atomic GC deletion
+    /// reservations.
+    fn activity(&self) -> &Arc<DaemonActivity>;
 
     /// `d.reserveStoreForDeletion`: reservation callback passed to store
     /// pruners.
@@ -790,9 +789,6 @@ pub(crate) trait GcHost: Send + Sync {
     /// `d.repoBarePathIsLive`: whether any watched workspace still claims
     /// this bare repo path (gc.go:1141/1183).
     fn repo_bare_path_is_live(&self, bare_path: &Path) -> bool;
-
-    /// `d.activeTasks.Load()` (gc.go:1312/1330).
-    fn active_tasks(&self) -> i64;
 
     /// Repo-cache gate for maintenance (`d.repoCache`, gc.go:1075/1095);
     /// None mirrors a daemon built without a repo cache.
@@ -1058,7 +1054,7 @@ async fn gc_workspace<H: GcHost>(host: &H, ctx: &Ctx, ws_dir: &Path, stats: &mut
             continue;
         }
         let task_dir = ws_dir.join(entry.file_name());
-        if host.is_active_env_root(&task_dir) {
+        if host.activity().is_active_env_root(&task_dir) {
             stats.skipped += 1;
             continue;
         }
@@ -1193,7 +1189,7 @@ fn apply_gc_action<H: GcHost>(
     stats: &mut GcStats,
 ) -> i32 {
     let _release = if action != GcAction::Skip {
-        match host.reserve_env_root_for_gc(task_dir) {
+        match host.activity().reserve_env_root_for_gc(task_dir) {
             Some(release) => Some(release),
             None => {
                 stats.skipped += 1;
@@ -1262,7 +1258,7 @@ fn record_artifact_cleanup(
 async fn should_clean_task_dir<H: GcHost>(host: &H, ctx: &Ctx, task_dir: &Path) -> GcAction {
     // A task currently running on this env root must never be reclaimed —
     // not even on the done/cancelled or orphan-404 paths.
-    if host.is_active_env_root(task_dir) {
+    if host.activity().is_active_env_root(task_dir) {
         return GcAction::Skip;
     }
 
@@ -2237,7 +2233,7 @@ async fn prune_worktree_locked<H: GcHost>(host: &H, ctx: &Ctx, bare_path: &Path)
     // Agent CLIs can mutate linked-worktree refs directly, outside the
     // daemon's in-process repository gate. Do not start heavy maintenance
     // while any task is active.
-    if host.active_tasks() > 0 {
+    if host.activity().active_tasks() > 0 {
         tracing::debug!(repo = %bare_path.display(), "gc: heavy repo maintenance deferred while tasks are active");
         return;
     }
@@ -2255,7 +2251,7 @@ async fn prune_worktree_locked<H: GcHost>(host: &H, ctx: &Ctx, bare_path: &Path)
     ];
     let mut completed = true;
     for (args, timeout) in maintenance {
-        if ctx.err().is_some() || host.active_tasks() > 0 {
+        if ctx.err().is_some() || host.activity().active_tasks() > 0 {
             return;
         }
         let before = snapshot_repo_maintenance_locks(bare_path);

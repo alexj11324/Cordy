@@ -6,6 +6,7 @@
 //! required [`DaemonTaskExecutionHost`] boundary: there is intentionally no
 //! default runner and no pretend execution path.
 
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -13,7 +14,9 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
+use crate::activity::DaemonActivity;
 use crate::client::{is_task_not_found_anyhow, is_transient_error, Client, TaskCancelAck};
+use crate::execenv::execenv::predict_root_dir;
 use crate::manager::DaemonControl;
 use crate::reconcile::ReconcileBroadcaster;
 use crate::repocache::{CancelCause, Ctx};
@@ -74,6 +77,7 @@ pub(crate) struct TaskExecutionConfig {
     pub max_concurrent_tasks: usize,
     pub poll_interval: Duration,
     pub cancel_poll_interval: Duration,
+    pub workspaces_root: String,
 }
 
 impl TaskExecutionConfig {
@@ -102,6 +106,7 @@ pub(crate) struct TaskExecutionOrchestrator<H: DaemonTaskExecutionHost> {
     control: Arc<DaemonControl>,
     host: Arc<H>,
     reconcile: Arc<ReconcileBroadcaster>,
+    activity: Arc<DaemonActivity>,
 }
 
 impl<H: DaemonTaskExecutionHost> TaskExecutionOrchestrator<H> {
@@ -111,6 +116,7 @@ impl<H: DaemonTaskExecutionHost> TaskExecutionOrchestrator<H> {
         control: Arc<DaemonControl>,
         host: Arc<H>,
         reconcile: Arc<ReconcileBroadcaster>,
+        activity: Arc<DaemonActivity>,
     ) -> anyhow::Result<Self> {
         anyhow::ensure!(
             config.max_concurrent_tasks > 0,
@@ -122,6 +128,7 @@ impl<H: DaemonTaskExecutionHost> TaskExecutionOrchestrator<H> {
             control,
             host,
             reconcile,
+            activity,
         })
     }
 
@@ -193,6 +200,11 @@ impl<H: DaemonTaskExecutionHost> TaskExecutionOrchestrator<H> {
                 slots.push(slot);
             }
 
+            let Some(claim_guard) = self.activity.try_enter_claim() else {
+                release_slots(&slots_tx, slots);
+                continue;
+            };
+
             let claimed = self
                 .control
                 .claim_tasks(&ctx, &runtime_ids, slots.len())
@@ -214,7 +226,19 @@ impl<H: DaemonTaskExecutionHost> TaskExecutionOrchestrator<H> {
                 // mutations cannot overlap low-priority maintenance.
                 self.host.cancel_repository_maintenance().await;
             }
-            for (task, slot) in claimed.into_iter().zip(slots.iter().copied()) {
+            let claimed: Vec<Task> = claimed.into_iter().take(dispatched).collect();
+            let roots = claimed
+                .iter()
+                .map(|task| task_env_roots(&self.config.workspaces_root, task))
+                .collect();
+            // This is the critical claim→active transition: active count and
+            // every root are installed before claims_in_flight is released.
+            let active_guards = claim_guard.handoff(roots).await;
+            for ((task, slot), activity_guard) in claimed
+                .into_iter()
+                .zip(slots.iter().copied())
+                .zip(active_guards)
+            {
                 tracing::info!(task = %task.id, runtime_id = %task.runtime_id, "task received");
                 let client = Arc::clone(&self.client);
                 let host = Arc::clone(&self.host);
@@ -224,6 +248,7 @@ impl<H: DaemonTaskExecutionHost> TaskExecutionOrchestrator<H> {
                 let task_nudge = nudge_tx.clone();
                 let cancel_poll_interval = self.config.cancel_poll_interval();
                 tasks.push(tokio::spawn(async move {
+                    let _activity_guard = activity_guard;
                     execute_claimed_task(
                         task_ctx,
                         task,
@@ -258,6 +283,23 @@ impl<H: DaemonTaskExecutionHost> TaskExecutionOrchestrator<H> {
             tracing::warn!("timed out waiting for in-flight tasks");
         }
     }
+}
+
+fn task_env_roots(workspaces_root: &str, task: &Task) -> Vec<PathBuf> {
+    let mut roots = Vec::with_capacity(2);
+    let predicted = predict_root_dir(workspaces_root, &task.workspace_id, &task.id);
+    if !predicted.is_empty() {
+        roots.push(PathBuf::from(predicted));
+    }
+    if !task.prior_work_dir.is_empty() {
+        if let Some(prior_root) = Path::new(&task.prior_work_dir).parent() {
+            let prior_root = prior_root.to_path_buf();
+            if !prior_root.as_os_str().is_empty() && !roots.contains(&prior_root) {
+                roots.push(prior_root);
+            }
+        }
+    }
+    roots
 }
 
 fn release_slots(slots_tx: &mpsc::Sender<usize>, slots: impl IntoIterator<Item = usize>) {
@@ -555,8 +597,26 @@ mod tests {
             max_concurrent_tasks: 1,
             poll_interval: Duration::from_secs(1),
             cancel_poll_interval: Duration::ZERO,
+            workspaces_root: "/tmp/workspaces".into(),
         };
         assert_eq!(config.cancel_poll_interval(), Duration::from_secs(5));
+    }
+
+    #[test]
+    fn task_roots_cover_predicted_and_distinct_prior_environment() {
+        let task = Task {
+            id: "01a01ec0-e69d-7000-8000-0123456789ab".into(),
+            workspace_id: "ws1".into(),
+            prior_work_dir: "/old/task/worktree".into(),
+            ..Task::default()
+        };
+        assert_eq!(
+            task_env_roots("/workspaces", &task),
+            vec![
+                PathBuf::from("/workspaces/ws1/0123456789ab"),
+                PathBuf::from("/old/task"),
+            ]
+        );
     }
 
     #[test]
