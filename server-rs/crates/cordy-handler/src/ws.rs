@@ -156,7 +156,7 @@ fn check_origin(headers: &HeaderMap, remote_ip: Option<std::net::IpAddr>) -> boo
         .unwrap_or_default();
     let proxy_trusted =
         remote_ip.is_some_and(|ip| trusted.iter().any(|network| network.contains(ip)));
-    check_origin_with_policy(headers, proxy_trusted, &allowed_ws_origins())
+    check_origin_with_policy(headers, proxy_trusted, &crate::allowed_origins())
 }
 
 fn check_origin_with_policy(
@@ -206,32 +206,6 @@ fn first_forwarded_host(headers: &HeaderMap) -> Option<&str> {
         .next()
         .map(str::trim)
         .filter(|host| !host.is_empty())
-}
-
-fn allowed_ws_origins() -> Vec<String> {
-    let raw = ["ALLOWED_ORIGINS", "CORS_ALLOWED_ORIGINS", "FRONTEND_ORIGIN"]
-        .into_iter()
-        .find_map(|name| {
-            std::env::var(name)
-                .ok()
-                .map(|value| value.trim().to_string())
-                .filter(|value| !value.is_empty())
-        });
-    raw.map(|value| {
-        value
-            .split(',')
-            .map(str::trim)
-            .filter(|origin| !origin.is_empty())
-            .map(str::to_string)
-            .collect()
-    })
-    .unwrap_or_else(|| {
-        vec![
-            "http://localhost:3000".to_string(),
-            "http://localhost:5173".to_string(),
-            "http://localhost:5174".to_string(),
-        ]
-    })
 }
 
 #[derive(Default, Clone)]

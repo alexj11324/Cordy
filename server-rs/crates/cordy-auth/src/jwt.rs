@@ -10,6 +10,19 @@ const DEFAULT_JWT_SECRET: &str = "cordy-dev-secret-change-in-production";
 
 static JWT_SECRET: OnceLock<String> = OnceLock::new();
 
+/// Installs the effective server configuration before any token is decoded or
+/// minted. This keeps TOML-backed configuration on the same singleton path as
+/// `JWT_SECRET` instead of silently falling back to the development key.
+pub fn configure_jwt_secret(secret: Option<&str>) -> anyhow::Result<()> {
+    let effective = secret
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(DEFAULT_JWT_SECRET)
+        .to_string();
+    JWT_SECRET
+        .set(effective)
+        .map_err(|_| anyhow::anyhow!("JWT secret was already initialized"))
+}
+
 /// Process-wide HS256 signing secret. Reads `JWT_SECRET` on first call and
 /// falls back to a dev-only default — mirrors Go's sync.Once singleton.
 pub fn jwt_secret() -> &'static str {
