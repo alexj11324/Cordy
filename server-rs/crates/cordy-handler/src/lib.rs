@@ -46,6 +46,7 @@ pub mod profile_json;
 pub mod project;
 pub mod property;
 pub mod quick_action;
+pub mod runtime_usage;
 pub mod session;
 pub mod squad;
 pub mod squad_briefing;
@@ -243,6 +244,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             WorkspaceGuardState::member_only(state.pool.clone()),
             cordy_middleware::workspace::require_workspace,
         )))
+        .merge(
+            runtime_usage::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
         .merge(pat::router())
         .merge(attachment_access::authenticated_router())
         .merge(attachment_routes)
@@ -411,6 +418,10 @@ mod tests {
             "/api/dashboard/runtime/daily",
             "/api/dashboard/failures/daily",
             "/api/dashboard/failures/by-agent",
+            "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/usage",
+            "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/usage/by-agent",
+            "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/usage/by-hour",
+            "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/activity",
             "/api/working-agents",
         ] {
             let response = build_router(None, None)
