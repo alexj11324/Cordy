@@ -26,6 +26,8 @@ use regex::Regex;
 use tokio::process::Command;
 use tracing::warn;
 
+use super::execenv::join_path;
+
 /// DetectGitRepo checks if dir is inside a git repository (regular or bare).
 /// Returns the git root path and true if found.
 pub async fn detect_git_repo(dir: &str) -> Option<String> {

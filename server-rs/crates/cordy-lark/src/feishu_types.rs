@@ -10,17 +10,33 @@ use uuid::Uuid;
 
 use crate::types::{ChatId, ChatType, DropReason, OpenId};
 
+/// cordy_channel::ChatType is a plain newtype without serde derives; the raw
+/// envelope carries it as its string value.
+mod chat_type_serde {
+    use cordy_channel::message::ChatType;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub(crate) fn serialize<S: Serializer>(t: &ChatType, s: S) -> Result<S::Ok, S::Error> {
+        t.0.serialize(s)
+    }
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<ChatType, D::Error> {
+        Ok(ChatType(String::deserialize(d)?))
+    }
+}
+
 /// InboundMessage is the Feishu connector's decoded, enriched event. It is
 /// the adapter's internal shape: the channel adapter maps it to a
 /// cordy_channel::InboundMessage (stashing this struct in Raw) so the
 /// resolvers can read the platform-specific fields the normalized envelope
 /// does not carry.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct InboundMessage {
     pub event_type: String,
     pub event_id: String,
     pub app_id: String,
     pub chat_id: ChatId,
+    #[serde(with = "chat_type_serde")]
     pub chat_type: ChatType,
     pub message_id: String,
     pub sender_open_id: OpenId,

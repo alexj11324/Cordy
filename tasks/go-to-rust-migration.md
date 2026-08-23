@@ -268,6 +268,7 @@ server-rs/
 后续排队：A 车道(client/wsrpc/config/types/health/wakeup/diskusage/identity/poisoned/reconcile/canonical_path/thread_name/helpers ≈5.5k) → B 车道(daemon.go 核心 8814 + agents_probe/refresh/local_skills/skill_cache/prompt/artifact_matcher/claude_plugins/slash_skill) → D 车道(auto_update/local_directory/openclaw_runtime_config/plugin_hook_mcp/remote_mcp_broker/runtime_mcp)
 
 - [x] **S7-c slack**(3,877)：full domain（提交 8d41cb0，另一并行会话完成）
+- [x] **S7-f lark**(10,060 最大域)：full domain——接手上一会话未提交的 20 个在制文件（http_client/registration/inbound_enricher/ws_connector/channel_store 等已在位但 lib.rs 未挂载），注册全部模块后补齐缺口：resolvers（ResolverSet 装配+larkSessionRouting 话题隔离+dispatchResultFromEngine）、typing_indicator（Typing reaction 生命周期+2min 陈旧跳过+快照兜底清账）、media_ingest（intent-first 台账/post span 去重/Opus 音频类型钉死）、outcome_replier（五 outcome 分流卡+中文文案+issue 文本组合）、outbound（LarkPatcher chat:done/task:failed/task:cancelled 订阅+线程回退分类降级+markdown 检测分流）；另修 frame_decoder/ws_frame/ws_connector/binding_token 的编译错误与 registration thiserror 注解。clippy -D warnings/fmt 干净，114 测试全过
 
 - [x] **S7-a0** cordy-channel 地基 crate + channelmedia → cordy-util（提交 61405ef）
 - [x] **S7-a1** engine 叶子件：LeaseStore trait+RedisLeaseStore（Lua 字节级对齐）、PendingBatcher 防抖器、/issue+/new 解析器、provenance（5dbf5dd）
@@ -293,8 +294,8 @@ server-rs/
 | channel(+engine) | 4,329 | cordy-channel(1,146)+channel-engine(5,077) | ✅ 引擎清零（S7-a0..b） |
 | composio | 1,050 | cordy-composio(2,889) | ✅ 四模块 |
 | vcs | 649 | cordy-vcs(1,233) | ✅ 三平台 |
-| ghsnapshot | 1,115 | cordy-ghsnapshot(911) | 🟡 client+snapshot 在位；**Manager 编排层(~430 行)未移植**——refresh.go 的 Enqueue/worker/process/rateLimitPause/applySnapshot/scheduleRetry/sweepLoop 全链 |
-| lark | 10,060 | cordy-lark(3) 空脚手架 | ⬜ 最大单域 |
+| ghsnapshot | 1,115 | cordy-ghsnapshot(2,360) | ✅ client+snapshot+Manager 编排层全链（refresh.go 的 Address/Enqueue/worker/process/rateLimitPause/deferActive/finish/applySnapshot/scheduleChase/scheduleRetry/sweepLoop；13 测试，DB 组需 DATABASE_URL） |
+| lark | 10,060 | cordy-lark(11,000+) | ✅ 全域落地（S7-f）：http_client/registration(+service)/inbound_enricher/outbound(Patcher)/ws_connector/media_ingest/channel_store/outcome_replier/resolvers/typing_indicator 等全部模块；114 测试 |
 | wecom | 7,525 | cordy-wecom(3) 空脚手架 | ⬜ |
 | dingtalk | 3,918 | cordy-dingtalk(3) 空脚手架 | ⬜ |
 | slack | 3,877 | cordy-slack(3) 空脚手架 | ⬜ |

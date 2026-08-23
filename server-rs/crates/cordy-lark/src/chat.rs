@@ -9,7 +9,7 @@
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::store::ChatId;
+use crate::types::ChatId;
 use crate::types::DropReason;
 
 /// Records dropped inbound events to channel_inbound_audit. The interface
