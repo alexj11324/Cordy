@@ -16,10 +16,15 @@
 //! the event-bus wiring lands with the S8 handler slice.
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
+use sqlx::PgPool;
+use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
+
 use crate::api::{ApiError, BotApi, EditMessageTextParams, ReplyParameters, SendMessageParams};
+use crate::config::{decode_credentials, DecrypterFn};
 use crate::markdown::format_html;
 use crate::sender::{chunk_message, utf16_units, MAX_MESSAGE_UNITS};
 
@@ -643,7 +648,545 @@ pub fn task_failure_retry_pending(payload: &serde_json::Value) -> bool {
         .unwrap_or(false)
 }
 
-use uuid::Uuid;
+const OUTBOUND_DELIVERY_CAPACITY: usize = 64;
+
+struct RuntimeTarget {
+    stream_key: String,
+    bot_key: String,
+    api: BotApi,
+    chat_id: i64,
+    thread_id: i64,
+    reply_to: i64,
+}
+
+struct LiveStream {
+    state: StreamState,
+    bot_key: String,
+}
+
+/// Production event-bus subscriber for Telegram streaming, completion, and
+/// failure delivery. The pure state machines above remain the protocol source
+/// of truth; this type owns their database lookup and network execution.
+pub struct Outbound {
+    pool: PgPool,
+    decrypt: Option<Arc<DecrypterFn>>,
+    api_base: String,
+    cancel: CancellationToken,
+    streams: tokio::sync::Mutex<HashMap<String, LiveStream>>,
+    schedules: ChatScheduleRegistry,
+    delivery_slots: Arc<tokio::sync::Semaphore>,
+}
+
+impl Outbound {
+    pub fn new(
+        pool: PgPool,
+        decrypt: Option<Arc<DecrypterFn>>,
+        api_base: String,
+        cancel: CancellationToken,
+    ) -> Self {
+        Self {
+            pool,
+            decrypt,
+            api_base,
+            cancel,
+            streams: tokio::sync::Mutex::new(HashMap::new()),
+            schedules: ChatScheduleRegistry::new(),
+            delivery_slots: Arc::new(tokio::sync::Semaphore::new(OUTBOUND_DELIVERY_CAPACITY)),
+        }
+    }
+
+    pub fn register(self: &Arc<Self>, bus: &cordy_events::Bus) {
+        let this = self.clone();
+        bus.subscribe(cordy_protocol::EVENT_TASK_MESSAGE, move |event| {
+            let this = this.clone();
+            let event = event.clone();
+            tokio::spawn(async move {
+                if let Err(error) = this.process_partial(&event).await {
+                    tracing::warn!(%error, task_id = %event.task_id, "telegram partial delivery failed");
+                }
+            });
+        });
+
+        for event_type in [
+            cordy_protocol::EVENT_CHAT_DONE,
+            cordy_protocol::EVENT_TASK_FAILED,
+            cordy_protocol::EVENT_TASK_CANCELLED,
+        ] {
+            let this = self.clone();
+            bus.subscribe(event_type, move |event| {
+                let Ok(permit) = this.delivery_slots.clone().try_acquire_owned() else {
+                    tracing::warn!(task_id = %event.task_id, "telegram terminal delivery queue is full");
+                    return;
+                };
+                let this = this.clone();
+                let event = event.clone();
+                tokio::spawn(async move {
+                    let _permit = permit;
+                    if let Err(error) = this.process_terminal(&event).await {
+                        tracing::warn!(%error, task_id = %event.task_id, "telegram terminal delivery failed");
+                    }
+                });
+            });
+        }
+    }
+
+    async fn process_partial(&self, event: &cordy_events::Event) -> anyhow::Result<()> {
+        if self.cancel.is_cancelled() {
+            return Ok(());
+        }
+        let Some(content) = task_message_content(&event.payload) else {
+            return Ok(());
+        };
+        let Some(target) = self.resolve_target(event).await? else {
+            return Ok(());
+        };
+        let now = SystemTime::now();
+        let mut streams = self.streams.lock().await;
+        if !streams.contains_key(&target.stream_key) {
+            if self
+                .schedules
+                .retain(&target.bot_key, target.chat_id, now)
+                .is_none()
+            {
+                return Ok(());
+            }
+            streams.insert(
+                target.stream_key.clone(),
+                LiveStream {
+                    state: StreamState {
+                        chat_id: target.chat_id,
+                        thread_id: target.thread_id,
+                        reply_to: target.reply_to,
+                        ..Default::default()
+                    },
+                    bot_key: target.bot_key.clone(),
+                },
+            );
+        }
+        let schedule = self
+            .schedules
+            .schedule_snapshot(&target.bot_key, target.chat_id)
+            .unwrap_or_else(|| ChatSchedule::new(target.bot_key.clone(), target.chat_id));
+        let stream = streams
+            .get_mut(&target.stream_key)
+            .map(|stream| &mut stream.state)
+            .ok_or_else(|| anyhow::anyhow!("telegram stream state disappeared"))?;
+        let action = stream_partial(stream, content, now, &schedule);
+        let result = match &action {
+            PartialAction::Wait => return Ok(()),
+            PartialAction::SendPlaceholder {
+                text,
+                thread_id,
+                reply_to,
+            } => {
+                let params = SendMessageParams {
+                    chat_id: target.chat_id,
+                    text: text.clone(),
+                    parse_mode: "HTML".to_string(),
+                    message_thread_id: *thread_id,
+                    reply_parameters: *reply_to,
+                };
+                tokio::select! {
+                    _ = self.cancel.cancelled() => return Ok(()),
+                    result = target.api.send_message(&params) => result.map(|message| message.message_id),
+                }
+            }
+            PartialAction::Edit { message_id, text } => {
+                let params = EditMessageTextParams {
+                    chat_id: target.chat_id,
+                    message_id: *message_id,
+                    text: text.clone(),
+                    parse_mode: "HTML".to_string(),
+                };
+                tokio::select! {
+                    _ = self.cancel.cancelled() => return Ok(()),
+                    result = target.api.edit_message_text(&params) => match result {
+                        Ok(()) => Ok(0),
+                        Err(error) if is_not_modified(&error) => Ok(0),
+                        Err(error) => Err(error),
+                    },
+                }
+            }
+        };
+        match result {
+            Ok(message_id) => {
+                if message_id != 0 {
+                    stream.message_id = message_id;
+                }
+                self.schedules
+                    .with_schedule(&target.bot_key, target.chat_id, |schedule| {
+                        schedule.last_edit = Some(now);
+                    });
+            }
+            Err(error) => {
+                self.record_rate_limit(&target, &error, now);
+                return Err(error);
+            }
+        }
+        Ok(())
+    }
+
+    async fn process_terminal(&self, event: &cordy_events::Event) -> anyhow::Result<()> {
+        let task_id = task_id_from_event(event);
+        let Some(task_id) = task_id else {
+            return Ok(());
+        };
+        if event.event_type == cordy_protocol::EVENT_TASK_CANCELLED {
+            self.release_stream(&task_id.to_string(), SystemTime::now())
+                .await;
+            return Ok(());
+        }
+        if event.event_type == cordy_protocol::EVENT_TASK_FAILED
+            && task_failure_retry_pending(&event.payload)
+        {
+            self.release_stream(&task_id.to_string(), SystemTime::now())
+                .await;
+            return Ok(());
+        }
+        let Some(target) = self.resolve_target(event).await? else {
+            return Ok(());
+        };
+        if event.event_type == cordy_protocol::EVENT_TASK_FAILED {
+            return self.deliver_failure(target).await;
+        }
+        let content = chat_done_content(&event.payload);
+        if content.is_empty() {
+            self.release_stream(&target.stream_key, SystemTime::now())
+                .await;
+            return Ok(());
+        }
+
+        let stream = self.streams.lock().await.remove(&target.stream_key);
+        if stream.is_none()
+            && self
+                .schedules
+                .retain(&target.bot_key, target.chat_id, SystemTime::now())
+                .is_none()
+        {
+            return Ok(());
+        }
+        let mut reply = TerminalReply {
+            chat_id: target.chat_id,
+            thread_id: target.thread_id,
+            reply_to: target.reply_to,
+            streamed_message_id: stream
+                .map(|stream| stream.state.message_id)
+                .unwrap_or_default(),
+            ..Default::default()
+        };
+        let result = self
+            .drive_terminal_reply(&target, &content, &mut reply)
+            .await;
+        self.schedules
+            .release(&target.bot_key, target.chat_id, SystemTime::now());
+        result
+    }
+
+    async fn drive_terminal_reply(
+        &self,
+        target: &RuntimeTarget,
+        content: &str,
+        reply: &mut TerminalReply,
+    ) -> anyhow::Result<()> {
+        loop {
+            if self.cancel.is_cancelled() {
+                return Ok(());
+            }
+            let now = SystemTime::now();
+            let schedule = self
+                .schedules
+                .schedule_snapshot(&target.bot_key, target.chat_id)
+                .unwrap_or_else(|| ChatSchedule::new(target.bot_key.clone(), target.chat_id));
+            match terminal_step(reply, &schedule, content, now) {
+                TerminalStep::Done => return Ok(()),
+                TerminalStep::RetryAt(at) => {
+                    let wait = at.duration_since(now).unwrap_or_default();
+                    tokio::select! {
+                        _ = self.cancel.cancelled() => return Ok(()),
+                        _ = tokio::time::sleep(wait) => {}
+                    }
+                }
+                TerminalStep::Call(call) => match call {
+                    TerminalCall::EditPlaceholder { message_id, text } => {
+                        let params = EditMessageTextParams {
+                            chat_id: target.chat_id,
+                            message_id,
+                            text,
+                            parse_mode: "HTML".to_string(),
+                        };
+                        let result = tokio::select! {
+                            _ = self.cancel.cancelled() => return Ok(()),
+                            result = target.api.edit_message_text(&params) => result,
+                        };
+                        match result {
+                            Ok(()) => {
+                                self.record_edit(target, now);
+                                match terminal_placeholder_edited(reply, now) {
+                                    TerminalStep::Done => return Ok(()),
+                                    TerminalStep::RetryAt(at) => {
+                                        self.wait_until(at).await;
+                                    }
+                                    TerminalStep::Call(_) => unreachable!(
+                                        "placeholder completion cannot issue an immediate call"
+                                    ),
+                                }
+                            }
+                            Err(error) if crate::api::retry_after(&error).is_some() => {
+                                self.record_rate_limit(target, &error, now);
+                            }
+                            Err(_) => {
+                                let _ = terminal_placeholder_failed(reply, now);
+                            }
+                        }
+                    }
+                    send @ TerminalCall::SendChunk { .. } => {
+                        let mut params = terminal_send_params(&send)
+                            .ok_or_else(|| anyhow::anyhow!("telegram terminal call mismatch"))?;
+                        params.chat_id = target.chat_id;
+                        let result = tokio::select! {
+                            _ = self.cancel.cancelled() => return Ok(()),
+                            result = target.api.send_message(&params) => result,
+                        };
+                        match result {
+                            Ok(_) => {
+                                self.record_edit(target, now);
+                                match terminal_chunk_sent(reply, now) {
+                                    TerminalStep::Done => return Ok(()),
+                                    TerminalStep::RetryAt(at) => {
+                                        self.wait_until(at).await;
+                                    }
+                                    TerminalStep::Call(_) => unreachable!(
+                                        "chunk completion cannot issue an immediate call"
+                                    ),
+                                }
+                            }
+                            Err(error) if crate::sender::is_html_parse_error(&error) => {
+                                reply.plain_text_fallback = true;
+                            }
+                            Err(error) => {
+                                self.record_rate_limit(target, &error, now);
+                                if crate::api::retry_after(&error).is_none() {
+                                    return Err(error);
+                                }
+                            }
+                        }
+                    }
+                },
+            }
+        }
+    }
+
+    async fn deliver_failure(&self, target: RuntimeTarget) -> anyhow::Result<()> {
+        let stream = self.streams.lock().await.remove(&target.stream_key);
+        if stream.is_none()
+            && self
+                .schedules
+                .retain(&target.bot_key, target.chat_id, SystemTime::now())
+                .is_none()
+        {
+            return Ok(());
+        }
+        let mut edited = false;
+        if let Some(params) = stream
+            .as_ref()
+            .and_then(|stream| failure_edit(&stream.state))
+        {
+            loop {
+                self.wait_for_schedule(&target).await;
+                let now = SystemTime::now();
+                let result = tokio::select! {
+                    _ = self.cancel.cancelled() => break,
+                    result = target.api.edit_message_text(&params) => result,
+                };
+                match result {
+                    Ok(()) => {
+                        self.record_edit(&target, now);
+                        edited = true;
+                        break;
+                    }
+                    Err(error) if is_not_modified(&error) => {
+                        edited = true;
+                        break;
+                    }
+                    Err(error) if crate::api::retry_after(&error).is_some() => {
+                        self.record_rate_limit(&target, &error, now);
+                    }
+                    Err(_) => break,
+                }
+            }
+        }
+        let result = if edited {
+            Ok(())
+        } else {
+            loop {
+                self.wait_for_schedule(&target).await;
+                let now = SystemTime::now();
+                let params = failure_send(target.chat_id, target.thread_id, target.reply_to);
+                let result = tokio::select! {
+                    _ = self.cancel.cancelled() => break Ok(()),
+                    result = target.api.send_message(&params) => result,
+                };
+                match result {
+                    Ok(_) => {
+                        self.record_edit(&target, now);
+                        break Ok(());
+                    }
+                    Err(error) if crate::api::retry_after(&error).is_some() => {
+                        self.record_rate_limit(&target, &error, now);
+                    }
+                    Err(error) => break Err(error),
+                }
+            }
+        };
+        self.schedules
+            .release(&target.bot_key, target.chat_id, SystemTime::now());
+        result
+    }
+
+    async fn wait_for_schedule(&self, target: &RuntimeTarget) {
+        let now = SystemTime::now();
+        let available = self
+            .schedules
+            .schedule_snapshot(&target.bot_key, target.chat_id)
+            .map(|schedule| schedule.edit_available_at(now))
+            .unwrap_or(now);
+        let wait = available.duration_since(now).unwrap_or_default();
+        tokio::select! {
+            _ = self.cancel.cancelled() => {}
+            _ = tokio::time::sleep(wait) => {}
+        }
+    }
+
+    async fn wait_until(&self, at: SystemTime) {
+        let wait = at.duration_since(SystemTime::now()).unwrap_or_default();
+        tokio::select! {
+            _ = self.cancel.cancelled() => {}
+            _ = tokio::time::sleep(wait) => {}
+        }
+    }
+
+    async fn resolve_target(
+        &self,
+        event: &cordy_events::Event,
+    ) -> anyhow::Result<Option<RuntimeTarget>> {
+        use cordy_db::queries::agent::get_agent_task;
+        use cordy_db::queries::channel::{
+            get_channel_chat_session_binding_by_session, get_channel_installation,
+        };
+
+        let Some(task_id) = task_id_from_event(event) else {
+            return Ok(None);
+        };
+        let Some(task) = get_agent_task(&self.pool, task_id).await? else {
+            return Ok(None);
+        };
+        if !cordy_channel_engine::task_input_is_channel_ingested(
+            &self.pool,
+            task.chat_input_task_id,
+        )
+        .await?
+        {
+            return Ok(None);
+        }
+        let Some(session_id) = task.chat_session_id else {
+            return Ok(None);
+        };
+        let Some(binding) = get_channel_chat_session_binding_by_session(
+            &self.pool,
+            session_id,
+            crate::TYPE_TELEGRAM,
+        )
+        .await?
+        else {
+            return Ok(None);
+        };
+        let Some(installation) =
+            get_channel_installation(&self.pool, binding.installation_id, crate::TYPE_TELEGRAM)
+                .await?
+        else {
+            return Ok(None);
+        };
+        if installation.status != "active" {
+            return Ok(None);
+        }
+        let raw = serde_json::to_vec(&installation.config)?;
+        let credentials = decode_credentials(&raw, self.decrypt.as_deref())?;
+        if credentials.bot_token.is_empty() {
+            return Ok(None);
+        }
+        let (chat_id, thread_id, reply_to) = outbound_target(
+            &binding.channel_chat_id,
+            &binding.config,
+            binding.last_thread_id.as_deref(),
+            binding.last_message_id.as_deref(),
+        );
+        if chat_id == 0 {
+            return Ok(None);
+        }
+        Ok(Some(RuntimeTarget {
+            stream_key: task_id.to_string(),
+            bot_key: installation.id.to_string(),
+            api: BotApi::new(&self.api_base, &credentials.bot_token),
+            chat_id,
+            thread_id,
+            reply_to,
+        }))
+    }
+
+    fn record_edit(&self, target: &RuntimeTarget, now: SystemTime) {
+        self.schedules
+            .with_schedule(&target.bot_key, target.chat_id, |schedule| {
+                schedule.last_edit = Some(now);
+            });
+    }
+
+    fn record_rate_limit(&self, target: &RuntimeTarget, error: &anyhow::Error, now: SystemTime) {
+        if let Some(wait) = crate::api::retry_after(error) {
+            self.schedules
+                .with_schedule(&target.bot_key, target.chat_id, |schedule| {
+                    schedule.backoff_till = Some(now + wait);
+                });
+        }
+    }
+
+    async fn release_stream(&self, stream_key: &str, now: SystemTime) {
+        if let Some(stream) = self.streams.lock().await.remove(stream_key) {
+            self.schedules
+                .release(&stream.bot_key, stream.state.chat_id, now);
+        }
+    }
+}
+
+fn task_id_from_event(event: &cordy_events::Event) -> Option<Uuid> {
+    let raw = if event.task_id.is_empty() {
+        event
+            .payload
+            .get("task_id")
+            .and_then(|value| value.as_str())
+            .or_else(|| {
+                event
+                    .payload
+                    .get("task_message")
+                    .and_then(|value| value.get("task_id"))
+                    .and_then(|value| value.as_str())
+            })
+            .unwrap_or_default()
+    } else {
+        &event.task_id
+    };
+    Uuid::parse_str(raw).ok().filter(|id| !id.is_nil())
+}
+
+fn task_message_content(payload: &serde_json::Value) -> Option<&str> {
+    let message = payload.get("task_message").unwrap_or(payload);
+    if message.get("type").and_then(|value| value.as_str()) != Some("text") {
+        return None;
+    }
+    message
+        .get("content")
+        .and_then(|value| value.as_str())
+        .filter(|content| !content.is_empty())
+}
 
 #[cfg(test)]
 mod tests {

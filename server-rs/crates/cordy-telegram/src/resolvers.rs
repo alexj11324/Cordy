@@ -22,7 +22,7 @@ use cordy_channel_engine::session::{
 use cordy_db::queries::channel::{
     claim_channel_inbound_dedup, get_channel_installation_by_app_id,
     get_channel_user_binding_by_user_id, mark_channel_inbound_dedup_processed,
-    release_channel_inbound_dedup,
+    record_channel_inbound_drop, release_channel_inbound_dedup,
 };
 use cordy_db::queries::member::get_member_by_user_and_workspace;
 
@@ -86,7 +86,7 @@ impl InstallationResolver for InstallationResolverImpl {
             route_revision: 0,
             installer_user_id: inst.installer_user_id,
             active: inst.status == "active",
-            platform: Arc::new(()),
+            platform: Arc::new(inst),
         })
     }
 }
@@ -211,16 +211,36 @@ impl SessionBinder for SessionBinderImpl {
     }
 }
 
-struct AuditorImpl {}
+struct AuditorImpl {
+    pool: PgPool,
+}
 
 #[async_trait::async_trait]
 impl cordy_channel_engine::resolvers::Auditor for AuditorImpl {
-    async fn record_drop(&self, _inst_id: Uuid, _msg: &InboundMessage, _reason: &DropReason) {
-        // Go's auditor writes a drop-audit row; the audit table lands with
-        // the S8 handler slice. Warn-log keeps the observability contract
-        // meanwhile.
-        tracing::info!(reason = %_reason.0, "telegram: inbound dropped");
+    async fn record_drop(&self, inst_id: Uuid, msg: &InboundMessage, reason: &DropReason) {
+        let event_type = decode_telegram_raw(msg)
+            .map(|raw| raw.event_type)
+            .unwrap_or_default();
+        let result = record_channel_inbound_drop(
+            &self.pool,
+            crate::TYPE_TELEGRAM,
+            &event_type,
+            &reason.0,
+            (!inst_id.is_nil()).then_some(inst_id),
+            opt_str(&msg.source.chat_id),
+            opt_str(&msg.event_id),
+            opt_str(&msg.message_id),
+            cordy_db::dbid::new_v7(),
+        )
+        .await;
+        if let Err(error) = result {
+            tracing::warn!(%error, "telegram audit: record drop failed");
+        }
     }
+}
+
+fn opt_str(value: &str) -> Option<&str> {
+    (!value.is_empty()).then_some(value)
 }
 
 /// Builds the full Telegram ResolverSet over a pool and an optional replier.
@@ -245,7 +265,7 @@ pub fn new_telegram_resolver_set(
         dedup: Some(Arc::new(DeduperImpl { pool: pool.clone() })),
         session: Some(Arc::new(SessionBinderImpl { session })),
         media: None,
-        audit: Some(Arc::new(AuditorImpl {})),
+        audit: Some(Arc::new(AuditorImpl { pool })),
         replier,
         typing,
         origin_type: ORIGIN_TELEGRAM_CHAT.to_string(),

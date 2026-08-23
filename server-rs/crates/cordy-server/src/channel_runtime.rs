@@ -47,9 +47,11 @@ impl ChannelRuntime {
             .clone()
             .map(|inner| Arc::new(ChannelStorage { inner }));
         let registry = Arc::new(cordy_channel::Registry::new());
+        let cancel = CancellationToken::new();
 
         configure_slack(state, cfg, &services, &router, storage.as_ref(), &registry);
         configure_dingtalk(state, cfg, &router, storage.as_ref(), &registry);
+        configure_telegram(state, cfg, &router, &registry, &cancel);
 
         let channel_types = registry.types();
         if channel_types.is_empty() {
@@ -65,7 +67,6 @@ impl ChannelRuntime {
                 None
             }
         };
-        let cancel = CancellationToken::new();
         let supervisor = if let Some(lease_store) = lease_store {
             let inbound_router = router.clone();
             let handler = cordy_channel::InboundHandler::new(move |ctx, message| {
@@ -287,6 +288,67 @@ fn configure_dingtalk(
         cordy_dingtalk::dingtalk_channel::ChannelDeps {
             decrypt: Some(decrypt),
             client: Some(client),
+        },
+    );
+}
+
+fn configure_telegram(
+    state: &cordy_handler::HandlerState,
+    cfg: &cordy_config::Config,
+    router: &Arc<ChannelRouter>,
+    registry: &Arc<cordy_channel::Registry>,
+    cancel: &CancellationToken,
+) {
+    let secret_box = match channel_secret_box("CORDY_TELEGRAM_SECRET_KEY") {
+        Ok(Some(secret_box)) => secret_box,
+        Ok(None) => {
+            tracing::info!("telegram channel runtime disabled: CORDY_TELEGRAM_SECRET_KEY not set");
+            return;
+        }
+        Err(error) => {
+            tracing::error!(%error, "telegram channel runtime disabled: invalid secret key");
+            return;
+        }
+    };
+    let decrypt: Arc<cordy_telegram::DecrypterFn> =
+        Arc::new(move |sealed| secret_box.open(sealed).map_err(anyhow::Error::from));
+    let binding = Arc::new(cordy_telegram::replier::DbBindingMinter::new(
+        state.pool.clone(),
+    ));
+    let replier = Arc::new(cordy_telegram::replier::OutboundReplier::new(
+        cordy_telegram::replier::OutboundReplierConfig {
+            binding: Some(binding),
+            decrypt: Some(decrypt.clone()),
+            app_url: app_url(cfg),
+            binding_path: String::new(),
+            api_base: String::new(),
+        },
+    ));
+    let typing = Arc::new(cordy_telegram::replier::TypingIndicator::new(
+        Some(decrypt.clone()),
+        String::new(),
+    ));
+    router.register(
+        cordy_channel::Type(cordy_telegram::TYPE_TELEGRAM.to_string()),
+        cordy_telegram::resolvers::new_telegram_resolver_set(
+            state.pool.clone(),
+            Some(replier),
+            Some(typing),
+        ),
+    );
+
+    Arc::new(cordy_telegram::outbound::Outbound::new(
+        state.pool.clone(),
+        Some(decrypt.clone()),
+        String::new(),
+        cancel.clone(),
+    ))
+    .register(&state.bus);
+    cordy_telegram::channel::register_telegram(
+        registry,
+        cordy_telegram::channel::ChannelDeps {
+            decrypt: Some(decrypt),
+            api_base: String::new(),
         },
     );
 }

@@ -23,6 +23,7 @@ cordy-metrics = { path = "../cordy-metrics" }
 cordy-realtime = { path = "../cordy-realtime" }
 cordy-service = { path = "../cordy-service" }
 cordy-slack = { path = "../cordy-slack" }
+cordy-telegram = { path = "../cordy-telegram" }
 cordy-util = { path = "../cordy-util" }
 
 anyhow = { workspace = true }

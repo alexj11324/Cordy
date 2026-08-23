@@ -3,10 +3,12 @@
 //! normalization, sender chunking, resolver set, install service.
 
 pub mod api;
+pub mod channel;
 pub mod config;
 pub mod inbound;
 pub mod markdown;
 pub mod outbound;
+pub mod replier;
 pub mod resolvers;
 pub mod sender;
 
@@ -17,7 +19,7 @@ pub use api::{
 };
 pub use config::{
     decode_credentials, decode_public_config, invalid_bot_token, parse_bot_id, Credentials,
-    Decrypter, PublicConfig, TYPE_TELEGRAM,
+    Decrypter, DecrypterFn, PublicConfig, TYPE_TELEGRAM,
 };
 pub use inbound::{inbound_from_update, message_key, telegram_chat_type, TelegramRawEvent};
 pub use markdown::{escape_html, format_html};
