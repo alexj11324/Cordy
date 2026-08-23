@@ -2,9 +2,11 @@
 //! ownership primitive and the durable audit log.
 
 mod db;
+mod jobs;
 mod manager;
 mod spec;
 
+pub use jobs::{task_usage_hourly_job, TASK_USAGE_ADVISORY_LOCK_ID, TASK_USAGE_HOURLY_JOB};
 pub use manager::{
     DbClock, Manager, ManagerOptions, ManagerRuntime, ProcessOutcome, RunReport, SchedulerClock,
     ShutdownOutcome,
