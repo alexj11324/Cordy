@@ -64,7 +64,7 @@ impl Provider for ForgejoProvider {
         let mut mac = <hmac::Hmac<sha2::Sha256> as hmac::Mac>::new_from_slice(secret.as_bytes())
             .expect("hmac accepts any key length");
         mac.update(body);
-        mac.finalize().into_bytes().as_slice() == want.as_slice()
+        mac.verify_slice(&want).is_ok()
     }
 
     fn parse_pull_request(&self, body: &[u8]) -> Result<PullRequestEvent> {

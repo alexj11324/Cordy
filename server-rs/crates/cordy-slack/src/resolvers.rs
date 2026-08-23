@@ -12,8 +12,9 @@ use uuid::Uuid;
 
 use cordy_channel::InboundMessage;
 use cordy_channel_engine::resolvers::{
-    AppendParams, AppendResult, BindMediaParams, DropReason, EnsureSessionParams, ResolvedIdentity,
-    ResolvedInstallation, ResolverError, ResolverSet, TypingNotifier,
+    AppendParams, AppendResult, BindMediaParams, DropReason, EnsureSessionParams, MediaResolver,
+    OutboundReplier, ResolvedIdentity, ResolvedInstallation, ResolverError, ResolverSet,
+    TypingNotifier,
 };
 use cordy_channel_engine::session::{ChatSession, SessionTitles};
 use cordy_db::models::{ChannelInstallation, ChannelUserBinding};
@@ -41,6 +42,8 @@ pub fn new_slack_resolver_set(
     pool: PgPool,
     decrypt: Option<DecrypterArc>,
     typing: Option<Arc<super::typing_indicator::TypingIndicatorManager>>,
+    media: Option<Arc<dyn MediaResolver>>,
+    replier: Option<Arc<dyn OutboundReplier>>,
 ) -> ResolverSet {
     let session = ChatSession::new(
         pool.clone(),
@@ -57,8 +60,8 @@ pub fn new_slack_resolver_set(
         dedup: Some(Arc::new(Deduper { pool: pool.clone() })),
         session: Some(Arc::new(SessionBinder { session })),
         audit: Some(Arc::new(Auditor { pool })),
-        media: None,
-        replier: None,
+        media,
+        replier,
         typing: typing
             .map(|mgr| Arc::new(SlackTypingNotifier { mgr, decrypt }) as Arc<dyn TypingNotifier>),
         validated: None,

@@ -160,12 +160,23 @@ fn is_public_v6(v6: Ipv6Addr) -> bool {
     let unique_local = segments[0] & 0xfe00 == 0xfc00; // fc00::/7
     let link_local_unicast = segments[0] & 0xffc0 == 0xfe80; // fe80::/10
     let link_local_multicast = segments[0] == 0xff02; // ff02::/16
+    let transition_or_reserved = [
+        (Ipv6Addr::new(0x0064, 0xff9b, 0, 0, 0, 0, 0, 0), 96),
+        (Ipv6Addr::new(0x0064, 0xff9b, 1, 0, 0, 0, 0, 0), 48),
+        (Ipv6Addr::new(0x2002, 0, 0, 0, 0, 0, 0, 0), 16),
+        (Ipv6Addr::new(0xfec0, 0, 0, 0, 0, 0, 0, 0), 10),
+        (Ipv6Addr::new(0x0100, 0, 0, 0, 0, 0, 0, 0), 64),
+        (Ipv6Addr::new(0x2001, 0, 0, 0, 0, 0, 0, 0), 23),
+    ]
+    .iter()
+    .any(|(base, bits)| v6_in_prefix(v6, *base, *bits));
     !(unique_local
         || link_local_unicast
         || link_local_multicast
         || v6.is_loopback()
         || v6.is_multicast()
         || v6.is_unspecified()
+        || transition_or_reserved
         || v6_in_prefix(v6, Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 0), 32))
 }
 
@@ -364,6 +375,11 @@ mod tests {
             ("fdff::1", false),
             ("2001:db8::1", false),
             ("2001:db8:ffff:ffff:ffff:ffff:ffff:ffff", false),
+            ("64:ff9b::7f00:1", false),
+            ("64:ff9b:1::a9fe:a9fe", false),
+            ("2002:7f00:1::1", false),
+            ("fec0::1", false),
+            ("100::1", false),
             ("ff02::1", false),
             ("::ffff:10.0.0.1", false),
         ];
