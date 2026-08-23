@@ -57,13 +57,18 @@ impl SecureHttpClient {
     /// `http.Client.Timeout` semantics) and buffers the response body up to
     /// [`MAX_RESPONSE_BYTES`] — bounded memory, like Go's LimitReader.
     pub async fn send(&self, request: Request<RequestBody>) -> Result<Response<Vec<u8>>, Error> {
-        let response = tokio::time::timeout(CALL_TIMEOUT, self.inner.request(request))
-            .await
-            .map_err(|_| Error::CallTimeout)?
-            .map_err(|error| Error::Request(error.to_string()))?;
-        let (parts, body) = response.into_parts();
-        let buffered = read_limited(body).await?;
-        Ok(Response::from_parts(parts, buffered))
+        tokio::time::timeout(CALL_TIMEOUT, async {
+            let response = self
+                .inner
+                .request(request)
+                .await
+                .map_err(|error| Error::Request(error.to_string()))?;
+            let (parts, body) = response.into_parts();
+            let buffered = read_limited(body).await?;
+            Ok(Response::from_parts(parts, buffered))
+        })
+        .await
+        .map_err(|_| Error::CallTimeout)?
     }
 }
 
