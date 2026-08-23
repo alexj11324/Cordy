@@ -149,7 +149,7 @@ struct JoinByShareLinkRequest {
 }
 
 #[derive(Debug, Serialize)]
-struct MemberWithUserResponse {
+pub(crate) struct MemberWithUserResponse {
     id: String,
     workspace_id: String,
     user_id: String,
@@ -161,7 +161,7 @@ struct MemberWithUserResponse {
 }
 
 impl MemberWithUserResponse {
-    fn new(member: &Member, user: &User) -> Self {
+    pub(crate) fn new(member: &Member, user: &User) -> Self {
         Self {
             id: member.id.to_string(),
             workspace_id: member.workspace_id.to_string(),
@@ -323,7 +323,7 @@ async fn join_by_share_link(
     .into_response()
 }
 
-fn unique_violation(error: &anyhow::Error) -> bool {
+pub(crate) fn unique_violation(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<sqlx::Error>()
         .and_then(|error| error.as_database_error())

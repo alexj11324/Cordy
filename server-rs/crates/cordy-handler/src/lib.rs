@@ -26,6 +26,7 @@ pub mod daemon_ws;
 pub mod error;
 pub mod feedback;
 pub mod health;
+pub mod invitation;
 pub mod issue;
 pub mod issue_property_value;
 pub mod issue_pull_request;
@@ -210,6 +211,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(cli_token::router())
         .merge(client_usage::router())
         .merge(feedback::router())
+        .merge(invitation::router())
         .merge(me::router())
         .merge(pat::router())
         .merge(attachment_access::authenticated_router())
@@ -341,6 +343,8 @@ mod tests {
             "/api/issues/CORD-14/pull-requests",
             "/api/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/messages",
             "/api/me",
+            "/api/invitations",
+            "/api/invitations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/issue-views?scope_type=workspace",
             "/api/issue-views/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/issue-view-preferences?scope_type=workspace",
@@ -393,6 +397,12 @@ mod tests {
                 .body(Body::from(
                     r#"{"name":"Assigned","scope_type":"my","scope_variant":"assigned","query":{}}"#,
                 ))
+                .unwrap(),
+            Request::post("/api/invitations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/accept")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/invitations/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/decline")
+                .body(Body::empty())
                 .unwrap(),
             Request::patch("/api/issue-views/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
                 .header("content-type", "application/json")
