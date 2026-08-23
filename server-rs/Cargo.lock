@@ -588,6 +588,7 @@ name = "cordy-handler"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
  "chrono",
  "chrono-tz",
@@ -610,6 +611,7 @@ dependencies = [
  "cordy-util",
  "futures-util",
  "hex",
+ "hmac",
  "http-body-util",
  "ipnetwork",
  "percent-encoding",
@@ -623,6 +625,7 @@ dependencies = [
  "sha2",
  "sqlx",
  "structured-email-address",
+ "tempfile",
  "tokio",
  "tower",
  "tower-http",

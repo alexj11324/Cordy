@@ -82,6 +82,9 @@ pub struct HandlerState {
     /// Daemon WebSocket hub (cordy-daemon). `None` only in tests — the WS
     /// endpoint reports 503 and daemons fall back to HTTP polling.
     pub daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
+    /// Attachment object store. None is the explicit unconfigured test path.
+    pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
+    pub attachment_frame_ancestors: Vec<String>,
     /// Keeps the weak notifier installed in `TaskService` alive.
     _task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier>,
 }
@@ -142,8 +145,20 @@ impl HandlerState {
             local_skill_import_store: None,
             rate_limit_client: None,
             daemon_hub: Some(daemon_hub),
+            attachment_storage: None,
+            attachment_frame_ancestors: Vec::new(),
             _task_wakeup: task_wakeup,
         }
+    }
+
+    pub fn with_attachment_storage(
+        mut self,
+        storage: Arc<dyn crate::attachment_storage::AttachmentStorage>,
+        frame_ancestors: Vec<String>,
+    ) -> Self {
+        self.attachment_storage = Some(storage);
+        self.attachment_frame_ancestors = frame_ancestors;
+        self
     }
 
     pub fn with_observability(

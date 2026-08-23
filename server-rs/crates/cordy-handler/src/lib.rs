@@ -13,6 +13,8 @@
 pub mod agent_aggregation;
 pub mod agent_builder;
 pub mod auth;
+pub mod attachment;
+pub mod attachment_storage;
 pub mod claim_comments;
 pub mod claim_response;
 pub mod cli_token;
@@ -209,6 +211,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         issue::require_issue_workspace,
     ));
     let authenticated = workspace::authenticated_router()
+        .merge(attachment::authenticated_router())
         .merge(
             agent_aggregation::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
@@ -288,6 +291,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(issue_routes)
         .merge(task_routes)
         .merge(comment_routes)
+        .merge(
+            attachment::workspace_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
         .merge(label::router().route_layer(middleware::from_fn_with_state(
             WorkspaceGuardState::member_only(state.pool.clone()),
             issue::require_issue_workspace,
@@ -361,6 +370,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(public_auth)
         .merge(session::public_router())
         .merge(workspace::public_router())
+        .merge(attachment::public_router())
         .merge(contact_sales)
         .merge(authenticated)
         .merge(daemon)

@@ -103,6 +103,7 @@ hyper = { version = "1", features = ["client", "http1"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "runtime", "service", "tokio"] }
 http-body-util = "0.1"
 url = "2"
+percent-encoding = "2"
 rustls-pemfile = "2"
 # secretbox config-secret encryption (AES-256-GCM, nonce-prefixed layout)
 aes-gcm = { version = "0.10", features = ["std", "getrandom"] }

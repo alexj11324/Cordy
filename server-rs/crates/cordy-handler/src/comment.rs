@@ -101,7 +101,7 @@ fn added_reaction_json(reaction: &reaction::AddReactionRow) -> Value {
     Value::Object(response)
 }
 
-async fn comment_json(state: &HandlerState, comment: &Comment) -> Value {
+pub(crate) async fn comment_json(state: &HandlerState, comment: &Comment) -> Value {
     let reactions = reaction::list_reactions_by_comment_i_ds(&state.pool, vec![comment.id])
         .await
         .unwrap_or_else(|error| {

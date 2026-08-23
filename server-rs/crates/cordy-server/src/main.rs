@@ -44,6 +44,7 @@ async fn install_pending_stores(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn build_production_router(
     db: sqlx::PgPool,
     hub: Arc<cordy_realtime::hub::Hub>,
@@ -51,6 +52,8 @@ async fn build_production_router(
     http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
     github_client: Option<cordy_ghsnapshot::Client>,
     cfg: &cordy_config::Config,
+    attachment_storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
+    attachment_frame_ancestors: Vec<String>,
 ) -> Router {
     let mut state = cordy_handler::HandlerState::new(
         db,
@@ -67,7 +70,8 @@ async fn build_production_router(
             cfg.email.smtp_host.as_deref(),
         ),
     ))
-    .with_rate_limit_trusted_proxies(cfg.urls.rate_limit_trusted_proxies.as_deref());
+    .with_rate_limit_trusted_proxies(cfg.urls.rate_limit_trusted_proxies.as_deref())
+    .with_attachment_storage(attachment_storage, attachment_frame_ancestors);
     let redis_url = cfg
         .redis
         .url
@@ -146,8 +150,32 @@ async fn main() -> anyhow::Result<()> {
         (None, None)
     };
     let github_client = cordy_ghsnapshot::Client::new_from_env()?;
-    let app =
-        build_production_router(db, hub, business_metrics, http_metrics, github_client, &cfg).await;
+    let attachment_storage = cordy_handler::attachment_storage::from_env(
+        cfg.storage.local_upload_dir.as_deref(),
+        cfg.storage.local_upload_base_url.as_deref(),
+    )?;
+    let attachment_frame_ancestors = cfg
+        .urls
+        .cors_allowed_origins
+        .as_deref()
+        .unwrap_or_default()
+        .split(',')
+        .chain(cfg.urls.frontend_origin.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect();
+    let app = build_production_router(
+        db,
+        hub,
+        business_metrics,
+        http_metrics,
+        github_client,
+        &cfg,
+        attachment_storage,
+        attachment_frame_ancestors,
+    )
+    .await;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -166,6 +194,16 @@ mod tests {
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
+
+    fn test_attachment_storage() -> Arc<dyn cordy_handler::attachment_storage::AttachmentStorage> {
+        Arc::new(
+            cordy_handler::attachment_storage::LocalStorage::new(
+                std::env::temp_dir().join("cordy-server-route-tests"),
+                String::new(),
+            )
+            .expect("test local storage"),
+        )
+    }
 
     #[tokio::test]
     async fn health_reports_ok_without_db() {
@@ -200,6 +238,8 @@ mod tests {
             None,
             None,
             &cfg,
+            test_attachment_storage(),
+            Vec::new(),
         )
         .await;
         let response = tokio::time::timeout(
@@ -240,6 +280,8 @@ mod tests {
             None,
             None,
             &cfg,
+            test_attachment_storage(),
+            Vec::new(),
         )
         .await;
         let response = tokio::time::timeout(
@@ -317,6 +359,8 @@ mod tests {
             None,
             None,
             &cfg,
+            test_attachment_storage(),
+            Vec::new(),
         )
         .await;
     }
