@@ -348,6 +348,9 @@ mod tests {
                     r#"{"url":"https://github.com/alexj11324/Cordy/pull/24"}"#,
                 ))
                 .unwrap(),
+            Request::delete("/api/issues/CORD-14/properties/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::empty())
+                .unwrap(),
             Request::post("/api/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/cancel")
                 .body(Body::empty())
                 .unwrap(),
