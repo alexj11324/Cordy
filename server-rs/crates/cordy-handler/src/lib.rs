@@ -15,6 +15,7 @@ pub mod attachment_storage;
 pub mod avatar;
 pub mod claim_comments;
 pub mod claim_response;
+pub mod cli_token;
 pub mod cloudfront;
 pub mod comment;
 pub mod daemon;
@@ -187,6 +188,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         issue::require_issue_workspace,
     ));
     let authenticated = workspace::authenticated_router()
+        .merge(cli_token::router())
         .merge(pat::router())
         .merge(attachment_access::authenticated_router())
         .merge(attachment_routes)
@@ -314,6 +316,7 @@ mod tests {
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"emoji":"👍"}"#))
                 .unwrap(),
+            Request::post("/api/cli-token").body(Body::empty()).unwrap(),
             Request::delete("/api/comments/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/reactions")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"emoji":"👍"}"#))
