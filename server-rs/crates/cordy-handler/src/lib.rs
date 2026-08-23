@@ -48,6 +48,7 @@ pub mod pat;
 pub mod pending_store;
 pub mod pin;
 pub mod plugin_action;
+pub mod plugin_admin;
 pub mod profile_json;
 pub mod project;
 pub mod property;
@@ -337,6 +338,16 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             issue::require_issue_workspace,
         )))
         .merge(
+            plugin_admin::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url_with_roles(
+                    state.pool.clone(),
+                    "id",
+                    vec!["owner".into(), "admin".into()],
+                ),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
             property::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 issue::require_issue_workspace,
@@ -511,6 +522,9 @@ mod tests {
             "/api/v1/plugin/issues/CORD-14/comments",
             "/api/v1/plugin/storage/workspace",
             "/api/v1/plugin/storage/workspace/key",
+            "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/plugins",
+            "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/plugins/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/invocations",
+            "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/plugins/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/mcp/search/tools",
         ] {
             let response = build_router(None, None)
                 .oneshot(Request::get(uri).body(Body::empty()).unwrap())
@@ -766,6 +780,41 @@ mod tests {
             Request::delete("/api/v1/plugin/storage/workspace/key")
                 .body(Body::empty())
                 .unwrap(),
+            Request::post(
+                "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/plugins/preview",
+            )
+            .body(Body::from(r#"{"source_url":"https://example.com/plugin.json"}"#))
+            .unwrap(),
+            Request::put(
+                "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/plugins/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/config",
+            )
+            .body(Body::from(r#"{"values":{}}"#))
+            .unwrap(),
+            Request::post(
+                "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/plugins/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/enable",
+            )
+            .body(Body::empty())
+            .unwrap(),
+            Request::delete(
+                "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/plugins/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
+            )
+            .body(Body::empty())
+            .unwrap(),
+            Request::post(
+                "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/plugins/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/token",
+            )
+            .body(Body::empty())
+            .unwrap(),
+            Request::delete(
+                "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/plugins/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/token",
+            )
+            .body(Body::empty())
+            .unwrap(),
+            Request::put(
+                "/api/workspaces/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/plugins/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/mcp/search/tools",
+            )
+            .body(Body::from(r#"{"tools":[]}"#))
+            .unwrap(),
         ] {
             let response = build_router(None, None).oneshot(request).await.unwrap();
             assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
