@@ -208,6 +208,9 @@ pub struct HandlerState {
     pub callbacks: Option<Arc<CallbackTokens>>,
     /// Absolute base URL used in hook callback_url; empty omits the field.
     pub callback_base_url: String,
+    /// Boot-time bearer token for `/health/realtime`. Empty enables the
+    /// direct-loopback-only development policy.
+    pub realtime_metrics_token: String,
     /// Redis-backed pending request stores (update / model list / local
     /// skills). `None` matches Go's nil-store path: every probe reports an
     /// empty queue and report endpoints answer 404, which daemons treat as a
@@ -251,6 +254,10 @@ impl HandlerState {
             plugins,
             callbacks: Some(Arc::new(CallbackTokens::new())),
             callback_base_url: String::new(),
+            realtime_metrics_token: std::env::var("REALTIME_METRICS_TOKEN")
+                .unwrap_or_default()
+                .trim()
+                .to_string(),
             update_store: None,
             model_list_store: None,
             local_skill_list_store: None,
