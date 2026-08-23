@@ -1540,7 +1540,7 @@ pub(crate) fn same_resolved_path(a: &Path, b: &Path) -> bool {
 
 /// Lexical `filepath.Clean` equivalent for absolute paths: collapses `.`,
 /// `..`, and duplicate separators without touching the filesystem.
-fn normalize_lexically(path: &Path) -> PathBuf {
+pub(crate) fn normalize_lexically(path: &Path) -> PathBuf {
     let mut out = PathBuf::from("/");
     for comp in path.components() {
         use std::path::Component;
