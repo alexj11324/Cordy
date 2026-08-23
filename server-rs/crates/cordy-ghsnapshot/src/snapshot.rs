@@ -105,7 +105,7 @@ struct GraphQLRollup {
 
 #[derive(Debug, Deserialize, Default)]
 struct RollupContexts {
-    #[serde(default)]
+    #[serde(default, rename = "pageInfo")]
     page_info: PageInfo,
     #[serde(default)]
     nodes: Vec<serde_json::Value>,
@@ -427,6 +427,17 @@ mod tests {
             normalize_status_state("weird"),
             ("queued".into(), "".into())
         );
+    }
+
+    #[test]
+    fn rollup_contexts_decode_camel_case_page_info() {
+        let contexts: RollupContexts = serde_json::from_value(serde_json::json!({
+            "pageInfo": {"hasNextPage": true, "endCursor": "cursor-2"},
+            "nodes": []
+        }))
+        .unwrap();
+        assert!(contexts.page_info.has_next_page);
+        assert_eq!(contexts.page_info.end_cursor, "cursor-2");
     }
 
     #[tokio::test]

@@ -55,7 +55,11 @@ impl Outbound {
                     tokio::time::sleep(REPLY_BUDGET).await;
                     cancel.cancel();
                 });
-                if let Err(err) = me.process_event(&ctx, &e).await {
+                let result = tokio::select! {
+                    result = me.process_event(&ctx, &e) => result,
+                    _ = ctx.cancelled() => Err(anyhow::anyhow!("reply deadline exceeded")),
+                };
+                if let Err(err) = result {
                     tracing::warn!(
                         error = %err,
                         chat_session_id = %e.chat_session_id,
