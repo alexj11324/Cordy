@@ -282,7 +282,7 @@ server-rs/
 - [x] **S7-i composio**：service/sdk/dispatch/state 四模块（Go 1,050 行→Rust 2,889 行；begin_connect/complete_callback/list_connections/disconnect/create_mcp_session/list_toolkits 全量+SDK mock 测试化）
 - [x] **S7-j vcs**：vcs.rs+forgejo.rs+gitlab.rs（Go 649 行→Rust 1,233 行；Provider trait+事件解析+签名验证+token 校验三平台全量）
 - [x] **S7-d telegram**(3,470→Rust 2,969)：api.rs（Bot API envelope/50s long-poll/409 Conflict/429 Retry-After 单次重试）+ config.rs（加密 token 解码、bot id 校验）+ markdown.rs（code/link 占位符先于 escape、粗斜删/标题/列表/fence、Go html.EscapeString 五字符对齐）+ inbound.rs（UTF-16 实体偏移、@mention 边界 @botfan 不误伤、quoted-human 增强、/new fresh、媒体分类表）+ sender.rs（4096 UTF-16 分块 newline 偏好、HTML 失败回退纯文本、首块才引用）+ resolvers.rs（bot_id→installation、binding+membership 身份、两阶段 dedup、topic 分会话路由 ResolverSet 装配）（8de1c4a+8c49f1e，25 测试）+ outbound.rs（Go 1,117 行→Rust 962 行：流式占位符编辑按 chat 2.5s 节流与 mid-stream 溢出冻结、终端回复状态机 placeholder-edit→分块发送→纯文本回退→not-modified 宽容、chat 日程注册表引用计数+idle TTL+容量驱逐+bot 级 backoff 合并、失败通知 edit/send 构造器）（a5c29db，13 测试，crate 共 38 测试）。事件总线订阅/worker 池+retry heap 执行器/resolveTarget DB 查询随 S8 handler 接线切片落地
-- [ ] **S7-c slack**(3,877)：history/media_ingest/resolvers——空脚手架（另一并行会话认领）
+- [x] **S7-c slack**(3,877)：history/media_ingest/resolvers——收尾核对通过（CORD-3，20260822）：三文件函数级覆盖 100%（history.go 18 函数→history.rs、media_ingest.go 17 函数→media_ingest.rs+raw.rs+client.rs、resolvers.go 21 函数→resolvers.rs+raw.rs；nullText→opt_str 适配）；cordy-slack 62 测试全过、clippy -D warnings 干净、fmt 干净
 - [ ] **S7-e dingtalk**(3,918)：resolvers——空脚手架（另一并行会话认领）
 - [ ] **S7-f lark**(10,060 最大域)：http_client/registration/inbound_enricher/outbound/ws_connector/media_ingest/channel_store/outcome_replier——空脚手架（另一并行会话认领）
 - [ ] **S7-g wecom**(7,525)：wecom_channel/ws_frame/outbound_media/installation/media_ingest/markdown/media_download/media_upload——空脚手架（另一并行会话认领）
@@ -298,7 +298,7 @@ server-rs/
 | lark | 10,060 | cordy-lark(11,000+) | ✅ 全域落地（S7-f）：http_client/registration(+service)/inbound_enricher/outbound(Patcher)/ws_connector/media_ingest/channel_store/outcome_replier/resolvers/typing_indicator 等全部模块；114 测试 |
 | wecom | 7,525 | cordy-wecom(3) 空脚手架 | ⬜ |
 | dingtalk | 3,918 | cordy-dingtalk(3) 空脚手架 | ⬜ |
-| slack | 3,877 | cordy-slack(3) 空脚手架 | ⬜ |
+| slack | 3,877 | cordy-slack(6,353) | ✅ 全域移植（8d41cb0，62 测试；history/media_ingest/resolvers 收尾核对通过）|
 | telegram | 3,470 | cordy-telegram(2,969) | ✅ 全域含 outbound（38 测试）；事件总线接线待 S8 |
 
 推进序（空脚手架小→大）：telegram → slack → dingtalk → wecom → lark
