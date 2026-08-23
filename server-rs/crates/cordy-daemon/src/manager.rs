@@ -56,6 +56,16 @@ struct ClaimState {
     http_fallback_after: Option<Instant>,
 }
 
+#[derive(Default)]
+struct PendingWorkState {
+    inflight: HashSet<String>,
+    last_run: HashMap<String, Instant>,
+}
+
+const PENDING_WORK_HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(15);
+const PENDING_WORK_HINT_MIN_INTERVAL: Duration = Duration::from_secs(1);
+const PENDING_WORK_HINT_BOOKKEEPING_TTL: Duration = Duration::from_secs(10 * 60);
+
 /// A complete daemon-side control connection manager.
 pub(crate) struct DaemonControl {
     client: Arc<Client>,
@@ -67,6 +77,7 @@ pub(crate) struct DaemonControl {
     ws_rpc: Arc<WsRpcClient>,
     claim: Mutex<ClaimState>,
     ws_heartbeat_acks: Mutex<HashMap<String, Instant>>,
+    pending_work: Mutex<PendingWorkState>,
 }
 
 impl DaemonControl {
@@ -88,6 +99,7 @@ impl DaemonControl {
             ws_rpc: Arc::new(WsRpcClient::new(WS_RPC_RESPONSE_GRACE)),
             claim: Mutex::new(ClaimState::default()),
             ws_heartbeat_acks: Mutex::new(HashMap::new()),
+            pending_work: Mutex::new(PendingWorkState::default()),
         })
     }
 
@@ -324,7 +336,7 @@ impl DaemonControl {
     }
 
     async fn read_messages<S>(
-        &self,
+        self: &Arc<Self>,
         ctx: &Ctx,
         stream: &mut S,
         writes: &mpsc::Sender<OutboundFrame>,
@@ -345,8 +357,10 @@ impl DaemonControl {
                 Ok(None) => return ConnectionEnd::Closed,
             };
             match message {
-                WsMessage::Text(text) => self.dispatch_message(text.as_bytes(), generation),
-                WsMessage::Binary(data) => self.dispatch_message(&data, generation),
+                WsMessage::Text(text) => {
+                    self.dispatch_message(ctx, text.as_bytes(), generation);
+                }
+                WsMessage::Binary(data) => self.dispatch_message(ctx, &data, generation),
                 WsMessage::Ping(data) => {
                     if writes.try_send(OutboundFrame::pong(data.to_vec())).is_err() {
                         return ConnectionEnd::Closed;
@@ -358,7 +372,7 @@ impl DaemonControl {
         }
     }
 
-    fn dispatch_message(&self, raw: &[u8], generation: u64) {
+    fn dispatch_message(self: &Arc<Self>, ctx: &Ctx, raw: &[u8], generation: u64) {
         let Ok(message) = serde_json::from_slice::<Message>(raw) else {
             tracing::debug!("task wakeup websocket invalid message");
             return;
@@ -382,7 +396,14 @@ impl DaemonControl {
             EVENT_DAEMON_PENDING_WORK => {
                 if let Ok(payload) = serde_json::from_value::<PendingWorkPayload>(message.payload) {
                     if !payload.runtime_id.is_empty() {
-                        self.emit(ControlEvent::PendingWork(payload));
+                        self.emit(ControlEvent::PendingWork(payload.clone()));
+                        if self.try_begin_pending_work(&payload.runtime_id) {
+                            let control = Arc::clone(self);
+                            let root_ctx = ctx.child();
+                            tokio::spawn(async move {
+                                control.serve_pending_work(root_ctx, payload).await;
+                            });
+                        }
                     }
                 }
             }
@@ -419,6 +440,68 @@ impl DaemonControl {
             .unwrap()
             .insert(ack.runtime_id.clone(), Instant::now());
         self.emit(ControlEvent::HeartbeatAck(ack));
+    }
+
+    fn try_begin_pending_work(&self, runtime_id: &str) -> bool {
+        if !self.runtimes_tx.borrow().iter().any(|id| id == runtime_id) {
+            return false;
+        }
+        let now = Instant::now();
+        let mut state = self.pending_work.lock().unwrap();
+        state
+            .last_run
+            .retain(|_, at| now.duration_since(*at) <= PENDING_WORK_HINT_BOOKKEEPING_TTL);
+        if state.inflight.contains(runtime_id)
+            || state
+                .last_run
+                .get(runtime_id)
+                .is_some_and(|at| now.duration_since(*at) < PENDING_WORK_HINT_MIN_INTERVAL)
+        {
+            return false;
+        }
+        state.inflight.insert(runtime_id.to_string());
+        state.last_run.insert(runtime_id.to_string(), now);
+        true
+    }
+
+    async fn serve_pending_work(self: Arc<Self>, ctx: Ctx, payload: PendingWorkPayload) {
+        let runtime_id = payload.runtime_id.clone();
+        // Deliberately bypass WS-heartbeat freshness: this caller-triggered
+        // hint requests an immediate durable pull, not another periodic tick.
+        let result = tokio::time::timeout(
+            PENDING_WORK_HEARTBEAT_TIMEOUT,
+            self.client.send_heartbeat(&ctx, &runtime_id),
+        )
+        .await;
+        match result {
+            Ok(Ok(ack)) if ack.runtime_gone => {
+                self.emit(ControlEvent::RuntimeGone {
+                    runtime_id: runtime_id.clone(),
+                });
+            }
+            Ok(Ok(ack)) => self.emit(ControlEvent::HeartbeatAck(ack)),
+            Ok(Err(err)) if request_status(&err) == Some(404) => {
+                self.emit(ControlEvent::RuntimeGone {
+                    runtime_id: runtime_id.clone(),
+                });
+            }
+            Ok(Err(err)) => tracing::debug!(
+                runtime_id = %runtime_id,
+                kind = %payload.kind,
+                error = %err,
+                "pending work hint heartbeat failed"
+            ),
+            Err(_) => tracing::debug!(
+                runtime_id = %runtime_id,
+                kind = %payload.kind,
+                "pending work hint heartbeat timed out"
+            ),
+        }
+        self.pending_work
+            .lock()
+            .unwrap()
+            .inflight
+            .remove(&runtime_id);
     }
 
     async fn heartbeat_supervisor(self: Arc<Self>, ctx: Ctx) {
@@ -723,5 +806,24 @@ mod tests {
             &*control.runtimes_tx.borrow(),
             &["a".to_string(), "b".to_string()]
         );
+    }
+
+    #[test]
+    fn pending_work_is_owned_coalesced_and_rate_limited() {
+        let client = Arc::new(Client::new("http://127.0.0.1"));
+        let (events, _) = mpsc::channel(1);
+        let control = DaemonControl::new(
+            client,
+            "http://127.0.0.1",
+            "d",
+            Duration::from_secs(1),
+            events,
+        );
+        assert!(!control.try_begin_pending_work("not-ours"));
+        control.set_runtime_ids(["ours".into()]);
+        assert!(control.try_begin_pending_work("ours"));
+        assert!(!control.try_begin_pending_work("ours"));
+        control.pending_work.lock().unwrap().inflight.remove("ours");
+        assert!(!control.try_begin_pending_work("ours"));
     }
 }
