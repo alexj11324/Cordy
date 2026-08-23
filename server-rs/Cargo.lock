@@ -595,6 +595,7 @@ dependencies = [
  "chrono-tz",
  "cordy-analytics",
  "cordy-auth",
+ "cordy-channel",
  "cordy-composio",
  "cordy-config",
  "cordy-daemon",

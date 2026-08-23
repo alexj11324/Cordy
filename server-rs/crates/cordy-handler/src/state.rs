@@ -92,6 +92,9 @@ pub struct HandlerState {
     /// Attachment object store. None is the explicit unconfigured test path.
     pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
     pub attachment_frame_ancestors: Vec<String>,
+    /// On-demand Slack channel history reader. `None` means Slack history is
+    /// not configured; chat history then falls back to the persisted transcript.
+    pub slack_history: Option<Arc<cordy_slack::history::History>>,
     /// Keeps the weak notifier installed in `TaskService` alive.
     _task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier>,
 }
@@ -157,8 +160,28 @@ impl HandlerState {
             daemon_hub: Some(daemon_hub),
             attachment_storage: None,
             attachment_frame_ancestors: Vec::new(),
+            slack_history: None,
             _task_wakeup: task_wakeup,
         }
+    }
+
+    /// Wires the S7 Slack history service with the same secretbox key used by
+    /// channel installation credentials. Missing or invalid keys leave the
+    /// reader disabled instead of interpreting ciphertext as plaintext.
+    pub fn with_slack_history_from_env(mut self) -> Self {
+        let Ok(key) = cordy_util::secretbox::load_key("CORDY_SLACK_SECRET_KEY") else {
+            return self;
+        };
+        let Ok(secret_box) = cordy_util::secretbox::SecretBox::new(&key) else {
+            return self;
+        };
+        let decrypt: Arc<cordy_slack::config::Decrypter> =
+            Arc::new(move |sealed| secret_box.open(sealed).map_err(anyhow::Error::from));
+        self.slack_history = Some(Arc::new(cordy_slack::history::History::new(
+            self.pool.clone(),
+            Some(decrypt),
+        )));
+        self
     }
 
     pub fn with_attachment_storage(

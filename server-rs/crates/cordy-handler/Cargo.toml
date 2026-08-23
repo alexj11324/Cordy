@@ -14,6 +14,7 @@ chrono = { workspace = true }
 chrono-tz = { workspace = true }
 cordy-analytics = { path = "../cordy-analytics" }
 cordy-auth = { path = "../cordy-auth" }
+cordy-channel = { path = "../cordy-channel" }
 cordy-config = { path = "../cordy-config" }
 cordy-composio = { path = "../cordy-composio" }
 cordy-db = { path = "../cordy-db" }

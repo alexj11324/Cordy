@@ -90,6 +90,7 @@ async fn build_production_router(
     .with_rate_limit_trusted_proxies(cfg.urls.rate_limit_trusted_proxies.as_deref())
     .with_attachment_storage(attachment_storage, attachment_frame_ancestors)
     .with_plugins_from_env()
+    .with_slack_history_from_env()
     .with_feature_flags(feature_flags)
     .with_public_config(cordy_handler::config::PublicConfigSettings {
         cdn_domain: cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
