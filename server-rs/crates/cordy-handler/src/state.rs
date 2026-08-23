@@ -10,6 +10,7 @@ use cordy_service::autopilot::{AutopilotService, EntitlementProvider};
 use cordy_service::email::EmailService;
 use cordy_service::issue_service::IssueService;
 use cordy_service::plugin::PluginService;
+use cordy_service::plugin_event_dispatch::PluginEventDispatcher;
 use cordy_service::plugin_token::CallbackTokens;
 use cordy_service::task_service::TaskService;
 
@@ -73,6 +74,9 @@ pub struct HandlerState {
     pub callbacks: Option<Arc<CallbackTokens>>,
     /// Absolute base URL used in hook callback_url; empty omits the field.
     pub callback_base_url: String,
+    /// Production event-hook workers and their bus subscriptions. `None` in
+    /// lightweight tests and before production side effects are started.
+    plugin_events: Option<Arc<PluginEventDispatcher>>,
     /// Boot-time bearer token for `/health/realtime`. Empty enables the
     /// direct-loopback-only development policy.
     pub realtime_metrics_token: String,
@@ -167,6 +171,7 @@ impl HandlerState {
             plugins,
             callbacks: Some(Arc::new(CallbackTokens::new())),
             callback_base_url: String::new(),
+            plugin_events: None,
             realtime_metrics_token: std::env::var("REALTIME_METRICS_TOKEN")
                 .unwrap_or_default()
                 .trim()
@@ -297,6 +302,33 @@ impl HandlerState {
         }
         self.business_metrics = business_metrics;
         self.http_metrics = http_metrics;
+        self
+    }
+
+    /// Subscribes and starts event-triggered plugin hooks after plugin config
+    /// and feature flags have both been installed. This is deliberately a
+    /// production-startup step: constructing lightweight handler state must
+    /// not spawn database or network workers.
+    pub fn start_plugin_event_dispatcher(mut self) -> Self {
+        if self.plugin_events.is_some() {
+            return self;
+        }
+        let Some(callbacks) = self.callbacks.clone() else {
+            tracing::warn!("plugins: event hooks disabled because callback tokens are unavailable");
+            return self;
+        };
+        let dispatcher = Arc::new(PluginEventDispatcher::new(
+            self.plugins.clone(),
+            callbacks,
+            self.callback_base_url.clone(),
+            self.feature_flags.clone(),
+        ));
+        cordy_service::plugin_event_dispatch::subscribe_plugin_events(
+            self.bus.as_ref(),
+            dispatcher.clone(),
+        );
+        dispatcher.start();
+        self.plugin_events = Some(dispatcher);
         self
     }
 
@@ -503,4 +535,43 @@ fn positive_env_i64(name: &str, default: i64) -> i64 {
         .and_then(|value| value.trim().parse::<i64>().ok())
         .filter(|value| *value > 0)
         .unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_state() -> HandlerState {
+        HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            PatCache::disabled(),
+            None,
+        )
+    }
+
+    #[tokio::test]
+    async fn plugin_event_dispatcher_start_is_idempotent() {
+        let state = test_state().start_plugin_event_dispatcher();
+        let first = state
+            .plugin_events
+            .as_ref()
+            .expect("dispatcher started")
+            .clone();
+
+        let state = state.start_plugin_event_dispatcher();
+        let second = state.plugin_events.as_ref().expect("dispatcher retained");
+        assert!(Arc::ptr_eq(&first, second));
+
+        first.close();
+    }
+
+    #[tokio::test]
+    async fn plugin_event_dispatcher_fails_closed_without_callback_tokens() {
+        let mut state = test_state();
+        state.callbacks = None;
+
+        let state = state.start_plugin_event_dispatcher();
+
+        assert!(state.plugin_events.is_none());
+    }
 }
