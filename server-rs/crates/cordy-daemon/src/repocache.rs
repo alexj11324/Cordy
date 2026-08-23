@@ -413,6 +413,16 @@ impl Drop for MaintenanceGuard {
     }
 }
 
+struct ForegroundGuard {
+    repo_lock: Arc<RepoLock>,
+}
+
+impl Drop for ForegroundGuard {
+    fn drop(&mut self) {
+        self.repo_lock.unlock();
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct RepoLock {
     state: Mutex<LockState>,
@@ -1189,6 +1199,9 @@ impl Cache {
                 }
             }
         }
+        let _repo_guard = ForegroundGuard {
+            repo_lock: repo_lock.clone(),
+        };
         if let Some(cause) = ctx.err() {
             return Err(anyhow::anyhow!(cause.to_string()));
         }
@@ -1932,7 +1945,7 @@ async fn checkout_new_branch_ctx(
     branch_name: &str,
     base_ref: &str,
 ) -> anyhow::Result<String> {
-    if run_git_combined_output(
+    let first = run_git_combined_output(
         ctx,
         &[
             "-C",
@@ -1943,10 +1956,14 @@ async fn checkout_new_branch_ctx(
             base_ref,
         ],
     )
-    .await
-    .is_ok()
-    {
-        return Ok(branch_name.to_string());
+    .await;
+    match first {
+        Ok(_) => return Ok(branch_name.to_string()),
+        Err(err) if !is_branch_collision_error(&err) => {
+            let out_text = extract_combined_output(&err);
+            return Err(err.context(format!("git checkout -b: {}", out_text.trim())));
+        }
+        Err(_) => {}
     }
     // Branch collision fallback: retry once with a Unix-timestamp suffix.
     let retried_name = format!("{}-{}", branch_name, chrono::Utc::now().timestamp());
@@ -2137,7 +2154,7 @@ async fn update_existing_worktree_ctx(
     // "refs/remotes/origin/<branch>" but may be "refs/heads/<branch>" on a
     // legacy/migration-pending cache. Either form is valid as a checkout
     // startpoint.
-    if run_git_combined_output(
+    let first = run_git_combined_output(
         ctx,
         &[
             "-C",
@@ -2148,10 +2165,14 @@ async fn update_existing_worktree_ctx(
             base_ref,
         ],
     )
-    .await
-    .is_ok()
-    {
-        return Ok(branch_name.to_string());
+    .await;
+    match first {
+        Ok(_) => return Ok(branch_name.to_string()),
+        Err(err) if !is_branch_collision_error(&err) => {
+            let out_text = extract_combined_output(&err);
+            return Err(err.context(format!("git checkout -b: {}", out_text.trim())));
+        }
+        Err(_) => {}
     }
     // Branch collision fallback mirrors checkoutNewBranchContext
     // (cache.go:1442–1451): retry once with a Unix-timestamp suffix.
@@ -2542,5 +2563,27 @@ pub(crate) fn short_id(uuid: &str) -> String {
         s[..8].to_string()
     } else {
         s
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn foreground_guard_releases_repository_lock_on_drop() {
+        let lock = Arc::new(RepoLock::new());
+        lock.lock(&Ctx::new()).await.unwrap();
+        {
+            let _guard = ForegroundGuard {
+                repo_lock: lock.clone(),
+            };
+        }
+
+        tokio::time::timeout(Duration::from_millis(100), lock.lock(&Ctx::new()))
+            .await
+            .expect("lock should be available after guard drop")
+            .unwrap();
+        lock.unlock();
     }
 }

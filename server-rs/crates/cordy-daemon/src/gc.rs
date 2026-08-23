@@ -20,6 +20,7 @@ use std::time::Duration;
 use anyhow::Context as _;
 use chrono::{DateTime, Utc};
 use futures_util::Future;
+use sha2::{Digest, Sha256};
 
 use crate::repocache::{CancelCause, Ctx};
 
@@ -59,6 +60,20 @@ pub(crate) mod processtree {
         Cancelled(CancelCause),
         #[error(transparent)]
         Io(#[from] std::io::Error),
+    }
+
+    fn run_failure(
+        combined: bool,
+        combined_output: Vec<u8>,
+        stdout: Vec<u8>,
+        stderr: Vec<u8>,
+        err: anyhow::Error,
+    ) -> (Vec<u8>, Vec<u8>, anyhow::Error) {
+        if combined {
+            (combined_output, Vec::new(), err)
+        } else {
+            (stdout, stderr, err)
+        }
     }
 
     /// Signals a process group; Ok(false) means the group no longer exists
@@ -115,16 +130,21 @@ pub(crate) mod processtree {
     async fn run_inner(
         ctx: &Ctx,
         mut cmd: Command,
-        _wait_delay: Duration,
+        wait_delay: Duration,
         combined: bool,
-    ) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
+    ) -> Result<(Vec<u8>, Vec<u8>), (Vec<u8>, Vec<u8>, anyhow::Error)> {
         if let Some(cause) = ctx.err() {
-            return Err(anyhow::anyhow!(cause.to_string()));
+            return Err((Vec::new(), Vec::new(), anyhow::anyhow!(cause.to_string())));
         }
         // newController (controller_unix.go:18–24): own process group.
         cmd.process_group(0);
         cmd.stdin(Stdio::null());
-        let mut child = cmd.spawn().context("start process")?;
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+        let mut child = cmd
+            .spawn()
+            .context("start process")
+            .map_err(|err| (Vec::new(), Vec::new(), err))?;
         let pid = child.id().unwrap_or_default() as i32;
 
         // Drain pipes concurrently into buffers, like Go's exec copying
@@ -193,10 +213,37 @@ pub(crate) mod processtree {
             }
         };
 
+        // Stop any descendants before waiting for pipe EOF: a helper may keep
+        // an inherited pipe open after the leader exits. The bounded join is
+        // the Rust equivalent of Go's Cmd.WaitDelay.
+        let finish_result = finish(pid).await;
+        let abort_handles: Vec<_> = drain_tasks.iter().map(|task| task.abort_handle()).collect();
+        let drained =
+            match tokio::time::timeout(wait_delay, futures_util::future::join_all(drain_tasks))
+                .await
+            {
+                Ok(results) => Ok(results),
+                Err(_) => {
+                    for handle in abort_handles {
+                        handle.abort();
+                    }
+                    Err(anyhow::anyhow!(
+                        "wait for process output exceeded {}s",
+                        wait_delay.as_secs()
+                    ))
+                }
+            };
+
         let mut stdout_buf = Vec::new();
         let mut stderr_buf = Vec::new();
-        for (i, task) in drain_tasks.into_iter().enumerate() {
-            let buf = task.await.unwrap_or_default();
+        for (i, result) in drained
+            .as_ref()
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .enumerate()
+        {
+            let buf = result.as_ref().cloned().unwrap_or_default();
             if combined {
                 continue; // already accumulated in `shared`
             }
@@ -209,26 +256,56 @@ pub(crate) mod processtree {
         let combined_buf = std::mem::take(&mut *shared.lock().unwrap());
 
         // errors.Join(stopErr, finishErr) != nil → "stop process tree: %w"
-        let lifecycle_err = match (stop_err, finish(pid).await) {
+        let lifecycle_err = match (stop_err, finish_result) {
             (None, Ok(())) => None,
             (Some(stop), Ok(())) => Some(anyhow::Error::new(stop)),
             (None, Err(finish)) => Some(finish),
             (Some(stop), Err(finish)) => Some(finish.context(format!("stop process tree: {stop}"))),
         };
         if let Some(e) = lifecycle_err {
-            return Err(if format!("{e:#}").contains("stop process tree") {
+            let err = if format!("{e:#}").contains("stop process tree") {
                 e
             } else {
                 e.context("stop process tree")
-            });
+            };
+            return Err(run_failure(
+                combined,
+                combined_buf,
+                stdout_buf,
+                stderr_buf,
+                err,
+            ));
+        }
+        if let Err(err) = drained {
+            return Err(run_failure(
+                combined,
+                combined_buf,
+                stdout_buf,
+                stderr_buf,
+                err,
+            ));
         }
         if cancelled {
-            return Err(anyhow::Error::new(ProcessError::Cancelled(ctx.cause())));
+            return Err(run_failure(
+                combined,
+                combined_buf,
+                stdout_buf,
+                stderr_buf,
+                anyhow::Error::new(ProcessError::Cancelled(ctx.cause())),
+            ));
         }
 
         let status = match status_result {
             Some(Ok(status)) => status,
-            Some(Err(e)) => return Err(anyhow::Error::new(ProcessError::Io(e))),
+            Some(Err(e)) => {
+                return Err(run_failure(
+                    combined,
+                    combined_buf,
+                    stdout_buf,
+                    stderr_buf,
+                    anyhow::Error::new(ProcessError::Io(e)),
+                ));
+            }
             None => unreachable!("status_result is None only when cancelled"),
         };
         if !status.success() {
@@ -237,7 +314,13 @@ pub(crate) mod processtree {
             } else {
                 anyhow::Error::new(ProcessError::Exit(status.code().unwrap_or(-1)))
             };
-            return Err(err);
+            return Err(run_failure(
+                combined,
+                combined_buf,
+                stdout_buf,
+                stderr_buf,
+                err,
+            ));
         }
         if combined {
             Ok((combined_buf, Vec::new()))
@@ -257,7 +340,7 @@ pub(crate) mod processtree {
     ) -> (Vec<u8>, anyhow::Result<()>) {
         match run_inner(ctx, cmd, wait_delay, true).await {
             Ok((out, _)) => (out, Ok(())),
-            Err(err) => (Vec::new(), Err(err)),
+            Err((out, _, err)) => (out, Err(err)),
         }
     }
 
@@ -268,15 +351,19 @@ pub(crate) mod processtree {
         cmd: Command,
         wait_delay: Duration,
     ) -> anyhow::Result<Vec<u8>> {
-        run_inner(ctx, cmd, wait_delay, false)
-            .await
-            .map(|(out, _)| out)
+        match run_inner(ctx, cmd, wait_delay, false).await {
+            Ok((out, _)) => Ok(out),
+            Err((_, _, err)) => Err(err),
+        }
     }
 
     /// `Run` (run.go:40–42): executes an unstarted command while owning its
     /// complete process tree.
     pub(crate) async fn run(ctx: &Ctx, cmd: Command, wait_delay: Duration) -> anyhow::Result<()> {
-        run_inner(ctx, cmd, wait_delay, true).await.map(|_| ())
+        match run_inner(ctx, cmd, wait_delay, true).await {
+            Ok(_) => Ok(()),
+            Err((_, _, err)) => Err(err),
+        }
     }
 }
 
@@ -427,7 +514,7 @@ pub(crate) struct IssueGCCheckStatus {
 
 /// `execenv.ManagedReclaimableArtifactSubpaths`: labels logged at GC startup.
 fn managed_reclaimable_artifact_subpaths() -> Vec<String> {
-    Vec::new()
+    crate::execenv::reclaimable::managed_reclaimable_artifact_subpaths()
 }
 
 // S9-integration: mirrors execenv.PruneCodexSessionStores /
@@ -444,8 +531,16 @@ fn prune_codex_session_stores(
     now: DateTime<Utc>,
     reserve: ReserveStoreForDeletion<'_>,
 ) -> (usize, i64) {
-    let _ = (profile, ttl, now, reserve);
-    (0, 0)
+    let namespace = if profile.is_empty() {
+        "default".to_string()
+    } else {
+        format!("p_{}", hex::encode(Sha256::digest(profile.as_bytes())))
+    };
+    let Some(root) = shared_codex_home().map(|home| home.join("cordy-sessions").join(namespace))
+    else {
+        return (0, 0);
+    };
+    prune_store_tree(&root, 2, ttl, now, reserve)
 }
 
 fn prune_hermes_memory_stores(
@@ -454,8 +549,10 @@ fn prune_hermes_memory_stores(
     now: DateTime<Utc>,
     reserve: ReserveStoreForDeletion<'_>,
 ) -> (usize, i64) {
-    let _ = (profile, ttl, now, reserve);
-    (0, 0)
+    let Some(root) = profile_dir(profile).map(|dir| dir.join("hermes-state")) else {
+        return (0, 0);
+    };
+    prune_store_tree(&root, 2, ttl, now, reserve)
 }
 
 fn prune_hermes_session_stores(
@@ -464,8 +561,128 @@ fn prune_hermes_session_stores(
     now: DateTime<Utc>,
     reserve: ReserveStoreForDeletion<'_>,
 ) -> (usize, i64) {
-    let _ = (profile, ttl, now, reserve);
-    (0, 0)
+    let Some(root) = profile_dir(profile).map(|dir| dir.join("hermes-sessions")) else {
+        return (0, 0);
+    };
+    prune_store_tree(&root, 3, ttl, now, reserve)
+}
+
+fn profile_dir(profile: &str) -> Option<PathBuf> {
+    if profile.contains(['/', '\\']) || profile == "." || profile == ".." {
+        return None;
+    }
+    if let Some(root) = std::env::var_os("CORDY_TASK_CONFIG_ROOT").filter(|v| !v.is_empty()) {
+        let root = PathBuf::from(root);
+        if !root.is_absolute() {
+            return None;
+        }
+        return Some(if profile.is_empty() {
+            root
+        } else {
+            root.join("profiles").join(profile)
+        });
+    }
+    let home = PathBuf::from(std::env::var_os("HOME")?);
+    Some(if profile.is_empty() {
+        home.join(".cordy")
+    } else {
+        home.join(".cordy").join("profiles").join(profile)
+    })
+}
+
+fn shared_codex_home() -> Option<PathBuf> {
+    if let Some(raw) = std::env::var_os("CODEX_HOME").filter(|v| !v.is_empty()) {
+        let path = PathBuf::from(raw);
+        return if path.is_absolute() {
+            Some(path)
+        } else {
+            std::env::current_dir().ok().map(|cwd| cwd.join(path))
+        };
+    }
+    Some(PathBuf::from(std::env::var_os("HOME")?).join(".codex"))
+}
+
+fn prune_store_tree(
+    root: &Path,
+    leaf_depth: usize,
+    ttl: Duration,
+    now: DateTime<Utc>,
+    reserve: ReserveStoreForDeletion<'_>,
+) -> (usize, i64) {
+    if ttl.is_zero() {
+        return (0, 0);
+    }
+    let Ok(retention) = chrono::Duration::from_std(ttl) else {
+        return (0, 0);
+    };
+    let Some(cutoff) = now.checked_sub_signed(retention) else {
+        return (0, 0);
+    };
+    let mut level = vec![root.to_path_buf()];
+    for _ in 0..leaf_depth {
+        let mut next = Vec::new();
+        for parent in level {
+            let Ok(entries) = std::fs::read_dir(parent) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                if entry.file_type().map(|kind| kind.is_dir()).unwrap_or(false) {
+                    next.push(entry.path());
+                }
+            }
+        }
+        level = next;
+    }
+
+    let mut removed = 0usize;
+    let mut bytes_freed = 0i64;
+    for store in level {
+        let (newest, size) = store_stat(&store);
+        let Some(newest) = newest else { continue };
+        let newest: DateTime<Utc> = newest.into();
+        if newest >= cutoff {
+            continue;
+        }
+        reserve(&store);
+        match std::fs::remove_dir_all(&store) {
+            Ok(()) => {
+                removed += 1;
+                bytes_freed += size;
+                remove_empty_ancestors(store.parent(), root);
+            }
+            Err(err) => {
+                tracing::warn!(store = %store.display(), error = %err, "gc: prune shared store failed")
+            }
+        }
+    }
+    (removed, bytes_freed)
+}
+
+fn store_stat(root: &Path) -> (Option<std::time::SystemTime>, i64) {
+    let mut newest = None;
+    let mut size = 0i64;
+    for entry in walkdir::WalkDir::new(root).follow_links(false) {
+        let Ok(entry) = entry else { continue };
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        if metadata.is_file() {
+            size = size.saturating_add(i64::try_from(metadata.len()).unwrap_or(i64::MAX));
+        }
+        if let Ok(modified) = metadata.modified() {
+            newest = Some(newest.map_or(modified, |current| std::cmp::max(current, modified)));
+        }
+    }
+    (newest, size)
+}
+
+fn remove_empty_ancestors(mut current: Option<&Path>, root: &Path) {
+    while let Some(dir) = current {
+        if dir == root || !dir.starts_with(root) || std::fs::remove_dir(dir).is_err() {
+            break;
+        }
+        current = dir.parent();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -720,24 +937,26 @@ pub(crate) async fn run_gc<H: GcHost>(host: &H, ctx: &Ctx) {
     };
 
     let mut stats = GcStats::new();
-    let mut ws_entries: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
-    ws_entries.sort();
+    let mut ws_entries: Vec<_> = entries.flatten().collect();
+    ws_entries.sort_by_key(|entry| entry.path());
     for ws_entry in ws_entries {
+        let file_type = match ws_entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(_) => continue,
+        };
+        let ws_entry = ws_entry.path();
         // Skip every daemon-internal dot directory, not just .repos. A
         // workspace directory is always a UUID, so a dot-prefixed entry is one
         // of our own caches. Walking .skill-cache as if it were a workspace
         // made its `v1` directory look like a task dir with no .gc_meta.json,
         // so the orphan path would delete the entire bundle cache once its
         // mtime went 72h without a new bundle.
-        let is_dir = std::fs::metadata(&ws_entry)
-            .map(|m| m.is_dir())
-            .unwrap_or(false);
         let name = ws_entry
             .file_name()
             .unwrap_or_default()
             .to_string_lossy()
             .into_owned();
-        if !is_dir || name.starts_with('.') {
+        if !file_type.is_dir() || name.starts_with('.') {
             continue;
         }
         gc_workspace(host, ctx, &ws_entry, &mut stats).await;
@@ -2392,4 +2611,67 @@ async fn list_agent_branches_ctx(ctx: &Ctx, bare_path: &Path) -> anyhow::Result<
 /// differs from repocache's HEAD-only probe.
 fn gc_is_bare_repo(path: &Path) -> bool {
     path.join("HEAD").exists() && path.join("objects").exists()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn process_tree_captures_success_and_failure_output() {
+        let ctx = Ctx::new();
+        let mut success = tokio::process::Command::new("/bin/sh");
+        success.args(["-c", "printf success"]);
+        let (output, result) =
+            processtree::combined_output(&ctx, success, Duration::from_secs(1)).await;
+        result.unwrap();
+        assert_eq!(output, b"success");
+
+        let mut failure = tokio::process::Command::new("/bin/sh");
+        failure.args([
+            "-c",
+            "printf \"fatal: a branch named 'taken' already exists\" >&2; exit 128",
+        ]);
+        let (output, result) =
+            processtree::combined_output(&ctx, failure, Duration::from_secs(1)).await;
+        assert!(result.is_err());
+        assert!(String::from_utf8_lossy(&output).contains("a branch named 'taken'"));
+    }
+
+    #[test]
+    fn prune_store_tree_removes_only_expired_leaf_stores() {
+        let temp = tempfile::tempdir().unwrap();
+        let old_store = temp.path().join("agent-a/profile-a");
+        let fresh_store = temp.path().join("agent-b/profile-b");
+        std::fs::create_dir_all(&old_store).unwrap();
+        std::fs::create_dir_all(&fresh_store).unwrap();
+        std::fs::write(old_store.join("memory.db"), b"old").unwrap();
+        std::fs::write(fresh_store.join("memory.db"), b"fresh").unwrap();
+
+        let reserved = std::sync::Mutex::new(Vec::new());
+        let reserve = |path: &Path| reserved.lock().unwrap().push(path.to_path_buf());
+        let now = Utc::now() + chrono::Duration::seconds(2);
+        let (removed, bytes) =
+            prune_store_tree(temp.path(), 2, Duration::from_secs(1), now, &reserve);
+
+        assert_eq!(removed, 2);
+        assert_eq!(bytes, 8);
+        assert_eq!(reserved.lock().unwrap().len(), 2);
+        assert!(!old_store.exists());
+        assert!(!fresh_store.exists());
+    }
+
+    #[test]
+    fn prune_store_tree_is_disabled_by_zero_ttl() {
+        let temp = tempfile::tempdir().unwrap();
+        let store = temp.path().join("agent/profile");
+        std::fs::create_dir_all(&store).unwrap();
+        std::fs::write(store.join("memory.db"), b"keep").unwrap();
+
+        let reserve = |_path: &Path| panic!("disabled pruning must not reserve a store");
+        let result = prune_store_tree(temp.path(), 2, Duration::ZERO, Utc::now(), &reserve);
+
+        assert_eq!(result, (0, 0));
+        assert!(store.exists());
+    }
 }
