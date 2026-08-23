@@ -42,7 +42,7 @@ const UPDATE_REPORT_BACKOFFS: &[Duration] = &[
 /// binary bootstrap supplies one real implementation; tests must supply every
 /// operation explicitly.
 #[async_trait::async_trait]
-pub(crate) trait DaemonCoreServices: Send + Sync + 'static {
+pub trait DaemonCoreServices: Send + Sync + 'static {
     async fn handle_runtime_gone(&self, ctx: Ctx, runtime_id: String);
     async fn refresh_workspace_runtime_profiles(
         &self,

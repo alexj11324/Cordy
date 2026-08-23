@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 /// must stay distinguishable from a pre-#6694 daemon (#6694); SkippedAgents is
 /// what made GH #6077 actionable (MUL-5439).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct HealthResponse {
+pub struct HealthResponse {
     pub status: String,
     pub pid: i32,
     pub os: String,
@@ -99,14 +99,14 @@ fn is_zero(v: &i64) -> bool {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct HealthWorkspace {
+pub struct HealthWorkspace {
     pub id: String,
     pub runtimes: Vec<String>,
 }
 
 /// `repoCheckoutRequest`: body of POST /repo/checkout.
 #[derive(Debug, Clone, Default, Deserialize)]
-pub(crate) struct RepoCheckoutRequest {
+pub struct RepoCheckoutRequest {
     #[serde(default)]
     pub url: String,
     #[serde(default, rename = "workspace_id")]
@@ -129,7 +129,7 @@ pub(crate) struct RepoCheckoutRequest {
 
 /// `activeRepoCheckoutTask`.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ActiveRepoCheckoutTask {
+pub struct ActiveRepoCheckoutTask {
     pub workspace_id: String,
     pub task_id: String,
     pub agent_id: String,
@@ -149,18 +149,18 @@ pub(crate) const REPO_CHECKOUT_RETRY_VALUE_BUSY: &str = "repo-busy";
 /// token prevents unauthenticated localhost callers from choosing another
 /// task's identity or workdir; it is NOT an OS-user isolation boundary.
 #[derive(Default)]
-pub(crate) struct RepoCheckoutRegistry {
+pub struct RepoCheckoutRegistry {
     tasks: std::sync::Mutex<HashMap<String, ActiveRepoCheckoutTask>>,
 }
 
 impl RepoCheckoutRegistry {
     /// `registerActiveRepoCheckoutTask`.
-    pub(crate) fn register(&self, token: &str, task: ActiveRepoCheckoutTask) {
+    pub fn register(&self, token: &str, task: ActiveRepoCheckoutTask) {
         self.tasks.lock().unwrap().insert(token.to_string(), task);
     }
 
     /// `clearActiveRepoCheckoutTask`.
-    pub(crate) fn clear(&self, token: &str) {
+    pub fn clear(&self, token: &str) {
         self.tasks.lock().unwrap().remove(token);
     }
 

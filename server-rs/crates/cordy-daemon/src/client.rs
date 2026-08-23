@@ -160,7 +160,7 @@ pub(crate) fn is_issue_gc_batch_unsupported(err: &ClientError) -> bool {
 /// Identity headers sent on every request as X-Client-* are populated by
 /// [`Client::set_version`] ([`Client::platform`] / [`Client::os`] are fixed at
 /// construction); empty values are simply omitted.
-pub(crate) struct Client {
+pub struct Client {
     base_url: String,
     token: std::sync::Mutex<String>,
     http: reqwest::Client,
@@ -187,7 +187,7 @@ struct IssueGcBatchState {
 
 /// `NewClient` (client.go:122): creates a new daemon API client.
 impl Client {
-    pub(crate) fn new(base_url: impl Into<String>) -> Self {
+    pub fn new(base_url: impl Into<String>) -> Self {
         Self {
             base_url: base_url.into(),
             token: std::sync::Mutex::new(String::new()),

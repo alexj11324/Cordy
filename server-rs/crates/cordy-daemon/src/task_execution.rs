@@ -31,7 +31,7 @@ const SHUTDOWN_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
 /// sets this when finalization had to preserve an uncommitted worktree; the
 /// cancel acknowledgement is then the only durable pointer to that work.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct CancelledRunDeliveryFailure {
+pub struct CancelledRunDeliveryFailure {
     pub error_message: String,
     pub failure_reason: String,
 }
@@ -40,7 +40,7 @@ pub(crate) struct CancelledRunDeliveryFailure {
 /// This mirrors Go's named `(TaskResult, error)` return without erasing the
 /// partially finalized result.
 #[derive(Debug)]
-pub(crate) struct TaskRunFailure {
+pub struct TaskRunFailure {
     pub message: String,
     pub failure_reason: String,
     pub cancelled_delivery_failure: Option<CancelledRunDeliveryFailure>,
@@ -48,7 +48,7 @@ pub(crate) struct TaskRunFailure {
 
 /// Complete output of one real provider run.
 #[derive(Debug)]
-pub(crate) struct TaskRunOutcome {
+pub struct TaskRunOutcome {
     pub result: TaskResult,
     pub failure: Option<TaskRunFailure>,
 }

@@ -25,7 +25,7 @@ struct ActivityState {
 /// Authoritative process-wide activity state shared by task execution,
 /// auto-update, and garbage collection.
 #[derive(Debug, Default)]
-pub(crate) struct DaemonActivity {
+pub struct DaemonActivity {
     state: Mutex<ActivityState>,
     env_root_released: Notify,
     activity_changed: Notify,
@@ -176,7 +176,7 @@ impl DaemonActivity {
     /// Provider preparation uses this before mounting persistent session or
     /// memory stores. It waits out a GC deletion reservation and holds the
     /// returned references through finalization.
-    pub(crate) async fn mark_stores(self: &Arc<Self>, paths: Vec<PathBuf>) -> StoreUseGuard {
+    pub async fn mark_stores(self: &Arc<Self>, paths: Vec<PathBuf>) -> StoreUseGuard {
         loop {
             let released = self.store_released.notified();
             tokio::pin!(released);
@@ -313,7 +313,7 @@ impl Drop for StoreGcReservation {
     }
 }
 
-pub(crate) struct StoreUseGuard {
+pub struct StoreUseGuard {
     activity: Arc<DaemonActivity>,
     paths: Vec<PathBuf>,
 }
