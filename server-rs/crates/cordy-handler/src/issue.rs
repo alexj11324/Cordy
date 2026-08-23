@@ -21,7 +21,7 @@ use cordy_db::models::{Attachment, Issue, IssueLabel, IssueReaction, IssueSubscr
 use cordy_db::queries::issue_reaction::AddIssueReactionRow;
 use cordy_db::queries::{
     agent, agent_invocation_target, attachment, issue as issue_q, issue_label, issue_reaction,
-    member, squad, subscriber, workspace,
+    member, squad, subscriber, task_usage, workspace,
 };
 use cordy_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use cordy_service::issue_service::{
@@ -50,6 +50,7 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/issues/{id}/", get(get_issue).put(update_issue))
         .route("/api/issues/{id}/move", post(move_issue))
         .route("/api/issues/{id}/children", get(list_child_issues))
+        .route("/api/issues/{id}/usage", get(get_issue_usage))
         .route("/api/issues/{id}/metadata", get(list_issue_metadata))
         .route(
             "/api/issues/{id}/metadata/{key}",
@@ -1593,6 +1594,63 @@ async fn get_issue(
             .map(AttachmentResponse::from)
             .collect();
     Json(response).into_response()
+}
+
+#[derive(Debug, Serialize)]
+struct IssueUsageResponse {
+    total_input_tokens: i64,
+    total_output_tokens: i64,
+    total_cache_read_tokens: i64,
+    total_cache_write_tokens: i64,
+    cost_usd_ticks: i64,
+    uncosted_input_tokens: i64,
+    uncosted_output_tokens: i64,
+    uncosted_cache_read_tokens: i64,
+    uncosted_cache_write_tokens: i64,
+    task_count: i32,
+}
+
+impl From<task_usage::GetIssueUsageSummaryRow> for IssueUsageResponse {
+    fn from(row: task_usage::GetIssueUsageSummaryRow) -> Self {
+        Self {
+            total_input_tokens: row.total_input_tokens,
+            total_output_tokens: row.total_output_tokens,
+            total_cache_read_tokens: row.total_cache_read_tokens,
+            total_cache_write_tokens: row.total_cache_write_tokens,
+            cost_usd_ticks: row.total_cost_usd_ticks,
+            uncosted_input_tokens: row.uncosted_input_tokens,
+            uncosted_output_tokens: row.uncosted_output_tokens,
+            uncosted_cache_read_tokens: row.uncosted_cache_read_tokens,
+            uncosted_cache_write_tokens: row.uncosted_cache_write_tokens,
+            task_count: row.task_count,
+        }
+    }
+}
+
+async fn get_issue_usage(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+) -> Response {
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+
+    match task_usage::get_issue_usage_summary(&state.pool, issue.id).await {
+        Ok(Some(row)) => Json(IssueUsageResponse::from(row)).into_response(),
+        Ok(None) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to get issue usage",
+        ),
+        Err(error) => {
+            tracing::warn!(%error, issue_id = %issue.id, "failed to get issue usage");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to get issue usage",
+            )
+        }
+    }
 }
 
 async fn list_child_issues(
@@ -4103,5 +4161,36 @@ mod tests {
 
         headers.insert("x-actor-source", "task_token".parse().unwrap());
         assert_eq!(request_actor(&headers, &context), ("agent", agent_id));
+    }
+
+    #[test]
+    fn issue_usage_response_matches_go_wire_contract() {
+        let response = IssueUsageResponse::from(task_usage::GetIssueUsageSummaryRow {
+            total_input_tokens: 1,
+            total_output_tokens: 2,
+            total_cache_read_tokens: 3,
+            total_cache_write_tokens: 4,
+            total_cost_usd_ticks: 5,
+            uncosted_input_tokens: 6,
+            uncosted_output_tokens: 7,
+            uncosted_cache_read_tokens: 8,
+            uncosted_cache_write_tokens: 9,
+            task_count: 10,
+        });
+        assert_eq!(
+            serde_json::to_value(response).unwrap(),
+            json!({
+                "total_input_tokens": 1,
+                "total_output_tokens": 2,
+                "total_cache_read_tokens": 3,
+                "total_cache_write_tokens": 4,
+                "cost_usd_ticks": 5,
+                "uncosted_input_tokens": 6,
+                "uncosted_output_tokens": 7,
+                "uncosted_cache_read_tokens": 8,
+                "uncosted_cache_write_tokens": 9,
+                "task_count": 10,
+            })
+        );
     }
 }
