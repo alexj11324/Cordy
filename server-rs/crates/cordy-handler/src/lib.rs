@@ -12,10 +12,12 @@ pub mod daemon_ws;
 pub mod error;
 pub mod health;
 pub mod issue;
+pub mod issue_status;
 pub mod label;
 pub mod mcp_merge;
 pub mod notification;
 pub mod pending_store;
+pub mod pin;
 pub mod profile_json;
 pub mod squad_briefing;
 pub mod state;
@@ -154,6 +156,16 @@ pub fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<Hub>>) -> Router {
     let authenticated = workspace::authenticated_router()
         .merge(issue_routes)
         .merge(label::router().route_layer(middleware::from_fn_with_state(
+            WorkspaceGuardState::member_only(state.pool.clone()),
+            issue::require_issue_workspace,
+        )))
+        .merge(
+            issue_status::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                issue::require_issue_workspace,
+            )),
+        )
+        .merge(pin::router().route_layer(middleware::from_fn_with_state(
             WorkspaceGuardState::member_only(state.pool.clone()),
             issue::require_issue_workspace,
         )))

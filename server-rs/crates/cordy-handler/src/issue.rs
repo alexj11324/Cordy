@@ -48,6 +48,11 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/issues/{id}", get(get_issue).put(update_issue))
         .route("/api/issues/{id}/", get(get_issue).put(update_issue))
         .route("/api/issues/{id}/children", get(list_child_issues))
+        .route("/api/issues/{id}/metadata", get(list_issue_metadata))
+        .route(
+            "/api/issues/{id}/metadata/{key}",
+            axum::routing::put(set_issue_metadata_key).delete(delete_issue_metadata_key),
+        )
         .route(
             "/api/issues/{id}/labels",
             get(list_labels_for_issue).post(attach_label),
@@ -56,6 +61,141 @@ pub fn router() -> Router<HandlerState> {
             "/api/issues/{id}/labels/{label_id}",
             axum::routing::delete(detach_label),
         )
+}
+
+fn valid_metadata_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    matches!(chars.next(), Some(first) if first == '_' || first.is_ascii_alphabetic())
+        && key.len() <= 64
+        && chars.all(|character| {
+            character == '_'
+                || character == '.'
+                || character == '-'
+                || character.is_ascii_alphanumeric()
+        })
+}
+
+async fn list_issue_metadata(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+) -> Response {
+    match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => Json(json!({ "metadata": issue.metadata })).into_response(),
+        Err(response) => response,
+    }
+}
+
+#[derive(Deserialize)]
+struct SetMetadataRequest {
+    value: Value,
+}
+
+async fn set_issue_metadata_key(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path((id, key)): Path<(String, String)>,
+    Json(request): Json<SetMetadataRequest>,
+) -> Response {
+    if !valid_metadata_key(&key) {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "key must match ^[a-zA-Z_][a-zA-Z0-9_.-]{0,63}$",
+        );
+    }
+    if !matches!(
+        request.value,
+        Value::String(_) | Value::Number(_) | Value::Bool(_)
+    ) {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "value must be a primitive: string, number, or bool",
+        );
+    }
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let count = issue.metadata.as_object().map_or(0, serde_json::Map::len);
+    if issue.metadata.get(&key).is_none() && count >= 50 {
+        return error_response(StatusCode::BAD_REQUEST, "metadata cannot exceed 50 keys");
+    }
+    match issue_q::set_issue_metadata_key(
+        &state.pool,
+        &key,
+        &request.value,
+        issue.id,
+        issue.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(updated)) => metadata_response(&state, &context, updated),
+        Ok(None) => error_response(StatusCode::NOT_FOUND, "issue not found"),
+        Err(error)
+            if error
+                .downcast_ref::<sqlx::Error>()
+                .and_then(|e| e.as_database_error())
+                .and_then(|e| e.code())
+                .is_some_and(|code| code == "23514") =>
+        {
+            error_response(
+                StatusCode::BAD_REQUEST,
+                "metadata exceeds the 8KB size limit",
+            )
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to set metadata key");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to set metadata key",
+            )
+        }
+    }
+}
+
+async fn delete_issue_metadata_key(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path((id, key)): Path<(String, String)>,
+) -> Response {
+    if !valid_metadata_key(&key) {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "key must match ^[a-zA-Z_][a-zA-Z0-9_.-]{0,63}$",
+        );
+    }
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    match issue_q::delete_issue_metadata_key(&state.pool, &key, issue.id, issue.workspace_id).await
+    {
+        Ok(Some(updated)) => metadata_response(&state, &context, updated),
+        Ok(None) => error_response(StatusCode::NOT_FOUND, "issue not found"),
+        Err(error) => {
+            tracing::warn!(%error, "failed to delete metadata key");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to delete metadata key",
+            )
+        }
+    }
+}
+
+fn metadata_response(state: &HandlerState, context: &WorkspaceContext, issue: Issue) -> Response {
+    state.bus.publish(&cordy_events::Event {
+        event_type: "issue:metadata_changed".into(),
+        workspace_id: context.workspace_id.clone(),
+        actor_type: "member".into(),
+        actor_id: context.member.user_id.to_string(),
+        payload: json!({
+            "issue_id": issue.id,
+            "metadata": issue.metadata,
+            "issue_revision": issue.revision,
+        }),
+        ..Default::default()
+    });
+    Json(json!({ "metadata": issue.metadata, "issue_revision": issue.revision })).into_response()
 }
 
 /// Workspace guard for the issue group. Kept here because this slice needs a
