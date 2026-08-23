@@ -23,8 +23,6 @@
 //! `crate::execenv::runtime_config_sections` because the per-turn prompt is
 //! their only daemon-side consumer.
 
-use crate::slash_skill::extract_slash_skills;
-use crate::types::{ActiveSiblingRunData, Task};
 use crate::execenv::channel_type::{
     audience_of, channel_carries_files, channel_display_name as execenv_channel_display_name,
     surface_persists_transcript, ChatAudience, CHANNEL_TYPE_SLACK,
@@ -34,6 +32,8 @@ use crate::runtime_config_sections::{
     session_continuity_notice_channel_history, session_continuity_notice_chat_transcript,
     session_continuity_notice_issue, session_continuity_notice_unrecoverable,
 };
+use crate::slash_skill::extract_slash_skills;
+use crate::types::{ActiveSiblingRunData, Task};
 
 /// squadBriefingMarker (prompt.go): legacy role signal ONLY.
 const SQUAD_BRIEFING_MARKER: &str = "## Squad Operating Protocol";
@@ -81,7 +81,10 @@ pub(crate) fn per_turn_context_blocks(task: &Task) -> String {
     b
 }
 
-fn build_active_sibling_runs_block(current_issue_id: &str, runs: &[ActiveSiblingRunData]) -> String {
+fn build_active_sibling_runs_block(
+    current_issue_id: &str,
+    runs: &[ActiveSiblingRunData],
+) -> String {
     // Sibling work is useful context only for another issue task. Rendering it
     // on chat/autopilot/quick-create creates an unactionable warning.
     if current_issue_id.is_empty() || runs.is_empty() {
@@ -100,7 +103,10 @@ fn build_active_sibling_runs_block(current_issue_id: &str, runs: &[ActiveSibling
         } else {
             &run.issue_identifier
         };
-        b.push_str(&format!("- {} — task `{}`, status `{}`", issue_label, run.task_id, run.status));
+        b.push_str(&format!(
+            "- {} — task `{}`, status `{}`",
+            issue_label, run.task_id, run.status
+        ));
         if !run.started_at.is_empty() {
             b.push_str(&format!(", started {}", run.started_at));
         } else if !run.created_at.is_empty() {
@@ -111,7 +117,10 @@ fn build_active_sibling_runs_block(current_issue_id: &str, runs: &[ActiveSibling
         if !title.is_empty() {
             b.push_str(&format!(": {title}"));
         }
-        b.push_str(&format!("; inspect: `cordy issue run-messages {}`\n", run.task_id));
+        b.push_str(&format!(
+            "; inspect: `cordy issue run-messages {}`\n",
+            run.task_id
+        ));
     }
     b.push('\n');
     b
@@ -272,11 +281,13 @@ pub(crate) fn build_comment_prompt(task: &Task, provider: &str) -> String {
     ) {
         b.push_str(&hint);
     } else if !task.prior_session_id.is_empty() {
-        b.push_str(&crate::runtime_config_sections::build_resumed_comments_hint(
-            &task.issue_id,
-            &task.trigger_comment_id,
-            &task.trigger_thread_id,
-        ));
+        b.push_str(
+            &crate::runtime_config_sections::build_resumed_comments_hint(
+                &task.issue_id,
+                &task.trigger_comment_id,
+                &task.trigger_thread_id,
+            ),
+        );
     } else if let Some(cold) = crate::runtime_config_sections::build_cold_comments_hint(
         &task.issue_id,
         &task.trigger_comment_id,
@@ -293,18 +304,22 @@ pub(crate) fn build_comment_prompt(task: &Task, provider: &str) -> String {
     // Reply routing (MUL-4348): more than one distinct root thread fans out.
     let targets = comment_reply_threads(task);
     if targets.len() >= 2 {
-        b.push_str(&crate::runtime_config_sections::build_multi_thread_comment_reply_instructions(
-            &task.issue_id,
-            &targets,
-            task_is_squad_leader(task),
-        ));
+        b.push_str(
+            &crate::runtime_config_sections::build_multi_thread_comment_reply_instructions(
+                &task.issue_id,
+                &targets,
+                task_is_squad_leader(task),
+            ),
+        );
     } else {
-        b.push_str(&crate::runtime_config_sections::build_comment_reply_instructions(
-            provider,
-            &task.issue_id,
-            &task.trigger_comment_id,
-            task_is_squad_leader(task),
-        ));
+        b.push_str(
+            &crate::runtime_config_sections::build_comment_reply_instructions(
+                provider,
+                &task.issue_id,
+                &task.trigger_comment_id,
+                task_is_squad_leader(task),
+            ),
+        );
     }
     b
 }
@@ -462,10 +477,7 @@ pub(crate) fn build_chat_prompt(task: &Task) -> String {
     // the verdict is stated.
     if task.chat_channel_type.is_empty() {
         b.push_str("\nTo include a file or image you produced in your reply, run `cordy attachment upload <local-path>`. The file binds to your reply automatically and appears as an attachment card below it even if you paste nothing. The command also returns a `markdown` snippet you may paste on its own line to place the item where you want it (files render as a card, images inline).\n");
-    } else if channel_carries_files(
-        &task.chat_channel_type,
-        task.chat_channel_delivers_files,
-    ) {
+    } else if channel_carries_files(&task.chat_channel_type, task.chat_channel_delivers_files) {
         let platform = channel_display_name(&task.chat_channel_type);
         b.push_str(&format!(
             "\nTo include a file or image you produced in your reply, run `cordy attachment upload <local-path>`. It binds to your reply and Cordy sends it into the {platform} conversation as a separate message right after your text — there is no way to place it inline, so write your reply to read correctly with the file arriving after it.\n"
@@ -554,8 +566,16 @@ pub(crate) fn build_quick_create_prompt(task: &Task) -> String {
     b.push_str("- **assignee**:\n");
     b.push_str("    - When the user names someone (\"assign to X\" / \"@X\"), call `cordy workspace member list --output json`, `cordy agent list --output json`, and `cordy squad list --output json` and find the matching entity by display name. Squads are first-class assignees too — a squad name (e.g. \"Super Human\") routes work to the squad leader, who then delegates. On a clean unambiguous match, prefer `--assignee-id <uuid>` using the `user_id` (member) or `id` (agent or squad) from that JSON — UUID matching is exact and robust to name collisions in workspaces with overlapping names. `--assignee <name>` (fuzzy) is acceptable as a fallback when names are unambiguous. On no match or ambiguous match, do NOT pass either flag — instead append a final line to the description: `Unrecognized assignee: X`.\n");
     b.push_str("    - Treat bare @-routing as an assignee directive even when the user did not write the English word \"assign\". This includes Chinese imperatives like `让 @独立团 review 这个 PR`, `给 @X 处理`, or `交给 @X`; strip the leading `@`/`＠` before matching display names. Do not keep that routing wrapper or `@Name` in the description unless it is a true CC-style notification rather than ownership. If the matched entity is a squad, pass the squad's `id` as `--assignee-id`, not the leader agent's id.\n");
-    let agent_id = task.agent.as_ref().map(|a| a.id.clone()).unwrap_or_default();
-    let agent_name = task.agent.as_ref().map(|a| a.name.clone()).unwrap_or_default();
+    let agent_id = task
+        .agent
+        .as_ref()
+        .map(|a| a.id.clone())
+        .unwrap_or_default();
+    let agent_name = task
+        .agent
+        .as_ref()
+        .map(|a| a.name.clone())
+        .unwrap_or_default();
     if !task.squad_id.is_empty() {
         // Squad picker opened quick-create: the squad owns the flow.
         if !task.squad_name.is_empty() {
@@ -603,7 +623,9 @@ pub(crate) fn build_quick_create_prompt(task: &Task) -> String {
             ));
         }
     } else {
-        b.push_str("- **project**: omit. The platform will route the issue to the workspace default.\n");
+        b.push_str(
+            "- **project**: omit. The platform will route the issue to the workspace default.\n",
+        );
     }
 
     if !task.parent_issue_id.is_empty() {

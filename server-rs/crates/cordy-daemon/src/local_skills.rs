@@ -52,7 +52,11 @@ pub struct RuntimeLocalSkillSummary {
     pub key: String,
     #[serde(rename = "name")]
     pub name: String,
-    #[serde(rename = "description", skip_serializing_if = "String::is_empty", default)]
+    #[serde(
+        rename = "description",
+        skip_serializing_if = "String::is_empty",
+        default
+    )]
     pub description: String,
     #[serde(rename = "source_path")]
     pub source_path: String,
@@ -65,7 +69,11 @@ pub struct RuntimeLocalSkillSummary {
     pub root: String,
     #[serde(rename = "plugin", skip_serializing_if = "String::is_empty", default)]
     pub plugin: String,
-    #[serde(rename = "can_disable", skip_serializing_if = "std::ops::Not::not", default)]
+    #[serde(
+        rename = "can_disable",
+        skip_serializing_if = "std::ops::Not::not",
+        default
+    )]
     pub can_disable: bool,
     #[serde(rename = "file_count")]
     pub file_count: usize,
@@ -75,7 +83,11 @@ pub struct RuntimeLocalSkillSummary {
 pub struct RuntimeLocalSkillBundle {
     #[serde(rename = "name")]
     pub name: String,
-    #[serde(rename = "description", skip_serializing_if = "String::is_empty", default)]
+    #[serde(
+        rename = "description",
+        skip_serializing_if = "String::is_empty",
+        default
+    )]
     pub description: String,
     #[serde(rename = "content")]
     pub content: String,
@@ -139,7 +151,9 @@ pub(crate) fn local_skill_roots_for_provider(
                 provider_root = Some(join_path(&[&base, "skills"]));
             }
             "copilot" => provider_root = Some(join_path(&[&home, ".copilot", "skills"])),
-            "opencode" => provider_root = Some(join_path(&[&home, ".config", "opencode", "skills"])),
+            "opencode" => {
+                provider_root = Some(join_path(&[&home, ".config", "opencode", "skills"]))
+            }
             "deveco" => provider_root = Some(join_path(&[&home, ".config", "deveco", "skills"])),
             "openclaw" => provider_root = Some(join_path(&[&home, ".openclaw", "skills"])),
             "pi" => provider_root = Some(join_path(&[&home, ".pi", "agent", "skills"])),
@@ -256,8 +270,7 @@ pub(crate) fn normalize_local_skill_key(key: &str) -> anyhow::Result<String> {
     if key.trim().is_empty() {
         anyhow::bail!("skill key is required");
     }
-    let cleaned =
-        crate::execenv::execenv::clean_path(&key.trim().replace('\\', "/"));
+    let cleaned = crate::execenv::execenv::clean_path(&key.trim().replace('\\', "/"));
     if cleaned == "." || cleaned.starts_with('/') || cleaned.starts_with("..") {
         anyhow::bail!("invalid skill key");
     }
@@ -415,16 +428,12 @@ pub(crate) fn is_likely_binary_file_path(path: &str) -> bool {
             // images
             ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".ico", ".heic",
             // fonts
-            ".ttf", ".otf", ".woff", ".woff2", ".eot",
-            // archives
-            ".zip", ".gz", ".tar", ".bz2", ".7z", ".rar",
-            // documents (binary office)
-            ".pdf", ".docx", ".xlsx", ".pptx", ".doc", ".xls", ".ppt",
-            // media
+            ".ttf", ".otf", ".woff", ".woff2", ".eot", // archives
+            ".zip", ".gz", ".tar", ".bz2", ".7z", ".rar", // documents (binary office)
+            ".pdf", ".docx", ".xlsx", ".pptx", ".doc", ".xls", ".ppt", // media
             ".mp3", ".mp4", ".wav", ".avi", ".mov", ".webm", ".m4a", ".flac",
             // compiled / executable
-            ".exe", ".dll", ".so", ".dylib", ".class", ".jar", ".wasm",
-            // db / cache
+            ".exe", ".dll", ".so", ".dylib", ".class", ".jar", ".wasm", // db / cache
             ".db", ".sqlite", ".sqlite3", ".pyc",
         ]
         .into_iter()
@@ -500,7 +509,15 @@ pub(crate) fn list_runtime_local_skills(
         // the same on-disk skill under two names by symlinking across roots.
         let mut root_skills: Vec<RuntimeLocalSkillSummary> = Vec::new();
         let mut visited: HashMap<String, bool> = HashMap::new();
-        walk_root_skills(provider, root, &root.path, &root.path, 0, &mut visited, &mut root_skills);
+        walk_root_skills(
+            provider,
+            root,
+            &root.path,
+            &root.path,
+            0,
+            &mut visited,
+            &mut root_skills,
+        );
 
         for s in root_skills {
             if seen_keys.contains(&s.key) {
@@ -667,7 +684,11 @@ pub(crate) fn load_runtime_local_skill_bundle(
         if !root.plugin.is_empty() {
             name = key.clone();
         } else if name.is_empty() {
-            name = skill_dir.rsplit('/').next().unwrap_or(&skill_dir).to_string();
+            name = skill_dir
+                .rsplit('/')
+                .next()
+                .unwrap_or(&skill_dir)
+                .to_string();
         }
 
         let files = collect_local_skill_files(&skill_dir, true)?;
@@ -733,9 +754,8 @@ mod tests {
 
     #[test]
     fn frontmatter_parsing() {
-        let (name, desc) = parse_skill_frontmatter(
-            "---\nname: deploy\ndescription: Deploy things\n---\n\nbody\n",
-        );
+        let (name, desc) =
+            parse_skill_frontmatter("---\nname: deploy\ndescription: Deploy things\n---\n\nbody\n");
         assert_eq!(name, "deploy");
         assert_eq!(desc, "Deploy things");
 
@@ -804,11 +824,8 @@ mod tests {
 
     #[test]
     fn load_missing_bundle_errors() {
-        let (bundle, _) = load_runtime_local_skill_bundle(
-            "nonexistent-provider-xyz",
-            "whatever",
-        )
-        .unwrap();
+        let (bundle, _) =
+            load_runtime_local_skill_bundle("nonexistent-provider-xyz", "whatever").unwrap();
         assert!(bundle.is_none());
     }
 }

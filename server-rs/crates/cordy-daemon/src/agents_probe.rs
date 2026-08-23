@@ -52,10 +52,29 @@ pub(crate) fn shell_resolve_env_key() -> String {
 /// appended from the descriptor registry.
 pub(crate) fn default_agent_command_names() -> Vec<&'static str> {
     let mut names: Vec<&'static str> = vec![
-        "claude", "codex", "opencode", "deveco", "openclaw", "hermes", "pi",
-        "cursor-agent", "copilot", "kimi", "reasonix", "dsh", "kiro-cli",
-        "codebuddy", "agy", "qodercli", "qoderclicn", "traecli", "grok",
-        "qwen", "qwenpaw", "mcode", "dim",
+        "claude",
+        "codex",
+        "opencode",
+        "deveco",
+        "openclaw",
+        "hermes",
+        "pi",
+        "cursor-agent",
+        "copilot",
+        "kimi",
+        "reasonix",
+        "dsh",
+        "kiro-cli",
+        "codebuddy",
+        "agy",
+        "qodercli",
+        "qoderclicn",
+        "traecli",
+        "grok",
+        "qwen",
+        "qwenpaw",
+        "mcode",
+        "dim",
     ];
     // agent.BuiltinRuntimeCommands()
     names.extend(builtin_runtime_commands());
@@ -116,11 +135,17 @@ pub(crate) fn cached_shell_resolved_agents() -> BTreeMap<String, String> {
     let mut state = SHELL_RESOLVE.lock().expect("shell resolve state");
     let key = shell_resolve_env_key();
     if let Some(existing) = state.as_ref() {
-        if existing.cache.is_some() && existing.key == key && existing.resolved_at.elapsed() < SHELL_RESOLVE_TTL {
+        if existing.cache.is_some()
+            && existing.key == key
+            && existing.resolved_at.elapsed() < SHELL_RESOLVE_TTL
+        {
             return existing.cache.clone().unwrap_or_default();
         }
     }
-    let names: Vec<String> = default_agent_command_names().iter().map(|s| s.to_string()).collect();
+    let names: Vec<String> = default_agent_command_names()
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     let resolved = resolve_agents_via_login_shell(&names);
     // Distinguish "resolved nothing" from "never resolved" so a failing shell
     // doesn't get re-forked on every probe inside the TTL window.
@@ -154,7 +179,10 @@ fn probe(env_var: &str, default_cmd: &str, model_env: &str) -> ProbeOutcome {
     // The shell fallback only rescues bare command names. An operator who
     // pinned CORDY_*_PATH to a path that doesn't exist should hard-miss.
     if cmd.contains('/') || cmd.contains('\\') {
-        return ProbeOutcome { entry: AgentEntry::default(), found: false };
+        return ProbeOutcome {
+            entry: AgentEntry::default(),
+            found: false,
+        };
     }
     if let Some(path) = cached_shell_resolved_agents().get(&cmd) {
         return ProbeOutcome {
@@ -174,7 +202,10 @@ fn probe(env_var: &str, default_cmd: &str, model_env: &str) -> ProbeOutcome {
             }
         }
     }
-    ProbeOutcome { entry: AgentEntry::default(), found: false }
+    ProbeOutcome {
+        entry: AgentEntry::default(),
+        found: false,
+    }
 }
 
 fn agent_entry(path: &str, cmd: &str, model_env: &str) -> AgentEntry {
@@ -201,12 +232,30 @@ pub(crate) fn probe_agent_clis() -> BTreeMap<String, AgentEntry> {
     }
     let mut add = |key: &str, outcome: ProbeOutcome| add(&mut agents, key, outcome);
 
-    add("claude", probe("CORDY_CLAUDE_PATH", "claude", "CORDY_CLAUDE_MODEL"));
-    add("codex", probe("CORDY_CODEX_PATH", "codex", "CORDY_CODEX_MODEL"));
-    add("opencode", probe("CORDY_OPENCODE_PATH", "opencode", "CORDY_OPENCODE_MODEL"));
-    add("deveco", probe("CORDY_DEVECO_PATH", "deveco", "CORDY_DEVECO_MODEL"));
-    add("openclaw", probe("CORDY_OPENCLAW_PATH", "openclaw", "CORDY_OPENCLAW_MODEL"));
-    add("hermes", probe("CORDY_HERMES_PATH", "hermes", "CORDY_HERMES_MODEL"));
+    add(
+        "claude",
+        probe("CORDY_CLAUDE_PATH", "claude", "CORDY_CLAUDE_MODEL"),
+    );
+    add(
+        "codex",
+        probe("CORDY_CODEX_PATH", "codex", "CORDY_CODEX_MODEL"),
+    );
+    add(
+        "opencode",
+        probe("CORDY_OPENCODE_PATH", "opencode", "CORDY_OPENCODE_MODEL"),
+    );
+    add(
+        "deveco",
+        probe("CORDY_DEVECO_PATH", "deveco", "CORDY_DEVECO_MODEL"),
+    );
+    add(
+        "openclaw",
+        probe("CORDY_OPENCLAW_PATH", "openclaw", "CORDY_OPENCLAW_MODEL"),
+    );
+    add(
+        "hermes",
+        probe("CORDY_HERMES_PATH", "hermes", "CORDY_HERMES_MODEL"),
+    );
     add("pi", probe("CORDY_PI_PATH", "pi", "CORDY_PI_MODEL"));
     // Built-in runtime identities are derived from the descriptor registry so
     // adding a new fork is a descriptor entry, not a probe edit.
@@ -215,10 +264,19 @@ pub(crate) fn probe_agent_clis() -> BTreeMap<String, AgentEntry> {
         let model_env = format!("{}_MODEL", desc.env_prefix);
         add(desc.id, probe(&path_env, desc.default_command, &model_env));
     }
-    add("cursor", probe("CORDY_CURSOR_PATH", "cursor-agent", "CORDY_CURSOR_MODEL"));
-    add("copilot", probe("CORDY_COPILOT_PATH", "copilot", "CORDY_COPILOT_MODEL"));
+    add(
+        "cursor",
+        probe("CORDY_CURSOR_PATH", "cursor-agent", "CORDY_CURSOR_MODEL"),
+    );
+    add(
+        "copilot",
+        probe("CORDY_COPILOT_PATH", "copilot", "CORDY_COPILOT_MODEL"),
+    );
     add("kimi", probe("CORDY_KIMI_PATH", "kimi", "CORDY_KIMI_MODEL"));
-    add("reasonix", probe("CORDY_REASONIX_PATH", "reasonix", "CORDY_REASONIX_MODEL"));
+    add(
+        "reasonix",
+        probe("CORDY_REASONIX_PATH", "reasonix", "CORDY_REASONIX_MODEL"),
+    );
     // DSH registers only when its Cordy runtime profile is installed: a bare
     // dsh binary has no --stdio protocol and every task would fail after
     // being advertised as healthy.
@@ -226,12 +284,34 @@ pub(crate) fn probe_agent_clis() -> BTreeMap<String, AgentEntry> {
     if dsh.found && probe_dsh_cordy_profile(&dsh.entry.path) {
         add("dsh", dsh);
     }
-    add("kiro", probe("CORDY_KIRO_PATH", "kiro-cli", "CORDY_KIRO_MODEL"));
-    add("codebuddy", probe("CORDY_CODEBUDDY_PATH", "codebuddy", "CORDY_CODEBUDDY_MODEL"));
-    add("antigravity", probe("CORDY_ANTIGRAVITY_PATH", "agy", "CORDY_ANTIGRAVITY_MODEL"));
-    add("qoder", probe("CORDY_QODER_PATH", "qodercli", "CORDY_QODER_MODEL"));
-    add("qoderclicn", probe("CORDY_QODERCLICN_PATH", "qoderclicn", "CORDY_QODERCLICN_MODEL"));
-    add("traecli", probe("CORDY_TRAECLI_PATH", "traecli", "CORDY_TRAECLI_MODEL"));
+    add(
+        "kiro",
+        probe("CORDY_KIRO_PATH", "kiro-cli", "CORDY_KIRO_MODEL"),
+    );
+    add(
+        "codebuddy",
+        probe("CORDY_CODEBUDDY_PATH", "codebuddy", "CORDY_CODEBUDDY_MODEL"),
+    );
+    add(
+        "antigravity",
+        probe("CORDY_ANTIGRAVITY_PATH", "agy", "CORDY_ANTIGRAVITY_MODEL"),
+    );
+    add(
+        "qoder",
+        probe("CORDY_QODER_PATH", "qodercli", "CORDY_QODER_MODEL"),
+    );
+    add(
+        "qoderclicn",
+        probe(
+            "CORDY_QODERCLICN_PATH",
+            "qoderclicn",
+            "CORDY_QODERCLICN_MODEL",
+        ),
+    );
+    add(
+        "traecli",
+        probe("CORDY_TRAECLI_PATH", "traecli", "CORDY_TRAECLI_MODEL"),
+    );
     add("grok", probe("CORDY_GROK_PATH", "grok", "CORDY_GROK_MODEL"));
     add("qwen", probe("CORDY_QWEN_PATH", "qwen", "CORDY_QWEN_MODEL"));
     // QwenPaw takes no model env var: the backend never calls session/set_model.
@@ -312,7 +392,10 @@ mod tests {
     #[test]
     fn codex_bundle_paths_order() {
         let paths = codex_desktop_app_bundle_paths();
-        assert_eq!(paths[0], "/Applications/ChatGPT.app/Contents/Resources/codex");
+        assert_eq!(
+            paths[0],
+            "/Applications/ChatGPT.app/Contents/Resources/codex"
+        );
         assert_eq!(paths[1], "/Applications/Codex.app/Contents/Resources/codex");
         // Home candidates follow.
         assert!(paths.len() >= 3);
@@ -323,7 +406,11 @@ mod tests {
     fn probe_of_missing_command_is_not_found() {
         // A command that cannot exist anywhere; the shell fallback may fork
         // but must still report not-found for a path-shaped override.
-        let outcome = probe("CORDY_TEST_MISSING_PATH", "/definitely/not/a/binary-xyz", "");
+        let outcome = probe(
+            "CORDY_TEST_MISSING_PATH",
+            "/definitely/not/a/binary-xyz",
+            "",
+        );
         assert!(!outcome.found);
     }
 }

@@ -4,12 +4,18 @@
 //! Exact paths take precedence so a broad basename such as `.sandbox-bin`
 //! cannot double-count a managed directory.
 //!
+//! This is the crate's SINGLE copy of the matcher: the inline duplicates that
+//! used to live in diskusage.rs (lane A) and gc.rs (lane R2) were retired into
+//! this module (CORD-12 review item). `buildPatternSet` moved here with them —
+//! Go defines it in diskusage.go but its only caller is `newArtifactMatcher`.
+//!
 //! Symbol map:
 //! - `artifactMatcher` → [`ArtifactMatcher`]
 //! - `newArtifactMatcher` → [`ArtifactMatcher::new`]
 //! - `matchDirectory` → [`ArtifactMatcher::match_directory`]
 //! - `managedSubpaths` → [`ArtifactMatcher::managed_subpaths`]
 //! - `safeRelativePath` → [`safe_relative_path`]
+//! - `buildPatternSet` (diskusage.go:285) → [`build_pattern_set`]
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Component, Path, PathBuf};
@@ -27,7 +33,7 @@ pub(crate) struct ArtifactMatcher {
 impl ArtifactMatcher {
     pub(crate) fn new(patterns: &[String], managed_subpaths: &[String]) -> Self {
         let mut m = ArtifactMatcher {
-            basenames: patterns.iter().cloned().collect(),
+            basenames: build_pattern_set(patterns),
             exact_paths: HashMap::with_capacity(managed_subpaths.len()),
             exact_leaf_names: HashSet::with_capacity(managed_subpaths.len()),
         };
@@ -41,7 +47,8 @@ impl ArtifactMatcher {
                 format!("{MANAGED_ARTIFACT_PATTERN_PREFIX}{display}"),
             );
             if let Some(leaf) = cleaned.file_name() {
-                m.exact_leaf_names.insert(leaf.to_string_lossy().into_owned());
+                m.exact_leaf_names
+                    .insert(leaf.to_string_lossy().into_owned());
             }
         }
         m
@@ -49,7 +56,12 @@ impl ArtifactMatcher {
 
     /// `matchDirectory`: `path` is the absolute directory being visited and
     /// `entry_name` its leaf name. Returns the matched artifact pattern.
-    pub(crate) fn match_directory(&self, abs_root: &Path, path: &Path, entry_name: &str) -> Option<String> {
+    pub(crate) fn match_directory(
+        &self,
+        abs_root: &Path,
+        path: &Path,
+        entry_name: &str,
+    ) -> Option<String> {
         let exact_candidate = self.exact_leaf_names.contains(entry_name);
         let basename_match = self.basenames.contains(entry_name);
         if !exact_candidate && !basename_match {
@@ -79,6 +91,32 @@ impl ArtifactMatcher {
         out.sort();
         out
     }
+
+    /// `len(matcher.basenames) == 0 && len(matcher.exactPaths) == 0`
+    /// (gc.go:905): nothing can match, so the walk is skipped entirely.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.basenames.is_empty() && self.exact_paths.is_empty()
+    }
+
+    /// `sortedKeys(m.basenames)` at the diskusage.go call sites: the report's
+    /// artifact_patterns field.
+    pub(crate) fn basenames_sorted(&self) -> Vec<String> {
+        let mut out: Vec<String> = self.basenames.iter().cloned().collect();
+        out.sort();
+        out
+    }
+}
+
+/// `buildPatternSet` (diskusage.go:285): basename-only patterns. Trims each
+/// entry and drops empties and anything carrying a path separator — a pattern
+/// with a separator could never match a walk entry's leaf name.
+pub(crate) fn build_pattern_set(patterns: &[String]) -> HashSet<String> {
+    patterns
+        .iter()
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty() && !p.contains('/') && !p.contains('\\'))
+        .map(|p| p.to_string())
+        .collect()
 }
 
 /// `safeRelativePath`: trims whitespace, rejects absolute paths (and Windows
@@ -86,7 +124,8 @@ impl ArtifactMatcher {
 /// cleaning; returns the cleaned path otherwise.
 pub(crate) fn safe_relative_path(path: &str) -> Option<PathBuf> {
     let trimmed = path.trim();
-    if trimmed.is_empty() || Path::new(trimmed).is_absolute() || has_windows_volume_prefix(trimmed) {
+    if trimmed.is_empty() || Path::new(trimmed).is_absolute() || has_windows_volume_prefix(trimmed)
+    {
         return None;
     }
     let cleaned = clean_path(trimmed);
@@ -159,10 +198,7 @@ mod tests {
     #[test]
     fn builds_exact_paths_from_managed_subpaths() {
         let m = matcher();
-        assert_eq!(
-            m.managed_subpaths(),
-            vec!["workdir/.managed".to_string()]
-        );
+        assert_eq!(m.managed_subpaths(), vec!["workdir/.managed".to_string()]);
         assert!(m.exact_leaf_names.contains(".managed"));
     }
 
@@ -190,10 +226,7 @@ mod tests {
     fn non_matching_entries_return_none() {
         let m = matcher();
         let root = Path::new("/root");
-        assert_eq!(
-            m.match_directory(root, &root.join("other"), "other"),
-            None
-        );
+        assert_eq!(m.match_directory(root, &root.join("other"), "other"), None);
     }
 
     #[test]
@@ -205,9 +238,6 @@ mod tests {
         assert_eq!(safe_relative_path("."), None);
         assert_eq!(safe_relative_path(".."), None);
         assert_eq!(safe_relative_path("../x"), None);
-        assert_eq!(
-            safe_relative_path("./a/../b"),
-            Some(PathBuf::from("b"))
-        );
+        assert_eq!(safe_relative_path("./a/../b"), Some(PathBuf::from("b")));
     }
 }

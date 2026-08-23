@@ -75,11 +75,15 @@ pub(crate) fn list_enabled_claude_plugins(home: &str) -> Vec<ClaudePluginInstall
         return Vec::new();
     }
 
-    let installed_raw =
-        match std::fs::read(join_path(&[home, ".claude", "plugins", "installed_plugins.json"])) {
-            Ok(raw) => raw,
-            Err(_) => return Vec::new(),
-        };
+    let installed_raw = match std::fs::read(join_path(&[
+        home,
+        ".claude",
+        "plugins",
+        "installed_plugins.json",
+    ])) {
+        Ok(raw) => raw,
+        Err(_) => return Vec::new(),
+    };
     let installed: ClaudeInstalledPluginsFile = match serde_json::from_slice(&installed_raw) {
         Ok(i) => i,
         Err(_) => return Vec::new(),

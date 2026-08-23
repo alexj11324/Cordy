@@ -22,6 +22,9 @@ use chrono::{DateTime, Utc};
 use futures_util::Future;
 use sha2::{Digest, Sha256};
 
+use crate::artifact_matcher::{
+    safe_relative_path, ArtifactMatcher, MANAGED_ARTIFACT_PATTERN_PREFIX,
+};
 use crate::repocache::{CancelCause, Ctx};
 
 // ---------------------------------------------------------------------------
@@ -1704,109 +1707,9 @@ fn base_name(path: &Path) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Artifact cleanup (gc.go lines 765–997 + artifact_matcher.go inlined).
+// Artifact cleanup (gc.go lines 765–997). The artifact matcher lives in
+// crate::artifact_matcher — the crate's single copy (CORD-12 consolidation).
 // ---------------------------------------------------------------------------
-
-/// `managedArtifactPatternPrefix` (artifact_matcher.go:10).
-const MANAGED_ARTIFACT_PATTERN_PREFIX: &str = "managed:";
-
-/// `artifactMatcher` (artifact_matcher.go:15–19): combines
-/// operator-configured basename matches with exact daemon-managed paths.
-/// Exact paths take precedence so a broad basename such as .sandbox-bin
-/// cannot double-count a managed directory.
-struct ArtifactMatcher {
-    basenames: std::collections::HashSet<String>,
-    exact_paths: HashMap<String, String>,
-    exact_leaf_names: std::collections::HashSet<String>,
-}
-
-impl ArtifactMatcher {
-    /// `newArtifactMatcher` (artifact_matcher.go:21–37).
-    fn new(patterns: &[String], managed_subpaths: &[String]) -> Self {
-        let mut matcher = ArtifactMatcher {
-            basenames: patterns.iter().cloned().collect(),
-            exact_paths: HashMap::with_capacity(managed_subpaths.len()),
-            exact_leaf_names: std::collections::HashSet::with_capacity(managed_subpaths.len()),
-        };
-        for subpath in managed_subpaths {
-            let Some(cleaned) = safe_relative_path(subpath) else {
-                continue;
-            };
-            let display = cleaned.replace('\\', "/");
-            matcher.exact_paths.insert(
-                cleaned.clone(),
-                format!("{MANAGED_ARTIFACT_PATTERN_PREFIX}{display}"),
-            );
-            if let Some(leaf) = Path::new(&cleaned).file_name() {
-                matcher
-                    .exact_leaf_names
-                    .insert(leaf.to_string_lossy().into_owned());
-            }
-        }
-        matcher
-    }
-
-    /// `matchDirectory` (artifact_matcher.go:39–63).
-    fn match_directory(&self, abs_root: &Path, path: &Path, name: &str) -> Option<String> {
-        let exact_candidate = self.exact_leaf_names.contains(name);
-        let basename_match = self.basenames.contains(name);
-        if !exact_candidate && !basename_match {
-            return None;
-        }
-
-        // Rel and containment validation are only needed for a directory
-        // whose leaf could actually match. Most workdir entries avoid this
-        // path entirely.
-        let rel = path.strip_prefix(abs_root).ok()?;
-        let rel = safe_relative_path(&rel.to_string_lossy())?;
-        if let Some(label) = self.exact_paths.get(&rel) {
-            return Some(label.clone());
-        }
-        if basename_match {
-            return Some(name.to_string());
-        }
-        None
-    }
-}
-
-/// Lexical `filepath.Clean` equivalent for relative paths: collapses `.`,
-/// `..`, and duplicate separators without touching the filesystem.
-#[allow(dead_code)] // used by repocache's absolute-path variant; kept symmetric
-fn normalize_lexically(path: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for comp in path.components() {
-        use std::path::Component;
-        match comp {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                out.pop();
-            }
-            other => out.push(other.as_os_str()),
-        }
-    }
-    if out.as_os_str().is_empty() {
-        out.push(".");
-    }
-    out
-}
-
-/// `safeRelativePath` (artifact_matcher.go:74–84).
-fn safe_relative_path(path: &str) -> Option<String> {
-    let path = path.trim();
-    if path.is_empty() || Path::new(path).is_absolute() {
-        return None;
-    }
-    let cleaned = normalize_lexically(Path::new(path));
-    let cleaned = cleaned.to_string_lossy().into_owned();
-    if cleaned == "."
-        || cleaned == ".."
-        || cleaned.starts_with("../")
-        || cleaned.starts_with("..\\")
-    {
-        return None;
-    }
-    Some(cleaned)
-}
 
 /// `cleanTaskDir` (gc.go:767–776): removes a task directory, logs the
 /// reclaimed bytes, and returns that count for the cycle summary. A failed
@@ -1866,7 +1769,8 @@ fn clean_managed_task_artifacts(task_dir: &Path) -> (i32, i64, HashMap<String, i
         let Some(rel) = safe_relative_path(&subpath) else {
             continue;
         };
-        let Some(target) = managed_artifact_target(&abs_root, &rel) else {
+        let rel_str = rel.to_string_lossy().into_owned();
+        let Some(target) = managed_artifact_target(&abs_root, &rel_str) else {
             continue;
         };
         let size = dir_size(&target);
@@ -1879,7 +1783,7 @@ fn clean_managed_task_artifacts(task_dir: &Path) -> (i32, i64, HashMap<String, i
         *per_pattern
             .entry(format!(
                 "{MANAGED_ARTIFACT_PATTERN_PREFIX}{}",
-                rel.replace('\\', "/")
+                rel_str.replace('\\', "/")
             ))
             .or_insert(0i32) += 1;
         tracing::info!(path = %target.display(), bytes = size, "gc: artifact removed");
@@ -1920,7 +1824,7 @@ fn has_managed_artifact(task_dir: &Path) -> bool {
         let Some(rel) = safe_relative_path(&subpath) else {
             continue;
         };
-        if managed_artifact_target(&abs_root, &rel).is_some() {
+        if managed_artifact_target(&abs_root, rel.to_string_lossy().as_ref()).is_some() {
             return true;
         }
     }
@@ -1937,9 +1841,7 @@ fn clean_task_artifacts_matching(
     let mut removed = 0i32;
     let mut bytes = 0i64;
     let mut per_pattern = HashMap::new();
-    if task_dir.as_os_str().is_empty()
-        || (matcher.basenames.is_empty() && matcher.exact_paths.is_empty())
-    {
+    if task_dir.as_os_str().is_empty() || matcher.is_empty() {
         return (removed, bytes, per_pattern);
     }
 
@@ -2616,6 +2518,21 @@ fn gc_is_bare_repo(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// safeRelativePath contract (artifact_matcher.go:74–84): rejects empty,
+    /// absolute, and upward-escaping paths; cleans the rest.
+    #[test]
+    fn safe_relative_path_contract() {
+        let p = |s: &str| safe_relative_path(s).map(|v| v.to_string_lossy().into_owned());
+        assert_eq!(p("a/b/c"), Some("a/b/c".into()));
+        assert_eq!(p("./a"), Some("a".into()));
+        assert_eq!(p("a//b"), Some("a/b".into()));
+        assert_eq!(p(""), None);
+        assert_eq!(p("/abs/path"), None);
+        assert_eq!(p(".."), None);
+        assert_eq!(p("../escape"), None);
+        assert_eq!(p("a/../.."), None);
+    }
 
     #[tokio::test]
     async fn process_tree_captures_success_and_failure_output() {

@@ -1679,7 +1679,6 @@ async fn body_limited(resp: reqwest::Response, limit: usize) -> String {
 async fn cdp_discard(resp: reqwest::Response) {
     let _ = resp.bytes().await;
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
