@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use axum::body::Bytes;
 use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
@@ -11,7 +12,8 @@ use chrono::{DateTime, Duration, Utc};
 use cordy_db::models::{Squad, SquadMember};
 use cordy_db::queries::{squad, workspace};
 use cordy_middleware::workspace::WorkspaceContext;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::error_response;
@@ -23,8 +25,22 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/squads/", get(list))
         .route("/api/squads/{id}", get(get_one))
         .route("/api/squads/{id}/", get(get_one))
-        .route("/api/squads/{id}/members", get(list_members))
-        .route("/api/squads/{id}/members/", get(list_members))
+        .route(
+            "/api/squads/{id}/members",
+            get(list_members).delete(remove_member),
+        )
+        .route(
+            "/api/squads/{id}/members/",
+            get(list_members).delete(remove_member),
+        )
+        .route(
+            "/api/squads/{id}/members/role",
+            axum::routing::patch(update_member_role),
+        )
+        .route(
+            "/api/squads/{id}/members/role/",
+            axum::routing::patch(update_member_role),
+        )
         .route("/api/squads/{id}/members/status", get(list_member_status))
         .route("/api/squads/{id}/members/status/", get(list_member_status))
 }
@@ -300,6 +316,134 @@ async fn list_members(
     }
 }
 
+fn can_manage(context: &WorkspaceContext, squad: &Squad) -> bool {
+    matches!(context.member.role.as_str(), "owner" | "admin")
+        || context.member.user_id == squad.creator_id
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct MemberMutationRequest {
+    #[serde(deserialize_with = "null_default")]
+    member_type: String,
+    #[serde(deserialize_with = "null_default")]
+    member_id: String,
+    #[serde(deserialize_with = "null_default")]
+    role: String,
+}
+
+fn null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Option::<T>::deserialize(deserializer).map(Option::unwrap_or_default)
+}
+
+fn decode_first<T>(body: &[u8]) -> Result<T, ()>
+where
+    T: for<'de> Deserialize<'de> + Default,
+{
+    let mut values = serde_json::Deserializer::from_slice(body).into_iter::<Option<T>>();
+    values
+        .next()
+        .ok_or(())?
+        .map(|value| value.unwrap_or_default())
+        .map_err(|_| ())
+}
+
+fn publish_squad_updated(state: &HandlerState, context: &WorkspaceContext, squad_id: Uuid) {
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::EVENT_SQUAD_UPDATED.into(),
+        workspace_id: context.member.workspace_id.to_string(),
+        actor_type: "member".into(),
+        actor_id: context.member.user_id.to_string(),
+        payload: json!({ "squad_id": squad_id }),
+        ..Default::default()
+    });
+}
+
+async fn remove_member(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(raw_id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let found = match load_squad(&state, &context, &raw_id).await {
+        Ok(squad) => squad,
+        Err(response) => return response,
+    };
+    if !can_manage(&context, &found) {
+        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
+    }
+    let request = match decode_first::<MemberMutationRequest>(&body) {
+        Ok(request) => request,
+        Err(()) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    let member_id = match Uuid::parse_str(&request.member_id) {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid member_id"),
+    };
+    if request.member_type == "agent" && found.leader_id == member_id {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "cannot remove the squad leader; change leader first",
+        );
+    }
+    match squad::remove_squad_member(&state.pool, found.id, &request.member_type, member_id).await {
+        Ok(0) => error_response(StatusCode::NOT_FOUND, "squad member not found"),
+        Ok(_) => {
+            publish_squad_updated(&state, &context, found.id);
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Err(error) => {
+            tracing::warn!(%error, squad_id = %found.id, "failed to remove squad member");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to remove squad member",
+            )
+        }
+    }
+}
+
+async fn update_member_role(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(raw_id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let found = match load_squad(&state, &context, &raw_id).await {
+        Ok(squad) => squad,
+        Err(response) => return response,
+    };
+    if !can_manage(&context, &found) {
+        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
+    }
+    let request = match decode_first::<MemberMutationRequest>(&body) {
+        Ok(request) => request,
+        Err(()) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    let member_id = match Uuid::parse_str(&request.member_id) {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid member_id"),
+    };
+    match squad::update_squad_member_role(
+        &state.pool,
+        found.id,
+        &request.member_type,
+        member_id,
+        &request.role,
+    )
+    .await
+    {
+        Ok(Some(member)) => {
+            publish_squad_updated(&state, &context, found.id);
+            Json(SquadMemberResponse::from(member)).into_response()
+        }
+        Ok(None) | Err(_) => error_response(StatusCode::NOT_FOUND, "squad member not found"),
+    }
+}
+
 struct MemberStatusAccumulator {
     response: SquadMemberStatusResponse,
     archived: bool,
@@ -468,5 +612,36 @@ mod tests {
             derive_member_status(false, None, None, false, now),
             "offline"
         );
+    }
+
+    #[test]
+    fn member_mutation_decoder_matches_go_first_value_and_null_defaults() {
+        let request = decode_first::<MemberMutationRequest>(
+            br#"{"member_type":"agent","member_id":"abc","role":"reviewer"} true"#,
+        )
+        .unwrap();
+        assert_eq!(request.member_type, "agent");
+        assert_eq!(request.member_id, "abc");
+        assert_eq!(request.role, "reviewer");
+
+        let empty = decode_first::<MemberMutationRequest>(b"null").unwrap();
+        assert!(empty.member_type.is_empty());
+        assert!(empty.member_id.is_empty());
+        assert!(decode_first::<MemberMutationRequest>(b"").is_err());
+
+        let null_fields = decode_first::<MemberMutationRequest>(
+            br#"{"member_type":null,"member_id":null,"role":null}"#,
+        )
+        .unwrap();
+        assert!(null_fields.member_type.is_empty());
+        assert!(null_fields.member_id.is_empty());
+        assert!(null_fields.role.is_empty());
+    }
+
+    #[test]
+    fn typed_uuid_comparison_protects_leader_for_noncanonical_input() {
+        let leader = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f12").unwrap();
+        let uppercase = Uuid::parse_str("018F03A0C4D27A37AE4D5AA45DE12F12").unwrap();
+        assert_eq!(leader, uppercase);
     }
 }
