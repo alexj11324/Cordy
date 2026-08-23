@@ -1723,34 +1723,7 @@ async fn issue_task_maps(
     include_usage: bool,
 ) -> Vec<Value> {
     let workspace_id = issue.workspace_id.to_string();
-    let mut maps = tasks
-        .iter()
-        .map(|task| crate::task_json::task_to_map(task, &workspace_id))
-        .collect::<Vec<_>>();
-
-    let mut user_ids = tasks
-        .iter()
-        .flat_map(|task| [task.accountable_user_id, task.originator_user_id])
-        .flatten()
-        .collect::<Vec<_>>();
-    user_ids.sort_unstable();
-    user_ids.dedup();
-    if !user_ids.is_empty() {
-        if let Ok(rows) = user::get_users_by_i_ds(&state.pool, user_ids).await {
-            let users = rows
-                .into_iter()
-                .filter_map(|row| row.id.map(|id| (id, row)))
-                .collect::<HashMap<_, _>>();
-            for map in &mut maps {
-                let Some(attribution) = map.get_mut("attribution").and_then(Value::as_object_mut)
-                else {
-                    continue;
-                };
-                hydrate_task_user_ref(attribution, "initiator", &users);
-                hydrate_task_user_ref(attribution, "originator", &users);
-            }
-        }
-    }
+    let mut maps = task_maps(state, tasks, &workspace_id).await;
 
     if include_usage {
         if let Ok(rows) = task_usage::list_issue_task_usage(&state.pool, issue.id).await {
@@ -1780,6 +1753,43 @@ async fn issue_task_maps(
                         map.insert("usage".into(), Value::Array(usage));
                     }
                 }
+            }
+        }
+    }
+
+    maps
+}
+
+pub(crate) async fn task_maps(
+    state: &HandlerState,
+    tasks: &[AgentTaskQueue],
+    workspace_id: &str,
+) -> Vec<Value> {
+    let mut maps = tasks
+        .iter()
+        .map(|task| crate::task_json::task_to_map(task, workspace_id))
+        .collect::<Vec<_>>();
+
+    let mut user_ids = tasks
+        .iter()
+        .flat_map(|task| [task.accountable_user_id, task.originator_user_id])
+        .flatten()
+        .collect::<Vec<_>>();
+    user_ids.sort_unstable();
+    user_ids.dedup();
+    if !user_ids.is_empty() {
+        if let Ok(rows) = user::get_users_by_i_ds(&state.pool, user_ids).await {
+            let users = rows
+                .into_iter()
+                .filter_map(|row| row.id.map(|id| (id, row)))
+                .collect::<HashMap<_, _>>();
+            for map in &mut maps {
+                let Some(attribution) = map.get_mut("attribution").and_then(Value::as_object_mut)
+                else {
+                    continue;
+                };
+                hydrate_task_user_ref(attribution, "initiator", &users);
+                hydrate_task_user_ref(attribution, "originator", &users);
             }
         }
     }
