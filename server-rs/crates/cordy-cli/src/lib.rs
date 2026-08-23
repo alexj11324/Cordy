@@ -95,6 +95,13 @@ enum WorkspaceCommand {
         #[arg(long, help = "Show full UUIDs in table output")]
         full_id: bool,
     },
+    #[command(about = "Get workspace details")]
+    Get {
+        #[arg(value_name = "WORKSPACE-ID|SLUG|PREFIX")]
+        workspace: Option<String>,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -195,6 +202,9 @@ async fn run_with_input<R: Read>(
         Command::Workspace(WorkspaceArgs {
             command: WorkspaceCommand::List { output, full_id },
         }) => run_workspace_list(cli, environment, *output, *full_id).await,
+        Command::Workspace(WorkspaceArgs {
+            command: WorkspaceCommand::Get { workspace, output },
+        }) => run_workspace_get(cli, environment, workspace.as_deref(), *output).await,
     }
 }
 
@@ -256,11 +266,7 @@ async fn run_workspace_list(
     output: OutputFormat,
     full_id: bool,
 ) -> Result<RunOutput> {
-    let client = new_unscoped_authenticated_api_client(cli, environment)?;
-    let workspaces: Vec<WorkspaceSummary> = client
-        .get_json("/api/workspaces")
-        .await
-        .context("list workspaces")?;
+    let workspaces = fetch_workspaces(cli, environment).await?;
     if output == OutputFormat::Json {
         return Ok(RunOutput {
             stdout: format!("{}\n", serde_json::to_string_pretty(&workspaces)?),
@@ -287,6 +293,184 @@ async fn run_workspace_list(
             "{current_hint}Tip: pass the ID column, SLUG, or full UUID (--full-id) to 'workspace get/update/switch'.\n"
         ),
     })
+}
+
+async fn fetch_workspaces(cli: &Cli, environment: &Environment) -> Result<Vec<WorkspaceSummary>> {
+    let client = new_unscoped_authenticated_api_client(cli, environment)?;
+    client
+        .get_json("/api/workspaces")
+        .await
+        .context("list workspaces")
+}
+
+async fn run_workspace_get(
+    cli: &Cli,
+    environment: &Environment,
+    workspace: Option<&str>,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let workspace_id = resolve_workspace_arg(cli, environment, workspace).await?;
+    if workspace_id.is_empty() {
+        bail!(
+            "workspace ID is required: pass an id/slug/prefix as argument or set CORDY_WORKSPACE_ID"
+        );
+    }
+    let client = new_api_client(cli, environment)?;
+    let workspace: Value = client
+        .get_json(&format!("/api/workspaces/{workspace_id}"))
+        .await
+        .context("get workspace")?;
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&workspace)?),
+            OutputFormat::Table => format_workspace_details_table(&workspace),
+        },
+        stderr: String::new(),
+    })
+}
+
+async fn resolve_workspace_arg(
+    cli: &Cli,
+    environment: &Environment,
+    workspace: Option<&str>,
+) -> Result<String> {
+    let Some(workspace) = workspace else {
+        return Ok(resolve_current_workspace_id(cli, environment));
+    };
+    let target = workspace.trim();
+    if target.is_empty() {
+        bail!("workspace id, slug, or id prefix is required");
+    }
+    if is_canonical_uuid(target) {
+        return Ok(target.into());
+    }
+    let workspaces = fetch_workspaces(cli, environment).await?;
+    Ok(resolve_workspace_reference(&workspaces, target)?.id.clone())
+}
+
+fn resolve_workspace_reference<'a>(
+    workspaces: &'a [WorkspaceSummary],
+    target: &str,
+) -> Result<&'a WorkspaceSummary> {
+    let target = target.trim();
+    if target.is_empty() {
+        bail!("workspace id, slug, or id prefix is required");
+    }
+    if let Some(workspace) = workspaces
+        .iter()
+        .find(|workspace| workspace.id.eq_ignore_ascii_case(target))
+    {
+        return Ok(workspace);
+    }
+    if let Some(workspace) = workspaces
+        .iter()
+        .find(|workspace| !workspace.slug.is_empty() && workspace.slug.eq_ignore_ascii_case(target))
+    {
+        return Ok(workspace);
+    }
+    if let Some(prefix) = normalize_uuid_prefix(target) {
+        let matches: Vec<_> = workspaces
+            .iter()
+            .filter(|workspace| compact_uuid(&workspace.id).starts_with(&prefix))
+            .collect();
+        match matches.as_slice() {
+            [workspace] => return Ok(workspace),
+            [_, _, ..] => {
+                let details = matches
+                    .iter()
+                    .map(|workspace| {
+                        let label = if workspace.slug.is_empty() {
+                            workspace.name.clone()
+                        } else {
+                            format!("{} ({})", workspace.name, workspace.slug)
+                        };
+                        format!("  {}  {label}", workspace.id)
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                bail!(
+                    "ambiguous workspace id prefix {target:?}; matches:\n{details}\nUse more characters, the slug, or the full UUID"
+                );
+            }
+            _ => {}
+        }
+    }
+    bail!(
+        "workspace {target:?} not found or you do not have access; run 'cordy workspace list' to see options"
+    )
+}
+
+fn is_canonical_uuid(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    bytes.len() == 36
+        && bytes.iter().enumerate().all(|(index, byte)| match index {
+            8 | 13 | 18 | 23 => *byte == b'-',
+            _ => byte.is_ascii_hexdigit(),
+        })
+}
+
+fn normalize_uuid_prefix(value: &str) -> Option<String> {
+    let prefix = value.trim().replace('-', "").to_ascii_lowercase();
+    (prefix.len() >= 4 && prefix.bytes().all(|byte| byte.is_ascii_hexdigit())).then_some(prefix)
+}
+
+fn compact_uuid(value: &str) -> String {
+    value.trim().replace('-', "").to_ascii_lowercase()
+}
+
+fn format_workspace_details_table(workspace: &Value) -> String {
+    let description = truncate_text(&value_string(workspace, "description"), 60);
+    let context = truncate_text(&value_string(workspace, "context"), 60);
+    format_table(&[
+        vec![
+            "ID".into(),
+            "NAME".into(),
+            "SLUG".into(),
+            "DESCRIPTION".into(),
+            "CONTEXT".into(),
+        ],
+        vec![
+            value_string(workspace, "id"),
+            value_string(workspace, "name"),
+            value_string(workspace, "slug"),
+            description,
+            context,
+        ],
+    ])
+}
+
+fn truncate_text(value: &str, limit: usize) -> String {
+    if value.chars().count() > limit {
+        value.chars().take(limit - 3).collect::<String>() + "..."
+    } else {
+        value.into()
+    }
+}
+
+fn format_table(rows: &[Vec<String>]) -> String {
+    let column_count = rows.iter().map(Vec::len).max().unwrap_or_default();
+    let widths: Vec<_> = (0..column_count.saturating_sub(1))
+        .map(|column| {
+            rows.iter()
+                .filter_map(|row| row.get(column))
+                .map(|value| value.chars().count())
+                .max()
+                .unwrap_or_default()
+                + 2
+        })
+        .collect();
+    let mut output = String::new();
+    for row in rows {
+        for (column, value) in row.iter().enumerate() {
+            if let Some(width) = widths.get(column) {
+                let _ = write!(output, "{value:<width$}");
+            } else {
+                output.push_str(value);
+            }
+        }
+        output.push('\n');
+    }
+    output
 }
 
 fn format_workspace_table(
@@ -1094,6 +1278,126 @@ mod tests {
             .to_string()
             .contains("not authenticated: run 'cordy login' first"));
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn workspace_get_resolves_slug_but_bypasses_list_for_full_uuid() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let list_calls = Arc::new(AtomicUsize::new(0));
+        let list_calls_by_handler = Arc::clone(&list_calls);
+        let workspace_id = "22222222-2222-2222-2222-222222222222";
+        let app = Router::new()
+            .route(
+                "/api/workspaces",
+                get(move || {
+                    let list_calls = Arc::clone(&list_calls_by_handler);
+                    async move {
+                        list_calls.fetch_add(1, Ordering::SeqCst);
+                        Json(serde_json::json!([
+                            {"id":"11111111-1111-1111-1111-111111111111","name":"Alpha","slug":"alpha"},
+                            {"id":"22222222-2222-2222-2222-222222222222","name":"Beta","slug":"beta"}
+                        ]))
+                    }
+                }),
+            )
+            .route(
+                "/api/workspaces/22222222-2222-2222-2222-222222222222",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "id":"22222222-2222-2222-2222-222222222222",
+                        "name":"Beta",
+                        "slug":"beta",
+                        "description":"Delivery workspace",
+                        "context":"Product context"
+                    }))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "workspace-token");
+
+        for target in ["BETA", workspace_id] {
+            let cli =
+                Cli::try_parse_from(["cordy", "workspace", "get", target, "--output", "json"])
+                    .expect("workspace get CLI");
+            let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .await
+                .expect("workspace get");
+            let workspace: Value = serde_json::from_str(&output.stdout).expect("JSON output");
+            assert_eq!(workspace["id"], workspace_id);
+        }
+        assert_eq!(list_calls.load(Ordering::SeqCst), 1);
+        server.abort();
+    }
+
+    #[test]
+    fn workspace_reference_reports_ambiguous_and_missing_targets() {
+        let workspaces = vec![
+            WorkspaceSummary {
+                id: "abcd1111-1111-1111-1111-111111111111".into(),
+                name: "Alpha".into(),
+                slug: "alpha".into(),
+            },
+            WorkspaceSummary {
+                id: "abcd2222-2222-2222-2222-222222222222".into(),
+                name: "Beta".into(),
+                slug: "beta".into(),
+            },
+        ];
+        let ambiguous = resolve_workspace_reference(&workspaces, "abcd")
+            .expect_err("ambiguous prefix")
+            .to_string();
+        assert!(ambiguous.contains("ambiguous workspace id prefix \"abcd\""));
+        assert!(ambiguous.contains("Alpha (alpha)"));
+        assert!(ambiguous.contains("Beta (beta)"));
+        assert!(resolve_workspace_reference(&workspaces, "gamma")
+            .expect_err("missing slug")
+            .to_string()
+            .contains("run 'cordy workspace list'"));
+        assert_eq!(
+            resolve_workspace_reference(&workspaces, "ALPHA")
+                .expect("case-insensitive slug")
+                .id,
+            workspaces[0].id
+        );
+    }
+
+    #[test]
+    fn workspace_details_table_truncates_description_and_context_at_sixty_chars() {
+        let long = "界".repeat(61);
+        let workspace = serde_json::json!({
+            "id":"workspace-1",
+            "name":"Alpha",
+            "slug":"alpha",
+            "description":long,
+            "context":"x".repeat(60)
+        });
+        let table = format_workspace_details_table(&workspace);
+        assert!(table.contains(&("界".repeat(57) + "...")));
+        assert!(table.contains(&"x".repeat(60)));
+        assert!(!table.contains(&"界".repeat(58)));
+    }
+
+    #[tokio::test]
+    async fn workspace_get_without_argument_requires_default_workspace() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from(["cordy", "workspace", "get"]).expect("workspace get CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("missing default workspace");
+        assert!(error.to_string().contains(
+            "workspace ID is required: pass an id/slug/prefix as argument or set CORDY_WORKSPACE_ID"
+        ));
     }
 
     #[test]
