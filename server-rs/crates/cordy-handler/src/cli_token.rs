@@ -16,6 +16,17 @@ pub fn router() -> Router<HandlerState> {
 }
 
 async fn issue(State(state): State<HandlerState>, headers: HeaderMap) -> Response {
+    if matches!(
+        headers
+            .get("x-actor-source")
+            .and_then(|value| value.to_str().ok()),
+        Some("task_token" | "cloud_pat")
+    ) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "this endpoint is only available to human actors",
+        );
+    }
     let user_id = match headers
         .get("x-user-id")
         .and_then(|value| value.to_str().ok())
@@ -39,6 +50,36 @@ async fn issue(State(state): State<HandlerState>, headers: HeaderMap) -> Respons
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to generate token",
             )
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::Request;
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn machine_credentials_are_rejected_before_user_lookup() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None);
+        let app = router().with_state(state);
+
+        for source in ["task_token", "cloud_pat"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::post("/api/cli-token")
+                        .header("x-actor-source", source)
+                        .header("x-user-id", Uuid::nil().to_string())
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{source}");
         }
     }
 }
