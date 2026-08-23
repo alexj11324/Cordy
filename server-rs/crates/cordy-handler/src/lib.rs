@@ -18,6 +18,7 @@ pub mod attachment;
 pub mod attachment_storage;
 pub mod auth;
 pub mod binding_redeem;
+pub mod chat_api;
 pub mod claim_comments;
 pub mod claim_response;
 pub mod cli_token;
@@ -284,6 +285,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         )
         .merge(
             agent_api::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            chat_api::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 cordy_middleware::workspace::require_workspace,
             )),
@@ -581,6 +588,17 @@ mod tests {
             "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/env",
             "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/labels",
             "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/skills",
+            "/api/chat/sessions",
+            "/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
+            "/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/messages",
+            "/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/messages/page",
+            "/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/pending-task",
+            "/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/draft-restores",
+            "/api/chat/pending-tasks",
+            "/api/chat/pending-tasks/has-any",
+            "/api/chat/pinned-agents",
+            "/api/chat/history?session_id=018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
+            "/api/chat/thread?session_id=018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/mcp-servers",
             "/api/skills",
             "/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
@@ -859,6 +877,48 @@ mod tests {
                 .unwrap(),
             Request::put("/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runtime-skills/enabled")
                 .body(Body::from(r#"{"skill_key":"review","enabled":true}"#))
+                .unwrap(),
+            Request::post("/api/chat/sessions")
+                .body(Body::from(r#"{"agent_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f11"}"#))
+                .unwrap(),
+            Request::patch("/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::from(r#"{"title":"Migration"}"#))
+                .unwrap(),
+            Request::delete("/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::empty())
+                .unwrap(),
+            Request::patch("/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/pin")
+                .body(Body::from(r#"{"pinned":true}"#))
+                .unwrap(),
+            Request::patch("/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/archive")
+                .body(Body::from(r#"{"archived":true}"#))
+                .unwrap(),
+            Request::post("/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/messages")
+                .body(Body::from(r#"{"content":"continue"}"#))
+                .unwrap(),
+            Request::post("/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/onboarding")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/quick-actions/regenerate")
+                .body(Body::empty())
+                .unwrap(),
+            Request::delete("/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/queued-tasks")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/queued-tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/prioritize")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/read")
+                .body(Body::empty())
+                .unwrap(),
+            Request::delete("/api/chat/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/draft-restores/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/chat/pinned-agents")
+                .body(Body::from(r#"{"agent_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f11"}"#))
+                .unwrap(),
+            Request::delete("/api/chat/pinned-agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::empty())
                 .unwrap(),
             Request::post(
                 "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/mcp-servers",
