@@ -63,7 +63,7 @@ pub(crate) trait DaemonTaskExecutionHost: Send + Sync + 'static {
 
     /// Preempt low-priority repository maintenance before a task starts, even
     /// when the runner reuses an existing worktree and never checks out.
-    fn cancel_repository_maintenance(&self);
+    async fn cancel_repository_maintenance(&self);
 
     async fn run_task(&self, ctx: Ctx, task: Task, provider: String, slot: usize)
         -> TaskRunOutcome;
@@ -208,9 +208,14 @@ impl<H: DaemonTaskExecutionHost> TaskExecutionOrchestrator<H> {
 
             let claimed_capacity = slots.len();
             let dispatched = claimed.len().min(claimed_capacity);
+            if dispatched > 0 {
+                // Cache cancellation is a wait-for-exit operation in Rust.
+                // Complete it before any provider runner starts so direct Git
+                // mutations cannot overlap low-priority maintenance.
+                self.host.cancel_repository_maintenance().await;
+            }
             for (task, slot) in claimed.into_iter().zip(slots.iter().copied()) {
                 tracing::info!(task = %task.id, runtime_id = %task.runtime_id, "task received");
-                self.host.cancel_repository_maintenance();
                 let client = Arc::clone(&self.client);
                 let host = Arc::clone(&self.host);
                 let reconcile = Arc::clone(&self.reconcile);
