@@ -34,6 +34,7 @@ impl ChannelRuntime {
         cfg: &cordy_config::Config,
         lease_metrics: Option<Arc<cordy_metrics::ChannelLeaseMetrics>>,
         media_metrics: Option<Arc<cordy_metrics::ChannelMediaReconcilerMetrics>>,
+        wecom_metrics: Option<Arc<cordy_metrics::WecomMetrics>>,
     ) -> anyhow::Result<Option<Self>> {
         let services = Arc::new(ChannelServices {
             pool: state.pool.clone(),
@@ -58,7 +59,15 @@ impl ChannelRuntime {
         configure_dingtalk(state, cfg, &router, storage.as_ref(), &registry);
         configure_telegram(state, cfg, &router, storage.as_ref(), &registry, &cancel);
         let mut maintenance = Vec::new();
-        let wecom = configure_wecom(state, cfg, &router, storage.as_ref(), &registry, &cancel)?;
+        let wecom = configure_wecom(
+            state,
+            cfg,
+            &router,
+            storage.as_ref(),
+            &registry,
+            &cancel,
+            wecom_metrics,
+        )?;
         maintenance.extend(wecom.tasks);
         if let Some(handle) =
             configure_lark(state, cfg, &router, storage.as_ref(), &registry, &cancel)?
@@ -193,6 +202,26 @@ impl LeaseMetrics for RuntimeLeaseMetrics {
 
     fn observe_takeover_latency(&self, delay: Duration) {
         self.0.observe_takeover_latency(delay.as_secs_f64());
+    }
+}
+
+struct RuntimeWecomMetrics(Arc<cordy_metrics::WecomMetrics>);
+
+impl cordy_wecom::metrics::Metrics for RuntimeWecomMetrics {
+    fn record_connect_failure(&self) {
+        self.0.record_connect_failure();
+    }
+
+    fn record_auth_failure(&self) {
+        self.0.record_auth_failure();
+    }
+
+    fn record_callback_queued(&self) {
+        self.0.record_callback_queued();
+    }
+
+    fn record_callback_queue_blocked(&self) {
+        self.0.record_callback_queue_blocked();
     }
 }
 
@@ -444,6 +473,7 @@ fn configure_wecom(
     storage: Option<&Arc<ChannelStorage>>,
     registry: &Arc<cordy_channel::Registry>,
     cancel: &CancellationToken,
+    metrics: Option<Arc<cordy_metrics::WecomMetrics>>,
 ) -> anyhow::Result<WecomRuntimeSetup> {
     let secret_box = match channel_secret_box("CORDY_WECOM_SECRET_KEY") {
         Ok(Some(secret_box)) => secret_box,
@@ -552,7 +582,9 @@ fn configure_wecom(
                 cordy_wecom::credentials::SecretboxCredentialsResolver::new(secret_box),
             )),
             senders: Some(senders),
-            metrics: None,
+            metrics: metrics.map(|metrics| {
+                Arc::new(RuntimeWecomMetrics(metrics)) as Arc<dyn cordy_wecom::metrics::Metrics>
+            }),
             dialer: None,
             ws_url: String::new(),
         },
