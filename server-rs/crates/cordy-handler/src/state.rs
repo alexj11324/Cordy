@@ -257,6 +257,9 @@ pub struct HandlerState {
     pub model_list_store: Option<Arc<crate::pending_store::ModelListStore>>,
     pub local_skill_list_store: Option<Arc<crate::pending_store::LocalSkillListStore>>,
     pub local_skill_import_store: Option<Arc<crate::pending_store::LocalSkillImportStore>>,
+    /// Shared Redis connection for per-IP public-route rate limiting. None is
+    /// the Go nil-client path and deliberately fails open.
+    pub rate_limit_client: Option<redis::Client>,
     /// Daemon WebSocket hub (cordy-daemon). `None` only in tests — the WS
     /// endpoint reports 503 and daemons fall back to HTTP polling.
     pub daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
@@ -303,6 +306,7 @@ impl HandlerState {
             model_list_store: None,
             local_skill_list_store: None,
             local_skill_import_store: None,
+            rate_limit_client: None,
             daemon_hub: Some(daemon_hub),
             attachment_storage: None,
             attachment_download: AttachmentDownloadSettings::default(),
@@ -419,9 +423,20 @@ impl HandlerState {
             crate::pending_store::LocalSkillListStore::new(conn.clone()),
         ));
         self.local_skill_import_store = Some(Arc::new(
-            crate::pending_store::LocalSkillImportStore::new(conn),
+            crate::pending_store::LocalSkillImportStore::new(conn.clone()),
         ));
         Ok(self)
+    }
+
+    /// Wires only public-route rate limiting. Kept separate from `with_redis`
+    /// so a handler-domain migration cannot implicitly activate pending-store
+    /// behavior owned by other S8 domains.
+    pub fn with_rate_limit_redis(mut self, client: redis::Client) -> Self {
+        // Keep Redis lazy like Go's redis.Client. The middleware establishes
+        // and caches a bounded connection on demand, so an unavailable Redis
+        // never delays or aborts HTTP server startup and can recover later.
+        self.rate_limit_client = Some(client);
+        self
     }
 }
 

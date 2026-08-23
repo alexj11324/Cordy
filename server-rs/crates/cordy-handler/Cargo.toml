@@ -36,6 +36,7 @@ futures-util = { workspace = true }
 hex = { workspace = true }
 hmac = { workspace = true }
 percent-encoding = { workspace = true }
+ipnetwork = { workspace = true }
 rand = { workspace = true }
 redis = { workspace = true }
 reqwest = { workspace = true }
