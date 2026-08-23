@@ -22,6 +22,7 @@ pub mod issue;
 pub mod issue_status;
 pub mod label;
 pub mod mcp_merge;
+pub mod me;
 pub mod notification;
 pub mod pat;
 pub mod pending_store;
@@ -173,6 +174,7 @@ pub fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<Hub>>) -> Router {
     ));
     let authenticated = workspace::authenticated_router()
         .merge(cli_token::router())
+        .merge(me::router())
         .merge(pat::router())
         .merge(issue_routes)
         .merge(task_routes)
@@ -262,6 +264,7 @@ mod tests {
             "/api/issues/CORD-14/active-task",
             "/api/issues/CORD-14/task-runs",
             "/api/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/messages",
+            "/api/me",
         ] {
             let response = build_router(None, None)
                 .oneshot(Request::get(uri).body(Body::empty()).unwrap())
