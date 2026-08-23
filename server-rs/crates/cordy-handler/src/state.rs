@@ -95,6 +95,9 @@ pub struct HandlerState {
     /// On-demand Slack channel history reader. `None` means Slack history is
     /// not configured; chat history then falls back to the persisted transcript.
     pub slack_history: Option<Arc<cordy_slack::history::History>>,
+    /// Server-internal assist LLM. An unconfigured client is deliberately
+    /// inert and guarantees that private chat content produces no egress.
+    pub llm: Arc<cordy_llm::Client>,
     /// Keeps the weak notifier installed in `TaskService` alive.
     _task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier>,
 }
@@ -125,6 +128,7 @@ impl HandlerState {
             60,
         );
         auth_verify_rate_limit.trusted_proxies = trusted_proxies;
+        let llm = cordy_llm::Client::new(cordy_llm::Config::default());
         Self {
             pool,
             pat_cache,
@@ -161,8 +165,44 @@ impl HandlerState {
             attachment_storage: None,
             attachment_frame_ancestors: Vec::new(),
             slack_history: None,
+            llm: Arc::new(llm),
             _task_wakeup: task_wakeup,
         }
+    }
+
+    /// Wires the internal OpenAI-compatible assist layer. Invalid retry
+    /// budgets fail startup rather than silently selecting another policy.
+    pub fn with_llm_from_env(mut self) -> anyhow::Result<Self> {
+        const MAX_RETRIES: u32 = 5;
+        let raw_retries = std::env::var("CORDY_LLM_MAX_RETRIES").unwrap_or_default();
+        let max_retries = if raw_retries.trim().is_empty() {
+            None
+        } else {
+            let parsed = raw_retries.trim().parse::<u32>().map_err(|_| {
+                anyhow::anyhow!(
+                    "CORDY_LLM_MAX_RETRIES must be an integer from 0 to {MAX_RETRIES}, got {:?}",
+                    raw_retries.trim()
+                )
+            })?;
+            anyhow::ensure!(
+                parsed <= MAX_RETRIES,
+                "CORDY_LLM_MAX_RETRIES must be at most {MAX_RETRIES}, got {parsed}"
+            );
+            Some(parsed)
+        };
+        self.llm = Arc::new(cordy_llm::Client::new(cordy_llm::Config {
+            api_key: std::env::var("CORDY_LLM_API_KEY").unwrap_or_default(),
+            base_url: std::env::var("CORDY_LLM_BASE_URL").unwrap_or_default(),
+            default_model: std::env::var("CORDY_LLM_DEFAULT_MODEL").unwrap_or_default(),
+            max_retries,
+        }));
+        tracing::info!(
+            enabled = self.llm.enabled(),
+            max_retries = self.llm.max_retries(),
+            default_model = self.llm.default_model(),
+            "llm assist policy"
+        );
+        Ok(self)
     }
 
     /// Wires the S7 Slack history service with the same secretbox key used by

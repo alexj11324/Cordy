@@ -19,6 +19,7 @@ pub mod attachment_storage;
 pub mod auth;
 pub mod binding_redeem;
 pub mod chat_api;
+mod chat_title;
 pub mod claim_comments;
 pub mod claim_response;
 pub mod cli_token;

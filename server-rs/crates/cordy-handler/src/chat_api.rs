@@ -1027,6 +1027,12 @@ async fn send_message(
             cordy_service::dispatch_reason::ReasonCode::InvocationNotAllowed,
         );
     }
+    // Inspect before inserting the turn. A failed inspection deliberately
+    // suppresses this best-effort feature rather than risking duplicate LLM
+    // egress or affecting the successful chat send.
+    let first_user_message = crate::chat_title::should_generate_for_first_message(
+        &chat::chat_session_has_user_message(&state.pool, session.id).await,
+    );
     let sent = match state
         .tasks
         .send_direct_chat_message(
@@ -1103,6 +1109,16 @@ async fn send_message(
             "created_at": crate::timefmt::rfc3339(message.created_at),
         }),
     );
+    if first_user_message {
+        crate::chat_title::generate_title_async(
+            state.clone(),
+            session.workspace_id,
+            user_id,
+            session.id,
+            session.title.clone(),
+            input.content.clone(),
+        );
+    }
     (
         StatusCode::CREATED,
         Json(json!({
