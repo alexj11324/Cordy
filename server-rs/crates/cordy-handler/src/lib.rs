@@ -47,6 +47,7 @@ pub mod quick_action;
 pub mod runtime;
 pub mod runtime_usage;
 pub mod session;
+pub mod skill;
 pub mod squad;
 pub mod squad_briefing;
 pub mod state;
@@ -267,6 +268,10 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             WorkspaceGuardState::member_only(state.pool.clone()),
             cordy_middleware::workspace::require_workspace,
         )))
+        .merge(skill::router().route_layer(middleware::from_fn_with_state(
+            WorkspaceGuardState::member_only(state.pool.clone()),
+            cordy_middleware::workspace::require_workspace,
+        )))
         .merge(issue_routes)
         .merge(task_routes)
         .merge(comment_routes)
@@ -419,6 +424,10 @@ mod tests {
             "/api/agent-run-counts",
             "/api/agent-task-snapshot",
             "/api/agent-builder/sessions",
+            "/api/skills",
+            "/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
+            "/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/files",
+            "/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/labels",
             "/api/properties",
             "/api/properties/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/projects",
@@ -569,6 +578,33 @@ mod tests {
             Request::put("/api/agent-builder/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/draft")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"draft":{"name":"Migration"}}"#))
+                .unwrap(),
+            Request::post("/api/skills")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"name":"review"}"#))
+                .unwrap(),
+            Request::put("/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"description":"Review changes"}"#))
+                .unwrap(),
+            Request::delete("/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::empty())
+                .unwrap(),
+            Request::put("/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/files")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"path":"references/checklist.md"}"#))
+                .unwrap(),
+            Request::delete("/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/files/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/labels")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"label_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12"}"#,
+                ))
+                .unwrap(),
+            Request::delete("/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/labels/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
+                .body(Body::empty())
                 .unwrap(),
             Request::post("/api/issue-views")
                 .header("content-type", "application/json")

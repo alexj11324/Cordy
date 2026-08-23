@@ -3790,7 +3790,7 @@ async fn report_local_skill_import_result(
             Some(&sanitized_name),
             Some(&sanitized_description),
             Some(&sanitized_content),
-            &config,
+            Some(&config),
         )
         .await
         {
