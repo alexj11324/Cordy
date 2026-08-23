@@ -23,9 +23,9 @@ use cordy_db::models::{
 };
 use cordy_db::queries::issue_reaction::AddIssueReactionRow;
 use cordy_db::queries::{
-    activity, agent, agent_invocation_target, attachment, comment as comment_q, issue as issue_q,
-    issue_label, issue_property, issue_reaction, member, quick_action, squad, subscriber,
-    task_usage, user, workspace,
+    activity, agent, agent_invocation_target, attachment, autopilot, comment as comment_q,
+    issue as issue_q, issue_label, issue_property, issue_reaction, member, quick_action, squad,
+    subscriber, task_usage, user, workspace,
 };
 use cordy_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use cordy_service::issue_service::{
@@ -1456,6 +1456,37 @@ struct BatchDeleteRequest {
     issue_ids: Vec<String>,
 }
 
+async fn delete_issue_and_collect_attachment_urls(
+    state: &HandlerState,
+    issue: &Issue,
+) -> anyhow::Result<Vec<String>> {
+    let mut tx = state.pool.begin().await?;
+    issue_q::lock_issue_for_delete(&mut *tx, issue.id, issue.workspace_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("issue not found while locking for delete"))?;
+    let urls = attachment::list_attachment_ur_ls_by_issue_or_comments(&mut *tx, issue.id).await?;
+    if issue_q::delete_issue(&mut *tx, issue.id, issue.workspace_id).await? != 1 {
+        anyhow::bail!("issue disappeared while deleting");
+    }
+    tx.commit().await?;
+    Ok(urls)
+}
+
+async fn delete_attachment_objects(state: &HandlerState, urls: Vec<String>) {
+    let Some(storage) = state.attachment_storage.as_ref() else {
+        return;
+    };
+    for url in urls {
+        let Some(key) = storage.key_from_url(&url) else {
+            tracing::warn!(%url, "skipping issue attachment URL outside configured storage");
+            continue;
+        };
+        if let Err(error) = storage.delete(&key).await {
+            tracing::warn!(%error, %key, "failed to delete issue attachment object");
+        }
+    }
+}
+
 async fn batch_delete_issues(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -1482,13 +1513,12 @@ async fn batch_delete_issues(
         if state.tasks.cancel_tasks_for_issue(issue.id).await.is_err() {
             continue;
         }
-        if issue_q::delete_issue(&state.pool, issue.id, workspace_id)
-            .await
-            .ok()
-            != Some(1)
-        {
+        let _ = autopilot::fail_autopilot_runs_by_issue(&state.pool, issue.id).await;
+        let Ok(attachment_urls) = delete_issue_and_collect_attachment_urls(&state, &issue).await
+        else {
             continue;
-        }
+        };
+        delete_attachment_objects(&state, attachment_urls).await;
         state.bus.publish(&cordy_events::Event {
             event_type: cordy_protocol::EVENT_ISSUE_DELETED.into(),
             workspace_id: workspace_id.to_string(),
@@ -1516,8 +1546,10 @@ async fn delete_issue(
         tracing::warn!(%error, issue_id=%issue.id, "failed to cancel issue tasks");
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete issue");
     }
-    match issue_q::delete_issue(&state.pool, issue.id, issue.workspace_id).await {
-        Ok(1) => {
+    let _ = autopilot::fail_autopilot_runs_by_issue(&state.pool, issue.id).await;
+    match delete_issue_and_collect_attachment_urls(&state, &issue).await {
+        Ok(attachment_urls) => {
+            delete_attachment_objects(&state, attachment_urls).await;
             let (actor_type, actor_id, _) = mutation_actor(&state, &context, &headers).await;
             state.bus.publish(&cordy_events::Event {
                 event_type: cordy_protocol::EVENT_ISSUE_DELETED.into(),
@@ -1529,7 +1561,6 @@ async fn delete_issue(
             });
             StatusCode::NO_CONTENT.into_response()
         }
-        Ok(_) => error_response(StatusCode::NOT_FOUND, "issue not found"),
         Err(error) => {
             tracing::warn!(%error, issue_id=%issue.id, "failed to delete issue");
             error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete issue")
