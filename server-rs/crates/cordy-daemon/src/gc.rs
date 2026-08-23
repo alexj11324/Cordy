@@ -65,6 +65,20 @@ pub(crate) mod processtree {
         Io(#[from] std::io::Error),
     }
 
+    fn run_failure(
+        combined: bool,
+        combined_output: Vec<u8>,
+        stdout: Vec<u8>,
+        stderr: Vec<u8>,
+        err: anyhow::Error,
+    ) -> (Vec<u8>, Vec<u8>, anyhow::Error) {
+        if combined {
+            (combined_output, Vec::new(), err)
+        } else {
+            (stdout, stderr, err)
+        }
+    }
+
     /// Signals a process group; Ok(false) means the group no longer exists
     /// (ESRCH), mirroring the controller's ESRCH tolerance.
     fn kill_group(pid: i32, sig: i32) -> std::io::Result<bool> {
@@ -119,16 +133,21 @@ pub(crate) mod processtree {
     async fn run_inner(
         ctx: &Ctx,
         mut cmd: Command,
-        _wait_delay: Duration,
+        wait_delay: Duration,
         combined: bool,
-    ) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
+    ) -> Result<(Vec<u8>, Vec<u8>), (Vec<u8>, Vec<u8>, anyhow::Error)> {
         if let Some(cause) = ctx.err() {
-            return Err(anyhow::anyhow!(cause.to_string()));
+            return Err((Vec::new(), Vec::new(), anyhow::anyhow!(cause.to_string())));
         }
         // newController (controller_unix.go:18–24): own process group.
         cmd.process_group(0);
         cmd.stdin(Stdio::null());
-        let mut child = cmd.spawn().context("start process")?;
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+        let mut child = cmd
+            .spawn()
+            .context("start process")
+            .map_err(|err| (Vec::new(), Vec::new(), err))?;
         let pid = child.id().unwrap_or_default() as i32;
 
         // Drain pipes concurrently into buffers, like Go's exec copying
@@ -194,10 +213,31 @@ pub(crate) mod processtree {
             }
         };
 
+        // Kill leftover descendants before awaiting pipe EOF, then bound the
+        // readers like Go's Cmd.WaitDelay in case an unrelated inherited
+        // handle still prevents EOF.
+        let finish_result = finish(pid).await;
+        let abort_handles: Vec<_> = drain_tasks.iter().map(|task| task.abort_handle()).collect();
+        let drained =
+            match tokio::time::timeout(wait_delay, futures_util::future::join_all(drain_tasks))
+                .await
+            {
+                Ok(results) => Ok(results),
+                Err(_) => {
+                    for handle in abort_handles {
+                        handle.abort();
+                    }
+                    Err(anyhow::anyhow!(
+                        "wait for process output exceeded {}s",
+                        wait_delay.as_secs()
+                    ))
+                }
+            };
+
         let mut stdout_buf = Vec::new();
         let mut stderr_buf = Vec::new();
-        for task in drain_tasks {
-            let (idx, buf) = task.await.unwrap_or((usize::MAX, Vec::new()));
+        for result in drained.as_ref().map(Vec::as_slice).unwrap_or_default() {
+            let (idx, buf) = result.as_ref().cloned().unwrap_or((usize::MAX, Vec::new()));
             if combined {
                 continue; // already accumulated in `shared`
             }
@@ -210,24 +250,52 @@ pub(crate) mod processtree {
         let combined_buf = std::mem::take(&mut *shared.lock().unwrap());
 
         // errors.Join(stopErr, finishErr) != nil → "stop process tree: %w"
-        if let Err(finish_err) = finish(pid).await {
-            let mut err = finish_err.context("stop process tree");
-            if let Some(se) = stop_err.take() {
-                err = err.context(se.to_string());
-            }
-            return Err(err);
+        let lifecycle_err = match (stop_err, finish_result) {
+            (None, Ok(())) => None,
+            (Some(stop), Ok(())) => Some(anyhow::Error::new(stop)),
+            (None, Err(finish)) => Some(finish),
+            (Some(stop), Err(finish)) => Some(finish.context(format!("stop process tree: {stop}"))),
+        };
+        if let Some(err) = lifecycle_err {
+            return Err(run_failure(
+                combined,
+                combined_buf,
+                stdout_buf,
+                stderr_buf,
+                err.context("stop process tree"),
+            ));
         }
-        if let Some(se) = stop_err.take() {
-            return Err(anyhow::Error::new(se).context("stop process tree"));
+        if let Err(err) = drained {
+            return Err(run_failure(
+                combined,
+                combined_buf,
+                stdout_buf,
+                stderr_buf,
+                err,
+            ));
         }
         if cancelled {
-            return Err(anyhow::Error::new(ProcessError::Cancelled(ctx.cause())));
+            return Err(run_failure(
+                combined,
+                combined_buf,
+                stdout_buf,
+                stderr_buf,
+                anyhow::Error::new(ProcessError::Cancelled(ctx.cause())),
+            ));
         }
 
         let status = match status_result {
             Some(Ok(status)) => status,
-            Some(Err(e)) => return Err(anyhow::Error::new(ProcessError::Io(e))),
-            None => return Err(anyhow::Error::new(ProcessError::Cancelled(ctx.cause()))),
+            Some(Err(e)) => {
+                return Err(run_failure(
+                    combined,
+                    combined_buf,
+                    stdout_buf,
+                    stderr_buf,
+                    anyhow::Error::new(ProcessError::Io(e)),
+                ));
+            }
+            None => unreachable!("status_result is None only when cancelled"),
         };
         if !status.success() {
             let err = if let Some(sig) = status.signal() {
@@ -235,7 +303,13 @@ pub(crate) mod processtree {
             } else {
                 anyhow::Error::new(ProcessError::Exit(status.code().unwrap_or(-1)))
             };
-            return Err(err);
+            return Err(run_failure(
+                combined,
+                combined_buf,
+                stdout_buf,
+                stderr_buf,
+                err,
+            ));
         }
         if combined {
             Ok((combined_buf, Vec::new()))
@@ -255,7 +329,7 @@ pub(crate) mod processtree {
     ) -> (Vec<u8>, anyhow::Result<()>) {
         match run_inner(ctx, cmd, wait_delay, true).await {
             Ok((out, _)) => (out, Ok(())),
-            Err(err) => (Vec::new(), Err(err)),
+            Err((out, _, err)) => (out, Err(err)),
         }
     }
 
@@ -266,15 +340,19 @@ pub(crate) mod processtree {
         cmd: Command,
         wait_delay: Duration,
     ) -> anyhow::Result<Vec<u8>> {
-        run_inner(ctx, cmd, wait_delay, false)
-            .await
-            .map(|(out, _)| out)
+        match run_inner(ctx, cmd, wait_delay, false).await {
+            Ok((out, _)) => Ok(out),
+            Err((_, _, err)) => Err(err),
+        }
     }
 
     /// `Run` (run.go:40–42): executes an unstarted command while owning its
     /// complete process tree.
     pub(crate) async fn run(ctx: &Ctx, cmd: Command, wait_delay: Duration) -> anyhow::Result<()> {
-        run_inner(ctx, cmd, wait_delay, true).await.map(|_| ())
+        match run_inner(ctx, cmd, wait_delay, true).await {
+            Ok(_) => Ok(()),
+            Err((_, _, err)) => Err(err),
+        }
     }
 }
 
@@ -2424,6 +2502,21 @@ fn gc_is_bare_repo(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn process_tree_preserves_failed_command_output() {
+        let mut command = tokio::process::Command::new("/bin/sh");
+        command.args([
+            "-c",
+            "printf \"fatal: a branch named 'taken' already exists\" >&2; exit 128",
+        ]);
+
+        let (output, result) =
+            processtree::combined_output(&Ctx::new(), command, Duration::from_secs(1)).await;
+
+        assert!(result.is_err());
+        assert!(String::from_utf8_lossy(&output).contains("a branch named 'taken'"));
+    }
 
     /// safeRelativePath contract (artifact_matcher.go:74–84): rejects empty,
     /// absolute, and upward-escaping paths; cleans the rest.

@@ -17,8 +17,8 @@
 //! - marshalPreparationRequest     → (serde handles the payload directly)
 //! - decodePreparationRequest      → decode_preparation_request
 //! - RunPreparationHelper          → run_preparation_helper
-//! - preparationProcessController  → (unix) process-group via tokio Command;
-//!    stop = SIGKILL to -pgid, ESRCH tolerated
+//! - preparationProcessController  → Unix process group / Windows Job Object;
+//!    cancellation terminates the complete helper process tree
 //!
 //! Deviations:
 //! - Go's DisallowUnknownFields is approximated with serde deny_unknown_fields.
@@ -26,9 +26,8 @@
 //!    type's MarshalJSON redacts Token. Our stand-in type serializes plainly
 //!    already, so the private view types collapse into the request structs.
 //! - slog logger dropped (tracing).
-//! - WaitDelay semantics: after cancellation we SIGKILL the process group and
-//!    await the child; a 2s grace for pipe flushes is not needed because we
-//!    read to EOF before waiting.
+//! - WaitDelay semantics: cancellation terminates the platform process-tree
+//!   boundary before awaiting the child and pipe readers.
 //!
 //! NOTE: the parent-side entry points (prepare_isolated / reuse_isolated) are
 //! wired into the task launcher in a later slice; until then this module is
@@ -206,8 +205,18 @@ async fn run_preparation_process(
         cmd.process_group(0);
     }
 
+    #[cfg(windows)]
+    let process_job =
+        WindowsProcessJob::new().context("execenv: create preparation process controller")?;
+
     let mut child = cmd.spawn().context("execenv: start preparation helper")?;
     let pid = child.id().unwrap_or_default();
+    #[cfg(windows)]
+    if let Err(err) = process_job.attach(pid) {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
+        return Err(err).context("execenv: attach preparation helper process");
+    }
 
     let mut stdin = child
         .stdin
@@ -257,7 +266,10 @@ async fn run_preparation_process(
     let status_result = tokio::select! {
         r = &mut wait_task => r.ok(),
         _ = ctx.cancelled() => {
+            #[cfg(unix)]
             stop_process_group(pid as i32);
+            #[cfg(windows)]
+            process_job.terminate().context("execenv: stop preparation process tree")?;
             let _ = wait_task.await;
             return Err(anyhow!(ctx.cause().to_string()));
         }
@@ -268,6 +280,11 @@ async fn run_preparation_process(
         Some(Err(e)) => return Err(anyhow!("execenv: preparation helper failed: {e}")),
         None => return Err(anyhow!("execenv: preparation helper wait task failed")),
     };
+    #[cfg(windows)]
+    process_job
+        .finish()
+        .await
+        .context("execenv: finish preparation process tree")?;
     let _ = PREPARATION_WAIT_DELAY; // documented grace; EOF reads bound below
 
     let write_err = write_task.await.ok();
@@ -326,8 +343,113 @@ fn stop_process_group(pid: i32) {
     }
 }
 
-#[cfg(not(unix))]
-fn stop_process_group(_pid: i32) {}
+#[cfg(windows)]
+struct WindowsProcessJob {
+    handle: windows_sys::Win32::Foundation::HANDLE,
+}
+
+#[cfg(windows)]
+impl WindowsProcessJob {
+    fn new() -> std::io::Result<Self> {
+        use windows_sys::Win32::System::JobObjects::{
+            CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
+            JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        };
+
+        let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+        if handle.is_null() {
+            return Err(std::io::Error::last_os_error());
+        }
+        let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        let configured = unsafe {
+            SetInformationJobObject(
+                handle,
+                JobObjectExtendedLimitInformation,
+                std::ptr::addr_of!(info).cast(),
+                std::mem::size_of_val(&info) as u32,
+            )
+        };
+        if configured == 0 {
+            let err = std::io::Error::last_os_error();
+            unsafe { windows_sys::Win32::Foundation::CloseHandle(handle) };
+            return Err(err);
+        }
+        Ok(Self { handle })
+    }
+
+    fn attach(&self, pid: u32) -> anyhow::Result<()> {
+        use windows_sys::Win32::System::JobObjects::AssignProcessToJobObject;
+        use windows_sys::Win32::System::Threading::{
+            OpenProcess, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
+        };
+
+        let process = unsafe { OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, 0, pid) };
+        if process.is_null() {
+            return Err(std::io::Error::last_os_error()).context("open helper process");
+        }
+        let assigned = unsafe { AssignProcessToJobObject(self.handle, process) };
+        unsafe { windows_sys::Win32::Foundation::CloseHandle(process) };
+        if assigned == 0 {
+            return Err(std::io::Error::last_os_error()).context("assign helper to job object");
+        }
+        Ok(())
+    }
+
+    fn terminate(&self) -> anyhow::Result<()> {
+        let terminated =
+            unsafe { windows_sys::Win32::System::JobObjects::TerminateJobObject(self.handle, 1) };
+        if terminated == 0 {
+            let err = std::io::Error::last_os_error();
+            if self.active_processes()? > 0 {
+                return Err(err).context("terminate helper job object");
+            }
+        }
+        Ok(())
+    }
+
+    async fn finish(&self) -> anyhow::Result<()> {
+        if self.active_processes()? > 0 {
+            self.terminate()?;
+        }
+        while self.active_processes()? > 0 {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        Ok(())
+    }
+
+    fn active_processes(&self) -> anyhow::Result<u32> {
+        use windows_sys::Win32::System::JobObjects::{
+            JobObjectBasicAccountingInformation, QueryInformationJobObject,
+            JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+        };
+
+        let mut info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+        let queried = unsafe {
+            QueryInformationJobObject(
+                self.handle,
+                JobObjectBasicAccountingInformation,
+                std::ptr::addr_of_mut!(info).cast(),
+                std::mem::size_of_val(&info) as u32,
+                std::ptr::null_mut(),
+            )
+        };
+        if queried == 0 {
+            return Err(std::io::Error::last_os_error()).context("query helper job object");
+        }
+        Ok(info.ActiveProcesses)
+    }
+}
+
+#[cfg(windows)]
+impl Drop for WindowsProcessJob {
+    fn drop(&mut self) {
+        if !self.handle.is_null() {
+            unsafe { windows_sys::Win32::Foundation::CloseHandle(self.handle) };
+            self.handle = std::ptr::null_mut();
+        }
+    }
+}
 
 /// decode_preparation_request reads the parent→helper payload strictly.
 pub(crate) fn decode_preparation_request<R: std::io::Read>(

@@ -193,7 +193,7 @@ pub fn prepare_codex_home_with_opts(
     for name in CODEX_COPIED_FILES {
         let src = join_path(&[&shared_home, name]);
         let dst = join_path(&[codex_home, name]);
-        if let Err(err) = super::execenv::copy_file(&src, &dst) {
+        if let Err(err) = sync_copied_file(&src, &dst) {
             tracing::warn!(file = %name, error = %format!("{err:#}"), "execenv: codex-home sync failed");
             if name == "config.toml" {
                 config_sync_err = Some(format!("{err:#}"));
@@ -953,11 +953,11 @@ fn expose_resume_rollout(
 /// link_codex_rollout materialises src at dst without copying its bytes: hard
 /// link first, falling back to a symlink across filesystems.
 fn link_codex_rollout(src: &str, dst: &str) -> anyhow::Result<()> {
+    if std::fs::hard_link(src, dst).is_ok() {
+        return Ok(());
+    }
     #[cfg(unix)]
     {
-        if std::fs::hard_link(src, dst).is_ok() {
-            return Ok(());
-        }
         std::os::unix::fs::symlink(src, dst)?;
         Ok(())
     }
@@ -1248,7 +1248,7 @@ fn resolve_codex_config_path(
     shared_home: &str,
     key: &str,
 ) -> anyhow::Result<String> {
-    if config_path.starts_with('/') {
+    if is_absolute_config_path(config_path) {
         return Ok(clean_lexical(config_path));
     }
     if config_path.starts_with("~/") || config_path.starts_with("~\\") {
@@ -1260,6 +1260,15 @@ fn resolve_codex_config_path(
         bail!("{key} {config_path:?} uses unsupported ~user expansion");
     }
     Ok(join_path(&[shared_home, &clean_lexical(config_path)]))
+}
+
+fn is_absolute_config_path(path: &str) -> bool {
+    Path::new(path).is_absolute()
+        || path.starts_with("\\\\")
+        || path
+            .as_bytes()
+            .get(1..3)
+            .is_some_and(|suffix| suffix[0] == b':' && matches!(suffix[1], b'/' | b'\\'))
 }
 
 // ---------------------------------------------------------------------------
@@ -1588,6 +1597,14 @@ mod tests {
         assert_eq!(
             resolve_codex_config_path("rel/file.md", shared, "k").unwrap(),
             "/shared/.codex/rel/file.md"
+        );
+        assert_eq!(
+            resolve_codex_config_path(r"C:\models\catalog.json", shared, "k").unwrap(),
+            r"C:\models\catalog.json"
+        );
+        assert_eq!(
+            resolve_codex_config_path(r"\\server\share\instructions.md", shared, "k").unwrap(),
+            r"\\server\share\instructions.md"
         );
         assert!(resolve_codex_config_path("~other/x", shared, "k").is_err());
         let got = resolve_codex_config_path("~/mine.md", shared, "k").unwrap();
