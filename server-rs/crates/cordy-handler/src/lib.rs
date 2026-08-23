@@ -17,6 +17,7 @@ pub mod attachment_access;
 pub mod attachment_storage;
 pub mod auth;
 pub mod avatar;
+pub mod binding_redeem;
 pub mod claim_comments;
 pub mod claim_response;
 pub mod cli_token;
@@ -236,6 +237,10 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         issue::require_issue_workspace,
     ));
     let authenticated = workspace::authenticated_router()
+        .merge(
+            binding_redeem::router()
+                .with_state(binding_redeem::BindingRedeemState::from_handler(&state)),
+        )
         .merge(
             runtime_profile::member_router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url(state.pool.clone(), "id"),
@@ -827,6 +832,21 @@ mod tests {
                 .body(Body::from(
                     r#"{"install_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f11"}"#,
                 ))
+                .unwrap(),
+            Request::post("/api/lark/binding/redeem")
+                .body(Body::from(r#"{"token":"binding-token"}"#))
+                .unwrap(),
+            Request::post("/api/slack/binding/redeem")
+                .body(Body::from(r#"{"token":"binding-token"}"#))
+                .unwrap(),
+            Request::post("/api/wecom/binding/redeem")
+                .body(Body::from(r#"{"token":"binding-token"}"#))
+                .unwrap(),
+            Request::post("/api/dingtalk/binding/redeem")
+                .body(Body::from(r#"{"token":"binding-token"}"#))
+                .unwrap(),
+            Request::post("/api/telegram/binding/redeem")
+                .body(Body::from(r#"{"token":"binding-token"}"#))
                 .unwrap(),
             Request::post("/api/comments/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/resolve")
                 .body(Body::empty())
