@@ -57,9 +57,8 @@ impl ChannelRuntime {
         configure_dingtalk(state, cfg, &router, storage.as_ref(), &registry);
         configure_telegram(state, cfg, &router, &registry, &cancel);
         let mut maintenance = Vec::new();
-        let (wecom_relay, wecom_tasks) =
-            configure_wecom(state, cfg, &router, storage.as_ref(), &registry, &cancel)?;
-        maintenance.extend(wecom_tasks);
+        let wecom = configure_wecom(state, cfg, &router, storage.as_ref(), &registry, &cancel)?;
+        maintenance.extend(wecom.tasks);
         if let Some(handle) =
             configure_lark(state, cfg, &router, storage.as_ref(), &registry, &cancel)?
         {
@@ -128,7 +127,7 @@ impl ChannelRuntime {
             supervisor,
             media_reconciler,
             maintenance,
-            wecom_relay,
+            wecom_relay: wecom.relay,
             router,
         }))
     }
@@ -412,6 +411,11 @@ fn configure_telegram(
     );
 }
 
+struct WecomRuntimeSetup {
+    relay: Option<Arc<cordy_wecom::outbound_relay::OutboundRelay>>,
+    tasks: Vec<tokio::task::JoinHandle<()>>,
+}
+
 fn configure_wecom(
     state: &cordy_handler::HandlerState,
     cfg: &cordy_config::Config,
@@ -419,19 +423,22 @@ fn configure_wecom(
     storage: Option<&Arc<ChannelStorage>>,
     registry: &Arc<cordy_channel::Registry>,
     cancel: &CancellationToken,
-) -> anyhow::Result<(
-    Option<Arc<cordy_wecom::outbound_relay::OutboundRelay>>,
-    Vec<tokio::task::JoinHandle<()>>,
-)> {
+) -> anyhow::Result<WecomRuntimeSetup> {
     let secret_box = match channel_secret_box("CORDY_WECOM_SECRET_KEY") {
         Ok(Some(secret_box)) => secret_box,
         Ok(None) => {
             tracing::info!("wecom channel runtime disabled: CORDY_WECOM_SECRET_KEY not set");
-            return Ok((None, Vec::new()));
+            return Ok(WecomRuntimeSetup {
+                relay: None,
+                tasks: Vec::new(),
+            });
         }
         Err(error) => {
             tracing::error!(%error, "wecom channel runtime disabled: invalid secret key");
-            return Ok((None, Vec::new()));
+            return Ok(WecomRuntimeSetup {
+                relay: None,
+                tasks: Vec::new(),
+            });
         }
     };
     let senders = Arc::new(cordy_wecom::senders_registry::SendersRegistry::new());
@@ -537,7 +544,10 @@ fn configure_wecom(
     } else {
         tracing::info!("wecom outbound relay disabled: Redis URL not configured; using direct local connection path");
     }
-    Ok((relay, relay_tasks))
+    Ok(WecomRuntimeSetup {
+        relay,
+        tasks: relay_tasks,
+    })
 }
 
 fn configure_lark(
