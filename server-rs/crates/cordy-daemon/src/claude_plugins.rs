@@ -144,6 +144,7 @@ pub(crate) fn claude_plugin_component_paths(
     raw: &serde_json::Value,
     defaults: &[String],
 ) -> Vec<String> {
+    let install_root = std::path::PathBuf::from(clean_path(install_path));
     let mut paths: Vec<String> = defaults.to_vec();
     match raw {
         serde_json::Value::String(one) => {
@@ -177,11 +178,10 @@ pub(crate) fn claude_plugin_component_paths(
             clean_path(&join_path(&[install_path, candidate]))
         };
         // Confine to the install path: rel must not escape (".." prefix).
-        let escapes = match candidate.strip_prefix(install_path) {
-            Some(rel) => rel == ".." || rel.starts_with("../") || rel.starts_with("..\\"),
-            None => true,
-        };
-        if escapes {
+        if std::path::Path::new(&candidate)
+            .strip_prefix(&install_root)
+            .is_err()
+        {
             continue;
         }
         if seen.insert(candidate.clone()) {
@@ -225,6 +225,15 @@ mod tests {
         assert_eq!(
             claude_plugin_component_paths(install, &raw, &[]),
             vec!["/plugins/foo/a".to_string()]
+        );
+    }
+
+    #[test]
+    fn component_paths_reject_sibling_prefixes() {
+        let raw = serde_json::json!(["/plugins/foobar/skills", "/plugins/foo/skills"]);
+        assert_eq!(
+            claude_plugin_component_paths("/plugins/foo", &raw, &[]),
+            vec!["/plugins/foo/skills".to_string()]
         );
     }
 

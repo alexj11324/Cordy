@@ -25,7 +25,6 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::OnceLock;
 
-use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::claude_plugins::{
@@ -441,40 +440,39 @@ pub(crate) fn is_likely_binary_file_path(path: &str) -> bool {
 /// `ParseSkillFrontmatter` (internal/skill/frontmatter.go): returns
 /// `(name, description)` from the leading YAML frontmatter block.
 pub(crate) fn parse_skill_frontmatter(content: &str) -> (String, String) {
-    static NAME_RE: OnceLock<Regex> = OnceLock::new();
-    static DESC_RE: OnceLock<Regex> = OnceLock::new();
-    let name_re = NAME_RE.get_or_init(|| Regex::new(r"(?m)^name:\s*(.+?)\s*$").expect("regex"));
-    let desc_re =
-        DESC_RE.get_or_init(|| Regex::new(r"(?m)^description:\s*(.+?)\s*$").expect("regex"));
-
-    let rest = match content.strip_prefix("---\n").or_else(|| content.strip_prefix("---\r\n")) {
-        Some(r) => r,
-        None => return (String::new(), String::new()),
+    let (rest, newline) = if let Some(rest) = content.strip_prefix("---\r\n") {
+        (rest, "\r\n")
+    } else if let Some(rest) = content.strip_prefix("---\n") {
+        (rest, "\n")
+    } else {
+        return (String::new(), String::new());
     };
-    let end = match rest.find("\n---") {
-        Some(i) => i,
-        None => return (String::new(), String::new()),
+    let marker = format!("{newline}---");
+    let Some(end) = rest.find(&marker) else {
+        return (String::new(), String::new());
     };
-    let block = &rest[..end];
-    let name = name_re
-        .captures(block)
-        .map(|c| unquote_yaml_scalar(&c[1]))
-        .unwrap_or_default();
-    let description = desc_re
-        .captures(block)
-        .map(|c| unquote_yaml_scalar(&c[1]))
-        .unwrap_or_default();
-    (name, description)
+    let block = &rest[..end + newline.len()];
+    let Ok(frontmatter) = serde_yaml::from_str::<HashMap<String, serde_yaml::Value>>(block) else {
+        return (String::new(), String::new());
+    };
+    (
+        coerce_frontmatter_value(frontmatter.get("name"))
+            .trim()
+            .to_string(),
+        coerce_frontmatter_value(frontmatter.get("description"))
+            .trim()
+            .to_string(),
+    )
 }
 
-fn unquote_yaml_scalar(v: &str) -> String {
-    let v = v.trim();
-    if v.len() >= 2
-        && ((v.starts_with('"') && v.ends_with('"')) || (v.starts_with('\'') && v.ends_with('\'')))
-    {
-        return v[1..v.len() - 1].to_string();
+fn coerce_frontmatter_value(value: Option<&serde_yaml::Value>) -> String {
+    match value {
+        None | Some(serde_yaml::Value::Null) => String::new(),
+        Some(serde_yaml::Value::String(value)) => value.clone(),
+        Some(serde_yaml::Value::Bool(value)) => value.to_string(),
+        Some(serde_yaml::Value::Number(value)) => value.to_string(),
+        Some(value) => serde_json::to_string(value).unwrap_or_default(),
     }
-    v.to_string()
 }
 
 /// `listRuntimeLocalSkills`: walk each root in priority order with symlink
@@ -749,6 +747,22 @@ mod tests {
 
         let (n3, d3) = parse_skill_frontmatter("no frontmatter");
         assert_eq!((n3, d3), (String::new(), String::new()));
+
+        let (block_name, block_desc) = parse_skill_frontmatter(
+            "---\nname: 42\ndescription: |\n  First line\n  second line\n---\n",
+        );
+        assert_eq!(block_name, "42");
+        assert_eq!(block_desc, "First line\nsecond line");
+
+        let (structured_name, structured_desc) =
+            parse_skill_frontmatter("---\nname: [deploy, prod]\ndescription: {safe: true}\n---\n");
+        assert_eq!(structured_name, r#"["deploy","prod"]"#);
+        assert_eq!(structured_desc, r#"{"safe":true}"#);
+
+        assert_eq!(
+            parse_skill_frontmatter("---\nname: [malformed\ndescription: valid\n---\n"),
+            (String::new(), String::new())
+        );
     }
 
     #[test]
