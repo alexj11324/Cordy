@@ -16,6 +16,7 @@ pub mod issue_status;
 pub mod label;
 pub mod mcp_merge;
 pub mod notification;
+pub mod pat;
 pub mod pending_store;
 pub mod pin;
 pub mod profile_json;
@@ -154,6 +155,7 @@ pub fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<Hub>>) -> Router {
         issue::require_issue_workspace,
     ));
     let authenticated = workspace::authenticated_router()
+        .merge(pat::router())
         .merge(issue_routes)
         .merge(label::router().route_layer(middleware::from_fn_with_state(
             WorkspaceGuardState::member_only(state.pool.clone()),
