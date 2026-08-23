@@ -289,6 +289,9 @@ mod tests {
             Request::post("/api/issues/CORD-14/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/cancel")
                 .body(Body::empty())
                 .unwrap(),
+            Request::patch("/api/me")
+                .body(Body::from(r#"{"name":"Alex"}"#))
+                .unwrap(),
             Request::post("/api/comments/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/resolve")
                 .body(Body::empty())
                 .unwrap(),

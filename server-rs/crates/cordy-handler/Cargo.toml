@@ -9,6 +9,7 @@ license.workspace = true
 anyhow = { workspace = true }
 axum = { workspace = true, features = ["ws"] }
 chrono = { workspace = true }
+chrono-tz = { workspace = true }
 cordy-auth = { path = "../cordy-auth" }
 cordy-db = { path = "../cordy-db" }
 cordy-daemon = { path = "../cordy-daemon" }
