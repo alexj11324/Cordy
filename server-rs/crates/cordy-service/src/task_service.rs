@@ -2820,6 +2820,48 @@ pub fn chat_input_owner_id(task: &AgentTaskQueue) -> Uuid {
     task.chat_input_task_id.unwrap_or(task.id)
 }
 
+/// Websocket-safe agent projection. Status events are workspace-wide, so they
+/// must never contain plaintext env/MCP/connected-app configuration.
+fn safe_agent_status_payload(agent: &Agent) -> serde_json::Value {
+    let env_count = agent.custom_env.as_object().map_or(0, serde_json::Map::len);
+    let mut value = serde_json::to_value(agent).unwrap_or_default();
+    let Some(map) = value.as_object_mut() else {
+        return serde_json::Value::Object(Default::default());
+    };
+    map.remove("custom_env");
+    map.insert("has_custom_env".into(), serde_json::json!(env_count > 0));
+    map.insert("custom_env_key_count".into(), serde_json::json!(env_count));
+
+    let has_mcp = map
+        .get("mcp_config")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|config| !config.is_empty());
+    map.insert("mcp_config".into(), serde_json::json!({}));
+    map.insert("mcp_config_redacted".into(), serde_json::json!(has_mcp));
+
+    let has_composio = agent
+        .composio_toolkit_allowlist
+        .as_ref()
+        .is_some_and(|allowlist| !allowlist.is_empty());
+    map.remove("composio_toolkit_allowlist");
+    map.insert(
+        "composio_toolkit_allowlist_redacted".into(),
+        serde_json::json!(has_composio),
+    );
+    if let Some(token) = map
+        .get_mut("runtime_config")
+        .and_then(serde_json::Value::as_object_mut)
+        .and_then(|config| config.get_mut("gateway"))
+        .and_then(serde_json::Value::as_object_mut)
+        .and_then(|gateway| gateway.get_mut("token"))
+    {
+        if token.as_str().is_some_and(|token| !token.is_empty()) {
+            *token = serde_json::Value::String("***".into());
+        }
+    }
+    value
+}
+
 impl TaskService {
     /// Refreshes the agent's status from its active tasks and broadcasts
     /// agent:status. Best-effort: errors are swallowed like Go's early return.
@@ -2837,7 +2879,7 @@ impl TaskService {
             workspace_id: agent.workspace_id.to_string(),
             actor_type: "system".to_string(),
             actor_id: String::new(),
-            payload: serde_json::json!({ "agent": serde_json::to_value(agent).unwrap_or_default() }),
+            payload: serde_json::json!({ "agent": safe_agent_status_payload(agent) }),
             task_id: String::new(),
             chat_session_id: String::new(),
         });

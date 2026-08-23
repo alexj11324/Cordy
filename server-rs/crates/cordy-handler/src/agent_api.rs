@@ -80,16 +80,72 @@ fn apply_targets(response: &mut Value, targets: &[AgentInvocationTarget]) {
             .iter()
             .map(|target| {
                 json!({
-                    "type": target.target_type,
-                    "id": target.target_id,
+                    "target_type": target.target_type,
+                    "target_id": target.target_id,
                 })
             })
             .collect(),
+    );
+    response["visibility"] = Value::String(
+        if response["permission_mode"] == "public_to"
+            && targets
+                .iter()
+                .any(|target| target.target_type == "workspace")
+        {
+            "workspace"
+        } else {
+            "private"
+        }
+        .into(),
     );
 }
 
 fn apply_skills<T: serde::Serialize>(response: &mut Value, skills: &T) {
     response["skills"] = serde_json::to_value(skills).unwrap_or_else(|_| json!([]));
+}
+
+async fn hydrated_agent_response(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    headers: &HeaderMap,
+    target: Agent,
+) -> Result<Value, Response> {
+    let (actor_type, _, _) = crate::issue::mutation_actor(state, context, headers).await;
+    let is_agent = actor_type == "agent";
+    let always_redact = workspace::get_workspace(&state.pool, target.workspace_id)
+        .await
+        .map_err(|_| {
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load workspace settings",
+            )
+        })?
+        .ok_or_else(|| error_response(StatusCode::NOT_FOUND, "workspace not found"))?
+        .settings["always_redact_env"]
+        .as_bool()
+        .unwrap_or(false);
+    let reveal_secrets = !is_agent && !always_redact && can_manage(context, &target);
+    let reveal_composio = !is_agent && target.owner_id == Some(context.member.user_id);
+    let targets = agent_invocation_target::list_agent_invocation_targets(&state.pool, target.id)
+        .await
+        .map_err(|_| {
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load agent invocation targets",
+            )
+        })?;
+    let skills = skill::list_agent_skill_summaries(&state.pool, target.id)
+        .await
+        .map_err(|_| {
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load agent skills",
+            )
+        })?;
+    let mut response = agent_response(target, reveal_secrets, reveal_composio);
+    apply_targets(&mut response, &targets);
+    apply_skills(&mut response, &skills);
+    Ok(response)
 }
 
 async fn load_agent(
@@ -122,6 +178,51 @@ fn env_map(agent: &Agent) -> BTreeMap<String, String> {
     serde_json::from_value(agent.custom_env.clone()).unwrap_or_default()
 }
 
+#[derive(Debug, Default, PartialEq)]
+struct EnvAudit {
+    added: Vec<String>,
+    removed: Vec<String>,
+    changed: Vec<String>,
+    preserved: Vec<String>,
+}
+
+fn merge_agent_env(
+    existing: &BTreeMap<String, String>,
+    requested: BTreeMap<String, String>,
+) -> (BTreeMap<String, String>, EnvAudit) {
+    let mut merged = BTreeMap::new();
+    let mut audit = EnvAudit::default();
+    for (key, value) in requested {
+        if value == ENV_SENTINEL {
+            if let Some(old) = existing.get(&key) {
+                merged.insert(key.clone(), old.clone());
+                audit.preserved.push(key);
+            }
+            continue;
+        }
+        match existing.get(&key) {
+            Some(old) if old == &value => {
+                merged.insert(key, value);
+            }
+            Some(_) => {
+                merged.insert(key.clone(), value);
+                audit.changed.push(key);
+            }
+            None => {
+                merged.insert(key.clone(), value);
+                audit.added.push(key);
+            }
+        }
+    }
+    audit.removed.extend(
+        existing
+            .keys()
+            .filter(|key| !merged.contains_key(*key))
+            .cloned(),
+    );
+    (merged, audit)
+}
+
 fn mask_gateway_token(mut config: Value) -> Value {
     if let Some(token) = config
         .get_mut("gateway")
@@ -135,6 +236,132 @@ fn mask_gateway_token(mut config: Value) -> Value {
     config
 }
 
+fn preserve_masked_gateway_token(incoming: &mut Value, existing: &Value) {
+    let Some(token) = incoming
+        .get_mut("gateway")
+        .and_then(Value::as_object_mut)
+        .and_then(|gateway| gateway.get_mut("token"))
+    else {
+        return;
+    };
+    if token.as_str() != Some("***") {
+        return;
+    }
+    if let Some(old) = existing
+        .get("gateway")
+        .and_then(Value::as_object)
+        .and_then(|gateway| gateway.get("token"))
+    {
+        *token = old.clone();
+    }
+}
+
+fn valid_catalog_token(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+}
+
+fn known_thinking_value(provider: &str, value: &str) -> bool {
+    if value.is_empty() {
+        return true;
+    }
+    if matches!(
+        provider,
+        "codex" | "dsh" | "opencode" | "kimi" | "reasonix" | "hermes" | "dim"
+    ) {
+        return valid_catalog_token(value);
+    }
+    match provider {
+        "claude" => matches!(value, "low" | "medium" | "high" | "xhigh" | "max"),
+        "codebuddy" => matches!(
+            value,
+            "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
+        ),
+        "grok" => matches!(value, "low" | "medium" | "high"),
+        "pi" => matches!(
+            value,
+            "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
+        ),
+        _ => false,
+    }
+}
+
+fn known_service_tier(provider: &str, value: &str) -> bool {
+    value.is_empty() || provider == "codex" && valid_catalog_token(value)
+}
+
+fn runtime_specific_model(model: &str) -> bool {
+    model.contains('/')
+        || model.starts_with("claude-")
+        || model.starts_with("gpt-")
+        || model.starts_with("gemini-")
+        || model.starts_with("auto-gemini-")
+        || model
+            .strip_prefix('o')
+            .and_then(|rest| rest.as_bytes().first())
+            .is_some_and(u8::is_ascii_digit)
+}
+
+fn model_known_incompatible(provider: &str, model: &str) -> bool {
+    let model = model.trim();
+    if model.is_empty() || !runtime_specific_model(model) {
+        return false;
+    }
+    match provider {
+        "claude" => {
+            let base = model
+                .rsplit_once('[')
+                .filter(|(_, suffix)| {
+                    suffix.ends_with(']')
+                        && suffix[..suffix.len() - 1]
+                            .strip_suffix(['k', 'm'])
+                            .is_some_and(|digits| {
+                                !digits.is_empty()
+                                    && !digits.starts_with('0')
+                                    && digits.bytes().all(|byte| byte.is_ascii_digit())
+                            })
+                })
+                .map_or(model, |(base, _)| base);
+            !matches!(
+                base,
+                "claude-sonnet-5"
+                    | "claude-sonnet-4-6"
+                    | "claude-fable-5"
+                    | "claude-opus-5"
+                    | "claude-opus-4-8"
+                    | "claude-opus-4-7"
+                    | "claude-haiku-4-5-20251001"
+                    | "claude-opus-4-6"
+                    | "claude-sonnet-4-5"
+            )
+        }
+        "codex" => !matches!(
+            model,
+            "gpt-5.6-sol"
+                | "gpt-5.6-terra"
+                | "gpt-5.6-luna"
+                | "gpt-5.5"
+                | "gpt-5.4"
+                | "gpt-5.4-mini"
+                | "gpt-5.3-codex"
+                | "gpt-5.2"
+        ),
+        _ => false,
+    }
+}
+
+fn normalise_allowlist(values: Vec<String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    values
+        .into_iter()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty() && seen.insert(value.clone()))
+        .collect()
+}
+
 fn system_instructions_for(system_key: Option<&str>, display_name: &str) -> String {
     if system_key == Some(cordy_service::builtin_agents::MIKA_SYSTEM_KEY) {
         cordy_service::builtin_agents::mika_system_instructions(display_name)
@@ -143,7 +370,7 @@ fn system_instructions_for(system_key: Option<&str>, display_name: &str) -> Stri
     }
 }
 
-fn agent_response(target: Agent, reveal_secrets: bool) -> Value {
+fn agent_response(target: Agent, reveal_secrets: bool, reveal_composio: bool) -> Value {
     let env_count = env_map(&target).len();
     let system_instructions = system_instructions_for(target.system_key.as_deref(), &target.name);
     let mut mcp_config = target.mcp_config.clone().unwrap_or_else(|| json!({}));
@@ -152,6 +379,17 @@ fn agent_response(target: Agent, reveal_secrets: bool) -> Value {
         mcp_config = json!({});
         mcp_config_redacted = true;
     }
+    let composio_toolkit_allowlist = reveal_composio.then(|| {
+        target
+            .composio_toolkit_allowlist
+            .clone()
+            .unwrap_or_default()
+    });
+    let composio_toolkit_allowlist_redacted = !reveal_composio
+        && target
+            .composio_toolkit_allowlist
+            .as_ref()
+            .is_some_and(|allowlist| !allowlist.is_empty());
     json!({
         "id": target.id,
         "workspace_id": target.workspace_id,
@@ -178,6 +416,8 @@ fn agent_response(target: Agent, reveal_secrets: bool) -> Value {
         "model": target.model.unwrap_or_default(),
         "thinking_level": target.thinking_level.unwrap_or_default(),
         "service_tier": target.service_tier.unwrap_or_default(),
+        "composio_toolkit_allowlist": composio_toolkit_allowlist,
+        "composio_toolkit_allowlist_redacted": composio_toolkit_allowlist_redacted,
         "owner_id": target.owner_id,
         "skills": [],
         "disabled_runtime_skills": target.disabled_runtime_skills,
@@ -289,7 +529,8 @@ async fn list_agents(
                     .get(&target.id)
                     .map(Vec::as_slice)
                     .unwrap_or_default();
-                let mut response = agent_response(target, reveal);
+                let reveal_composio = !is_agent && target.owner_id == Some(context.member.user_id);
+                let mut response = agent_response(target, reveal, reveal_composio);
                 apply_targets(&mut response, targets);
                 if let Some(skills) = skills_by_agent.get(&target_id) {
                     apply_skills(&mut response, skills);
@@ -347,7 +588,8 @@ async fn get_agent(
     };
     let target_id = target.id;
     let reveal = !is_agent && !always_redact && can_manage(&context, &target);
-    let mut response = agent_response(target, reveal);
+    let reveal_composio = !is_agent && target.owner_id == Some(context.member.user_id);
+    let mut response = agent_response(target, reveal, reveal_composio);
     apply_targets(&mut response, &targets);
     match skill::list_agent_skill_summaries(&state.pool, target_id).await {
         Ok(skills) => apply_skills(&mut response, &skills),
@@ -363,12 +605,9 @@ async fn get_agent(
 
 #[derive(Default, Deserialize)]
 struct AgentWrite {
-    #[serde(default)]
-    name: String,
-    #[serde(default)]
-    description: String,
-    #[serde(default)]
-    instructions: String,
+    name: Option<String>,
+    description: Option<String>,
+    instructions: Option<String>,
     avatar_url: Option<String>,
     runtime_id: Option<String>,
     runtime_config: Option<Value>,
@@ -384,14 +623,15 @@ struct AgentWrite {
     service_tier: Option<String>,
     composio_toolkit_allowlist: Option<Vec<String>>,
     #[serde(default)]
+    template: String,
+    #[serde(default)]
     skill_ids: Vec<String>,
 }
 
 #[derive(Clone, Deserialize)]
 struct InvocationTargetInput {
-    #[serde(rename = "type")]
     target_type: String,
-    id: String,
+    target_id: Option<String>,
 }
 
 fn resolve_permission(
@@ -419,21 +659,34 @@ fn resolve_permission(
             resolved.push(("workspace".to_string(), workspace_id));
         } else {
             for target in targets.unwrap_or_default() {
-                if !matches!(target.target_type.as_str(), "workspace" | "member") {
+                if !matches!(target.target_type.as_str(), "workspace" | "member" | "team") {
                     return Err(error_response(
                         StatusCode::BAD_REQUEST,
-                        "invocation target type must be workspace or member",
+                        "invocation target type must be workspace, member, or team",
                     ));
                 }
-                let target_id = Uuid::parse_str(&target.id).map_err(|_| {
-                    error_response(StatusCode::BAD_REQUEST, "invalid invocation target id")
-                })?;
-                if target.target_type == "workspace" && target_id != workspace_id {
-                    return Err(error_response(
-                        StatusCode::BAD_REQUEST,
-                        "workspace invocation target must match the current workspace",
-                    ));
-                }
+                let target_id = if target.target_type == "workspace" {
+                    match target.target_id.as_deref().filter(|id| !id.is_empty()) {
+                        Some(id) if Uuid::parse_str(id).ok() != Some(workspace_id) => {
+                            return Err(error_response(
+                                StatusCode::BAD_REQUEST,
+                                "workspace invocation target must match the current workspace",
+                            ));
+                        }
+                        _ => workspace_id,
+                    }
+                } else {
+                    target
+                        .target_id
+                        .as_deref()
+                        .and_then(|id| Uuid::parse_str(id).ok())
+                        .ok_or_else(|| {
+                            error_response(
+                                StatusCode::BAD_REQUEST,
+                                "member/team invocation target requires a valid target_id",
+                            )
+                        })?
+                };
                 if !resolved
                     .iter()
                     .any(|(kind, id)| kind == &target.target_type && *id == target_id)
@@ -443,10 +696,7 @@ fn resolve_permission(
             }
         }
         if resolved.is_empty() {
-            return Err(error_response(
-                StatusCode::BAD_REQUEST,
-                "public_to requires at least one invocation target",
-            ));
+            resolved.push(("workspace".to_string(), workspace_id));
         }
     }
     Ok((permission_mode.to_string(), resolved))
@@ -475,16 +725,25 @@ async fn replace_invocation_targets(
 async fn create_agent(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Response {
     let request: AgentWrite = match serde_json::from_slice(&body) {
         Ok(value) => value,
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
     };
-    if request.name.trim().is_empty() {
+    let name = request.name.as_deref().unwrap_or_default().trim();
+    if name.is_empty() {
         return error_response(StatusCode::BAD_REQUEST, "name is required");
     }
-    if request.description.chars().count() > 255 {
+    if request
+        .description
+        .as_deref()
+        .unwrap_or_default()
+        .chars()
+        .count()
+        > 255
+    {
         return error_response(
             StatusCode::BAD_REQUEST,
             "description must be 255 characters or fewer",
@@ -518,6 +777,15 @@ async fn create_agent(
         Ok(value) => value,
         Err(response) => return response,
     };
+    let legacy_visibility = if permission_mode == "public_to"
+        && invocation_targets
+            .iter()
+            .any(|(target_type, _)| target_type == "workspace")
+    {
+        "workspace"
+    } else {
+        "private"
+    };
     let rt = match runtime::get_agent_runtime_for_workspace(&state.pool, runtime_id, ws).await {
         Ok(Some(rt)) => rt,
         _ => {
@@ -535,6 +803,43 @@ async fn create_agent(
             "this runtime is private; only its owner can create agents on it",
         );
     }
+    if request
+        .model
+        .as_deref()
+        .is_some_and(|model| model_known_incompatible(&rt.provider, model))
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "model is not valid for this runtime provider",
+        );
+    }
+    if request
+        .thinking_level
+        .as_deref()
+        .is_some_and(|value| !known_thinking_value(&rt.provider, value))
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "thinking_level is not recognised for this runtime",
+        );
+    }
+    if request
+        .service_tier
+        .as_deref()
+        .is_some_and(|value| !known_service_tier(&rt.provider, value))
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "service_tier is not recognised for this runtime",
+        );
+    }
+    let is_first_agent = sqlx::query_scalar::<_, bool>(
+        "SELECT NOT EXISTS (SELECT 1 FROM agent WHERE workspace_id=$1)",
+    )
+    .bind(ws)
+    .fetch_one(&state.pool)
+    .await
+    .unwrap_or(false);
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(_) => {
@@ -560,30 +865,33 @@ async fn create_agent(
     let custom_env = json!(request.custom_env.clone().unwrap_or_default());
     let custom_args = json!(request.custom_args.clone().unwrap_or_default());
     let mcp_config = request.mcp_config.clone().unwrap_or_else(|| json!({}));
+    let composio_toolkit_allowlist = normalise_allowlist(
+        request
+            .composio_toolkit_allowlist
+            .clone()
+            .unwrap_or_default(),
+    );
     let created = agent::create_agent(
         &mut *tx,
         ws,
-        request.name.trim(),
-        request.description.trim(),
+        name,
+        request.description.as_deref().unwrap_or_default().trim(),
         request.avatar_url.as_deref(),
         &rt.runtime_mode,
         &runtime_config,
         runtime_id,
-        request.visibility.as_deref().unwrap_or("private"),
+        legacy_visibility,
         max_concurrent_tasks,
         context.member.user_id,
-        request.instructions.trim(),
+        request.instructions.as_deref().unwrap_or_default().trim(),
         &custom_env,
         &custom_args,
         &mcp_config,
         request.model.as_deref(),
         request.thinking_level.as_deref(),
         request.service_tier.as_deref(),
-        request
-            .composio_toolkit_allowlist
-            .as_deref()
-            .unwrap_or_default(),
-        &json!(permission_mode),
+        &composio_toolkit_allowlist,
+        &permission_mode,
     )
     .await;
     let created = match created {
@@ -621,13 +929,32 @@ async fn create_agent(
             "failed to commit agent create",
         );
     }
+    if rt.status == "online" {
+        state.tasks.reconcile_agent_status(created.id).await;
+    }
+    let created = match agent::get_agent(&state.pool, created.id).await {
+        Ok(Some(created)) => created,
+        _ => created,
+    };
     publish(&state, "agent:created", &created, context.member.user_id);
-    let mut response = agent_response(created, true);
-    response["invocation_targets"] = Value::Array(
-        invocation_targets
-            .iter()
-            .map(|(target_type, id)| json!({"type": target_type, "id": id}))
-            .collect(),
+    let response = match hydrated_agent_response(&state, &context, &headers, created.clone()).await
+    {
+        Ok(response) => response,
+        Err(response) => return response,
+    };
+    let analytics = cordy_analytics::events::agent_created(
+        &context.member.user_id.to_string(),
+        &ws.to_string(),
+        &created.id.to_string(),
+        &rt.provider,
+        &rt.runtime_mode,
+        &request.template,
+        is_first_agent,
+    );
+    cordy_metrics::business_events::record_event(
+        Some(state.analytics.as_ref()),
+        state.business_metrics.as_deref(),
+        &analytics,
     );
     (StatusCode::CREATED, Json(response)).into_response()
 }
@@ -636,6 +963,7 @@ async fn update_agent(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Response {
     let existing = match load_agent(&state, &context, &id).await {
@@ -645,11 +973,19 @@ async fn update_agent(
     if let Err(r) = manage_or_forbidden(&context, &existing) {
         return r;
     }
-    let request: AgentWrite = match serde_json::from_slice(&body) {
+    let raw_request: Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
     };
-    if request.description.chars().count() > 255 {
+    let request: AgentWrite = match serde_json::from_value(raw_request.clone()) {
+        Ok(v) => v,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    if request
+        .description
+        .as_deref()
+        .is_some_and(|description| description.chars().count() > 255)
+    {
         return error_response(
             StatusCode::BAD_REQUEST,
             "description must be 255 characters or fewer",
@@ -664,7 +1000,7 @@ async fn update_agent(
             "max_concurrent_tasks must be between 1 and 50",
         );
     }
-    if request.custom_env.is_some() {
+    if raw_request.get("custom_env").is_some() {
         return error_response(
             StatusCode::BAD_REQUEST,
             "custom_env is no longer accepted on this endpoint; use PUT /api/agents/{id}/env",
@@ -684,21 +1020,20 @@ async fn update_agent(
             None => return error_response(StatusCode::CONFLICT, "agent has no runtime"),
         },
     };
-    if request.runtime_id.is_some() {
-        let target_runtime =
-            match runtime::get_agent_runtime_for_workspace(&state.pool, runtime_id, ws).await {
-                Ok(Some(runtime)) => runtime,
-                _ => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
-            };
-        if target_runtime.owner_id.is_none()
+    let target_runtime =
+        match runtime::get_agent_runtime_for_workspace(&state.pool, runtime_id, ws).await {
+            Ok(Some(runtime)) => runtime,
+            _ => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
+        };
+    if request.runtime_id.is_some()
+        && (target_runtime.owner_id.is_none()
             || target_runtime.visibility != "public"
-                && target_runtime.owner_id != Some(context.member.user_id)
-        {
-            return error_response(
-                StatusCode::FORBIDDEN,
-                "this runtime is private; only its owner can move agents onto it",
-            );
-        }
+                && target_runtime.owner_id != Some(context.member.user_id))
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "this runtime is private; only its owner can move agents onto it",
+        );
     }
     let permission_touched = request.permission_mode.is_some()
         || request.visibility.is_some()
@@ -719,7 +1054,7 @@ async fn update_agent(
                     .into_iter()
                     .map(|target| InvocationTargetInput {
                         target_type: target.target_type,
-                        id: target.target_id.to_string(),
+                        target_id: Some(target.target_id.to_string()),
                     })
                     .collect(),
             ),
@@ -751,22 +1086,116 @@ async fn update_agent(
     } else {
         (None, None)
     };
+    let resolved_visibility = resolved_targets.as_ref().map(|targets| {
+        if resolved_permission.as_deref() == Some("public_to")
+            && targets
+                .iter()
+                .any(|(target_type, _)| target_type == "workspace")
+        {
+            "workspace"
+        } else {
+            "private"
+        }
+    });
+    if request
+        .model
+        .as_deref()
+        .is_some_and(|model| model_known_incompatible(&target_runtime.provider, model))
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "model is not valid for this runtime provider",
+        );
+    }
+    if request
+        .thinking_level
+        .as_deref()
+        .is_some_and(|value| !known_thinking_value(&target_runtime.provider, value))
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "thinking_level is not recognised for this runtime",
+        );
+    }
+    if request
+        .service_tier
+        .as_deref()
+        .is_some_and(|value| !known_service_tier(&target_runtime.provider, value))
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "service_tier is not recognised for this runtime",
+        );
+    }
+    if request.runtime_id.is_some() {
+        if request.thinking_level.is_none()
+            && existing
+                .thinking_level
+                .as_deref()
+                .is_some_and(|value| !known_thinking_value(&target_runtime.provider, value))
+        {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "existing thinking_level is not valid for the new runtime; clear or replace it",
+            );
+        }
+        if request.service_tier.is_none()
+            && existing
+                .service_tier
+                .as_deref()
+                .is_some_and(|value| !known_service_tier(&target_runtime.provider, value))
+        {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "existing service_tier is not valid for the new runtime; clear or replace it",
+            );
+        }
+    }
     let custom_env = existing.custom_env.clone();
     let custom_args = request
         .custom_args
         .as_ref()
         .map(|value| json!(value))
         .unwrap_or_else(|| existing.custom_args.clone());
+    let clear_mcp_config = raw_request.get("mcp_config").is_some_and(Value::is_null);
     let mcp_config = request
         .mcp_config
         .clone()
         .or_else(|| existing.mcp_config.clone())
         .unwrap_or_else(|| json!({}));
-    let composio_toolkit_allowlist = request
-        .composio_toolkit_allowlist
+    let allowlist_touched = raw_request.get("composio_toolkit_allowlist").is_some();
+    let is_owner = existing.owner_id == Some(context.member.user_id);
+    let clear_allowlist =
+        allowlist_touched && is_owner && raw_request["composio_toolkit_allowlist"].is_null();
+    let composio_toolkit_allowlist = if allowlist_touched && is_owner {
+        request
+            .composio_toolkit_allowlist
+            .clone()
+            .map(normalise_allowlist)
+            .unwrap_or_default()
+    } else {
+        existing
+            .composio_toolkit_allowlist
+            .clone()
+            .unwrap_or_default()
+    };
+    let mut runtime_config = request
+        .runtime_config
         .clone()
-        .or_else(|| existing.composio_toolkit_allowlist.clone())
-        .unwrap_or_default();
+        .unwrap_or_else(|| existing.runtime_config.clone());
+    preserve_masked_gateway_token(&mut runtime_config, &existing.runtime_config);
+    let model = if request.model.is_some() {
+        request.model.as_deref()
+    } else if request.runtime_id.is_some()
+        && existing
+            .model
+            .as_deref()
+            .is_some_and(|model| model_known_incompatible(&target_runtime.provider, model))
+    {
+        Some("")
+    } else {
+        None
+    };
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(_) => {
@@ -779,30 +1208,36 @@ async fn update_agent(
     let updated = agent::update_agent(
         &mut *tx,
         existing.id,
-        (!request.name.is_empty()).then_some(request.name.trim()),
-        (!request.description.is_empty()).then_some(request.description.trim()),
+        request.name.as_deref().map(str::trim),
+        request.description.as_deref().map(str::trim),
         request.avatar_url.as_deref(),
+        &runtime_config,
         request
-            .runtime_config
+            .runtime_id
             .as_ref()
-            .unwrap_or(&existing.runtime_config),
-        None,
+            .map(|_| target_runtime.runtime_mode.as_str()),
         runtime_id,
-        request.visibility.as_deref(),
+        resolved_visibility.or(request.visibility.as_deref()),
         resolved_permission.as_deref(),
         None,
         request.max_concurrent_tasks,
-        (!request.instructions.is_empty()).then_some(request.instructions.trim()),
+        request.instructions.as_deref().map(str::trim),
         &custom_env,
         &custom_args,
         &mcp_config,
-        request.model.as_deref(),
-        request.thinking_level.as_deref(),
-        request.service_tier.as_deref(),
+        model,
+        request
+            .thinking_level
+            .as_deref()
+            .filter(|value| !value.is_empty()),
+        request
+            .service_tier
+            .as_deref()
+            .filter(|value| !value.is_empty()),
         &composio_toolkit_allowlist,
     )
     .await;
-    let updated = match updated {
+    let mut updated = match updated {
         Ok(Some(v)) => v,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update agent"),
     };
@@ -817,23 +1252,61 @@ async fn update_agent(
             );
         }
     }
+    if clear_mcp_config {
+        updated = match agent::clear_agent_mcp_config(&mut *tx, updated.id).await {
+            Ok(Some(updated)) => updated,
+            _ => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to clear agent mcp_config",
+                )
+            }
+        };
+    }
+    if clear_allowlist {
+        updated = match agent::clear_agent_composio_toolkit_allowlist(&mut *tx, updated.id).await {
+            Ok(Some(updated)) => updated,
+            _ => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to clear composio_toolkit_allowlist",
+                )
+            }
+        };
+    }
+    if request.thinking_level.as_deref() == Some("") {
+        updated = match agent::clear_agent_thinking_level(&mut *tx, updated.id).await {
+            Ok(Some(updated)) => updated,
+            _ => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to clear thinking_level",
+                )
+            }
+        };
+    }
+    if request.service_tier.as_deref() == Some("") {
+        updated = match agent::clear_agent_service_tier(&mut *tx, updated.id).await {
+            Ok(Some(updated)) => updated,
+            _ => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to clear service_tier",
+                )
+            }
+        };
+    }
     if tx.commit().await.is_err() {
         return error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to commit agent update",
         );
     }
-    publish(&state, "agent:updated", &updated, context.member.user_id);
-    let mut response = agent_response(updated, true);
-    if let Some(targets) = resolved_targets {
-        response["invocation_targets"] = Value::Array(
-            targets
-                .iter()
-                .map(|(target_type, id)| json!({"type": target_type, "id": id}))
-                .collect(),
-        );
+    publish(&state, "agent:status", &updated, context.member.user_id);
+    match hydrated_agent_response(&state, &context, &headers, updated).await {
+        Ok(response) => Json(response).into_response(),
+        Err(response) => response,
     }
-    Json(response).into_response()
 }
 
 #[derive(Default, Deserialize)]
@@ -888,6 +1361,7 @@ async fn get_or_create_mika_session(
 async fn create_mika(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Response {
     let request: MikaRequest = match serde_json::from_slice(&body) {
@@ -1041,8 +1515,10 @@ async fn create_mika(
     if created_now {
         publish(&state, "agent:created", &target, context.member.user_id);
     }
-    let mut response = agent_response(target, true);
-    response["invocation_targets"] = json!([{"type":"workspace","id":ws}]);
+    let mut response = match hydrated_agent_response(&state, &context, &headers, target).await {
+        Ok(response) => response,
+        Err(response) => return response,
+    };
     response["onboarding_session"] = json!(session);
     (
         if created_now {
@@ -1059,6 +1535,7 @@ async fn archive_agent(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
+    headers: HeaderMap,
 ) -> Response {
     let target = match load_agent(&state, &context, &id).await {
         Ok(v) => v,
@@ -1081,15 +1558,21 @@ async fn archive_agent(
         Ok(Some(v)) => v,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive agent"),
     };
-    let _ = agent::cancel_agent_tasks_by_agent(&state.pool, target.id).await;
+    if state.tasks.cancel_tasks_for_agent(target.id).await.is_err() {
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to cancel tasks");
+    }
     publish(&state, "agent:archived", &archived, context.member.user_id);
-    Json(agent_response(archived, true)).into_response()
+    match hydrated_agent_response(&state, &context, &headers, archived).await {
+        Ok(response) => Json(response).into_response(),
+        Err(response) => response,
+    }
 }
 
 async fn restore_agent(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
+    headers: HeaderMap,
 ) -> Response {
     let target = match load_agent(&state, &context, &id).await {
         Ok(v) => v,
@@ -1106,7 +1589,10 @@ async fn restore_agent(
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to restore agent"),
     };
     publish(&state, "agent:restored", &restored, context.member.user_id);
-    Json(agent_response(restored, true)).into_response()
+    match hydrated_agent_response(&state, &context, &headers, restored).await {
+        Ok(response) => Json(response).into_response(),
+        Err(response) => response,
+    }
 }
 
 async fn cancel_tasks(
@@ -1121,7 +1607,7 @@ async fn cancel_tasks(
     if let Err(r) = manage_or_forbidden(&context, &target) {
         return r;
     }
-    match agent::cancel_agent_tasks_by_agent(&state.pool, target.id).await {
+    match state.tasks.cancel_tasks_for_agent(target.id).await {
         Ok(rows) => Json(json!({"cancelled": rows.len()})).into_response(),
         Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to cancel tasks"),
     }
@@ -1159,7 +1645,8 @@ async fn list_tasks(
         );
     }
     match agent::list_agent_tasks(&state.pool, target.id).await {
-        Ok(rows) => Json(rows).into_response(),
+        Ok(rows) => Json(crate::issue::task_maps(&state, &rows, &context.workspace_id).await)
+            .into_response(),
         Err(_) => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to list agent tasks",
@@ -1193,7 +1680,12 @@ async fn get_env(
         &target,
         context.member.user_id,
         "agent_env_revealed",
-        json!({"revealed_keys": env.keys().collect::<Vec<_>>(), "key_count": env.len()}),
+        json!({
+            "agent_id": target.id,
+            "agent_name": target.name,
+            "revealed_keys": env.keys().collect::<Vec<_>>(),
+            "key_count": env.len()
+        }),
     )
     .await
     .is_err()
@@ -1236,12 +1728,7 @@ async fn update_env(
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
     };
     let existing = env_map(&target);
-    let mut incoming = request.custom_env.unwrap_or_default();
-    for (key, old) in &existing {
-        if incoming.get(key).is_some_and(|v| v == ENV_SENTINEL) {
-            incoming.insert(key.clone(), old.clone());
-        }
-    }
+    let (incoming, audit) = merge_agent_env(&existing, request.custom_env.unwrap_or_default());
     let mut tx = match state.pool.begin().await {
         Ok(v) => v,
         Err(_) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update env"),
@@ -1256,7 +1743,14 @@ async fn update_env(
         &target,
         context.member.user_id,
         "agent_env_updated",
-        json!({"key_count": incoming.len()}),
+        json!({
+            "agent_id": target.id,
+            "agent_name": target.name,
+            "added_keys": audit.added,
+            "removed_keys": audit.removed,
+            "changed_keys": audit.changed,
+            "preserved_keys": audit.preserved,
+        }),
     )
     .await
     .is_err()
@@ -1264,6 +1758,7 @@ async fn update_env(
     {
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update env");
     }
+    publish(&state, "agent:status", &updated, context.member.user_id);
     Json(json!({"agent_id": target.id, "custom_env": env_map(&updated)})).into_response()
 }
 
@@ -1704,7 +2199,7 @@ fn publish(state: &HandlerState, event_type: &str, target: &Agent, actor_id: Uui
         workspace_id: target.workspace_id.to_string(),
         actor_type: "member".into(),
         actor_id: actor_id.to_string(),
-        payload: json!({"agent":agent_response(target.clone(),false)}),
+        payload: json!({"agent":agent_response(target.clone(),false,false)}),
         ..Default::default()
     });
 }
@@ -1731,12 +2226,58 @@ async fn audit_env_on<'e>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn agent_fixture() -> Agent {
+        Agent {
+            id: Uuid::now_v7(),
+            workspace_id: Uuid::now_v7(),
+            name: "Agent".into(),
+            avatar_url: None,
+            runtime_mode: "local".into(),
+            runtime_config: json!({"gateway":{"token":"gateway-secret"}}),
+            visibility: "private".into(),
+            status: "idle".into(),
+            max_concurrent_tasks: 1,
+            owner_id: Some(Uuid::now_v7()),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            description: String::new(),
+            runtime_id: None,
+            instructions: String::new(),
+            archived_at: None,
+            archived_by: None,
+            custom_env: json!({"TOKEN":"env-secret"}),
+            custom_args: json!([]),
+            mcp_config: Some(json!({"server":{"token":"mcp-secret"}})),
+            model: None,
+            thinking_level: None,
+            composio_toolkit_allowlist: Some(vec!["github".into()]),
+            permission_mode: "private".into(),
+            kind: "user".into(),
+            system_key: None,
+            disabled_runtime_skills: json!([]),
+            service_tier: None,
+        }
+    }
+
     #[test]
     fn gateway_tokens_are_masked() {
         assert_eq!(
             mask_gateway_token(json!({"gateway":{"token":"secret"}}))["gateway"]["token"],
             "***"
         );
+    }
+
+    #[test]
+    fn agent_actor_projection_redacts_every_secret_surface() {
+        let response = agent_response(agent_fixture(), false, false);
+        assert_eq!(response["runtime_config"]["gateway"]["token"], "***");
+        assert_eq!(response["mcp_config"], json!({}));
+        assert_eq!(response["mcp_config_redacted"], true);
+        assert!(response["composio_toolkit_allowlist"].is_null());
+        assert_eq!(response["composio_toolkit_allowlist_redacted"], true);
+        assert!(response.get("custom_env").is_none());
+        assert_eq!(response["custom_env_key_count"], 1);
     }
     #[test]
     fn skill_ids_are_validated_and_deduplicated() {
@@ -1760,8 +2301,12 @@ mod tests {
     }
 
     #[test]
-    fn public_permission_requires_a_target() {
-        assert!(resolve_permission(Uuid::new_v4(), Some("public_to"), None, None).is_err());
+    fn public_permission_without_targets_defaults_to_workspace() {
+        let workspace_id = Uuid::new_v4();
+        assert_eq!(
+            resolve_permission(workspace_id, Some("public_to"), None, None).unwrap(),
+            ("public_to".into(), vec![("workspace".into(), workspace_id)])
+        );
     }
 
     #[test]
@@ -1769,7 +2314,7 @@ mod tests {
         let workspace_id = Uuid::new_v4();
         let targets = [InvocationTargetInput {
             target_type: "workspace".into(),
-            id: Uuid::new_v4().to_string(),
+            target_id: Some(Uuid::new_v4().to_string()),
         }];
         assert!(resolve_permission(workspace_id, Some("public_to"), None, Some(&targets)).is_err());
     }
@@ -1779,5 +2324,69 @@ mod tests {
         let instructions = system_instructions_for(Some("mika"), "Mika");
         assert!(instructions.contains("You are Mika"));
         assert!(system_instructions_for(None, "Ordinary agent").is_empty());
+    }
+
+    #[test]
+    fn workspace_target_may_omit_target_id_and_team_is_supported() {
+        let workspace_id = Uuid::new_v4();
+        let team_id = Uuid::new_v4();
+        let targets = [
+            InvocationTargetInput {
+                target_type: "workspace".into(),
+                target_id: None,
+            },
+            InvocationTargetInput {
+                target_type: "team".into(),
+                target_id: Some(team_id.to_string()),
+            },
+        ];
+        assert_eq!(
+            resolve_permission(workspace_id, Some("public_to"), None, Some(&targets))
+                .unwrap()
+                .1,
+            vec![("workspace".into(), workspace_id), ("team".into(), team_id)]
+        );
+    }
+
+    #[test]
+    fn masked_gateway_token_round_trip_preserves_secret() {
+        let mut incoming = json!({"gateway":{"token":"***"}});
+        preserve_masked_gateway_token(&mut incoming, &json!({"gateway":{"token":"secret"}}));
+        assert_eq!(incoming["gateway"]["token"], "secret");
+    }
+
+    #[test]
+    fn env_merge_drops_unknown_sentinel_and_reports_key_diff_without_values() {
+        let existing = BTreeMap::from([
+            ("KEEP".into(), "old".into()),
+            ("CHANGE".into(), "before".into()),
+            ("REMOVE".into(), "gone".into()),
+        ]);
+        let requested = BTreeMap::from([
+            ("KEEP".into(), ENV_SENTINEL.into()),
+            ("CHANGE".into(), "after".into()),
+            ("ADD".into(), "new".into()),
+            ("UNKNOWN".into(), ENV_SENTINEL.into()),
+        ]);
+        let (merged, audit) = merge_agent_env(&existing, requested);
+        assert_eq!(merged.get("KEEP").map(String::as_str), Some("old"));
+        assert!(!merged.contains_key("UNKNOWN"));
+        assert_eq!(audit.added, vec!["ADD"]);
+        assert_eq!(audit.changed, vec!["CHANGE"]);
+        assert_eq!(audit.preserved, vec!["KEEP"]);
+        assert_eq!(audit.removed, vec!["REMOVE"]);
+    }
+
+    #[test]
+    fn runtime_native_validation_rejects_foreign_values() {
+        assert!(model_known_incompatible("codex", "claude-opus-5"));
+        assert!(model_known_incompatible("claude", "gpt-5.6-sol"));
+        assert!(model_known_incompatible("codex", "gpt-99"));
+        assert!(!model_known_incompatible("claude", "claude-opus-5[1m]"));
+        assert!(!model_known_incompatible("codex", "private-lab-model"));
+        assert!(known_thinking_value("codex", "ultra"));
+        assert!(!known_thinking_value("grok", "xhigh"));
+        assert!(known_service_tier("codex", "priority"));
+        assert!(!known_service_tier("claude", "priority"));
     }
 }
