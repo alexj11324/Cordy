@@ -748,6 +748,7 @@ dependencies = [
  "axum",
  "cordy-config",
  "cordy-db",
+ "cordy-handler",
  "cordy-util",
  "serde_json",
  "sqlx",

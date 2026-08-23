@@ -23,9 +23,11 @@ pub mod ws;
 
 use std::sync::Arc;
 
-use axum::middleware;
 use axum::routing::get;
-use axum::Router;
+use axum::{middleware, Router};
+use cordy_auth::daemon_token_cache::DaemonTokenCache;
+use cordy_middleware::auth::{auth_middleware, AuthState};
+use cordy_middleware::daemon_auth::{daemon_auth_middleware, DaemonAuthState};
 use cordy_realtime::hub::Hub;
 
 pub use state::HandlerState;
@@ -59,20 +61,28 @@ pub fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<Hub>>) -> Router {
         hub.set_authorizer(Arc::new(ws::DbScopeAuthorizer::new(state.tasks.clone())));
     }
 
-    let daemon_auth_state = cordy_middleware::daemon_auth::DaemonAuthState {
+    let auth_state = AuthState {
         pool: state.pool.clone(),
         pat_cache: state.pat_cache.clone(),
-        daemon_cache: cordy_auth::daemon_token_cache::DaemonTokenCache::disabled(),
     };
-    let daemon_routes = daemon::router().layer(middleware::from_fn_with_state(
+    let daemon_auth_state = DaemonAuthState {
+        pool: state.pool.clone(),
+        pat_cache: state.pat_cache.clone(),
+        daemon_cache: DaemonTokenCache::disabled(),
+    };
+
+    let authenticated = workspace::authenticated_router()
+        .route_layer(middleware::from_fn_with_state(auth_state, auth_middleware));
+    let daemon = daemon::router().route_layer(middleware::from_fn_with_state(
         daemon_auth_state,
-        cordy_middleware::daemon_auth::daemon_auth_middleware,
+        daemon_auth_middleware,
     ));
 
     Router::new()
         .merge(health::router())
-        .merge(workspace::router())
-        .merge(daemon_routes)
+        .merge(workspace::public_router())
+        .merge(authenticated)
+        .merge(daemon)
         .route("/ws", get(ws::ws_handler))
         .with_state(state)
 }
@@ -89,6 +99,30 @@ mod tests {
         let response = build_router(None, None)
             .oneshot(
                 Request::post("/api/daemon/heartbeat")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn authenticated_workspace_collection_rejects_anonymous_requests() {
+        let response = build_router(None, None)
+            .oneshot(Request::get("/api/workspaces").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn daemon_routes_are_mounted_and_protected() {
+        let response = build_router(None, None)
+            .oneshot(
+                Request::get("/api/daemon/workspaces")
                     .body(Body::empty())
                     .unwrap(),
             )

@@ -4,48 +4,11 @@
 //! pg pool, and health endpoints. Routes are ported domain-by-domain in
 //! later steps (475 routes total, see tasks/go-to-rust-migration.md).
 
+use axum::Router;
 use std::net::SocketAddr;
-use std::sync::Arc;
 
-use axum::extract::State;
-use axum::http::StatusCode;
-use axum::response::Json;
-use axum::routing::{get, Router};
-use serde_json::json;
-
-const VERSION: &str = env!("CARGO_PKG_VERSION");
-
-#[derive(Clone)]
-struct AppState {
-    db: Option<sqlx::PgPool>,
-}
-
-/// Build the application router. DB pool is optional so the router can be
-/// exercised in tests without a database.
 fn build_router(db: Option<sqlx::PgPool>) -> Router {
-    let state = Arc::new(AppState { db });
-    Router::new()
-        .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
-        .with_state(state)
-}
-
-async fn healthz() -> Json<serde_json::Value> {
-    Json(json!({ "status": "ok", "version": VERSION }))
-}
-
-async fn readyz(State(state): State<Arc<AppState>>) -> Result<Json<serde_json::Value>, StatusCode> {
-    match &state.db {
-        Some(pool) => match cordy_db::ping(pool).await {
-            Ok(()) => Ok(Json(json!({ "status": "ready" }))),
-            Err(e) => {
-                tracing::error!(error = %e, "readyz: db ping failed");
-                Err(StatusCode::SERVICE_UNAVAILABLE)
-            }
-        },
-        // No pool wired (test mode) — process is up but not serving traffic.
-        None => Err(StatusCode::SERVICE_UNAVAILABLE),
-    }
+    cordy_handler::build_router(db, None)
 }
 
 #[tokio::main]
@@ -75,14 +38,14 @@ async fn main() -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use axum::body::Body;
-    use axum::http::Request;
+    use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
 
     #[tokio::test]
-    async fn healthz_reports_ok_without_db() {
+    async fn health_reports_ok_without_db() {
         let app = build_router(None);
         let res = app
-            .oneshot(Request::get("/healthz").body(Body::empty()).unwrap())
+            .oneshot(Request::get("/health").body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::OK);

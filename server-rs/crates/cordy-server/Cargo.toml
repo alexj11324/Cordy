@@ -12,6 +12,7 @@ path = "src/main.rs"
 [dependencies]
 cordy-config = { path = "../cordy-config" }
 cordy-db = { path = "../cordy-db" }
+cordy-handler = { path = "../cordy-handler" }
 cordy-util = { path = "../cordy-util" }
 
 anyhow = { workspace = true }
