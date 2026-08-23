@@ -3978,3 +3978,127 @@ func TestIsTerminalChildIssue(t *testing.T) {
 		})
 	}
 }
+
+func newIssuePullRequestAttachTestCmd() *cobra.Command {
+	cmd := &cobra.Command{Use: "attach"}
+	cmd.Flags().String("url", "", "")
+	cmd.Flags().String("title", "", "")
+	cmd.Flags().String("state", "", "")
+	cmd.Flags().String("branch", "", "")
+	cmd.Flags().String("head-sha", "", "")
+	cmd.Flags().String("output", "table", "")
+	return cmd
+}
+
+func TestRunIssuePullRequestAttachPostsURLAndReturnsPR(t *testing.T) {
+	var gotPath, gotMethod string
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/issues/MUL-24":
+			json.NewEncoder(w).Encode(map[string]any{
+				"id":         "issue-uuid",
+				"identifier": "MUL-24",
+				"title":      "PR write-back",
+			})
+		case "/api/issues/issue-uuid/pull-requests":
+			gotPath = r.URL.Path
+			gotMethod = r.Method
+			json.NewDecoder(r.Body).Decode(&gotBody)
+			json.NewEncoder(w).Encode(map[string]any{
+				"pull_request": map[string]any{
+					"url":    "https://github.com/cordy-ai/cordy/pull/6",
+					"number": float64(6),
+					"state":  "open",
+					"title":  "cordy-ai/cordy#6",
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	t.Setenv("CORDY_SERVER_URL", srv.URL)
+	t.Setenv("CORDY_WORKSPACE_ID", "ws-1")
+	t.Setenv("CORDY_TOKEN", "test-token")
+
+	cmd := newIssuePullRequestAttachTestCmd()
+	_ = cmd.Flags().Set("url", "https://github.com/cordy-ai/cordy/pull/6")
+	_ = cmd.Flags().Set("output", "json")
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	err := runIssuePullRequestAttach(cmd, []string{"MUL-24"})
+	_ = w.Close()
+	os.Stdout = old
+	out, _ := io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("runIssuePullRequestAttach: %v", err)
+	}
+
+	if gotMethod != http.MethodPost || gotPath != "/api/issues/issue-uuid/pull-requests" {
+		t.Fatalf("request = %s %s, want POST /api/issues/issue-uuid/pull-requests", gotMethod, gotPath)
+	}
+	if gotBody["url"] != "https://github.com/cordy-ai/cordy/pull/6" {
+		t.Fatalf("body url = %#v, want the PR URL", gotBody["url"])
+	}
+	var payload struct {
+		PullRequest map[string]any `json:"pull_request"`
+	}
+	if err := json.Unmarshal(out, &payload); err != nil {
+		t.Fatalf("decode JSON output: %v\n%s", err, string(out))
+	}
+	if payload.PullRequest["number"] != float64(6) || payload.PullRequest["state"] != "open" {
+		t.Fatalf("unexpected PR payload: %#v", payload.PullRequest)
+	}
+}
+
+func TestRunIssuePullRequestAttachSendsOptionalMetadata(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/issues/MUL-24":
+			json.NewEncoder(w).Encode(map[string]any{"id": "issue-uuid", "identifier": "MUL-24"})
+		case "/api/issues/issue-uuid/pull-requests":
+			json.NewDecoder(r.Body).Decode(&gotBody)
+			json.NewEncoder(w).Encode(map[string]any{"pull_request": map[string]any{"number": float64(7)}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	t.Setenv("CORDY_SERVER_URL", srv.URL)
+	t.Setenv("CORDY_WORKSPACE_ID", "ws-1")
+	t.Setenv("CORDY_TOKEN", "test-token")
+
+	cmd := newIssuePullRequestAttachTestCmd()
+	_ = cmd.Flags().Set("url", "https://github.com/acme/api/pull/7")
+	_ = cmd.Flags().Set("title", "Manual title")
+	_ = cmd.Flags().Set("state", "open")
+	_ = cmd.Flags().Set("head-sha", "abc123")
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	err := runIssuePullRequestAttach(cmd, []string{"MUL-24"})
+	_ = w.Close()
+	os.Stdout = old
+	_, _ = io.ReadAll(r)
+	if err != nil {
+		t.Fatalf("runIssuePullRequestAttach: %v", err)
+	}
+	if gotBody["title"] != "Manual title" || gotBody["state"] != "open" || gotBody["head_sha"] != "abc123" {
+		t.Fatalf("optional metadata not forwarded: %#v", gotBody)
+	}
+	if _, has := gotBody["branch"]; has {
+		t.Fatalf("unset flags must be omitted, got %#v", gotBody)
+	}
+}
+
+func TestRunIssuePullRequestAttachRequiresURL(t *testing.T) {
+	err := runIssuePullRequestAttach(newIssuePullRequestAttachTestCmd(), []string{"MUL-24"})
+	if err == nil || !strings.Contains(err.Error(), "--url") {
+		t.Fatalf("expected --url error, got %v", err)
+	}
+}

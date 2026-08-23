@@ -680,7 +680,7 @@ pub struct GithubPullRequest {
     pub head_sha: String,
     pub html_url: String,
     pub id: Uuid,
-    pub installation_id: i64,
+    pub installation_id: Option<i64>,
     pub mergeable_state: Option<String>,
     pub merged_at: Option<DateTime<Utc>>,
     pub pr_created_at: DateTime<Utc>,

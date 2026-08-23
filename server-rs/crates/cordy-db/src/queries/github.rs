@@ -373,7 +373,7 @@ WHERE pull_request_id = $1"#,
 pub struct ListPullRequestsByIssueRow {
     pub id: Option<Uuid>,
     pub workspace_id: Option<Uuid>,
-    pub installation_id: i64,
+    pub installation_id: Option<i64>,
     pub repo_owner: String,
     pub repo_name: String,
     pub pr_number: i32,

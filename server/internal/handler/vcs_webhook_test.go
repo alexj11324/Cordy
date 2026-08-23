@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/cordy-ai/cordy/server/internal/util/secretbox"
 	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func withVCSBox(t *testing.T) *secretbox.Box {
@@ -240,7 +240,7 @@ func TestCombinedCloseAggregateSpansProviders(t *testing.T) {
 
 	// OPEN GitHub PR linked to the issue (installation_id carries no FK).
 	ghPR, err := testHandler.Queries.UpsertGitHubPullRequest(ctx, db.UpsertGitHubPullRequestParams{
-		WorkspaceID: parseUUID(testWorkspaceID), InstallationID: 987654,
+		WorkspaceID: parseUUID(testWorkspaceID), InstallationID: pgtype.Int8{Int64: 987654, Valid: true},
 		RepoOwner: "acme", RepoName: "gh", PrNumber: 3,
 		Title: "WIP " + issue.Identifier, State: "open",
 		HtmlUrl:     "https://github.com/acme/gh/pull/3",

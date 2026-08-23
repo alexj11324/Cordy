@@ -102,10 +102,10 @@ WHERE installation_id = $1 AND repo_owner = $2 AND repo_name = $3 AND head_sha =
 `
 
 type ListGitHubPRNumbersByHeadSHAParams struct {
-	InstallationID int64  `json:"installation_id"`
-	RepoOwner      string `json:"repo_owner"`
-	RepoName       string `json:"repo_name"`
-	HeadSha        string `json:"head_sha"`
+	InstallationID pgtype.Int8 `json:"installation_id"`
+	RepoOwner      string      `json:"repo_owner"`
+	RepoName       string      `json:"repo_name"`
+	HeadSha        string      `json:"head_sha"`
 }
 
 // Resolves a commit SHA to the PR numbers whose head it is. `status` webhook
@@ -144,10 +144,10 @@ WHERE installation_id = $1 AND repo_owner = $2 AND repo_name = $3 AND pr_number 
 `
 
 type ListGitHubPRRowsByAddressParams struct {
-	InstallationID int64  `json:"installation_id"`
-	RepoOwner      string `json:"repo_owner"`
-	RepoName       string `json:"repo_name"`
-	PrNumber       int32  `json:"pr_number"`
+	InstallationID pgtype.Int8 `json:"installation_id"`
+	RepoOwner      string      `json:"repo_owner"`
+	RepoName       string      `json:"repo_name"`
+	PrNumber       int32       `json:"pr_number"`
 }
 
 type ListGitHubPRRowsByAddressRow struct {
@@ -204,6 +204,10 @@ WITH candidates AS (
     SELECT installation_id, repo_owner, repo_name, pr_number
     FROM github_pull_request AS pr
     WHERE state IN ('open', 'draft')
+      -- App-less rows (CORD-24 attach without any GitHub installation) have
+      -- no token to refresh with; they leave the sweep until a webhook
+      -- backfills installation_id.
+      AND installation_id IS NOT NULL
       AND (snapshot_fetched_at IS NULL OR snapshot_fetched_at < $6)
       AND (
           snapshot_fetched_at IS NULL
@@ -243,10 +247,10 @@ type ListStaleUndecidedGitHubPRsParams struct {
 }
 
 type ListStaleUndecidedGitHubPRsRow struct {
-	InstallationID int64  `json:"installation_id"`
-	RepoOwner      string `json:"repo_owner"`
-	RepoName       string `json:"repo_name"`
-	PrNumber       int32  `json:"pr_number"`
+	InstallationID pgtype.Int8 `json:"installation_id"`
+	RepoOwner      string      `json:"repo_owner"`
+	RepoName       string      `json:"repo_name"`
+	PrNumber       int32       `json:"pr_number"`
 }
 
 // TTL / safety-net sweep source. Returns distinct addresses of open/draft PRs

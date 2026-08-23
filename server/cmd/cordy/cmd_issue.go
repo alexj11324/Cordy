@@ -189,6 +189,26 @@ var issuePullRequestsCmd = &cobra.Command{
 	RunE:    runIssuePullRequests,
 }
 
+var issuePullRequestCmd = &cobra.Command{
+	Use:   "pull-request",
+	Short: "Manage pull requests linked to an issue",
+}
+
+var issuePullRequestAttachCmd = &cobra.Command{
+	Use:   "attach <issue-id>",
+	Short: "Attach an existing GitHub pull request to an issue",
+	Long: "Link an existing GitHub PR to an issue by URL, so the issue sidebar\n" +
+		"shows it immediately — no GitHub App or webhook required.\n\n" +
+		"Example:\n" +
+		"  cordy issue pull-request attach CORD-24 --url https://github.com/owner/repo/pull/6\n\n" +
+		"The optional metadata flags are only needed when the workspace has no\n" +
+		"GitHub App installation; with an app installed the server fetches the\n" +
+		"full PR metadata itself. Attaching never sets closing intent — merging\n" +
+		"still auto-closes only via Closes/Fixes/Resolves in the title/body.",
+	Args: exactArgs(1),
+	RunE: runIssuePullRequestAttach,
+}
+
 var issueChildrenCmd = &cobra.Command{
 	Use:     "children <id>",
 	Aliases: []string{"subissues"},
@@ -445,6 +465,7 @@ func init() {
 	issueCmd.AddCommand(issueListCmd)
 	issueCmd.AddCommand(issueGetCmd)
 	issueCmd.AddCommand(issuePullRequestsCmd)
+	issueCmd.AddCommand(issuePullRequestCmd)
 	issueCmd.AddCommand(issueChildrenCmd)
 	issueCmd.AddCommand(issueCreateCmd)
 	issueCmd.AddCommand(issueUpdateCmd)
@@ -465,6 +486,8 @@ func init() {
 	issueCommentCmd.AddCommand(issueCommentDeleteCmd)
 	issueCommentCmd.AddCommand(issueCommentResolveCmd)
 	issueCommentCmd.AddCommand(issueCommentUnresolveCmd)
+
+	issuePullRequestCmd.AddCommand(issuePullRequestAttachCmd)
 
 	issueSubscriberCmd.AddCommand(issueSubscriberListCmd)
 	issueSubscriberCmd.AddCommand(issueSubscriberAddCmd)
@@ -489,6 +512,15 @@ func init() {
 
 	// issue pull-requests
 	issuePullRequestsCmd.Flags().String("output", "table", "Output format: table or json")
+
+	// issue pull-request attach
+	issuePullRequestAttachCmd.Flags().String("url", "", "GitHub pull request URL: https://github.com/{owner}/{repo}/pull/{number}")
+	_ = issuePullRequestAttachCmd.MarkFlagRequired("url")
+	issuePullRequestAttachCmd.Flags().String("title", "", "Optional PR title, used only when the workspace has no GitHub App installed (gh pr view --json title)")
+	issuePullRequestAttachCmd.Flags().String("state", "", "Optional PR state: open, closed, merged, or draft (gh pr view --json state)")
+	issuePullRequestAttachCmd.Flags().String("branch", "", "Optional head branch name (gh pr view --json headRefName)")
+	issuePullRequestAttachCmd.Flags().String("head-sha", "", "Optional head commit SHA (gh pr view --json headRefOid)")
+	issuePullRequestAttachCmd.Flags().String("output", "table", "Output format: table or json")
 
 	issueChildrenCmd.Flags().String("output", "table", "Output format: table or json")
 	issueChildrenCmd.Flags().Bool("full-id", false, "Show full UUIDs in table output")
@@ -793,6 +825,73 @@ func runIssuePullRequests(cmd *cobra.Command, args []string) error {
 
 	prs, _ := result["pull_requests"].([]any)
 	printIssuePullRequestsTable(normalizePullRequestList(prs))
+	return nil
+}
+
+type attachPullRequestBody struct {
+	URL     string  `json:"url"`
+	Title   *string `json:"title,omitempty"`
+	State   *string `json:"state,omitempty"`
+	Branch  *string `json:"branch,omitempty"`
+	HeadSha *string `json:"head_sha,omitempty"`
+}
+
+func runIssuePullRequestAttach(cmd *cobra.Command, args []string) error {
+	prURL, _ := cmd.Flags().GetString("url")
+	if strings.TrimSpace(prURL) == "" {
+		return fmt.Errorf("--url is required (https://github.com/{owner}/{repo}/pull/{number})")
+	}
+
+	client, err := newAPIClient(cmd)
+	if err != nil {
+		return err
+	}
+
+	ctx, cancel := cli.APIContext(context.Background())
+	defer cancel()
+
+	issueRef, err := resolveIssueRef(ctx, client, args[0])
+	if err != nil {
+		return fmt.Errorf("resolve issue: %w", err)
+	}
+
+	body := attachPullRequestBody{URL: strings.TrimSpace(prURL)}
+	for _, f := range []struct{ flag, field string }{
+		{"title", "title"},
+		{"state", "state"},
+		{"branch", "branch"},
+		{"head-sha", "head-sha"},
+	} {
+		value, _ := cmd.Flags().GetString(f.flag)
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		switch f.field {
+		case "title":
+			body.Title = &value
+		case "state":
+			body.State = &value
+		case "branch":
+			body.Branch = &value
+		case "head-sha":
+			body.HeadSha = &value
+		}
+	}
+
+	var result struct {
+		PullRequest map[string]any `json:"pull_request"`
+	}
+	path := "/api/issues/" + url.PathEscape(issueRef.ID) + "/pull-requests"
+	if err := client.PostJSON(ctx, path, body, &result); err != nil {
+		return fmt.Errorf("attach pull request: %w", err)
+	}
+	pr := result.PullRequest
+
+	output, _ := cmd.Flags().GetString("output")
+	if output == "json" {
+		return cli.PrintJSON(os.Stdout, map[string]any{"pull_request": pr})
+	}
+	printIssuePullRequestsTable([]map[string]any{pr})
 	return nil
 }
 

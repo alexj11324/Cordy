@@ -103,7 +103,7 @@ INSERT INTO github_pull_request (
     $12, $13, $14
 )
 ON CONFLICT (workspace_id, repo_owner, repo_name, pr_number) DO UPDATE SET
-    installation_id = EXCLUDED.installation_id,
+    installation_id = COALESCE(EXCLUDED.installation_id, github_pull_request.installation_id),
     title = EXCLUDED.title,
     state = EXCLUDED.state,
     html_url = EXCLUDED.html_url,
@@ -122,6 +122,46 @@ ON CONFLICT (workspace_id, repo_owner, repo_name, pr_number) DO UPDATE SET
     additions     = EXCLUDED.additions,
     deletions     = EXCLUDED.deletions,
     changed_files = EXCLUDED.changed_files,
+    updated_at = now()
+RETURNING *;
+
+-- name: AttachGitHubPullRequest :one
+-- Explicit attach may have either complete App-fetched metadata or only the
+-- identity parsed from a URL. On conflict, the identity-only path must never
+-- replace metadata already supplied by a webhook. Complete App metadata is
+-- authoritative for the mirrored fields, while snapshot fields remain owned
+-- by the snapshot pipeline.
+INSERT INTO github_pull_request (
+    workspace_id, installation_id, repo_owner, repo_name, pr_number,
+    title, state, html_url, branch, author_login, author_avatar_url,
+    merged_at, closed_at, pr_created_at, pr_updated_at,
+    head_sha, mergeable_state,
+    additions, deletions, changed_files
+) VALUES (
+    $1, $2, $3, $4, $5,
+    $6, $7, $8, sqlc.narg('branch'), sqlc.narg('author_login'), sqlc.narg('author_avatar_url'),
+    sqlc.narg('merged_at'), sqlc.narg('closed_at'), $9, $10,
+    $11, NULL,
+    $12, $13, $14
+)
+ON CONFLICT (workspace_id, repo_owner, repo_name, pr_number) DO UPDATE SET
+    installation_id = CASE
+        WHEN sqlc.arg('metadata_complete')::boolean THEN COALESCE(EXCLUDED.installation_id, github_pull_request.installation_id)
+        ELSE github_pull_request.installation_id
+    END,
+    title = CASE WHEN sqlc.arg('metadata_complete')::boolean THEN EXCLUDED.title ELSE github_pull_request.title END,
+    state = CASE WHEN sqlc.arg('metadata_complete')::boolean THEN EXCLUDED.state ELSE github_pull_request.state END,
+    html_url = CASE WHEN sqlc.arg('metadata_complete')::boolean THEN EXCLUDED.html_url ELSE github_pull_request.html_url END,
+    branch = CASE WHEN sqlc.arg('metadata_complete')::boolean THEN EXCLUDED.branch ELSE github_pull_request.branch END,
+    author_login = CASE WHEN sqlc.arg('metadata_complete')::boolean THEN EXCLUDED.author_login ELSE github_pull_request.author_login END,
+    author_avatar_url = CASE WHEN sqlc.arg('metadata_complete')::boolean THEN EXCLUDED.author_avatar_url ELSE github_pull_request.author_avatar_url END,
+    merged_at = CASE WHEN sqlc.arg('metadata_complete')::boolean THEN EXCLUDED.merged_at ELSE github_pull_request.merged_at END,
+    closed_at = CASE WHEN sqlc.arg('metadata_complete')::boolean THEN EXCLUDED.closed_at ELSE github_pull_request.closed_at END,
+    pr_updated_at = CASE WHEN sqlc.arg('metadata_complete')::boolean THEN EXCLUDED.pr_updated_at ELSE github_pull_request.pr_updated_at END,
+    head_sha = CASE WHEN sqlc.arg('metadata_complete')::boolean THEN EXCLUDED.head_sha ELSE github_pull_request.head_sha END,
+    additions = CASE WHEN sqlc.arg('metadata_complete')::boolean THEN EXCLUDED.additions ELSE github_pull_request.additions END,
+    deletions = CASE WHEN sqlc.arg('metadata_complete')::boolean THEN EXCLUDED.deletions ELSE github_pull_request.deletions END,
+    changed_files = CASE WHEN sqlc.arg('metadata_complete')::boolean THEN EXCLUDED.changed_files ELSE github_pull_request.changed_files END,
     updated_at = now()
 RETURNING *;
 
@@ -259,21 +299,32 @@ WHERE ipr.issue_id = $1 AND NOT ipr.reference_only;
 -- keeping the merge-time decision stable.
 --
 -- reference_only marks a link justified ONLY by a bare body mention (no closing
--- keyword, no title/branch reference). It follows the same preserve gate as
--- close_intent so a post-terminal edit can't retroactively hide a PR that did
--- the work. The issue's PR list filters these out (see ListPullRequestsByIssue).
+-- keyword, no title/branch reference). Webhooks preserve it alongside
+-- close_intent after terminal events, while explicit attach can independently
+-- promote the link to a visible working PR without changing close_intent.
+-- Explicit attach also replaces webhook system attribution; later webhooks
+-- preserve the human/agent attribution. The issue's PR list filters
+-- reference-only links out (see ListPullRequestsByIssue).
 INSERT INTO issue_pull_request (
     issue_id, pull_request_id, linked_by_type, linked_by_id, close_intent, reference_only
 ) VALUES (
     $1, $2, sqlc.narg('linked_by_type'), sqlc.narg('linked_by_id'), $3, sqlc.arg('reference_only')
 )
 ON CONFLICT (issue_id, pull_request_id) DO UPDATE SET
+    linked_by_type = CASE
+        WHEN sqlc.arg('preserve_linked_by')::boolean THEN issue_pull_request.linked_by_type
+        ELSE EXCLUDED.linked_by_type
+    END,
+    linked_by_id = CASE
+        WHEN sqlc.arg('preserve_linked_by')::boolean THEN issue_pull_request.linked_by_id
+        ELSE EXCLUDED.linked_by_id
+    END,
     close_intent = CASE
-        WHEN sqlc.arg('preserve_close_intent') THEN issue_pull_request.close_intent
+        WHEN sqlc.arg('preserve_close_intent')::boolean THEN issue_pull_request.close_intent
         ELSE EXCLUDED.close_intent
     END,
     reference_only = CASE
-        WHEN sqlc.arg('preserve_close_intent') THEN issue_pull_request.reference_only
+        WHEN sqlc.arg('preserve_reference_only')::boolean THEN issue_pull_request.reference_only
         ELSE EXCLUDED.reference_only
     END;
 

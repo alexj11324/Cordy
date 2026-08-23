@@ -179,6 +179,7 @@ pub async fn list_stale_undecided_git_hub_p_rs(
     SELECT installation_id, repo_owner, repo_name, pr_number
     FROM github_pull_request AS pr
     WHERE state IN ('open', 'draft')
+      AND installation_id IS NOT NULL
       AND (snapshot_fetched_at IS NULL OR snapshot_fetched_at < $6)
       AND (
           snapshot_fetched_at IS NULL

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -20,14 +21,15 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cordy-ai/cordy/server/internal/issuestatus"
+	"github.com/cordy-ai/cordy/server/internal/middleware"
+	"github.com/cordy-ai/cordy/server/internal/util"
+	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/cordy-ai/cordy/server/pkg/protocol"
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/cordy-ai/cordy/server/internal/issuestatus"
-	"github.com/cordy-ai/cordy/server/internal/middleware"
-	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
-	"github.com/cordy-ai/cordy/server/pkg/protocol"
 )
 
 // githubAPIBase is the base URL for GitHub's REST API. Mutable so tests can
@@ -816,50 +818,11 @@ func fetchGitHubInstallationRepositories(
 	installationID int64,
 	page, perPage int,
 ) (GitHubRepositoriesResponse, error) {
-	appJWT, err := signGitHubAppJWT(time.Now())
+	client, token, cleanup, err := newGitHubInstallationClient(ctx, installationID)
 	if err != nil {
 		return GitHubRepositoriesResponse{}, err
 	}
-	if appJWT == "" {
-		return GitHubRepositoriesResponse{}, errors.New("github App JWT credentials unavailable")
-	}
-
-	client := &http.Client{Timeout: 15 * time.Second}
-	tokenEndpoint := fmt.Sprintf(
-		"%s/app/installations/%d/access_tokens",
-		strings.TrimRight(githubAPIBase, "/"),
-		installationID,
-	)
-	tokenReq, err := http.NewRequestWithContext(
-		ctx,
-		http.MethodPost,
-		tokenEndpoint,
-		strings.NewReader(`{"permissions":{"metadata":"read"}}`),
-	)
-	if err != nil {
-		return GitHubRepositoriesResponse{}, err
-	}
-	setGitHubAPIHeaders(tokenReq, appJWT)
-	tokenReq.Header.Set("Content-Type", "application/json")
-	tokenResp, err := client.Do(tokenReq)
-	if err != nil {
-		return GitHubRepositoriesResponse{}, fmt.Errorf("create installation token: %w", err)
-	}
-	defer tokenResp.Body.Close()
-	if tokenResp.StatusCode != http.StatusCreated {
-		_, _ = io.Copy(io.Discard, io.LimitReader(tokenResp.Body, githubAPIResponseLimit))
-		return GitHubRepositoriesResponse{}, fmt.Errorf("create installation token: github status %d", tokenResp.StatusCode)
-	}
-	var tokenBody struct {
-		Token string `json:"token"`
-	}
-	if err := json.NewDecoder(io.LimitReader(tokenResp.Body, githubAPIResponseLimit)).Decode(&tokenBody); err != nil {
-		return GitHubRepositoriesResponse{}, fmt.Errorf("decode installation token: %w", err)
-	}
-	if tokenBody.Token == "" {
-		return GitHubRepositoriesResponse{}, errors.New("github returned an empty installation token")
-	}
-	defer revokeGitHubInstallationToken(client, tokenBody.Token)
+	defer cleanup()
 
 	repositoriesEndpoint := fmt.Sprintf(
 		"%s/installation/repositories?page=%d&per_page=%d",
@@ -871,7 +834,7 @@ func fetchGitHubInstallationRepositories(
 	if err != nil {
 		return GitHubRepositoriesResponse{}, err
 	}
-	setGitHubAPIHeaders(repositoriesReq, tokenBody.Token)
+	setGitHubAPIHeaders(repositoriesReq, token)
 	repositoriesResp, err := client.Do(repositoriesReq)
 	if err != nil {
 		return GitHubRepositoriesResponse{}, fmt.Errorf("list installation repositories: %w", err)
@@ -909,6 +872,71 @@ func fetchGitHubInstallationRepositories(
 		out.NextPage = &nextPage
 	}
 	return out, nil
+}
+
+// newGitHubInstallationClient mints a short-lived installation token via the
+// GitHub App JWT and returns an HTTP client bound to it. The returned cleanup
+// revokes the token and must be called by every caller.
+func newGitHubInstallationClient(ctx context.Context, installationID int64) (*http.Client, string, func(), error) {
+	return newGitHubInstallationClientWithPermissions(ctx, installationID, map[string]string{
+		"metadata": "read",
+	})
+}
+
+func newGitHubInstallationClientWithPermissions(
+	ctx context.Context,
+	installationID int64,
+	permissions map[string]string,
+) (*http.Client, string, func(), error) {
+	appJWT, err := signGitHubAppJWT(time.Now())
+	if err != nil {
+		return nil, "", nil, err
+	}
+	if appJWT == "" {
+		return nil, "", nil, errors.New("github App JWT credentials unavailable")
+	}
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	tokenEndpoint := fmt.Sprintf(
+		"%s/app/installations/%d/access_tokens",
+		strings.TrimRight(githubAPIBase, "/"),
+		installationID,
+	)
+	tokenPayload, err := json.Marshal(map[string]any{"permissions": permissions})
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("encode installation token permissions: %w", err)
+	}
+	tokenReq, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodPost,
+		tokenEndpoint,
+		bytes.NewReader(tokenPayload),
+	)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	setGitHubAPIHeaders(tokenReq, appJWT)
+	tokenReq.Header.Set("Content-Type", "application/json")
+	tokenResp, err := client.Do(tokenReq)
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("create installation token: %w", err)
+	}
+	defer tokenResp.Body.Close()
+	if tokenResp.StatusCode != http.StatusCreated {
+		_, _ = io.Copy(io.Discard, io.LimitReader(tokenResp.Body, githubAPIResponseLimit))
+		return nil, "", nil, fmt.Errorf("create installation token: github status %d", tokenResp.StatusCode)
+	}
+	var tokenBody struct {
+		Token string `json:"token"`
+	}
+	if err := json.NewDecoder(io.LimitReader(tokenResp.Body, githubAPIResponseLimit)).Decode(&tokenBody); err != nil {
+		return nil, "", nil, fmt.Errorf("decode installation token: %w", err)
+	}
+	if tokenBody.Token == "" {
+		return nil, "", nil, errors.New("github returned an empty installation token")
+	}
+	cleanup := func() { revokeGitHubInstallationToken(client, tokenBody.Token) }
+	return client, tokenBody.Token, cleanup, nil
 }
 
 func setGitHubAPIHeaders(req *http.Request, token string) {
@@ -977,13 +1005,15 @@ func (h *Handler) ListPullRequestsForIssue(w http.ResponseWriter, r *http.Reques
 		// older than the view TTL, kick an async refresh. Non-blocking — the
 		// current (possibly stale) response is returned immediately and the
 		// fresh snapshot arrives via the pull_request:updated realtime event.
-		h.PRRefresh.MaybeEnqueueOnView(
-			row.InstallationID, row.RepoOwner, row.RepoName, row.PrNumber,
-			row.SnapshotFetchedAt.Time,
-			row.SnapshotFetchedAt.Valid &&
-				row.SnapshotHeadSha != "" &&
-				row.SnapshotHeadSha == row.HeadSha,
-		)
+		if row.InstallationID.Valid {
+			h.PRRefresh.MaybeEnqueueOnView(
+				row.InstallationID.Int64, row.RepoOwner, row.RepoName, row.PrNumber,
+				row.SnapshotFetchedAt.Time,
+				row.SnapshotFetchedAt.Valid &&
+					row.SnapshotHeadSha != "" &&
+					row.SnapshotHeadSha == row.HeadSha,
+			)
+		}
 	}
 	// PRs from token-based providers (Forgejo / Gitea / GitLab) share the same
 	// card list. They live in their own provider-tagged tables, so they merge
@@ -1001,6 +1031,342 @@ func (h *Handler) ListPullRequestsForIssue(w http.ResponseWriter, r *http.Reques
 		return out[i].PRCreatedAt > out[j].PRCreatedAt
 	})
 	writeJSON(w, http.StatusOK, map[string]any{"pull_requests": out})
+}
+
+// ── Attach an existing PR to an issue ───────────────────────────────────────
+
+// githubPRURLRe matches canonical GitHub PR URLs
+// (https://github.com/{owner}/{repo}/pull/{number}), tolerating a trailing
+// slash and extra segments (/files, /commits/...). Anything else — other
+// hosts, issues, releases — is rejected so the CLI can surface a clear 400.
+var githubPRURLRe = regexp.MustCompile(
+	`^https?://github\.com/([A-Za-z0-9][A-Za-z0-9-_.]*)/([A-Za-z0-9][A-Za-z0-9-_.]*)/pull/(\d+)(?:[/?#].*)?$`,
+)
+
+// parseGitHubPRURL extracts (owner, repo, number) from a GitHub PR URL.
+func parseGitHubPRURL(raw string) (string, string, int32, error) {
+	m := githubPRURLRe.FindStringSubmatch(strings.TrimSpace(raw))
+	if m == nil {
+		return "", "", 0, fmt.Errorf("not a GitHub pull request URL: %q", raw)
+	}
+	number, err := strconv.ParseInt(m[3], 10, 32)
+	if err != nil || number <= 0 {
+		return "", "", 0, fmt.Errorf("invalid pull request number in %q", raw)
+	}
+	return strings.ToLower(m[1]), strings.ToLower(m[2]), int32(number), nil
+}
+
+type AttachPullRequestToIssueRequest struct {
+	// URL is required: https://github.com/{owner}/{repo}/pull/{number}.
+	URL string `json:"url"`
+	// Optional metadata for workspaces without a GitHub App installation.
+	// Field names follow `gh pr view --json` where applicable; unknown
+	// fields are ignored.
+	Title       *string `json:"title"`
+	State       *string `json:"state"`
+	Branch      *string `json:"branch"`
+	HeadRefName *string `json:"head_ref_name"`
+	HeadSha     *string `json:"head_sha"`
+	AuthorLogin *string `json:"author_login"`
+}
+
+// fetchedGitHubPullRequestMeta carries what the GitHub REST API returned for
+// a PR, plus the installation that served the request.
+type fetchedGitHubPullRequestMeta struct {
+	InstallationID  int64
+	Title           string
+	State           string
+	HtmlURL         string
+	Branch          string
+	HeadSha         string
+	AuthorLogin     string
+	AuthorAvatarURL string
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+	MergedAt        pgtype.Timestamptz
+	ClosedAt        pgtype.Timestamptz
+	Additions       int32
+	Deletions       int32
+	ChangedFiles    int32
+}
+
+func fetchGitHubPullRequestMeta(
+	ctx context.Context,
+	installationID int64,
+	owner, repo string,
+	number int32,
+) (*fetchedGitHubPullRequestMeta, error) {
+	client, token, cleanup, err := newGitHubInstallationClientWithPermissions(
+		ctx,
+		installationID,
+		map[string]string{"metadata": "read", "pull_requests": "read"},
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	endpoint := fmt.Sprintf(
+		"%s/repos/%s/%s/pulls/%d",
+		strings.TrimRight(githubAPIBase, "/"),
+		url.PathEscape(owner),
+		url.PathEscape(repo),
+		number,
+	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	setGitHubAPIHeaders(req, token)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("fetch pull request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, githubAPIResponseLimit))
+		return nil, fmt.Errorf("fetch pull request: github status %d", resp.StatusCode)
+	}
+	var body struct {
+		Title     string `json:"title"`
+		State     string `json:"state"`
+		Draft     bool   `json:"draft"`
+		Merged    bool   `json:"merged"`
+		HTMLURL   string `json:"html_url"`
+		CreatedAt string `json:"created_at"`
+		UpdatedAt string `json:"updated_at"`
+		MergedAt  string `json:"merged_at"`
+		ClosedAt  string `json:"closed_at"`
+		Head      struct {
+			Ref string `json:"ref"`
+			SHA string `json:"sha"`
+		} `json:"head"`
+		User struct {
+			Login     string `json:"login"`
+			AvatarURL string `json:"avatar_url"`
+		} `json:"user"`
+		Additions    int32 `json:"additions"`
+		Deletions    int32 `json:"deletions"`
+		ChangedFiles int32 `json:"changed_files"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, githubAPIResponseLimit)).Decode(&body); err != nil {
+		return nil, fmt.Errorf("decode pull request: %w", err)
+	}
+	meta := &fetchedGitHubPullRequestMeta{
+		InstallationID:  installationID,
+		Title:           body.Title,
+		State:           derivePRState(body.State, body.Draft, body.Merged),
+		HtmlURL:         body.HTMLURL,
+		Branch:          body.Head.Ref,
+		HeadSha:         body.Head.SHA,
+		AuthorLogin:     body.User.Login,
+		AuthorAvatarURL: body.User.AvatarURL,
+		CreatedAt:       parseGHTimeRequired(body.CreatedAt),
+		UpdatedAt:       parseGHTimeRequired(body.UpdatedAt),
+		MergedAt:        parseGHTime(body.MergedAt),
+		ClosedAt:        parseGHTime(body.ClosedAt),
+		Additions:       body.Additions,
+		Deletions:       body.Deletions,
+		ChangedFiles:    body.ChangedFiles,
+	}
+	return meta, nil
+}
+
+// normalizeAttachState maps caller-supplied state onto the mirrored column's
+// CHECK domain. Accepts gh-style uppercase ("OPEN"/"MERGED") and lowercase;
+// an unrecognized value is an error rather than a silent default so agents
+// don't attach a merged PR as open.
+func normalizeAttachState(raw *string) (string, error) {
+	if raw == nil || strings.TrimSpace(*raw) == "" {
+		return "open", nil
+	}
+	state := strings.ToLower(strings.TrimSpace(*raw))
+	switch state {
+	case "open", "closed", "merged", "draft":
+		return state, nil
+	default:
+		return "", fmt.Errorf("invalid state %q: expected open, closed, merged, or draft", *raw)
+	}
+}
+
+// AttachPullRequestToIssue links an existing GitHub PR to an issue at creation
+// time (CORD-24): the agent (or member) that opened the PR already knows its
+// URL and writes it back immediately instead of waiting for the webhook's
+// identifier scan. The PR row is upserted into github_pull_request with the
+// same shape the webhook mirror produces, then linked to the issue with
+// reference_only=false — this is an explicit working-PR attachment, not a bare
+// body mention. Attach never creates close_intent and preserves any value the
+// webhook already recorded: merge-time auto-close still requires a literal
+// Closes/Fixes/Resolves PREFIX-N in the title/body, parsed only by the webhook
+// path. When the workspace has a GitHub App installation,
+// full metadata is pulled through the App API (matching the webhook upsert);
+// without one the row still lands (number + URL minimum) with a NULL
+// installation_id that a later webhook ON CONFLICT backfills.
+func (h *Handler) AttachPullRequestToIssue(w http.ResponseWriter, r *http.Request) {
+	issue, ok := h.loadIssueForUser(w, r, chi.URLParam(r, "id"))
+	if !ok {
+		return
+	}
+	userID, _ := requireUserID(w, r)
+
+	var reqBody AttachPullRequestToIssueRequest
+	if err := json.NewDecoder(io.LimitReader(r.Body, githubAPIResponseLimit)).Decode(&reqBody); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	owner, repo, number, err := parseGitHubPRURL(reqBody.URL)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	state, err := normalizeAttachState(reqBody.State)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Prefer App-fetched metadata when any workspace installation can serve
+	// the repo; fall back to request-supplied fields otherwise. A fetch
+	// failure (repo not installed, transient API error) degrades to the
+	// app-less path instead of failing the attach.
+	ctx := r.Context()
+	insts, instErr := h.Queries.ListGitHubInstallationsByWorkspace(ctx, issue.WorkspaceID)
+	var meta *fetchedGitHubPullRequestMeta
+	if instErr == nil {
+		for _, inst := range insts {
+			meta, err = fetchGitHubPullRequestMeta(ctx, inst.InstallationID, owner, repo, number)
+			if err == nil {
+				break
+			}
+			meta = nil
+		}
+	}
+
+	title := fmt.Sprintf("%s/%s#%d", owner, repo, number)
+	branch := reqBody.Branch
+	if branch == nil {
+		branch = reqBody.HeadRefName
+	}
+	headSha := ""
+	nowTS := pgtype.Timestamptz{Time: time.Now().UTC(), Valid: true}
+	prCreatedAt, prUpdatedAt := nowTS, nowTS
+	mergedAt, closedAt := pgtype.Timestamptz{}, pgtype.Timestamptz{}
+	var additions, deletions, changedFiles int32
+	var avatarURL string
+	authorLogin := ""
+	var installationID pgtype.Int8
+	if meta != nil {
+		installationID = pgtype.Int8{Int64: meta.InstallationID, Valid: true}
+		if meta.Title != "" {
+			title = meta.Title
+		}
+		state = meta.State
+		if meta.Branch != "" {
+			branch = &meta.Branch
+		}
+		headSha = meta.HeadSha
+		authorLogin = meta.AuthorLogin
+		prCreatedAt = meta.CreatedAt
+		prUpdatedAt = meta.UpdatedAt
+		mergedAt = meta.MergedAt
+		closedAt = meta.ClosedAt
+		additions = meta.Additions
+		deletions = meta.Deletions
+		changedFiles = meta.ChangedFiles
+		avatarURL = meta.AuthorAvatarURL
+	} else if reqBody.Title != nil && strings.TrimSpace(*reqBody.Title) != "" {
+		title = strings.TrimSpace(*reqBody.Title)
+	}
+	_, lookupErr := h.Queries.GetGitHubPullRequest(ctx, db.GetGitHubPullRequestParams{
+		WorkspaceID: issue.WorkspaceID,
+		RepoOwner:   owner,
+		RepoName:    repo,
+		PrNumber:    number,
+	})
+	isNew := errors.Is(lookupErr, pgx.ErrNoRows)
+	if lookupErr != nil && !isNew {
+		slog.Warn("github: attach lookup pr failed", "err", lookupErr)
+		writeError(w, http.StatusInternalServerError, "failed to attach pull request")
+		return
+	}
+
+	var branchText pgtype.Text
+	if branch != nil && *branch != "" {
+		branchText = strToText(*branch)
+	}
+	var authorText, avatarText pgtype.Text
+	if authorLogin != "" {
+		authorText = strToText(authorLogin)
+		if avatarURL != "" {
+			avatarText = strToText(avatarURL)
+		}
+	} else if reqBody.AuthorLogin != nil && *reqBody.AuthorLogin != "" {
+		authorText = strToText(strings.TrimSpace(*reqBody.AuthorLogin))
+	}
+	pr, err := h.Queries.AttachGitHubPullRequest(ctx, db.AttachGitHubPullRequestParams{
+		WorkspaceID:      issue.WorkspaceID,
+		InstallationID:   installationID,
+		RepoOwner:        owner,
+		RepoName:         repo,
+		PrNumber:         number,
+		Title:            title,
+		State:            state,
+		HtmlUrl:          fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, number),
+		Branch:           branchText,
+		AuthorLogin:      authorText,
+		AuthorAvatarUrl:  avatarText,
+		MergedAt:         mergedAt,
+		ClosedAt:         closedAt,
+		PrCreatedAt:      prCreatedAt,
+		PrUpdatedAt:      prUpdatedAt,
+		HeadSha:          headSha,
+		Additions:        additions,
+		Deletions:        deletions,
+		ChangedFiles:     changedFiles,
+		MetadataComplete: meta != nil,
+	})
+	if err != nil {
+		slog.Warn("github: attach upsert pr failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to attach pull request")
+		return
+	}
+
+	actorType, actorID := h.resolveActor(r, userID, uuidToString(issue.WorkspaceID))
+	linkedByType := actorType
+	if linkedByType == "member" {
+		linkedByType = "user"
+	}
+	var linkedByID pgtype.UUID
+	if id, parseErr := util.ParseUUID(actorID); parseErr == nil {
+		linkedByID = id
+	}
+	if err := h.Queries.LinkIssueToPullRequest(ctx, db.LinkIssueToPullRequestParams{
+		IssueID:               issue.ID,
+		PullRequestID:         pr.ID,
+		CloseIntent:           false,
+		ReferenceOnly:         false,
+		PreserveCloseIntent:   true,
+		PreserveReferenceOnly: false,
+		PreserveLinkedBy:      false,
+		LinkedByType:          strToText(linkedByType),
+		LinkedByID:            linkedByID,
+	}); err != nil {
+		slog.Warn("github: attach link failed", "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to link pull request")
+		return
+	}
+
+	resp := githubPullRequestToResponse(pr, h.PRRefresh.Enabled())
+	h.publish(protocol.EventPullRequestUpdated, uuidToString(issue.WorkspaceID), actorType, actorID, map[string]any{
+		"pull_request":     resp,
+		"linked_issue_ids": []string{uuidToString(issue.ID)},
+	})
+
+	status := http.StatusOK
+	if isNew {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, map[string]any{"pull_request": resp})
 }
 
 // broadcastPRSnapshotApplied is the ghsnapshot pipeline's onApplied callback:
@@ -1295,7 +1661,12 @@ func (h *Handler) handlePullRequestEvent(ctx context.Context, body []byte) {
 	// authoritative CI + mergeability snapshot for that head. The webhook is
 	// only the doorbell — its own mergeable/checks payload is not used for
 	// display anymore (MUL-5265).
-	h.PRRefresh.Enqueue(p.Installation.ID, p.Repository.Owner.Login, p.Repository.Name, p.PullRequest.Number)
+	h.PRRefresh.Enqueue(
+		p.Installation.ID,
+		strings.ToLower(p.Repository.Owner.Login),
+		strings.ToLower(p.Repository.Name),
+		p.PullRequest.Number,
+	)
 }
 
 // closeIntentPolicy decides which (closing identifier, workspace) pairs this
@@ -1474,7 +1845,7 @@ func (h *Handler) triggerPRRefreshFromCIEvent(ctx context.Context, body []byte) 
 	if p.Installation.ID == 0 || p.Repository.Name == "" {
 		return
 	}
-	owner, repo := p.Repository.Owner.Login, p.Repository.Name
+	owner, repo := strings.ToLower(p.Repository.Owner.Login), strings.ToLower(p.Repository.Name)
 
 	seen := map[int32]struct{}{}
 	enqueue := func(number int32) {
@@ -1506,7 +1877,7 @@ func (h *Handler) triggerPRRefreshFromCIEvent(ctx context.Context, body []byte) 
 		return
 	}
 	numbers, err := h.Queries.ListGitHubPRNumbersByHeadSHA(ctx, db.ListGitHubPRNumbersByHeadSHAParams{
-		InstallationID: p.Installation.ID,
+		InstallationID: pgtype.Int8{Int64: p.Installation.ID, Valid: true},
 		RepoOwner:      owner,
 		RepoName:       repo,
 		HeadSha:        sha,
@@ -1534,11 +1905,13 @@ func (h *Handler) triggerPRRefreshFromCIEvent(ctx context.Context, body []byte) 
 func (h *Handler) mirrorPullRequestForWorkspace(ctx context.Context, wsID pgtype.UUID, installationID int64, p *ghPullRequestPayload, closePolicy closeIntentPolicy) {
 	state := derivePRState(p.PullRequest.State, p.PullRequest.Draft, p.PullRequest.Merged)
 	mergeable, clearMergeable := derivePRMergeableState(p.Action, p.PullRequest.MergeableState, baseRefChanged(p.Changes))
+	owner := strings.ToLower(p.Repository.Owner.Login)
+	repo := strings.ToLower(p.Repository.Name)
 	pr, err := h.Queries.UpsertGitHubPullRequest(ctx, db.UpsertGitHubPullRequestParams{
 		WorkspaceID:         wsID,
-		InstallationID:      installationID,
-		RepoOwner:           p.Repository.Owner.Login,
-		RepoName:            p.Repository.Name,
+		InstallationID:      pgtype.Int8{Int64: installationID, Valid: installationID > 0},
+		RepoOwner:           owner,
+		RepoName:            repo,
 		PrNumber:            p.PullRequest.Number,
 		Title:               p.PullRequest.Title,
 		State:               state,
@@ -1638,13 +2011,15 @@ func (h *Handler) mirrorPullRequestForWorkspace(ctx context.Context, wsID pgtype
 			_, qualifies := qualifyingIdents[id]
 			referenceOnly := !qualifies
 			if err := h.Queries.LinkIssueToPullRequest(ctx, db.LinkIssueToPullRequestParams{
-				IssueID:             issue.ID,
-				PullRequestID:       pr.ID,
-				CloseIntent:         closeIntent,
-				ReferenceOnly:       referenceOnly,
-				PreserveCloseIntent: preserveCloseIntent,
-				LinkedByType:        strToText("system"),
-				LinkedByID:          pgtype.UUID{},
+				IssueID:               issue.ID,
+				PullRequestID:         pr.ID,
+				CloseIntent:           closeIntent,
+				ReferenceOnly:         referenceOnly,
+				PreserveCloseIntent:   preserveCloseIntent,
+				PreserveReferenceOnly: preserveCloseIntent,
+				PreserveLinkedBy:      true,
+				LinkedByType:          strToText("system"),
+				LinkedByID:            pgtype.UUID{},
 			}); err != nil {
 				slog.Warn("github: link failed", "err", err)
 				continue
