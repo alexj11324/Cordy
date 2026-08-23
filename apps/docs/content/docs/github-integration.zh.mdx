@@ -65,6 +65,21 @@ Resolves MUL-123
 
 正文中的普通提及，例如 `Related to MUL-123`，不会作为该 issue 的工作 PR 显示。Commit message 和 PR 评论也不会触发关联。
 
+### 创建时直接挂上（CLI / 智能体）
+
+编号扫描依赖 GitHub webhook，因此需要连接 GitHub 应用。还有一条不依赖它的路径：打开 PR 的人当时就知道 URL，可以立刻把它挂到 issue 上。
+
+```bash
+cordy issue pull-request attach MUL-123 --url https://github.com/acme/api/pull/6
+```
+
+- 工作区没有安装 GitHub App 时同样可用——侧栏至少显示 PR 编号和可点击的链接。
+- 已安装应用时，Cordy 会通过应用 API 自动拉全元数据（标题、状态、分支、head），不需要额外参数。
+- 可选参数（`--title`、`--state`、`--branch`、`--head-sha`）对应 `gh pr view --json` 的输出，供无应用时补充。
+- 挂上不会新建关闭意图：合入自动关单仍然只认标题或正文里的 `Closes` / `Fixes` / `Resolves`。若 webhook 已记录该意图，重复挂上会保留它。
+
+两条路径无论先后都并存且幂等：挂上的 PR 之后被 webhook 匹配到时仍是同一张卡片，webhook 会补全或刷新元数据（包括补上安装关联）；已经由 webhook 镜像的 PR 再次挂上时，也不会被仅含 URL 的兜底数据覆盖。标题 / 分支里带编号仍建议保留作为兜底，但它不再是侧栏亮起来的唯一条件。
+
 ## 在 issue 中查看 PR
 
 关联成功后，PR 会出现在 issue 详情的 **Pull requests** 区块。每条记录会显示：

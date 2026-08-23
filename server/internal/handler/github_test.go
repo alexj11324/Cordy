@@ -20,14 +20,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/cordy-ai/cordy/server/internal/events"
 	"github.com/cordy-ai/cordy/server/internal/middleware"
 	"github.com/cordy-ai/cordy/server/internal/testutil"
 	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 	"github.com/cordy-ai/cordy/server/pkg/protocol"
+	"github.com/go-chi/chi/v5"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func TestExtractIdentifiers(t *testing.T) {
@@ -1554,13 +1554,26 @@ func TestDerivePRMergeableState(t *testing.T) {
 // tests need both knobs to exercise head-change semantics.
 func firePullRequestWebhookWithHead(t *testing.T, secret, identifier string, installationID int64, repo string, prNumber int32, action, headSHA, mergeableState string) {
 	t.Helper()
+	firePullRequestWebhookFull(t, secret, installationID, repo, prNumber, action, "Fix "+identifier, "", headSHA, mergeableState)
+}
+
+// firePullRequestWebhookWithBodyTitle fires a pull_request webhook with an
+// explicit title/body so tests can exercise the reference_only rules
+// (bare body mention vs qualifying title/branch reference) directly.
+func firePullRequestWebhookWithBodyTitle(t *testing.T, secret, identifier string, installationID int64, repo string, prNumber int32, title, body string) {
+	t.Helper()
+	firePullRequestWebhookFull(t, secret, installationID, repo, prNumber, "opened", title, body, "headref", "")
+}
+
+func firePullRequestWebhookFull(t *testing.T, secret string, installationID int64, repo string, prNumber int32, action, title, body, headSHA, mergeableState string) {
+	t.Helper()
 	payload := map[string]any{
 		"action": action,
 		"pull_request": map[string]any{
 			"number":          prNumber,
 			"html_url":        "https://github.com/acme/" + repo + "/pull/1",
-			"title":           "Fix " + identifier,
-			"body":            "",
+			"title":           title,
+			"body":            body,
 			"state":           "open",
 			"draft":           false,
 			"merged":          false,
@@ -3286,5 +3299,395 @@ func TestWebhook_UninstallDeletesAllBindings(t *testing.T) {
 	}
 	if !seen[testWorkspaceID] || !seen[uuidToString(wsB.ID)] {
 		t.Errorf("deleted broadcasts must cover both workspaces; saw %v", seen)
+	}
+}
+
+// ── CORD-24: attach an existing PR to an issue ─────────────────────────────
+
+func TestParseGitHubPRURL(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		owner   string
+		repo    string
+		number  int32
+		wantErr bool
+	}{
+		{name: "canonical", raw: "https://github.com/acme/api/pull/6", owner: "acme", repo: "api", number: 6},
+		{name: "trailing_slash", raw: "https://github.com/acme/api/pull/6/", owner: "acme", repo: "api", number: 6},
+		{name: "files_suffix", raw: "https://github.com/acme/api/pull/123/files", owner: "acme", repo: "api", number: 123},
+		{name: "http_scheme", raw: "http://github.com/acme/api/pull/9", owner: "acme", repo: "api", number: 9},
+		{name: "issue_url_rejected", raw: "https://github.com/acme/api/issues/6", wantErr: true},
+		{name: "other_host_rejected", raw: "https://gitlab.com/acme/api/-/merge_requests/6", wantErr: true},
+		{name: "not_a_url", raw: "just some text", wantErr: true},
+		{name: "zero_number_rejected", raw: "https://github.com/acme/api/pull/0", wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			owner, repo, number, err := parseGitHubPRURL(tc.raw)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseGitHubPRURL(%q) = %v, want error", tc.raw, owner)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("parseGitHubPRURL(%q): %v", tc.raw, err)
+			}
+			if owner != tc.owner || repo != tc.repo || number != tc.number {
+				t.Fatalf("parseGitHubPRURL(%q) = %q/%q/#%d, want %q/%q/#%d",
+					tc.raw, owner, repo, number, tc.owner, tc.repo, tc.number)
+			}
+		})
+	}
+}
+
+// stubGitHubAPIBase points App-authenticated calls at a dead local server so
+// the attach path's metadata fetch fails fast instead of reaching api.github.com.
+func stubGitHubAPIBase(t *testing.T) {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	previous := githubAPIBase
+	githubAPIBase = srv.URL
+	t.Cleanup(func() { githubAPIBase = previous })
+}
+
+func createAttachTestIssue(t *testing.T, secret string) IssueResponse {
+	t.Helper()
+	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
+		"title":  "CORD-24 attach test",
+		"status": "in_progress",
+	})
+	w := testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
+	var created IssueResponse
+	json.NewDecoder(w.Body).Decode(&created)
+	t.Cleanup(func() {
+		ctx := context.Background()
+		testPool.Exec(ctx, `DELETE FROM issue_pull_request WHERE issue_id = $1`, created.ID)
+		testPool.Exec(ctx, `DELETE FROM activity_log WHERE issue_id = $1`, created.ID)
+		testPool.Exec(ctx, `DELETE FROM issue WHERE id = $1`, created.ID)
+	})
+	return created
+}
+
+func cleanupAttachedPR(t *testing.T, owner, repo string, number int32) {
+	t.Helper()
+	ctx := context.Background()
+	testPool.Exec(ctx,
+		`DELETE FROM github_pull_request_check_run WHERE pr_id IN (SELECT id FROM github_pull_request WHERE workspace_id = $1 AND repo_owner = $2 AND repo_name = $3 AND pr_number = $4)`,
+		testWorkspaceID, owner, repo, number)
+	testPool.Exec(ctx,
+		`DELETE FROM issue_pull_request WHERE pull_request_id IN (SELECT id FROM github_pull_request WHERE workspace_id = $1 AND repo_owner = $2 AND repo_name = $3 AND pr_number = $4)`,
+		testWorkspaceID, owner, repo, number)
+	testPool.Exec(ctx,
+		`DELETE FROM github_pull_request WHERE workspace_id = $1 AND repo_owner = $2 AND repo_name = $3 AND pr_number = $4`,
+		testWorkspaceID, owner, repo, number)
+}
+
+func attachPRViaAPI(t *testing.T, issueID, rawURL string, extra map[string]any) *testutil.Response {
+	t.Helper()
+	body := map[string]any{"url": rawURL}
+	for k, v := range extra {
+		body[k] = v
+	}
+	req := newRequest("POST", "/api/issues/"+issueID+"/pull-requests", body)
+	return testutil.Call(t, testHandler.AttachPullRequestToIssue, withURLParam(req, "id", issueID))
+}
+
+func listIssuePRsViaAPI(t *testing.T, issueID string) []GitHubPullRequestResponse {
+	t.Helper()
+	req := newRequest("GET", "/api/issues/"+issueID+"/pull-requests", nil)
+	w := testutil.Call(t, testHandler.ListPullRequestsForIssue, withURLParam(req, "id", issueID)).Want(http.StatusOK)
+	var out struct {
+		PullRequests []GitHubPullRequestResponse `json:"pull_requests"`
+	}
+	if err := json.NewDecoder(w.Body).Decode(&out); err != nil {
+		t.Fatalf("decode pull request list: %v", err)
+	}
+	return out.PullRequests
+}
+
+func TestAttachPullRequestToIssue_AppLessPath(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("handler test fixture not initialized (no DB?)")
+	}
+	const secret = "cord24-appless-secret"
+	t.Setenv("GITHUB_WEBHOOK_SECRET", secret)
+	stubGitHubAPIBase(t)
+	created := createAttachTestIssue(t, secret)
+	const (
+		owner  = "cord24-acme"
+		repo   = "attach-repo-a"
+		number = int32(7)
+	)
+	cleanupAttachedPR(t, owner, repo, number)
+
+	rec := attachPRViaAPI(t, created.ID,
+		fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, number), nil)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("attach: expected 201, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	prs := listIssuePRsViaAPI(t, created.ID)
+	if len(prs) != 1 {
+		t.Fatalf("GET list after attach: %d PRs, want 1 (%+v)", len(prs), prs)
+	}
+	pr := prs[0]
+	if pr.Number != number || pr.RepoOwner != owner || pr.RepoName != repo || pr.Provider != "github" {
+		t.Errorf("identity fields mismatch: %+v", pr)
+	}
+	if pr.HtmlURL != fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, number) {
+		t.Errorf("html_url = %q, want the canonical URL", pr.HtmlURL)
+	}
+	if pr.Title != fmt.Sprintf("%s/%s#%d", owner, repo, number) {
+		t.Errorf("title fallback = %q, want owner/repo#N", pr.Title)
+	}
+	if pr.State != "open" {
+		t.Errorf("state = %q, want open", pr.State)
+	}
+
+	row, err := testHandler.Queries.GetGitHubPullRequest(context.Background(), db.GetGitHubPullRequestParams{
+		WorkspaceID: parseUUID(testWorkspaceID), RepoOwner: owner, RepoName: repo, PrNumber: number,
+	})
+	if err != nil {
+		t.Fatalf("GetGitHubPullRequest: %v", err)
+	}
+	if row.InstallationID.Valid {
+		t.Errorf("app-less attach must leave installation_id NULL, got %d", row.InstallationID.Int64)
+	}
+	var referenceOnly, closeIntent bool
+	if err := testPool.QueryRow(context.Background(),
+		`SELECT reference_only, close_intent FROM issue_pull_request WHERE issue_id = $1 AND pull_request_id = $2`,
+		parseUUID(created.ID), row.ID).Scan(&referenceOnly, &closeIntent); err != nil {
+		t.Fatalf("load link row: %v", err)
+	}
+	if referenceOnly || closeIntent {
+		t.Errorf("link row must be a working PR without close intent, got reference_only=%v close_intent=%v", referenceOnly, closeIntent)
+	}
+}
+
+func TestAttachPullRequestToIssue_WebhookIdempotentAndBackfills(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("handler test fixture not initialized (no DB?)")
+	}
+	ctx := context.Background()
+	const secret = "cord24-idem-secret"
+	created, installationID := setupPRTestIssue(t, ctx, secret)
+	stubGitHubAPIBase(t)
+	// The webhook payload builder hardcodes repo owner "acme"; the attach URL
+	// must use the same owner so both paths address one PR row.
+	const (
+		repo   = "attach-repo-i"
+		number = int32(91)
+	)
+	cleanupAttachedPR(t, "acme", repo, number)
+
+	rec := attachPRViaAPI(t, created.ID,
+		fmt.Sprintf("https://github.com/acme/%s/pull/%d", repo, number),
+		map[string]any{"title": "manual title"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("attach: expected 201, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	firePullRequestWebhookWithHead(t, secret, created.Identifier, installationID, repo, number, "opened", "headabc", "")
+	// `opened` clears mergeability; a metadata event carries the verdict.
+	firePullRequestWebhookWithHead(t, secret, created.Identifier, installationID, repo, number, "labeled", "headabc", "clean")
+
+	rows, err := testHandler.Queries.ListPullRequestsByIssue(ctx, parseUUID(created.ID))
+	if err != nil {
+		t.Fatalf("ListPullRequestsByIssue: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("after webhook there must still be exactly one row, got %d", len(rows))
+	}
+	row := rows[0]
+	if !row.InstallationID.Valid || row.InstallationID.Int64 != installationID {
+		t.Errorf("webhook must backfill installation_id, got valid=%v value=%d want %d",
+			row.InstallationID.Valid, row.InstallationID.Int64, installationID)
+	}
+	if !strings.HasPrefix(row.Title, "Fix ") {
+		t.Errorf("webhook metadata must win after backfill, title = %q", row.Title)
+	}
+	if row.HeadSha != "headabc" {
+		t.Errorf("head_sha = %q, want headabc", row.HeadSha)
+	}
+	if !row.MergeableState.Valid || row.MergeableState.String != "clean" {
+		t.Errorf("mergeable_state = %+v, want clean", row.MergeableState)
+	}
+	webhookRow := row
+
+	rec2 := attachPRViaAPI(t, created.ID,
+		fmt.Sprintf("https://github.com/acme/%s/pull/%d", repo, number), nil)
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("re-attach of existing PR: expected 200, got %d", rec2.Code)
+	}
+	var linkCount int
+	if err := testPool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM issue_pull_request WHERE issue_id = $1`, parseUUID(created.ID)).Scan(&linkCount); err != nil {
+		t.Fatalf("count link rows: %v", err)
+	}
+	if linkCount != 1 {
+		t.Fatalf("re-attach duplicated the link: %d rows, want 1", linkCount)
+	}
+
+	// The App fetch above deliberately fails, so attach only has URL identity.
+	// It must not downgrade metadata already mirrored by the webhook.
+	afterAttach, err := testHandler.Queries.GetGitHubPullRequest(ctx, db.GetGitHubPullRequestParams{
+		WorkspaceID: parseUUID(testWorkspaceID), RepoOwner: "acme", RepoName: repo, PrNumber: number,
+	})
+	if err != nil {
+		t.Fatalf("GetGitHubPullRequest after re-attach: %v", err)
+	}
+	if afterAttach.InstallationID != webhookRow.InstallationID ||
+		afterAttach.Title != webhookRow.Title ||
+		afterAttach.State != webhookRow.State ||
+		afterAttach.HtmlUrl != webhookRow.HtmlUrl ||
+		afterAttach.Branch != webhookRow.Branch ||
+		afterAttach.AuthorLogin != webhookRow.AuthorLogin ||
+		afterAttach.PrCreatedAt != webhookRow.PrCreatedAt ||
+		afterAttach.PrUpdatedAt != webhookRow.PrUpdatedAt ||
+		afterAttach.HeadSha != webhookRow.HeadSha ||
+		afterAttach.MergeableState != webhookRow.MergeableState {
+		t.Fatalf("identity-only re-attach downgraded webhook metadata:\n before=%+v\n after=%+v", webhookRow, afterAttach)
+	}
+
+	var linkedByType pgtype.Text
+	var linkedByID pgtype.UUID
+	var closeIntent, referenceOnly bool
+	if err := testPool.QueryRow(ctx, `
+		SELECT linked_by_type, linked_by_id, close_intent, reference_only
+		FROM issue_pull_request
+		WHERE issue_id = $1 AND pull_request_id = $2`,
+		parseUUID(created.ID), afterAttach.ID,
+	).Scan(&linkedByType, &linkedByID, &closeIntent, &referenceOnly); err != nil {
+		t.Fatalf("load link after re-attach: %v", err)
+	}
+	if !closeIntent {
+		t.Error("re-attach cleared close_intent established by the webhook")
+	}
+	if referenceOnly {
+		t.Error("explicit attach must promote a reference-only link to a working PR")
+	}
+	if !linkedByType.Valid || linkedByType.String == "system" || !linkedByID.Valid {
+		t.Errorf("explicit attach must replace system attribution, got type=%+v id=%+v", linkedByType, linkedByID)
+	}
+}
+
+func TestAttachPullRequestToIssue_NeverClosesOrAdvances(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("handler test fixture not initialized (no DB?)")
+	}
+	ctx := context.Background()
+	const secret = "cord24-noclose-secret"
+	created, _ := setupPRTestIssue(t, ctx, secret)
+	stubGitHubAPIBase(t)
+	const (
+		owner  = "cord24-acme"
+		repo   = "attach-repo-m"
+		number = int32(5)
+	)
+	cleanupAttachedPR(t, owner, repo, number)
+
+	rec := attachPRViaAPI(t, created.ID,
+		fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, number),
+		map[string]any{"state": "merged"})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("attach merged PR: expected 201, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	got, err := testHandler.Queries.GetIssue(ctx, parseUUID(created.ID))
+	if err != nil {
+		t.Fatalf("GetIssue: %v", err)
+	}
+	if got.Status != "in_progress" {
+		t.Fatalf("attach must never advance the issue, status = %q", got.Status)
+	}
+	counts, err := testHandler.Queries.GetIssueCombinedPullRequestCloseAggregate(ctx, parseUUID(created.ID))
+	if err != nil {
+		t.Fatalf("close aggregate: %v", err)
+	}
+	if counts.MergedWithCloseIntentCount != 0 {
+		t.Errorf("attach must not write close_intent, merged_with_close_intent_count = %d", counts.MergedWithCloseIntentCount)
+	}
+}
+
+func TestAttachPullRequestToIssue_ValidationErrors(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("handler test fixture not initialized (no DB?)")
+	}
+	const secret = "cord24-invalid-secret"
+	t.Setenv("GITHUB_WEBHOOK_SECRET", secret)
+	created := createAttachTestIssue(t, secret)
+
+	if rec := attachPRViaAPI(t, created.ID, "https://gitlab.com/a/b/-/merge_requests/1", nil); rec.Code != http.StatusBadRequest {
+		t.Errorf("non-GitHub URL: expected 400, got %d", rec.Code)
+	}
+	if rec := attachPRViaAPI(t, created.ID, "not a url", nil); rec.Code != http.StatusBadRequest {
+		t.Errorf("garbage URL: expected 400, got %d", rec.Code)
+	}
+	if rec := attachPRViaAPI(t, created.ID, "https://github.com/a/b/pull/1", map[string]any{"state": "exploded"}); rec.Code != http.StatusBadRequest {
+		t.Errorf("invalid state: expected 400, got %d", rec.Code)
+	}
+	unknown := "00000000-0000-0000-0000-000000000000"
+	req := newRequest("POST", "/api/issues/"+unknown+"/pull-requests", map[string]any{
+		"url": "https://github.com/a/b/pull/1",
+	})
+	rec := testutil.Call(t, testHandler.AttachPullRequestToIssue, withURLParam(req, "id", unknown))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown issue: expected 404, got %d", rec.Code)
+	}
+}
+
+func TestAttachPullRequestToIssue_DoesNotTouchReferenceOnlyMentions(t *testing.T) {
+	if testHandler == nil {
+		t.Skip("handler test fixture not initialized (no DB?)")
+	}
+	ctx := context.Background()
+	const secret = "cord24-refonly-secret"
+	created, installationID := setupPRTestIssue(t, ctx, secret)
+	stubGitHubAPIBase(t)
+	const (
+		repo   = "attach-ref-repo"
+		number = int32(12)
+	)
+	cleanupAttachedPR(t, "acme", repo, number)
+	cleanupAttachedPR(t, "ci-acct", repo, number)
+
+	// A webhook whose PR body only bare-mentions the issue links it as
+	// reference_only — that legacy rule is unchanged by CORD-24.
+	firePullRequestWebhookWithBodyTitle(t, secret, created.Identifier, installationID, repo, number,
+		"Unrelated title", "Follow up in "+created.Identifier+" someday")
+
+	rows, err := testHandler.Queries.ListPullRequestsByIssue(ctx, parseUUID(created.ID))
+	if err != nil {
+		t.Fatalf("ListPullRequestsByIssue: %v", err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("bare body mention must stay hidden from the working-PR list, got %d rows", len(rows))
+	}
+
+	// Explicitly attaching that same PR promotes the existing link to a visible
+	// working PR, but does not manufacture close intent.
+	rec := attachPRViaAPI(t, created.ID, "https://github.com/acme/"+repo+"/pull/12", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("attach existing webhook PR: expected 200, got %d", rec.Code)
+	}
+	prs := listIssuePRsViaAPI(t, created.ID)
+	if len(prs) != 1 || prs[0].Number != 12 {
+		t.Fatalf("list must show exactly the explicitly attached PR (#12), got %+v", prs)
+	}
+	var referenceOnly, closeIntent bool
+	if err := testPool.QueryRow(ctx, `
+		SELECT reference_only, close_intent
+		FROM issue_pull_request
+		WHERE issue_id = $1`, parseUUID(created.ID),
+	).Scan(&referenceOnly, &closeIntent); err != nil {
+		t.Fatalf("load promoted link: %v", err)
+	}
+	if referenceOnly || closeIntent {
+		t.Errorf("promoted link = reference_only=%v close_intent=%v, want false/false", referenceOnly, closeIntent)
 	}
 }
