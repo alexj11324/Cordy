@@ -793,6 +793,7 @@ impl<T> UpdateField<T> {
     }
 }
 
+#[allow(clippy::result_large_err)]
 fn update_field<T: serde::de::DeserializeOwned>(
     fields: &serde_json::Map<String, Value>,
     name: &str,
@@ -808,6 +809,7 @@ fn update_field<T: serde::de::DeserializeOwned>(
         .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid request body"))
 }
 
+#[allow(clippy::result_large_err)]
 fn update_object(body: &[u8]) -> Result<serde_json::Map<String, Value>, Response> {
     match serde_json::from_slice::<Value>(body) {
         Ok(Value::Object(fields)) => Ok(fields),
@@ -822,6 +824,7 @@ async fn update_issue(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Response {
     let previous = match resolve_issue(&state, &context, &id).await {
@@ -832,7 +835,7 @@ async fn update_issue(
         Ok(fields) => fields,
         Err(response) => return response,
     };
-    match apply_issue_update(&state, &context, previous, &fields).await {
+    match apply_issue_update(&state, &context, &headers, previous, &fields, true).await {
         Ok(issue) => issue_response(&state, issue).await,
         Err(response) => response,
     }
@@ -841,8 +844,10 @@ async fn update_issue(
 async fn apply_issue_update(
     state: &HandlerState,
     context: &WorkspaceContext,
+    headers: &HeaderMap,
     previous: Issue,
     fields: &serde_json::Map<String, Value>,
+    notify_parent: bool,
 ) -> Result<Issue, Response> {
     let expected_revision = match update_field::<i64>(fields, "expected_revision")? {
         UpdateField::Value(value) if value > 0 => Some(value),
@@ -927,7 +932,18 @@ async fn apply_issue_update(
         }
     }
     if assignee_touched {
-        validate_assignee(state, previous.workspace_id, &next).await?;
+        match (next.assignee_type.as_deref(), next.assignee_id) {
+            (None, None) => {}
+            (Some(kind), Some(id)) => validate_assignee(state, context, kind, id)
+                .await
+                .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?,
+            _ => {
+                return Err(error_response(
+                    StatusCode::BAD_REQUEST,
+                    "assignee_type and assignee_id must be set together",
+                ));
+            }
+        }
     }
 
     let start_date = update_field::<String>(fields, "start_date")?;
@@ -1022,6 +1038,107 @@ async fn apply_issue_update(
         };
     }
 
+    let mut tx = state.pool.begin().await.map_err(|error| {
+        tracing::warn!(%error, issue_id = %previous.id, "failed to begin issue update");
+        error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
+    })?;
+    if fields.contains_key("status") {
+        cordy_db::queries::issue_status::lock_issue_status_catalog_shared(
+            &mut *tx,
+            previous.workspace_id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to lock issue status catalog");
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
+        })?;
+        next.status = cordy_service::issue_status::resolve(
+            &mut *tx,
+            previous.workspace_id,
+            &next.status,
+        )
+        .await
+        .map_err(|_| {
+            error_response(
+                StatusCode::CONFLICT,
+                "the target status was archived while this request was in flight; reload the status list and retry",
+            )
+        })?
+        .key;
+    }
+    if !attachment_ids.is_empty() {
+        attachment::lock_attachments_for_issue_link(
+            &mut *tx,
+            previous.workspace_id,
+            attachment_ids.clone(),
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, issue_id = %previous.id, "failed to lock issue attachments");
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
+        })?;
+    }
+    let locked = sqlx::query_as::<_, Issue>(
+        "SELECT * FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+    )
+    .bind(previous.id)
+    .bind(previous.workspace_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|error| {
+        tracing::warn!(%error, issue_id = %previous.id, "failed to lock issue");
+        error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
+    })?
+    .ok_or_else(|| error_response(StatusCode::NOT_FOUND, "issue not found"))?;
+    if let Some(expected) = expected_revision {
+        if locked.revision != expected {
+            return Err(revision_conflict(&locked, expected, locked.revision));
+        }
+    }
+
+    refresh_untouched_fields(&mut next, &locked, fields);
+    if let (UpdateField::Value(incoming), UpdateField::Value(base)) = (
+        update_field::<String>(fields, "title")?,
+        update_field::<String>(fields, "title_base")?,
+    ) {
+        if locked.title != base && locked.title != incoming {
+            return Err(edit_conflict(&locked));
+        }
+    }
+    if let UpdateField::Value(incoming) = update_field::<String>(fields, "description")? {
+        let base = match update_field::<String>(fields, "description_base")? {
+            UpdateField::Value(value) => Some(value),
+            UpdateField::Missing | UpdateField::Null => None,
+        };
+        let attachments = attachment::list_attachments_by_issue(
+            &mut *tx,
+            locked.id,
+            locked.workspace_id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, issue_id = %locked.id, "failed to load description attachments");
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
+        })?;
+        let current = locked.description.clone().unwrap_or_default();
+        if let Some(base) = base.as_deref() {
+            if current != base && current != incoming {
+                let base_with_late_media =
+                    merge_channel_media_description(&current, base, Some(base), &attachments);
+                if current != base_with_late_media {
+                    return Err(edit_conflict(&locked));
+                }
+            }
+        }
+        next.description = Some(merge_channel_media_description(
+            &current,
+            &incoming,
+            base.as_deref(),
+            &attachments,
+        ));
+    }
+
+    let previous = locked;
     let did_change = issue_mutable_fields_differ(&previous, &next);
     if !did_change && attachment_ids.is_empty() {
         return Ok(previous);
@@ -1055,7 +1172,7 @@ RETURNING *"#,
         .bind(next.stage)
         .bind(did_activity)
         .bind(expected_revision)
-        .fetch_optional(&state.pool)
+        .fetch_optional(&mut *tx)
         .await
         .map_err(|error| {
             tracing::warn!(%error, issue_id = %previous.id, "failed to update issue");
@@ -1063,7 +1180,7 @@ RETURNING *"#,
         })?;
         let Some(updated) = updated else {
             let actual =
-                issue_q::get_issue_in_workspace(&state.pool, previous.id, previous.workspace_id)
+                issue_q::get_issue_in_workspace(&mut *tx, previous.id, previous.workspace_id)
                     .await
                     .ok()
                     .flatten()
@@ -1079,9 +1196,10 @@ RETURNING *"#,
     } else {
         previous.clone()
     };
+    let mut attachments_changed = false;
     if !attachment_ids.is_empty() {
         let linked = cordy_db::queries::attachment::link_attachments_to_issue(
-            &state.pool,
+            &mut *tx,
             previous.id,
             previous.workspace_id,
             attachment_ids,
@@ -1096,19 +1214,52 @@ RETURNING *"#,
             )
         })?;
         if linked.is_some_and(|result| result.linked_count > 0) {
+            attachments_changed = true;
             if let Ok(Some(current)) =
-                issue_q::get_issue_in_workspace(&state.pool, previous.id, previous.workspace_id)
-                    .await
+                issue_q::get_issue_in_workspace(&mut *tx, previous.id, previous.workspace_id).await
             {
                 updated = current;
             }
         }
     }
-    publish_issue_updated(state, context, &previous, &updated).await;
+    tx.commit().await.map_err(|error| {
+        tracing::warn!(%error, issue_id = %previous.id, "failed to commit issue update");
+        error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
+    })?;
+    let (actor_type, actor_id, task_id) = mutation_actor(state, context, headers).await;
+    publish_issue_updated(state, &previous, &updated, &actor_type, actor_id, task_id).await;
+    if attachments_changed {
+        publish_issue_attachments_changed(state, &updated, &actor_type, actor_id, task_id);
+    }
+    if previous.assignee_type != updated.assignee_type
+        || previous.assignee_id != updated.assignee_id
+    {
+        record_assignee_activity(state, &previous, &updated, &actor_type, actor_id).await;
+    }
     let assignee_changed = previous.assignee_type != updated.assignee_type
         || previous.assignee_id != updated.assignee_id;
     let status_changed = previous.status != updated.status;
     if !suppress_run {
+        let is_self_loop = if let Some(task_id) = task_id {
+            agent::get_agent_task(&state.pool, task_id)
+                .await
+                .ok()
+                .flatten()
+                .is_some_and(|task| task.issue_id == Some(updated.id))
+        } else {
+            false
+        };
+        let suppress_active_self_assignment = if actor_type == "agent"
+            && updated.assignee_type.as_deref() == Some("agent")
+            && updated.assignee_id == Some(actor_id)
+        {
+            agent::has_active_task_for_issue_and_agent(&state.pool, updated.id, actor_id)
+                .await
+                .map(|active| active.unwrap_or(true))
+                .unwrap_or(true)
+        } else {
+            false
+        };
         let trigger = state
             .issues
             .will_enqueue_run(
@@ -1121,24 +1272,39 @@ RETURNING *"#,
                 },
                 IssueTriggerProbe {
                     can_access_agent: None,
-                    is_self_loop: None,
-                    suppress_active_self_assignment: None,
+                    is_self_loop: Some(Box::new(move |_| is_self_loop)),
+                    suppress_active_self_assignment: Some(Box::new(move |_| {
+                        suppress_active_self_assignment
+                    })),
                 },
             )
             .await;
-        if trigger.is_some() {
-            if let Err(error) = state
-                .tasks
-                .enqueue_task_for_issue_with_handoff(
-                    &updated,
-                    &handoff_note,
-                    Some(context.member.user_id),
-                )
-                .await
-            {
+        if let Some(trigger) = trigger {
+            let actor_user_id = (actor_type == "member").then_some(actor_id);
+            let result = if trigger.assignee_type == "squad" {
+                state
+                    .tasks
+                    .enqueue_task_for_squad_leader_with_handoff(
+                        &updated,
+                        trigger.agent_id,
+                        updated.assignee_id.unwrap_or_default(),
+                        &handoff_note,
+                        actor_user_id,
+                    )
+                    .await
+            } else {
+                state
+                    .tasks
+                    .enqueue_task_for_issue_with_handoff(&updated, &handoff_note, actor_user_id)
+                    .await
+            };
+            if let Err(error) = result {
                 tracing::warn!(%error, issue_id = %updated.id, "failed to enqueue updated issue");
             }
         }
+    }
+    if notify_parent && status_changed {
+        notify_parent_of_child_done(state, &previous, &updated).await;
     }
     Ok(updated)
 }
@@ -1187,51 +1353,140 @@ fn issue_activity_fields_differ(left: &Issue, right: &Issue) -> bool {
         || left.stage != right.stage
 }
 
-async fn validate_assignee(
-    state: &HandlerState,
-    workspace_id: Uuid,
-    issue: &Issue,
-) -> Result<(), Response> {
-    let (Some(kind), Some(id)) = (issue.assignee_type.as_deref(), issue.assignee_id) else {
-        if issue.assignee_type.is_none() && issue.assignee_id.is_none() {
-            return Ok(());
+fn refresh_untouched_fields(
+    next: &mut Issue,
+    current: &Issue,
+    fields: &serde_json::Map<String, Value>,
+) {
+    if !fields.contains_key("title") {
+        next.title = current.title.clone();
+    }
+    if !fields.contains_key("description") {
+        next.description = current.description.clone();
+    }
+    if !fields.contains_key("status") {
+        next.status = current.status.clone();
+    }
+    if !fields.contains_key("priority") {
+        next.priority = current.priority.clone();
+    }
+    if !fields.contains_key("position") {
+        next.position = current.position;
+    }
+    if !fields.contains_key("assignee_type") && !fields.contains_key("assignee_id") {
+        next.assignee_type = current.assignee_type.clone();
+        next.assignee_id = current.assignee_id;
+    }
+    if !fields.contains_key("start_date") {
+        next.start_date = current.start_date;
+    }
+    if !fields.contains_key("due_date") {
+        next.due_date = current.due_date;
+    }
+    if !fields.contains_key("parent_issue_id") {
+        next.parent_issue_id = current.parent_issue_id;
+    }
+    if !fields.contains_key("project_id") {
+        next.project_id = current.project_id;
+    }
+    if !fields.contains_key("stage") {
+        next.stage = current.stage;
+    }
+}
+
+fn edit_conflict(issue: &Issue) -> Response {
+    (
+        StatusCode::CONFLICT,
+        Json(json!({
+            "error": "resource changed since it was loaded",
+            "code": "edit_conflict",
+            "resource_type": "issue",
+            "resource_id": issue.id.to_string(),
+        })),
+    )
+        .into_response()
+}
+
+fn marked_media_ids(markdown: &str) -> Vec<Uuid> {
+    const PREFIX: &str = "<!-- cordy:channel-media:";
+    let mut ids = Vec::new();
+    let mut remaining = markdown;
+    while let Some(index) = remaining.find(PREFIX) {
+        remaining = &remaining[index + PREFIX.len()..];
+        let Some(raw) = remaining.get(..36) else {
+            break;
+        };
+        if remaining.get(36..40) == Some(" -->") {
+            if let Ok(id) = Uuid::parse_str(raw) {
+                if !ids.contains(&id) {
+                    ids.push(id);
+                }
+            }
         }
-        return Err(error_response(
-            StatusCode::BAD_REQUEST,
-            "assignee_type and assignee_id must be set together",
-        ));
-    };
-    let table = match kind {
-        "member" => "member",
-        "agent" => "agent",
-        "squad" => "squad",
-        _ => {
-            return Err(error_response(
-                StatusCode::BAD_REQUEST,
-                "invalid assignee_type",
-            ))
+        remaining = remaining.get(36..).unwrap_or_default();
+    }
+    ids
+}
+
+fn media_marker(id: Uuid) -> String {
+    format!("<!-- cordy:channel-media:{id} -->")
+}
+
+fn append_markdown(markdown: &str, block: &str) -> String {
+    if markdown.is_empty() {
+        block.to_string()
+    } else {
+        format!("{markdown}\n\n{block}")
+    }
+}
+
+fn merge_channel_media_description(
+    current: &str,
+    incoming: &str,
+    base: Option<&str>,
+    attachments: &[Attachment],
+) -> String {
+    let current_ids = marked_media_ids(current);
+    if current_ids.is_empty() {
+        return incoming.to_string();
+    }
+    let base_ids = base.map(marked_media_ids).unwrap_or_default();
+    let mut merged = incoming.to_string();
+    for id in current_ids {
+        let Some(attachment) = attachments.iter().find(|attachment| attachment.id == id) else {
+            continue;
+        };
+        let path = format!("/api/attachments/{id}/download");
+        let has_link = merged.contains(&path);
+        if base.is_some() && base_ids.contains(&id) && !has_link {
+            continue;
         }
-    };
-    let query = format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id = $1 AND workspace_id = $2)");
-    match sqlx::query_scalar::<_, bool>(&query)
-        .bind(id)
-        .bind(workspace_id)
-        .fetch_one(&state.pool)
-        .await
-    {
-        Ok(true) => Ok(()),
-        Ok(false) => Err(error_response(
-            StatusCode::BAD_REQUEST,
-            "assignee not found in this workspace",
-        )),
-        Err(error) => {
-            tracing::warn!(%error, %id, kind, "failed to validate issue assignee");
-            Err(error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to validate assignee",
-            ))
+        if !has_link {
+            let block = if attachment.content_type.starts_with("image/") {
+                format!("![]({path})\n\n{}", media_marker(id))
+            } else {
+                let label = attachment
+                    .filename
+                    .replace('\\', "\\\\")
+                    .replace('[', "\\[")
+                    .replace(']', "\\]")
+                    .replace(['\r', '\n'], " ");
+                format!(
+                    "[{}]({path})\n\n{}",
+                    if label.is_empty() {
+                        "attachment"
+                    } else {
+                        &label
+                    },
+                    media_marker(id)
+                )
+            };
+            merged = append_markdown(&merged, &block);
+        } else if !merged.contains(&media_marker(id)) {
+            merged = append_markdown(&merged, &media_marker(id));
         }
     }
+    merged
 }
 
 async fn validate_parent(
@@ -1286,11 +1541,25 @@ async fn issue_response(state: &HandlerState, issue: Issue) -> Response {
     Json(response).into_response()
 }
 
-async fn publish_issue_updated(
+async fn mutation_actor(
     state: &HandlerState,
     context: &WorkspaceContext,
+    headers: &HeaderMap,
+) -> (String, Uuid, Option<Uuid>) {
+    if let Some((task_id, agent_id)) = trusted_agent_task(state, context, headers).await {
+        ("agent".to_string(), agent_id, Some(task_id))
+    } else {
+        ("member".to_string(), context.member.user_id, None)
+    }
+}
+
+async fn publish_issue_updated(
+    state: &HandlerState,
     previous: &Issue,
     issue: &Issue,
+    actor_type: &str,
+    actor_id: Uuid,
+    task_id: Option<Uuid>,
 ) {
     let prefix = issue_prefix(state, issue.workspace_id).await;
     let category =
@@ -1301,8 +1570,8 @@ async fn publish_issue_updated(
     state.bus.publish(&cordy_events::Event {
         event_type: cordy_protocol::EVENT_ISSUE_UPDATED.to_string(),
         workspace_id: issue.workspace_id.to_string(),
-        actor_type: "member".to_string(),
-        actor_id: context.member.user_id.to_string(),
+        actor_type: actor_type.to_string(),
+        actor_id: actor_id.to_string(),
         payload: json!({
             "issue": response,
             "assignee_changed": previous.assignee_type != issue.assignee_type || previous.assignee_id != issue.assignee_id,
@@ -1310,14 +1579,219 @@ async fn publish_issue_updated(
             "priority_changed": previous.priority != issue.priority,
             "project_changed": previous.project_id != issue.project_id,
         }),
+        task_id: task_id.map(|id| id.to_string()).unwrap_or_default(),
+        chat_session_id: String::new(),
+    });
+}
+
+fn publish_issue_attachments_changed(
+    state: &HandlerState,
+    issue: &Issue,
+    actor_type: &str,
+    actor_id: Uuid,
+    task_id: Option<Uuid>,
+) {
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::EVENT_ISSUE_ATTACHMENTS_CHANGED.to_string(),
+        workspace_id: issue.workspace_id.to_string(),
+        actor_type: actor_type.to_string(),
+        actor_id: actor_id.to_string(),
+        payload: json!({
+            "issue_id": issue.id.to_string(),
+            "issue_revision": issue.revision,
+        }),
+        task_id: task_id.map(|id| id.to_string()).unwrap_or_default(),
+        chat_session_id: String::new(),
+    });
+}
+
+async fn record_assignee_activity(
+    state: &HandlerState,
+    previous: &Issue,
+    issue: &Issue,
+    actor_type: &str,
+    actor_id: Uuid,
+) {
+    let details = json!({
+        "from_type": previous.assignee_type,
+        "from_id": previous.assignee_id.map(|id| id.to_string()),
+        "to_type": issue.assignee_type,
+        "to_id": issue.assignee_id.map(|id| id.to_string()),
+    });
+    if let Err(error) = cordy_db::queries::activity::create_activity(
+        &state.pool,
+        issue.workspace_id,
+        issue.id,
+        Some(actor_type),
+        actor_id,
+        "assignee_changed",
+        &details,
+        cordy_db::dbid::new_v7(),
+    )
+    .await
+    {
+        tracing::warn!(%error, issue_id = %issue.id, "failed to record assignee activity");
+    }
+}
+
+fn terminal_category(category: &str) -> bool {
+    matches!(category, "done" | "cancelled")
+}
+
+async fn notify_parent_of_child_done(state: &HandlerState, previous: &Issue, issue: &Issue) {
+    let Some(parent_id) = issue.parent_issue_id else {
+        return;
+    };
+    let mut resolver = cordy_service::issue_status::Resolver::new(issue.workspace_id);
+    let previous_category = resolver.effective(&state.pool, &previous.status).await;
+    let current_category = resolver.effective(&state.pool, &issue.status).await;
+    if terminal_category(&previous_category) || !terminal_category(&current_category) {
+        return;
+    }
+    let Some(parent) = issue_q::get_issue_in_workspace(&state.pool, parent_id, issue.workspace_id)
+        .await
+        .ok()
+        .flatten()
+    else {
+        return;
+    };
+    let parent_category = resolver.effective(&state.pool, &parent.status).await;
+    if matches!(parent_category.as_str(), "backlog" | "done" | "cancelled")
+        || parent.assignee_type.as_deref() == Some("member")
+    {
+        return;
+    }
+    let children = match issue_q::list_child_issues(&state.pool, parent.id).await {
+        Ok(children) => children,
+        Err(error) => {
+            tracing::warn!(%error, parent_id = %parent.id, "failed to inspect child completion barrier");
+            return;
+        }
+    };
+    let staged = children.iter().any(|child| child.stage.is_some());
+    if staged && issue.stage.is_none() {
+        return;
+    }
+    let closed_stage = issue.stage;
+    for child in &children {
+        if staged {
+            let Some(child_stage) = child.stage else {
+                continue;
+            };
+            if child_stage > closed_stage.unwrap_or_default() {
+                continue;
+            }
+        }
+        let category = resolver.effective(&state.pool, &child.status).await;
+        if !terminal_category(&category) {
+            return;
+        }
+    }
+
+    let (mention, target_agent, squad_id) =
+        match (parent.assignee_type.as_deref(), parent.assignee_id) {
+            (Some("agent"), Some(agent_id)) => (
+                format!("[@assignee](mention://agent/{agent_id}) "),
+                Some(agent_id),
+                None,
+            ),
+            (Some("squad"), Some(squad_id)) => {
+                let leader =
+                    squad::get_squad_in_workspace(&state.pool, squad_id, parent.workspace_id)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|squad| squad.leader_id);
+                (
+                    format!("[@squad](mention://squad/{squad_id}) "),
+                    leader,
+                    Some(squad_id),
+                )
+            }
+            _ => (String::new(), None, None),
+        };
+    let identifier = format!(
+        "{}-{}",
+        issue_prefix(state, issue.workspace_id).await,
+        issue.number
+    );
+    let progress = if let Some(stage) = closed_stage {
+        format!("Stage {stage} is complete")
+    } else {
+        "All sub-issues are complete".to_string()
+    };
+    let content = format!(
+        "{mention}{progress} — the last sub-issue [{identifier}](mention://issue/{}) — \"{}\" — just finished. Continue the parent or move it to review when complete.",
+        issue.id,
+        issue.title.replace(['\r', '\n'], " ")
+    );
+    let created = match cordy_db::queries::comment::create_comment(
+        &state.pool,
+        parent.id,
+        parent.workspace_id,
+        "system",
+        Uuid::nil(),
+        &content,
+        "system",
+        None,
+        None,
+        None,
+        None,
+        cordy_db::dbid::new_v7(),
+    )
+    .await
+    {
+        Ok(Some(created)) => created,
+        Ok(None) => return,
+        Err(error) => {
+            tracing::warn!(%error, parent_id = %parent.id, "failed to create child completion comment");
+            return;
+        }
+    };
+    let comment_id = created.id;
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::EVENT_COMMENT_CREATED.to_string(),
+        workspace_id: parent.workspace_id.to_string(),
+        actor_type: "system".to_string(),
+        actor_id: String::new(),
+        payload: json!({
+            "comment": {
+                "id": created.id.map(|id| id.to_string()),
+                "issue_id": created.issue_id.map(|id| id.to_string()),
+                "author_type": created.author_type,
+                "author_id": created.author_id.map(|id| id.to_string()),
+                "content": created.content,
+                "type": created.type_,
+                "revision": created.revision,
+            },
+            "issue_title": parent.title,
+            "issue_revision": created.issue_revision,
+        }),
         task_id: String::new(),
         chat_session_id: String::new(),
     });
+    if let (Some(agent_id), Some(comment_id)) = (target_agent, comment_id) {
+        let result = if let Some(squad_id) = squad_id {
+            state
+                .tasks
+                .enqueue_task_for_squad_leader(&parent, agent_id, squad_id, Some(comment_id))
+                .await
+        } else {
+            state
+                .tasks
+                .enqueue_task_for_mention(&parent, agent_id, Some(comment_id))
+                .await
+        };
+        if let Err(error) = result {
+            tracing::warn!(%error, parent_id = %parent.id, "failed to wake parent assignee");
+        }
+    }
 }
 
 async fn batch_update_issues(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Response {
     let root = match update_object(&body) {
@@ -1353,7 +1827,50 @@ async fn batch_update_issues(
         return Json(json!({ "updated": 0 })).into_response();
     }
 
+    if let Some(Value::String(status)) = updates.get("status") {
+        if cordy_service::issue_status::resolve(&state.pool, context.member.workspace_id, status)
+            .await
+            .is_err()
+        {
+            return invalid_status(&state, context.member.workspace_id, status).await;
+        }
+    } else if updates.contains_key("status") {
+        return error_response(StatusCode::BAD_REQUEST, "invalid request body");
+    }
+    if let Some(Value::String(priority)) = updates.get("priority") {
+        if !PRIORITIES.contains(&priority.as_str()) {
+            return error_response(StatusCode::BAD_REQUEST, "invalid priority");
+        }
+    } else if updates.contains_key("priority") {
+        return error_response(StatusCode::BAD_REQUEST, "invalid request body");
+    }
+    if let Some(project) = updates.get("project_id") {
+        if !project.is_null() {
+            let Some(raw) = project.as_str() else {
+                return error_response(StatusCode::BAD_REQUEST, "invalid project_id");
+            };
+            let Ok(project_id) = Uuid::parse_str(raw) else {
+                return error_response(StatusCode::BAD_REQUEST, "invalid project_id");
+            };
+            if !matches!(
+                cordy_db::queries::project::get_project_in_workspace(
+                    &state.pool,
+                    project_id,
+                    context.member.workspace_id,
+                )
+                .await,
+                Ok(Some(_))
+            ) {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "project not found in this workspace",
+                );
+            }
+        }
+    }
+
     let mut updated = 0usize;
+    let mut parent_notifications = HashMap::<Uuid, (Issue, Issue)>::new();
     for raw_id in issue_ids {
         let Ok(id) = Uuid::parse_str(&raw_id) else {
             continue;
@@ -1365,12 +1882,25 @@ async fn batch_update_issues(
                 Ok(Some(issue)) => issue,
                 _ => continue,
             };
-        if apply_issue_update(&state, &context, previous, updates)
-            .await
-            .is_ok()
+        let previous_snapshot = previous.clone();
+        if let Ok(issue) =
+            apply_issue_update(&state, &context, &headers, previous, updates, false).await
         {
+            if previous_snapshot.status != issue.status {
+                if let Some(parent_id) = issue.parent_issue_id {
+                    let replace = parent_notifications
+                        .get(&parent_id)
+                        .is_none_or(|(_, current)| issue.stage > current.stage);
+                    if replace {
+                        parent_notifications.insert(parent_id, (previous_snapshot, issue));
+                    }
+                }
+            }
             updated += 1;
         }
+    }
+    for (_, (previous, issue)) in parent_notifications {
+        notify_parent_of_child_done(&state, &previous, &issue).await;
     }
     Json(json!({ "updated": updated })).into_response()
 }
@@ -2442,6 +2972,25 @@ mod tests {
         }
     }
 
+    fn fixture_attachment(id: Uuid) -> Attachment {
+        Attachment {
+            chat_message_id: None,
+            chat_session_id: None,
+            comment_id: None,
+            content_type: "image/png".into(),
+            created_at: Utc.with_ymd_and_hms(2026, 8, 23, 3, 30, 0).unwrap(),
+            filename: "diagram.png".into(),
+            id,
+            issue_id: Some(fixture_issue().id),
+            size_bytes: 42,
+            task_id: None,
+            uploader_id: fixture_issue().creator_id,
+            uploader_type: "member".into(),
+            url: "/uploads/diagram.png".into(),
+            workspace_id: fixture_issue().workspace_id,
+        }
+    }
+
     #[test]
     fn issue_response_matches_go_wire_shape() {
         let value =
@@ -2535,5 +3084,45 @@ mod tests {
         updated.status = "in_review".into();
         assert!(issue_mutable_fields_differ(&issue, &updated));
         assert!(issue_activity_fields_differ(&issue, &updated));
+    }
+
+    #[test]
+    fn description_merge_preserves_only_late_channel_media() {
+        let id = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f13").unwrap();
+        let path = format!("/api/attachments/{id}/download");
+        let block = format!("![]({path})\n\n{}", media_marker(id));
+        let current = append_markdown("Original", &block);
+        let attachments = vec![fixture_attachment(id)];
+
+        let merged = merge_channel_media_description(
+            &current,
+            "Original with local edit",
+            Some("Original"),
+            &attachments,
+        );
+        assert!(merged.contains("Original with local edit"));
+        assert!(merged.contains(&path));
+        assert!(merged.contains(&media_marker(id)));
+
+        let deleted = merge_channel_media_description(
+            &current,
+            "Original with local edit",
+            Some(&current),
+            &attachments,
+        );
+        assert!(!deleted.contains(&path));
+    }
+
+    #[test]
+    fn locked_snapshot_refreshes_fields_the_request_did_not_touch() {
+        let mut next = fixture_issue();
+        let mut current = next.clone();
+        current.priority = "urgent".into();
+        current.title = "concurrent title".into();
+        let fields = update_object(br#"{"title":"local title"}"#).unwrap();
+        next.title = "local title".into();
+        refresh_untouched_fields(&mut next, &current, &fields);
+        assert_eq!(next.title, "local title");
+        assert_eq!(next.priority, "urgent");
     }
 }
