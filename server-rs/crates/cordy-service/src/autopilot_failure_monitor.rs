@@ -767,7 +767,7 @@ fn inbox_event_payload(item: InboxItem) -> Value {
         "id": item.id.to_string(),
         "workspace_id": item.workspace_id.to_string(),
         "recipient_type": item.recipient_type,
-        "recipient_id": item.recipient_id.map(|id| id.to_string()),
+        "recipient_id": item.recipient_id.to_string(),
         "type": item.type_,
         "severity": item.severity,
         "issue_id": item.issue_id.map(|id| id.to_string()),
