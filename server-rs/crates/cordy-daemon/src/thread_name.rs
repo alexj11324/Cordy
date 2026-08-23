@@ -5,13 +5,10 @@
 //! prompt, chat message, and trigger comment content — whitespace-collapsed
 //! and rune-truncated to [`CODEX_THREAD_NAME_MAX_RUNES`].
 //!
-//! Deviations from Go:
-//! - Go's `Task` struct lives in types.go (lane A1's `types.rs`); until that
-//!   lands this module takes a minimal source struct with the five fields the
-//!   derivation reads.
+//! Port notes: Go's `Task` struct is `crate::types::Task` (ported in this
+//! lane); `deriveTaskThreadName` reads it directly. `ThreadNameSource`
+//! remains as the test seam with `From<&Task>` so both shapes work.
 
-// S9-integration: replace `ThreadNameSource` with `crate::types::Task` once
-// lane A1 lands types.rs; silence dead-code until daemon wiring consumes it.
 #![allow(dead_code)]
 
 /// `codexThreadNameMaxRunes` (thread_name.go:5).
@@ -25,6 +22,24 @@ pub(crate) struct ThreadNameSource {
     pub quick_create_prompt: String,
     pub chat_message: String,
     pub trigger_comment_content: String,
+}
+
+impl From<&crate::types::Task> for ThreadNameSource {
+    fn from(task: &crate::types::Task) -> Self {
+        Self {
+            thread_name: task.thread_name.clone(),
+            autopilot_title: task.autopilot_title.clone(),
+            quick_create_prompt: task.quick_create_prompt.clone(),
+            chat_message: task.chat_message.clone(),
+            trigger_comment_content: task.trigger_comment_content.clone(),
+        }
+    }
+}
+
+/// `deriveTaskThreadName` over a full wire Task (Go's actual signature).
+#[allow(dead_code)]
+pub(crate) fn derive_task_thread_name_from_task(task: &crate::types::Task) -> String {
+    derive_task_thread_name(&ThreadNameSource::from(task))
 }
 
 /// `deriveTaskThreadName` (thread_name.go:7–21): first candidate whose

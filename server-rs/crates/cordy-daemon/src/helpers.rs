@@ -18,8 +18,7 @@
 //! call site feeds a timeout/floor that Go code would immediately misuse
 //! anyway (documented deviation).
 
-// S9-integration: dead_code is expected until the Daemon core (daemon.go
-// port) wires these symbols; remove this allow when that lane lands.
+// S9-integration: consumed by daemon.go core (lane B); silence dead-code.
 #![allow(dead_code)]
 
 use std::time::Duration;

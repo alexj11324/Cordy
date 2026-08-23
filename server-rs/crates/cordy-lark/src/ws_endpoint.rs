@@ -16,7 +16,6 @@ use async_trait::async_trait;
 use serde::Deserialize;
 
 use crate::client::InstallationCredentials;
-use crate::types::Region;
 use crate::ws_connector::{EndpointFetcher, WsEndpoint};
 
 /// HTTPConnectionTokenFetcher is the production EndpointFetcher. It exchanges
@@ -119,10 +118,7 @@ struct ClientConfig {
 #[async_trait]
 impl EndpointFetcher for HttpConnectionTokenFetcher {
     /// Implements EndpointFetcher.
-    async fn endpoint(
-        &self,
-        creds: InstallationCredentials,
-    ) -> anyhow::Result<WsEndpoint> {
+    async fn endpoint(&self, creds: InstallationCredentials) -> anyhow::Result<WsEndpoint> {
         if creds.app_id.is_empty() || creds.app_secret.is_empty() {
             anyhow::bail!("lark ws endpoint: missing app_id / app_secret");
         }
@@ -157,7 +153,10 @@ impl EndpointFetcher for HttpConnectionTokenFetcher {
             .await
             .map_err(|e| anyhow::anyhow!("http do: {e}"))?;
         let status = resp.status();
-        let raw_resp = resp.bytes().await.map_err(|e| anyhow::anyhow!("read body: {e}"))?;
+        let raw_resp = resp
+            .bytes()
+            .await
+            .map_err(|e| anyhow::anyhow!("read body: {e}"))?;
         let raw_str = String::from_utf8_lossy(&raw_resp);
         if !status.is_success() {
             anyhow::bail!(
@@ -190,12 +189,14 @@ impl EndpointFetcher for HttpConnectionTokenFetcher {
             url: decoded.data.url,
             headers: Vec::new(),
             service_id,
-            ping_interval: Duration::from_secs(decoded.data.client_config.ping_interval.max(0) as u64),
+            ping_interval: Duration::from_secs(
+                decoded.data.client_config.ping_interval.max(0) as u64
+            ),
             reconnect_interval: Duration::from_secs(
                 decoded.data.client_config.reconnect_interval.max(0) as u64,
             ),
             reconnect_nonce: Duration::from_secs(
-                decoded.data.client_config.reconnect_nonce.max(0) as u64,
+                decoded.data.client_config.reconnect_nonce.max(0) as u64
             ),
             reconnect_count: decoded.data.client_config.reconnect_count,
         })
@@ -272,7 +273,7 @@ mod tests {
     fn region_resolves_bootstrap_host_when_no_override() {
         // Mirrors the Go contract: empty BaseURL defers to the region.
         assert_eq!(
-            Region::Lark.open_platform_base_url(),
+            crate::types::Region::Lark.open_platform_base_url(),
             "https://open.larksuite.com"
         );
     }
