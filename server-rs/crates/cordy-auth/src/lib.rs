@@ -2,7 +2,8 @@
 //!
 //! Modules mirror the Go files one-to-one so review diffs stay aligned:
 //! `jwt` (secrets + token minting), `cookie` (session/CSRF), `disabled_users`
-//! (emergency denylist), `pat_cache` (Redis-backed lookup cache).
+//! (emergency denylist), plus the Redis-backed `pat_cache`,
+//! `daemon_token_cache`, and `membership_cache` modules.
 
 pub mod cookie;
 pub mod daemon_token_cache;

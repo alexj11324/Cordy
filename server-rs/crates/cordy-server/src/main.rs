@@ -158,7 +158,7 @@ async fn install_pending_stores(
     let client = match redis::Client::open(redis_url) {
         Ok(client) => client,
         Err(_) => {
-            tracing::warn!("REDIS_URL is invalid; runtime pending requests are disabled");
+            tracing::warn!("REDIS_URL is invalid; Redis caches and stores are disabled");
             return state;
         }
     };
@@ -170,7 +170,7 @@ async fn install_pending_stores(
     {
         Ok(Ok(wired)) => wired,
         Ok(Err(_)) | Err(_) => {
-            tracing::warn!("Redis is unavailable; runtime pending requests are disabled");
+            tracing::warn!("Redis is unavailable; Redis caches and stores are disabled");
             state
         }
     }

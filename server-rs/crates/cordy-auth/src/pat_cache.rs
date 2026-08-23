@@ -26,7 +26,11 @@ impl PatCache {
     /// (auto-reconnecting, shared like go-redis's internal pool).
     pub async fn new(client: redis::Client) -> redis::RedisResult<Self> {
         let conn = client.get_connection_manager().await?;
-        Ok(Self { conn: Some(conn) })
+        Ok(Self::from_connection_manager(conn))
+    }
+
+    pub fn from_connection_manager(conn: ConnectionManager) -> Self {
+        Self { conn: Some(conn) }
     }
 
     /// A cache that never hits — used when REDIS_URL is unset.

@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use cordy_auth::daemon_token_cache::DaemonTokenCache;
+use cordy_auth::membership_cache::MembershipCache;
 use cordy_auth::pat_cache::PatCache;
 use cordy_realtime::hub::Hub;
 use cordy_service::autopilot::{AutopilotService, EntitlementProvider};
@@ -39,6 +40,7 @@ pub struct HandlerState {
     pub pool: sqlx::PgPool,
     pub pat_cache: PatCache,
     pub daemon_token_cache: DaemonTokenCache,
+    pub membership_cache: MembershipCache,
     /// Realtime WS hub (cordy-realtime). `None` only in tests.
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
@@ -148,6 +150,7 @@ impl HandlerState {
             pool,
             pat_cache,
             daemon_token_cache: DaemonTokenCache::disabled(),
+            membership_cache: MembershipCache::disabled(),
             hub,
             bus,
             business_metrics: None,
@@ -441,15 +444,20 @@ impl HandlerState {
         self
     }
 
-    /// Builds the pending-request stores from a Redis client (Go
-    /// NewRedis{Update,ModelList,LocalSkill*}Store wiring). Callers without
-    /// Redis keep `None` fields — the disabled path degrades exactly like Go's
-    /// nil-store behavior.
+    /// Builds all handler/service Redis dependencies from the production
+    /// client: auth/member caches, empty-claim cache, rate limits, and pending
+    /// request stores. Callers without Redis keep the explicit disabled
+    /// implementations and preserve the Go nil-store behavior.
     pub async fn with_redis(mut self, client: redis::Client) -> Result<Self, redis::RedisError> {
         self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
         self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client.clone());
-        self.daemon_token_cache = DaemonTokenCache::new(client.clone()).await?;
         let conn = client.get_connection_manager().await?;
+        self.pat_cache = PatCache::from_connection_manager(conn.clone());
+        self.daemon_token_cache = DaemonTokenCache::from_connection_manager(conn.clone());
+        self.membership_cache = MembershipCache::from_connection_manager(conn.clone());
+        self.tasks.install_empty_claim_cache(
+            cordy_service::empty_claim_cache::EmptyClaimCache::new(conn.clone()),
+        );
         self.update_store = Some(Arc::new(crate::pending_store::UpdateStore::new(
             conn.clone(),
         )));

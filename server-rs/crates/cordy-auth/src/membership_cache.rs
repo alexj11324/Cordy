@@ -26,6 +26,7 @@ pub const MEMBERSHIP_CACHE_TTL_SECS: i64 = 5 * 60;
 /// A `disabled()` cache is safe to use — every method becomes a no-op or
 /// reports a miss, and callers degrade to direct DB lookups (mirrors Go's nil
 /// `*MembershipCache`).
+#[derive(Clone)]
 pub struct MembershipCache {
     conn: Option<ConnectionManager>,
 }
@@ -34,7 +35,11 @@ impl MembershipCache {
     /// Builds an active cache backed by `client`'s connection manager.
     pub async fn new(client: redis::Client) -> redis::RedisResult<Self> {
         let conn = client.get_connection_manager().await?;
-        Ok(Self { conn: Some(conn) })
+        Ok(Self::from_connection_manager(conn))
+    }
+
+    pub fn from_connection_manager(conn: ConnectionManager) -> Self {
+        Self { conn: Some(conn) }
     }
 
     /// A cache that never hits — used when REDIS_URL is unset.

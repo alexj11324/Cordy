@@ -256,8 +256,23 @@ async fn check_daemon_workspace_access(
     if user_id.is_empty() {
         return Err(error_response(StatusCode::NOT_FOUND, "not found"));
     }
+    if access
+        .state
+        .membership_cache
+        .get(&user_id, workspace_id)
+        .await
+    {
+        return Ok(workspace_id.to_string());
+    }
     match access.get_member(&user_id, workspace_id).await {
-        Some(_) => Ok(workspace_id.to_string()),
+        Some(_) => {
+            access
+                .state
+                .membership_cache
+                .set(&user_id, workspace_id)
+                .await;
+            Ok(workspace_id.to_string())
+        }
         None => Err(error_response(StatusCode::NOT_FOUND, "not found")),
     }
 }
@@ -798,7 +813,13 @@ async fn register(
     } else {
         let user_id = request_user_id(&headers);
         match access_get_member(&state, &headers, &user_id, &req.workspace_id).await {
-            Some(m) => owner_id = Some(m.user_id),
+            Some(m) => {
+                state
+                    .membership_cache
+                    .set(&user_id, &req.workspace_id)
+                    .await;
+                owner_id = Some(m.user_id);
+            }
             None => return error_response(StatusCode::NOT_FOUND, "workspace not found"),
         }
     }
@@ -2302,7 +2323,7 @@ async fn complete_task(
         .await
     {
         Ok(task) => {
-            state.tasks.notify_task_finished(&task);
+            state.tasks.notify_task_finished(&task).await;
             revoke_tokens_best_effort(&state, task.id).await;
             tracing::info!(task_id = %task_id, agent_id = %task.agent_id, "task completed");
             Json(crate::task_json::task_to_map(&task, &ws_id)).into_response()
@@ -2398,7 +2419,7 @@ async fn fail_task_impl(
         .await
     {
         Ok(task) => {
-            state.tasks.notify_task_finished(&task);
+            state.tasks.notify_task_finished(&task).await;
             revoke_tokens_best_effort(state, task.id).await;
             tracing::info!(
                 task_id = %task_id,

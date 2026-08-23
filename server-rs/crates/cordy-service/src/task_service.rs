@@ -269,6 +269,7 @@ pub struct TaskService {
     pub composio: Option<std::sync::Arc<dyn ComposioOverlayBuilder>>,
     /// Optional follow-up suggestion generator; `None` disables the feature.
     pub quick_actions: Option<std::sync::Arc<dyn ChatQuickActionsLlm>>,
+    empty_claim: std::sync::RwLock<crate::empty_claim_cache::EmptyClaimCache>,
 
     /// chat session id -> admitted; one suggestion pass per session plus a
     /// process-wide ceiling. Zero values are usable.
@@ -313,9 +314,28 @@ impl TaskService {
             feature_flags: None,
             composio: None,
             quick_actions: None,
+            empty_claim: std::sync::RwLock::new(
+                crate::empty_claim_cache::EmptyClaimCache::disabled(),
+            ),
             quick_actions_in_flight: Mutex::new(HashMap::new()),
             quick_actions_running: AtomicI64::new(0),
             analytics_context: Mutex::new(AnalyticsContextCache::default()),
+        }
+    }
+
+    /// Installs the production Redis-backed negative claim cache after the
+    /// shared connection manager has been established during server startup.
+    pub fn install_empty_claim_cache(&self, cache: crate::empty_claim_cache::EmptyClaimCache) {
+        match self.empty_claim.write() {
+            Ok(mut current) => *current = cache,
+            Err(poisoned) => *poisoned.into_inner() = cache,
+        }
+    }
+
+    fn empty_claim_cache(&self) -> crate::empty_claim_cache::EmptyClaimCache {
+        match self.empty_claim.read() {
+            Ok(cache) => cache.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
         }
     }
 
@@ -1120,18 +1140,20 @@ impl TaskService {
     /// claim cannot read a still-current "empty" verdict.
     pub async fn notify_task_enqueued(&self, task: &AgentTaskQueue) {
         self.capture_task_queued(task).await;
-        self.notify_runtime_may_have_work(task.runtime_id, Some(&task.id.to_string()));
+        self.notify_runtime_may_have_work(task.runtime_id, Some(&task.id.to_string()))
+            .await;
     }
 
     /// Best-effort daemon wakeup after a terminal state. The task ID is
     /// deliberately omitted: the completed task is not available; the hint
     /// only means a queued successor may have become claimable.
-    pub fn notify_task_finished(&self, task: &AgentTaskQueue) {
-        self.notify_runtime_may_have_work(task.runtime_id, None);
+    pub async fn notify_task_finished(&self, task: &AgentTaskQueue) {
+        self.notify_runtime_may_have_work(task.runtime_id, None)
+            .await;
     }
 
     /// Batch form used by bulk terminal transitions; coalesces by runtime.
-    pub fn notify_tasks_finished(&self, tasks: &[AgentTaskQueue]) {
+    pub async fn notify_tasks_finished(&self, tasks: &[AgentTaskQueue]) {
         let mut seen = std::collections::HashSet::new();
         for task in tasks {
             let Some(runtime_id) = task.runtime_id else {
@@ -1140,17 +1162,21 @@ impl TaskService {
             if !seen.insert(runtime_id) {
                 continue;
             }
-            self.notify_runtime_may_have_work(Some(runtime_id), None);
+            self.notify_runtime_may_have_work(Some(runtime_id), None)
+                .await;
         }
     }
 
-    fn notify_runtime_may_have_work(&self, runtime_id: Option<Uuid>, task_id: Option<&str>) {
-        // EmptyClaim cache bump goes here once the Redis-backed cache lands;
-        // the wakeup alone still unblocks the daemon's next poll.
+    async fn notify_runtime_may_have_work(&self, runtime_id: Option<Uuid>, task_id: Option<&str>) {
+        let Some(runtime_id) = runtime_id else {
+            return;
+        };
+        let runtime_id = runtime_id.to_string();
+        // Preserve the Go ordering contract: invalidate before waking the
+        // daemon, or a wakeup-driven claim could accept a stale empty verdict.
+        self.empty_claim_cache().bump(&runtime_id).await;
         if let Some(wakeup) = self.wakeup.as_ref().and_then(|w| w.upgrade()) {
-            if let Some(runtime_id) = runtime_id {
-                wakeup.notify_task_available(&runtime_id.to_string(), task_id.unwrap_or(""));
-            }
+            wakeup.notify_task_available(&runtime_id, task_id.unwrap_or(""));
         }
     }
 
@@ -2184,7 +2210,7 @@ impl TaskService {
             self.broadcast_task_event(cordy_protocol::EVENT_TASK_CANCELLED, t, Default::default())
                 .await;
         }
-        self.notify_tasks_finished(&cancelled);
+        self.notify_tasks_finished(&cancelled).await;
         Ok(())
     }
 
@@ -2901,7 +2927,7 @@ impl TaskService {
         }
         // One reconcile: all rows belong to the same agent.
         self.reconcile_agent_status(agent_id).await;
-        self.notify_tasks_finished(&cancelled);
+        self.notify_tasks_finished(&cancelled).await;
         Ok(cancelled)
     }
 
@@ -2923,7 +2949,7 @@ impl TaskService {
         for agent_id in distinct_agent_ids(&cancelled) {
             self.reconcile_agent_status(agent_id).await;
         }
-        self.notify_tasks_finished(&cancelled);
+        self.notify_tasks_finished(&cancelled).await;
         Ok(cancelled)
     }
 
@@ -2948,7 +2974,7 @@ impl TaskService {
             )
             .await;
         }
-        self.notify_tasks_finished(cancelled);
+        self.notify_tasks_finished(cancelled).await;
     }
 
     /// Post-commit queue invalidation for clients.
@@ -3124,7 +3150,7 @@ impl TaskService {
             Default::default(),
         )
         .await;
-        self.notify_task_finished(&task);
+        self.notify_task_finished(&task).await;
 
         Ok(CancelTaskResult {
             task,
@@ -3175,7 +3201,7 @@ impl TaskService {
             )
             .await;
         }
-        self.notify_tasks_finished(&tasks);
+        self.notify_tasks_finished(&tasks).await;
         Ok(())
     }
 
@@ -3738,14 +3764,28 @@ impl TaskService {
             }
         }
 
-        // EmptyClaim fast path lands here once the Redis-backed cache ports;
-        // without it every claim goes through the DB, which is correct.
+        let runtime_key = runtime_id.to_string();
+        let empty_claim = self.empty_claim_cache();
+        if empty_claim.is_empty(&runtime_key).await {
+            return Ok(None);
+        }
+
+        // Sample before the candidate SELECT. A concurrent enqueue bumps the
+        // version and makes a later stale MarkEmpty untrustworthy.
+        let pre_select_version = empty_claim.current_version(&runtime_key).await;
 
         let tasks = list_queued_claim_candidates_by_runtime(&self.pool, runtime_id)
             .await
             .map_err(|e| {
                 TaskServiceError::Internal(format!("list queued claim candidates: {e}"))
             })?;
+
+        if tasks.is_empty() {
+            empty_claim
+                .mark_empty(&runtime_key, pre_select_version)
+                .await;
+            return Ok(None);
+        }
 
         let mut tried_agents = std::collections::HashSet::new();
         for candidate in &tasks {
@@ -3795,7 +3835,8 @@ impl TaskService {
             Default::default(),
         )
         .await;
-        self.notify_runtime_may_have_work(requeued.runtime_id, Some(&requeued.id.to_string()));
+        self.notify_runtime_may_have_work(requeued.runtime_id, Some(&requeued.id.to_string()))
+            .await;
         tracing::info!(
             task_id = %requeued.id,
             runtime_id = ?requeued.runtime_id,
@@ -3889,10 +3930,27 @@ impl TaskService {
             return Ok(claimed);
         }
 
-        // 3-5. Candidate SELECT across the set. (EmptyClaim short-circuit and
-        // MarkEmpty land with the Redis-backed cache port.)
+        // 3. Short-circuit cached-empty runtimes and sample each remaining
+        // version before the shared SELECT, preserving the singular race
+        // closure for the batch path.
+        let empty_claim = self.empty_claim_cache();
+        let mut non_empty = Vec::with_capacity(unique_ids.len());
+        let mut versions = std::collections::HashMap::with_capacity(unique_ids.len());
+        for runtime_id in unique_ids {
+            let key = runtime_id.to_string();
+            if empty_claim.is_empty(&key).await {
+                continue;
+            }
+            versions.insert(runtime_id, empty_claim.current_version(&key).await);
+            non_empty.push(runtime_id);
+        }
+        if non_empty.is_empty() {
+            return Ok(claimed);
+        }
+
+        // 4. Query only runtimes that did not have a current empty verdict.
         let candidates =
-            list_queued_claim_candidates_by_runtimes(&self.pool, unique_ids.clone()).await;
+            list_queued_claim_candidates_by_runtimes(&self.pool, non_empty.clone()).await;
         let candidates = match candidates {
             Ok(c) => c,
             Err(e) => {
@@ -3907,6 +3965,22 @@ impl TaskService {
                 )));
             }
         };
+
+        // 5. Cache only negative results. A runtime with any candidate keeps
+        // hitting Postgres so concurrent claimers continue to race fairly.
+        let with_candidates: std::collections::HashSet<Uuid> = candidates
+            .iter()
+            .filter_map(|candidate| candidate.runtime_id)
+            .collect();
+        for runtime_id in non_empty {
+            if with_candidates.contains(&runtime_id) {
+                continue;
+            }
+            let version = versions.get(&runtime_id).copied().unwrap_or_default();
+            empty_claim
+                .mark_empty(&runtime_id.to_string(), version)
+                .await;
+        }
 
         // 6. Claim per distinct agent through the runtime-scoped helper.
         let mut tried_agents = std::collections::HashSet::new();

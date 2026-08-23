@@ -510,13 +510,18 @@ async fn download(
     else {
         return error_response(StatusCode::NOT_FOUND, "attachment not found");
     };
-    if member::get_member_by_user_and_workspace(&state.pool, uid, att.workspace_id)
-        .await
-        .ok()
-        .flatten()
-        .is_none()
-    {
-        return error_response(StatusCode::NOT_FOUND, "attachment not found");
+    let user_id = uid.to_string();
+    let workspace_id = att.workspace_id.to_string();
+    if !state.membership_cache.get(&user_id, &workspace_id).await {
+        if member::get_member_by_user_and_workspace(&state.pool, uid, att.workspace_id)
+            .await
+            .ok()
+            .flatten()
+            .is_none()
+        {
+            return error_response(StatusCode::NOT_FOUND, "attachment not found");
+        }
+        state.membership_cache.set(&user_id, &workspace_id).await;
     }
     stream(
         &state,
