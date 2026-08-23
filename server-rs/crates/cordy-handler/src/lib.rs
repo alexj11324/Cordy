@@ -21,8 +21,8 @@ pub mod claim_comments;
 pub mod claim_response;
 pub mod cli_token;
 pub mod client_usage;
-pub mod cloudfront;
 pub mod cloud_runtime;
+pub mod cloudfront;
 pub mod comment;
 pub mod comment_list;
 pub mod config;
@@ -125,7 +125,6 @@ fn cors_layer() -> CorsLayer {
         HeaderName::from_static("idempotency-key"),
         HeaderName::from_static("x-workspace-id"),
         HeaderName::from_static("x-workspace-slug"),
-        HeaderName::from_static("x-request-id"),
         HeaderName::from_static("x-agent-id"),
         HeaderName::from_static("x-task-id"),
         HeaderName::from_static("x-csrf-token"),
@@ -136,6 +135,7 @@ fn cors_layer() -> CorsLayer {
         HeaderName::from_static("x-cordy-plugin-installation"),
     ];
     let exposed_headers = [
+        HeaderName::from_static("x-request-id"),
         HeaderName::from_static("x-comments-truncated"),
         HeaderName::from_static("x-cordy-next-before"),
         HeaderName::from_static("x-cordy-next-before-id"),
@@ -194,14 +194,19 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         hub.set_authorizer(Arc::new(ws::DbScopeAuthorizer::new(state.tasks.clone())));
     }
 
+    let cloud_pat =
+        cordy_auth::cloud_pat::CloudPatVerifier::new(cloud_runtime::fleet_url_from_env())
+            .map(Arc::new);
     let auth_state = AuthState {
         pool: state.pool.clone(),
         pat_cache: state.pat_cache.clone(),
+        cloud_pat: cloud_pat.clone(),
     };
     let daemon_auth_state = DaemonAuthState {
         pool: state.pool.clone(),
         pat_cache: state.pat_cache.clone(),
         daemon_cache: DaemonTokenCache::disabled(),
+        cloud_pat: cloud_pat.clone(),
     };
     let public_auth = auth::public_router(
         state.auth_rate_limit.clone(),
@@ -418,6 +423,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         AuthState {
             pool: state.pool.clone(),
             pat_cache: state.pat_cache.clone(),
+            cloud_pat,
         },
         cordy_middleware::plugin_auth::plugin_auth,
     ));
