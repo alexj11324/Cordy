@@ -203,6 +203,22 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(client_usage::router())
         .merge(feedback::router())
         .merge(invitation::router())
+        .merge(
+            invitation::workspace_member_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(state.pool.clone(), "id"),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            invitation::workspace_admin_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url_with_roles(
+                    state.pool.clone(),
+                    "id",
+                    vec!["owner".into(), "admin".into()],
+                ),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
         .merge(me::router())
         .merge(pat::router())
         .merge(issue_routes)
