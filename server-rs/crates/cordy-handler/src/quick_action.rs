@@ -1,11 +1,13 @@
 //! Workspace quick-action catalog management.
 
+use std::collections::{HashMap, HashSet};
+
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
-use cordy_db::models::{Agent, QuickAction};
+use cordy_db::models::{Agent, QuickAction, Squad};
 use cordy_db::queries::{agent, agent_invocation_target, quick_action as quick_action_q, squad};
 use cordy_middleware::workspace::WorkspaceContext;
 use serde::{Deserialize, Serialize};
@@ -244,6 +246,15 @@ async fn response_for(state: &HandlerState, action: QuickAction) -> QuickActionR
         Ok((name, _, is_public)) => (name, is_public, false),
         Err(_) => (String::new(), false, true),
     };
+    response_with_target(action, target_name, target_public, target_missing)
+}
+
+fn response_with_target(
+    action: QuickAction,
+    target_name: String,
+    target_public: bool,
+    target_missing: bool,
+) -> QuickActionResponse {
     QuickActionResponse {
         id: action.id,
         workspace_id: action.workspace_id,
@@ -265,6 +276,68 @@ async fn response_for(state: &HandlerState, action: QuickAction) -> QuickActionR
     }
 }
 
+struct QuickActionCatalog {
+    agents: HashMap<Uuid, Agent>,
+    squads: HashMap<Uuid, Squad>,
+    public_agents: HashSet<Uuid>,
+}
+
+impl QuickActionCatalog {
+    async fn load(state: &HandlerState, workspace_id: Uuid) -> Self {
+        let agents = agent::list_agents(&state.pool, workspace_id)
+            .await
+            .unwrap_or_default();
+        let agent_ids = agents.iter().map(|agent| agent.id).collect::<Vec<_>>();
+        let public_agents = if agent_ids.is_empty() {
+            HashSet::new()
+        } else {
+            agent_invocation_target::list_agent_invocation_targets_by_agent_i_ds(
+                &state.pool,
+                agent_ids,
+            )
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|target| target.target_type == "workspace")
+            .map(|target| target.agent_id)
+            .collect()
+        };
+        Self {
+            agents: agents.into_iter().map(|agent| (agent.id, agent)).collect(),
+            squads: squad::list_squads(&state.pool, workspace_id)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .map(|squad| (squad.id, squad))
+                .collect(),
+            public_agents,
+        }
+    }
+
+    fn response(&self, action: QuickAction) -> QuickActionResponse {
+        let target = if action.assignee_type == "squad" {
+            self.squads.get(&action.assignee_id).and_then(|squad| {
+                self.agents
+                    .get(&squad.leader_id)
+                    .map(|agent| (squad.name.clone(), agent))
+            })
+        } else {
+            self.agents
+                .get(&action.assignee_id)
+                .map(|agent| (agent.name.clone(), agent))
+        };
+        match target {
+            Some((name, agent)) => response_with_target(
+                action,
+                name,
+                agent.permission_mode == "public_to" && self.public_agents.contains(&agent.id),
+                false,
+            ),
+            None => response_with_target(action, String::new(), false, true),
+        }
+    }
+}
+
 async fn list(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -283,10 +356,11 @@ async fn list(
     .await
     {
         Ok(actions) => {
-            let mut responses = Vec::with_capacity(actions.len());
-            for action in actions {
-                responses.push(response_for(&state, action).await);
-            }
+            let catalog = QuickActionCatalog::load(&state, workspace_id).await;
+            let responses = actions
+                .into_iter()
+                .map(|action| catalog.response(action))
+                .collect::<Vec<_>>();
             Json(serde_json::json!({ "quick_actions": responses })).into_response()
         }
         Err(error) => db_error(error, "failed to list quick actions"),
