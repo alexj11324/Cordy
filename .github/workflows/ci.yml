@@ -4,6 +4,16 @@ on:
   # Full validation is intentionally manual to keep GitHub-hosted runner
   # usage predictable. Select the branch to validate from the Actions page.
   workflow_dispatch:
+    inputs:
+      base_ref:
+        description: Base branch used for path and image-budget comparisons
+        required: true
+        default: main
+        type: string
+      pr_body:
+        description: Optional PR body, used only for an oversized-image exemption
+        required: false
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -36,6 +46,7 @@ jobs:
         id: filter
         uses: dorny/paths-filter@v3
         with:
+          base: ${{ inputs.base_ref }}
           # apps/docs is excluded from the frontend turbo run, but knip does
           # analyze it, so a docs-only change still needs this job.
           # apps/mobile has its own mobile-verify workflow. Everything else
@@ -638,10 +649,10 @@ jobs:
   image-budget:
     # Soft gate against the 21.7MB of raw PNG/JPG that MUL-6352 cleared out:
     # a bitmap added or grown past 300KB fails until the PR description says
-    # why. Pull requests only — a push to main has no description to read,
-    # and the branch it came from was already checked.
+    # why. Manual runs compare the selected branch against base_ref;
+    # maintainers can paste the PR body when an explicit exemption is needed.
     needs: changes
-    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.images == 'true' }}
+    if: ${{ needs.changes.outputs.images == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -653,8 +664,8 @@ jobs:
 
       - name: Check image budget
         env:
-          PR_BODY: ${{ github.event.pull_request.body }}
-        run: node scripts/check-image-budget.mjs --base "origin/${{ github.base_ref }}"
+          PR_BODY: ${{ inputs.pr_body }}
+        run: node scripts/check-image-budget.mjs --base "origin/${{ inputs.base_ref }}"
 
   installer:
     # Stub-driven shell tests for scripts/install.sh and scripts/install.ps1.

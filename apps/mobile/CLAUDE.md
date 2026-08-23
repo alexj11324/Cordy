@@ -154,7 +154,7 @@ Never copy the visual shape of an existing hand-written `components/ui/` compone
 ## Build & release
 
 - **Main CI** (`.github/workflows/ci.yml`) excludes mobile via `--filter='!@cordy/mobile'`. Mobile failures do NOT block web/desktop PRs.
-- **Mobile verify** (`.github/workflows/mobile-verify.yml`): triggered on `apps/mobile/**` or `packages/core/types/**` changes — runs typecheck/lint/test only, no IPA build.
+- **Mobile verify** (`.github/workflows/mobile-verify.yml`): manually dispatched by a maintainer for an upstream branch — runs typecheck/lint/test only, no IPA build. Mobile changes are not validated automatically; a fork commit must first be pushed to a maintainer-controlled upstream branch.
 - **Mobile release** (`.github/workflows/mobile-release.yml`): triggered by `mobile-v*.*.*` tag → `eas build` + `eas submit`.
 - **OTA** — EAS Update for JS-only fixes that don't change the runtime version. Manual / on-demand push to preview/production channels.
 
