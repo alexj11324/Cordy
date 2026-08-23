@@ -228,7 +228,7 @@ fn cancel_options(
     Ok(options)
 }
 
-async fn can_access_agent(
+pub(crate) async fn can_access_agent(
     state: &HandlerState,
     context: &WorkspaceContext,
     target: &Agent,

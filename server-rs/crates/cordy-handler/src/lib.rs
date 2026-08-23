@@ -443,6 +443,10 @@ mod tests {
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"member_type":"agent","member_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12"}"#))
                 .unwrap(),
+            Request::post("/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"member_type":"agent","member_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12","role":"worker"}"#))
+                .unwrap(),
             Request::patch("/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members/role")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"member_type":"agent","member_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12","role":"reviewer"}"#))
