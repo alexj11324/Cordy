@@ -179,11 +179,10 @@ fn check_origin_with_policy(
         return true;
     }
 
-    if proxy_trusted {
-        if first_forwarded_host(headers).is_some_and(|host| origin_host.eq_ignore_ascii_case(host))
-        {
-            return true;
-        }
+    if proxy_trusted
+        && first_forwarded_host(headers).is_some_and(|host| origin_host.eq_ignore_ascii_case(host))
+    {
+        return true;
     }
 
     allowed_origins.iter().any(|allowed| allowed == origin)
