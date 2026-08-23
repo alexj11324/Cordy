@@ -597,6 +597,7 @@ dependencies = [
  "sqlx",
  "tokio",
  "tower",
+ "tower-http",
  "tracing",
  "uuid",
 ]
@@ -746,9 +747,11 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
+ "cordy-auth",
  "cordy-config",
  "cordy-db",
  "cordy-handler",
+ "cordy-realtime",
  "cordy-util",
  "serde_json",
  "sqlx",

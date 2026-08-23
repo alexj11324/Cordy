@@ -10,7 +10,6 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
-use chrono::SecondsFormat;
 use cordy_db::models::Workspace;
 use cordy_db::queries::{member, share_link, workspace};
 use serde::Serialize;
@@ -102,9 +101,23 @@ async fn list_workspaces(
 /// contract.
 async fn get_workspace(
     State(state): State<HandlerState>,
-    Path(id): Path<Uuid>,
+    Path(raw_id): Path<String>,
     headers: axum::http::HeaderMap,
 ) -> Response {
+    let Ok(id) = Uuid::parse_str(raw_id.trim()) else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid workspace_id");
+    };
+    if headers
+        .get("x-actor-source")
+        .and_then(|value| value.to_str().ok())
+        == Some("task_token")
+        && header_uuid(&headers, "x-workspace-id") != Some(id)
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task token is bound to a different workspace",
+        );
+    }
     let Some(user_id) = header_uuid(&headers, "x-user-id") else {
         return error_response(StatusCode::UNAUTHORIZED, "user not authenticated");
     };
@@ -161,12 +174,8 @@ impl From<Workspace> for WorkspaceResponse {
             repos: workspace.repos,
             issue_prefix: workspace.issue_prefix,
             avatar_url: workspace.avatar_url,
-            created_at: workspace
-                .created_at
-                .to_rfc3339_opts(SecondsFormat::AutoSi, true),
-            updated_at: workspace
-                .updated_at
-                .to_rfc3339_opts(SecondsFormat::AutoSi, true),
+            created_at: crate::timefmt::rfc3339(workspace.created_at),
+            updated_at: crate::timefmt::rfc3339(workspace.updated_at),
         }
     }
 }
@@ -174,8 +183,59 @@ impl From<Workspace> for WorkspaceResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::Body;
+    use axum::http::Request;
     use chrono::{TimeZone, Utc};
     use serde_json::json;
+    use tower::ServiceExt;
+
+    fn test_router() -> Router {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = HandlerState::new(
+            pool.clone(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        authenticated_router().with_state(state)
+    }
+
+    #[tokio::test]
+    async fn malformed_workspace_id_uses_json_error_contract() {
+        let response = test_router()
+            .oneshot(
+                Request::get("/api/workspaces/not-a-uuid")
+                    .header("x-user-id", Uuid::nil().to_string())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(bytes, r#"{"error":"invalid workspace_id"}"#.as_bytes());
+    }
+
+    #[tokio::test]
+    async fn task_token_cannot_cross_its_bound_workspace() {
+        let requested = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+        let bound = Uuid::parse_str("22222222-2222-2222-2222-222222222222").unwrap();
+        let response = test_router()
+            .oneshot(
+                Request::get(format!("/api/workspaces/{requested}"))
+                    .header("x-user-id", Uuid::nil().to_string())
+                    .header("x-actor-source", "task_token")
+                    .header("x-workspace-id", bound.to_string())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
 
     #[test]
     fn workspace_response_matches_go_wire_shape() {
@@ -213,5 +273,30 @@ mod tests {
                 "updated_at": "2026-08-23T02:30:00Z"
             })
         );
+    }
+
+    #[test]
+    fn workspace_response_strips_fractional_timestamp_seconds() {
+        let timestamp = chrono::DateTime::parse_from_rfc3339("2026-08-23T02:30:00.987Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let response = WorkspaceResponse::from(Workspace {
+            attribution_fail_closed: false,
+            avatar_url: None,
+            context: None,
+            created_at: timestamp,
+            description: None,
+            id: Uuid::nil(),
+            issue_counter: 0,
+            issue_prefix: "CORD".into(),
+            name: "Cordy".into(),
+            repos: json!([]),
+            settings: json!({}),
+            slug: "cordy".into(),
+            updated_at: timestamp,
+        });
+
+        assert_eq!(response.created_at, "2026-08-23T02:30:00Z");
+        assert_eq!(response.updated_at, "2026-08-23T02:30:00Z");
     }
 }
