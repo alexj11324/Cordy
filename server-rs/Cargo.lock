@@ -813,6 +813,7 @@ dependencies = [
  "cordy-channel-engine",
  "cordy-config",
  "cordy-db",
+ "cordy-dingtalk",
  "cordy-ghsnapshot",
  "cordy-handler",
  "cordy-metrics",

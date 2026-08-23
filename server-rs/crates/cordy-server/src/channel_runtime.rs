@@ -1,4 +1,4 @@
-//! Production lifecycle wiring for the Slack channel vertical slice.
+//! Production lifecycle wiring for chat-channel adapters.
 
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -30,20 +30,6 @@ impl ChannelRuntime {
         state: &cordy_handler::HandlerState,
         cfg: &cordy_config::Config,
     ) -> anyhow::Result<Option<Self>> {
-        let secret_box = match slack_secret_box() {
-            Ok(Some(secret_box)) => secret_box,
-            Ok(None) => {
-                tracing::info!("slack channel runtime disabled: CORDY_SLACK_SECRET_KEY not set");
-                return Ok(None);
-            }
-            Err(error) => {
-                tracing::error!(%error, "slack channel runtime disabled: invalid secret key");
-                return Ok(None);
-            }
-        };
-        let decrypt: Arc<cordy_slack::config::Decrypter> =
-            Arc::new(move |sealed| secret_box.open(sealed).map_err(anyhow::Error::from));
-
         let services = Arc::new(ChannelServices {
             pool: state.pool.clone(),
             issues: state.issues.clone(),
@@ -56,71 +42,20 @@ impl ChannelRuntime {
             RouterConfig::default(),
         );
         router.enable_run_batching(cordy_channel_engine::DEFAULT_CHAT_RUN_BATCH_WINDOW);
-
-        let typing = Arc::new(cordy_slack::typing_indicator::TypingIndicatorManager::new(
-            state.pool.clone(),
-        ));
-        // Registration order is observable: clear the processing reaction
-        // before the terminal outbound subscriber posts the reply.
-        typing.register(&state.bus, Some(decrypt.clone()));
-
-        let replier = Arc::new(cordy_slack::replier::OutboundReplier::new(
-            cordy_slack::replier::OutboundReplierConfig {
-                pool: state.pool.clone(),
-                decrypt: Some(decrypt.clone()),
-                app_url: app_url(cfg),
-                binding_path: String::new(),
-            },
-        ));
         let storage = state
             .attachment_storage
             .clone()
             .map(|inner| Arc::new(ChannelStorage { inner }));
-        let media = storage.as_ref().map(|storage| {
-            Arc::new(cordy_slack::media_ingest::SlackMediaResolver::new(
-                Some(decrypt.clone()),
-                storage.clone(),
-                Arc::new(cordy_channel_engine::resolvers::DbMediaIntentLedger::new(
-                    state.pool.clone(),
-                )),
-            )) as Arc<dyn cordy_channel_engine::resolvers::MediaResolver>
-        });
-        router.register(
-            cordy_channel::Type(cordy_slack::TYPE_SLACK.to_string()),
-            cordy_slack::resolvers::new_slack_resolver_set(
-                state.pool.clone(),
-                Some(decrypt.clone()),
-                Some(typing),
-                media,
-                Some(replier),
-            ),
-        );
-
-        Arc::new(cordy_slack::outbound::Outbound::new(
-            state.pool.clone(),
-            Some(decrypt.clone()),
-        ))
-        .register(&state.bus);
-
-        let binding = cordy_slack::binding::BindingTokenService::new(state.pool.clone());
-        let slash = Arc::new(cordy_slack::slash_command::SlashCommandProcessor::new(
-            cordy_slack::slash_command::SlashCommandConfig {
-                pool: state.pool.clone(),
-                tasks: services,
-                binding: Some(binding),
-                app_url: app_url(cfg),
-                binding_path: String::new(),
-                respond: None,
-            },
-        ));
         let registry = Arc::new(cordy_channel::Registry::new());
-        cordy_slack::channel::register_slack(
-            &registry,
-            cordy_slack::channel::ChannelDeps {
-                decrypt: Some(decrypt),
-                slash: Some(slash),
-            },
-        );
+
+        configure_slack(state, cfg, &services, &router, storage.as_ref(), &registry);
+        configure_dingtalk(state, cfg, &router, storage.as_ref(), &registry);
+
+        let channel_types = registry.types();
+        if channel_types.is_empty() {
+            tracing::info!("channel runtime disabled: no adapter secret keys configured");
+            return Ok(None);
+        }
 
         let store = Arc::new(PostgresChannelStore::new(state.pool.clone()));
         let lease_store = match RuntimeLeaseStore::from_env(store.clone(), cfg).await {
@@ -170,7 +105,8 @@ impl ChannelRuntime {
         tracing::info!(
             supervisor = supervisor.is_some(),
             media = media_reconciler.is_some(),
-            "slack channel runtime started"
+            channels = ?channel_types,
+            "channel runtime started"
         );
         Ok(Some(Self {
             cancel,
@@ -200,15 +136,170 @@ impl ChannelRuntime {
     }
 }
 
-fn slack_secret_box() -> anyhow::Result<Option<cordy_util::secretbox::SecretBox>> {
-    if std::env::var("CORDY_SLACK_SECRET_KEY")
+fn configure_slack(
+    state: &cordy_handler::HandlerState,
+    cfg: &cordy_config::Config,
+    services: &Arc<ChannelServices>,
+    router: &Arc<ChannelRouter>,
+    storage: Option<&Arc<ChannelStorage>>,
+    registry: &Arc<cordy_channel::Registry>,
+) {
+    let secret_box = match channel_secret_box("CORDY_SLACK_SECRET_KEY") {
+        Ok(Some(secret_box)) => secret_box,
+        Ok(None) => {
+            tracing::info!("slack channel runtime disabled: CORDY_SLACK_SECRET_KEY not set");
+            return;
+        }
+        Err(error) => {
+            tracing::error!(%error, "slack channel runtime disabled: invalid secret key");
+            return;
+        }
+    };
+    let decrypt: Arc<cordy_slack::config::Decrypter> =
+        Arc::new(move |sealed| secret_box.open(sealed).map_err(anyhow::Error::from));
+
+    let typing = Arc::new(cordy_slack::typing_indicator::TypingIndicatorManager::new(
+        state.pool.clone(),
+    ));
+    // Registration order is observable: clear the processing reaction
+    // before the terminal outbound subscriber posts the reply.
+    typing.register(&state.bus, Some(decrypt.clone()));
+
+    let replier = Arc::new(cordy_slack::replier::OutboundReplier::new(
+        cordy_slack::replier::OutboundReplierConfig {
+            pool: state.pool.clone(),
+            decrypt: Some(decrypt.clone()),
+            app_url: app_url(cfg),
+            binding_path: String::new(),
+        },
+    ));
+    let media = storage.map(|storage| {
+        Arc::new(cordy_slack::media_ingest::SlackMediaResolver::new(
+            Some(decrypt.clone()),
+            storage.clone(),
+            Arc::new(cordy_channel_engine::resolvers::DbMediaIntentLedger::new(
+                state.pool.clone(),
+            )),
+        )) as Arc<dyn cordy_channel_engine::resolvers::MediaResolver>
+    });
+    router.register(
+        cordy_channel::Type(cordy_slack::TYPE_SLACK.to_string()),
+        cordy_slack::resolvers::new_slack_resolver_set(
+            state.pool.clone(),
+            Some(decrypt.clone()),
+            Some(typing),
+            media,
+            Some(replier),
+        ),
+    );
+
+    Arc::new(cordy_slack::outbound::Outbound::new(
+        state.pool.clone(),
+        Some(decrypt.clone()),
+    ))
+    .register(&state.bus);
+
+    let binding = cordy_slack::binding::BindingTokenService::new(state.pool.clone());
+    let slash = Arc::new(cordy_slack::slash_command::SlashCommandProcessor::new(
+        cordy_slack::slash_command::SlashCommandConfig {
+            pool: state.pool.clone(),
+            tasks: services.clone(),
+            binding: Some(binding),
+            app_url: app_url(cfg),
+            binding_path: String::new(),
+            respond: None,
+        },
+    ));
+    cordy_slack::channel::register_slack(
+        registry,
+        cordy_slack::channel::ChannelDeps {
+            decrypt: Some(decrypt),
+            slash: Some(slash),
+        },
+    );
+}
+
+fn configure_dingtalk(
+    state: &cordy_handler::HandlerState,
+    cfg: &cordy_config::Config,
+    router: &Arc<ChannelRouter>,
+    storage: Option<&Arc<ChannelStorage>>,
+    registry: &Arc<cordy_channel::Registry>,
+) {
+    let secret_box = match channel_secret_box("CORDY_DINGTALK_SECRET_KEY") {
+        Ok(Some(secret_box)) => secret_box,
+        Ok(None) => {
+            tracing::info!("dingtalk channel runtime disabled: CORDY_DINGTALK_SECRET_KEY not set");
+            return;
+        }
+        Err(error) => {
+            tracing::error!(%error, "dingtalk channel runtime disabled: invalid secret key");
+            return;
+        }
+    };
+    let decrypt: Arc<cordy_dingtalk::config::Decrypter> =
+        Arc::new(move |sealed| secret_box.open(sealed).map_err(anyhow::Error::from));
+    let client = Arc::new(cordy_dingtalk::client::Client::new(None, ""));
+    let binding = Arc::new(cordy_dingtalk::binding::BindingTokenService::new(
+        state.pool.clone(),
+    ));
+    let replier = Arc::new(cordy_dingtalk::replier::OutboundReplier::new(
+        cordy_dingtalk::replier::OutboundReplierConfig {
+            binding: Some(binding),
+            decrypt: Some(decrypt.clone()),
+            client: Some(client.clone()),
+            app_url: app_url(cfg),
+            binding_path: String::new(),
+        },
+    ));
+    let ack = Arc::new(cordy_dingtalk::ack::AckNotifier::new(
+        client.clone(),
+        Some(decrypt.clone()),
+    ));
+    let media = storage.map(|storage| {
+        Arc::new(cordy_dingtalk::media::MediaResolverImpl::new(
+            client.clone(),
+            Some(decrypt.clone()),
+            storage.clone(),
+            Arc::new(cordy_channel_engine::resolvers::DbMediaIntentLedger::new(
+                state.pool.clone(),
+            )),
+        )) as Arc<dyn cordy_channel_engine::resolvers::MediaResolver>
+    });
+    router.register(
+        cordy_dingtalk::channel_type(),
+        cordy_dingtalk::resolvers::new_dingtalk_resolver_set(
+            state.pool.clone(),
+            Some(replier),
+            Some(ack),
+            media,
+        ),
+    );
+
+    Arc::new(cordy_dingtalk::outbound::Outbound::new(
+        state.pool.clone(),
+        Some(decrypt.clone()),
+        client.clone(),
+    ))
+    .register(&state.bus);
+    cordy_dingtalk::dingtalk_channel::register_dingtalk(
+        registry,
+        cordy_dingtalk::dingtalk_channel::ChannelDeps {
+            decrypt: Some(decrypt),
+            client: Some(client),
+        },
+    );
+}
+
+fn channel_secret_box(env_name: &str) -> anyhow::Result<Option<cordy_util::secretbox::SecretBox>> {
+    if std::env::var(env_name)
         .unwrap_or_default()
         .trim()
         .is_empty()
     {
         return Ok(None);
     }
-    let key = cordy_util::secretbox::load_key("CORDY_SLACK_SECRET_KEY")?;
+    let key = cordy_util::secretbox::load_key(env_name)?;
     Ok(Some(cordy_util::secretbox::SecretBox::new(&key)?))
 }
 
@@ -328,6 +419,30 @@ struct ChannelStorage {
 }
 
 impl cordy_slack::media_ingest::MediaStorage for ChannelStorage {
+    fn upload(
+        &self,
+        key: &str,
+        data: Vec<u8>,
+        content_type: &str,
+        filename: &str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + '_>> {
+        let key = key.to_string();
+        let content_type = content_type.to_string();
+        let filename = filename.to_string();
+        Box::pin(async move {
+            self.inner
+                .upload(&key, data, &content_type, &filename)
+                .await
+                .map(|_| ())
+        })
+    }
+
+    fn object_url(&self, key: &str) -> String {
+        self.inner.object_url(key)
+    }
+}
+
+impl cordy_dingtalk::media::MediaStorage for ChannelStorage {
     fn upload(
         &self,
         key: &str,

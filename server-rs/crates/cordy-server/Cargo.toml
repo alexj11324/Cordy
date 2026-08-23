@@ -16,6 +16,7 @@ cordy-analytics = { path = "../cordy-analytics" }
 cordy-channel = { path = "../cordy-channel" }
 cordy-channel-engine = { path = "../cordy-channel-engine" }
 cordy-db = { path = "../cordy-db" }
+cordy-dingtalk = { path = "../cordy-dingtalk" }
 cordy-handler = { path = "../cordy-handler" }
 cordy-ghsnapshot = { path = "../cordy-ghsnapshot" }
 cordy-metrics = { path = "../cordy-metrics" }
