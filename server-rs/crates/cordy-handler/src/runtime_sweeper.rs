@@ -289,7 +289,10 @@ impl RuntimeSweeperHandle {
             return;
         };
         if tokio::time::timeout(timeout, &mut join).await.is_err() {
-            tracing::warn!(?timeout, "runtime sweeper shutdown timed out; aborting task");
+            tracing::warn!(
+                ?timeout,
+                "runtime sweeper shutdown timed out; aborting task"
+            );
             join.abort();
         }
     }
@@ -344,10 +347,7 @@ mod tests {
         let alive_id = Uuid::from_u128(1);
         let absent_id = Uuid::from_u128(2);
         let missing_result_id = Uuid::from_u128(3);
-        let alive = HashMap::from([
-            (alive_id.to_string(), true),
-            (absent_id.to_string(), false),
-        ]);
+        let alive = HashMap::from([(alive_id.to_string(), true), (absent_id.to_string(), false)]);
 
         assert_eq!(
             filter_candidate_ids(&[alive_id, absent_id, missing_result_id], &alive),
