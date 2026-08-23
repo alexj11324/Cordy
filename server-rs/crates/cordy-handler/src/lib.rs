@@ -11,6 +11,7 @@ pub mod daemon;
 pub mod daemon_ws;
 pub mod error;
 pub mod health;
+pub mod issue;
 pub mod mcp_merge;
 pub mod pending_store;
 pub mod profile_json;
@@ -30,6 +31,7 @@ use axum::{middleware, Router};
 use cordy_auth::daemon_token_cache::DaemonTokenCache;
 use cordy_middleware::auth::{auth_middleware, AuthState};
 use cordy_middleware::daemon_auth::{daemon_auth_middleware, DaemonAuthState};
+use cordy_middleware::workspace::WorkspaceGuardState;
 use cordy_realtime::hub::Hub;
 use tower_http::cors::{AllowOrigin, CorsLayer};
 
@@ -143,7 +145,12 @@ pub fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<Hub>>) -> Router {
         daemon_cache: DaemonTokenCache::disabled(),
     };
 
+    let issue_routes = issue::router().route_layer(middleware::from_fn_with_state(
+        WorkspaceGuardState::member_only(state.pool.clone()),
+        issue::require_issue_workspace,
+    ));
     let authenticated = workspace::authenticated_router()
+        .merge(issue_routes)
         .route_layer(middleware::from_fn_with_state(auth_state, auth_middleware));
     let daemon = daemon::router().route_layer(middleware::from_fn_with_state(
         daemon_auth_state,
@@ -185,6 +192,16 @@ mod tests {
     async fn authenticated_workspace_collection_rejects_anonymous_requests() {
         let response = build_router(None, None)
             .oneshot(Request::get("/api/workspaces").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn authenticated_issue_collection_rejects_anonymous_requests() {
+        let response = build_router(None, None)
+            .oneshot(Request::get("/api/issues").body(Body::empty()).unwrap())
             .await
             .unwrap();
 

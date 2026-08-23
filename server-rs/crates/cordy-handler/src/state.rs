@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use cordy_auth::pat_cache::PatCache;
 use cordy_realtime::hub::Hub;
+use cordy_service::issue_service::IssueService;
 use cordy_service::plugin::PluginService;
 use cordy_service::plugin_token::CallbackTokens;
 use cordy_service::task_service::TaskService;
@@ -30,6 +31,8 @@ pub struct HandlerState {
     pub bus: Arc<cordy_events::Bus>,
     /// Task domain service (Go h.TaskService).
     pub tasks: Arc<TaskService>,
+    /// Issue domain service (Go h.IssueService).
+    pub issues: Arc<IssueService>,
     /// Plugin service (Go h.PluginService).
     pub plugins: Arc<PluginService>,
     /// Hook callback token store; None disables callback tokens (fail-closed).
@@ -62,6 +65,7 @@ impl HandlerState {
         let mut task_service = TaskService::new(pool.clone(), bus.clone());
         task_service.wakeup = Some(Arc::downgrade(&task_wakeup));
         let tasks = Arc::new(task_service);
+        let issues = Arc::new(IssueService::new(pool.clone(), bus.clone(), tasks.clone()));
         let plugins = Arc::new(PluginService::with_pool(pool.clone()));
         Self {
             pool,
@@ -69,6 +73,7 @@ impl HandlerState {
             hub,
             bus,
             tasks,
+            issues,
             plugins,
             callbacks: Some(Arc::new(CallbackTokens::new())),
             callback_base_url: String::new(),
