@@ -10,7 +10,7 @@
 
 use axum::body::Body;
 use axum::extract::Request;
-use axum::http::StatusCode;
+use axum::http::{HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 
@@ -29,6 +29,7 @@ pub const WEBHOOK_TRIGGER_ID_HEADER: &str = "x-webhook-trigger-id";
 /// envelope is small — far less is needed to see the "error" field — and the
 /// cap means an unbounded handler body cannot blow up logger memory.
 const SOFT_NOT_FOUND_BODY_CAPTURE_LIMIT: usize = 256 * 1024;
+const REQUEST_ID_HEADER: &str = "x-request-id";
 
 /// 404 response bodies the daemon emits routinely as part of normal lifecycle
 /// events: a runtime deleted from the UI, a task GC'd after an issue was
@@ -72,16 +73,22 @@ fn is_soft_not_found(body: &[u8]) -> bool {
 
 /// Structured HTTP request logger. Skips the hot liveness endpoint to keep
 /// logs readable.
-pub async fn request_logger(req: Request, next: Next) -> Response {
+pub async fn request_logger(mut req: Request, next: Next) -> Response {
+    // Chi's RequestID middleware generated this before the Go logger and all
+    // handlers. Preserve a valid caller ID, otherwise mint one here so API
+    // logs, outbound Fleet calls, and the response share the same value.
+    let request_id = ensure_request_id(&mut req);
+
     // Skip the hot liveness endpoint.
     if req.uri().path() == "/health" {
-        return next.run(req).await;
+        let mut res = next.run(req).await;
+        stamp_response_request_id(&mut res, &request_id);
+        return res;
     }
 
     let start = std::time::Instant::now();
     let method = req.method().to_string();
     let raw_path = req.uri().path().to_string();
-    let request_id = header_str(&req, "x-request-id");
     let user_id = header_str(&req, "x-user-id");
     let meta = req.extensions().get::<ClientMetadata>().cloned();
 
@@ -114,6 +121,7 @@ pub async fn request_logger(req: Request, next: Next) -> Response {
             }
         }
     }
+    stamp_response_request_id(&mut res, &request_id);
 
     let default_meta = ClientMetadata::default();
     let meta = meta.as_ref().unwrap_or(&default_meta);
@@ -153,6 +161,32 @@ pub async fn request_logger(req: Request, next: Next) -> Response {
     }
 
     res
+}
+
+fn ensure_request_id(req: &mut Request) -> String {
+    if let Some(request_id) = req
+        .headers()
+        .get(REQUEST_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty())
+    {
+        return request_id.to_string();
+    }
+    let request_id = uuid::Uuid::now_v7().to_string();
+    req.headers_mut().insert(
+        REQUEST_ID_HEADER,
+        HeaderValue::from_str(&request_id).expect("UUID is a valid header value"),
+    );
+    request_id
+}
+
+fn stamp_response_request_id(response: &mut Response, request_id: &str) {
+    if response.headers().contains_key(REQUEST_ID_HEADER) {
+        return;
+    }
+    if let Ok(value) = HeaderValue::from_str(request_id) {
+        response.headers_mut().insert(REQUEST_ID_HEADER, value);
+    }
 }
 
 fn header_str(req: &Request, name: &str) -> String {
@@ -198,5 +232,29 @@ mod tests {
         assert!(is_soft_not_found(b"{\"error\":\"task not found\"}"));
         assert!(!is_soft_not_found(b"{\"error\":\"wrong path\"}"));
         assert!(!is_soft_not_found(b""));
+    }
+
+    #[test]
+    fn request_id_is_preserved_or_generated_and_returned() {
+        let mut supplied = Request::builder()
+            .header(REQUEST_ID_HEADER, "caller-id")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(ensure_request_id(&mut supplied), "caller-id");
+
+        let mut generated = Request::new(Body::empty());
+        let request_id = ensure_request_id(&mut generated);
+        assert!(uuid::Uuid::parse_str(&request_id).is_ok());
+        assert_eq!(
+            generated.headers()[REQUEST_ID_HEADER].to_str().unwrap(),
+            request_id
+        );
+
+        let mut response = StatusCode::NO_CONTENT.into_response();
+        stamp_response_request_id(&mut response, &request_id);
+        assert_eq!(
+            response.headers()[REQUEST_ID_HEADER].to_str().unwrap(),
+            request_id
+        );
     }
 }

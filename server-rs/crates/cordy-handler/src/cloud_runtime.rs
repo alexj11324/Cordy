@@ -5,7 +5,7 @@
 //! and preserves the upstream status/body contract.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use axum::body::{Body, Bytes};
@@ -16,6 +16,7 @@ use axum::routing::{get, post};
 use axum::Router;
 use futures_util::StreamExt;
 use url::Url;
+use uuid::Uuid;
 
 use crate::error::error_response;
 use crate::state::HandlerState;
@@ -91,6 +92,7 @@ pub struct HttpCloudRuntimeProxy {
     base_url: String,
     client: reqwest::Client,
     timeout: Duration,
+    metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
 }
 
 impl HttpCloudRuntimeProxy {
@@ -99,14 +101,19 @@ impl HttpCloudRuntimeProxy {
             base_url: base_url.into().trim().trim_end_matches('/').to_string(),
             client,
             timeout: DEFAULT_TIMEOUT,
+            metrics: None,
         }
     }
 
     pub fn from_env() -> Self {
-        Self::new(
-            std::env::var("CORDY_CLOUD_FLEET_URL").unwrap_or_default(),
-            reqwest::Client::new(),
-        )
+        let mut proxy = Self::new(fleet_url_from_env(), reqwest::Client::new());
+        proxy.timeout = fleet_timeout_from_env();
+        proxy
+    }
+
+    pub fn with_metrics(mut self, metrics: Option<Arc<cordy_metrics::BusinessMetrics>>) -> Self {
+        self.metrics = metrics;
+        self
     }
 
     #[cfg(test)]
@@ -130,6 +137,78 @@ impl HttpCloudRuntimeProxy {
     }
 }
 
+pub(crate) fn fleet_url_from_env() -> String {
+    select_fleet_url(
+        std::env::var("CORDY_CLOUD_FLEET_URL").ok().as_deref(),
+        std::env::var("CORDY_FLEET_URL").ok().as_deref(),
+    )
+}
+
+fn select_fleet_url(primary: Option<&str>, legacy: Option<&str>) -> String {
+    primary
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or_else(|| legacy.map(str::trim).filter(|value| !value.is_empty()))
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn fleet_timeout_from_env() -> Duration {
+    let Ok(raw) = std::env::var("CORDY_CLOUD_FLEET_TIMEOUT") else {
+        return DEFAULT_TIMEOUT;
+    };
+    match parse_go_duration(&raw).filter(|duration| !duration.is_zero()) {
+        Some(duration) => duration,
+        None => {
+            tracing::warn!(
+                value = raw,
+                default_seconds = DEFAULT_TIMEOUT.as_secs(),
+                "invalid CORDY_CLOUD_FLEET_TIMEOUT; using default"
+            );
+            DEFAULT_TIMEOUT
+        }
+    }
+}
+
+fn parse_go_duration(raw: &str) -> Option<Duration> {
+    let raw = raw.trim();
+    if raw.is_empty() || raw.starts_with('-') {
+        return None;
+    }
+    if raw == "0" {
+        return Some(Duration::ZERO);
+    }
+    let bytes = raw.as_bytes();
+    let mut cursor = 0;
+    let mut seconds = 0.0_f64;
+    while cursor < bytes.len() {
+        let number_start = cursor;
+        while cursor < bytes.len() && (bytes[cursor].is_ascii_digit() || bytes[cursor] == b'.') {
+            cursor += 1;
+        }
+        if cursor == number_start {
+            return None;
+        }
+        let value = raw[number_start..cursor].parse::<f64>().ok()?;
+        let units = [
+            ("ns", 1e-9),
+            ("us", 1e-6),
+            ("µs", 1e-6),
+            ("ms", 1e-3),
+            ("s", 1.0),
+            ("m", 60.0),
+            ("h", 3600.0),
+        ];
+        let (unit, multiplier) = units
+            .into_iter()
+            .find(|(unit, _)| raw[cursor..].starts_with(unit))?;
+        cursor += unit.len();
+        seconds += value * multiplier;
+    }
+    (seconds.is_finite() && seconds >= 0.0 && seconds < Duration::MAX.as_secs_f64())
+        .then(|| Duration::from_secs_f64(seconds))
+}
+
 #[async_trait]
 impl CloudRuntimeProxy for HttpCloudRuntimeProxy {
     fn enabled(&self) -> bool {
@@ -140,65 +219,112 @@ impl CloudRuntimeProxy for HttpCloudRuntimeProxy {
         &self,
         request: CloudRuntimeRequest,
     ) -> Result<CloudRuntimeResponse, CloudRuntimeError> {
-        let url = self.target_url(&request.path, request.query.as_deref())?;
-        let has_body = !request.body.is_empty();
-        let mut forwarded_headers = request.headers;
-        forwarded_headers
-            .entry(header::ACCEPT)
-            .or_insert(HeaderValue::from_static("application/json"));
-        if has_body {
+        let operation = infer_cloud_runtime_op(&request.method, &request.path);
+        let started = Instant::now();
+        let result = async {
+            let url = self.target_url(&request.path, request.query.as_deref())?;
+            let has_body = !request.body.is_empty();
+            let mut forwarded_headers = request.headers;
             forwarded_headers
-                .entry(header::CONTENT_TYPE)
+                .entry(header::ACCEPT)
                 .or_insert(HeaderValue::from_static("application/json"));
-        }
-        if !request.user_id.is_empty() {
-            if let Ok(user_id) = HeaderValue::from_str(&request.user_id) {
-                forwarded_headers.insert("x-user-id", user_id);
+            if has_body {
+                forwarded_headers
+                    .entry(header::CONTENT_TYPE)
+                    .or_insert(HeaderValue::from_static("application/json"));
             }
-        }
-        if !request.request_id.is_empty() {
-            if let Ok(request_id) = HeaderValue::from_str(&request.request_id) {
-                forwarded_headers.insert("x-request-id", request_id);
+            if !request.user_id.is_empty() {
+                if let Ok(user_id) = HeaderValue::from_str(&request.user_id) {
+                    forwarded_headers.insert("x-user-id", user_id);
+                }
             }
-        }
-        let mut upstream = self
-            .client
-            .request(request.method, url)
-            .timeout(self.timeout)
-            .headers(forwarded_headers);
-        if has_body {
-            upstream = upstream.body(request.body);
-        }
+            if !request.request_id.is_empty() {
+                if let Ok(request_id) = HeaderValue::from_str(&request.request_id) {
+                    forwarded_headers.insert("x-request-id", request_id);
+                }
+            }
+            let mut upstream = self
+                .client
+                .request(request.method, url)
+                .timeout(self.timeout)
+                .headers(forwarded_headers);
+            if has_body {
+                upstream = upstream.body(request.body);
+            }
 
-        let response = upstream.send().await.map_err(|error| {
-            if error.is_timeout() {
-                CloudRuntimeError::Timeout
-            } else {
-                CloudRuntimeError::Transport(error)
-            }
-        })?;
-        let status = response.status();
-        let headers = response.headers().clone();
-        let mut stream = response.bytes_stream();
-        let mut body = Vec::new();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|error| {
+            let response = upstream.send().await.map_err(|error| {
                 if error.is_timeout() {
                     CloudRuntimeError::Timeout
                 } else {
                     CloudRuntimeError::Transport(error)
                 }
             })?;
-            if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BODY_SIZE {
-                return Err(CloudRuntimeError::ResponseTooLarge);
+            let status = response.status();
+            let headers = response.headers().clone();
+            let mut stream = response.bytes_stream();
+            let mut body = Vec::new();
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(|error| {
+                    if error.is_timeout() {
+                        CloudRuntimeError::Timeout
+                    } else {
+                        CloudRuntimeError::Transport(error)
+                    }
+                })?;
+                if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BODY_SIZE {
+                    return Err(CloudRuntimeError::ResponseTooLarge);
+                }
+                body.extend_from_slice(&chunk);
             }
-            body.extend_from_slice(&chunk);
+            Ok(CloudRuntimeResponse {
+                status,
+                headers,
+                body: body.into(),
+            })
         }
-        Ok(CloudRuntimeResponse {
-            status,
-            headers,
-            body: body.into(),
-        })
+        .await;
+
+        if let Some(metrics) = self.metrics.as_ref() {
+            metrics.record_cloud_runtime_request(
+                operation,
+                cloud_runtime_status_bucket(&result),
+                started.elapsed().as_secs_f64(),
+            );
+        }
+        result
+    }
+}
+
+fn infer_cloud_runtime_op(method: &Method, path: &str) -> &'static str {
+    match () {
+        _ if path.contains("/billing") => "billing",
+        _ if path.contains("/gateway") || path.contains("/proxy") || path.contains("/exec") => {
+            "gateway"
+        }
+        _ if path.contains("/start") || path.contains("/provision") => "provision",
+        _ if path.contains("/stop") || path.contains("/terminate") || path.contains("/reboot") => {
+            "terminate"
+        }
+        _ if path.contains("/status") || path.contains("/health") || path.contains("/ready") => {
+            "status"
+        }
+        _ if path.contains("/nodes") && *method == Method::POST => "provision",
+        _ if path.contains("/nodes") && *method == Method::DELETE => "terminate",
+        _ if path.contains("/nodes") => "status",
+        _ => "fleet",
+    }
+}
+
+fn cloud_runtime_status_bucket(
+    result: &Result<CloudRuntimeResponse, CloudRuntimeError>,
+) -> &'static str {
+    match result {
+        Ok(response) if response.status.is_success() || response.status.is_redirection() => "ok",
+        Ok(response) if response.status.is_client_error() => "4xx",
+        Ok(response) if response.status.is_server_error() => "5xx",
+        Ok(_) => "error",
+        Err(CloudRuntimeError::Timeout) => "timeout",
+        Err(_) => "error",
     }
 }
 
@@ -351,7 +477,8 @@ async fn execute(
     } else {
         String::new()
     };
-    let request_id = optional_header(&headers, "x-request-id");
+    let request_id =
+        required_header(&headers, "x-request-id").unwrap_or_else(|| Uuid::now_v7().to_string());
     match proxy
         .execute(CloudRuntimeRequest {
             method,
@@ -563,6 +690,15 @@ mod tests {
                 .as_deref(),
             Some("limit=10&filter=a%2Fb")
         );
+        let request_id = proxy
+            .request
+            .lock()
+            .await
+            .as_ref()
+            .unwrap()
+            .request_id
+            .clone();
+        assert!(Uuid::parse_str(&request_id).is_ok());
     }
 
     #[tokio::test]
@@ -644,6 +780,41 @@ mod tests {
         assert_eq!(
             url.as_str(),
             "https://fleet.test/base/api/v1/nodes?limit=20&offset=0"
+        );
+    }
+
+    #[test]
+    fn fleet_url_and_timeout_compatibility_helpers_match_go() {
+        assert_eq!(
+            select_fleet_url(Some(" https://cloud.test/ "), Some("https://legacy.test")),
+            "https://cloud.test/"
+        );
+        assert_eq!(
+            select_fleet_url(Some("  "), Some(" https://legacy.test ")),
+            "https://legacy.test"
+        );
+        assert_eq!(parse_go_duration("1m30s"), Some(Duration::from_secs(90)));
+        assert_eq!(parse_go_duration("250ms"), Some(Duration::from_millis(250)));
+        assert!(parse_go_duration("forever").is_none());
+    }
+
+    #[test]
+    fn metrics_labels_cover_success_and_failure_paths() {
+        assert_eq!(
+            infer_cloud_runtime_op(&Method::POST, "/api/v1/nodes"),
+            "provision"
+        );
+        assert_eq!(
+            infer_cloud_runtime_op(&Method::POST, "/api/v1/nodes/exec"),
+            "gateway"
+        );
+        assert_eq!(
+            cloud_runtime_status_bucket(&Ok(response(StatusCode::CREATED, b"{}"))),
+            "ok"
+        );
+        assert_eq!(
+            cloud_runtime_status_bucket(&Err(CloudRuntimeError::Timeout)),
+            "timeout"
         );
     }
 

@@ -148,6 +148,7 @@ fn cors_layer() -> CorsLayer {
         HeaderName::from_static("x-cordy-plugin-installation"),
     ];
     let exposed_headers = [
+        HeaderName::from_static("x-request-id"),
         HeaderName::from_static("x-comments-truncated"),
         HeaderName::from_static("x-cordy-next-before"),
         HeaderName::from_static("x-cordy-next-before-id"),
@@ -206,14 +207,19 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         hub.set_authorizer(Arc::new(ws::DbScopeAuthorizer::new(state.tasks.clone())));
     }
 
+    let cloud_pat =
+        cordy_auth::cloud_pat::CloudPatVerifier::new(cloud_runtime::fleet_url_from_env())
+            .map(Arc::new);
     let auth_state = AuthState {
         pool: state.pool.clone(),
         pat_cache: state.pat_cache.clone(),
+        cloud_pat: cloud_pat.clone(),
     };
     let daemon_auth_state = DaemonAuthState {
         pool: state.pool.clone(),
         pat_cache: state.pat_cache.clone(),
         daemon_cache: state.daemon_token_cache.clone(),
+        cloud_pat: cloud_pat.clone(),
     };
     let public_auth = auth::public_router(
         state.auth_rate_limit.clone(),
@@ -232,8 +238,10 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         WorkspaceGuardState::member_only(state.pool.clone()),
         issue::require_issue_workspace,
     ));
-    let cloud_runtime_proxy: Arc<dyn cloud_runtime::CloudRuntimeProxy> =
-        Arc::new(cloud_runtime::HttpCloudRuntimeProxy::from_env());
+    let cloud_runtime_proxy: Arc<dyn cloud_runtime::CloudRuntimeProxy> = Arc::new(
+        cloud_runtime::HttpCloudRuntimeProxy::from_env()
+            .with_metrics(state.business_metrics.clone()),
+    );
     let composio_state = composio::ComposioState::from_handler(&state);
     let authenticated = workspace::authenticated_router()
         .merge(
@@ -535,6 +543,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         AuthState {
             pool: state.pool.clone(),
             pat_cache: state.pat_cache.clone(),
+            cloud_pat,
         },
         cordy_middleware::plugin_auth::plugin_auth,
     ));
