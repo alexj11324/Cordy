@@ -6,12 +6,16 @@ use aws_credential_types::{
 };
 use axum::body::Body;
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
 use reqwest::header::{HeaderMap, HeaderValue};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashMap,
+    fmt,
     path::{Component, Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio_util::io::ReaderStream;
@@ -22,6 +26,11 @@ pub const MAX_STREAM_UPLOAD_BYTES: i64 = 100 << 20;
 const STREAMING_UNSIGNED_PAYLOAD_TRAILER: &str = "STREAMING-UNSIGNED-PAYLOAD-TRAILER";
 const UNSIGNED_PAYLOAD: &str = "UNSIGNED-PAYLOAD";
 const CRC32_TRAILER: &str = "x-amz-checksum-crc32";
+const S3_MAX_ATTEMPTS: usize = 3;
+const S3_MAX_ERROR_BODY: usize = 64 << 10;
+const S3_MAX_RETRY_DELAY: Duration = Duration::from_secs(20);
+const S3_CORRECTION_TTL: Duration = Duration::from_secs(15 * 60);
+const S3_MAX_CLOCK_SKEW_SECONDS: i64 = 24 * 60 * 60;
 
 #[async_trait]
 pub trait AttachmentStorage: Send + Sync {
@@ -302,6 +311,73 @@ pub struct S3Storage {
     path_style: bool,
     credentials: SharedCredentialsProvider,
     cdn_domain: Option<String>,
+    transport: Arc<S3TransportState>,
+}
+
+#[derive(Default)]
+struct S3TransportState {
+    corrections: Mutex<HashMap<String, EndpointCorrection>>,
+}
+
+#[derive(Clone)]
+struct EndpointCorrection {
+    clock_skew_seconds: i64,
+    region: Option<String>,
+    expires_at: Instant,
+}
+
+pub struct S3RequestError {
+    pub operation: &'static str,
+    pub status: reqwest::StatusCode,
+    pub code: Option<String>,
+    pub request_id: Option<String>,
+    pub host_id: Option<String>,
+}
+
+impl fmt::Debug for S3RequestError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("S3RequestError")
+            .field("operation", &self.operation)
+            .field("status", &self.status)
+            .field("code", &self.code)
+            .field("request_id", &self.request_id)
+            .field("host_id", &self.host_id.as_ref().map(|_| "[redacted]"))
+            .finish()
+    }
+}
+
+impl fmt::Display for S3RequestError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "object storage {} failed with HTTP {}",
+            self.operation, self.status
+        )?;
+        if let Some(code) = &self.code {
+            write!(formatter, " ({code})")?;
+        }
+        if let Some(request_id) = &self.request_id {
+            write!(formatter, " [request_id={request_id}]")?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for S3RequestError {}
+
+#[derive(Default)]
+struct S3ErrorDocument {
+    code: Option<String>,
+    request_id: Option<String>,
+    host_id: Option<String>,
+}
+
+struct S3Failure {
+    error: S3RequestError,
+    retry_after: Option<Duration>,
+    server_date: Option<chrono::DateTime<chrono::Utc>>,
+    bucket_region: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -406,6 +482,14 @@ fn prepare_buffered_put(
     })
 }
 
+fn s3_http_client(custom_endpoint: bool) -> anyhow::Result<reqwest::Client> {
+    let mut builder = reqwest::Client::builder();
+    if !custom_endpoint {
+        builder = builder.redirect(reqwest::redirect::Policy::none());
+    }
+    Ok(builder.build()?)
+}
+
 impl S3Storage {
     pub async fn from_env() -> anyhow::Result<Option<Self>> {
         let Some(bucket) = env("S3_BUCKET") else {
@@ -443,7 +527,7 @@ impl S3Storage {
                 .await,
         );
         Ok(Some(Self {
-            client: reqwest::Client::new(),
+            client: s3_http_client(custom.is_some())?,
             bucket,
             region,
             endpoint,
@@ -451,20 +535,99 @@ impl S3Storage {
             path_style,
             credentials,
             cdn_domain: env("CLOUDFRONT_DOMAIN"),
+            transport: Arc::new(S3TransportState::default()),
         }))
     }
+    fn correction_key(&self) -> String {
+        format!(
+            "{}://{}:{}/{}",
+            self.endpoint.scheme(),
+            self.endpoint.host_str().unwrap_or_default(),
+            self.endpoint.port_or_known_default().unwrap_or_default(),
+            self.bucket
+        )
+    }
+
+    fn correction(&self) -> EndpointCorrection {
+        let empty = EndpointCorrection {
+            clock_skew_seconds: 0,
+            region: None,
+            expires_at: Instant::now(),
+        };
+        if self.custom_endpoint {
+            return empty;
+        }
+        let key = self.correction_key();
+        let mut corrections = self
+            .transport
+            .corrections
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let Some(correction) = corrections.get(&key).cloned() else {
+            return empty;
+        };
+        if correction.expires_at <= Instant::now() {
+            corrections.remove(&key);
+            return empty;
+        }
+        correction
+    }
+
+    fn update_correction(&self, clock_skew_seconds: Option<i64>, region: Option<String>) -> bool {
+        if self.custom_endpoint {
+            return false;
+        }
+        if let Some(region) = region.as_deref() {
+            if !valid_aws_region(region) {
+                return false;
+            }
+        }
+        if clock_skew_seconds
+            .is_some_and(|seconds| seconds.unsigned_abs() > S3_MAX_CLOCK_SKEW_SECONDS as u64)
+        {
+            return false;
+        }
+        let key = self.correction_key();
+        let mut corrections = self
+            .transport
+            .corrections
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let current = corrections.get(&key);
+        let next = EndpointCorrection {
+            clock_skew_seconds: clock_skew_seconds
+                .or_else(|| current.map(|value| value.clock_skew_seconds))
+                .unwrap_or_default(),
+            region: region.or_else(|| current.and_then(|value| value.region.clone())),
+            expires_at: Instant::now() + S3_CORRECTION_TTL,
+        };
+        let changed = current.is_none_or(|current| {
+            current.clock_skew_seconds != next.clock_skew_seconds || current.region != next.region
+        });
+        corrections.insert(key, next);
+        changed
+    }
+
     fn request_url(&self, key: &str) -> anyhow::Result<Url> {
+        let correction = self.correction();
+        self.request_url_for_region(key, correction.region.as_deref().unwrap_or(&self.region))
+    }
+
+    fn request_url_for_region(&self, key: &str, region: &str) -> anyhow::Result<Url> {
         if key.is_empty() || key.split('/').any(|v| v == "." || v == "..") {
             anyhow::bail!("invalid storage key")
         }
-        let mut url = self.endpoint.clone();
+        let mut url = if !self.custom_endpoint && region != self.region {
+            Url::parse(&format!("https://s3.{region}.amazonaws.com"))?
+        } else {
+            self.endpoint.clone()
+        };
         let base_path = url.path().trim_end_matches('/').to_string();
         let path_style = self.path_style || (!self.custom_endpoint && self.bucket.contains('.'));
         if path_style {
             url.set_path(&format!("{base_path}/{}/{key}", self.bucket));
         } else {
-            let host = self
-                .endpoint
+            let host = url
                 .host_str()
                 .ok_or_else(|| anyhow::anyhow!("S3 endpoint has no host"))?;
             url.set_host(Some(&format!("{}.{host}", self.bucket)))?;
@@ -480,6 +643,7 @@ impl S3Storage {
         now: chrono::DateTime<chrono::Utc>,
         extra: &HeaderMap,
         credentials: &Credentials,
+        signing_region: &str,
     ) -> anyhow::Result<HeaderMap> {
         let date = now.format("%Y%m%d").to_string();
         let timestamp = now.format("%Y%m%dT%H%M%SZ").to_string();
@@ -519,7 +683,7 @@ impl S3Storage {
             url.path(),
             url.query().unwrap_or("")
         );
-        let scope = format!("{date}/{}/s3/aws4_request", self.region);
+        let scope = format!("{date}/{signing_region}/s3/aws4_request");
         let to_sign = format!(
             "AWS4-HMAC-SHA256\n{timestamp}\n{scope}\n{}",
             hex::encode(Sha256::digest(canonical_request.as_bytes()))
@@ -528,7 +692,7 @@ impl S3Storage {
             format!("AWS4{}", credentials.secret_access_key()).as_bytes(),
             date.as_bytes(),
         )?;
-        let k_region = hmac_bytes(&k_date, self.region.as_bytes())?;
+        let k_region = hmac_bytes(&k_date, signing_region.as_bytes())?;
         let k_service = hmac_bytes(&k_region, b"s3")?;
         let k_signing = hmac_bytes(&k_service, b"aws4_request")?;
         let signature = hex::encode(hmac_bytes(&k_signing, to_sign.as_bytes())?);
@@ -579,32 +743,81 @@ impl S3Storage {
         extra: HeaderMap,
         payload_hash: &str,
     ) -> anyhow::Result<reqwest::Response> {
-        let url = self.request_url(key)?;
         let credentials = self
             .credentials
             .provide_credentials()
             .await
             .map_err(|error| anyhow::anyhow!("resolve AWS credentials: {error}"))?;
-        let mut headers = self.signed_headers(
-            method.as_str(),
-            &url,
-            payload_hash,
-            chrono::Utc::now(),
-            &extra,
-            &credentials,
-        )?;
-        headers.extend(extra);
-        let response = self
-            .client
-            .request(method, url)
-            .headers(headers)
-            .body(bytes)
-            .send()
-            .await?;
-        if !response.status().is_success() {
-            anyhow::bail!("object storage returned {}", response.status())
+        let operation = s3_operation(&method);
+        for attempt in 1..=S3_MAX_ATTEMPTS {
+            let correction = self.correction();
+            let signing_region = correction.region.as_deref().unwrap_or(&self.region);
+            let url = self.request_url_for_region(key, signing_region)?;
+            let now = chrono::Utc::now() + chrono::Duration::seconds(correction.clock_skew_seconds);
+            let mut headers = self.signed_headers(
+                method.as_str(),
+                &url,
+                payload_hash,
+                now,
+                &extra,
+                &credentials,
+                signing_region,
+            )?;
+            headers.extend(extra.clone());
+            let response = self
+                .client
+                .request(method.clone(), url)
+                .headers(headers)
+                .body(bytes.clone())
+                .send()
+                .await;
+            let response = match response {
+                Ok(response) => response,
+                Err(error) if attempt < S3_MAX_ATTEMPTS && retryable_transport_error(&error) => {
+                    tokio::time::sleep(retry_delay(attempt, None, rand::random())).await;
+                    continue;
+                }
+                Err(error) => {
+                    return Err(anyhow::anyhow!(
+                        "object storage {operation} transport failed: {}",
+                        transport_error_kind(&error)
+                    ));
+                }
+            };
+            if response.status().is_success() {
+                return Ok(response);
+            }
+            let failure = parse_s3_failure(operation, response).await;
+            if attempt < S3_MAX_ATTEMPTS && self.apply_aws_correction(&failure) {
+                continue;
+            }
+            if attempt < S3_MAX_ATTEMPTS && retryable_s3_failure(&failure.error) {
+                tokio::time::sleep(retry_delay(attempt, failure.retry_after, rand::random())).await;
+                continue;
+            }
+            return Err(failure.error.into());
         }
-        Ok(response)
+        unreachable!("bounded S3 retry loop always returns")
+    }
+
+    fn apply_aws_correction(&self, failure: &S3Failure) -> bool {
+        if self.custom_endpoint {
+            return false;
+        }
+        if is_region_redirect(&failure.error) {
+            if let Some(region) = failure.bucket_region.clone() {
+                return self.update_correction(None, Some(region));
+            }
+        }
+        if is_clock_skew_error(failure.error.code.as_deref()) {
+            if let Some(server_date) = failure.server_date {
+                let skew = server_date
+                    .signed_duration_since(chrono::Utc::now())
+                    .num_seconds();
+                return self.update_correction(Some(skew), None);
+            }
+        }
+        false
     }
 
     async fn execute_stream(
@@ -615,7 +828,9 @@ impl S3Storage {
         mut extra: HeaderMap,
     ) -> anyhow::Result<()> {
         validate_stream_size(size_bytes)?;
-        let url = self.request_url(key)?;
+        let correction = self.correction();
+        let signing_region = correction.region.as_deref().unwrap_or(&self.region);
+        let url = self.request_url_for_region(key, signing_region)?;
         let credentials = self
             .credentials
             .provide_credentials()
@@ -625,9 +840,10 @@ impl S3Storage {
             "PUT",
             &url,
             UNSIGNED_PAYLOAD,
-            chrono::Utc::now(),
+            chrono::Utc::now() + chrono::Duration::seconds(correction.clock_skew_seconds),
             &extra,
             &credentials,
+            signing_region,
         )?;
         extra.insert(
             reqwest::header::CONTENT_LENGTH,
@@ -643,13 +859,20 @@ impl S3Storage {
                 size_bytes as u64,
             )))
             .send()
-            .await?;
-        anyhow::ensure!(
-            response.status().is_success(),
-            "object storage returned {}",
-            response.status()
-        );
-        Ok(())
+            .await
+            .map_err(|error| {
+                anyhow::anyhow!(
+                    "object storage PutObjectStream transport failed: {}",
+                    transport_error_kind(&error)
+                )
+            })?;
+        if response.status().is_success() {
+            return Ok(());
+        }
+        Err(parse_s3_failure("PutObjectStream", response)
+            .await
+            .error
+            .into())
     }
 
     async fn presigned_get(
@@ -667,16 +890,18 @@ impl S3Storage {
             (1..=7 * 24 * 60 * 60).contains(&expires),
             "S3 presigned download TTL must be between 1 second and 7 days"
         );
-        let mut url = self.request_url(key)?;
+        let correction = self.correction();
+        let signing_region = correction.region.as_deref().unwrap_or(&self.region);
+        let mut url = self.request_url_for_region(key, signing_region)?;
         let credentials = self
             .credentials
             .provide_credentials()
             .await
             .map_err(|error| anyhow::anyhow!("resolve AWS credentials: {error}"))?;
-        let now = chrono::Utc::now();
+        let now = chrono::Utc::now() + chrono::Duration::seconds(correction.clock_skew_seconds);
         let date = now.format("%Y%m%d").to_string();
         let timestamp = now.format("%Y%m%dT%H%M%SZ").to_string();
-        let scope = format!("{date}/{}/s3/aws4_request", self.region);
+        let scope = format!("{date}/{signing_region}/s3/aws4_request");
         let hostname = url
             .host_str()
             .ok_or_else(|| anyhow::anyhow!("S3 endpoint has no host"))?;
@@ -726,7 +951,7 @@ impl S3Storage {
             format!("AWS4{}", credentials.secret_access_key()).as_bytes(),
             date.as_bytes(),
         )?;
-        let k_region = hmac_bytes(&k_date, self.region.as_bytes())?;
+        let k_region = hmac_bytes(&k_date, signing_region.as_bytes())?;
         let k_service = hmac_bytes(&k_region, b"s3")?;
         let k_signing = hmac_bytes(&k_service, b"aws4_request")?;
         let signature = hex::encode(hmac_bytes(&k_signing, to_sign.as_bytes())?);
@@ -1005,6 +1230,224 @@ impl cordy_wecom::media_ingest::MediaStreamStorage for ChannelMediaStorage {
         }
     }
 }
+
+fn s3_operation(method: &reqwest::Method) -> &'static str {
+    if method == reqwest::Method::GET {
+        "GetObject"
+    } else if method == reqwest::Method::PUT {
+        "PutObject"
+    } else if method == reqwest::Method::DELETE {
+        "DeleteObject"
+    } else {
+        "Request"
+    }
+}
+
+async fn parse_s3_failure(operation: &'static str, response: reqwest::Response) -> S3Failure {
+    let status = response.status();
+    let headers = response.headers();
+    let retry_after = headers
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(parse_retry_after);
+    let server_date = headers
+        .get(reqwest::header::DATE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(parse_http_date);
+    let bucket_region = headers
+        .get("x-amz-bucket-region")
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|value| valid_aws_region(value))
+        .map(str::to_string);
+    let header_request_id = safe_error_identifier(headers.get("x-amz-request-id"), 256);
+    let header_host_id = safe_error_identifier(headers.get("x-amz-id-2"), 2048);
+    let mut body = Vec::new();
+    let mut overflow = false;
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let Ok(chunk) = chunk else {
+            break;
+        };
+        if body
+            .len()
+            .checked_add(chunk.len())
+            .is_none_or(|length| length > S3_MAX_ERROR_BODY)
+        {
+            overflow = true;
+            break;
+        }
+        body.extend_from_slice(&chunk);
+    }
+    let document = if overflow {
+        S3ErrorDocument::default()
+    } else {
+        parse_s3_error_document(&body)
+    };
+    S3Failure {
+        error: S3RequestError {
+            operation,
+            status,
+            code: document.code,
+            request_id: header_request_id.or(document.request_id),
+            host_id: header_host_id.or(document.host_id),
+        },
+        retry_after,
+        server_date,
+        bucket_region,
+    }
+}
+
+fn parse_s3_error_document(body: &[u8]) -> S3ErrorDocument {
+    let Ok(xml) = std::str::from_utf8(body) else {
+        return S3ErrorDocument::default();
+    };
+    S3ErrorDocument {
+        code: xml_error_field(xml, "Code", 128).filter(|value| {
+            value
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+        }),
+        request_id: xml_error_field(xml, "RequestId", 256),
+        host_id: xml_error_field(xml, "HostId", 2048),
+    }
+}
+
+fn xml_error_field(xml: &str, field: &str, max_len: usize) -> Option<String> {
+    let value = xml
+        .split_once(&format!("<{field}>"))?
+        .1
+        .split_once(&format!("</{field}>"))?
+        .0
+        .trim();
+    (!value.is_empty()
+        && value.len() <= max_len
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() && !matches!(byte, b'<' | b'>')))
+    .then(|| value.to_string())
+}
+
+fn safe_error_identifier(value: Option<&HeaderValue>, max_len: usize) -> Option<String> {
+    let value = value?.to_str().ok()?.trim();
+    (!value.is_empty()
+        && value.len() <= max_len
+        && value.bytes().all(|byte| byte.is_ascii_graphic()))
+    .then(|| value.to_string())
+}
+
+fn retryable_transport_error(error: &reqwest::Error) -> bool {
+    error.is_connect() || error.is_timeout() || error.is_body()
+}
+
+fn transport_error_kind(error: &reqwest::Error) -> &'static str {
+    if error.is_timeout() {
+        "timeout"
+    } else if error.is_connect() {
+        "connection"
+    } else if error.is_body() {
+        "request body"
+    } else if error.is_builder() {
+        "invalid request"
+    } else {
+        "request"
+    }
+}
+
+fn retryable_s3_failure(error: &S3RequestError) -> bool {
+    matches!(
+        error.status,
+        reqwest::StatusCode::REQUEST_TIMEOUT
+            | reqwest::StatusCode::TOO_MANY_REQUESTS
+            | reqwest::StatusCode::INTERNAL_SERVER_ERROR
+            | reqwest::StatusCode::BAD_GATEWAY
+            | reqwest::StatusCode::SERVICE_UNAVAILABLE
+            | reqwest::StatusCode::GATEWAY_TIMEOUT
+    ) || matches!(
+        error.code.as_deref(),
+        Some(
+            "RequestTimeout"
+                | "RequestTimeoutException"
+                | "SlowDown"
+                | "Throttling"
+                | "ThrottlingException"
+                | "InternalError"
+                | "ServiceUnavailable"
+        )
+    )
+}
+
+fn is_region_redirect(error: &S3RequestError) -> bool {
+    matches!(
+        error.status,
+        reqwest::StatusCode::MOVED_PERMANENTLY | reqwest::StatusCode::TEMPORARY_REDIRECT
+    ) || matches!(
+        error.code.as_deref(),
+        Some("PermanentRedirect" | "AuthorizationHeaderMalformed" | "IncorrectEndpoint")
+    )
+}
+
+fn is_clock_skew_error(code: Option<&str>) -> bool {
+    matches!(
+        code,
+        Some(
+            "RequestTimeTooSkewed"
+                | "RequestExpired"
+                | "InvalidSignatureException"
+                | "SignatureDoesNotMatch"
+        )
+    )
+}
+
+fn valid_aws_region(region: &str) -> bool {
+    (3..=64).contains(&region.len())
+        && region
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        && region
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        && region
+            .as_bytes()
+            .last()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        && region.contains('-')
+}
+
+fn parse_http_date(value: &str) -> Option<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::parse_from_rfc2822(value.trim())
+        .ok()
+        .map(|value| value.with_timezone(&chrono::Utc))
+}
+
+fn parse_retry_after(value: &str) -> Option<Duration> {
+    let value = value.trim();
+    let delay = if let Ok(seconds) = value.parse::<u64>() {
+        Duration::from_secs(seconds)
+    } else {
+        let deadline = parse_http_date(value)?;
+        let milliseconds = deadline
+            .signed_duration_since(chrono::Utc::now())
+            .num_milliseconds()
+            .max(0) as u64;
+        Duration::from_millis(milliseconds)
+    };
+    Some(delay.min(S3_MAX_RETRY_DELAY))
+}
+
+fn retry_delay(attempt: usize, retry_after: Option<Duration>, jitter: u64) -> Duration {
+    if let Some(delay) = retry_after {
+        return delay.min(S3_MAX_RETRY_DELAY);
+    }
+    let exponent = attempt.saturating_sub(1).min(8) as u32;
+    let window_ms = 50u64
+        .saturating_mul(1u64 << exponent)
+        .min(S3_MAX_RETRY_DELAY.as_millis() as u64);
+    let delay_ms = ((jitter as u128 * (window_ms as u128 + 1)) >> 64) as u64;
+    Duration::from_millis(delay_ms)
+}
+
 fn env(name: &str) -> Option<String> {
     std::env::var(name)
         .ok()
@@ -1187,6 +1630,45 @@ fn parse_range(raw: &str, total: u64) -> Option<(u64, u64)> {
 mod tests {
     use super::*;
     use http_body_util::BodyExt;
+    use std::{
+        collections::VecDeque,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+
+    async fn s3_status_server(statuses: Vec<reqwest::StatusCode>) -> (String, Arc<AtomicUsize>) {
+        let statuses = Arc::new(Mutex::new(VecDeque::from(statuses)));
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let app = axum::Router::new().fallback(axum::routing::any({
+            let statuses = statuses.clone();
+            let attempts = attempts.clone();
+            move || {
+                let statuses = statuses.clone();
+                let attempts = attempts.clone();
+                async move {
+                    attempts.fetch_add(1, Ordering::SeqCst);
+                    let status = statuses
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .pop_front()
+                        .unwrap_or(reqwest::StatusCode::SERVICE_UNAVAILABLE);
+                    let mut response = axum::response::Response::new(Body::from(
+                        "<Error><Code>SlowDown</Code><RequestId>REQ123</RequestId></Error>",
+                    ));
+                    *response.status_mut() = status;
+                    response
+                        .headers_mut()
+                        .insert(reqwest::header::RETRY_AFTER, HeaderValue::from_static("0"));
+                    response
+                }
+            }
+        }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+        (format!("http://{address}"), attempts)
+    }
 
     #[tokio::test]
     async fn local_round_trip_preserves_metadata_and_range() {
@@ -1315,7 +1797,7 @@ mod tests {
     #[test]
     fn s3_unicode_key_round_trips_through_stored_url() {
         let store = S3Storage {
-            client: reqwest::Client::new(),
+            client: s3_http_client(false).unwrap(),
             bucket: "bucket".into(),
             region: "us-west-2".into(),
             endpoint: Url::parse("https://s3.us-west-2.amazonaws.com").unwrap(),
@@ -1323,6 +1805,7 @@ mod tests {
             path_style: false,
             credentials: SharedCredentialsProvider::new(test_credentials(None)),
             cdn_domain: None,
+            transport: Arc::new(S3TransportState::default()),
         };
         let key = "workspaces/w/file.微信";
         let url = store.object_url(key);
@@ -1336,7 +1819,7 @@ mod tests {
 
     fn test_s3(endpoint: &str, custom_endpoint: bool, path_style: bool) -> S3Storage {
         S3Storage {
-            client: reqwest::Client::new(),
+            client: s3_http_client(custom_endpoint).unwrap(),
             bucket: "bucket".into(),
             region: "us-west-2".into(),
             endpoint: Url::parse(endpoint).unwrap(),
@@ -1344,6 +1827,7 @@ mod tests {
             path_style,
             credentials: SharedCredentialsProvider::new(test_credentials(None)),
             cdn_domain: None,
+            transport: Arc::new(S3TransportState::default()),
         }
     }
 
@@ -1502,6 +1986,119 @@ mod tests {
     }
 
     #[test]
+    fn retry_policy_is_bounded_and_honors_retry_after() {
+        assert_eq!(
+            retry_delay(1, Some(Duration::from_secs(7)), 0),
+            Duration::from_secs(7)
+        );
+        assert_eq!(
+            retry_delay(1, Some(Duration::from_secs(60)), 0),
+            S3_MAX_RETRY_DELAY
+        );
+        assert_eq!(retry_delay(1, None, 0), Duration::ZERO);
+        assert!(retry_delay(1, None, u64::MAX) <= Duration::from_millis(50));
+        assert!(retry_delay(2, None, u64::MAX) <= Duration::from_millis(100));
+        assert_eq!(parse_retry_after("5"), Some(Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn retry_and_correction_error_classes_match_s3_boundaries() {
+        let mut error = S3RequestError {
+            operation: "GetObject",
+            status: reqwest::StatusCode::BAD_REQUEST,
+            code: Some("RequestTimeout".into()),
+            request_id: Some("request-123".into()),
+            host_id: Some("host-id-is-not-rendered".into()),
+        };
+        assert!(retryable_s3_failure(&error));
+        error.code = Some("AccessDenied".into());
+        assert!(!retryable_s3_failure(&error));
+        assert_eq!(
+            error.to_string(),
+            "object storage GetObject failed with HTTP 400 Bad Request (AccessDenied) [request_id=request-123]"
+        );
+        assert!(!error.to_string().contains("host-id"));
+        assert!(!format!("{error:?}").contains("host-id-is-not-rendered"));
+
+        error.status = reqwest::StatusCode::MOVED_PERMANENTLY;
+        assert!(is_region_redirect(&error));
+        assert!(is_clock_skew_error(Some("RequestTimeTooSkewed")));
+        assert!(!is_clock_skew_error(Some("AccessDenied")));
+    }
+
+    #[test]
+    fn structured_s3_error_parser_ignores_messages_and_unsafe_identifiers() {
+        let document = parse_s3_error_document(
+            br#"<Error><Code>SlowDown</Code><Message>Authorization: secret</Message><RequestId>REQ123</RequestId><HostId>HOST456</HostId></Error>"#,
+        );
+        assert_eq!(document.code.as_deref(), Some("SlowDown"));
+        assert_eq!(document.request_id.as_deref(), Some("REQ123"));
+        assert_eq!(document.host_id.as_deref(), Some("HOST456"));
+        assert!(
+            safe_error_identifier(Some(&HeaderValue::from_static("unsafe value")), 256).is_none()
+        );
+    }
+
+    #[test]
+    fn aws_corrections_are_bounded_cached_and_never_touch_custom_endpoints() {
+        let aws = test_s3("https://s3.us-west-2.amazonaws.com", false, false);
+        assert!(aws.update_correction(Some(120), Some("eu-west-1".into())));
+        let correction = aws.correction();
+        assert_eq!(correction.clock_skew_seconds, 120);
+        assert_eq!(correction.region.as_deref(), Some("eu-west-1"));
+        let url = aws.request_url("workspaces/w/object").unwrap();
+        assert_eq!(url.host_str(), Some("bucket.s3.eu-west-1.amazonaws.com"));
+        assert!(!aws.update_correction(Some(S3_MAX_CLOCK_SKEW_SECONDS + 1), None));
+        assert!(!aws.update_correction(None, Some("invalid/region".into())));
+
+        let custom = test_s3("https://objects.example.test/base", true, true);
+        assert!(!custom.update_correction(Some(120), Some("eu-west-1".into())));
+        assert_eq!(custom.correction().clock_skew_seconds, 0);
+        assert_eq!(
+            custom.request_url("object").unwrap().as_str(),
+            "https://objects.example.test/base/bucket/object"
+        );
+    }
+
+    #[tokio::test]
+    async fn replayable_requests_retry_at_most_three_attempts() {
+        let (endpoint, attempts) = s3_status_server(vec![
+            reqwest::StatusCode::SERVICE_UNAVAILABLE,
+            reqwest::StatusCode::TOO_MANY_REQUESTS,
+            reqwest::StatusCode::OK,
+        ])
+        .await;
+        let store = test_s3(&endpoint, true, true);
+        let response = store
+            .execute(reqwest::Method::GET, "object", None, HeaderMap::new())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        assert_eq!(attempts.load(Ordering::SeqCst), S3_MAX_ATTEMPTS);
+    }
+
+    #[tokio::test]
+    async fn non_replayable_streaming_put_is_never_retried() {
+        let (endpoint, attempts) =
+            s3_status_server(vec![reqwest::StatusCode::SERVICE_UNAVAILABLE]).await;
+        let store = test_s3(&endpoint, true, true);
+        let error = store
+            .upload_stream(
+                "object",
+                Box::new(std::io::Cursor::new(b"stream".to_vec())),
+                6,
+                "application/octet-stream",
+                "stream.bin",
+            )
+            .await
+            .unwrap_err();
+        let error = error.downcast_ref::<S3RequestError>().unwrap();
+        assert_eq!(error.code.as_deref(), Some("SlowDown"));
+        assert_eq!(error.request_id.as_deref(), Some("REQ123"));
+        assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
     fn sigv4_signs_amz_extension_headers() {
         let store = test_s3("https://s3.us-west-2.amazonaws.com", false, true);
         let url = store.request_url("object").unwrap();
@@ -1518,6 +2115,7 @@ mod tests {
                 chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
                 &extra,
                 &test_credentials(None),
+                &store.region,
             )
             .unwrap();
         let authorization = headers
@@ -1546,6 +2144,7 @@ mod tests {
                 chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
                 &prepared.headers,
                 &test_credentials(Some("temporary-session-token")),
+                &store.region,
             )
             .unwrap();
         let authorization = headers
@@ -1572,6 +2171,7 @@ mod tests {
                 chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
                 &HeaderMap::new(),
                 &test_credentials(Some("temporary-session-token")),
+                &store.region,
             )
             .unwrap();
         assert_eq!(
