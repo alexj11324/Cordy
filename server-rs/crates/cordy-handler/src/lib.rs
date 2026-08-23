@@ -45,6 +45,7 @@ pub mod project;
 pub mod property;
 pub mod quick_action;
 pub mod session;
+pub mod squad;
 pub mod squad_briefing;
 pub mod state;
 pub mod task;
@@ -239,6 +240,10 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
                 cordy_middleware::workspace::require_workspace,
             )),
         )
+        .merge(squad::router().route_layer(middleware::from_fn_with_state(
+            WorkspaceGuardState::member_only(state.pool.clone()),
+            cordy_middleware::workspace::require_workspace,
+        )))
         .merge(issue_routes)
         .merge(task_routes)
         .merge(comment_routes)
@@ -380,6 +385,10 @@ mod tests {
             "/api/projects/search?q=migration",
             "/api/projects/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/projects/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/resources",
+            "/api/squads",
+            "/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
+            "/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members",
+            "/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members/status",
             "/api/working-agents",
         ] {
             let response = build_router(None, None)
