@@ -849,11 +849,20 @@ pub(crate) fn rfc3339(t: chrono::DateTime<chrono::Utc>) -> String {
     t.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
-/// Go time.RFC3339Nano: fractional seconds without trailing zeros. chrono's
-/// AutoSi rounds precision to 3/6/9 digits rather than trimming fully; the
-/// difference is invisible to ISO-8601 parsers on both clients.
+/// Go time.RFC3339Nano: fractional seconds without trailing zeros.
 pub(crate) fn rfc3339_nano(t: chrono::DateTime<chrono::Utc>) -> String {
-    t.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, true)
+    let rendered = t.to_rfc3339_opts(chrono::SecondsFormat::Nanos, true);
+    let Some((prefix, fraction_and_zone)) = rendered.split_once('.') else {
+        return rendered;
+    };
+    let fraction = fraction_and_zone
+        .trim_end_matches('Z')
+        .trim_end_matches('0');
+    if fraction.is_empty() {
+        format!("{prefix}Z")
+    } else {
+        format!("{prefix}.{fraction}Z")
+    }
 }
 
 /// Go util.DateToPtr equivalent (DateOnly rendering, null when absent).
@@ -866,5 +875,23 @@ fn json_object_or_empty(v: &serde_json::Value) -> serde_json::Value {
     match v {
         serde_json::Value::Object(_) => v.clone(),
         _ => serde_json::Value::Object(Default::default()),
+    }
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::*;
+
+    #[test]
+    fn rfc3339_nano_trims_every_fractional_zero() {
+        let timestamp = chrono::DateTime::parse_from_rfc3339("2026-08-22T12:34:56.123400Z")
+            .unwrap()
+            .to_utc();
+        assert_eq!(rfc3339_nano(timestamp), "2026-08-22T12:34:56.1234Z");
+
+        let whole = chrono::DateTime::parse_from_rfc3339("2026-08-22T12:34:56Z")
+            .unwrap()
+            .to_utc();
+        assert_eq!(rfc3339_nano(whole), "2026-08-22T12:34:56Z");
     }
 }

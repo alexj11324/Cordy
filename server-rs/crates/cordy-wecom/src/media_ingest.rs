@@ -29,7 +29,7 @@ use cordy_channel_engine::resolvers::{
 };
 
 use crate::media_download::{download_media, open_media_parts};
-use crate::media_guard::{new_media_http_client, MediaAddrBlocked, MediaGuard};
+use crate::media_guard::{new_media_http_client, validate_media_url, MediaAddrBlocked, MediaGuard};
 use crate::media_stream::{decrypt_to_file, peek_file};
 use crate::senders_registry::SendersRegistry;
 use crate::trace::trace_media_headers;
@@ -160,6 +160,7 @@ impl WecomMediaResolver {
             }
         }
 
+        validate_media_url(&m.url)?;
         let got = download_media(&self.http, &m.url).await?;
         trace_media_headers(
             &wm.msg_id,
@@ -192,7 +193,7 @@ impl WecomMediaResolver {
     #[allow(clippy::too_many_arguments)]
     async fn ingest_streaming(
         &self,
-        ctx: &CancellationToken,
+        _ctx: &CancellationToken,
         streamer: &dyn MediaStreamStorage,
         wm: &WecomInboundMessage,
         index: usize,
@@ -200,7 +201,7 @@ impl WecomMediaResolver {
         key: &str,
         link: &str,
     ) -> anyhow::Result<MediaRef> {
-        let _ = ctx;
+        validate_media_url(&m.url)?;
         let (mut body, headers) = open_media_parts(&self.http, &m.url).await?;
         trace_media_headers(&wm.msg_id, index, &headers.disposition, &headers.filename);
 
@@ -357,10 +358,12 @@ impl MediaResolver for WecomMediaResolver {
 
         let mut failures: Vec<MediaFailure> = Vec::new();
         for (i, m) in wm.media.iter().enumerate() {
-            match self
-                .ingest_one(&ctx, inst, chat_message_id, &wm, i, m)
-                .await
-            {
+            let ingest = self.ingest_one(&ctx, inst, chat_message_id, &wm, i, m);
+            let result = tokio::select! {
+                _ = ctx.cancelled() => break,
+                result = ingest => result,
+            };
+            match result {
                 Ok(r#ref) => msg.media_refs.push(r#ref),
                 Err(e) => {
                     let failure = classify_media_failure(&e);
