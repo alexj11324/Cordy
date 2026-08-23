@@ -2,6 +2,7 @@
 //! DB/redis wiring. Domain services are added per-slice as routes land.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use cordy_auth::daemon_token_cache::DaemonTokenCache;
 use cordy_auth::pat_cache::PatCache;
@@ -12,6 +13,54 @@ use cordy_service::issue_service::IssueService;
 use cordy_service::plugin::PluginService;
 use cordy_service::plugin_token::CallbackTokens;
 use cordy_service::task_service::TaskService;
+use tokio_util::sync::CancellationToken;
+
+/// Cancellation and join ownership for handler background maintenance loops.
+#[derive(Clone)]
+pub struct BackgroundRuntime {
+    shutdown: CancellationToken,
+    tasks: Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+}
+
+impl Default for BackgroundRuntime {
+    fn default() -> Self {
+        Self {
+            shutdown: CancellationToken::new(),
+            tasks: Arc::new(std::sync::Mutex::new(Vec::new())),
+        }
+    }
+}
+
+impl BackgroundRuntime {
+    fn token(&self) -> CancellationToken {
+        self.shutdown.clone()
+    }
+
+    fn track(&self, task: tokio::task::JoinHandle<()>) {
+        self.tasks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(task);
+    }
+
+    /// Cancels every loop and waits up to `timeout` for the owned tasks.
+    pub async fn shutdown(&self, timeout: Duration) -> bool {
+        self.shutdown.cancel();
+        let tasks: Vec<_> = self
+            .tasks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .drain(..)
+            .collect();
+        tokio::time::timeout(timeout, async move {
+            for task in tasks {
+                let _ = task.await;
+            }
+        })
+        .await
+        .is_ok()
+    }
+}
 
 struct DaemonTaskWakeup {
     notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
@@ -102,6 +151,9 @@ pub struct HandlerState {
     /// Local-first daemon wakeup publisher. Production runtime installs the
     /// shared Redis relay for sharded/dual modes before the router is served.
     pub daemon_notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
+    /// Owns cancellable workers that must stop after HTTP drain and before
+    /// realtime fanout is torn down.
+    pub background_runtime: BackgroundRuntime,
     /// Attachment object store. None is the explicit unconfigured test path.
     pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
     pub attachment_frame_ancestors: Vec<String>,
@@ -126,6 +178,7 @@ impl HandlerState {
             Some(daemon_hub.clone()),
             None,
         ));
+        let background_runtime = BackgroundRuntime::default();
         let task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier> =
             Arc::new(DaemonTaskWakeup {
                 notifier: daemon_notifier.clone(),
@@ -191,6 +244,7 @@ impl HandlerState {
             vcs_secret_box: None,
             daemon_hub: Some(daemon_hub),
             daemon_notifier,
+            background_runtime,
             attachment_storage: None,
             attachment_frame_ancestors: Vec::new(),
             slack_history: None,
@@ -333,12 +387,13 @@ impl HandlerState {
     /// from production startup after all Autopilot service wiring is complete.
     pub fn start_webhook_delivery_worker(mut self) -> Self {
         let notify = Arc::new(tokio::sync::Notify::new());
-        crate::webhook_delivery_worker::WebhookDeliveryWorker::new(
+        let task = crate::webhook_delivery_worker::WebhookDeliveryWorker::new(
             self.pool.clone(),
             self.autopilots.clone(),
             notify.clone(),
         )
-        .start();
+        .start(self.background_runtime.token());
+        self.background_runtime.track(task);
         self.webhook_delivery_notify = Some(notify);
         self
     }
@@ -348,7 +403,8 @@ impl HandlerState {
             return self;
         }
         let service = self.autopilots.clone();
-        tokio::spawn(async move {
+        let shutdown = self.background_runtime.token();
+        let task = tokio::spawn(async move {
             loop {
                 let now = chrono::Utc::now();
                 match service
@@ -367,9 +423,13 @@ impl HandlerState {
                         tracing::warn!(%error, "autopilot quota reconciler failed");
                     }
                 }
-                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                tokio::select! {
+                    () = shutdown.cancelled() => return,
+                    () = tokio::time::sleep(std::time::Duration::from_secs(60)) => {}
+                }
             }
         });
+        self.background_runtime.track(task);
         self
     }
 

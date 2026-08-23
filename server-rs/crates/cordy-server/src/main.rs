@@ -250,6 +250,7 @@ async fn build_production_router(
         &state.bus,
         state.daemon_hub.clone(),
         state.daemon_notifier.clone(),
+        state.background_runtime.clone(),
     );
     Ok((cordy_handler::build_router_from_state(state), realtime))
 }

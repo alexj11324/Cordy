@@ -51,6 +51,7 @@ pub struct RealtimeRuntime {
     shutdown: CancellationToken,
     forwarder: Option<RealtimeForwarder>,
     daemon_notifier: Option<Arc<cordy_daemon::notifier::RelayNotifier>>,
+    background: Option<cordy_handler::state::BackgroundRuntime>,
 }
 
 impl RealtimeRuntime {
@@ -74,6 +75,7 @@ impl RealtimeRuntime {
                 shutdown,
                 forwarder: None,
                 daemon_notifier: None,
+                background: None,
             };
         };
 
@@ -94,6 +96,7 @@ impl RealtimeRuntime {
                     shutdown,
                     forwarder: None,
                     daemon_notifier: None,
+                    background: None,
                 };
             }
             Err(_) => {
@@ -105,6 +108,7 @@ impl RealtimeRuntime {
                     shutdown,
                     forwarder: None,
                     daemon_notifier: None,
+                    background: None,
                 };
             }
         };
@@ -119,6 +123,7 @@ impl RealtimeRuntime {
             shutdown,
             forwarder: None,
             daemon_notifier: None,
+            background: None,
         }
     }
 
@@ -127,6 +132,7 @@ impl RealtimeRuntime {
         bus: &cordy_events::Bus,
         daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
         daemon_notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
+        background: cordy_handler::state::BackgroundRuntime,
     ) {
         if let Some(relay) = &self.relay {
             if self.relay_mode != Some(RelayMode::Legacy) {
@@ -138,10 +144,16 @@ impl RealtimeRuntime {
             }
             relay.clone().start(self.shutdown.clone());
         }
+        self.background = Some(background);
         self.forwarder = Some(RealtimeForwarder::start(bus, self.broadcaster.clone()));
     }
 
     pub async fn shutdown(mut self) {
+        if let Some(background) = self.background.take() {
+            if !background.shutdown(Duration::from_secs(5)).await {
+                tracing::warn!("handler background workers did not exit within shutdown timeout");
+            }
+        }
         if let Some(forwarder) = self.forwarder.take() {
             forwarder.shutdown().await;
         }
