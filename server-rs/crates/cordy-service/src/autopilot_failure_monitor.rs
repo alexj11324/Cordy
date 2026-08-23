@@ -718,7 +718,7 @@ fn format_lookback(duration: Duration) -> String {
         return "0s".into();
     }
     let hours = duration.as_secs() / 3600;
-    if hours >= 24 && duration.as_secs() % (24 * 3600) == 0 {
+    if hours >= 24 && duration.as_secs().is_multiple_of(24 * 3600) {
         let days = hours / 24;
         return if days == 1 {
             "1 day".into()
@@ -726,7 +726,7 @@ fn format_lookback(duration: Duration) -> String {
             format!("{days} days")
         };
     }
-    if duration.as_secs() % 3600 == 0 {
+    if duration.as_secs().is_multiple_of(3600) {
         return if hours == 1 {
             "1 hour".into()
         } else {
