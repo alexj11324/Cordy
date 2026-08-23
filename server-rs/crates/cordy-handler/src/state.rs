@@ -133,6 +133,20 @@ impl cordy_service::task_service::TaskWakeupNotifier for DaemonTaskWakeup {
     }
 }
 
+/// Owns the background daemon relay for exactly as long as handler state is
+/// alive. The relay supervisor retains its own `Arc`, so dropping the
+/// publisher alone cannot stop its reader tasks; the explicit guard closes
+/// that lifecycle loop when the last router-state clone goes away.
+struct DaemonRelayGuard {
+    relay: Arc<cordy_realtime::sharded_stream_relay::ShardedStreamRelay<cordy_realtime::hub::Hub>>,
+}
+
+impl Drop for DaemonRelayGuard {
+    fn drop(&mut self) {
+        self.relay.stop();
+    }
+}
+
 /// Handler-layer state shared by all axum extractors.
 #[derive(Clone)]
 pub struct HandlerState {
@@ -200,6 +214,8 @@ pub struct HandlerState {
     /// Relay-aware daemon notifier. It always targets the local hub and, when
     /// Redis is configured, publishes the same hint for other API replicas.
     pub daemon_notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
+    /// Retains the relay lifecycle independently from the erased publisher.
+    _daemon_relay: Option<Arc<DaemonRelayGuard>>,
     /// Attachment object store. None is the explicit unconfigured test path.
     pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
     pub attachment_frame_ancestors: Vec<String>,
@@ -291,6 +307,7 @@ impl HandlerState {
                 Some(daemon_hub.clone()),
                 None,
             )),
+            _daemon_relay: None,
             attachment_storage: None,
             attachment_frame_ancestors: Vec::new(),
             attachment_download: AttachmentDownloadSettings::default(),
@@ -603,11 +620,12 @@ impl HandlerState {
         );
         relay.set_daemon_runtime_deliverer(daemon_hub.clone());
         relay.start();
-        let publisher: Arc<dyn cordy_realtime::RelayPublisher> = relay;
+        let publisher: Arc<dyn cordy_realtime::RelayPublisher> = relay.clone();
         self.daemon_notifier = Arc::new(cordy_daemon::notifier::RelayNotifier::new(
             Some(daemon_hub),
             Some(publisher),
         ));
+        self._daemon_relay = Some(Arc::new(DaemonRelayGuard { relay }));
         Ok(self)
     }
 

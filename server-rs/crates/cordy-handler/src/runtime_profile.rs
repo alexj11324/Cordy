@@ -443,6 +443,9 @@ pub(crate) async fn teardown_runtime(
         anyhow::bail!("runtime_delete_not_drained");
     }
     runtime::unbind_tasks_from_runtime(&mut **transaction, runtime_id).await?;
+    // Serialize with deferred chat finalization before pruning draft restores
+    // and deleting the system-agent rows their sessions cascade from.
+    chat::lock_chat_sessions_by_system_runtime_agents(&mut **transaction, runtime_id).await?;
     agent_invocation_target::delete_agent_invocation_targets_by_system_runtime_agents(
         &mut **transaction,
         runtime_id,

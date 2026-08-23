@@ -11,6 +11,19 @@ use std::time::Duration;
 
 const PENDING_STORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum RealtimeRelayMode {
+    Sharded,
+    Dual,
+    Legacy,
+}
+
+impl RealtimeRelayMode {
+    fn daemon_fanout_enabled(self) -> bool {
+        matches!(self, Self::Sharded | Self::Dual)
+    }
+}
+
 struct VcsWebhookConfig {
     enabled: bool,
     secret_box: Option<cordy_util::secretbox::SecretBox>,
@@ -22,6 +35,36 @@ impl VcsWebhookConfig {
         Self {
             enabled: false,
             secret_box: None,
+        }
+    }
+}
+
+fn configured_url(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+fn realtime_relay_url(redis: &cordy_config::RedisConfig) -> Option<&str> {
+    configured_url(redis.realtime_relay_url.as_deref())
+        .or_else(|| configured_url(redis.url.as_deref()))
+}
+
+fn realtime_relay_mode(raw: Option<&str>) -> RealtimeRelayMode {
+    match raw
+        .map(str::trim)
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "" | "sharded" => RealtimeRelayMode::Sharded,
+        "dual" => RealtimeRelayMode::Dual,
+        "legacy" => RealtimeRelayMode::Legacy,
+        value => {
+            tracing::warn!(
+                value,
+                default = "sharded",
+                "invalid REALTIME_RELAY_MODE; using default"
+            );
+            RealtimeRelayMode::Sharded
         }
     }
 }
@@ -162,18 +205,41 @@ async fn install_pending_stores(
             return state;
         }
     };
-    let wiring = async {
-        state
-            .clone()
-            .with_redis(client.clone())
-            .await?
-            .with_daemon_relay(client)
-            .await
-    };
+    let wiring = state.clone().with_redis(client);
     match tokio::time::timeout(PENDING_STORE_CONNECT_TIMEOUT, wiring).await {
         Ok(Ok(wired)) => wired,
         Ok(Err(_)) | Err(_) => {
             tracing::warn!("Redis is unavailable; runtime pending requests are disabled");
+            state
+        }
+    }
+}
+
+async fn install_daemon_relay(
+    state: cordy_handler::HandlerState,
+    redis_url: Option<&str>,
+) -> cordy_handler::HandlerState {
+    let Some(redis_url) = configured_url(redis_url) else {
+        return state;
+    };
+    let client = match redis::Client::open(redis_url) {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::warn!(%error, "realtime relay Redis URL is invalid; daemon fanout is local-only");
+            return state;
+        }
+    };
+    let wiring = state.clone().with_daemon_relay(client);
+    match tokio::time::timeout(PENDING_STORE_CONNECT_TIMEOUT, wiring).await {
+        Ok(Ok(wired)) => wired,
+        Ok(Err(error)) => {
+            tracing::warn!(%error, "realtime relay Redis is unavailable; daemon fanout is local-only");
+            state
+        }
+        Err(_) => {
+            tracing::warn!(
+                "realtime relay Redis connection timed out; daemon fanout is local-only"
+            );
             state
         }
     }
@@ -248,8 +314,17 @@ async fn build_production_router(
     } else {
         tracing::warn!("public-route rate limiting disabled: REDIS_URL not configured");
     }
-    let state = install_pending_stores(state, redis_url)
-        .await
+    let relay_mode = realtime_relay_mode(cfg.redis.realtime_relay_mode.as_deref());
+    let state = install_pending_stores(state, redis_url).await;
+    let state = if relay_mode.daemon_fanout_enabled() {
+        install_daemon_relay(state, realtime_relay_url(&cfg.redis)).await
+    } else {
+        tracing::info!(
+            "daemon websocket wakeup: Redis fanout disabled in legacy realtime relay mode"
+        );
+        state
+    };
+    let state = state
         .start_autopilot_quota_reconciler()
         .start_webhook_delivery_worker();
     Ok(cordy_handler::build_router_from_state(state))
@@ -476,6 +551,31 @@ mod tests {
 
         cfg.auth.jwt_secret = Some("a-long-random-production-secret".into());
         assert!(validate_auth_config(&cfg).is_ok());
+    }
+
+    #[test]
+    fn realtime_relay_prefers_dedicated_redis_and_falls_back_to_shared() {
+        let mut redis = cordy_config::RedisConfig {
+            url: Some(" redis://shared:6379/0 ".into()),
+            realtime_relay_url: Some(" redis://relay:6379/0 ".into()),
+            ..Default::default()
+        };
+        assert_eq!(realtime_relay_url(&redis), Some("redis://relay:6379/0"));
+
+        redis.realtime_relay_url = Some("   ".into());
+        assert_eq!(realtime_relay_url(&redis), Some("redis://shared:6379/0"));
+    }
+
+    #[test]
+    fn realtime_relay_mode_matches_daemon_fanout_contract() {
+        assert_eq!(realtime_relay_mode(None), RealtimeRelayMode::Sharded);
+        assert_eq!(realtime_relay_mode(Some(" dual ")), RealtimeRelayMode::Dual);
+        assert!(realtime_relay_mode(Some("dual")).daemon_fanout_enabled());
+        assert!(!realtime_relay_mode(Some("legacy")).daemon_fanout_enabled());
+        assert_eq!(
+            realtime_relay_mode(Some("unexpected")),
+            RealtimeRelayMode::Sharded
+        );
     }
 
     #[tokio::test]
