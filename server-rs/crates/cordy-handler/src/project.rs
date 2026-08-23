@@ -8,7 +8,7 @@ use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
-use cordy_db::models::Project;
+use cordy_db::models::{Project, ProjectResource};
 use cordy_db::queries::{project, project_resource};
 use cordy_middleware::workspace::WorkspaceContext;
 use serde::{Deserialize, Serialize};
@@ -32,6 +32,16 @@ pub fn router() -> Router<HandlerState> {
         .route(
             "/api/projects/{id}/",
             get(get_one).put(update).delete(remove),
+        )
+        .route("/api/projects/{id}/resources", get(list_resources))
+        .route("/api/projects/{id}/resources/", get(list_resources))
+        .route(
+            "/api/projects/{id}/resources/{resource_id}",
+            axum::routing::delete(remove_resource),
+        )
+        .route(
+            "/api/projects/{id}/resources/{resource_id}/",
+            axum::routing::delete(remove_resource),
         )
 }
 
@@ -78,6 +88,35 @@ impl From<Project> for ProjectResponse {
             issue_count: 0,
             done_count: 0,
             resource_count: 0,
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ProjectResourceResponse {
+    id: String,
+    project_id: String,
+    workspace_id: String,
+    resource_type: String,
+    resource_ref: Value,
+    label: Option<String>,
+    position: i32,
+    created_at: String,
+    created_by: Option<String>,
+}
+
+impl From<ProjectResource> for ProjectResourceResponse {
+    fn from(resource: ProjectResource) -> Self {
+        Self {
+            id: resource.id.to_string(),
+            project_id: resource.project_id.to_string(),
+            workspace_id: resource.workspace_id.to_string(),
+            resource_type: resource.resource_type,
+            resource_ref: resource.resource_ref,
+            label: resource.label,
+            position: resource.position,
+            created_at: crate::timefmt::rfc3339(resource.created_at),
+            created_by: resource.created_by.map(|id| id.to_string()),
         }
     }
 }
@@ -419,6 +458,92 @@ async fn remove(
     StatusCode::NO_CONTENT.into_response()
 }
 
+async fn load_project_for_resource(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    raw_id: &str,
+) -> Result<Project, Response> {
+    let id = Uuid::parse_str(raw_id.trim())
+        .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid project id"))?;
+    match project::get_project_in_workspace(&state.pool, id, context.member.workspace_id).await {
+        Ok(Some(project)) => Ok(project),
+        Ok(None) | Err(_) => Err(error_response(StatusCode::NOT_FOUND, "project not found")),
+    }
+}
+
+async fn list_resources(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(raw_id): Path<String>,
+) -> Response {
+    let project = match load_project_for_resource(&state, &context, &raw_id).await {
+        Ok(project) => project,
+        Err(response) => return response,
+    };
+    let resources = match project_resource::list_project_resources(&state.pool, project.id).await {
+        Ok(resources) => resources,
+        Err(error) => {
+            tracing::warn!(%error, project_id = %project.id, "failed to list project resources");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list project resources",
+            );
+        }
+    };
+    let response = resources
+        .into_iter()
+        .map(ProjectResourceResponse::from)
+        .collect::<Vec<_>>();
+    Json(json!({ "resources": response, "total": response.len() })).into_response()
+}
+
+async fn remove_resource(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path((raw_project_id, raw_resource_id)): Path<(String, String)>,
+) -> Response {
+    let project = match load_project_for_resource(&state, &context, &raw_project_id).await {
+        Ok(project) => project,
+        Err(response) => return response,
+    };
+    let resource_id = match Uuid::parse_str(raw_resource_id.trim()) {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid resource id"),
+    };
+    let resource = match project_resource::get_project_resource_in_workspace(
+        &state.pool,
+        resource_id,
+        context.member.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(resource)) if resource.project_id == project.id => resource,
+        Ok(Some(_)) | Ok(None) | Err(_) => {
+            return error_response(StatusCode::NOT_FOUND, "project resource not found")
+        }
+    };
+    match project_resource::delete_project_resource(&state.pool, resource.id).await {
+        Ok(_) => {}
+        Err(error) => {
+            tracing::warn!(%error, %resource_id, "failed to delete project resource");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to delete project resource",
+            );
+        }
+    }
+    publish_project(
+        &state,
+        &context,
+        cordy_protocol::EVENT_PROJECT_RESOURCE_DELETED,
+        json!({
+            "project_id": project.id.to_string(),
+            "resource_id": resource.id.to_string(),
+        }),
+    );
+    StatusCode::NO_CONTENT.into_response()
+}
+
 async fn project_enrichment(
     state: &HandlerState,
     ids: &[Uuid],
@@ -690,6 +815,29 @@ mod tests {
         assert_eq!(value["start_date"], "2026-08-23");
         assert_eq!(value["description"], serde_json::Value::Null);
         assert_eq!(value["issue_count"], 0);
+    }
+
+    #[test]
+    fn project_resource_wire_preserves_json_and_nullable_creator() {
+        let now = chrono::Utc::now();
+        let response = ProjectResourceResponse::from(ProjectResource {
+            id: Uuid::nil(),
+            project_id: Uuid::nil(),
+            workspace_id: Uuid::nil(),
+            resource_type: "github_repo".into(),
+            resource_ref: json!({"url": "git@github.com:alexj11324/Cordy.git"}),
+            label: None,
+            position: 2,
+            created_at: now,
+            created_by: None,
+        });
+        let value = serde_json::to_value(response).unwrap();
+        assert_eq!(
+            value["resource_ref"]["url"],
+            "git@github.com:alexj11324/Cordy.git"
+        );
+        assert_eq!(value["created_by"], Value::Null);
+        assert_eq!(value["position"], 2);
     }
 
     #[test]
