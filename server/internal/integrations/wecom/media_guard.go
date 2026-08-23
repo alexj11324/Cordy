@@ -189,8 +189,8 @@ func publicAddrOnly(a netip.Addr) bool {
 		return false
 	}
 	if a.IsLoopback() || a.IsPrivate() || a.IsUnspecified() ||
-		a.IsLinkLocalUnicast() || a.IsLinkLocalCordyst() ||
-		a.IsInterfaceLocalCordyst() || a.IsCordyst() {
+		a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast() ||
+		a.IsInterfaceLocalMulticast() || a.IsMulticast() {
 		return false
 	}
 	// Translation space first, and before the allow-list is consulted at all.
