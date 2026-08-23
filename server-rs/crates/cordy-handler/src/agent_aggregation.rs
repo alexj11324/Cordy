@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use axum::extract::{Extension, State};
+use axum::extract::{Extension, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -20,6 +20,8 @@ pub fn router() -> Router<HandlerState> {
     Router::new()
         .route("/api/agent-activity-30d", get(activity_30d))
         .route("/api/agent-run-counts", get(run_counts))
+        .route("/api/agent-task-snapshot", get(task_snapshot))
+        .route("/api/working-agents", get(working_agents))
 }
 
 #[derive(Debug, Serialize)]
@@ -34,6 +36,27 @@ struct ActivityBucket {
 struct RunCount {
     agent_id: String,
     run_count: i32,
+}
+
+#[derive(Debug, Default, serde::Deserialize)]
+struct WorkingParams {
+    #[serde(default, rename = "type")]
+    work_type: String,
+    #[serde(default)]
+    scope: String,
+    #[serde(default)]
+    relation: String,
+    #[serde(default)]
+    parent: String,
+}
+
+#[derive(Debug, Serialize)]
+struct WorkingAgent {
+    id: String,
+    name: String,
+    avatar_url: Option<String>,
+    running_task_count: i32,
+    issue_ids: Vec<String>,
 }
 
 fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
@@ -189,6 +212,176 @@ async fn activity_30d(
     .into_response()
 }
 
+async fn task_snapshot(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    headers: HeaderMap,
+) -> Response {
+    let workspace_id = match workspace_id(&context) {
+        Ok(workspace_id) => workspace_id,
+        Err(response) => return response,
+    };
+    let tasks = match agent::list_workspace_agent_task_snapshot(&state.pool, workspace_id).await {
+        Ok(tasks) => tasks,
+        Err(error) => {
+            tracing::warn!(%error, %workspace_id, "failed to list agent task snapshot");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list agent task snapshot",
+            );
+        }
+    };
+    let allowed = match accessible_agent_ids(&state, &context, &headers, workspace_id).await {
+        Ok(allowed) => allowed,
+        Err(response) => return response,
+    };
+    let tasks = tasks
+        .into_iter()
+        .filter(|task| allowed.contains(&task.agent_id))
+        .collect::<Vec<_>>();
+    Json(crate::issue::task_maps(&state, &tasks, &workspace_id.to_string()).await).into_response()
+}
+
+fn validate_working_params(
+    params: WorkingParams,
+    user_id: Uuid,
+) -> Result<(String, String, Option<Uuid>, Option<Uuid>), Response> {
+    let work_type = params.work_type.trim().to_string();
+    if !matches!(work_type.as_str(), "" | "issue" | "autopilot" | "chat") {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid type: must be issue, autopilot, or chat",
+        ));
+    }
+
+    let scope = params.scope.trim();
+    let mut relation = params.relation.trim().to_string();
+    let member_id = match scope {
+        "" => {
+            if !relation.is_empty() {
+                return Err(error_response(
+                    StatusCode::BAD_REQUEST,
+                    "relation requires scope=mine",
+                ));
+            }
+            None
+        }
+        "mine" => {
+            if work_type != "issue" {
+                return Err(error_response(
+                    StatusCode::BAD_REQUEST,
+                    "scope=mine requires type=issue",
+                ));
+            }
+            if relation.is_empty() {
+                relation = "any".into();
+            }
+            if !matches!(
+                relation.as_str(),
+                "assigned" | "created" | "involved" | "any"
+            ) {
+                return Err(error_response(
+                    StatusCode::BAD_REQUEST,
+                    "invalid relation: must be assigned, created, involved, or any",
+                ));
+            }
+            Some(user_id)
+        }
+        _ => {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid scope: must be mine",
+            ))
+        }
+    };
+
+    let parent = params.parent.trim();
+    let parent_id = if parent.is_empty() {
+        None
+    } else {
+        if work_type != "issue" {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "parent requires type=issue",
+            ));
+        }
+        if !scope.is_empty() {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "parent cannot be combined with scope",
+            ));
+        }
+        Some(
+            Uuid::parse_str(parent)
+                .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid parent"))?,
+        )
+    };
+
+    Ok((work_type, relation, member_id, parent_id))
+}
+
+async fn working_agents(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    headers: HeaderMap,
+    Query(params): Query<WorkingParams>,
+) -> Response {
+    let workspace_id = match workspace_id(&context) {
+        Ok(workspace_id) => workspace_id,
+        Err(response) => return response,
+    };
+    let (work_type, relation, member_id, parent_id) =
+        match validate_working_params(params, context.member.user_id) {
+            Ok(values) => values,
+            Err(response) => return response,
+        };
+    let rows = match agent::list_workspace_working_agents(
+        &state.pool,
+        workspace_id,
+        &work_type,
+        &relation,
+        member_id,
+        parent_id,
+    )
+    .await
+    {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::warn!(%error, %workspace_id, "failed to list workspace working agents");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list workspace working agents",
+            );
+        }
+    };
+    let allowed = match accessible_agent_ids(&state, &context, &headers, workspace_id).await {
+        Ok(allowed) => allowed,
+        Err(response) => return response,
+    };
+    Json(
+        rows.into_iter()
+            .filter_map(|row| {
+                let id = row.id?;
+                allowed.contains(&id).then_some(WorkingAgent {
+                    id: id.to_string(),
+                    name: row.name,
+                    // HandlerState has no storage signer yet; this is the same
+                    // raw URL branch used by the Go handler when none is wired.
+                    avatar_url: row.avatar_url,
+                    running_task_count: row.running_task_count,
+                    issue_ids: row
+                        .issue_ids
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|id| id.to_string())
+                        .collect(),
+                })
+            })
+            .collect::<Vec<_>>(),
+    )
+    .into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use chrono::Utc;
@@ -273,5 +466,34 @@ mod tests {
             member,
             "member"
         ));
+    }
+
+    #[test]
+    fn working_params_match_go_validation_contract() {
+        let user_id = Uuid::now_v7();
+        let params = WorkingParams {
+            work_type: " issue ".into(),
+            scope: " mine ".into(),
+            relation: String::new(),
+            parent: String::new(),
+        };
+        let (work_type, relation, member_id, parent_id) =
+            validate_working_params(params, user_id).unwrap();
+        assert_eq!(work_type, "issue");
+        assert_eq!(relation, "any");
+        assert_eq!(member_id, Some(user_id));
+        assert_eq!(parent_id, None);
+
+        let invalid = WorkingParams {
+            work_type: "chat".into(),
+            scope: "mine".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            validate_working_params(invalid, user_id)
+                .unwrap_err()
+                .status(),
+            StatusCode::BAD_REQUEST
+        );
     }
 }

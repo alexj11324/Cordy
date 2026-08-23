@@ -5174,8 +5174,8 @@ pub async fn list_workspace_working_agents(
     workspace_id: Uuid,
     work_type: &str,
     mine_relation: &str,
-    member_id: Uuid,
-    parent_issue_id: Uuid,
+    member_id: Option<Uuid>,
+    parent_issue_id: Option<Uuid>,
 ) -> anyhow::Result<Vec<ListWorkspaceWorkingAgentsRow>> {
     let rows = sqlx::query(
         r#"SELECT
