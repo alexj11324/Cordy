@@ -24,6 +24,7 @@ pub mod client;
 pub mod config;
 pub mod control_lifecycle;
 pub mod daemon_core;
+pub mod bootstrap;
 pub mod update_executor;
 pub mod diskusage;
 pub mod health;
