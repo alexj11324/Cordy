@@ -1179,8 +1179,14 @@ async fn table_rows(
         };
     let prefix = issue_prefix(&state, workspace_id).await;
     let ids = rows.iter().map(|issue| issue.id).collect::<Vec<_>>();
-    let child_counts = sqlx::query_as::<_, (Uuid, i64)>("SELECT parent_issue_id, count(*)::bigint FROM issue WHERE workspace_id=$1 AND parent_issue_id=ANY($2) GROUP BY parent_issue_id")
-        .bind(workspace_id).bind(ids).fetch_all(&state.pool).await.unwrap_or_default().into_iter().collect::<HashMap<_,_>>();
+    let child_counts = match sqlx::query_as::<_, (Uuid, i64)>("SELECT parent_issue_id, count(*)::bigint FROM issue WHERE workspace_id=$1 AND parent_issue_id=ANY($2) GROUP BY parent_issue_id")
+        .bind(workspace_id).bind(ids).fetch_all(&state.pool).await {
+            Ok(rows) => rows.into_iter().collect::<HashMap<_, _>>(),
+            Err(error) => {
+                tracing::warn!(%error, "failed to count issue table children");
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to query issue table");
+            }
+        };
     let response_rows = rows.iter().map(|issue| json!({ "issue": IssueResponse::from_issue(issue, &prefix), "direct_child_count": child_counts.get(&issue.id).copied().unwrap_or(0) })).collect::<Vec<_>>();
     Json(json!({
         "query_fingerprint": table_fingerprint(&request), "group_key": request.group_key,
@@ -1218,8 +1224,14 @@ async fn table_groups(
         || (kind == "compound"
             && request.group.get("secondary").and_then(Value::as_str) == Some("status_category"))
     {
-        sqlx::query_as::<_, (Uuid, String)>("SELECT id, issue_effective_status(workspace_id, status) FROM issue WHERE workspace_id=$1 AND id=ANY($2)")
-            .bind(workspace_id).bind(rows.iter().map(|row| row.id).collect::<Vec<_>>()).fetch_all(&state.pool).await.unwrap_or_default().into_iter().collect::<HashMap<_,_>>()
+        match sqlx::query_as::<_, (Uuid, String)>("SELECT id, issue_effective_status(workspace_id, status) FROM issue WHERE workspace_id=$1 AND id=ANY($2)")
+            .bind(workspace_id).bind(rows.iter().map(|row| row.id).collect::<Vec<_>>()).fetch_all(&state.pool).await {
+                Ok(rows) => rows.into_iter().collect::<HashMap<_, _>>(),
+                Err(error) => {
+                    tracing::warn!(%error, "failed to resolve issue table status categories");
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to query issue table");
+                }
+            }
     } else {
         HashMap::new()
     };
@@ -1441,10 +1453,28 @@ async fn table_facets(
         }
         let issue_ids = facet_rows.iter().map(|issue| issue.id).collect::<Vec<_>>();
         if kind == "label" && !issue_ids.is_empty() {
-            for (key, count) in sqlx::query_as::<_, (Uuid, i64)>("SELECT label_id, count(DISTINCT issue_id)::bigint FROM issue_to_label WHERE issue_id=ANY($1) GROUP BY label_id").bind(&issue_ids).fetch_all(&state.pool).await.unwrap_or_default() { counts.insert(key.to_string(), count); }
+            let rows = match sqlx::query_as::<_, (Uuid, i64)>("SELECT label_id, count(DISTINCT issue_id)::bigint FROM issue_to_label WHERE issue_id=ANY($1) GROUP BY label_id").bind(&issue_ids).fetch_all(&state.pool).await {
+                Ok(rows) => rows,
+                Err(error) => {
+                    tracing::warn!(%error, "failed to query issue label facets");
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to query issue facets");
+                }
+            };
+            for (key, count) in rows {
+                counts.insert(key.to_string(), count);
+            }
         }
         if kind == "working_agents" && !issue_ids.is_empty() {
-            for (key, count) in sqlx::query_as::<_, (Uuid, i64)>("SELECT agent_id, count(DISTINCT issue_id)::bigint FROM agent_task_queue WHERE workspace_id=$1 AND issue_id=ANY($2) AND status='running' GROUP BY agent_id").bind(workspace_id).bind(&issue_ids).fetch_all(&state.pool).await.unwrap_or_default() { counts.insert(key.to_string(), count); }
+            let rows = match sqlx::query_as::<_, (Uuid, i64)>("SELECT agent_id, count(DISTINCT issue_id)::bigint FROM agent_task_queue WHERE workspace_id=$1 AND issue_id=ANY($2) AND status='running' GROUP BY agent_id").bind(workspace_id).bind(&issue_ids).fetch_all(&state.pool).await {
+                Ok(rows) => rows,
+                Err(error) => {
+                    tracing::warn!(%error, "failed to query working-agent facets");
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to query issue facets");
+                }
+            };
+            for (key, count) in rows {
+                counts.insert(key.to_string(), count);
+            }
         }
         facets.push(json!({ "kind": kind, "property_id": facet.get("property_id"), "values": counts.into_iter().map(|(key,count)| json!({"key":key,"count":count})).collect::<Vec<_>>() }));
     }
