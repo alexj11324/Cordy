@@ -26,6 +26,7 @@ pub mod feedback;
 pub mod health;
 pub mod issue;
 pub mod issue_status;
+pub mod issue_view_preference;
 pub mod label;
 pub mod mcp_merge;
 pub mod me;
@@ -212,6 +213,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
                 issue::require_issue_workspace,
             )),
         )
+        .merge(
+            issue_view_preference::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                issue::require_issue_workspace,
+            )),
+        )
         .merge(pin::router().route_layer(middleware::from_fn_with_state(
             WorkspaceGuardState::member_only(state.pool.clone()),
             issue::require_issue_workspace,
@@ -306,6 +313,7 @@ mod tests {
             "/api/issues/CORD-14/task-runs",
             "/api/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/messages",
             "/api/me",
+            "/api/issue-view-preferences?scope_type=workspace",
         ] {
             let response = build_router(None, None)
                 .oneshot(Request::get(uri).body(Body::empty()).unwrap())
@@ -344,6 +352,9 @@ mod tests {
                 .unwrap(),
             Request::post("/api/me/onboarding/cloud-waitlist")
                 .body(Body::from(r#"{"email":"alex@example.com"}"#))
+                .unwrap(),
+            Request::put("/api/issue-view-preferences")
+                .body(Body::from(r#"{"scope_type":"workspace","prefs":{}}"#))
                 .unwrap(),
             Request::post("/api/share-links/join")
                 .body(Body::from(r#"{"code":"invite"}"#))
