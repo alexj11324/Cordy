@@ -41,6 +41,7 @@ license = "UNLICENSED"
 tokio = { version = "1", features = ["full"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "ws", "matched-path", "original-uri", "tower-log", "tracing"] }
 tower-http = { version = "0.6", features = ["cors"] }
+percent-encoding = "2.3"
 # data
 sqlx = { version = "0.8", features = [
     "runtime-tokio",

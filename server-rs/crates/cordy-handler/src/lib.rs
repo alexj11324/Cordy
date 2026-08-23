@@ -11,9 +11,10 @@
 #![allow(clippy::result_large_err)]
 
 pub mod attachment_url;
+pub mod attachment_storage;
 pub mod claim_comments;
 pub mod claim_response;
-mod cloudfront;
+pub mod cloudfront;
 pub mod daemon;
 pub mod daemon_ws;
 pub mod error;

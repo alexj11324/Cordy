@@ -14,13 +14,13 @@ use url::Url;
 type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Clone)]
-pub(crate) struct CloudFrontSigner {
+pub struct CloudFrontSigner {
     key_pair_id: Arc<str>,
     private_key: Arc<RsaPrivateKey>,
 }
 
 impl CloudFrontSigner {
-    pub(crate) async fn from_config(config: &cordy_config::Config) -> anyhow::Result<Option<Self>> {
+    pub async fn from_config(config: &cordy_config::Config) -> anyhow::Result<Option<Self>> {
         let Some(key_pair_id) = config
             .storage
             .cloudfront_key_pair_id
@@ -71,8 +71,17 @@ impl CloudFrontSigner {
         }))
     }
 
-    pub(crate) fn signed_url(&self, raw_url: &str, ttl: Duration) -> anyhow::Result<String> {
-        let url = Url::parse(raw_url)?;
+    pub fn signed_url(
+        &self,
+        raw_url: &str,
+        ttl: Duration,
+        content_disposition: Option<&str>,
+    ) -> anyhow::Result<String> {
+        let mut url = Url::parse(raw_url)?;
+        if let Some(value) = content_disposition.filter(|value| !value.is_empty()) {
+            url.query_pairs_mut()
+                .append_pair("response-content-disposition", value);
+        }
         let resource = url.to_string();
         let expires =
             chrono::Utc::now().timestamp() + i64::try_from(ttl.as_secs()).unwrap_or(i64::MAX);

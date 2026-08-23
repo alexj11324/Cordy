@@ -927,6 +927,7 @@ name = "cordy-handler"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "aws-config",
  "aws-credential-types",
  "aws-types",
@@ -951,6 +952,7 @@ dependencies = [
  "hex",
  "hmac 0.12.1",
  "http-body-util",
+ "percent-encoding",
  "rand 0.8.7",
  "redis",
  "reqwest",
@@ -960,7 +962,10 @@ dependencies = [
  "sha1",
  "sha2 0.10.9",
  "sqlx",
+ "tempfile",
+ "thiserror 2.0.20",
  "tokio",
+ "tokio-util",
  "tower",
  "tower-http",
  "tracing",
