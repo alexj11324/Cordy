@@ -43,7 +43,7 @@ impl RuntimeCommand {
 
     /// Includes the prefix because one wrapper binary may expose several
     /// independent model catalogs through different fixed subcommands.
-    pub fn cache_key(&self) -> String {
+    pub(crate) fn cache_key(&self) -> String {
         if self.prefix.is_empty() {
             return self.path.clone();
         }
@@ -77,20 +77,24 @@ fn filter_args(
     let mut index = 0;
     while index < args.len() {
         let arg = unshell_quote_arg(&args[index]);
-        let flag = flag_name(&arg);
-        if prefix_mode && flag.is_none() {
+        let blocked_name = if prefix_mode {
+            flag_name(&arg)
+        } else {
+            Some(arg.split_once('=').map_or(arg.as_str(), |(name, _)| name))
+        };
+        if prefix_mode && blocked_name.is_none() {
             filtered.push(arg);
             index += 1;
             continue;
         }
-        let mode = flag.and_then(|name| blocked.get(name).copied());
+        let mode = blocked_name.and_then(|name| blocked.get(name).copied());
         let Some(mode) = mode else {
             filtered.push(arg);
             index += 1;
             continue;
         };
-        let flag = flag.unwrap_or_default();
-        blocked_flags.push(flag.to_string());
+        let blocked_name = blocked_name.unwrap_or_default();
+        blocked_flags.push(blocked_name.to_string());
         let inline = arg.contains('=');
         index += 1;
         match mode {
@@ -235,6 +239,40 @@ mod tests {
         );
         assert_eq!(result.args, strings(&["acp", "tenant", "--model=o3"]));
         assert_eq!(result.blocked_flags, strings(&["--output-format"]));
+    }
+
+    #[test]
+    fn custom_args_block_owned_subcommands_but_launch_prefix_preserves_them() {
+        let cases: &[(&str, &[&str])] = &[
+            ("hermes", &["acp"]),
+            ("qwenpaw", &["acp"]),
+            ("traecli", &["acp", "serve"]),
+            ("grok", &["agent", "stdio", "serve"]),
+        ];
+
+        for (provider, owned_subcommands) in cases {
+            let blocked: BTreeMap<&str, BlockedArgMode> = owned_subcommands
+                .iter()
+                .map(|subcommand| (*subcommand, BlockedArgMode::Standalone))
+                .collect();
+            let mut configured = strings(owned_subcommands);
+            configured.push("tenant".to_string());
+
+            let custom = filter_custom_args(&configured, &blocked);
+            assert_eq!(custom.args, strings(&["tenant"]), "{provider} custom args");
+            assert_eq!(
+                custom.blocked_flags,
+                strings(owned_subcommands),
+                "{provider} blocked custom subcommands"
+            );
+
+            let prefix = filter_launch_prefix(&configured, &blocked);
+            assert_eq!(prefix.args, configured, "{provider} launch prefix");
+            assert!(
+                prefix.blocked_flags.is_empty(),
+                "{provider} launch prefix must preserve positionals"
+            );
+        }
     }
 
     #[test]

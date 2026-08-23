@@ -185,6 +185,28 @@ pub const PROVIDERS: &[ProviderDescriptor] = &[
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelDiscoveryOutput {
+    OmpModelsJson,
+}
+
+/// A built-in runtime's model-discovery command. Presence replaces protocol-
+/// family discovery entirely; absence disables discovery for that runtime
+/// rather than falling back to a potentially incompatible family command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ModelDiscoveryOverride {
+    pub arguments: &'static [&'static str],
+    pub output: ModelDiscoveryOutput,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelDiscoveryStrategy {
+    ProviderFamily(&'static str),
+    RuntimeOverride(ModelDiscoveryOverride),
+    DisabledBuiltinRuntime,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BuiltinRuntimeDescriptor {
     pub id: &'static str,
     pub protocol_family: &'static str,
@@ -194,6 +216,9 @@ pub struct BuiltinRuntimeDescriptor {
     pub skills_dir: &'static str,
     pub user_skills_dir: &'static str,
     pub launch_header: &'static str,
+    pub default_executable: &'static str,
+    pub provider_label: &'static str,
+    pub model_discovery: Option<ModelDiscoveryOverride>,
 }
 
 pub const BUILTIN_RUNTIMES: &[BuiltinRuntimeDescriptor] = &[BuiltinRuntimeDescriptor {
@@ -205,6 +230,12 @@ pub const BUILTIN_RUNTIMES: &[BuiltinRuntimeDescriptor] = &[BuiltinRuntimeDescri
     skills_dir: ".omp/skills",
     user_skills_dir: ".omp/agent/skills",
     launch_header: "omp (json mode)",
+    default_executable: "omp",
+    provider_label: "omp",
+    model_discovery: Some(ModelDiscoveryOverride {
+        arguments: &["models", "--json"],
+        output: ModelDiscoveryOutput::OmpModelsJson,
+    }),
 }];
 
 pub fn provider(id: &str) -> Option<&'static ProviderDescriptor> {
@@ -220,6 +251,20 @@ pub fn protocol_family(id: &str) -> Option<&'static str> {
         return Some(provider.id);
     }
     builtin_runtime(id).map(|runtime| runtime.protocol_family)
+}
+
+/// Resolves discovery without allowing a built-in runtime identity to
+/// silently inherit its protocol family's CLI command.
+pub fn model_discovery_strategy(id: &str) -> ModelDiscoveryStrategy {
+    if let Some(runtime) = builtin_runtime(id) {
+        return runtime.model_discovery.map_or(
+            ModelDiscoveryStrategy::DisabledBuiltinRuntime,
+            ModelDiscoveryStrategy::RuntimeOverride,
+        );
+    }
+    provider(id).map_or(ModelDiscoveryStrategy::Unknown, |provider| {
+        ModelDiscoveryStrategy::ProviderFamily(provider.id)
+    })
 }
 
 pub fn launch_header(id: &str) -> &'static str {
@@ -295,6 +340,33 @@ mod tests {
         assert_eq!(protocol_family("omp"), Some("pi"));
         assert_eq!(launch_header("omp"), "omp (json mode)");
         assert_eq!(launch_header("unknown"), "");
+    }
+
+    #[test]
+    fn omp_descriptor_owns_execution_and_model_discovery_overrides() {
+        let Some(omp) = builtin_runtime("omp") else {
+            panic!("omp descriptor must exist");
+        };
+        assert_eq!(omp.default_executable, "omp");
+        assert_eq!(omp.provider_label, "omp");
+        let discovery = ModelDiscoveryOverride {
+            arguments: &["models", "--json"],
+            output: ModelDiscoveryOutput::OmpModelsJson,
+        };
+        assert_eq!(omp.model_discovery, Some(discovery));
+        assert_eq!(
+            model_discovery_strategy("omp"),
+            ModelDiscoveryStrategy::RuntimeOverride(discovery)
+        );
+        assert_ne!(
+            model_discovery_strategy("omp"),
+            ModelDiscoveryStrategy::ProviderFamily("pi"),
+            "OMP must never fall back to Pi's incompatible --list-models command"
+        );
+        assert_eq!(
+            model_discovery_strategy("pi"),
+            ModelDiscoveryStrategy::ProviderFamily("pi")
+        );
     }
 
     #[test]
