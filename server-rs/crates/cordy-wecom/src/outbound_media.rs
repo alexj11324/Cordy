@@ -364,7 +364,10 @@ async fn send_attachments_owned(
     // on the task-completion path, so blocking out there would wedge the
     // completion path for up to the attachment budget — which is the very
     // thing the detached task exists to prevent.
-    let slot = ATTACHMENT_SLOTS.acquire().await;
+    let slot = tokio::select! {
+        _ = ctx.cancelled() => return,
+        slot = ATTACHMENT_SLOTS.acquire() => slot,
+    };
     if slot.is_err() {
         return; // semaphore closed: process shutting down
     }
@@ -487,7 +490,11 @@ async fn send_attachment(
             ),
         );
     }
-    let data = match read_object(&objects, &row.url).await {
+    let read = read_object(&objects, &row.url);
+    let data = match tokio::select! {
+        _ = ctx.cancelled() => Err(anyhow::anyhow!("attachment delivery deadline exceeded")),
+        data = read => data,
+    } {
         Ok(data) => data,
         Err(e) => return (DeliveryState::DefinitelyFailed, Some(e)),
     };
