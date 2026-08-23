@@ -243,6 +243,10 @@ mod tests {
             "/api/issues/children?parent_ids=018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/issues/child-progress",
             "/api/assignee-frequency",
+            "/api/issues/CORD-14/usage",
+            "/api/issues/CORD-14/attachments",
+            "/api/issues/CORD-14/active-task",
+            "/api/issues/CORD-14/task-runs",
         ] {
             let response = build_router(None, None)
                 .oneshot(Request::get(uri).body(Body::empty()).unwrap())
@@ -263,6 +267,9 @@ mod tests {
             Request::post("/api/issues/batch-update")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"issue_ids":[],"updates":{}}"#))
+                .unwrap(),
+            Request::post("/api/issues/CORD-14/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/cancel")
+                .body(Body::empty())
                 .unwrap(),
         ] {
             let response = build_router(None, None).oneshot(request).await.unwrap();
