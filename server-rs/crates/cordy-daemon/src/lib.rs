@@ -34,6 +34,14 @@ pub mod hub;
 pub mod notifier;
 pub mod repocache;
 
+// Lane D (auto_update / local MCP / local_directory) — disjoint from lanes A/B.
+pub mod auto_update;
+pub mod local_directory;
+pub mod openclaw_runtime_config;
+pub mod plugin_hook_mcp;
+pub mod remote_mcp_broker;
+pub mod runtime_mcp;
+
 // Lane B (daemon.go core + surrounding surfaces) — S9-B.
 pub mod agents_probe;
 pub mod artifact_matcher;

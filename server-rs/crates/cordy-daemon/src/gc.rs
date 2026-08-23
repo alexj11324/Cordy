@@ -21,6 +21,10 @@
 // the daemon-runner/execenv lanes; silence dead-code until that lands.
 #![allow(dead_code)]
 
+// S9-integration: entry points (gc_loop/run_gc) and seam types are wired by
+// the daemon-runner/execenv lanes; silence dead-code until that lands.
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
