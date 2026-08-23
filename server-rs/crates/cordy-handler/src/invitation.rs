@@ -1,14 +1,17 @@
 //! Current-user workspace invitation reads and decisions.
 
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use cordy_db::models::WorkspaceInvitation;
-use cordy_db::queries::invitation::{self, ListPendingInvitationsForUserRow};
+use cordy_db::queries::invitation::{
+    self, ListPendingInvitationsByWorkspaceRow, ListPendingInvitationsForUserRow,
+};
 use cordy_db::queries::{member, user, workspace};
-use serde::Serialize;
+use cordy_middleware::workspace::WorkspaceContext;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::error::error_response;
@@ -24,6 +27,17 @@ pub fn router() -> Router<HandlerState> {
             "/api/invitations/{id}/decline",
             axum::routing::post(decline),
         )
+}
+
+pub fn workspace_member_router() -> Router<HandlerState> {
+    Router::new().route("/api/workspaces/{id}/invitations", get(list_workspace))
+}
+
+pub fn workspace_admin_router() -> Router<HandlerState> {
+    Router::new().route(
+        "/api/workspaces/{id}/invitations/{invitation_id}",
+        axum::routing::delete(revoke),
+    )
 }
 
 #[derive(Debug, Serialize)]
@@ -90,6 +104,26 @@ impl From<ListPendingInvitationsForUserRow> for InvitationResponse {
             inviter_name: row.inviter_name,
             inviter_email: row.inviter_email,
             workspace_name: row.workspace_name,
+        }
+    }
+}
+
+impl From<ListPendingInvitationsByWorkspaceRow> for InvitationResponse {
+    fn from(row: ListPendingInvitationsByWorkspaceRow) -> Self {
+        Self {
+            id: option_uuid(row.id),
+            workspace_id: option_uuid(row.workspace_id),
+            inviter_id: option_uuid(row.inviter_id),
+            invitee_email: row.invitee_email,
+            invitee_user_id: row.invitee_user_id.map(|id| id.to_string()),
+            role: row.role,
+            status: row.status,
+            created_at: option_time(row.created_at),
+            updated_at: option_time(row.updated_at),
+            expires_at: option_time(row.expires_at),
+            inviter_name: row.inviter_name,
+            inviter_email: row.inviter_email,
+            workspace_name: String::new(),
         }
     }
 }
@@ -199,6 +233,76 @@ async fn list(State(state): State<HandlerState>, headers: HeaderMap) -> Response
             )
         }
     }
+}
+
+async fn list_workspace(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    match invitation::list_pending_invitations_by_workspace(
+        &state.pool,
+        context.member.workspace_id,
+    )
+    .await
+    {
+        Ok(rows) => Json(
+            rows.into_iter()
+                .map(InvitationResponse::from)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(error) => {
+            tracing::warn!(%error, workspace_id = %context.workspace_id, "failed to list invitations");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list invitations",
+            )
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct WorkspaceInvitationPath {
+    invitation_id: String,
+}
+
+async fn revoke(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(path): Path<WorkspaceInvitationPath>,
+) -> Response {
+    let id = match invitation_id(&path.invitation_id) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let found = match invitation::get_invitation(&state.pool, id).await {
+        Ok(Some(found))
+            if found.workspace_id == context.member.workspace_id && found.status == "pending" =>
+        {
+            found
+        }
+        Ok(_) | Err(_) => return error_response(StatusCode::NOT_FOUND, "invitation not found"),
+    };
+    if let Err(error) = invitation::revoke_invitation(&state.pool, found.id).await {
+        tracing::warn!(%error, invitation_id = %found.id, "failed to revoke invitation");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to revoke invitation",
+        );
+    }
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::events::EVENT_INVITATION_REVOKED.into(),
+        workspace_id: context.workspace_id,
+        actor_type: "member".into(),
+        actor_id: context.member.user_id.to_string(),
+        payload: serde_json::json!({
+            "invitation_id": found.id.to_string(),
+            "invitee_email": found.invitee_email,
+            "invitee_user_id": found.invitee_user_id,
+        }),
+        ..Default::default()
+    });
+    StatusCode::NO_CONTENT.into_response()
 }
 
 async fn get_one(
@@ -482,5 +586,27 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].name, cordy_analytics::EVENT_TEAM_INVITE_ACCEPTED);
         assert_eq!(events[1].name, cordy_analytics::EVENT_ONBOARDING_COMPLETED);
+    }
+
+    #[test]
+    fn workspace_list_response_includes_inviter_enrichment() {
+        let response = InvitationResponse::from(ListPendingInvitationsByWorkspaceRow {
+            id: Some(Uuid::nil()),
+            workspace_id: Some(Uuid::nil()),
+            inviter_id: Some(Uuid::nil()),
+            invitee_email: "invitee@example.com".into(),
+            invitee_user_id: None,
+            role: "member".into(),
+            status: "pending".into(),
+            created_at: Some(chrono::Utc::now()),
+            updated_at: Some(chrono::Utc::now()),
+            expires_at: Some(chrono::Utc::now()),
+            inviter_name: "Alex".into(),
+            inviter_email: "alex@example.com".into(),
+        });
+        let value = serde_json::to_value(response).unwrap();
+        assert_eq!(value["inviter_name"], "Alex");
+        assert_eq!(value["inviter_email"], "alex@example.com");
+        assert!(value.get("workspace_name").is_none());
     }
 }
