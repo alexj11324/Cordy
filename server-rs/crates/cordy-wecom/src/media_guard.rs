@@ -286,14 +286,17 @@ pub fn validate_media_url(raw: &str) -> anyhow::Result<()> {
     if !matches!(url.scheme(), "http" | "https") {
         anyhow::bail!("wecom: media url scheme refused");
     }
-    if url
-        .host_str()
-        .and_then(|host| host.parse::<IpAddr>().ok())
-        .is_some()
-    {
+    if url.host_str().is_some_and(is_numeric_host) {
         return Err(anyhow::Error::new(MediaAddrBlocked));
     }
     Ok(())
+}
+
+fn is_numeric_host(host: &str) -> bool {
+    host.trim_start_matches('[')
+        .trim_end_matches(']')
+        .parse::<IpAddr>()
+        .is_ok()
 }
 
 fn redirect_policy() -> reqwest::redirect::Policy {
@@ -301,12 +304,7 @@ fn redirect_policy() -> reqwest::redirect::Policy {
         if attempt.previous().len() >= 5 {
             attempt.error("wecom: media download: too many redirects")
         } else {
-            if attempt
-                .url()
-                .host_str()
-                .and_then(|host| host.parse::<IpAddr>().ok())
-                .is_some()
-            {
+            if attempt.url().host_str().is_some_and(is_numeric_host) {
                 attempt.error(MediaAddrBlocked)
             } else if !matches!(attempt.url().scheme(), "http" | "https") {
                 let scheme = attempt.url().scheme().to_string();
