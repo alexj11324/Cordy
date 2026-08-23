@@ -190,6 +190,9 @@ async fn build_production_router(
 ) -> anyhow::Result<Router> {
     let feature_flags = Arc::new(cordy_service::feature_flags::ConfiguredFlags::from_env()?);
     let entitlements = autopilot_entitlements(cfg);
+    let attachment_download =
+        cordy_handler::state::AttachmentDownloadSettings::from_config(cfg).await?;
+    let cdn_signed = attachment_download.cloudfront_signer.is_some();
     let mut state = cordy_handler::HandlerState::new(
         db,
         cordy_auth::pat_cache::PatCache::disabled(),
@@ -207,16 +210,18 @@ async fn build_production_router(
         ),
     ))
     .with_rate_limit_trusted_proxies(cfg.urls.rate_limit_trusted_proxies.as_deref())
-    .with_attachment_storage(attachment_storage, attachment_frame_ancestors)
+    .with_attachment_storage(
+        attachment_storage,
+        attachment_frame_ancestors,
+        attachment_download,
+    )
     .with_plugins_from_env()
     .with_slack_history_from_env()
     .with_llm_from_env()?
     .with_feature_flags(feature_flags)
     .with_public_config(cordy_handler::config::PublicConfigSettings {
         cdn_domain: cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
-        cdn_signed: cfg.storage.cloudfront_key_pair_id.is_some()
-            && (cfg.storage.cloudfront_private_key.is_some()
-                || cfg.storage.cloudfront_private_key_secret.is_some()),
+        cdn_signed,
         server_version: env!("CARGO_PKG_VERSION").to_string(),
     })
     .with_vcs_webhooks(vcs.enabled, vcs.secret_box);

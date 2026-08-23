@@ -29,6 +29,7 @@ pub mod cli_token;
 pub mod client_usage;
 pub mod cloud_billing;
 pub mod cloud_runtime;
+pub mod cloudfront;
 pub mod comment;
 pub mod comment_list;
 pub mod composio;
@@ -214,6 +215,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         pat_cache: state.pat_cache.clone(),
         daemon_cache: state.daemon_token_cache.clone(),
     };
+    let cloudfront_signer = state.attachment_download.cloudfront_signer.clone();
     let public_auth = auth::public_router(
         state.auth_rate_limit.clone(),
         state.auth_verify_rate_limit.clone(),
@@ -529,6 +531,10 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
                 issue::require_issue_workspace,
             )),
         )
+        .route_layer(middleware::from_fn_with_state(
+            cloudfront_signer,
+            cloudfront::refresh_signed_cookies,
+        ))
         .route_layer(middleware::from_fn_with_state(auth_state, auth_middleware));
     let plugin_action = plugin_action::router().route_layer(middleware::from_fn_with_state(
         AuthState {

@@ -84,15 +84,50 @@ async fn load(
         .ok_or_else(|| error_response(StatusCode::NOT_FOUND, "attachment not found"))
 }
 
-fn response_json(att: &Attachment, capability: bool) -> Value {
+fn response_json(state: &HandlerState, att: &Attachment, capability: bool) -> Value {
     let stable = format!("/api/attachments/{}/download", att.id);
     let mut download_url = stable.clone();
     let mut attachment_download_url = None;
-    if capability {
+    if state.attachment_download.cloudfront_active() {
+        if let (Some(signer), Ok(expiry)) = (
+            state.attachment_download.cloudfront_signer.as_ref(),
+            cloudfront_expiry(state),
+        ) {
+            match signer.signed_url(&att.url, expiry, None) {
+                Ok(url) => download_url = url,
+                Err(error) => tracing::warn!(
+                    %error,
+                    attachment_id = %att.id,
+                    "failed to sign CloudFront attachment URL"
+                ),
+            }
+            if capability {
+                match signer.signed_url(
+                    &att.url,
+                    expiry,
+                    Some(&content_disposition(&att.content_type, &att.filename, true)),
+                ) {
+                    Ok(url) => attachment_download_url = Some(url),
+                    Err(error) => tracing::warn!(
+                        %error,
+                        attachment_id = %att.id,
+                        "failed to sign CloudFront attachment download URL"
+                    ),
+                }
+            }
+        }
+    } else if capability {
         download_url = capability_path(att.id, false);
         attachment_download_url = Some(capability_path(att.id, true));
     }
-    let mut value = json!({"id":att.id,"workspace_id":att.workspace_id,"issue_id":att.issue_id,"comment_id":att.comment_id,"chat_session_id":att.chat_session_id,"chat_message_id":att.chat_message_id,"uploader_type":att.uploader_type,"uploader_id":att.uploader_id,"filename":att.filename,"url":att.url,"download_url":download_url,"markdown_url":stable,"content_type":att.content_type,"size_bytes":att.size_bytes,"created_at":crate::timefmt::rfc3339(att.created_at)});
+    let markdown_url = if state.attachment_download.cloudfront_active()
+        && !state.attachment_download.public_url.is_empty()
+    {
+        format!("{}{}", state.attachment_download.public_url, stable)
+    } else {
+        stable
+    };
+    let mut value = json!({"id":att.id,"workspace_id":att.workspace_id,"issue_id":att.issue_id,"comment_id":att.comment_id,"chat_session_id":att.chat_session_id,"chat_message_id":att.chat_message_id,"uploader_type":att.uploader_type,"uploader_id":att.uploader_id,"filename":att.filename,"url":att.url,"download_url":download_url,"markdown_url":markdown_url,"content_type":att.content_type,"size_bytes":att.size_bytes,"created_at":crate::timefmt::rfc3339(att.created_at)});
     if let Some(url) = attachment_download_url {
         value
             .as_object_mut()
@@ -108,7 +143,7 @@ async fn metadata(
     Path(id): Path<String>,
 ) -> Response {
     match load(&state, &context, &id).await {
-        Ok(att) => Json(response_json(&att, true)).into_response(),
+        Ok(att) => Json(response_json(&state, &att, true)).into_response(),
         Err(r) => r,
     }
 }
@@ -341,7 +376,7 @@ async fn upload(
         )
         .await;
         let _ = mem;
-        return Json(response_json(&att, false)).into_response();
+        return Json(response_json(&state, &att, false)).into_response();
     }
     let url = match storage
         .upload(&key, form.bytes, &content_type, &form.filename)
@@ -523,6 +558,44 @@ async fn download(
         }
         state.membership_cache.set(&user_id, &workspace_id).await;
     }
+    if state.attachment_download.cloudfront_active() {
+        let Some(signer) = state.attachment_download.cloudfront_signer.as_ref() else {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "cloudfront attachment downloads are not configured",
+            );
+        };
+        let expiry = match cloudfront_expiry(&state) {
+            Ok(expiry) => expiry,
+            Err(error) => {
+                tracing::warn!(%error, attachment_id = %att.id, "invalid CloudFront attachment TTL");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "cloudfront attachment downloads are not configured",
+                );
+            }
+        };
+        let location = match signer.signed_url(
+            &att.url,
+            expiry,
+            Some(&content_disposition(&att.content_type, &att.filename, true)),
+        ) {
+            Ok(location) => location,
+            Err(error) => {
+                tracing::warn!(%error, attachment_id = %att.id, "failed to sign CloudFront attachment download URL");
+                return error_response(StatusCode::BAD_GATEWAY, "failed to create download URL");
+            }
+        };
+        let Ok(location) = HeaderValue::from_str(&location) else {
+            return error_response(StatusCode::BAD_GATEWAY, "failed to create download URL");
+        };
+        let mut response = StatusCode::FOUND.into_response();
+        response.headers_mut().insert(header::LOCATION, location);
+        response
+            .headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+        return response;
+    }
     stream(
         &state,
         &att,
@@ -530,6 +603,14 @@ async fn download(
         false,
     )
     .await
+}
+
+fn cloudfront_expiry(state: &HandlerState) -> anyhow::Result<chrono::DateTime<chrono::Utc>> {
+    let ttl = chrono::Duration::from_std(state.attachment_download.ttl)
+        .map_err(|_| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too large"))?;
+    chrono::Utc::now()
+        .checked_add_signed(ttl)
+        .ok_or_else(|| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL overflows expiry"))
 }
 async fn signed_download(
     State(state): State<HandlerState>,

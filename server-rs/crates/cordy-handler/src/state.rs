@@ -14,6 +14,101 @@ use cordy_service::plugin::PluginService;
 use cordy_service::plugin_token::CallbackTokens;
 use cordy_service::task_service::TaskService;
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum AttachmentDownloadMode {
+    #[default]
+    Auto,
+    CloudFront,
+    Presign,
+    Proxy,
+}
+
+#[derive(Clone)]
+pub struct AttachmentDownloadSettings {
+    pub mode: AttachmentDownloadMode,
+    pub public_url: String,
+    pub ttl: std::time::Duration,
+    pub cloudfront_signer: Option<Arc<crate::cloudfront::CloudFrontSigner>>,
+}
+
+impl Default for AttachmentDownloadSettings {
+    fn default() -> Self {
+        Self {
+            mode: AttachmentDownloadMode::Auto,
+            public_url: String::new(),
+            ttl: std::time::Duration::from_secs(30 * 60),
+            cloudfront_signer: None,
+        }
+    }
+}
+
+impl AttachmentDownloadSettings {
+    pub async fn from_config(config: &cordy_config::Config) -> anyhow::Result<Self> {
+        let raw_mode = config
+            .storage
+            .attachment_download_mode
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+        let mode = match raw_mode.as_str() {
+            "" | "auto" => AttachmentDownloadMode::Auto,
+            "cloudfront" => AttachmentDownloadMode::CloudFront,
+            "presign" => AttachmentDownloadMode::Presign,
+            "proxy" => AttachmentDownloadMode::Proxy,
+            _ => {
+                tracing::warn!(
+                    value = raw_mode,
+                    "invalid ATTACHMENT_DOWNLOAD_MODE; using auto"
+                );
+                AttachmentDownloadMode::Auto
+            }
+        };
+        let ttl = match config
+            .storage
+            .attachment_download_url_ttl
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            Some(raw) => cordy_auth::cookie::parse_auth_token_ttl(raw).ok_or_else(|| {
+                anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL must be a positive Go duration")
+            })?,
+            None => std::time::Duration::from_secs(30 * 60),
+        };
+        chrono::Duration::from_std(ttl)
+            .map_err(|_| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too large"))?;
+        let cloudfront_signer = crate::cloudfront::CloudFrontSigner::from_config(config)
+            .await?
+            .map(Arc::new);
+        anyhow::ensure!(
+            mode != AttachmentDownloadMode::CloudFront || cloudfront_signer.is_some(),
+            "ATTACHMENT_DOWNLOAD_MODE=cloudfront requires a usable CloudFront signing key"
+        );
+        Ok(Self {
+            mode,
+            public_url: config
+                .urls
+                .public_url
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .trim_end_matches('/')
+                .to_string(),
+            ttl,
+            cloudfront_signer,
+        })
+    }
+
+    pub fn cloudfront_active(&self) -> bool {
+        self.cloudfront_signer.is_some()
+            && matches!(
+                self.mode,
+                AttachmentDownloadMode::Auto | AttachmentDownloadMode::CloudFront
+            )
+    }
+}
+
 struct DaemonTaskWakeup {
     hub: Arc<cordy_daemon::hub::DaemonHub>,
 }
@@ -101,6 +196,7 @@ pub struct HandlerState {
     /// Attachment object store. None is the explicit unconfigured test path.
     pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
     pub attachment_frame_ancestors: Vec<String>,
+    pub attachment_download: AttachmentDownloadSettings,
     /// On-demand Slack channel history reader. `None` means Slack history is
     /// not configured; chat history then falls back to the persisted transcript.
     pub slack_history: Option<Arc<cordy_slack::history::History>>,
@@ -185,6 +281,7 @@ impl HandlerState {
             daemon_hub: Some(daemon_hub),
             attachment_storage: None,
             attachment_frame_ancestors: Vec::new(),
+            attachment_download: AttachmentDownloadSettings::default(),
             slack_history: None,
             llm: Arc::new(llm),
             webhook_delivery_notify: None,
@@ -250,9 +347,11 @@ impl HandlerState {
         mut self,
         storage: Arc<dyn crate::attachment_storage::AttachmentStorage>,
         frame_ancestors: Vec<String>,
+        download: AttachmentDownloadSettings,
     ) -> Self {
         self.attachment_storage = Some(storage);
         self.attachment_frame_ancestors = frame_ancestors;
+        self.attachment_download = download;
         self
     }
 
