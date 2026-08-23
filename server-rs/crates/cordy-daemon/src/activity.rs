@@ -4,6 +4,7 @@
 //! reservations. Keeping these transitions together preserves the Go
 //! daemon's update barrier and closes task-start/GC check-then-delete races.
 
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -17,6 +18,8 @@ struct ActivityState {
     active_tasks: usize,
     active_env_roots: HashMap<PathBuf, usize>,
     deleting_env_roots: HashSet<PathBuf>,
+    active_stores: HashMap<PathBuf, usize>,
+    deleting_stores: HashSet<PathBuf>,
 }
 
 /// Authoritative process-wide activity state shared by task execution,
@@ -25,6 +28,8 @@ struct ActivityState {
 pub(crate) struct DaemonActivity {
     state: Mutex<ActivityState>,
     env_root_released: Notify,
+    activity_changed: Notify,
+    store_released: Notify,
 }
 
 impl DaemonActivity {
@@ -75,6 +80,40 @@ impl DaemonActivity {
         self.state.lock().unwrap().pause_claims = false;
     }
 
+    /// Server-triggered update acquisition: pause new claims while allowing an
+    /// already-issued claim to finish its active-task handoff.
+    pub(crate) async fn pause_claims_when_idle(&self, ctx: &crate::repocache::Ctx) -> bool {
+        {
+            let mut state = self.state.lock().unwrap();
+            if state.pause_claims || state.active_tasks > 0 {
+                return false;
+            }
+            state.pause_claims = true;
+        }
+        loop {
+            let changed = self.activity_changed.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
+            {
+                let mut state = self.state.lock().unwrap();
+                if state.claims_in_flight == 0 {
+                    if state.active_tasks == 0 {
+                        return true;
+                    }
+                    state.pause_claims = false;
+                    return false;
+                }
+            }
+            tokio::select! {
+                () = ctx.cancelled() => {
+                    self.release_claim_barrier();
+                    return false;
+                }
+                () = changed.as_mut() => {}
+            }
+        }
+    }
+
     pub(crate) fn is_active_env_root(&self, path: &Path) -> bool {
         self.state
             .lock()
@@ -108,6 +147,57 @@ impl DaemonActivity {
             activity: Arc::clone(self),
             path,
         })
+    }
+
+    pub(crate) fn reserve_store_for_gc(
+        self: &Arc<Self>,
+        path: &Path,
+    ) -> Option<StoreGcReservation> {
+        if path.as_os_str().is_empty() {
+            return None;
+        }
+        let mut state = self.state.lock().unwrap();
+        if state
+            .active_stores
+            .get(path)
+            .is_some_and(|count| *count > 0)
+            || state.deleting_stores.contains(path)
+        {
+            return None;
+        }
+        let path = path.to_path_buf();
+        state.deleting_stores.insert(path.clone());
+        Some(StoreGcReservation {
+            activity: Arc::clone(self),
+            path,
+        })
+    }
+
+    /// Provider preparation uses this before mounting persistent session or
+    /// memory stores. It waits out a GC deletion reservation and holds the
+    /// returned references through finalization.
+    pub(crate) async fn mark_stores(self: &Arc<Self>, paths: Vec<PathBuf>) -> StoreUseGuard {
+        loop {
+            let released = self.store_released.notified();
+            tokio::pin!(released);
+            released.as_mut().enable();
+            {
+                let mut state = self.state.lock().unwrap();
+                if !paths
+                    .iter()
+                    .any(|path| state.deleting_stores.contains(path))
+                {
+                    for path in &paths {
+                        *state.active_stores.entry(path.clone()).or_default() += 1;
+                    }
+                    return StoreUseGuard {
+                        activity: Arc::clone(self),
+                        paths,
+                    };
+                }
+            }
+            released.as_mut().await;
+        }
     }
 }
 
@@ -146,13 +236,16 @@ impl ClaimGuard {
                         *state.active_env_roots.entry(path.clone()).or_default() += 1;
                     }
                     self.live = false;
-                    return env_roots_by_task
+                    let guards = env_roots_by_task
                         .into_iter()
                         .map(|env_roots| ActiveTaskGuard {
                             activity: Arc::clone(&self.activity),
                             env_roots,
                         })
                         .collect();
+                    drop(state);
+                    self.activity.activity_changed.notify_waiters();
+                    return guards;
                 }
             }
             wait.as_mut().await;
@@ -170,6 +263,8 @@ impl Drop for ClaimGuard {
             .claims_in_flight
             .checked_sub(1)
             .expect("claim guard dropped without in-flight claim");
+        drop(state);
+        self.activity.activity_changed.notify_waiters();
     }
 }
 
@@ -188,13 +283,51 @@ impl Drop for ActiveTaskGuard {
             .checked_sub(1)
             .expect("active task guard dropped without active task");
         for path in &self.env_roots {
-            let Some(count) = state.active_env_roots.get_mut(path) else {
-                continue;
-            };
-            if *count <= 1 {
-                state.active_env_roots.remove(path);
-            } else {
-                *count -= 1;
+            match state.active_env_roots.entry(path.clone()) {
+                Entry::Occupied(mut entry) if *entry.get() > 1 => *entry.get_mut() -= 1,
+                Entry::Occupied(entry) => {
+                    entry.remove();
+                }
+                Entry::Vacant(_) => {}
+            }
+        }
+        drop(state);
+        self.activity.activity_changed.notify_waiters();
+    }
+}
+
+pub(crate) struct StoreGcReservation {
+    activity: Arc<DaemonActivity>,
+    path: PathBuf,
+}
+
+impl Drop for StoreGcReservation {
+    fn drop(&mut self) {
+        self.activity
+            .state
+            .lock()
+            .unwrap()
+            .deleting_stores
+            .remove(&self.path);
+        self.activity.store_released.notify_waiters();
+    }
+}
+
+pub(crate) struct StoreUseGuard {
+    activity: Arc<DaemonActivity>,
+    paths: Vec<PathBuf>,
+}
+
+impl Drop for StoreUseGuard {
+    fn drop(&mut self) {
+        let mut state = self.activity.state.lock().unwrap();
+        for path in &self.paths {
+            match state.active_stores.entry(path.clone()) {
+                Entry::Occupied(mut entry) if *entry.get() > 1 => *entry.get_mut() -= 1,
+                Entry::Occupied(entry) => {
+                    entry.remove();
+                }
+                Entry::Vacant(_) => {}
             }
         }
     }
@@ -257,5 +390,43 @@ mod tests {
         assert!(activity.reserve_env_root_for_gc(&root).is_none());
         drop(tasks);
         assert!(!activity.is_active_env_root(&root));
+    }
+
+    #[tokio::test]
+    async fn server_update_waits_for_claim_and_rejects_its_active_handoff() {
+        let activity = DaemonActivity::new();
+        let claim = activity.try_enter_claim().unwrap();
+        let ctx = crate::repocache::Ctx::new();
+        let acquiring = tokio::spawn({
+            let activity = Arc::clone(&activity);
+            async move { activity.pause_claims_when_idle(&ctx).await }
+        });
+        tokio::task::yield_now().await;
+        assert!(activity.claims_paused());
+
+        let tasks = claim.handoff(vec![Vec::new()]).await;
+        assert!(!acquiring.await.unwrap());
+        assert!(!activity.claims_paused());
+        drop(tasks);
+    }
+
+    #[tokio::test]
+    async fn store_use_and_gc_reservation_are_mutually_exclusive() {
+        let activity = DaemonActivity::new();
+        let store = PathBuf::from("/stores/session");
+        let use_guard = activity.mark_stores(vec![store.clone()]).await;
+        assert!(activity.reserve_store_for_gc(&store).is_none());
+        drop(use_guard);
+
+        let reservation = activity.reserve_store_for_gc(&store).unwrap();
+        let marking = tokio::spawn({
+            let activity = Arc::clone(&activity);
+            let store = store.clone();
+            async move { activity.mark_stores(vec![store]).await }
+        });
+        tokio::task::yield_now().await;
+        assert!(!marking.is_finished());
+        drop(reservation);
+        drop(marking.await.unwrap());
     }
 }

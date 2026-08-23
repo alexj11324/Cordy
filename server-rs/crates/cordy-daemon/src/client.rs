@@ -1447,6 +1447,10 @@ fn request_error(err: &anyhow::Error) -> Option<&RequestError> {
     })
 }
 
+pub(crate) fn request_status_code(err: &anyhow::Error) -> Option<u16> {
+    request_error(err).map(|request| request.status_code)
+}
+
 impl Client {
     /// `postJSONWithRetry` (client.go:1009): bounded exponential backoff for
     /// "must reach the server" terminal callbacks. Retries per

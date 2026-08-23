@@ -23,6 +23,7 @@ pub mod canonical_path;
 pub mod client;
 pub mod config;
 pub mod control_lifecycle;
+pub mod daemon_core;
 pub mod diskusage;
 pub mod health;
 pub mod helpers;

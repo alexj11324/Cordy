@@ -528,7 +528,8 @@ fn managed_reclaimable_artifact_subpaths() -> Vec<String> {
 // and receive `reserve_store_for_deletion` as a reservation callback.
 
 /// Reservation callback handed to store pruners (`d.reserveStoreForDeletion`).
-pub(crate) type ReserveStoreForDeletion<'a> = &'a (dyn Fn(&Path) + Send + Sync);
+pub(crate) type ReserveStoreForDeletion<'a> =
+    &'a (dyn Fn(&Path) -> Option<crate::activity::StoreGcReservation> + Send + Sync);
 
 fn prune_codex_session_stores(
     profile: &str,
@@ -648,7 +649,9 @@ fn prune_store_tree(
         if newest >= cutoff {
             continue;
         }
-        reserve(&store);
+        let Some(_reservation) = reserve(&store) else {
+            continue;
+        };
         match std::fs::remove_dir_all(&store) {
             Ok(()) => {
                 removed += 1;
@@ -781,10 +784,6 @@ pub(crate) trait GcHost: Send + Sync {
     /// Shared task/root state used for active checks and atomic GC deletion
     /// reservations.
     fn activity(&self) -> &Arc<DaemonActivity>;
-
-    /// `d.reserveStoreForDeletion`: reservation callback passed to store
-    /// pruners.
-    fn reserve_store_for_deletion(&self, path: &Path);
 
     /// `d.repoBarePathIsLive`: whether any watched workspace still claims
     /// this bare repo path (gc.go:1141/1183).
@@ -968,7 +967,7 @@ pub(crate) async fn run_gc<H: GcHost>(host: &H, ctx: &Ctx) {
 
     // Reclaim per-issue Codex session stores idle past their TTL (MUL-4424).
     let now = Utc::now();
-    let reserve = |p: &Path| host.reserve_store_for_deletion(p);
+    let reserve = |p: &Path| host.activity().reserve_store_for_gc(p);
     let (stores_removed, store_bytes) =
         prune_codex_session_stores(&cfg.profile, cfg.gc_codex_session_ttl, now, &reserve);
     if stores_removed > 0 {
@@ -2562,7 +2561,11 @@ mod tests {
         std::fs::write(fresh_store.join("memory.db"), b"fresh").unwrap();
 
         let reserved = std::sync::Mutex::new(Vec::new());
-        let reserve = |path: &Path| reserved.lock().unwrap().push(path.to_path_buf());
+        let activity = DaemonActivity::new();
+        let reserve = |path: &Path| {
+            reserved.lock().unwrap().push(path.to_path_buf());
+            activity.reserve_store_for_gc(path)
+        };
         let now = Utc::now() + chrono::Duration::seconds(2);
         let (removed, bytes) =
             prune_store_tree(temp.path(), 2, Duration::from_secs(1), now, &reserve);
@@ -2581,7 +2584,9 @@ mod tests {
         std::fs::create_dir_all(&store).unwrap();
         std::fs::write(store.join("memory.db"), b"keep").unwrap();
 
-        let reserve = |_path: &Path| panic!("disabled pruning must not reserve a store");
+        let reserve = |_path: &Path| -> Option<crate::activity::StoreGcReservation> {
+            panic!("disabled pruning must not reserve a store")
+        };
         let result = prune_store_tree(temp.path(), 2, Duration::ZERO, Utc::now(), &reserve);
 
         assert_eq!(result, (0, 0));
