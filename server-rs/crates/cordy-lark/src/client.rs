@@ -338,10 +338,7 @@ pub trait ApiClient: Send + Sync {
     /// with those creds and calls /open-apis/bot/v3/info to learn the Bot's
     /// identity. The result is then frozen into the installation alongside
     /// the app_id / app_secret in the same transaction as the installer-bind.
-    async fn get_bot_info(
-        &self,
-        creds: InstallationCredentials,
-    ) -> anyhow::Result<BotInfo>;
+    async fn get_bot_info(&self, creds: InstallationCredentials) -> anyhow::Result<BotInfo>;
 
     /// Fetches a message by id via GET /open-apis/im/v1/messages/{message_id}.
     /// Lark always returns an ARRAY (data.items[]): for a normal message
@@ -507,7 +504,10 @@ impl ApiClient for StubApiClient {
         _creds: InstallationCredentials,
         open_ids: &[String],
     ) -> anyhow::Result<std::collections::HashMap<String, String>> {
-        tracing::warn!(count = open_ids.len(), "lark stub client: batch_get_users called");
+        tracing::warn!(
+            count = open_ids.len(),
+            "lark stub client: batch_get_users called"
+        );
         Err(ApiClientNotConfigured.into())
     }
 

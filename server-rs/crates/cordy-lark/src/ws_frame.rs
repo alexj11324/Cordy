@@ -121,7 +121,8 @@ impl Frame {
     /// divergence is invisible until Lark's server starts dropping frames in
     /// production.
     pub fn marshal(&self) -> Vec<u8> {
-        let mut buf: Vec<u8> = Vec::with_capacity(64 + self.payload.as_ref().map_or(0, |p| p.len()));
+        let mut buf: Vec<u8> =
+            Vec::with_capacity(64 + self.payload.as_ref().map_or(0, |p| p.len()));
 
         // Required fields (proto2 req): always emit tag + varint, even when
         // the value is zero. The SDK's generated code unconditionally writes
@@ -278,7 +279,7 @@ impl<'a> WireReader<'a> {
         match wt {
             0 => Ok((num, WireType::Varint)),
             2 => Ok((num, WireType::Bytes)),
-            _ => Err(FrameError::UnsupportedWireType(wt)),
+            _ => Err(FrameError::UnsupportedWireType((tag & 0x7) as u32)),
         }
     }
 
@@ -384,14 +385,18 @@ pub fn unmarshal_frame(b: &[u8]) -> Result<Frame, FrameError> {
                 let WireType::Bytes = typ else {
                     return Err(wrong_wire(6, "bytes", typ));
                 };
-                let s = r.read_len_delimited().map_err(|e| e.relabel("payload_encoding"))?;
+                let s = r
+                    .read_len_delimited()
+                    .map_err(|e| e.relabel("payload_encoding"))?;
                 f.payload_encoding = String::from_utf8_lossy(s).into_owned();
             }
             7 => {
                 let WireType::Bytes = typ else {
                     return Err(wrong_wire(7, "bytes", typ));
                 };
-                let s = r.read_len_delimited().map_err(|e| e.relabel("payload_type"))?;
+                let s = r
+                    .read_len_delimited()
+                    .map_err(|e| e.relabel("payload_type"))?;
                 f.payload_type = String::from_utf8_lossy(s).into_owned();
             }
             8 => {
@@ -406,7 +411,9 @@ pub fn unmarshal_frame(b: &[u8]) -> Result<Frame, FrameError> {
                 let WireType::Bytes = typ else {
                     return Err(wrong_wire(9, "bytes", typ));
                 };
-                let s = r.read_len_delimited().map_err(|e| e.relabel("log_id_new"))?;
+                let s = r
+                    .read_len_delimited()
+                    .map_err(|e| e.relabel("log_id_new"))?;
                 f.log_id_new = String::from_utf8_lossy(s).into_owned();
             }
             _ => {
@@ -436,7 +443,7 @@ impl FrameError {
 }
 
 fn unmarshal_header(b: &[u8]) -> Result<FrameHeader, FrameError> {
-    let mut h = FrameHeader::default();
+    let mut h = FrameHeader::new("", "");
     let mut r = WireReader::new(b);
     while r.remaining() {
         let (num, typ) = r.read_tag()?;
@@ -503,10 +510,15 @@ pub fn new_ack_frame(inbound: &Frame, code_ok: bool) -> Frame {
     let code = if code_ok { 200 } else { 500 };
     let payload = format!(r#"{{"code":{code},"headers":null,"data":null}}"#);
     Frame {
+        seq_id: inbound.seq_id,
+        log_id: inbound.log_id,
         method: inbound.method,
         service: inbound.service,
         headers: inbound.headers.clone(),
+        payload_encoding: inbound.payload_encoding.clone(),
+        payload_type: inbound.payload_type.clone(),
         payload: Some(payload.into_bytes()),
+        log_id_new: inbound.log_id_new.clone(),
     }
 }
 
@@ -546,7 +558,10 @@ mod tests {
             log_id: 2,
             service: 9,
             method: FRAME_METHOD_DATA,
-            headers: vec![FrameHeader::new("message_id", "m/1"), FrameHeader::new("sum", "1")],
+            headers: vec![
+                FrameHeader::new("message_id", "m/1"),
+                FrameHeader::new("sum", "1"),
+            ],
             payload: Some(br#"{"event":{}}"#.to_vec()),
             ..Frame::default()
         };

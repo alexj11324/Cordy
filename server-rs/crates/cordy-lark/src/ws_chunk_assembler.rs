@@ -65,7 +65,13 @@ impl ChunkAssembler {
     /// never fire because Lark enforces them server-side, but the function
     /// stays defensive — one malformed header must not corrupt the buffer for
     /// the next event.
-    pub fn admit(&self, message_id: &str, sum: usize, seq: usize, payload: &[u8]) -> Option<Vec<u8>> {
+    pub fn admit(
+        &self,
+        message_id: &str,
+        sum: usize,
+        seq: usize,
+        payload: &[u8],
+    ) -> Option<Vec<u8>> {
         if message_id.is_empty() || sum == 0 || seq >= sum {
             return None;
         }
@@ -75,6 +81,14 @@ impl ChunkAssembler {
         // separate sweeper task. Bounded by the live message_id count, which
         // is small (Lark caps in-flight chunked events per connection).
         self.gc_expired_locked(&mut buf);
+
+        if buf
+            .get(message_id)
+            .is_some_and(|entry| entry.chunks.len() != sum)
+        {
+            buf.remove(message_id);
+            return None;
+        }
 
         let entry = buf.entry(message_id.to_string()).or_insert_with(|| {
             let mut chunks = Vec::with_capacity(sum);
@@ -103,7 +117,13 @@ impl ChunkAssembler {
             return None;
         }
 
-        let mut out = Vec::with_capacity(entry.chunks.iter().map(|c| c.as_ref().map_or(0, |v| v.len())).sum());
+        let mut out = Vec::with_capacity(
+            entry
+                .chunks
+                .iter()
+                .map(|c| c.as_ref().map_or(0, |v| v.len()))
+                .sum(),
+        );
         for c in &entry.chunks {
             out.extend_from_slice(c.as_deref().unwrap_or(&[]));
         }
@@ -140,10 +160,16 @@ impl ChunkAssembler {
 pub fn parse_chunk_headers(f: &crate::ws_frame::Frame) -> (usize, usize, String) {
     let mut sum = 0usize;
     let mut seq = 0usize;
-    if let Ok(n) = f.header_value(crate::ws_frame::FRAME_HEADER_SUM_KEY).parse::<usize>() {
+    if let Ok(n) = f
+        .header_value(crate::ws_frame::FRAME_HEADER_SUM_KEY)
+        .parse::<usize>()
+    {
         sum = n;
     }
-    if let Ok(n) = f.header_value(crate::ws_frame::FRAME_HEADER_SEQ_KEY).parse::<usize>() {
+    if let Ok(n) = f
+        .header_value(crate::ws_frame::FRAME_HEADER_SEQ_KEY)
+        .parse::<usize>()
+    {
         seq = n;
     }
     let message_id = f
@@ -178,6 +204,14 @@ mod tests {
         assert_eq!(a.admit("m", 2, 0, b"x"), None);
         assert_eq!(a.pending_count(), 1);
         assert_eq!(a.admit("m", 2, 1, b"y"), Some(b"xy".to_vec()));
+    }
+
+    #[test]
+    fn inconsistent_chunk_count_is_dropped_without_indexing() {
+        let a = ChunkAssembler::new(Duration::from_secs(1));
+        assert_eq!(a.admit("m", 2, 0, b"a"), None);
+        assert_eq!(a.admit("m", 3, 2, b"c"), None);
+        assert_eq!(a.pending_count(), 0);
     }
 
     #[test]

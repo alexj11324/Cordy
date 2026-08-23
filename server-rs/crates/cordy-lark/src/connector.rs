@@ -22,11 +22,9 @@ use crate::store::Installation;
 /// implies is handled off the ACK path by the runtime). The connector MUST
 /// NOT bypass emit by writing to the DB directly; emit is the only ingress
 /// path.
-pub type EmitFuture =
-    Pin<Box<dyn Future<Output = anyhow::Result<DispatchResult>> + Send>>;
+pub type EmitFuture = Pin<Box<dyn Future<Output = anyhow::Result<DispatchResult>> + Send>>;
 
-pub type EventEmitter =
-    Arc<dyn Fn(CancellationToken, InboundMessage) -> EmitFuture + Send + Sync>;
+pub type EventEmitter = Arc<dyn Fn(CancellationToken, InboundMessage) -> EmitFuture + Send + Sync>;
 
 /// The per-installation Feishu transport: it opens the Lark long connection,
 /// decodes events, normalizes them into [`InboundMessage`], and calls emit

@@ -268,6 +268,7 @@ server-rs/
 后续排队：A 车道(client/wsrpc/config/types/health/wakeup/diskusage/identity/poisoned/reconcile/canonical_path/thread_name/helpers ≈5.5k) → B 车道(daemon.go 核心 8814 + agents_probe/refresh/local_skills/skill_cache/prompt/artifact_matcher/claude_plugins/slash_skill) → D 车道(auto_update/local_directory/openclaw_runtime_config/plugin_hook_mcp/remote_mcp_broker/runtime_mcp)
 
 - [x] **S7-c slack**(3,877)：full domain（提交 8d41cb0，另一并行会话完成）
+- [x] **S7-f lark**(10,060 最大域)：full domain——接手上一会话未提交的 20 个在制文件（http_client/registration/inbound_enricher/ws_connector/channel_store 等已在位但 lib.rs 未挂载），注册全部模块后补齐缺口：resolvers（ResolverSet 装配+larkSessionRouting 话题隔离+dispatchResultFromEngine）、typing_indicator（Typing reaction 生命周期+2min 陈旧跳过+快照兜底清账）、media_ingest（intent-first 台账/post span 去重/Opus 音频类型钉死）、outcome_replier（五 outcome 分流卡+中文文案+issue 文本组合）、outbound（LarkPatcher chat:done/task:failed/task:cancelled 订阅+线程回退分类降级+markdown 检测分流）；另修 frame_decoder/ws_frame/ws_connector/binding_token 的编译错误与 registration thiserror 注解。clippy -D warnings/fmt 干净，114 测试全过
 
 - [x] **S7-a0** cordy-channel 地基 crate + channelmedia → cordy-util（提交 61405ef）
 - [x] **S7-a1** engine 叶子件：LeaseStore trait+RedisLeaseStore（Lua 字节级对齐）、PendingBatcher 防抖器、/issue+/new 解析器、provenance（5dbf5dd）
@@ -280,9 +281,9 @@ server-rs/
 - [x] **S7-h ghsnapshot**：client.rs+snapshot.rs 落地（Go 1,115 行→Rust 911 行，36 函数中核心刷新管线覆盖）
 - [x] **S7-i composio**：service/sdk/dispatch/state 四模块（Go 1,050 行→Rust 2,889 行；begin_connect/complete_callback/list_connections/disconnect/create_mcp_session/list_toolkits 全量+SDK mock 测试化）
 - [x] **S7-j vcs**：vcs.rs+forgejo.rs+gitlab.rs（Go 649 行→Rust 1,233 行；Provider trait+事件解析+签名验证+token 校验三平台全量）
-- [x] **S7-d telegram**(3,470→Rust ~1,900)：api.rs（Bot API envelope/50s long-poll/409 Conflict/429 Retry-After 单次重试）+ config.rs（加密 token 解码、bot id 校验）+ markdown.rs（code/link 占位符先于 escape、粗斜删/标题/列表/fence、Go html.EscapeString 五字符对齐）+ inbound.rs（UTF-16 实体偏移、@mention 边界 @botfan 不误伤、quoted-human 增强、/new fresh、媒体分类表）+ sender.rs（4096 UTF-16 分块 newline 偏好、HTML 失败回退纯文本、首块才引用）+ resolvers.rs（bot_id→installation、binding+membership 身份、两阶段 dedup、topic 分会话路由 ResolverSet 装配）（8de1c4a+8c49f1e，25 测试）。**outbound.go（1,117 行流式编辑/终端回复队列/backoff 日历）未移植**——随 S8 handler 接线切片落地
-- [ ] **S7-c slack**(3,877)：history/media_ingest/resolvers——空脚手架（另一并行会话认领）
-- [ ] **S7-e dingtalk**(3,918)：resolvers——空脚手架（另一并行会话认领）
+- [x] **S7-d telegram**(3,470→Rust 2,969)：api.rs（Bot API envelope/50s long-poll/409 Conflict/429 Retry-After 单次重试）+ config.rs（加密 token 解码、bot id 校验）+ markdown.rs（code/link 占位符先于 escape、粗斜删/标题/列表/fence、Go html.EscapeString 五字符对齐）+ inbound.rs（UTF-16 实体偏移、@mention 边界 @botfan 不误伤、quoted-human 增强、/new fresh、媒体分类表）+ sender.rs（4096 UTF-16 分块 newline 偏好、HTML 失败回退纯文本、首块才引用）+ resolvers.rs（bot_id→installation、binding+membership 身份、两阶段 dedup、topic 分会话路由 ResolverSet 装配）（8de1c4a+8c49f1e，25 测试）+ outbound.rs（Go 1,117 行→Rust 962 行：流式占位符编辑按 chat 2.5s 节流与 mid-stream 溢出冻结、终端回复状态机 placeholder-edit→分块发送→纯文本回退→not-modified 宽容、chat 日程注册表引用计数+idle TTL+容量驱逐+bot 级 backoff 合并、失败通知 edit/send 构造器）（a5c29db，13 测试，crate 共 38 测试）。事件总线订阅/worker 池+retry heap 执行器/resolveTarget DB 查询随 S8 handler 接线切片落地
+- [x] **S7-c slack**(3,877)：history/media_ingest/resolvers——收尾核对通过（CORD-3，20260822）：三文件函数级覆盖 100%（history.go 18 函数→history.rs、media_ingest.go 17 函数→media_ingest.rs+raw.rs+client.rs、resolvers.go 21 函数→resolvers.rs+raw.rs；nullText→opt_str 适配）；cordy-slack 62 测试全过、clippy -D warnings 干净、fmt 干净
+- [x] **S7-e dingtalk**(3,918)：full domain（Owen/CORD-4，20260822）。19 个 Go 文件→同名 .rs 全对照清零：resolvers（ResolverSet 六件套+3 次重试路由仲裁循环、append 前 FOR SHARE 路由锁——Go 的 BeforeWrite 事务内钩子在共享 session 服务未暴露，锁移到 append 前池上执行并注记放宽了与 append 的原子性）、ack（5s 合并窗+prune）、binding（SHA-256 hash、消费+绑定单事务、跨 adapter token 回滚）、byo_install、client/token（access_token 缓存+401 单次失效重试）、config（加密凭证解码）、dingtalk_channel（Supervisor 接缝+dispatch 串行队列）、dispatch（per-conversation FIFO）、inbound（rich text 布局/媒体占位符/fresh /issue）、install、markdown（fence 续行/字节预算分块）、media、outbound（事件→会话回复）、outbound_send、replier（绑定提示/issue 结果文案）、ws_connector/ws_endpoint/ws_frame（Stream 协议握手+SYSTEM ping/disconnect）。**本轮补齐唯一缺口：media.go 的 publicDownloadDialer SSRF 拨号守卫**——is_public_download_address（Go netip IsGlobalUnicast/IsPrivate 语义逐条对齐 + 18 条非公开前缀表含 ::/96、64:ff9b:1::/48、6to4、Teredo、ORCHID 等 IPv6 过渡段；NAT64 64:ff9b::/96 内嵌 IPv4 递归复检）经 reqwest dns_resolver 钉死解析结果（resolve-check-dial 同序，消 DNS rebinding 窗口），字面 IP 主机在 hyper-util 跳过自定义 resolver 的路径上单独预检。46 测试全过（新增地址矩阵 ~70 断言 + 字面 URL 拒绝表）。验证基线：workspace（除 cordy-daemon——E1a 车道基线内语法损坏，未越界修复）clippy --all-targets -D warnings 干净、fmt 干净；cordy-wecom fake_ip_range_is_reopenable_for_proxy_deployments 为基线内既有并发 flake（全局 prefix static 竞态，隔离/重跑 3/3 通过），未动他车道
 - [ ] **S7-f lark**(10,060 最大域)：http_client/registration/inbound_enricher/outbound/ws_connector/media_ingest/channel_store/outcome_replier——空脚手架（另一并行会话认领）
 - [x] **S7-g wecom**(7,525)：wecom_channel/ws_frame/outbound_media/installation/media_ingest/markdown/media_download/media_upload——8 个范围内模块全量落地 cordy-wecom（19 模块 9,581 行，111 测试，clippy -D warnings/fmt 干净）。**范围外遗留**：wecom_resolvers.go/binding.go/replier.go/outbound.go(文本半区)/inbox_message.go（~1,474 行 ResolverSet 装配+绑定 token+回复文案）未移植——随 S8 handler 接线切片落地
 
@@ -293,12 +294,12 @@ server-rs/
 | channel(+engine) | 4,329 | cordy-channel(1,146)+channel-engine(5,077) | ✅ 引擎清零（S7-a0..b） |
 | composio | 1,050 | cordy-composio(2,889) | ✅ 四模块 |
 | vcs | 649 | cordy-vcs(1,233) | ✅ 三平台 |
-| ghsnapshot | 1,115 | cordy-ghsnapshot(911) | 🟡 client+snapshot 在位；**Manager 编排层(~430 行)未移植**——refresh.go 的 Enqueue/worker/process/rateLimitPause/applySnapshot/scheduleRetry/sweepLoop 全链 |
-| lark | 10,060 | cordy-lark(3) 空脚手架 | ⬜ 最大单域 |
+| ghsnapshot | 1,115 | cordy-ghsnapshot(2,360) | ✅ client+snapshot+Manager 编排层全链（refresh.go 的 Address/Enqueue/worker/process/rateLimitPause/deferActive/finish/applySnapshot/scheduleChase/scheduleRetry/sweepLoop；13 测试，DB 组需 DATABASE_URL） |
+| lark | 10,060 | cordy-lark(11,000+) | ✅ 全域落地（S7-f）：http_client/registration(+service)/inbound_enricher/outbound(Patcher)/ws_connector/media_ingest/channel_store/outcome_replier/resolvers/typing_indicator 等全部模块；114 测试 |
 | wecom | 7,525 | cordy-wecom(3) 空脚手架 | ⬜ |
-| dingtalk | 3,918 | cordy-dingtalk(3) 空脚手架 | ⬜ |
-| slack | 3,877 | cordy-slack(3) 空脚手架 | ⬜ |
-| telegram | 3,470 | cordy-telegram(3) 空脚手架 | ⬜ 最小起步点 |
+| dingtalk | 3,918 | cordy-dingtalk(~5,600) | ✅ 全域清零（S7-e，含 SSRF 拨号守卫补齐） |
+| slack | 3,877 | cordy-slack(6,353) | ✅ 全域移植（8d41cb0，62 测试；history/media_ingest/resolvers 收尾核对通过）|
+| telegram | 3,470 | cordy-telegram(2,969) | ✅ 全域含 outbound（38 测试）；事件总线接线待 S8 |
 
 推进序（空脚手架小→大）：telegram → slack → dingtalk → wecom → lark
 
