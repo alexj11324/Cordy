@@ -21,6 +21,7 @@ pub mod cli_token;
 pub mod client_usage;
 pub mod comment;
 pub mod comment_list;
+pub mod config;
 pub mod contact_sales;
 pub mod daemon;
 pub mod daemon_ws;
@@ -372,6 +373,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(session::public_router())
         .merge(workspace::public_router())
         .merge(attachment::public_router())
+        .merge(config::router())
         .merge(contact_sales)
         .merge(vcs_webhook::router())
         .merge(authenticated)

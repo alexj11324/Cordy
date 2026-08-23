@@ -88,6 +88,13 @@ async fn build_production_router(
     ))
     .with_rate_limit_trusted_proxies(cfg.urls.rate_limit_trusted_proxies.as_deref())
     .with_attachment_storage(attachment_storage, attachment_frame_ancestors)
+    .with_public_config(cordy_handler::config::PublicConfigSettings {
+        cdn_domain: cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
+        cdn_signed: cfg.storage.cloudfront_key_pair_id.is_some()
+            && (cfg.storage.cloudfront_private_key.is_some()
+                || cfg.storage.cloudfront_private_key_secret.is_some()),
+        server_version: env!("CARGO_PKG_VERSION").to_string(),
+    })
     .with_vcs_webhooks(vcs.enabled, vcs.secret_box);
     let redis_url = cfg
         .redis

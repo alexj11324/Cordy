@@ -50,6 +50,8 @@ pub struct HandlerState {
     pub analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
     pub auth_rate_limit: cordy_middleware::ratelimit::RateLimitState,
     pub auth_verify_rate_limit: cordy_middleware::ratelimit::RateLimitState,
+    /// Anonymous frontend capability/configuration response.
+    pub public_config: crate::config::PublicConfigSettings,
     /// GitHub GraphQL snapshot refresh pipeline. Disabled in lightweight tests.
     pub github_snapshots: Arc<cordy_ghsnapshot::Manager>,
     /// Feature flag source. `None` fails closed for rollout-gated writes.
@@ -132,6 +134,7 @@ impl HandlerState {
             analytics: Arc::new(cordy_analytics::NoopClient),
             auth_rate_limit,
             auth_verify_rate_limit,
+            public_config: crate::config::PublicConfigSettings::default(),
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
             feature_flags: None,
             tasks,
@@ -165,6 +168,11 @@ impl HandlerState {
     ) -> Self {
         self.attachment_storage = Some(storage);
         self.attachment_frame_ancestors = frame_ancestors;
+        self
+    }
+
+    pub fn with_public_config(mut self, settings: crate::config::PublicConfigSettings) -> Self {
+        self.public_config = settings;
         self
     }
 
