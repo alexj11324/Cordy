@@ -2339,6 +2339,56 @@ func TestFetchGitHubInstallationRepositories(t *testing.T) {
 	}
 }
 
+func TestFetchGitHubPullRequestMetaRequestsPullRequestPermission(t *testing.T) {
+	pemBytes, _ := generateTestRSAKeyPEM(t)
+	t.Setenv("GITHUB_APP_ID", "424242")
+	t.Setenv("GITHUB_APP_PRIVATE_KEY", string(pemBytes))
+
+	const installationID int64 = 271828
+	var gotPermissions map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/app/installations/271828/access_tokens":
+			var body struct {
+				Permissions map[string]string `json:"permissions"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, "bad token request", http.StatusBadRequest)
+				return
+			}
+			gotPermissions = body.Permissions
+			writeJSON(w, http.StatusCreated, map[string]any{"token": "pr-token"})
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/acme/api/pulls/6":
+			if r.Header.Get("Authorization") != "Bearer pr-token" {
+				http.Error(w, "bad token", http.StatusUnauthorized)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"title": "Attach PR", "state": "open", "html_url": "https://github.com/acme/api/pull/6",
+				"created_at": "2026-08-23T00:00:00Z", "updated_at": "2026-08-23T00:01:00Z",
+				"head": map[string]any{"ref": "feature", "sha": "abc123"},
+				"user": map[string]any{"login": "octocat", "avatar_url": "https://example.com/avatar.png"},
+			})
+		case r.Method == http.MethodDelete && r.URL.Path == "/installation/token":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	oldBase := githubAPIBase
+	githubAPIBase = srv.URL
+	t.Cleanup(func() { githubAPIBase = oldBase })
+
+	if _, err := fetchGitHubPullRequestMeta(context.Background(), installationID, "acme", "api", 6); err != nil {
+		t.Fatalf("fetchGitHubPullRequestMeta: %v", err)
+	}
+	want := map[string]string{"metadata": "read", "pull_requests": "read"}
+	if !reflect.DeepEqual(gotPermissions, want) {
+		t.Fatalf("installation token permissions = %#v, want %#v", gotPermissions, want)
+	}
+}
+
 func TestListGitHubInstallationRepositoriesRejectsCrossWorkspaceRow(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("handler test fixture not initialized (no DB?)")
@@ -3314,6 +3364,7 @@ func TestParseGitHubPRURL(t *testing.T) {
 		wantErr bool
 	}{
 		{name: "canonical", raw: "https://github.com/acme/api/pull/6", owner: "acme", repo: "api", number: 6},
+		{name: "canonicalizes_case", raw: "https://github.com/AcMe/API/pull/6", owner: "acme", repo: "api", number: 6},
 		{name: "trailing_slash", raw: "https://github.com/acme/api/pull/6/", owner: "acme", repo: "api", number: 6},
 		{name: "files_suffix", raw: "https://github.com/acme/api/pull/123/files", owner: "acme", repo: "api", number: 123},
 		{name: "http_scheme", raw: "http://github.com/acme/api/pull/9", owner: "acme", repo: "api", number: 9},
@@ -3486,7 +3537,7 @@ func TestAttachPullRequestToIssue_WebhookIdempotentAndBackfills(t *testing.T) {
 	cleanupAttachedPR(t, "acme", repo, number)
 
 	rec := attachPRViaAPI(t, created.ID,
-		fmt.Sprintf("https://github.com/acme/%s/pull/%d", repo, number),
+		fmt.Sprintf("https://github.com/AcMe/%s/pull/%d", strings.ToUpper(repo), number),
 		map[string]any{"title": "manual title"})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("attach: expected 201, got %d (%s)", rec.Code, rec.Body.String())
@@ -3530,6 +3581,18 @@ func TestAttachPullRequestToIssue_WebhookIdempotentAndBackfills(t *testing.T) {
 	}
 	if linkCount != 1 {
 		t.Fatalf("re-attach duplicated the link: %d rows, want 1", linkCount)
+	}
+	preserved, err := testHandler.Queries.GetGitHubPullRequest(ctx, db.GetGitHubPullRequestParams{
+		WorkspaceID: parseUUID(testWorkspaceID), RepoOwner: "acme", RepoName: repo, PrNumber: number,
+	})
+	if err != nil {
+		t.Fatalf("load re-attached PR: %v", err)
+	}
+	if !preserved.InstallationID.Valid || preserved.InstallationID.Int64 != installationID {
+		t.Errorf("re-attach must preserve installation_id, got %+v", preserved.InstallationID)
+	}
+	if !strings.HasPrefix(preserved.Title, "Fix ") || preserved.HeadSha != "headabc" {
+		t.Errorf("re-attach downgraded webhook metadata: title=%q head=%q", preserved.Title, preserved.HeadSha)
 	}
 }
 

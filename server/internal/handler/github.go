@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -877,6 +878,16 @@ func fetchGitHubInstallationRepositories(
 // GitHub App JWT and returns an HTTP client bound to it. The returned cleanup
 // revokes the token and must be called by every caller.
 func newGitHubInstallationClient(ctx context.Context, installationID int64) (*http.Client, string, func(), error) {
+	return newGitHubInstallationClientWithPermissions(ctx, installationID, map[string]string{
+		"metadata": "read",
+	})
+}
+
+func newGitHubInstallationClientWithPermissions(
+	ctx context.Context,
+	installationID int64,
+	permissions map[string]string,
+) (*http.Client, string, func(), error) {
 	appJWT, err := signGitHubAppJWT(time.Now())
 	if err != nil {
 		return nil, "", nil, err
@@ -891,11 +902,15 @@ func newGitHubInstallationClient(ctx context.Context, installationID int64) (*ht
 		strings.TrimRight(githubAPIBase, "/"),
 		installationID,
 	)
+	tokenPayload, err := json.Marshal(map[string]any{"permissions": permissions})
+	if err != nil {
+		return nil, "", nil, fmt.Errorf("encode installation token permissions: %w", err)
+	}
 	tokenReq, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
 		tokenEndpoint,
-		strings.NewReader(`{"permissions":{"metadata":"read"}}`),
+		bytes.NewReader(tokenPayload),
 	)
 	if err != nil {
 		return nil, "", nil, err
@@ -1036,7 +1051,7 @@ func parseGitHubPRURL(raw string) (string, string, int32, error) {
 	if err != nil || number <= 0 {
 		return "", "", 0, fmt.Errorf("invalid pull request number in %q", raw)
 	}
-	return m[1], m[2], int32(number), nil
+	return strings.ToLower(m[1]), strings.ToLower(m[2]), int32(number), nil
 }
 
 type AttachPullRequestToIssueRequest struct {
@@ -1079,7 +1094,11 @@ func fetchGitHubPullRequestMeta(
 	owner, repo string,
 	number int32,
 ) (*fetchedGitHubPullRequestMeta, error) {
-	client, token, cleanup, err := newGitHubInstallationClient(ctx, installationID)
+	client, token, cleanup, err := newGitHubInstallationClientWithPermissions(
+		ctx,
+		installationID,
+		map[string]string{"metadata": "read", "pull_requests": "read"},
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -1255,13 +1274,41 @@ func (h *Handler) AttachPullRequestToIssue(w http.ResponseWriter, r *http.Reques
 	} else if reqBody.Title != nil && strings.TrimSpace(*reqBody.Title) != "" {
 		title = strings.TrimSpace(*reqBody.Title)
 	}
-	_, lookupErr := h.Queries.GetGitHubPullRequest(ctx, db.GetGitHubPullRequestParams{
+	existingPR, lookupErr := h.Queries.GetGitHubPullRequest(ctx, db.GetGitHubPullRequestParams{
 		WorkspaceID: issue.WorkspaceID,
 		RepoOwner:   owner,
 		RepoName:    repo,
 		PrNumber:    number,
 	})
-	isNew := lookupErr != nil
+	isNew := errors.Is(lookupErr, pgx.ErrNoRows)
+	if lookupErr != nil && !isNew {
+		slog.Warn("github: attach lookup pr failed", "err", lookupErr)
+		writeError(w, http.StatusInternalServerError, "failed to attach pull request")
+		return
+	}
+	if meta == nil && !isNew {
+		// A transient GitHub failure during a re-attach must not downgrade a
+		// webhook-populated row to app-less placeholder metadata.
+		installationID = existingPR.InstallationID
+		title = existingPR.Title
+		state = existingPR.State
+		if existingPR.Branch.Valid {
+			preservedBranch := existingPR.Branch.String
+			branch = &preservedBranch
+		} else {
+			branch = nil
+		}
+		headSha = existingPR.HeadSha
+		authorLogin = existingPR.AuthorLogin.String
+		avatarURL = existingPR.AuthorAvatarUrl.String
+		mergedAt = existingPR.MergedAt
+		closedAt = existingPR.ClosedAt
+		prCreatedAt = existingPR.PrCreatedAt
+		prUpdatedAt = existingPR.PrUpdatedAt
+		additions = existingPR.Additions
+		deletions = existingPR.Deletions
+		changedFiles = existingPR.ChangedFiles
+	}
 
 	var branchText pgtype.Text
 	if branch != nil && *branch != "" {
@@ -1633,7 +1680,12 @@ func (h *Handler) handlePullRequestEvent(ctx context.Context, body []byte) {
 	// authoritative CI + mergeability snapshot for that head. The webhook is
 	// only the doorbell — its own mergeable/checks payload is not used for
 	// display anymore (MUL-5265).
-	h.PRRefresh.Enqueue(p.Installation.ID, p.Repository.Owner.Login, p.Repository.Name, p.PullRequest.Number)
+	h.PRRefresh.Enqueue(
+		p.Installation.ID,
+		strings.ToLower(p.Repository.Owner.Login),
+		strings.ToLower(p.Repository.Name),
+		p.PullRequest.Number,
+	)
 }
 
 // closeIntentPolicy decides which (closing identifier, workspace) pairs this
@@ -1812,7 +1864,7 @@ func (h *Handler) triggerPRRefreshFromCIEvent(ctx context.Context, body []byte) 
 	if p.Installation.ID == 0 || p.Repository.Name == "" {
 		return
 	}
-	owner, repo := p.Repository.Owner.Login, p.Repository.Name
+	owner, repo := strings.ToLower(p.Repository.Owner.Login), strings.ToLower(p.Repository.Name)
 
 	seen := map[int32]struct{}{}
 	enqueue := func(number int32) {
@@ -1872,11 +1924,13 @@ func (h *Handler) triggerPRRefreshFromCIEvent(ctx context.Context, body []byte) 
 func (h *Handler) mirrorPullRequestForWorkspace(ctx context.Context, wsID pgtype.UUID, installationID int64, p *ghPullRequestPayload, closePolicy closeIntentPolicy) {
 	state := derivePRState(p.PullRequest.State, p.PullRequest.Draft, p.PullRequest.Merged)
 	mergeable, clearMergeable := derivePRMergeableState(p.Action, p.PullRequest.MergeableState, baseRefChanged(p.Changes))
+	owner := strings.ToLower(p.Repository.Owner.Login)
+	repo := strings.ToLower(p.Repository.Name)
 	pr, err := h.Queries.UpsertGitHubPullRequest(ctx, db.UpsertGitHubPullRequestParams{
 		WorkspaceID:         wsID,
 		InstallationID:      pgtype.Int8{Int64: installationID, Valid: installationID > 0},
-		RepoOwner:           p.Repository.Owner.Login,
-		RepoName:            p.Repository.Name,
+		RepoOwner:           owner,
+		RepoName:            repo,
 		PrNumber:            p.PullRequest.Number,
 		Title:               p.PullRequest.Title,
 		State:               state,

@@ -103,7 +103,7 @@ INSERT INTO github_pull_request (
     $12, $13, $14
 )
 ON CONFLICT (workspace_id, repo_owner, repo_name, pr_number) DO UPDATE SET
-    installation_id = EXCLUDED.installation_id,
+    installation_id = COALESCE(EXCLUDED.installation_id, github_pull_request.installation_id),
     title = EXCLUDED.title,
     state = EXCLUDED.state,
     html_url = EXCLUDED.html_url,

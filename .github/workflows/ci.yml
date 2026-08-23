@@ -74,14 +74,16 @@ jobs:
               - 'docker-compose.selfhost.yml'
               - 'docker-compose.selfhost.build.yml'
               - 'Makefile'
-            # The Rust service workspace plus the Go-era assets that Rust
-            # embeds or loads at build/runtime. A change to any one of these
-            # paths must exercise the Rust gate.
+            # Both backends remain production-relevant during the migration.
+            # A backend change exercises the Go deployment gate and the Rust
+            # migration gate until the deployed server switches fully.
             backend:
               - 'server-rs/**'
-              - 'server/migrations/**'
-              - 'server/internal/service/builtin_agents/**'
-              - 'server/internal/service/builtin_skills/**'
+              - 'server/**'
+              - 'deploy/helm/**'
+              - 'scripts/**'
+              - 'packages/core/runtimes/cli-version.ts'
+              - 'Makefile'
               - '.github/workflows/ci.yml'
             installer:
               - 'scripts/install.sh'
@@ -385,6 +387,92 @@ jobs:
             exit 1
           fi
 
+  go-backend-tests:
+    needs: changes
+    if: ${{ needs.changes.outputs.backend == 'true' }}
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: cordy
+          POSTGRES_USER: cordy
+          POSTGRES_PASSWORD: cordy
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cordy -d cordy"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
+      REDIS_TEST_URL: redis://localhost:6379/1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: server/go.sum
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Verify generated SQL is current
+        run: |
+          make sqlc
+          git diff --exit-code -- server/pkg/db/generated
+          test -z "$(git ls-files --others --exclude-standard -- server/pkg/db/generated)"
+
+      - name: Test build and deployment contracts
+        run: |
+          bash scripts/helm-config.test.sh
+          bash scripts/makefile-build.test.sh
+          bash scripts/test-go.test.sh
+
+      - name: Build deployed Go server
+        working-directory: server
+        run: go build ./...
+
+      - name: Apply database migrations
+        working-directory: server
+        run: go run ./cmd/migrate up
+
+      - name: Run Go tests
+        run: bash scripts/test-go.sh --race
+
+  go-vulnerability-scan:
+    needs: changes
+    if: ${{ needs.changes.outputs.backend == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: server/go.sum
+
+      - name: Scan Go dependencies
+        working-directory: server
+        run: go tool govulncheck ./...
+
   rust-quality:
     needs: changes
     if: ${{ needs.changes.outputs.backend == 'true' }}
@@ -480,11 +568,10 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: server-rs
 
-  # Preserve the required check name while the backend implementation moves
-  # from Go to Rust. Intentional path-filter skips are green only when the
-  # classifier itself succeeded and reported no Rust backend work.
+  # Preserve the required check name while both production Go and migration
+  # Rust implementations are validated.
   backend:
-    needs: [changes, rust-quality, rust-tests, rust-platform, rust-audit]
+    needs: [changes, go-backend-tests, go-vulnerability-scan, rust-quality, rust-tests, rust-platform, rust-audit]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -492,6 +579,8 @@ jobs:
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
           BACKEND_CHANGED: ${{ needs.changes.outputs.backend }}
+          GO_TEST_RESULT: ${{ needs.go-backend-tests.result }}
+          GO_AUDIT_RESULT: ${{ needs.go-vulnerability-scan.result }}
           QUALITY_RESULT: ${{ needs.rust-quality.result }}
           TEST_RESULT: ${{ needs.rust-tests.result }}
           PLATFORM_RESULT: ${{ needs.rust-platform.result }}
@@ -499,6 +588,8 @@ jobs:
         run: |
           echo "changes:       $CHANGES_RESULT"
           echo "backend path:  $BACKEND_CHANGED"
+          echo "go-tests:     $GO_TEST_RESULT"
+          echo "go-audit:     $GO_AUDIT_RESULT"
           echo "rust-quality:  $QUALITY_RESULT"
           echo "rust-tests:    $TEST_RESULT"
           echo "rust-platform: $PLATFORM_RESULT"
@@ -508,11 +599,11 @@ jobs:
             exit 1
           fi
           if [ "$BACKEND_CHANGED" != "true" ]; then
-            echo "No Rust backend paths changed."
+            echo "No backend paths changed."
             exit 0
           fi
-          if [ "$QUALITY_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$PLATFORM_RESULT" != "success" ] || [ "$AUDIT_RESULT" != "success" ]; then
-            echo "::error::Rust backend validation failed"
+          if [ "$GO_TEST_RESULT" != "success" ] || [ "$GO_AUDIT_RESULT" != "success" ] || [ "$QUALITY_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$PLATFORM_RESULT" != "success" ] || [ "$AUDIT_RESULT" != "success" ]; then
+            echo "::error::backend validation failed"
             exit 1
           fi
 
