@@ -20,15 +20,31 @@ use std::io::Read;
 use std::path::{Component, Path, PathBuf};
 use url::Url;
 
-pub const CLIENT_VERSION: &str = match option_env!("CORDY_BUILD_VERSION") {
-    Some(version) => version,
-    None => env!("CARGO_PKG_VERSION"),
-};
+pub const CLIENT_VERSION: &str = env!("CORDY_BUILD_VERSION");
+pub const BUILD_COMMIT: &str = env!("CORDY_BUILD_COMMIT");
+pub const BUILD_DATE: &str = env!("CORDY_BUILD_DATE");
+pub const BUILD_GO_VERSION: &str = env!("CORDY_BUILD_GO_VERSION");
+pub const BUILD_OS: &str = env!("CORDY_BUILD_OS");
+pub const BUILD_ARCH: &str = env!("CORDY_BUILD_ARCH");
+pub const ROOT_LONG_VERSION: &str = concat!(
+    env!("CORDY_BUILD_VERSION"),
+    " (commit: ",
+    env!("CORDY_BUILD_COMMIT"),
+    ", built: ",
+    env!("CORDY_BUILD_DATE"),
+    ")\ngo: ",
+    env!("CORDY_BUILD_GO_VERSION"),
+    ", os/arch: ",
+    env!("CORDY_BUILD_OS"),
+    "/",
+    env!("CORDY_BUILD_ARCH")
+);
 
 #[derive(Debug, Parser)]
 #[command(
     name = "cordy",
     version = CLIENT_VERSION,
+    long_version = ROOT_LONG_VERSION,
     about = "Cordy CLI — local agent runtime and management tool",
     long_about = "Work seamlessly with Cordy from the command line."
 )]
@@ -64,6 +80,11 @@ enum Command {
     User(UserArgs),
     #[command(about = "Work with workspaces")]
     Workspace(WorkspaceArgs),
+    #[command(about = "Print version information")]
+    Version {
+        #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
+        output: VersionOutput,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -275,6 +296,13 @@ enum OutputFormat {
     Json,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
+enum VersionOutput {
+    #[default]
+    Text,
+    Json,
+}
+
 #[derive(Debug)]
 pub struct RunOutput {
     pub stdout: String,
@@ -344,7 +372,31 @@ async fn run_with_input<R: Read>(
         Command::Workspace(WorkspaceArgs {
             command: WorkspaceCommand::Update(args),
         }) => run_workspace_update(cli, environment, args, input).await,
+        Command::Version { output } => run_version(*output),
     }
+}
+
+fn run_version(output: VersionOutput) -> Result<RunOutput> {
+    let stdout = match output {
+        VersionOutput::Text => format!(
+            "cordy {CLIENT_VERSION} (commit: {BUILD_COMMIT}, built: {BUILD_DATE})\ngo: {BUILD_GO_VERSION}, os/arch: {BUILD_OS}/{BUILD_ARCH}\n"
+        ),
+        VersionOutput::Json => format!(
+            "{}\n",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "version": CLIENT_VERSION,
+                "commit": BUILD_COMMIT,
+                "date": BUILD_DATE,
+                "go": BUILD_GO_VERSION,
+                "os": BUILD_OS,
+                "arch": BUILD_ARCH
+            }))?
+        ),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -1742,6 +1794,44 @@ mod tests {
     use std::io::Cursor;
     use std::sync::{Arc, Mutex};
     use tokio::net::TcpListener;
+
+    #[test]
+    fn version_text_json_and_root_flag_match_go_contract() {
+        let text = run_version(VersionOutput::Text).expect("text version");
+        assert_eq!(
+            text.stdout,
+            format!(
+                "cordy {CLIENT_VERSION} (commit: {BUILD_COMMIT}, built: {BUILD_DATE})\ngo: {BUILD_GO_VERSION}, os/arch: {BUILD_OS}/{BUILD_ARCH}\n"
+            )
+        );
+        assert!(text.stderr.is_empty());
+
+        let json = run_version(VersionOutput::Json).expect("JSON version");
+        let info: Value = serde_json::from_str(&json.stdout).expect("version JSON");
+        assert_eq!(info.as_object().expect("version object").len(), 6);
+        assert_eq!(info["version"], CLIENT_VERSION);
+        assert_eq!(info["commit"], BUILD_COMMIT);
+        assert_eq!(info["date"], BUILD_DATE);
+        assert_eq!(info["go"], BUILD_GO_VERSION);
+        assert_eq!(info["os"], BUILD_OS);
+        assert_eq!(info["arch"], BUILD_ARCH);
+
+        let root = Cli::try_parse_from(["cordy", "--version"])
+            .expect_err("--version exits after rendering");
+        assert_eq!(root.kind(), clap::error::ErrorKind::DisplayVersion);
+        assert_eq!(root.to_string(), format!("cordy {ROOT_LONG_VERSION}\n"));
+        let first_line =
+            format!("cordy {CLIENT_VERSION} (commit: {BUILD_COMMIT}, built: {BUILD_DATE})");
+        assert_eq!(root.to_string().lines().next(), Some(first_line.as_str()));
+    }
+
+    #[test]
+    fn version_subcommand_accepts_only_go_registry_output_values() {
+        assert!(Cli::try_parse_from(["cordy", "version"]).is_ok());
+        assert!(Cli::try_parse_from(["cordy", "version", "--output", "text"]).is_ok());
+        assert!(Cli::try_parse_from(["cordy", "version", "--output", "json"]).is_ok());
+        assert!(Cli::try_parse_from(["cordy", "version", "--output", "table"]).is_err());
+    }
 
     async fn test_server() -> (String, tokio::task::JoinHandle<()>) {
         let app = Router::new().route(
