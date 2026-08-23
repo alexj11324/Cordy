@@ -23,6 +23,7 @@ pub mod error;
 pub mod feedback;
 pub mod health;
 pub mod issue;
+pub mod issue_property_value;
 pub mod issue_pull_request;
 pub mod issue_status;
 pub mod issue_view_preference;
@@ -350,6 +351,10 @@ mod tests {
                 .unwrap(),
             Request::delete("/api/issues/CORD-14/properties/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
                 .body(Body::empty())
+                .unwrap(),
+            Request::put("/api/issues/CORD-14/properties/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"value":"high"}"#))
                 .unwrap(),
             Request::post("/api/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/cancel")
                 .body(Body::empty())

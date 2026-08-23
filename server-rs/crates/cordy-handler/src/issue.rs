@@ -14,7 +14,7 @@ use axum::extract::{DefaultBodyLimit, Extension, Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{NaiveDate, SecondsFormat};
 use cordy_db::models::{
@@ -70,7 +70,7 @@ pub fn router() -> Router<HandlerState> {
         )
         .route(
             "/api/issues/{id}/properties/{property_id}",
-            delete(unset_issue_property),
+            axum::routing::put(set_issue_property).delete(unset_issue_property),
         )
         .route(
             "/api/issues/{id}/reactions",
@@ -644,6 +644,151 @@ async fn list_issue_metadata(
         Ok(issue) => Json(json!({ "metadata": issue.metadata })).into_response(),
         Err(response) => response,
     }
+}
+
+fn decode_property_value(body: &[u8]) -> Result<Option<Value>, ()> {
+    let mut deserializer = serde_json::Deserializer::from_slice(body);
+    let request = Value::deserialize(&mut deserializer).map_err(|_| ())?;
+    let fields = request.as_object().ok_or(())?;
+    Ok(fields.get("value").cloned())
+}
+
+async fn set_issue_property(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path((raw_issue, raw_property)): Path<(String, String)>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let property_id = match Uuid::parse_str(raw_property.trim()) {
+        Ok(property_id) => property_id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid property id"),
+    };
+    let value = match decode_property_value(&body) {
+        Ok(Some(value)) => value,
+        Ok(None) => return error_response(StatusCode::BAD_REQUEST, "value is required"),
+        Err(()) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    let issue = match resolve_issue(&state, &context, &raw_issue).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, issue_id = %issue.id, %property_id, "failed to begin property write");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to set property");
+        }
+    };
+    if let Err(error) = sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!("prop:{property_id}"))
+        .execute(&mut *transaction)
+        .await
+    {
+        tracing::warn!(%error, %property_id, "failed to lock property definition");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to set property");
+    }
+    let definition = match issue_property::get_issue_property(
+        &mut *transaction,
+        property_id,
+        issue.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(definition)) => definition,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "property not found"),
+        Err(error) => {
+            tracing::warn!(%error, %property_id, "failed to resolve property before set");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to set property");
+        }
+    };
+    if definition.archived_at.is_some() {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            &format!(
+                "property {:?} is archived and cannot receive new values",
+                definition.name
+            ),
+        );
+    }
+    let (stored, actor_refs) = match crate::issue_property_value::validate(&definition, &value) {
+        Ok(validated) => validated,
+        Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
+    };
+    for actor in actor_refs {
+        match member::get_member_by_user_and_workspace(
+            &mut *transaction,
+            actor.user_id,
+            issue.workspace_id,
+        )
+        .await
+        {
+            Ok(Some(_)) => {}
+            Ok(None) | Err(_) => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    &format!(
+                        "{:?} does not refer to a member of this workspace",
+                        actor.value
+                    ),
+                )
+            }
+        }
+    }
+    let updated = match issue_property::set_issue_property_value(
+        &mut *transaction,
+        &property_id.to_string(),
+        &stored,
+        issue.id,
+        issue.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(updated)) => updated,
+        Ok(None) => {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to set property")
+        }
+        Err(error)
+            if error
+                .downcast_ref::<sqlx::Error>()
+                .and_then(sqlx::Error::as_database_error)
+                .and_then(|error| error.code())
+                .is_some_and(|code| code == "23514") =>
+        {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "issue properties exceed the 16KB size limit",
+            )
+        }
+        Err(error) => {
+            tracing::warn!(%error, issue_id = %issue.id, %property_id, "failed to set property");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to set property");
+        }
+    };
+    if let Err(error) = transaction.commit().await {
+        tracing::warn!(%error, issue_id = %issue.id, %property_id, "failed to commit property write");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to set property");
+    }
+    let properties = object_or_empty(updated.properties.clone());
+    let (actor_type, actor_id, task_id) = mutation_actor(&state, &context, &headers).await;
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::EVENT_ISSUE_PROPERTIES_CHANGED.into(),
+        workspace_id: updated.workspace_id.to_string(),
+        actor_type,
+        actor_id: actor_id.to_string(),
+        payload: json!({
+            "issue_id": updated.id,
+            "properties": properties.clone(),
+            "issue_revision": updated.revision,
+        }),
+        task_id: task_id.map(|id| id.to_string()).unwrap_or_default(),
+        chat_session_id: String::new(),
+    });
+    Json(json!({
+        "properties": properties,
+        "issue_revision": updated.revision,
+    }))
+    .into_response()
 }
 
 async fn unset_issue_property(
@@ -4305,6 +4450,20 @@ mod tests {
         assert!(groups[0].iter().any(
             |alternative| matches!(alternative, PropertyAlternative::Missing(value) if value == id)
         ));
+    }
+
+    #[test]
+    fn property_value_decoder_preserves_missing_null_and_go_first_value_behavior() {
+        assert_eq!(decode_property_value(br#"{"other":1}"#), Ok(None));
+        assert_eq!(
+            decode_property_value(br#"{"value":null}"#),
+            Ok(Some(Value::Null))
+        );
+        assert_eq!(
+            decode_property_value(br#"{"value":"high","unknown":true} trailing"#),
+            Ok(Some(json!("high")))
+        );
+        assert!(decode_property_value(b"[]").is_err());
     }
 
     #[test]
