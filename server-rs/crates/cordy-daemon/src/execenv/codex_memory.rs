@@ -190,25 +190,20 @@ fn strip_user_memory_directives(content: &str) -> String {
             continue;
         }
         match current_table {
-            "" => {
-                if root_dotted_features_memories_re().is_match(trimmed)
-                    || root_dotted_memories_generate_re().is_match(trimmed)
-                    || root_dotted_memories_use_re().is_match(trimmed)
-                {
-                    continue;
-                }
+            "" if root_dotted_features_memories_re().is_match(trimmed)
+                || root_dotted_memories_generate_re().is_match(trimmed)
+                || root_dotted_memories_use_re().is_match(trimmed) =>
+            {
+                continue;
             }
-            "[features]" => {
-                if features_table_memories_re().is_match(trimmed) {
-                    continue;
-                }
+            "[features]" if features_table_memories_re().is_match(trimmed) => {
+                continue;
             }
-            "[memories]" => {
+            "[memories]"
                 if memories_table_generate_re().is_match(trimmed)
-                    || memories_table_use_re().is_match(trimmed)
-                {
-                    continue;
-                }
+                    || memories_table_use_re().is_match(trimmed) =>
+            {
+                continue;
             }
             _ => {}
         }
@@ -359,12 +354,10 @@ pub(crate) fn ensure_codex_memory_config(config_path: &str) -> anyhow::Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::{Mutex, MutexGuard};
 
-    fn lock_memory_env() -> MutexGuard<'static, ()> {
-        static LOCK: Mutex<()> = Mutex::new(());
-        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
+    // Tests that mutate CORDY_CODEX_MEMORY share one process env, so they
+    // must not run concurrently.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     // Port of TestRenderCordyMemoryBlocks: table vs dotted-key forms for both
     // managed blocks.
@@ -447,7 +440,7 @@ mod tests {
     // both blocks adapt to existing tables and stay byte-stable across reruns.
     #[test]
     fn test_ensure_codex_memory_config_idempotent_and_layout_aware() {
-        let _guard = lock_memory_env();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp
             .path()
@@ -504,7 +497,7 @@ mod tests {
     // feature on (config left untouched).
     #[test]
     fn test_codex_memory_escape_hatch() {
-        let _guard = lock_memory_env();
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp
             .path()
