@@ -13,6 +13,7 @@
 pub mod claim_comments;
 pub mod claim_response;
 pub mod cli_token;
+pub mod client_usage;
 pub mod comment;
 pub mod daemon;
 pub mod daemon_ws;
@@ -183,6 +184,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
     ));
     let authenticated = workspace::authenticated_router()
         .merge(cli_token::router())
+        .merge(client_usage::router())
         .merge(feedback::router())
         .merge(me::router())
         .merge(pat::router())
@@ -329,6 +331,11 @@ mod tests {
                 .unwrap(),
             Request::post("/api/feedback")
                 .body(Body::from(r#"{"message":"feedback"}"#))
+                .unwrap(),
+            Request::post("/api/client-usage")
+                .body(Body::from(
+                    r#"{"install_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f11"}"#,
+                ))
                 .unwrap(),
             Request::post("/api/comments/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/resolve")
                 .body(Body::empty())
