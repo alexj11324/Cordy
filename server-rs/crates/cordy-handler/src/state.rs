@@ -396,18 +396,22 @@ impl HandlerState {
         self
     }
 
-    /// Starts the bounded PostgreSQL-leased webhook worker pool. Call only
-    /// from production startup after all Autopilot service wiring is complete.
-    pub fn start_webhook_delivery_worker(mut self) -> Self {
+    /// Prepares the PostgreSQL-leased webhook worker without spawning it.
+    /// Production installs root cancellation and owns the returned runtime.
+    pub fn prepare_webhook_delivery_worker(
+        mut self,
+    ) -> (
+        Self,
+        Arc<crate::webhook_delivery_worker::WebhookDeliveryWorker>,
+    ) {
         let notify = Arc::new(tokio::sync::Notify::new());
-        crate::webhook_delivery_worker::WebhookDeliveryWorker::new(
+        let worker = crate::webhook_delivery_worker::WebhookDeliveryWorker::new(
             self.pool.clone(),
             self.autopilots.clone(),
             notify.clone(),
-        )
-        .start();
+        );
         self.webhook_delivery_notify = Some(notify);
-        self
+        (self, worker)
     }
 
     pub fn notify_webhook_delivery(&self) {

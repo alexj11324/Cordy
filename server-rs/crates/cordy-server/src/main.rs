@@ -17,6 +17,7 @@ struct ProductionApp {
     root_cancel: CancellationToken,
     failure_monitor: cordy_service::autopilot_failure_monitor::FailureMonitorRuntime,
     quota_reconciler: cordy_service::autopilot_quota_reconciler::QuotaReconcilerRuntime,
+    webhook_delivery: cordy_handler::webhook_delivery_worker::WebhookDeliveryRuntime,
 }
 
 struct VcsWebhookConfig {
@@ -252,8 +253,8 @@ async fn build_production_router(
         .start_subscriber_activity_listeners()
         .start_notification_event_listeners()
         .start_autopilot_event_listeners()
-        .start_plugin_event_dispatcher()
-        .start_webhook_delivery_worker();
+        .start_plugin_event_dispatcher();
+    let (state, webhook_worker) = state.prepare_webhook_delivery_worker();
     let root_cancel = CancellationToken::new();
     let failure_metrics = state.business_metrics.clone().map(|metrics| {
         metrics as Arc<dyn cordy_service::autopilot_failure_monitor::FailureMonitorMetrics>
@@ -274,11 +275,13 @@ async fn build_production_router(
             quota_metrics,
         )
         .start(root_cancel.child_token());
+    let webhook_delivery = webhook_worker.start(root_cancel.child_token());
     Ok(ProductionApp {
         router: cordy_handler::build_router_from_state(state),
         root_cancel,
         failure_monitor,
         quota_reconciler,
+        webhook_delivery,
     })
 }
 
@@ -402,6 +405,7 @@ async fn main() -> anyhow::Result<()> {
         root_cancel,
         failure_monitor,
         quota_reconciler,
+        webhook_delivery,
     } = app;
     let serve_result = axum::serve(
         listener,
@@ -410,11 +414,12 @@ async fn main() -> anyhow::Result<()> {
     .with_graceful_shutdown(shutdown_signal(root_cancel.clone()))
     .await;
     root_cancel.cancel();
-    let (failure_shutdown, quota_shutdown) = tokio::join!(
+    let (failure_shutdown, quota_shutdown, webhook_shutdown) = tokio::join!(
         failure_monitor
             .shutdown(cordy_service::autopilot_failure_monitor::DEFAULT_SHUTDOWN_TIMEOUT),
         quota_reconciler
             .shutdown(cordy_service::autopilot_quota_reconciler::DEFAULT_SHUTDOWN_TIMEOUT),
+        webhook_delivery.shutdown(cordy_handler::webhook_delivery_worker::DEFAULT_SHUTDOWN_TIMEOUT),
     );
     match failure_shutdown {
         cordy_service::autopilot_failure_monitor::ShutdownOutcome::TimedOut => {
@@ -431,6 +436,15 @@ async fn main() -> anyhow::Result<()> {
         }
         cordy_service::autopilot_failure_monitor::ShutdownOutcome::Panicked => {
             tracing::error!("autopilot quota reconciler task panicked during shutdown");
+        }
+        _ => {}
+    }
+    match webhook_shutdown {
+        cordy_handler::webhook_delivery_worker::WebhookShutdownOutcome::TimedOut => {
+            tracing::warn!("webhook delivery worker exceeded shutdown deadline and was aborted");
+        }
+        cordy_handler::webhook_delivery_worker::WebhookShutdownOutcome::Panicked => {
+            tracing::error!("webhook delivery worker supervisor panicked during shutdown");
         }
         _ => {}
     }
