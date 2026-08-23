@@ -150,6 +150,32 @@ pub fn is_secure_cookie(frontend_origin: Option<&str>) -> bool {
     }
 }
 
+/// Values for the two `Set-Cookie` headers that clear the session and CSRF
+/// cookies. `Max-Age=0` is Go net/http's wire representation for MaxAge=-1.
+pub fn clear_auth_cookie_values(domain: Option<&str>, secure: bool) -> [String; 2] {
+    [
+        clear_cookie_value(AUTH_COOKIE_NAME, domain, secure, true),
+        clear_cookie_value(CSRF_COOKIE_NAME, domain, secure, false),
+    ]
+}
+
+fn clear_cookie_value(name: &str, domain: Option<&str>, secure: bool, http_only: bool) -> String {
+    let mut value = format!("{name}=; Path=/");
+    if let Some(domain) = domain.filter(|value| !value.is_empty()) {
+        value.push_str("; Domain=");
+        value.push_str(domain);
+    }
+    value.push_str("; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0");
+    if http_only {
+        value.push_str("; HttpOnly");
+    }
+    if secure {
+        value.push_str("; Secure");
+    }
+    value.push_str("; SameSite=Strict");
+    value
+}
+
 /// CSRF token bound to the auth token via HMAC:
 /// hex(nonce16) + "." + hex(HMAC-SHA256(nonce, key=authToken)).
 /// An attacker who can write cookies on a subdomain cannot forge a valid
@@ -273,5 +299,24 @@ mod tests {
         assert!(is_secure_cookie(Some("https://app.example.com")));
         assert!(is_secure_cookie(Some("HTTPS://app.example.com")));
         assert!(!is_secure_cookie(Some("app.example.com")));
+    }
+
+    #[test]
+    fn clear_cookie_values_match_go_logout_contract() {
+        let values = clear_auth_cookie_values(Some(".example.com"), true);
+        assert_eq!(
+            values[0],
+            "cordy_auth=; Path=/; Domain=.example.com; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; HttpOnly; Secure; SameSite=Strict"
+        );
+        assert_eq!(
+            values[1],
+            "cordy_csrf=; Path=/; Domain=.example.com; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Secure; SameSite=Strict"
+        );
+
+        let local = clear_auth_cookie_values(None, false);
+        assert!(!local[0].contains("Domain="));
+        assert!(!local[0].contains("; Secure"));
+        assert!(local[0].contains("; HttpOnly"));
+        assert!(!local[1].contains("; HttpOnly"));
     }
 }
