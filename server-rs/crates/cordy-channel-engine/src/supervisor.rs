@@ -499,6 +499,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
         let id = inst.id.to_string();
         let gen;
         let cancel;
+        let done_tx;
         {
             let mut inner = self.lock();
             if inner.stopped || inner.supervisors.contains_key(&id) {
@@ -506,7 +507,8 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
             }
             gen = self.supervisor_gen.fetch_add(1, Ordering::SeqCst) + 1;
             cancel = parent.child_token();
-            let (_, done_rx) = tokio::sync::oneshot::channel::<()>();
+            let (tx, done_rx) = tokio::sync::oneshot::channel::<()>();
+            done_tx = tx;
             inner.supervisors.insert(
                 id.clone(),
                 SupervisorEntry {
@@ -537,6 +539,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                 }
             }
             drop(inner);
+            let _ = done_tx.send(());
             let _ = inst_id;
         });
     }

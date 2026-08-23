@@ -15,6 +15,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures_util::StreamExt;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -123,7 +124,7 @@ impl SlackMediaResolver {
                 .bearer_auth(bot_token)
                 .send()
                 .await
-                .map_err(|e| anyhow::anyhow!("download file request failed: {e}"))?;
+                .map_err(|_| anyhow::anyhow!("download file request failed"))?;
             if resp.status().is_redirection() {
                 if redirects >= MAX_DOWNLOAD_REDIRECTS {
                     anyhow::bail!("too many redirects");
@@ -155,17 +156,25 @@ impl SlackMediaResolver {
                 .unwrap_or("")
                 .trim()
                 .to_ascii_lowercase();
-            let data = resp
-                .bytes()
-                .await
-                .map_err(|e| anyhow::anyhow!("read file: {e}"))?;
+            let mut stream = resp.bytes_stream();
+            let mut data = Vec::new();
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk.map_err(|_| anyhow::anyhow!("read file failed"))?;
+                if data.len().saturating_add(chunk.len()) > MAX_INBOUND_FILE_BYTES {
+                    anyhow::bail!(
+                        "file exceeds the {} MiB limit",
+                        MAX_INBOUND_FILE_BYTES >> 20
+                    );
+                }
+                data.extend_from_slice(&chunk);
+            }
             if data.len() > MAX_INBOUND_FILE_BYTES {
                 anyhow::bail!(
                     "file exceeds the {} MiB limit",
                     MAX_INBOUND_FILE_BYTES >> 20
                 );
             }
-            return Ok((data.to_vec(), content_type));
+            return Ok((data, content_type));
         }
     }
 
@@ -211,6 +220,7 @@ impl SlackMediaResolver {
         }
 
         let (data, response_type) = self.download(http, &f.download_url, bot_token).await?;
+        let size_bytes = data.len() as i64;
         let content_type = slack_file_content_type(f, &response_type, &data)?;
         let filename = slack_file_name(f, index, &content_type);
         // The store may still be processing the PUT; the intent row covers the
@@ -225,11 +235,10 @@ impl SlackMediaResolver {
             storage_url: link,
             filename,
             mime_type: content_type,
-            size_bytes: 0, // overwritten below via len; kept explicit for clarity
+            size_bytes,
             inline_placeholder: String::new(),
             inline_index: 0,
         })
-        // NOTE: size_bytes set by caller wrapper below.
     }
 }
 
@@ -279,6 +288,7 @@ impl MediaResolver for SlackMediaResolver {
 
         let http = reqwest::Client::builder()
             .timeout(FILE_FETCH_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap_or_default();
 
@@ -310,14 +320,13 @@ impl MediaResolver for SlackMediaResolver {
                 );
                 break;
             }
-            match self
-                .ingest_one(&http, inst, chat_message_id, i, f, &creds.bot_token)
-                .await
-            {
-                Ok(mut reference) => {
-                    reference.size_bytes = f.size.max(0);
-                    msg.media_refs.push(reference);
-                }
+            let ingest = self.ingest_one(&http, inst, chat_message_id, i, f, &creds.bot_token);
+            let result = tokio::select! {
+                _ = ctx.cancelled() => break,
+                result = ingest => result,
+            };
+            match result {
+                Ok(reference) => msg.media_refs.push(reference),
                 Err(e) => {
                     tracing::warn!(
                         installation_id = %inst.id,
