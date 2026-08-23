@@ -29,7 +29,7 @@ pub async fn create_feedback(
     user_id: Uuid,
     message: &str,
     metadata: &serde_json::Value,
-    workspace_id: Uuid,
+    workspace_id: Option<Uuid>,
 ) -> anyhow::Result<Option<Feedback>> {
     let row = sqlx::query(
         r#"INSERT INTO feedback (user_id, workspace_id, message, metadata)

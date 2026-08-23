@@ -595,6 +595,7 @@ dependencies = [
  "http-body-util",
  "rand 0.8.7",
  "redis",
+ "regex",
  "serde",
  "serde_json",
  "sha2",
