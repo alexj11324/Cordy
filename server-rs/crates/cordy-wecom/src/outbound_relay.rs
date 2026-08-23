@@ -739,7 +739,7 @@ impl OutboundRelay {
     }
 
     async fn ownership_loop(self: Arc<Self>, cancel: CancellationToken) {
-        let mut advertised = HashMap::new();
+        let mut advertised: HashMap<Uuid, String> = HashMap::new();
         loop {
             if cancel.is_cancelled() {
                 break;
