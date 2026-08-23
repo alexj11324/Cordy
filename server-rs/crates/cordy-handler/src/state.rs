@@ -3,6 +3,7 @@
 
 use std::sync::Arc;
 
+use cordy_auth::daemon_token_cache::DaemonTokenCache;
 use cordy_auth::pat_cache::PatCache;
 use cordy_realtime::hub::Hub;
 use cordy_service::autopilot::{AutopilotService, EntitlementProvider};
@@ -37,6 +38,7 @@ impl cordy_service::task_service::TaskWakeupNotifier for DaemonTaskWakeup {
 pub struct HandlerState {
     pub pool: sqlx::PgPool,
     pub pat_cache: PatCache,
+    pub daemon_token_cache: DaemonTokenCache,
     /// Realtime WS hub (cordy-realtime). `None` only in tests.
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
@@ -51,6 +53,7 @@ pub struct HandlerState {
     pub analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
     pub auth_rate_limit: cordy_middleware::ratelimit::RateLimitState,
     pub auth_verify_rate_limit: cordy_middleware::ratelimit::RateLimitState,
+    pub invitation_admission: crate::invitation::InvitationAdmission,
     /// Anonymous frontend capability/configuration response.
     pub public_config: crate::config::PublicConfigSettings,
     /// GitHub GraphQL snapshot refresh pipeline. Disabled in lightweight tests.
@@ -144,6 +147,7 @@ impl HandlerState {
         Self {
             pool,
             pat_cache,
+            daemon_token_cache: DaemonTokenCache::disabled(),
             hub,
             bus,
             business_metrics: None,
@@ -153,6 +157,7 @@ impl HandlerState {
             analytics: Arc::new(cordy_analytics::NoopClient),
             auth_rate_limit,
             auth_verify_rate_limit,
+            invitation_admission: crate::invitation::InvitationAdmission::default(),
             public_config: crate::config::PublicConfigSettings::default(),
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
             feature_flags: None,
@@ -443,6 +448,7 @@ impl HandlerState {
     pub async fn with_redis(mut self, client: redis::Client) -> Result<Self, redis::RedisError> {
         self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
         self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client.clone());
+        self.daemon_token_cache = DaemonTokenCache::new(client.clone()).await?;
         let conn = client.get_connection_manager().await?;
         self.update_store = Some(Arc::new(crate::pending_store::UpdateStore::new(
             conn.clone(),

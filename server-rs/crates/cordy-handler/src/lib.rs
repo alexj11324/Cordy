@@ -84,7 +84,6 @@ use std::time::Duration;
 use axum::http::{header, HeaderName, HeaderValue, Method};
 use axum::routing::get;
 use axum::{middleware, Router};
-use cordy_auth::daemon_token_cache::DaemonTokenCache;
 use cordy_middleware::auth::{auth_middleware, AuthState};
 use cordy_middleware::daemon_auth::{daemon_auth_middleware, DaemonAuthState};
 use cordy_middleware::workspace::WorkspaceGuardState;
@@ -207,7 +206,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
     let daemon_auth_state = DaemonAuthState {
         pool: state.pool.clone(),
         pat_cache: state.pat_cache.clone(),
-        daemon_cache: DaemonTokenCache::disabled(),
+        daemon_cache: state.daemon_token_cache.clone(),
     };
     let public_auth = auth::public_router(
         state.auth_rate_limit.clone(),
@@ -230,6 +229,22 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         Arc::new(cloud_runtime::HttpCloudRuntimeProxy::from_env());
     let composio_state = composio::ComposioState::from_handler(&state);
     let authenticated = workspace::authenticated_router()
+        .merge(
+            workspace::member_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(state.pool.clone(), "id"),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            workspace::admin_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url_with_roles(
+                    state.pool.clone(),
+                    "id",
+                    vec!["owner".into(), "admin".into()],
+                ),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
         .merge(composio::authenticated_router().with_state::<HandlerState>(composio_state.clone()))
         .merge(
             binding_redeem::router()
