@@ -635,6 +635,7 @@ pub struct DisabledRuntimeSkillData {
 /// SkillData represents a structured skill for task execution
 /// (types.go:228–237).
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SkillData {
     #[serde(rename = "id")]
     pub id: String,

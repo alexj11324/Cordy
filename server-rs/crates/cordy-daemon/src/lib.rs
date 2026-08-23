@@ -33,3 +33,13 @@ pub mod gc;
 pub mod hub;
 pub mod notifier;
 pub mod repocache;
+
+// Lane B (daemon.go core + surrounding surfaces) — S9-B.
+pub mod agents_probe;
+pub mod artifact_matcher;
+pub mod claude_plugins;
+pub mod local_skills;
+pub mod prompt;
+pub mod runtime_config_sections;
+pub mod skill_cache;
+pub mod slash_skill;
