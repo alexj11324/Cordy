@@ -55,7 +55,7 @@ impl ChannelRuntime {
 
         configure_slack(state, cfg, &services, &router, storage.as_ref(), &registry);
         configure_dingtalk(state, cfg, &router, storage.as_ref(), &registry);
-        configure_telegram(state, cfg, &router, &registry, &cancel);
+        configure_telegram(state, cfg, &router, storage.as_ref(), &registry, &cancel);
         let mut maintenance = Vec::new();
         let wecom = configure_wecom(state, cfg, &router, storage.as_ref(), &registry, &cancel)?;
         maintenance.extend(wecom.tasks);
@@ -354,6 +354,7 @@ fn configure_telegram(
     state: &cordy_handler::HandlerState,
     cfg: &cordy_config::Config,
     router: &Arc<ChannelRouter>,
+    storage: Option<&Arc<ChannelStorage>>,
     registry: &Arc<cordy_channel::Registry>,
     cancel: &CancellationToken,
 ) {
@@ -386,12 +387,31 @@ fn configure_telegram(
         Some(decrypt.clone()),
         String::new(),
     ));
+    let media = storage.and_then(|storage| {
+        match cordy_telegram::media::TelegramMediaResolver::new(
+            Some(decrypt.clone()),
+            String::new(),
+            storage.clone(),
+            Arc::new(cordy_channel_engine::resolvers::DbMediaIntentLedger::new(
+                state.pool.clone(),
+            )),
+        ) {
+            Ok(media) => Some(
+                Arc::new(media) as Arc<dyn cordy_channel_engine::resolvers::MediaResolver>
+            ),
+            Err(error) => {
+                tracing::error!(%error, "telegram inbound media disabled: guarded HTTP client unavailable");
+                None
+            }
+        }
+    });
     router.register(
         cordy_channel::Type(cordy_telegram::TYPE_TELEGRAM.to_string()),
         cordy_telegram::resolvers::new_telegram_resolver_set(
             state.pool.clone(),
             Some(replier),
             Some(typing),
+            media,
         ),
     );
 
@@ -893,6 +913,30 @@ impl cordy_wecom::media_ingest::MediaStorage for ChannelStorage {
 }
 
 impl cordy_lark::media_ingest::MediaStorage for ChannelStorage {
+    fn upload(
+        &self,
+        key: &str,
+        data: Vec<u8>,
+        content_type: &str,
+        filename: &str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + '_>> {
+        let key = key.to_string();
+        let content_type = content_type.to_string();
+        let filename = filename.to_string();
+        Box::pin(async move {
+            self.inner
+                .upload(&key, data, &content_type, &filename)
+                .await
+                .map(|_| ())
+        })
+    }
+
+    fn object_url(&self, key: &str) -> String {
+        self.inner.object_url(key)
+    }
+}
+
+impl cordy_telegram::media::MediaStorage for ChannelStorage {
     fn upload(
         &self,
         key: &str,

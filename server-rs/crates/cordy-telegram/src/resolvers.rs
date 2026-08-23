@@ -248,6 +248,7 @@ pub fn new_telegram_resolver_set(
     pool: PgPool,
     replier: Option<Arc<dyn cordy_channel_engine::resolvers::OutboundReplier>>,
     typing: Option<Arc<dyn TypingNotifier>>,
+    media: Option<Arc<dyn cordy_channel_engine::resolvers::MediaResolver>>,
 ) -> ResolverSet {
     let session = ChatSession::new(
         pool.clone(),
@@ -264,7 +265,7 @@ pub fn new_telegram_resolver_set(
         validated: None,
         dedup: Some(Arc::new(DeduperImpl { pool: pool.clone() })),
         session: Some(Arc::new(SessionBinderImpl { session })),
-        media: None,
+        media,
         audit: Some(Arc::new(AuditorImpl { pool })),
         replier,
         typing,
