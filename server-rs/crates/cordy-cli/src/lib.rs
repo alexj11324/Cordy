@@ -102,6 +102,43 @@ enum WorkspaceCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
         output: OutputFormat,
     },
+    #[command(
+        about = "Create a workspace",
+        long_about = "Creates a new workspace and adds you as its owner. Both --name and --slug are required; the slug is permanent (lowercase letters, digits, and hyphens) and cannot be changed after creation.\n\nCreating a workspace does NOT change the current default workspace for this profile — run 'cordy workspace switch <slug>' afterward if you want subsequent commands to target the new workspace."
+    )]
+    Create(CreateWorkspaceArgs),
+}
+
+#[derive(Debug, Args)]
+struct CreateWorkspaceArgs {
+    #[arg(long, help = "Workspace name")]
+    name: Option<String>,
+    #[arg(long, help = "Workspace slug")]
+    slug: Option<String>,
+    #[arg(
+        long,
+        help = "Workspace description (decodes \\n, \\r, \\t, \\\\; use --description-stdin to preserve literal backslashes)"
+    )]
+    description: Option<String>,
+    #[arg(
+        long,
+        help = "Read description from stdin (preserves multi-line content verbatim)"
+    )]
+    description_stdin: bool,
+    #[arg(
+        long,
+        help = "Workspace context (decodes \\n, \\r, \\t, \\\\; use --context-stdin to preserve literal backslashes)"
+    )]
+    context: Option<String>,
+    #[arg(
+        long,
+        help = "Read context from stdin (preserves multi-line content verbatim)"
+    )]
+    context_stdin: bool,
+    #[arg(long, help = "Issue prefix (uppercased server-side)")]
+    issue_prefix: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Subcommand)]
@@ -205,6 +242,9 @@ async fn run_with_input<R: Read>(
         Command::Workspace(WorkspaceArgs {
             command: WorkspaceCommand::Get { workspace, output },
         }) => run_workspace_get(cli, environment, workspace.as_deref(), *output).await,
+        Command::Workspace(WorkspaceArgs {
+            command: WorkspaceCommand::Create(args),
+        }) => run_workspace_create(cli, environment, args, input).await,
     }
 }
 
@@ -327,6 +367,110 @@ async fn run_workspace_get(
         },
         stderr: String::new(),
     })
+}
+
+#[derive(Debug, Serialize)]
+struct CreateWorkspaceBody {
+    name: String,
+    slug: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    issue_prefix: Option<String>,
+}
+
+async fn run_workspace_create<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &CreateWorkspaceArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let body = build_workspace_create_body(args, input)?;
+    let client = new_unscoped_api_client(cli, environment)?;
+    let workspace: Value = client
+        .post_json("/api/workspaces", &body)
+        .await
+        .context("create workspace")?;
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&workspace)?),
+            OutputFormat::Table => format_workspace_details_table(&workspace),
+        },
+        stderr: String::new(),
+    })
+}
+
+fn build_workspace_create_body<R: Read>(
+    args: &CreateWorkspaceArgs,
+    input: &mut R,
+) -> Result<CreateWorkspaceBody> {
+    let name = args.name.as_deref().unwrap_or_default();
+    if name.trim().is_empty() {
+        bail!("--name is required");
+    }
+    let slug = args.slug.as_deref().unwrap_or_default();
+    if slug.trim().is_empty() {
+        bail!("--slug is required");
+    }
+    if args.description_stdin && args.context_stdin {
+        bail!(
+            "--description-stdin and --context-stdin cannot be combined; a single stdin cannot feed both fields — pass one of them inline"
+        );
+    }
+    let description = resolve_optional_text_input(
+        args.description.as_deref(),
+        args.description_stdin,
+        "description",
+        input,
+    )?;
+    let context = resolve_optional_text_input(
+        args.context.as_deref(),
+        args.context_stdin,
+        "context",
+        input,
+    )?;
+    let issue_prefix = args
+        .issue_prefix
+        .as_ref()
+        .map(|prefix| {
+            if prefix.trim().is_empty() {
+                bail!("--issue-prefix cannot be empty; omit it to use the server-generated prefix");
+            }
+            Ok(prefix.clone())
+        })
+        .transpose()?;
+    Ok(CreateWorkspaceBody {
+        name: name.into(),
+        slug: slug.into(),
+        description,
+        context,
+        issue_prefix,
+    })
+}
+
+fn resolve_optional_text_input<R: Read>(
+    inline: Option<&str>,
+    use_stdin: bool,
+    field: &str,
+    input: &mut R,
+) -> Result<Option<String>> {
+    if use_stdin && inline.is_some_and(|value| !value.is_empty()) {
+        bail!("--{field} and --{field}-stdin are mutually exclusive");
+    }
+    if use_stdin {
+        let mut bytes = Vec::new();
+        input
+            .read_to_end(&mut bytes)
+            .with_context(|| format!("read stdin for --{field}-stdin"))?;
+        let body = trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned());
+        if body.is_empty() {
+            bail!("stdin content for --{field}-stdin is empty");
+        }
+        return Ok(Some(body));
+    }
+    Ok(inline.map(unescape_backslash_escapes))
 }
 
 async fn resolve_workspace_arg(
@@ -677,6 +821,10 @@ fn new_unscoped_authenticated_api_client(
     new_api_client_with_options(cli, environment, false, true, false)
 }
 
+fn new_unscoped_api_client(cli: &Cli, environment: &Environment) -> Result<ApiClient> {
+    new_api_client_with_options(cli, environment, false, false, true)
+}
+
 fn new_api_client_with_options(
     cli: &Cli,
     environment: &Environment,
@@ -857,7 +1005,8 @@ fn value_string(object: &Value, key: &str) -> String {
 mod tests {
     use super::*;
     use axum::extract::Request;
-    use axum::routing::{get, patch};
+    use axum::http::HeaderMap;
+    use axum::routing::{get, patch, post};
     use axum::{Json, Router};
     use clap::Parser;
     use std::fs;
@@ -931,6 +1080,15 @@ mod tests {
                     }),
             }) => args,
             _ => panic!("expected user profile update"),
+        }
+    }
+
+    fn create_workspace_args(cli: &Cli) -> &CreateWorkspaceArgs {
+        match &cli.command {
+            Command::Workspace(WorkspaceArgs {
+                command: WorkspaceCommand::Create(args),
+            }) => args,
+            _ => panic!("expected workspace create"),
         }
     }
 
@@ -1398,6 +1556,135 @@ mod tests {
         assert!(error.to_string().contains(
             "workspace ID is required: pass an id/slug/prefix as argument or set CORDY_WORKSPACE_ID"
         ));
+    }
+
+    #[tokio::test]
+    async fn workspace_create_posts_complete_body_without_workspace_scope() {
+        let captured = Arc::new(Mutex::new(None));
+        let captured_by_handler = Arc::clone(&captured);
+        let app = Router::new().route(
+            "/api/workspaces",
+            post(move |headers: HeaderMap, Json(body): Json<Value>| {
+                let captured = Arc::clone(&captured_by_handler);
+                async move {
+                    assert_eq!(headers["authorization"], "Bearer workspace-token");
+                    assert!(headers.get("x-workspace-id").is_none());
+                    *captured.lock().expect("capture body") = Some(body.clone());
+                    Json(serde_json::json!({
+                        "id":"33333333-3333-3333-3333-333333333333",
+                        "name":body["name"],
+                        "slug":body["slug"],
+                        "description":body["description"],
+                        "context":body["context"]
+                    }))
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "workspace-token");
+        environment.set("CORDY_WORKSPACE_ID", "must-not-be-sent");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "workspace",
+            "create",
+            "--name",
+            "Support Team",
+            "--slug",
+            "support-team",
+            "--description",
+            r"First line\nSecond line",
+            "--context-stdin",
+            "--issue-prefix",
+            "SUP",
+            "--output",
+            "table",
+        ])
+        .expect("workspace create CLI");
+        let output = run_with_input(
+            &cli,
+            &environment,
+            &mut Cursor::new(b"Customer support context\n".to_vec()),
+        )
+        .await
+        .expect("create workspace");
+
+        let body = captured
+            .lock()
+            .expect("captured body")
+            .clone()
+            .expect("request body");
+        assert_eq!(body["name"], "Support Team");
+        assert_eq!(body["slug"], "support-team");
+        assert_eq!(body["description"], "First line\nSecond line");
+        assert_eq!(body["context"], "Customer support context");
+        assert_eq!(body["issue_prefix"], "SUP");
+        assert!(output.stdout.starts_with("ID"));
+        assert!(output.stdout.contains("support-team"));
+        server.abort();
+    }
+
+    #[test]
+    fn workspace_create_validates_required_and_safe_input_flags() {
+        let missing_name =
+            Cli::try_parse_from(["cordy", "workspace", "create", "--slug", "support-team"])
+                .expect("missing name CLI");
+        assert_eq!(
+            build_workspace_create_body(
+                create_workspace_args(&missing_name),
+                &mut Cursor::new(Vec::<u8>::new())
+            )
+            .expect_err("missing name")
+            .to_string(),
+            "--name is required"
+        );
+
+        let dual_stdin = Cli::try_parse_from([
+            "cordy",
+            "workspace",
+            "create",
+            "--name",
+            "Support",
+            "--slug",
+            "support",
+            "--description-stdin",
+            "--context-stdin",
+        ])
+        .expect("dual stdin CLI");
+        assert!(build_workspace_create_body(
+            create_workspace_args(&dual_stdin),
+            &mut Cursor::new(b"ambiguous".to_vec())
+        )
+        .expect_err("dual stdin")
+        .to_string()
+        .contains("a single stdin cannot feed both fields"));
+
+        let empty_prefix = Cli::try_parse_from([
+            "cordy",
+            "workspace",
+            "create",
+            "--name",
+            "Support",
+            "--slug",
+            "support",
+            "--issue-prefix",
+            "   ",
+        ])
+        .expect("empty prefix CLI");
+        assert!(build_workspace_create_body(
+            create_workspace_args(&empty_prefix),
+            &mut Cursor::new(Vec::<u8>::new())
+        )
+        .expect_err("empty issue prefix")
+        .to_string()
+        .contains("omit it to use the server-generated prefix"));
     }
 
     #[test]

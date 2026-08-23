@@ -114,6 +114,19 @@ impl ApiClient {
         .await
     }
 
+    pub async fn post_json<B: Serialize + ?Sized, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<T> {
+        self.send_json(
+            Method::POST,
+            path,
+            self.request(Method::POST, path).json(body),
+        )
+        .await
+    }
+
     fn request(&self, method: Method, path: &str) -> RequestBuilder {
         let mut request = self
             .client
