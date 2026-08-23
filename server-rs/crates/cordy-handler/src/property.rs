@@ -9,7 +9,9 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use cordy_db::models::IssueProperty;
-use cordy_db::queries::issue_property::{self, ListIssuePropertiesRow};
+use cordy_db::queries::issue_property::{
+    self, CountIssuesUsingPropertyOptionsRow, ListIssuePropertiesRow,
+};
 use cordy_middleware::workspace::WorkspaceContext;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -21,7 +23,7 @@ use crate::state::HandlerState;
 pub fn router() -> Router<HandlerState> {
     Router::new()
         .route("/api/properties", get(list).post(create))
-        .route("/api/properties/{id}", get(get_one))
+        .route("/api/properties/{id}", get(get_one).patch(update))
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -51,6 +53,15 @@ struct CreateRequest {
     #[serde(default)]
     icon: String,
     config: Option<PropertyConfig>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct UpdateRequest {
+    name: Option<String>,
+    description: Option<String>,
+    icon: Option<String>,
+    config: Option<PropertyConfig>,
+    archived: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -254,6 +265,53 @@ fn validate_config(
 fn decode_create(body: &[u8]) -> Result<CreateRequest, ()> {
     let mut deserializer = serde_json::Deserializer::from_slice(body);
     CreateRequest::deserialize(&mut deserializer).map_err(|_| ())
+}
+
+fn decode_update(body: &[u8]) -> Result<UpdateRequest, ()> {
+    let mut deserializer = serde_json::Deserializer::from_slice(body);
+    UpdateRequest::deserialize(&mut deserializer).map_err(|_| ())
+}
+
+fn removed_option_ids(
+    existing_config: &serde_json::Value,
+    next_config: &serde_json::Value,
+) -> Vec<String> {
+    let next = config(next_config.clone())
+        .options
+        .into_iter()
+        .map(|option| option.id)
+        .collect::<std::collections::HashSet<_>>();
+    config(existing_config.clone())
+        .options
+        .into_iter()
+        .filter_map(|option| (!next.contains(&option.id)).then_some(option.id))
+        .collect()
+}
+
+fn describe_options_in_use(
+    existing_config: &serde_json::Value,
+    rows: &[CountIssuesUsingPropertyOptionsRow],
+) -> String {
+    let names = config(existing_config.clone())
+        .options
+        .into_iter()
+        .map(|option| (option.id, option.name))
+        .collect::<HashMap<_, _>>();
+    let mut parts = rows
+        .iter()
+        .map(|row| {
+            let name = names
+                .get(&row.option_id)
+                .filter(|name| !name.is_empty())
+                .unwrap_or(&row.option_id);
+            format!("{name:?} ({} issues)", row.usage_count)
+        })
+        .collect::<Vec<_>>();
+    parts.sort();
+    format!(
+        "cannot remove options still in use: {}; clear or change those values first",
+        parts.join(", ")
+    )
 }
 
 fn property_definition_actor_is_agent(headers: &HeaderMap, resolved_actor_type: &str) -> bool {
@@ -500,6 +558,234 @@ async fn create(
     (StatusCode::CREATED, Json(response)).into_response()
 }
 
+async fn update(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if property_definition_actor_is_agent(&headers, "member") {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "agents cannot manage property definitions",
+        );
+    }
+    let (actor_type, _, _) = crate::issue::mutation_actor(&state, &context, &headers).await;
+    if property_definition_actor_is_agent(&headers, &actor_type) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "agents cannot manage property definitions",
+        );
+    }
+    if !matches!(context.member.role.as_str(), "owner" | "admin") {
+        return error_response(StatusCode::FORBIDDEN, "insufficient workspace role");
+    }
+    let property_id = match Uuid::parse_str(&id) {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid property id"),
+    };
+    let request = match decode_update(&body) {
+        Ok(request) => request,
+        Err(()) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, %property_id, "failed to begin property definition update");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update property",
+            );
+        }
+    };
+    for key in [
+        format!("props:{}", context.member.workspace_id),
+        format!("prop:{property_id}"),
+    ] {
+        if let Err(error) = sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+            .bind(key)
+            .execute(&mut *transaction)
+            .await
+        {
+            tracing::warn!(%error, %property_id, "failed to lock property definition update");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update property",
+            );
+        }
+    }
+    let existing = match issue_property::get_issue_property(
+        &mut *transaction,
+        property_id,
+        context.member.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(property)) => property,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "property not found"),
+        Err(error) => {
+            tracing::warn!(%error, %property_id, "failed to load property for update");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update property",
+            );
+        }
+    };
+
+    let name = match request.name {
+        Some(name) => match validate_name(&name) {
+            Ok(name) => Some(name),
+            Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
+        },
+        None => None,
+    };
+    let description = match request.description {
+        Some(description) if description.chars().count() > 500 => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "description must be 500 characters or fewer",
+            )
+        }
+        Some(description) => Some(description.trim().replace('\0', "")),
+        None => None,
+    };
+    let icon = match request.icon {
+        Some(icon) => match validate_icon(&icon) {
+            Ok(icon) => Some(icon),
+            Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
+        },
+        None => None,
+    };
+    let config_update = match request.config {
+        Some(config) => match validate_config(&existing.type_, Some(config)) {
+            Ok(config) => Some(config),
+            Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
+        },
+        None => None,
+    };
+    if let Some(next_config) = &config_update {
+        let removed = removed_option_ids(&existing.config, next_config);
+        if !removed.is_empty() {
+            let rows = match issue_property::count_issues_using_property_options(
+                &mut *transaction,
+                &removed,
+                context.member.workspace_id,
+                &property_id.to_string(),
+            )
+            .await
+            {
+                Ok(rows) => rows,
+                Err(error) => {
+                    tracing::warn!(%error, %property_id, "failed to count property option usage");
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to update property",
+                    );
+                }
+            };
+            if !rows.is_empty() {
+                return error_response(
+                    StatusCode::CONFLICT,
+                    &describe_options_in_use(&existing.config, &rows),
+                );
+            }
+        }
+    }
+
+    let archived_set = request.archived.is_some();
+    let archived_at = match request.archived {
+        Some(true) => Some(chrono::Utc::now()),
+        Some(false) => {
+            if existing.archived_at.is_some() {
+                let active = match issue_property::count_active_issue_properties(
+                    &mut *transaction,
+                    context.member.workspace_id,
+                )
+                .await
+                {
+                    Ok(Some(active)) => active,
+                    Ok(None) => {
+                        return error_response(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "failed to update property",
+                        )
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, %property_id, "failed to count active properties");
+                        return error_response(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "failed to update property",
+                        );
+                    }
+                };
+                if active >= 20 {
+                    return error_response(
+                        StatusCode::BAD_REQUEST,
+                        "a workspace cannot have more than 20 active properties; archive unused ones first",
+                    );
+                }
+            }
+            None
+        }
+        None => None,
+    };
+
+    let property = match issue_property::update_issue_property(
+        &mut *transaction,
+        property_id,
+        context.member.workspace_id,
+        name.as_deref(),
+        description.as_deref(),
+        icon.as_deref(),
+        config_update.as_ref(),
+        archived_set,
+        archived_at,
+    )
+    .await
+    {
+        Ok(Some(property)) => property,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "property not found"),
+        Err(error)
+            if error
+                .downcast_ref::<sqlx::Error>()
+                .and_then(sqlx::Error::as_database_error)
+                .and_then(|error| error.code())
+                .is_some_and(|code| code == "23505") =>
+        {
+            return error_response(
+                StatusCode::CONFLICT,
+                "a property with that name already exists",
+            )
+        }
+        Err(error) => {
+            tracing::warn!(%error, %property_id, "failed to update property");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update property",
+            );
+        }
+    };
+    if let Err(error) = transaction.commit().await {
+        tracing::warn!(%error, %property_id, "failed to commit property definition update");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to update property",
+        );
+    }
+    let response = from_model(property, 0);
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::EVENT_PROPERTY_UPDATED.into(),
+        workspace_id: context.member.workspace_id.to_string(),
+        actor_type: "member".into(),
+        actor_id: context.member.user_id.to_string(),
+        payload: json!({ "property": &response }),
+        ..Default::default()
+    });
+    Json(response).into_response()
+}
+
 async fn get_one(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -609,5 +895,39 @@ mod tests {
             &HeaderMap::new(),
             "member"
         ));
+    }
+
+    #[test]
+    fn update_decoder_preserves_missing_and_explicit_null_fields() {
+        let request = decode_update(
+            br#"{"name":"Impact","description":null,"archived":false,"unknown":true} trailing"#,
+        )
+        .unwrap();
+        assert_eq!(request.name.as_deref(), Some("Impact"));
+        assert!(request.description.is_none());
+        assert_eq!(request.archived, Some(false));
+        assert!(request.config.is_none());
+    }
+
+    #[test]
+    fn removed_options_and_conflict_message_match_go_contract() {
+        let existing = json!({"options": [
+            {"id": "a", "name": "Critical", "color": "#ff0000"},
+            {"id": "b", "name": "Low", "color": "#00ff00"}
+        ]});
+        let next = json!({"options": [
+            {"id": "b", "name": "Minor", "color": "#00ff00"}
+        ]});
+        assert_eq!(removed_option_ids(&existing, &next), vec!["a"]);
+        assert_eq!(
+            describe_options_in_use(
+                &existing,
+                &[CountIssuesUsingPropertyOptionsRow {
+                    option_id: "a".into(),
+                    usage_count: 3,
+                }]
+            ),
+            "cannot remove options still in use: \"Critical\" (3 issues); clear or change those values first"
+        );
     }
 }
