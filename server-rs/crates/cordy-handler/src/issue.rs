@@ -3847,7 +3847,7 @@ async fn issue_prefix(state: &HandlerState, workspace_id: Uuid) -> String {
         .unwrap_or_else(|| "ISSUE".to_string())
 }
 
-fn legacy_issue_prefix(name: &str) -> String {
+pub(crate) fn legacy_issue_prefix(name: &str) -> String {
     let letters = name
         .chars()
         .filter(|character| character.is_ascii_alphabetic())
