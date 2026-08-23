@@ -187,22 +187,53 @@ async fn resolve(
     Path(comment_id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let current = match load_comment(&state, &context, &comment_id).await {
+    let initial = match load_comment(&state, &context, &comment_id).await {
         Ok(comment) => comment,
         Err(response) => return response,
     };
-    let was_resolved = current.resolved_at.is_some();
     let (actor_type, actor_id, _) = crate::issue::mutation_actor(&state, &context, &headers).await;
     let mut transaction = match state.pool.begin().await {
         Ok(transaction) => transaction,
         Err(error) => {
-            tracing::warn!(%error, comment_id = %current.id, "failed to begin comment resolution");
+            tracing::warn!(%error, comment_id = %initial.id, "failed to begin comment resolution");
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to resolve comment",
             );
         }
     };
+    if !matches!(
+        comment::lock_comment_thread(
+            &mut *transaction,
+            initial.id,
+            initial.issue_id,
+            initial.workspace_id,
+        )
+        .await,
+        Ok(Some(_))
+    ) {
+        tracing::warn!(comment_id = %initial.id, "failed to lock comment thread");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to resolve comment",
+        );
+    }
+    let current = match comment::get_comment_in_workspace(
+        &mut *transaction,
+        initial.id,
+        initial.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(comment)) => comment,
+        Ok(None) | Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to resolve comment",
+            );
+        }
+    };
+    let was_resolved = current.resolved_at.is_some();
     let cleared = match comment::clear_other_thread_resolutions(
         &mut *transaction,
         current.id,
@@ -271,13 +302,54 @@ async fn unresolve(
     Path(comment_id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let current = match load_comment(&state, &context, &comment_id).await {
+    let initial = match load_comment(&state, &context, &comment_id).await {
         Ok(comment) => comment,
         Err(response) => return response,
     };
-    let was_resolved = current.resolved_at.is_some();
     let (actor_type, actor_id, _) = crate::issue::mutation_actor(&state, &context, &headers).await;
-    let updated = match comment::unresolve_comment(&state.pool, current.id).await {
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, comment_id = %initial.id, "failed to begin comment resolution");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to unresolve comment",
+            );
+        }
+    };
+    if !matches!(
+        comment::lock_comment_thread(
+            &mut *transaction,
+            initial.id,
+            initial.issue_id,
+            initial.workspace_id,
+        )
+        .await,
+        Ok(Some(_))
+    ) {
+        tracing::warn!(comment_id = %initial.id, "failed to lock comment thread");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to unresolve comment",
+        );
+    }
+    let current = match comment::get_comment_in_workspace(
+        &mut *transaction,
+        initial.id,
+        initial.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(comment)) => comment,
+        Ok(None) | Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to unresolve comment",
+            );
+        }
+    };
+    let was_resolved = current.resolved_at.is_some();
+    let updated = match comment::unresolve_comment(&mut *transaction, current.id).await {
         Ok(Some(updated)) => updated,
         Ok(None) | Err(_) => {
             return error_response(
@@ -286,6 +358,13 @@ async fn unresolve(
             )
         }
     };
+    if let Err(error) = transaction.commit().await {
+        tracing::warn!(%error, comment_id = %current.id, "failed to commit comment resolution");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to unresolve comment",
+        );
+    }
     let response = comment_json(&state, &updated).await;
     if was_resolved {
         publish(
@@ -335,8 +414,23 @@ async fn add_reaction(
     .await
     {
         Ok(Some(added)) => added,
-        Ok(None) | Err(_) => {
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to add reaction")
+        Ok(None) => match reaction::get_reaction_for_actor(
+            &state.pool,
+            current.id,
+            current.workspace_id,
+            &actor_type,
+            actor_id,
+            &request.emoji,
+        )
+        .await
+        {
+            Ok(Some(added)) => added,
+            Ok(None) | Err(_) => {
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to add reaction");
+            }
+        },
+        Err(_) => {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to add reaction");
         }
     };
     let response = added_reaction_json(&added);
