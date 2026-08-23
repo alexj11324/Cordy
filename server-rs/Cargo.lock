@@ -806,6 +806,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "cordy-db",
+ "cordy-service",
  "futures-util",
  "serde_json",
  "sqlx",

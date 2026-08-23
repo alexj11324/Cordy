@@ -8,6 +8,13 @@ use sqlx::PgPool;
 
 use crate::{static_scopes, CatchUpMode, HandlerResult, JobSpec, GLOBAL_SCOPE};
 
+mod autopilot;
+
+pub use autopilot::{
+    autopilot_schedule_dispatch_job, AutopilotScheduleDispatcher, AUTOPILOT_SCHEDULE_DISPATCH_JOB,
+    AUTOPILOT_TRIGGER_SCOPE, DEFAULT_AUTOPILOT_SCHEDULE_TIMEZONE,
+};
+
 /// Stable audit name. Renaming it would detach existing execution history.
 pub const TASK_USAGE_HOURLY_JOB: &str = "rollup_task_usage_hourly";
 
