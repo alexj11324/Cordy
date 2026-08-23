@@ -6,8 +6,8 @@
 //! - preparationWaitDelay          → PREPARATION_WAIT_DELAY
 //! - preparationRequest            → PreparationRequest
 //! - preparationPrepareParams /
-//!    preparationReuseParams        → (folded: the gateway token is carried
-//!    plainly on the wire structs; see note)
+//!   preparationReuseParams        → (folded: the gateway token is carried
+//!   plainly on the wire structs; see note)
 //! - preparationResponse           → PreparationResponse
 //! - preparationErrorKindOpenclawCLITimeout → PREPARATION_ERROR_KIND_OPENCLAW_CLI_TIMEOUT
 //! - preparationErrorKind          → preparation_error_kind
@@ -18,17 +18,17 @@
 //! - decodePreparationRequest      → decode_preparation_request
 //! - RunPreparationHelper          → run_preparation_helper
 //! - preparationProcessController  → (unix) process-group via tokio Command;
-//!    stop = SIGKILL to -pgid, ESRCH tolerated
+//!   stop = SIGKILL to -pgid, ESRCH tolerated
 //!
 //! Deviations:
 //! - Go's DisallowUnknownFields is approximated with serde deny_unknown_fields.
 //! - The OpenclawGateway token-masking dance exists in Go because the public
-//!    type's MarshalJSON redacts Token. Our stand-in type serializes plainly
-//!    already, so the private view types collapse into the request structs.
+//!   type's MarshalJSON redacts Token. Our stand-in type serializes plainly
+//!   already, so the private view types collapse into the request structs.
 //! - slog logger dropped (tracing).
 //! - WaitDelay semantics: after cancellation we SIGKILL the process group and
-//!    await the child; a 2s grace for pipe flushes is not needed because we
-//!    read to EOF before waiting.
+//!   await the child; a 2s grace for pipe flushes is not needed because we
+//!   read to EOF before waiting.
 //!
 //! NOTE: the parent-side entry points (prepare_isolated / reuse_isolated) are
 //! wired into the task launcher in a later slice; until then this module is
@@ -219,10 +219,16 @@ async fn run_preparation_process(
     // Attach-to-kill ordering from Go: the group is set at spawn time, so the
     // payload can be released immediately afterwards.
     let write_task = tokio::spawn(async move {
-        // Write then shutdown so the helper's decoder sees EOF.
+        // Write then shutdown so the helper's decoder sees EOF. Both failures
+        // ride back joined, mirroring Go's errors.Join at this boundary.
         let write_res = stdin.write_all(&payload).await.map(|_| ());
         let close_res = stdin.shutdown().await;
-        (write_res.err(), close_res.err())
+        match (write_res.err(), close_res.err()) {
+            (None, None) => Ok(()),
+            (Some(a), None) => Err(a.to_string()),
+            (None, Some(b)) => Err(b.to_string()),
+            (Some(a), Some(b)) => Err(format!("{a}; {b}")),
+        }
     });
 
     let stderr_buf = Vec::new();
@@ -260,7 +266,7 @@ async fn run_preparation_process(
     let status = match status_result {
         Some(Ok(status)) => status,
         Some(Err(e)) => return Err(anyhow!("execenv: preparation helper failed: {e}")),
-        None => unreachable!("wait_task resolved"),
+        None => return Err(anyhow!("execenv: preparation helper wait task failed")),
     };
     let _ = PREPARATION_WAIT_DELAY; // documented grace; EOF reads bound below
 

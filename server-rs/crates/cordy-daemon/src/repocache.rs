@@ -184,7 +184,7 @@ const REPO_CACHE_GIT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 /// minute/second values (e.g. `10m0s`), used inside timeout error messages.
 fn go_duration(d: Duration) -> String {
     let secs = d.as_secs();
-    if secs >= 60 && secs % 60 == 0 {
+    if secs >= 60 && secs.is_multiple_of(60) {
         format!("{}m0s", secs / 60)
     } else if secs >= 60 {
         format!("{}m{}s", secs / 60, secs % 60)
@@ -389,6 +389,7 @@ pub(crate) fn is_repo_busy(err: &anyhow::Error) -> bool {
         .any(|c| c.downcast_ref::<RepoBusyError>().is_some())
 }
 
+#[derive(Default)]
 struct LockState {
     held: bool,
     maintenance: bool,
@@ -396,17 +397,6 @@ struct LockState {
     /// with [`CancelCause::Preempted`] mirrors `maintenanceCancel(cause)`.
     maintenance_cancel: Option<Ctx>,
     foreground_waiters: i32,
-}
-
-impl Default for LockState {
-    fn default() -> Self {
-        Self {
-            held: false,
-            maintenance: false,
-            maintenance_cancel: None,
-            foreground_waiters: 0,
-        }
-    }
 }
 
 /// `repoLock` (cache.go:190–197): a foreground-priority mutex. Ordinary cache
@@ -1074,10 +1064,10 @@ async fn read_fetch_refspec_ctx(ctx: &Ctx, bare_path: &Path) -> anyhow::Result<S
 /// (`exec.ExitError.ExitCode()` equivalent).
 pub(crate) fn exit_code_of(err: &anyhow::Error) -> Option<i32> {
     for cause in err.chain() {
-        if let Some(pe) = cause.downcast_ref::<processtree::ProcessError>() {
-            if let processtree::ProcessError::Exit(code) = pe {
-                return Some(*code);
-            }
+        if let Some(processtree::ProcessError::Exit(code)) =
+            cause.downcast_ref::<processtree::ProcessError>()
+        {
+            return Some(*code);
         }
     }
     None

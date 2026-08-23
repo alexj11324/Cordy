@@ -17,6 +17,10 @@
 // the daemon-runner/execenv lanes; silence dead-code until that lands.
 #![allow(dead_code)]
 
+// S9-integration: entry points (gc_loop/run_gc) and seam types are wired by
+// the daemon-runner/execenv lanes; silence dead-code until that lands.
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -2203,10 +2207,10 @@ fn err_is_cancellation(err: &anyhow::Error) -> bool {
 /// cancelled (`context.Cause(ctx)` equivalent).
 fn cancel_cause_of(err: &anyhow::Error) -> Option<CancelCause> {
     for cause in err.chain() {
-        if let Some(pe) = cause.downcast_ref::<processtree::ProcessError>() {
-            if let processtree::ProcessError::Cancelled(c) = pe {
-                return Some(*c);
-            }
+        if let Some(processtree::ProcessError::Cancelled(c)) =
+            cause.downcast_ref::<processtree::ProcessError>()
+        {
+            return Some(*c);
         }
     }
     None

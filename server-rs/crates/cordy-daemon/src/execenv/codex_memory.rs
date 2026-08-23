@@ -190,25 +190,20 @@ fn strip_user_memory_directives(content: &str) -> String {
             continue;
         }
         match current_table {
-            "" => {
-                if root_dotted_features_memories_re().is_match(trimmed)
-                    || root_dotted_memories_generate_re().is_match(trimmed)
-                    || root_dotted_memories_use_re().is_match(trimmed)
-                {
-                    continue;
-                }
+            "" if root_dotted_features_memories_re().is_match(trimmed)
+                || root_dotted_memories_generate_re().is_match(trimmed)
+                || root_dotted_memories_use_re().is_match(trimmed) =>
+            {
+                continue;
             }
-            "[features]" => {
-                if features_table_memories_re().is_match(trimmed) {
-                    continue;
-                }
+            "[features]" if features_table_memories_re().is_match(trimmed) => {
+                continue;
             }
-            "[memories]" => {
+            "[memories]"
                 if memories_table_generate_re().is_match(trimmed)
-                    || memories_table_use_re().is_match(trimmed)
-                {
-                    continue;
-                }
+                    || memories_table_use_re().is_match(trimmed) =>
+            {
+                continue;
             }
             _ => {}
         }
@@ -437,10 +432,16 @@ mod tests {
         assert!(injected.ends_with("body = 1\n"));
     }
 
+    // Serializes tests that read/mutate CORDY_CODEX_MEMORY: ensure_codex_
+    // memory_config consults the env var, so parallel mutation from the
+    // escape-hatch test would flip a concurrent run into a no-op mid-test.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     // Port of TestEnsureCodexMemoryConfigIdempotent + layout transitions:
     // both blocks adapt to existing tables and stay byte-stable across reruns.
     #[test]
     fn test_ensure_codex_memory_config_idempotent_and_layout_aware() {
+        let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp
             .path()
@@ -497,6 +498,7 @@ mod tests {
     // feature on (config left untouched).
     #[test]
     fn test_codex_memory_escape_hatch() {
+        let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp
             .path()

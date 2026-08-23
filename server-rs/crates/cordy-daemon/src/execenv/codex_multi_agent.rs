@@ -123,16 +123,8 @@ fn strip_user_multi_agent_directives(content: &str) -> String {
             continue;
         }
         match current_table {
-            "" => {
-                if root_dotted_multi_agent_re().is_match(trimmed) {
-                    continue;
-                }
-            }
-            "[features]" => {
-                if features_table_multi_agent_re().is_match(trimmed) {
-                    continue;
-                }
-            }
+            "" if root_dotted_multi_agent_re().is_match(trimmed) => continue,
+            "[features]" if features_table_multi_agent_re().is_match(trimmed) => continue,
             _ => {}
         }
         out.push(line);
@@ -235,6 +227,12 @@ mod tests {
         std::env::set_var(key, value);
     }
 
+    // Serializes tests that read/mutate CORDY_CODEX_MULTI_AGENT:
+    // ensure_codex_multi_agent_config consults the env var, so parallel
+    // mutation from the escape-hatch test would flip a concurrent run into a
+    // no-op mid-test.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     // Port of TestRenderCordyMultiAgentBlock: table vs dotted-key forms.
     #[test]
     fn test_render_cordy_multi_agent_block() {
@@ -276,6 +274,7 @@ mod tests {
     // root-form ↔ in-table rewrites stay byte-stable and never duplicate keys.
     #[test]
     fn test_ensure_codex_multi_agent_config_idempotent_and_layout_aware() {
+        let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp
             .path()
@@ -319,6 +318,7 @@ mod tests {
     // the feature on (config left untouched).
     #[test]
     fn test_codex_multi_agent_escape_hatch() {
+        let _env_guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp
             .path()

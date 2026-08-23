@@ -16,6 +16,7 @@ tracing = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 uuid = { workspace = true }
+url = { workspace = true }
 chrono = { workspace = true }
 sqlx = { workspace = true }
 redis = { workspace = true }

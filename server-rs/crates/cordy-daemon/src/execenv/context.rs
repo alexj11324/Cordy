@@ -2,7 +2,7 @@
 //!
 //! Symbol map:
 //! - TaskContextMarkerRelPath / TaskContextMarkerManagedBy
-//!    → TASK_CONTEXT_MARKER_REL_PATH / TASK_CONTEXT_MARKER_MANAGED_BY
+//!   → TASK_CONTEXT_MARKER_REL_PATH / TASK_CONTEXT_MARKER_MANAGED_BY
 //! - taskContextMarkerFile        → TaskContextMarkerFile
 //! - EnsureWorkspacesRootMarker   → ensure_workspaces_root_marker
 //! - writeWorkspacesRootMarkerAtomic → write_workspaces_root_marker_atomic
@@ -23,8 +23,8 @@
 //! - setFrontmatterName           → set_frontmatter_name
 //! - renameFrontmatterNameViaNode → rename_frontmatter_name_via_node
 //! - materializeAliasesOf / cloneYAMLNode → folded into serde_yaml's alias
-//!    resolution (aliases materialize at parse; anchors drop on re-marshal,
-//!    which is exactly the outcome Go's manual pass produces)
+//!   resolution (aliases materialize at parse; anchors drop on re-marshal,
+//!   which is exactly the outcome Go's manual pass produces)
 //! - frontmatterNameIs            → frontmatter_name_is
 //! - yamlEscapeInline             → yaml_escape_inline
 //! - sanitizeSkillName            → sanitize_skill_name
@@ -36,25 +36,25 @@
 //! Shared package helpers hosted here per mod.rs (sidecar-manifest /
 //! runtime-skill-policy land with lane E2/E3 consumers):
 //! - sidecar_manifest.go: SidecarManifest, recordMkdirAll, recordWriteFile,
-//!    errPathPreExists, allocateCollisionFreeSkillDir, skillSlugCandidate,
-//!    writeSidecarManifest, CleanupSidecars, rollBackManifest,
-//!    rollBackPreparedSidecars, removeReusedManagedSkillDirs, dirHasEntries
+//!   errPathPreExists, allocateCollisionFreeSkillDir, skillSlugCandidate,
+//!   writeSidecarManifest, CleanupSidecars, rollBackManifest,
+//!   rollBackPreparedSidecars, removeReusedManagedSkillDirs, dirHasEntries
 //! - runtime_skill_policy.go: RuntimeSkillRefForEnv, cleanRuntimeSkillKey,
-//!    prepareClaudeSkillSettings, ensureCodexDisabledSkillsConfig,
-//!    workspaceClaimsRuntimeSkill
+//!   prepareClaudeSkillSettings, ensureCodexDisabledSkillsConfig,
+//!   workspaceClaimsRuntimeSkill
 //! - skill_visibility.go: resolveSkillSlugs (modelVisibleSkills stays with
-//!    its runtime_config_sections consumer in a later lane)
+//!   its runtime_config_sections consumer in a later lane)
 //! - internal/skill.IsReservedContentPath → is_reserved_content_path
 //! - pkg/agent.BuiltinRuntimeByID (SkillsDir only) → builtin_runtime_skills_dir
 //!
 //! Deviations:
 //! - slog logger parameters dropped; tracing macros used directly.
 //! - frontmatterNameValueSpan is lexical (line scan) instead of yaml.v3 node
-//!    line numbers; setFrontmatterName re-parses and verifies the result and
-//!    falls back to renameFrontmatterNameViaNode on any mismatch, so a
-//!    mis-scanned span degrades to the same recovery path Go uses.
+//!   line numbers; setFrontmatterName re-parses and verifies the result and
+//!   falls back to renameFrontmatterNameViaNode on any mismatch, so a
+//!   mis-scanned span degrades to the same recovery path Go uses.
 //! - renameFrontmatterNameViaNode re-marshals through serde_yaml, which
-//!    normalizes quoting/indentation just like Go's yaml.Marshal round-trip.
+//!   normalizes quoting/indentation just like Go's yaml.Marshal round-trip.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -526,8 +526,7 @@ pub(crate) fn write_context_files(
 
     // Project resources are best-effort: a write failure logs but does not
     // block task startup.
-    write_project_resources(work_dir, ctx, manifest.as_deref_mut())
-        .context("write project resources")?;
+    write_project_resources(work_dir, ctx, manifest).context("write project resources")?;
 
     Ok(())
 }
@@ -612,7 +611,7 @@ fn write_project_resources(
     };
     let data = serde_json::to_vec_pretty(&payload)?;
     let path = join_path(&[&dir, "resources.json"]);
-    if let Err(err) = record_write_file(&path, &data, manifest.as_deref_mut()) {
+    if let Err(err) = record_write_file(&path, &data, manifest) {
         // .cordy/project/resources.json is Cordy-owned and a pre-existing path
         // is almost certainly user content the manifest must not destroy.
         if !is_pre_exists(&err) {

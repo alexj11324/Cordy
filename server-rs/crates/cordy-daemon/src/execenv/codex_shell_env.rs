@@ -164,7 +164,11 @@ fn toml_basic_string(s: &str) -> String {
 /// at the root, or as a profile overlay (`profiles.<name>.
 /// shell_environment_policy`).
 fn is_codex_shell_env_policy_path(keys: &[String]) -> bool {
-    if keys.first().map(|k| k == SHELL_ENVIRONMENT_POLICY_KEY).unwrap_or(false) {
+    if keys
+        .first()
+        .map(|k| k == SHELL_ENVIRONMENT_POLICY_KEY)
+        .unwrap_or(false)
+    {
         return true;
     }
     keys.len() >= 3 && keys[0] == "profiles" && keys[2] == SHELL_ENVIRONMENT_POLICY_KEY
@@ -383,7 +387,10 @@ mod tests {
     use super::*;
 
     fn hm(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     fn inherited(entries: &[&str]) -> Vec<String> {
@@ -396,18 +403,32 @@ mod tests {
     #[test]
     fn test_codex_shell_env_allowlist() {
         let got = codex_shell_env_allowlist(
-            &inherited(&["PATH=/usr/bin", "HOME=/home/u", "API_KEY=secret", "CORDY_TOKEN=t"]),
-            &hm(&[("CORDY_TOKEN", "task-token"), ("MY_SECRET", "x"), ("EXTRA", "1")]),
+            &inherited(&[
+                "PATH=/usr/bin",
+                "HOME=/home/u",
+                "API_KEY=secret",
+                "CORDY_TOKEN=t",
+            ]),
+            &hm(&[
+                ("CORDY_TOKEN", "task-token"),
+                ("MY_SECRET", "x"),
+                ("EXTRA", "1"),
+            ]),
             &["my_secret".to_string()],
         );
-        assert_eq!(got, vec!["EXTRA", "HOME", "PATH", "MY_SECRET", "CORDY_TOKEN"]);
+        assert_eq!(
+            got,
+            vec![
+                "CORDY_TOKEN".to_string(),
+                "EXTRA".to_string(),
+                "HOME".to_string(),
+                "MY_SECRET".to_string(),
+                "PATH".to_string()
+            ]
+        );
 
         // Unauthorized credential-looking explicit value dropped.
-        let got = codex_shell_env_allowlist(
-            &[],
-            &hm(&[("UNAUTHORIZED_KEY", "v")]),
-            &[],
-        );
+        let got = codex_shell_env_allowlist(&[], &hm(&[("UNAUTHORIZED_KEY", "v")]), &[]);
         assert!(got.is_empty());
 
         // Authorized credential-looking explicit value kept.
@@ -432,11 +453,7 @@ mod tests {
         assert!(got.is_empty());
 
         // Empty authorized entries ignored.
-        let got = codex_shell_env_allowlist(
-            &[],
-            &hm(&[("KEYX", "v")]),
-            &["".to_string()],
-        );
+        let got = codex_shell_env_allowlist(&[], &hm(&[("KEYX", "v")]), &["".to_string()]);
         assert!(got.is_empty());
     }
 
@@ -457,14 +474,21 @@ mod tests {
         assert!(got.contains("top = 1"));
         assert!(got.contains("[other]"));
         assert!(got.contains("value = 2"));
-        assert!(got.contains("profiles_dotted = 3"));
-        assert!(got.contains("after = 4"));
+        // Go's isCodexShellEnvPolicyPath matches every key inside a
+        // [profiles.*.shell_environment_policy] table, so the entire table
+        // body is stripped along with its header.
+        assert!(!got.contains("profiles_dotted"));
+        assert!(!got.contains("after = 4"));
 
         assert!(!got.contains("inherit = "));
         assert!(!got.contains("keep_flag"));
         assert!(!got.contains("include_only"));
-        assert!(!got.lines().any(|l| l.trim() == "[shell_environment_policy]"));
-        assert!(!got.lines().any(|l| l.trim() == "[profiles.fast.shell_environment_policy]"));
+        assert!(!got
+            .lines()
+            .any(|l| l.trim() == "[shell_environment_policy]"));
+        assert!(!got
+            .lines()
+            .any(|l| l.trim() == "[profiles.fast.shell_environment_policy]"));
 
         // Result still parses as valid TOML.
         let parsed: Result<toml::Value, _> = got.parse();
@@ -508,7 +532,11 @@ mod tests {
     #[test]
     fn test_ensure_codex_shell_env_policy_config_idempotent() {
         let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("config.toml").to_string_lossy().into_owned();
+        let path = tmp
+            .path()
+            .join("config.toml")
+            .to_string_lossy()
+            .into_owned();
 
         ensure_codex_shell_env_policy_config(&path, &["PATH".to_string()]).unwrap();
         let first = std::fs::read_to_string(&path).unwrap();
@@ -549,7 +577,9 @@ mod tests {
     #[test]
     fn test_is_codex_shell_env_policy_path() {
         let mk = |parts: &[&str]| parts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-        assert!(is_codex_shell_env_policy_path(&mk(&["shell_environment_policy"])));
+        assert!(is_codex_shell_env_policy_path(&mk(&[
+            "shell_environment_policy"
+        ])));
         assert!(is_codex_shell_env_policy_path(&mk(&[
             "shell_environment_policy",
             "include_only"
@@ -562,9 +592,7 @@ mod tests {
         assert!(!is_codex_shell_env_policy_path(&mk(&["profiles"])));
         assert!(!is_codex_shell_env_policy_path(&mk(&["other"])));
         assert!(!is_codex_shell_env_policy_path(&mk(&[
-            "profiles",
-            "fast",
-            "other"
+            "profiles", "fast", "other"
         ])));
     }
 }

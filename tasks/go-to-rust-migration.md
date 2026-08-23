@@ -258,10 +258,11 @@ server-rs/
 
 | 车道 | 范围 | 文件所有权 | 状态 |
 |---|---|---|---|
-| W | daemonws hub.go(920)+notifier.go(130) | src/hub.rs, src/notifier.rs | ✅ **完成**（hub.rs 2,336 行+notifier.rs 590 行，符号映射头+37 测试；metrics.go 内嵌 hub.rs 因 lib.rs 模块冻结；ULID→UUIDv4 已注记；socket 泵留 S8 axum 层） |
-| E1a | execenv 地基四件(execenv/context/isolation/local_worktree)≈3.4k 行 + 修复 git.rs 三错 | src/execenv/{execenv,context,isolation,local_worktree}.rs + git.rs 编译修复 | 🔄 运行中（execenv.rs 65KB 在写） |
-| E1b | codex 全家(codex_home/sandbox/memory/shell_env/multi_agent/user_skills/skill_strip/cursor_mcp) ≈3.4k 行 | src/execenv/{codex_*,cursor_mcp}.rs | ⏳ 排队等 E1a |
-| R2 | repocache/cache.go(1811)+gc.go(1509)+processtree 内联 | src/repocache.rs, src/gc.rs | 🔄 运行中（repocache.rs 50KB 在写） |
+| W | daemonws hub.go(920)+notifier.go(130) | src/hub.rs, src/notifier.rs | ✅ **完成**（hub.rs 2,347 行+notifier.rs 590 行，符号映射头+37 测试；metrics.go 内嵌 hub.rs；ULID→UUIDv4 已注记；socket 泵留 S8 axum 层） |
+| E1a | execenv 地基四件≈3.4k 行 + git.rs 三错修复 | src/execenv/{execenv,context,isolation,local_worktree}.rs | ✅ **完成且超范围**——实际交付全部 16 文件 10,867 行：含 codex 全家(codex_home/sandbox/memory/shell_env/multi_agent/user_skills/skill_strip/cursor_mcp)；Prepare/Reuse 完整移植，hermes/openclaw/reasonix/qwenpaw 家族调用点留 `// S9-integration:` 错误桩待 E2 |
+| R2 | repocache/cache.go(1811)+gc.go(1509)+processtree 内联 | src/repocache.rs(2,826), src/gc.rs(2,573) | ✅ **完成**——Ctx/CancelCause 因果令牌对、前台优先 repoLock 状态机、GcHost trait 接缝、processtree 进程组控制内联 |
+
+**S9 第一批集成验收（20260822）：cordy-daemon 全 crate clippy --all-targets -D warnings 0 错误、144 测试全过；全 workspace clippy 0 错误、881 测试全过（737→881）。**
 
 > 教训：前两轮车道卡死源于"先批量读完所有源再动笔"的长读阶段——重发时改为逐文件读写交替的早写节奏后恢复健康。
 
