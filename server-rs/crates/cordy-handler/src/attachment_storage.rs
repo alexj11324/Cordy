@@ -5,6 +5,7 @@ use aws_credential_types::{
     Credentials,
 };
 use axum::body::Body;
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use hmac::{Hmac, Mac};
 use reqwest::header::{HeaderMap, HeaderValue};
 use sha2::{Digest, Sha256};
@@ -18,6 +19,9 @@ use url::Url;
 
 type HmacSha256 = Hmac<Sha256>;
 pub const MAX_STREAM_UPLOAD_BYTES: i64 = 100 << 20;
+const STREAMING_UNSIGNED_PAYLOAD_TRAILER: &str = "STREAMING-UNSIGNED-PAYLOAD-TRAILER";
+const UNSIGNED_PAYLOAD: &str = "UNSIGNED-PAYLOAD";
+const CRC32_TRAILER: &str = "x-amz-checksum-crc32";
 
 #[async_trait]
 pub trait AttachmentStorage: Send + Sync {
@@ -300,6 +304,108 @@ pub struct S3Storage {
     cdn_domain: Option<String>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BufferedChecksumCapability {
+    AwsHttpsTrailer,
+    AwsHttpHeader,
+    CompatibleSha256,
+}
+
+struct BufferedPut {
+    body: Vec<u8>,
+    payload_hash: String,
+    headers: HeaderMap,
+}
+
+fn buffered_checksum_capability(endpoint: &Url) -> BufferedChecksumCapability {
+    if !uses_aws_endpoint(endpoint) {
+        return BufferedChecksumCapability::CompatibleSha256;
+    }
+    if endpoint.scheme() == "https" {
+        BufferedChecksumCapability::AwsHttpsTrailer
+    } else {
+        BufferedChecksumCapability::AwsHttpHeader
+    }
+}
+
+fn uses_aws_endpoint(endpoint: &Url) -> bool {
+    let Some(host) = endpoint.host_str() else {
+        return false;
+    };
+    let host = host.trim_end_matches('.').to_ascii_lowercase();
+    host == "amazonaws.com"
+        || host.ends_with(".amazonaws.com")
+        || host == "amazonaws.com.cn"
+        || host.ends_with(".amazonaws.com.cn")
+}
+
+fn prepare_buffered_put(
+    body: Vec<u8>,
+    capability: BufferedChecksumCapability,
+) -> anyhow::Result<BufferedPut> {
+    if capability == BufferedChecksumCapability::CompatibleSha256 {
+        return Ok(BufferedPut {
+            payload_hash: hex::encode(Sha256::digest(&body)),
+            body,
+            headers: HeaderMap::new(),
+        });
+    }
+
+    let checksum = BASE64_STANDARD.encode(crc32fast::hash(&body).to_be_bytes());
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "x-amz-sdk-checksum-algorithm",
+        HeaderValue::from_static("CRC32"),
+    );
+    if capability == BufferedChecksumCapability::AwsHttpHeader || body.is_empty() {
+        headers.insert(CRC32_TRAILER, HeaderValue::from_str(&checksum)?);
+        return Ok(BufferedPut {
+            payload_hash: if capability == BufferedChecksumCapability::AwsHttpsTrailer {
+                UNSIGNED_PAYLOAD.to_string()
+            } else {
+                hex::encode(Sha256::digest(&body))
+            },
+            body,
+            headers,
+        });
+    }
+
+    let decoded_length = body.len();
+    let chunk_prefix = format!("{decoded_length:x}\r\n");
+    let trailer = format!("\r\n0\r\n{CRC32_TRAILER}:{checksum}\r\n\r\n");
+    let encoded_length = chunk_prefix
+        .len()
+        .checked_add(decoded_length)
+        .and_then(|length| length.checked_add(trailer.len()))
+        .ok_or_else(|| anyhow::anyhow!("buffered S3 upload length overflow"))?;
+    let mut encoded = Vec::with_capacity(encoded_length);
+    encoded.extend_from_slice(chunk_prefix.as_bytes());
+    encoded.extend_from_slice(&body);
+    encoded.extend_from_slice(trailer.as_bytes());
+    anyhow::ensure!(
+        encoded.len() == encoded_length,
+        "buffered S3 checksum encoding length mismatch"
+    );
+    headers.insert(
+        reqwest::header::CONTENT_ENCODING,
+        HeaderValue::from_static("aws-chunked"),
+    );
+    headers.insert(
+        reqwest::header::CONTENT_LENGTH,
+        HeaderValue::from_str(&encoded_length.to_string())?,
+    );
+    headers.insert(
+        "x-amz-decoded-content-length",
+        HeaderValue::from_str(&decoded_length.to_string())?,
+    );
+    headers.insert("x-amz-trailer", HeaderValue::from_static(CRC32_TRAILER));
+    Ok(BufferedPut {
+        body: encoded,
+        payload_hash: STREAMING_UNSIGNED_PAYLOAD_TRAILER.to_string(),
+        headers,
+    })
+}
+
 impl S3Storage {
     pub async fn from_env() -> anyhow::Result<Option<Self>> {
         let Some(bucket) = env("S3_BUCKET") else {
@@ -442,9 +548,38 @@ impl S3Storage {
         body: Option<Vec<u8>>,
         extra: HeaderMap,
     ) -> anyhow::Result<reqwest::Response> {
-        let url = self.request_url(key)?;
         let bytes = body.unwrap_or_default();
         let hash = hex::encode(Sha256::digest(&bytes));
+        self.execute_bytes(method, key, bytes, extra, &hash).await
+    }
+
+    async fn execute_buffered_put(
+        &self,
+        key: &str,
+        body: Vec<u8>,
+        mut extra: HeaderMap,
+    ) -> anyhow::Result<reqwest::Response> {
+        let prepared = prepare_buffered_put(body, buffered_checksum_capability(&self.endpoint))?;
+        extra.extend(prepared.headers);
+        self.execute_bytes(
+            reqwest::Method::PUT,
+            key,
+            prepared.body,
+            extra,
+            &prepared.payload_hash,
+        )
+        .await
+    }
+
+    async fn execute_bytes(
+        &self,
+        method: reqwest::Method,
+        key: &str,
+        bytes: Vec<u8>,
+        extra: HeaderMap,
+        payload_hash: &str,
+    ) -> anyhow::Result<reqwest::Response> {
+        let url = self.request_url(key)?;
         let credentials = self
             .credentials
             .provide_credentials()
@@ -453,7 +588,7 @@ impl S3Storage {
         let mut headers = self.signed_headers(
             method.as_str(),
             &url,
-            &hash,
+            payload_hash,
             chrono::Utc::now(),
             &extra,
             &credentials,
@@ -489,7 +624,7 @@ impl S3Storage {
         let mut headers = self.signed_headers(
             "PUT",
             &url,
-            "UNSIGNED-PAYLOAD",
+            UNSIGNED_PAYLOAD,
             chrono::Utc::now(),
             &extra,
             &credentials,
@@ -632,8 +767,7 @@ impl AttachmentStorage for S3Storage {
                 "INTELLIGENT_TIERING"
             }),
         );
-        self.execute(reqwest::Method::PUT, key, Some(body), headers)
-            .await?;
+        self.execute_buffered_put(key, body, headers).await?;
         Ok(self.object_url(key))
     }
     async fn get(&self, key: &str, range: Option<&str>) -> anyhow::Result<StoredObject> {
@@ -1247,6 +1381,127 @@ mod tests {
     }
 
     #[test]
+    fn s3_checksum_capability_requires_an_aws_hostname_boundary() {
+        for endpoint in [
+            "https://s3.us-west-2.amazonaws.com",
+            "https://S3.US-WEST-2.AMAZONAWS.COM",
+            "https://bucket.s3.amazonaws.com.",
+            "https://s3-fips.us-gov-west-1.amazonaws.com",
+            "https://s3.dualstack.us-east-1.amazonaws.com",
+            "https://bucket.vpce-012345.s3.us-east-1.vpce.amazonaws.com",
+            "https://s3.cn-north-1.amazonaws.com.cn",
+        ] {
+            assert_eq!(
+                buffered_checksum_capability(&Url::parse(endpoint).unwrap()),
+                BufferedChecksumCapability::AwsHttpsTrailer,
+                "{endpoint}"
+            );
+        }
+        assert_eq!(
+            buffered_checksum_capability(&Url::parse("http://s3.us-west-2.amazonaws.com").unwrap()),
+            BufferedChecksumCapability::AwsHttpHeader
+        );
+        for endpoint in [
+            "https://s3.amazonaws.com.example.test",
+            "https://notamazonaws.com",
+            "https://oss-cn-hangzhou.aliyuncs.com",
+            "https://cos.ap-guangzhou.myqcloud.com",
+            "https://minio.internal/amazonaws.com",
+            "https://minio.internal?probe=amazonaws.com",
+            "http://minio.internal:9000",
+        ] {
+            assert_eq!(
+                buffered_checksum_capability(&Url::parse(endpoint).unwrap()),
+                BufferedChecksumCapability::CompatibleSha256,
+                "{endpoint}"
+            );
+        }
+    }
+
+    #[test]
+    fn aws_https_buffered_put_uses_crc32_trailer_and_exact_lengths() {
+        let prepared = prepare_buffered_put(
+            b"123456789".to_vec(),
+            BufferedChecksumCapability::AwsHttpsTrailer,
+        )
+        .unwrap();
+        assert_eq!(prepared.payload_hash, STREAMING_UNSIGNED_PAYLOAD_TRAILER);
+        assert_eq!(
+            prepared.body,
+            b"9\r\n123456789\r\n0\r\nx-amz-checksum-crc32:y/Q5Jg==\r\n\r\n"
+        );
+        assert_eq!(
+            prepared
+                .headers
+                .get(reqwest::header::CONTENT_ENCODING)
+                .unwrap(),
+            "aws-chunked"
+        );
+        assert_eq!(
+            prepared
+                .headers
+                .get("x-amz-decoded-content-length")
+                .unwrap(),
+            "9"
+        );
+        assert_eq!(
+            prepared
+                .headers
+                .get(reqwest::header::CONTENT_LENGTH)
+                .unwrap(),
+            prepared.body.len().to_string().as_str()
+        );
+        assert_eq!(
+            prepared.headers.get("x-amz-trailer").unwrap(),
+            CRC32_TRAILER
+        );
+        assert_eq!(
+            prepared
+                .headers
+                .get("x-amz-sdk-checksum-algorithm")
+                .unwrap(),
+            "CRC32"
+        );
+        assert!(prepared.headers.get(CRC32_TRAILER).is_none());
+    }
+
+    #[test]
+    fn aws_empty_or_http_put_uses_checksum_header_without_trailer() {
+        let empty =
+            prepare_buffered_put(Vec::new(), BufferedChecksumCapability::AwsHttpsTrailer).unwrap();
+        assert_eq!(empty.payload_hash, UNSIGNED_PAYLOAD);
+        assert_eq!(empty.headers.get(CRC32_TRAILER).unwrap(), "AAAAAA==");
+        assert!(empty.headers.get("x-amz-trailer").is_none());
+        assert!(empty
+            .headers
+            .get(reqwest::header::CONTENT_ENCODING)
+            .is_none());
+
+        let http = prepare_buffered_put(
+            b"123456789".to_vec(),
+            BufferedChecksumCapability::AwsHttpHeader,
+        )
+        .unwrap();
+        assert_eq!(http.headers.get(CRC32_TRAILER).unwrap(), "y/Q5Jg==");
+        assert_eq!(http.payload_hash, hex::encode(Sha256::digest(b"123456789")));
+        assert!(http.headers.get("x-amz-trailer").is_none());
+    }
+
+    #[test]
+    fn compatible_buffered_put_keeps_raw_sha256_body_without_checksum_headers() {
+        let body = b"compatible endpoint body".to_vec();
+        let prepared =
+            prepare_buffered_put(body.clone(), BufferedChecksumCapability::CompatibleSha256)
+                .unwrap();
+        assert_eq!(prepared.body, body);
+        assert_eq!(
+            prepared.payload_hash,
+            hex::encode(Sha256::digest(&prepared.body))
+        );
+        assert!(prepared.headers.is_empty());
+    }
+
+    #[test]
     fn sigv4_signs_amz_extension_headers() {
         let store = test_s3("https://s3.us-west-2.amazonaws.com", false, true);
         let url = store.request_url("object").unwrap();
@@ -1272,6 +1527,37 @@ mod tests {
             .unwrap();
         assert!(authorization
             .contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-storage-class"));
+    }
+
+    #[test]
+    fn sigv4_canonical_request_covers_checksum_trailer_headers() {
+        let store = test_s3("https://s3.us-west-2.amazonaws.com", false, true);
+        let url = store.request_url("object").unwrap();
+        let prepared = prepare_buffered_put(
+            b"body".to_vec(),
+            BufferedChecksumCapability::AwsHttpsTrailer,
+        )
+        .unwrap();
+        let headers = store
+            .signed_headers(
+                "PUT",
+                &url,
+                &prepared.payload_hash,
+                chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+                &prepared.headers,
+                &test_credentials(Some("temporary-session-token")),
+            )
+            .unwrap();
+        let authorization = headers
+            .get(reqwest::header::AUTHORIZATION)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(authorization.contains(concat!(
+            "SignedHeaders=host;x-amz-content-sha256;x-amz-date;",
+            "x-amz-decoded-content-length;x-amz-sdk-checksum-algorithm;",
+            "x-amz-security-token;x-amz-trailer"
+        )));
     }
 
     #[test]
