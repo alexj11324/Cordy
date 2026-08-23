@@ -11,6 +11,7 @@
 #![allow(clippy::result_large_err)]
 
 pub mod agent_aggregation;
+pub mod agent_api;
 pub mod agent_builder;
 pub mod agent_mcp;
 pub mod attachment;
@@ -279,6 +280,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             agent_mcp::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 issue::require_issue_workspace,
+            )),
+        )
+        .merge(
+            agent_api::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                cordy_middleware::workspace::require_workspace,
             )),
         )
         .merge(cli_token::router())
@@ -568,6 +575,12 @@ mod tests {
             "/api/agent-run-counts",
             "/api/agent-task-snapshot",
             "/api/agent-builder/sessions",
+            "/api/agents",
+            "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
+            "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/tasks",
+            "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/env",
+            "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/labels",
+            "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/skills",
             "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/mcp-servers",
             "/api/skills",
             "/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
@@ -802,6 +815,50 @@ mod tests {
                 .body(Body::from(
                     r#"{"runtime_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12"}"#,
                 ))
+                .unwrap(),
+            Request::post("/api/agents")
+                .body(Body::from(r#"{"name":"Reviewer"}"#))
+                .unwrap(),
+            Request::post("/api/agents/mika")
+                .body(Body::from(r#"{"language":"en"}"#))
+                .unwrap(),
+            Request::put("/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::from(r#"{"name":"Reviewer"}"#))
+                .unwrap(),
+            Request::post("/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/archive")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/restore")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/cancel-tasks")
+                .body(Body::empty())
+                .unwrap(),
+            Request::put("/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/env")
+                .body(Body::from(r#"{"env":{"TOKEN":"secret"}}"#))
+                .unwrap(),
+            Request::post("/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/labels")
+                .body(Body::from(
+                    r#"{"label_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12"}"#,
+                ))
+                .unwrap(),
+            Request::delete("/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/labels/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
+                .body(Body::empty())
+                .unwrap(),
+            Request::put("/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/skills")
+                .body(Body::from(r#"{"skill_ids":[]}"#))
+                .unwrap(),
+            Request::post("/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/skills/add")
+                .body(Body::from(r#"{"skill_ids":[]}"#))
+                .unwrap(),
+            Request::delete("/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
+                .body(Body::empty())
+                .unwrap(),
+            Request::put("/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/enabled")
+                .body(Body::from(r#"{"enabled":true}"#))
+                .unwrap(),
+            Request::put("/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runtime-skills/enabled")
+                .body(Body::from(r#"{"skill_key":"review","enabled":true}"#))
                 .unwrap(),
             Request::post(
                 "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/mcp-servers",
