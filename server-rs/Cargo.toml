@@ -39,7 +39,7 @@ license = "UNLICENSED"
 [workspace.dependencies]
 # async runtime & web
 tokio = { version = "1", features = ["full"] }
-axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "ws", "matched-path", "original-uri", "tower-log", "tracing"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "multipart", "ws", "matched-path", "original-uri", "tower-log", "tracing"] }
 tower-http = { version = "0.6", features = ["cors"] }
 percent-encoding = "2.3"
 # data
@@ -88,6 +88,7 @@ chrono-tz = "0.9"
 regex = "1"
 croner = "1"
 serde_yaml = "0.9"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 # email & integrations
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 structured-email-address = { version = "0.0.16", default-features = false }

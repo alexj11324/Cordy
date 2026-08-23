@@ -53,6 +53,7 @@ pub mod runtime_requests;
 pub mod runtime_usage;
 pub mod session;
 pub mod skill;
+mod skill_import;
 pub mod squad;
 pub mod squad_briefing;
 pub mod state;
