@@ -38,9 +38,12 @@ const PRIORITIES: &[&str] = &["urgent", "high", "medium", "low", "none"];
 
 pub fn router() -> Router<HandlerState> {
     Router::new()
+        .route("/api/assignee-frequency", get(get_assignee_frequency))
         .route("/api/issues", get(list_issues).post(create_issue))
         .route("/api/issues/", get(list_issues).post(create_issue))
         .route("/api/issues/query", post(query_issues))
+        .route("/api/issues/child-progress", get(child_issue_progress))
+        .route("/api/issues/children", get(list_children_by_parents))
         .route("/api/issues/batch-update", post(batch_update_issues))
         .route("/api/issues/{id}", get(get_issue).put(update_issue))
         .route("/api/issues/{id}/", get(get_issue).put(update_issue))
@@ -162,6 +165,181 @@ struct ListParams {
     open_only: Option<String>,
     sort: Option<String>,
     direction: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ChildrenByParentsParams {
+    parent_ids: Option<String>,
+}
+
+const LIST_CHILDREN_BY_PARENTS_LIMIT: usize = 200;
+
+fn parse_parent_ids(raw: &str) -> Result<Vec<Uuid>, &'static str> {
+    let parts = raw.split(',').collect::<Vec<_>>();
+    if parts.len() > LIST_CHILDREN_BY_PARENTS_LIMIT {
+        return Err("too many parent_ids");
+    }
+    parts
+        .into_iter()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| Uuid::parse_str(value).map_err(|_| "invalid parent_ids"))
+        .collect()
+}
+
+async fn list_children_by_parents(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Query(params): Query<ChildrenByParentsParams>,
+) -> Response {
+    let raw = params.parent_ids.as_deref().unwrap_or_default();
+    if raw.is_empty() {
+        return Json(json!({ "issues": Vec::<IssueResponse>::new() })).into_response();
+    }
+
+    let parent_ids = match parse_parent_ids(raw) {
+        Ok(ids) => ids,
+        Err(message) => return error_response(StatusCode::BAD_REQUEST, message),
+    };
+    if parent_ids.is_empty() {
+        return Json(json!({ "issues": Vec::<IssueResponse>::new() })).into_response();
+    }
+
+    match issue_q::list_children_by_parents(&state.pool, context.member.workspace_id, parent_ids)
+        .await
+    {
+        Ok(issues) => Json(json!({
+            "issues": enrich_issue_list(&state, &context, issues).await,
+        }))
+        .into_response(),
+        Err(error) => {
+            tracing::warn!(%error, workspace_id = %context.member.workspace_id, "failed to list child issues");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list child issues",
+            )
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct ChildProgressResponse {
+    parent_issue_id: String,
+    total: i64,
+    done: i64,
+}
+
+async fn child_issue_progress(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    match issue_q::child_issue_progress(&state.pool, context.member.workspace_id).await {
+        Ok(rows) => {
+            let progress = rows
+                .into_iter()
+                .filter_map(|row| {
+                    row.parent_issue_id
+                        .map(|parent_issue_id| ChildProgressResponse {
+                            parent_issue_id: parent_issue_id.to_string(),
+                            total: row.total,
+                            done: row.done,
+                        })
+                })
+                .collect::<Vec<_>>();
+            Json(json!({ "progress": progress })).into_response()
+        }
+        Err(error) => {
+            tracing::warn!(%error, workspace_id = %context.member.workspace_id, "failed to get child issue progress");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to get child issue progress",
+            )
+        }
+    }
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+struct AssigneeFrequencyResponse {
+    assignee_type: String,
+    assignee_id: String,
+    frequency: i64,
+}
+
+#[derive(Debug, FromRow)]
+struct AssigneeActivityFrequencyRow {
+    assignee_type: String,
+    assignee_id: String,
+    frequency: i64,
+}
+
+async fn get_assignee_frequency(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    let workspace_id = context.member.workspace_id;
+    let user_id = context.member.user_id;
+    let (activity_counts, issue_counts) = tokio::join!(
+        sqlx::query_as::<_, AssigneeActivityFrequencyRow>(
+            r#"SELECT
+                  details->>'to_type' AS assignee_type,
+                  details->>'to_id' AS assignee_id,
+                  COUNT(*)::bigint AS frequency
+               FROM activity_log
+              WHERE workspace_id = $1
+                AND actor_id = $2
+                AND actor_type = 'member'
+                AND action = 'assignee_changed'
+                AND details->>'to_type' IS NOT NULL
+                AND details->>'to_id' IS NOT NULL
+              GROUP BY details->>'to_type', details->>'to_id'"#,
+        )
+        .bind(workspace_id)
+        .bind(user_id)
+        .fetch_all(&state.pool),
+        issue_q::count_created_issue_assignees(&state.pool, workspace_id, user_id),
+    );
+    let (activity_counts, issue_counts) = match (activity_counts, issue_counts) {
+        (Ok(activity_counts), Ok(issue_counts)) => (activity_counts, issue_counts),
+        (activity_result, issue_result) => {
+            tracing::warn!(
+                workspace_id = %workspace_id,
+                activity_error = ?activity_result.err(),
+                issue_error = ?issue_result.err(),
+                "failed to get assignee frequency"
+            );
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to get assignee frequency",
+            );
+        }
+    };
+
+    let mut frequencies = HashMap::<(String, String), i64>::new();
+    for row in activity_counts {
+        *frequencies
+            .entry((row.assignee_type, row.assignee_id))
+            .or_default() += row.frequency;
+    }
+    for row in issue_counts {
+        if let (Some(assignee_type), Some(assignee_id)) = (row.assignee_type, row.assignee_id) {
+            *frequencies
+                .entry((assignee_type, assignee_id.to_string()))
+                .or_default() += row.frequency;
+        }
+    }
+
+    let mut response = frequencies
+        .into_iter()
+        .map(
+            |((assignee_type, assignee_id), frequency)| AssigneeFrequencyResponse {
+                assignee_type,
+                assignee_id,
+                frequency,
+            },
+        )
+        .collect::<Vec<_>>();
+    response.sort_by_key(|entry| std::cmp::Reverse(entry.frequency));
+    Json(response).into_response()
 }
 
 #[derive(Debug, FromRow)]
@@ -3008,6 +3186,25 @@ mod tests {
         assert!(optional_uuid(Some("not-a-uuid"), "assignee_id").is_err());
         assert!(uuid_list(Some("not-a-uuid"), "ids").is_err());
         assert!(uuid_list(Some(""), "ids").unwrap().is_empty());
+    }
+
+    #[test]
+    fn children_by_parents_enforces_uuid_and_fanout_limits() {
+        assert!(parse_parent_ids("").unwrap().is_empty());
+        assert_eq!(
+            parse_parent_ids("018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            parse_parent_ids("not-a-uuid").unwrap_err(),
+            "invalid parent_ids"
+        );
+        assert_eq!(
+            parse_parent_ids(&vec![Uuid::nil().to_string(); 201].join(",")).unwrap_err(),
+            "too many parent_ids"
+        );
     }
 
     #[test]

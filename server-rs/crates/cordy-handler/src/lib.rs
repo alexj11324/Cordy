@@ -200,12 +200,19 @@ mod tests {
 
     #[tokio::test]
     async fn authenticated_issue_collection_rejects_anonymous_requests() {
-        let response = build_router(None, None)
-            .oneshot(Request::get("/api/issues").body(Body::empty()).unwrap())
-            .await
-            .unwrap();
+        for uri in [
+            "/api/issues",
+            "/api/issues/children?parent_ids=018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
+            "/api/issues/child-progress",
+            "/api/assignee-frequency",
+        ] {
+            let response = build_router(None, None)
+                .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
 
-        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{uri}");
+        }
     }
 
     #[tokio::test]
