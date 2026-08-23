@@ -111,6 +111,7 @@ aes-gcm = { version = "0.10", features = ["std", "getrandom"] }
 
 # daemon manager (S9): filesystem walking, temp files, process control
 futures-util = "0.3"
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
 walkdir = "2"
 tempfile = "3"
 libc = "0.2"

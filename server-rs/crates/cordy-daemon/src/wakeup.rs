@@ -133,14 +133,27 @@ pub(crate) type FrameTx = mpsc::Sender<OutboundFrame>;
 /// A queued frame plus its cancellation handle (Go's `*wsOutbound` with data).
 #[derive(Debug)]
 pub(crate) struct OutboundFrame {
-    pub data: Vec<u8>,
+    pub payload: OutboundPayload,
     pub outbound: std::sync::Arc<crate::wsrpc::WsOutbound>,
+}
+
+#[derive(Debug)]
+pub(crate) enum OutboundPayload {
+    Text(Vec<u8>),
+    Pong(Vec<u8>),
 }
 
 impl OutboundFrame {
     pub(crate) fn new(data: Vec<u8>) -> Self {
         Self {
-            data,
+            payload: OutboundPayload::Text(data),
+            outbound: std::sync::Arc::new(crate::wsrpc::WsOutbound::default()),
+        }
+    }
+
+    pub(crate) fn pong(data: Vec<u8>) -> Self {
+        Self {
+            payload: OutboundPayload::Pong(data),
             outbound: std::sync::Arc::new(crate::wsrpc::WsOutbound::default()),
         }
     }
@@ -203,7 +216,7 @@ pub(crate) async fn run_ws_heartbeat_sender(
     if interval.is_zero() {
         interval = DEFAULT_HEARTBEAT_INTERVAL;
     }
-    let mut ticker = tokio::time::interval(interval);
+    let mut ticker = tokio::time::interval_at(tokio::time::Instant::now() + interval, interval);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     loop {
         tokio::select! {

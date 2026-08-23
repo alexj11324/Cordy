@@ -218,6 +218,30 @@ impl Client {
         self.token.lock().unwrap().clone()
     }
 
+    /// Builds the daemon control-WebSocket handshake with exactly the same
+    /// identity and capability headers as the HTTP control plane.
+    pub(crate) fn websocket_request(&self, url: &str) -> anyhow::Result<http::Request<()>> {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+        let mut request = url.into_client_request()?;
+        let headers = request.headers_mut();
+        let token = self.token();
+        if !token.is_empty() {
+            headers.insert("Authorization", format!("Bearer {token}").parse()?);
+        }
+        headers.insert("X-Client-Platform", self.platform().parse()?);
+        headers.insert("X-Client-OS", self.os().parse()?);
+        headers.insert(
+            "X-Client-Capabilities",
+            daemon_client_capabilities().parse()?,
+        );
+        let version = self.version.lock().unwrap().clone();
+        if !version.is_empty() {
+            headers.insert("X-Client-Version", version.parse()?);
+        }
+        Ok(request)
+    }
+
     fn platform(&self) -> &'static str {
         "daemon"
     }

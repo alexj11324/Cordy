@@ -26,6 +26,7 @@ pub mod diskusage;
 pub mod health;
 pub mod helpers;
 pub mod identity;
+pub mod manager;
 pub mod poisoned;
 pub mod reconcile;
 pub mod thread_name;
