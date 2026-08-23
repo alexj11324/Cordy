@@ -282,7 +282,7 @@ async fn with_runtime(
             None,
             None,
             &[],
-            &json!(null),
+            None,
         )
         .await
         {

@@ -28,11 +28,83 @@ fn signing_key() -> [u8; 32] {
     Sha256::digest(format!("avatar-url:{}", cordy_auth::jwt::jwt_secret()).as_bytes()).into()
 }
 
-#[cfg(test)]
-fn sign_key(key: &str) -> String {
+pub(crate) fn sign_key(key: &str) -> String {
     let mut mac = HmacSha256::new_from_slice(&signing_key()).expect("HMAC accepts any key length");
     mac.update(key.as_bytes());
     URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
+}
+
+fn key_from_served_url(raw: &str) -> Option<String> {
+    let path = url::Url::parse(raw)
+        .ok()
+        .map(|url| url.path().to_string())
+        .unwrap_or_else(|| raw.to_string());
+    let rest = path.strip_prefix("/api/avatars/")?;
+    let (signature, key) = rest.split_once('/')?;
+    (!key.is_empty() && signature_valid(key, signature)).then(|| key.to_string())
+}
+
+fn served_url(key: &str) -> String {
+    let path = format!("/api/avatars/{}/{key}", sign_key(key));
+    let base = std::env::var("CORDY_PUBLIC_URL")
+        .unwrap_or_default()
+        .trim()
+        .trim_end_matches('/')
+        .to_string();
+    if base.is_empty() {
+        path
+    } else {
+        format!("{base}{path}")
+    }
+}
+
+/// Resolves a durable avatar object URL into the stable capability endpoint
+/// used by private object stores. Foreign URLs and local public uploads are
+/// deliberately passed through unchanged.
+pub(crate) fn resolve_url(state: &HandlerState, raw: &str) -> String {
+    let Some(storage) = state.attachment_storage.as_ref() else {
+        return raw.to_string();
+    };
+    if let Some(key) = key_from_served_url(raw) {
+        return served_url(&key);
+    }
+    let Some(key) = storage.key_from_url(raw) else {
+        return raw.to_string();
+    };
+    if storage.object_url(&key) != raw || content_type(&key).is_none() || storage.is_local() {
+        return raw.to_string();
+    }
+    served_url(&key)
+}
+
+/// Normalizes and validates a client-supplied avatar URL before persistence.
+/// A private workspace attachment can never be promoted into a public avatar
+/// capability simply by copying its object URL into an avatar field.
+pub async fn accept_url(
+    state: &HandlerState,
+    raw: &str,
+    current: Option<&str>,
+) -> Result<String, &'static str> {
+    let Some(storage) = state.attachment_storage.as_ref() else {
+        return Ok(raw.trim().to_string());
+    };
+    let trimmed = raw.trim();
+    let normalized = key_from_served_url(trimmed)
+        .map(|key| storage.object_url(&key))
+        .unwrap_or_else(|| trimmed.to_string());
+    if current.is_some_and(|value| value.trim() == normalized) {
+        return Ok(normalized);
+    }
+    let Some(key) = storage.key_from_url(&normalized) else {
+        return Ok(normalized);
+    };
+    if storage.object_url(&key) != normalized {
+        return Ok(normalized);
+    }
+    if !publishable(state, &key).await {
+        return Err("avatar_url must reference a standalone image upload, not a file attached to an issue, comment, or chat");
+    }
+    Ok(normalized)
 }
 
 fn signature_valid(key: &str, signature: &str) -> bool {
@@ -165,5 +237,10 @@ mod tests {
         assert_eq!(content_type("a.PNG"), Some("image/png"));
         assert_eq!(content_type("a.svg"), None);
         assert_eq!(content_type("a.txt"), None);
+    }
+
+    #[test]
+    fn forged_served_urls_are_not_normalized() {
+        assert!(key_from_served_url("/api/avatars/not-valid/users/u/avatar.png").is_none());
     }
 }

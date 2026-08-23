@@ -891,7 +891,7 @@ async fn create_agent(
         request.thinking_level.as_deref(),
         request.service_tier.as_deref(),
         &composio_toolkit_allowlist,
-        &permission_mode,
+        Some(permission_mode.as_str()),
     )
     .await;
     let created = match created {

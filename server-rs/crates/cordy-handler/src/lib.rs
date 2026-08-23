@@ -558,6 +558,23 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         },
         cordy_middleware::ratelimit::rate_limit,
     ));
+    // Stripe ingress gets a coarse per-IP budget before body buffering or a
+    // cloud-runtime call. Redis absence is the documented self-hosted
+    // fail-open path. Autopilot webhooks apply their separate token/IP gates
+    // inside their handler because successful and bad-credential deliveries
+    // intentionally consume different budgets.
+    let webhook_ip_limit = cordy_middleware::ratelimit::RateLimitState {
+        client: state.rate_limit_client.clone(),
+        conn: Arc::new(tokio::sync::Mutex::new(None)),
+        limit: 30,
+        window_secs: 60,
+        trusted_proxies: cordy_middleware::ratelimit::parse_trusted_proxies(
+            &std::env::var("RATE_LIMIT_TRUSTED_PROXIES").unwrap_or_default(),
+        ),
+    };
+    let stripe_webhooks = cloud_billing::stripe_webhook_router(cloud_runtime_proxy).route_layer(
+        middleware::from_fn_with_state(webhook_ip_limit, cordy_middleware::ratelimit::rate_limit),
+    );
 
     let http_metrics = state.http_metrics.clone();
     let app = Router::new()
@@ -571,7 +588,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(github::public_router())
         .merge(config::router())
         .merge(contact_sales)
-        .merge(cloud_billing::stripe_webhook_router(cloud_runtime_proxy))
+        .merge(stripe_webhooks)
         .merge(vcs_webhook::router())
         .merge(composio::public_router().with_state::<HandlerState>(composio_state))
         .merge(plugin_action)

@@ -69,18 +69,21 @@ fn allowed_return(value: &str) -> bool {
     matches!(value, "github" | "repositories")
 }
 
-fn state_token(workspace_id: Uuid, return_to: &str) -> Option<String> {
+fn state_token(workspace_id: Uuid, connected_by: Uuid, return_to: &str) -> Option<String> {
     let secret = env("GITHUB_WEBHOOK_SECRET");
     if secret.is_empty() || !allowed_return(return_to) {
         return None;
     }
     let mut nonce = [0_u8; 12];
     OsRng.fill_bytes(&mut nonce);
-    let payload = if return_to == "github" {
-        format!("{workspace_id}.{}", hex::encode(nonce))
-    } else {
-        format!("{workspace_id}.{return_to}.{}", hex::encode(nonce))
-    };
+    // The callback is public, so the connecting identity must travel inside
+    // the authenticated state rather than in a client-controlled header.
+    // The version marker also lets us continue accepting legacy state tokens
+    // (which intentionally yield no connected_by attribution).
+    let payload = format!(
+        "v2.{workspace_id}.{connected_by}.{return_to}.{}",
+        hex::encode(nonce)
+    );
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).ok()?;
     mac.update(payload.as_bytes());
     Some(format!(
@@ -89,16 +92,27 @@ fn state_token(workspace_id: Uuid, return_to: &str) -> Option<String> {
     ))
 }
 
-fn verify_state(token: &str) -> Option<(Uuid, &str)> {
+struct VerifiedState<'a> {
+    workspace_id: Uuid,
+    return_to: &'a str,
+    connected_by: Option<Uuid>,
+}
+
+fn verify_state(token: &str) -> Option<VerifiedState<'_>> {
     let secret = env("GITHUB_WEBHOOK_SECRET");
     let parts = token.split('.').collect::<Vec<_>>();
-    if secret.is_empty() || !matches!(parts.len(), 3 | 4) {
+    if secret.is_empty() || !matches!(parts.len(), 3 | 4 | 6) {
         return None;
     }
-    let (return_to, nonce_index) = if parts.len() == 4 {
-        (parts[1], 2)
+    let (workspace_index, return_to, nonce_index, connected_by) = if parts.len() == 6 {
+        if parts[0] != "v2" {
+            return None;
+        }
+        (1, parts[3], 4, Some(Uuid::parse_str(parts[2]).ok()?))
+    } else if parts.len() == 4 {
+        (0, parts[1], 2, None)
     } else {
-        ("github", 1)
+        (0, "github", 1, None)
     };
     if !allowed_return(return_to) {
         return None;
@@ -108,7 +122,11 @@ fn verify_state(token: &str) -> Option<(Uuid, &str)> {
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).ok()?;
     mac.update(payload.as_bytes());
     mac.verify_slice(&signature).ok()?;
-    Some((Uuid::parse_str(parts[0]).ok()?, return_to))
+    Some(VerifiedState {
+        workspace_id: Uuid::parse_str(parts[workspace_index]).ok()?,
+        return_to,
+        connected_by,
+    })
 }
 
 fn settings_url(return_to: &str) -> String {
@@ -143,7 +161,7 @@ async fn connect(
     if !allowed_return(return_to) {
         return error_response(StatusCode::BAD_REQUEST, "invalid return target");
     }
-    let Some(state) = state_token(workspace_id, return_to) else {
+    let Some(state) = state_token(workspace_id, context.member.user_id, return_to) else {
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to sign state");
     };
     let app_slug = env("GITHUB_APP_SLUG");
@@ -162,21 +180,17 @@ struct SetupQuery {
     state: Option<String>,
 }
 
-async fn setup(
-    State(state): State<HandlerState>,
-    headers: HeaderMap,
-    Query(query): Query<SetupQuery>,
-) -> Response {
+async fn setup(State(state): State<HandlerState>, Query(query): Query<SetupQuery>) -> Response {
     let default_url = settings_url("github");
     let Some(raw_state) = query.state.as_deref().filter(|value| !value.is_empty()) else {
         return Redirect::temporary(&format!("{default_url}&github_error=missing_params"))
             .into_response();
     };
-    let Some((workspace_id, return_to)) = verify_state(raw_state) else {
+    let Some(verified) = verify_state(raw_state) else {
         return Redirect::temporary(&format!("{default_url}&github_error=invalid_state"))
             .into_response();
     };
-    let target = settings_url(return_to);
+    let target = settings_url(verified.return_to);
     let Some(installation_id) = query
         .installation_id
         .as_deref()
@@ -196,10 +210,8 @@ async fn setup(
     let (login, account_type, avatar) = account
         .map(|value| (value.login, value.account_type, Some(value.avatar_url)))
         .unwrap_or_else(|| ("unknown".into(), "User".into(), None));
-    let connected_by = headers
-        .get("x-user-id")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| Uuid::parse_str(value).ok());
+    let workspace_id = verified.workspace_id;
+    let connected_by = verified.connected_by;
     let mut installation = match github::create_git_hub_installation(
         &state.pool,
         workspace_id,
@@ -545,6 +557,21 @@ struct PullRequestEvent {
     pull_request: PullRequestBody,
     repository: RepositoryBody,
     installation: EventInstallation,
+    changes: Option<PullRequestChanges>,
+}
+#[derive(Deserialize)]
+struct PullRequestChanges {
+    base: Option<BaseChange>,
+}
+#[derive(Deserialize)]
+struct BaseChange {
+    #[serde(rename = "ref")]
+    reference: Option<RefChange>,
+}
+#[derive(Deserialize)]
+struct RefChange {
+    #[serde(default)]
+    from: String,
 }
 #[derive(Deserialize)]
 struct EventInstallation {
@@ -564,7 +591,7 @@ struct PullRequestBody {
     number: i32,
     html_url: String,
     title: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     body: String,
     state: String,
     draft: bool,
@@ -578,7 +605,8 @@ struct PullRequestBody {
     deletions: i32,
     changed_files: i32,
     head: HeadBody,
-    user: UserBody,
+    #[serde(default)]
+    user: Option<UserBody>,
 }
 #[derive(Deserialize)]
 struct HeadBody {
@@ -598,6 +626,13 @@ fn timestamp(value: Option<&str>) -> Option<DateTime<Utc>> {
         .map(|value| value.to_utc())
 }
 
+fn null_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) {
     let Ok(event) = serde_json::from_slice::<PullRequestEvent>(body) else {
         return;
@@ -605,10 +640,21 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) {
     if event.installation.id == 0 {
         return;
     }
-    let installations =
-        github::list_git_hub_installations_by_installation_id(&state.pool, event.installation.id)
-            .await
-            .unwrap_or_default();
+    let installations = match github::list_git_hub_installations_by_installation_id(
+        &state.pool,
+        event.installation.id,
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, installation_id = event.installation.id, "github: lookup installation failed");
+            return;
+        }
+    };
+    if installations.is_empty() {
+        return;
+    }
     let owner = event.repository.owner.login.to_lowercase();
     let repo = event.repository.name.to_lowercase();
     let pr_state = if event.pull_request.merged {
@@ -622,8 +668,15 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) {
     };
     let close_policy = close_intent_policy(state, &installations, &event).await;
     for installation in installations {
+        let base_changed = event
+            .changes
+            .as_ref()
+            .and_then(|changes| changes.base.as_ref())
+            .and_then(|base| base.reference.as_ref())
+            .is_some_and(|reference| !reference.from.is_empty());
         let clear_mergeable =
-            matches!(event.action.as_str(), "opened" | "synchronize" | "reopened");
+            matches!(event.action.as_str(), "opened" | "synchronize" | "reopened")
+                || (event.action == "edited" && base_changed);
         if let Ok(Some(pr)) = github::upsert_git_hub_pull_request(
             &state.pool,
             installation.workspace_id,
@@ -634,15 +687,25 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) {
             &event.pull_request.title,
             pr_state,
             &event.pull_request.html_url,
-            timestamp(event.pull_request.created_at.as_deref()),
-            timestamp(event.pull_request.updated_at.as_deref()),
+            Some(timestamp(event.pull_request.created_at.as_deref()).unwrap_or_else(Utc::now)),
+            Some(timestamp(event.pull_request.updated_at.as_deref()).unwrap_or_else(Utc::now)),
             &event.pull_request.head.sha,
             event.pull_request.additions,
             event.pull_request.deletions,
             event.pull_request.changed_files,
             Some(&event.pull_request.head.branch),
-            Some(&event.pull_request.user.login),
-            Some(&event.pull_request.user.avatar_url),
+            event
+                .pull_request
+                .user
+                .as_ref()
+                .map(|user| user.login.as_str())
+                .filter(|value| !value.is_empty()),
+            event
+                .pull_request
+                .user
+                .as_ref()
+                .map(|user| user.avatar_url.as_str())
+                .filter(|value| !value.is_empty()),
             timestamp(event.pull_request.merged_at.as_deref()),
             timestamp(event.pull_request.closed_at.as_deref()),
             event.pull_request.mergeable_state.as_deref(),
@@ -881,23 +944,20 @@ async fn handle_ci_event(state: &HandlerState, body: &[u8]) {
     };
     let owner = event.repository.owner.login.to_lowercase();
     let repo = event.repository.name.to_lowercase();
+    if event.installation.id == 0 || repo.is_empty() {
+        return;
+    }
     let mut numbers = event
         .check_suite
         .pull_requests
-        .into_iter()
-        .chain(event.check_run.pull_requests)
+        .iter()
+        .chain(&event.check_run.pull_requests)
         .map(|value| value.number)
         .collect::<Vec<_>>();
     numbers.sort_unstable();
     numbers.dedup();
     if numbers.is_empty() {
-        let sha = if !event.sha.is_empty() {
-            event.sha
-        } else if !event.check_suite.head_sha.is_empty() {
-            event.check_suite.head_sha
-        } else {
-            event.check_run.check_suite.head_sha
-        };
+        let sha = ci_sha(&event).to_string();
         if !sha.is_empty() {
             numbers = cordy_db::queries::github_snapshot::list_git_hub_pr_numbers_by_head_sha(
                 &state.pool,
@@ -917,6 +977,16 @@ async fn handle_ci_event(state: &HandlerState, body: &[u8]) {
     }
 }
 
+fn ci_sha(event: &CiEvent) -> &str {
+    if !event.sha.is_empty() {
+        &event.sha
+    } else if !event.check_suite.head_sha.is_empty() {
+        &event.check_suite.head_sha
+    } else {
+        &event.check_run.check_suite.head_sha
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -926,14 +996,58 @@ mod tests {
     fn state_and_webhook_signatures_are_tamper_evident() {
         std::env::set_var("GITHUB_WEBHOOK_SECRET", "test-secret");
         let workspace = Uuid::new_v4();
-        let token = state_token(workspace, "repositories").unwrap();
-        assert_eq!(verify_state(&token), Some((workspace, "repositories")));
+        let user = Uuid::new_v4();
+        let token = state_token(workspace, user, "repositories").unwrap();
+        let verified = verify_state(&token).unwrap();
+        assert_eq!(verified.workspace_id, workspace);
+        assert_eq!(verified.return_to, "repositories");
+        assert_eq!(verified.connected_by, Some(user));
         assert!(verify_state(&format!("{token}x")).is_none());
         let mut mac = HmacSha256::new_from_slice(b"test-secret").unwrap();
         mac.update(b"{}");
         let header = format!("sha256={}", hex::encode(mac.finalize().into_bytes()));
         assert!(webhook_signature_valid(Some(&header), b"{}"));
         assert!(!webhook_signature_valid(Some(&header), b"{ }"));
+    }
+
+    #[test]
+    fn callback_identity_cannot_be_replaced_without_invalidating_state() {
+        std::env::set_var("GITHUB_WEBHOOK_SECRET", "test-secret");
+        let workspace = Uuid::new_v4();
+        let user = Uuid::new_v4();
+        let token = state_token(workspace, user, "github").unwrap();
+        let forged = token.replacen(&user.to_string(), &Uuid::new_v4().to_string(), 1);
+        assert!(verify_state(&forged).is_none());
+    }
+
+    #[test]
+    fn status_webhook_preserves_top_level_sha_for_pr_lookup() {
+        let event: CiEvent = serde_json::from_value(json!({
+            "installation": {"id": 42},
+            "repository": {"name": "cordy", "owner": {"login": "cordy-ai"}},
+            "sha": "abc123"
+        }))
+        .unwrap();
+        assert_eq!(ci_sha(&event), "abc123");
+    }
+
+    #[test]
+    fn pull_request_payload_accepts_null_body_and_deleted_author() {
+        let event: PullRequestEvent = serde_json::from_value(json!({
+            "action": "closed",
+            "installation": {"id": 42},
+            "repository": {"name": "cordy", "owner": {"login": "cordy-ai"}},
+            "pull_request": {
+                "number": 1, "html_url": "https://example.test/pr/1", "title": "CORD-1",
+                "body": null, "state": "closed", "draft": false, "merged": false,
+                "merged_at": null, "closed_at": null, "created_at": null, "updated_at": null,
+                "mergeable_state": null, "additions": 0, "deletions": 0, "changed_files": 0,
+                "head": {"ref": "cord-1", "sha": "abc"}, "user": null
+            }
+        }))
+        .unwrap();
+        assert!(event.pull_request.body.is_empty());
+        assert!(event.pull_request.user.is_none());
     }
 
     #[tokio::test]

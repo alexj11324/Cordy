@@ -49,7 +49,68 @@ fn runtime_profile_conflict() -> Response {
         .into_response()
 }
 
-fn active_agents_conflict(agents: &[cordy_db::models::Agent], plan_changed: bool) -> Response {
+fn redact_gateway_token(mut config: Value) -> Value {
+    let has_token = config
+        .get_mut("gateway")
+        .and_then(Value::as_object_mut)
+        .and_then(|gateway| gateway.get_mut("token"))
+        .and_then(|value| value.as_str())
+        .filter(|token| !token.is_empty())
+        .is_some();
+    if has_token {
+        config["gateway"]["token"] = Value::String("***".into());
+    }
+    config
+}
+
+fn safe_agent_response(state: &HandlerState, agent: &cordy_db::models::Agent) -> Value {
+    let env_count = agent.custom_env.as_object().map_or(0, serde_json::Map::len);
+    let runtime_id = agent
+        .runtime_id
+        .map(|id| id.to_string())
+        .unwrap_or_default();
+    json!({
+        "id": agent.id,
+        "workspace_id": agent.workspace_id,
+        "runtime_id": runtime_id,
+        "runtime_bound": agent.runtime_id.is_some(),
+        "name": agent.name,
+        "description": agent.description,
+        "instructions": agent.instructions,
+        "system_key": agent.system_key,
+        "avatar_url": agent.avatar_url.as_deref().map(|raw| crate::avatar::resolve_url(state, raw)),
+        "runtime_mode": agent.runtime_mode,
+        "runtime_config": redact_gateway_token(agent.runtime_config.clone()),
+        "custom_args": agent.custom_args,
+        "mcp_config": Value::Null,
+        "mcp_config_redacted": agent.mcp_config.is_some(),
+        "has_custom_env": env_count > 0,
+        "custom_env_key_count": env_count,
+        "visibility": agent.visibility,
+        "permission_mode": agent.permission_mode,
+        "invocation_targets": [],
+        "status": agent.status,
+        "max_concurrent_tasks": agent.max_concurrent_tasks,
+        "model": agent.model.as_deref().unwrap_or_default(),
+        "thinking_level": agent.thinking_level.as_deref().unwrap_or_default(),
+        "service_tier": agent.service_tier.as_deref().unwrap_or_default(),
+        "composio_toolkit_allowlist": Value::Null,
+        "composio_toolkit_allowlist_redacted": agent.composio_toolkit_allowlist.is_some(),
+        "owner_id": agent.owner_id,
+        "skills": [],
+        "disabled_runtime_skills": agent.disabled_runtime_skills,
+        "created_at": crate::timefmt::rfc3339(agent.created_at),
+        "updated_at": crate::timefmt::rfc3339(agent.updated_at),
+        "archived_at": agent.archived_at.map(crate::timefmt::rfc3339),
+        "archived_by": agent.archived_by,
+    })
+}
+
+fn active_agents_conflict(
+    state: &HandlerState,
+    agents: &[cordy_db::models::Agent],
+    plan_changed: bool,
+) -> Response {
     let (message, code) = if plan_changed {
         (
             "the active agent set changed; please review and confirm again.",
@@ -63,7 +124,11 @@ fn active_agents_conflict(agents: &[cordy_db::models::Agent], plan_changed: bool
     };
     (
         StatusCode::CONFLICT,
-        Json(json!({"error": message, "code": code, "active_agents": agents})),
+        Json(json!({
+            "error": message,
+            "code": code,
+            "active_agents": agents.iter().map(|agent| safe_agent_response(state, agent)).collect::<Vec<_>>()
+        })),
     )
         .into_response()
 }
@@ -154,10 +219,10 @@ async fn locked_delete(
         let mut expected = expected.to_vec();
         expected.sort_unstable();
         if expected != current_ids {
-            return active_agents_conflict(&active, true);
+            return active_agents_conflict(state, &active, true);
         }
     } else if !active.is_empty() {
-        return active_agents_conflict(&active, false);
+        return active_agents_conflict(state, &active, false);
     }
     let teardown = match crate::runtime_profile::teardown_runtime(&mut transaction, found.id).await
     {
@@ -209,7 +274,7 @@ async fn delete_runtime(
         Err(response) => return response,
     };
     match agent::list_active_agents_by_runtime(&state.pool, found.id).await {
-        Ok(active) if !active.is_empty() => return active_agents_conflict(&active, false),
+        Ok(active) if !active.is_empty() => return active_agents_conflict(&state, &active, false),
         Ok(_) => {}
         Err(_) => {
             return error_response(
@@ -496,6 +561,40 @@ async fn update(
 mod tests {
     use super::*;
 
+    fn test_agent() -> cordy_db::models::Agent {
+        let now = chrono::Utc::now();
+        cordy_db::models::Agent {
+            archived_at: None,
+            archived_by: None,
+            avatar_url: None,
+            composio_toolkit_allowlist: Some(vec!["github".into()]),
+            created_at: now,
+            custom_args: json!(["--safe"]),
+            custom_env: json!({"SECRET": "do-not-leak"}),
+            description: "description".into(),
+            disabled_runtime_skills: json!([]),
+            id: Uuid::new_v4(),
+            instructions: "instructions".into(),
+            kind: "user".into(),
+            max_concurrent_tasks: 1,
+            mcp_config: Some(json!({"token": "do-not-leak"})),
+            model: None,
+            name: "agent".into(),
+            owner_id: Some(Uuid::new_v4()),
+            permission_mode: "private".into(),
+            runtime_config: json!({"gateway": {"token": "do-not-leak"}}),
+            runtime_id: Some(Uuid::new_v4()),
+            runtime_mode: "local".into(),
+            service_tier: None,
+            status: "active".into(),
+            system_key: None,
+            thinking_level: None,
+            updated_at: now,
+            visibility: "workspace".into(),
+            workspace_id: Uuid::new_v4(),
+        }
+    }
+
     #[test]
     fn update_decoder_matches_go_first_value_and_unknown_field_behavior() {
         let request = decode_update(
@@ -520,5 +619,18 @@ mod tests {
     fn custom_name_limit_counts_unicode_codepoints() {
         assert_eq!("机".repeat(MAX_CUSTOM_NAME_CHARS).chars().count(), 100);
         assert_eq!("机".repeat(MAX_CUSTOM_NAME_CHARS + 1).chars().count(), 101);
+    }
+
+    #[tokio::test]
+    async fn runtime_delete_conflict_never_serializes_agent_secrets() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None);
+        let response = safe_agent_response(&state, &test_agent());
+        assert!(response.get("custom_env").is_none());
+        assert_eq!(response["custom_env_key_count"], 1);
+        assert_eq!(response["mcp_config"], Value::Null);
+        assert_eq!(response["runtime_config"]["gateway"]["token"], "***");
+        assert_eq!(response["composio_toolkit_allowlist"], Value::Null);
+        assert!(!response.to_string().contains("do-not-leak"));
     }
 }

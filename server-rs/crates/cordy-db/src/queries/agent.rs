@@ -1871,7 +1871,7 @@ pub async fn create_agent(
     thinking_level: Option<&str>,
     service_tier: Option<&str>,
     composio_toolkit_allowlist: &[String],
-    permission_mode: &str,
+    permission_mode: Option<&str>,
 ) -> anyhow::Result<Option<Agent>> {
     let row = sqlx::query(
         r#"INSERT INTO agent (
@@ -1886,7 +1886,7 @@ pub async fn create_agent(
     $11, $12, $13, $14, $15, $16,
     $17,
     $18::text[],
-    COALESCE($19, 'private')
+    COALESCE($19::text, 'private')
 )
 RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
     )

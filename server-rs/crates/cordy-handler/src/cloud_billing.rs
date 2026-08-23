@@ -1,16 +1,21 @@
 //! Human-only owner-credit billing and workspace subscription proxies.
 
+use std::collections::HashMap;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use axum::body::{Body, Bytes};
-use axum::extract::{Extension, Path, State};
+use axum::extract::{ConnectInfo, Extension, Path, Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::Router;
+use axum::{middleware, Router};
 use cordy_middleware::workspace::WorkspaceContext;
 use futures_util::StreamExt;
+use ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::cloud_runtime::{
@@ -48,9 +53,99 @@ pub fn billing_router(proxy: Arc<dyn CloudRuntimeProxy>) -> Router<HandlerState>
 /// preserves the exact signed bytes and signature header and never attaches a
 /// Cordy user identity.
 pub fn stripe_webhook_router(proxy: Arc<dyn CloudRuntimeProxy>) -> Router<HandlerState> {
+    stripe_webhook_router_with_limiter(proxy, StripeIpLimiter::from_env())
+}
+
+fn stripe_webhook_router_with_limiter(
+    proxy: Arc<dyn CloudRuntimeProxy>,
+    limiter: StripeIpLimiter,
+) -> Router<HandlerState> {
     Router::new()
         .route("/api/webhooks/stripe", post(stripe_webhook))
+        .route_layer(middleware::from_fn_with_state(limiter, stripe_ip_limit))
         .layer(Extension(proxy))
+}
+
+#[derive(Clone)]
+struct StripeIpLimiter {
+    hits: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
+    limit: usize,
+    window: Duration,
+    trusted_proxies: Vec<IpNetwork>,
+}
+
+impl StripeIpLimiter {
+    fn from_env() -> Self {
+        Self {
+            hits: Arc::new(Mutex::new(HashMap::new())),
+            limit: 30,
+            window: Duration::from_secs(60),
+            trusted_proxies: cordy_middleware::ratelimit::parse_trusted_proxies(
+                &std::env::var("RATE_LIMIT_TRUSTED_PROXIES").unwrap_or_default(),
+            ),
+        }
+    }
+
+    #[cfg(test)]
+    fn test(limit: usize) -> Self {
+        Self {
+            hits: Arc::new(Mutex::new(HashMap::new())),
+            limit,
+            window: Duration::from_secs(60),
+            trusted_proxies: Vec::new(),
+        }
+    }
+
+    async fn allow(&self, ip: &str) -> bool {
+        if self.limit == 0 || ip.is_empty() {
+            return true;
+        }
+        let now = Instant::now();
+        let cutoff = now - self.window;
+        let mut hits = self.hits.lock().await;
+        let entries = hits.entry(ip.to_string()).or_default();
+        entries.retain(|seen| *seen > cutoff);
+        if entries.len() >= self.limit {
+            return false;
+        }
+        entries.push(now);
+        true
+    }
+}
+
+fn stripe_client_ip(request: &Request, trusted_proxies: &[IpNetwork]) -> String {
+    let remote = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|info| info.0.ip());
+    if remote.is_some_and(|ip| trusted_proxies.iter().any(|network| network.contains(ip))) {
+        if let Some(forwarded) = request
+            .headers()
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok())
+        {
+            for candidate in forwarded.rsplit(',').map(str::trim) {
+                if let Ok(ip) = candidate.parse::<IpAddr>() {
+                    if !trusted_proxies.iter().any(|network| network.contains(ip)) {
+                        return ip.to_string();
+                    }
+                }
+            }
+        }
+    }
+    remote.map(|ip| ip.to_string()).unwrap_or_default()
+}
+
+async fn stripe_ip_limit(
+    State(limiter): State<StripeIpLimiter>,
+    request: Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let ip = stripe_client_ip(&request, &limiter.trusted_proxies);
+    if !limiter.allow(&ip).await {
+        return error_response(StatusCode::TOO_MANY_REQUESTS, "rate limit exceeded");
+    }
+    next.run(request).await
 }
 
 async fn stripe_webhook(
@@ -786,6 +881,24 @@ mod tests {
             .unwrap();
         assert_eq!(result.status(), StatusCode::UNAUTHORIZED);
         assert!(cloud.request.lock().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn stripe_webhook_is_rate_limited_per_remote_ip_before_proxy() {
+        let cloud = Arc::new(FakeProxy::default());
+        let app = stripe_webhook_router_with_limiter(cloud, StripeIpLimiter::test(1))
+            .with_state(test_state(false));
+        for expected in [StatusCode::OK, StatusCode::TOO_MANY_REQUESTS] {
+            let mut request = Request::post("/api/webhooks/stripe")
+                .header("stripe-signature", "t=1,v1=abc")
+                .body(Body::from("{}"))
+                .unwrap();
+            request
+                .extensions_mut()
+                .insert(ConnectInfo(SocketAddr::from(([203, 0, 113, 7], 1234))));
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), expected);
+        }
     }
 
     #[tokio::test]
