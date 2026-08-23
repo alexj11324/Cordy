@@ -417,6 +417,7 @@ dependencies = [
  "redis",
  "regex",
  "serde_json",
+ "sha2",
  "sqlx",
  "thiserror 2.0.20",
  "tokio",
@@ -803,9 +804,13 @@ name = "cordy-server"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "axum",
+ "chrono",
  "cordy-analytics",
  "cordy-auth",
+ "cordy-channel",
+ "cordy-channel-engine",
  "cordy-config",
  "cordy-db",
  "cordy-ghsnapshot",
@@ -813,14 +818,17 @@ dependencies = [
  "cordy-metrics",
  "cordy-realtime",
  "cordy-service",
+ "cordy-slack",
  "cordy-util",
  "redis",
  "serde_json",
  "sqlx",
  "tokio",
+ "tokio-util",
  "tower",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

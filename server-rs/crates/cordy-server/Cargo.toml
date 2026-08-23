@@ -13,22 +13,29 @@ path = "src/main.rs"
 cordy-config = { path = "../cordy-config" }
 cordy-auth = { path = "../cordy-auth" }
 cordy-analytics = { path = "../cordy-analytics" }
+cordy-channel = { path = "../cordy-channel" }
+cordy-channel-engine = { path = "../cordy-channel-engine" }
 cordy-db = { path = "../cordy-db" }
 cordy-handler = { path = "../cordy-handler" }
 cordy-ghsnapshot = { path = "../cordy-ghsnapshot" }
 cordy-metrics = { path = "../cordy-metrics" }
 cordy-realtime = { path = "../cordy-realtime" }
 cordy-service = { path = "../cordy-service" }
+cordy-slack = { path = "../cordy-slack" }
 cordy-util = { path = "../cordy-util" }
 
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 axum = { workspace = true }
+chrono = { workspace = true }
 redis = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

@@ -324,7 +324,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
         loop {
             tokio::select! {
                 _ = ctx.cancelled() => {
-                    self.cancel_all();
+                    self.cancel_all_and_wait().await;
                     return;
                 }
                 _ = ticker.tick() => {
@@ -914,11 +914,32 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
         }
     }
 
-    fn cancel_all(&self) {
-        let mut inner = self.lock();
-        inner.stopped = true;
-        for (_, entry) in inner.supervisors.drain() {
-            entry.cancel.cancel();
+    async fn cancel_all_and_wait(&self) {
+        let waits = {
+            let mut inner = self.lock();
+            inner.stopped = true;
+            inner
+                .supervisors
+                .drain()
+                .map(|(_, entry)| {
+                    entry.cancel.cancel();
+                    entry.done
+                })
+                .collect::<Vec<_>>()
+        };
+        let join = async {
+            for wait in waits {
+                let _ = wait.await;
+            }
+        };
+        if tokio::time::timeout(self.cfg.shutdown_timeout, join)
+            .await
+            .is_err()
+        {
+            tracing::warn!(
+                timeout = ?self.cfg.shutdown_timeout,
+                "channel supervisor: connections did not exit before shutdown deadline"
+            );
         }
     }
 }

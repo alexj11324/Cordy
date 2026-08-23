@@ -9,6 +9,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+mod channel_runtime;
+
 const PENDING_STORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
 struct VcsWebhookConfig {
@@ -187,7 +189,7 @@ async fn build_production_router(
     attachment_storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
     attachment_frame_ancestors: Vec<String>,
     vcs: VcsWebhookConfig,
-) -> anyhow::Result<Router> {
+) -> anyhow::Result<(Router, Option<channel_runtime::ChannelRuntime>)> {
     let feature_flags = Arc::new(cordy_service::feature_flags::ConfiguredFlags::from_env()?);
     let entitlements = autopilot_entitlements(cfg);
     let mut state = cordy_handler::HandlerState::new(
@@ -243,7 +245,11 @@ async fn build_production_router(
         .await
         .start_autopilot_quota_reconciler()
         .start_webhook_delivery_worker();
-    Ok(cordy_handler::build_router_from_state(state))
+    let channel_runtime = channel_runtime::ChannelRuntime::start(&state, cfg).await?;
+    Ok((
+        cordy_handler::build_router_from_state(state),
+        channel_runtime,
+    ))
 }
 
 fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
@@ -320,7 +326,7 @@ async fn main() -> anyhow::Result<()> {
     let vcs_secret_box = cordy_util::secretbox::load_key("CORDY_VCS_SECRET_KEY")
         .ok()
         .and_then(|key| cordy_util::secretbox::SecretBox::new(&key).ok());
-    let app = build_production_router(
+    let (app, channel_runtime) = build_production_router(
         db,
         hub,
         business_metrics,
@@ -343,8 +349,34 @@ async fn main() -> anyhow::Result<()> {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal())
     .await?;
+    if let Some(channel_runtime) = channel_runtime {
+        channel_runtime.shutdown().await;
+    }
     Ok(())
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("install SIGTERM handler");
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => {
+                if let Err(error) = result {
+                    tracing::error!(%error, "failed to listen for shutdown signal");
+                }
+            }
+            _ = terminate.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    if let Err(error) = tokio::signal::ctrl_c().await {
+        tracing::error!(%error, "failed to listen for shutdown signal");
+    }
+    tracing::info!("shutdown signal received; draining HTTP server");
 }
 
 #[cfg(test)]
@@ -390,7 +422,7 @@ mod tests {
             .unwrap_or_else(|_| unreachable!("static test URL is valid"));
         let mut cfg = cordy_config::Config::default();
         cfg.redis.url = Some("redis://127.0.0.1:1/".into());
-        let router = build_production_router(
+        let (router, _runtime) = build_production_router(
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
             None,
@@ -434,7 +466,7 @@ mod tests {
         let redis_url = format!("redis://{address}/");
         let mut cfg = cordy_config::Config::default();
         cfg.redis.url = Some(redis_url);
-        let router = build_production_router(
+        let (router, _runtime) = build_production_router(
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
             None,
@@ -515,7 +547,7 @@ mod tests {
         let mut cfg = cordy_config::Config::default();
         cfg.redis.url = Some("not a redis URL".into());
         cfg.urls.rate_limit_trusted_proxies = Some("10.0.0.0/8".into());
-        let _router = build_production_router(
+        let (_router, _runtime) = build_production_router(
             pool,
             Arc::new(cordy_realtime::hub::Hub::new()),
             None,
