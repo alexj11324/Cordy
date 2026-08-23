@@ -476,6 +476,7 @@ dependencies = [
  "cordy-realtime",
  "cordy-remotemcp",
  "cordy-task-failure",
+ "flate2",
  "futures-util",
  "hex",
  "http",
@@ -501,6 +502,7 @@ dependencies = [
  "uuid",
  "walkdir",
  "windows-sys 0.61.2",
+ "zip",
 ]
 
 [[package]]

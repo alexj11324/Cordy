@@ -1,9 +1,9 @@
 //! Concrete daemon-core host composition.
 //!
 //! This owner joins transport lifecycle, task orchestration, auto-update, and
-//! GC around one [`DaemonActivity`]. Provider execution and platform-specific
-//! binary replacement remain required services; no default/no-op behavior is
-//! available in production.
+//! GC around one [`DaemonActivity`]. Provider execution remains a required
+//! service while binary replacement is owned by the production
+//! [`UpdateExecutor`]; no default/no-op behavior is available.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -29,6 +29,7 @@ use crate::gc::{
 use crate::repocache::{Cache, CancelCause, Ctx};
 use crate::task_execution::{DaemonTaskExecutionHost, TaskRunOutcome};
 use crate::types::Task;
+use crate::update_executor::UpdateExecutor;
 
 const UPDATE_REPORT_BACKOFFS: &[Duration] = &[
     Duration::ZERO,
@@ -65,8 +66,6 @@ pub(crate) trait DaemonCoreServices: Send + Sync + 'static {
         activity: Arc<DaemonActivity>,
     ) -> TaskRunOutcome;
 
-    async fn run_update(&self, target_version: &str) -> anyhow::Result<String>;
-    fn restart_target_binary(&self) -> anyhow::Result<String>;
     fn repo_bare_path_is_live(&self, bare_path: &Path) -> bool;
 }
 
@@ -75,6 +74,7 @@ pub(crate) struct DaemonCoreHost<S: DaemonCoreServices> {
     client: Arc<Client>,
     repo_cache: Arc<Cache>,
     services: Arc<S>,
+    update_executor: Arc<UpdateExecutor>,
     activity: Arc<DaemonActivity>,
     root_ctx: Ctx,
     auto_update: AutoUpdateSettings,
@@ -90,6 +90,7 @@ impl<S: DaemonCoreServices> DaemonCoreHost<S> {
         client: Arc<Client>,
         repo_cache: Arc<Cache>,
         services: Arc<S>,
+        update_executor: Arc<UpdateExecutor>,
         activity: Arc<DaemonActivity>,
         root_ctx: Ctx,
     ) -> Self {
@@ -121,6 +122,7 @@ impl<S: DaemonCoreServices> DaemonCoreHost<S> {
             client,
             repo_cache,
             services,
+            update_executor,
             activity,
             root_ctx,
             auto_update,
@@ -147,11 +149,15 @@ impl<S: DaemonCoreServices> DaemonCoreHost<S> {
         if !self.scheduled_restart_binary().is_empty() {
             return true;
         }
-        let target = match self.services.restart_target_binary() {
-            Ok(target) if !target.is_empty() => target,
-            Ok(_) => return false,
-            Err(err) => {
-                tracing::error!(error = %err, "resolve daemon restart target failed");
+        let target = match self
+            .update_executor
+            .restart_target_binary()
+            .as_os_str()
+            .to_str()
+        {
+            Some(target) if !target.is_empty() => target.to_string(),
+            _ => {
+                tracing::error!("daemon restart target is not valid UTF-8");
                 return false;
             }
         };
@@ -245,7 +251,7 @@ impl<S: DaemonCoreServices> DaemonCoreHost<S> {
             json!({"status":"running"}),
         )
         .await;
-        match self.services.run_update(&update.target_version).await {
+        match self.update_executor.update(&update.target_version).await {
             Ok(output) => {
                 tracing::info!(%output, target = %update.target_version, "CLI update completed successfully");
                 self.report_update_result_with_retry(
@@ -362,7 +368,7 @@ impl<S: DaemonCoreServices> AutoUpdateHost for DaemonCoreHost<S> {
     }
 
     fn run_update<'a>(&'a self, target_version: &'a str) -> BoxFuture<'a, anyhow::Result<String>> {
-        self.services.run_update(target_version)
+        Box::pin(self.update_executor.update(target_version))
     }
 
     fn trigger_restart(&self) -> bool {
@@ -370,7 +376,12 @@ impl<S: DaemonCoreServices> AutoUpdateHost for DaemonCoreHost<S> {
     }
 
     fn restart_target_binary(&self) -> anyhow::Result<String> {
-        self.services.restart_target_binary()
+        self.update_executor
+            .restart_target_binary()
+            .as_os_str()
+            .to_str()
+            .map(str::to_owned)
+            .ok_or_else(|| anyhow::anyhow!("daemon restart target is not valid UTF-8"))
     }
 
     fn set_reload_pending(&self, reason: Option<String>) {

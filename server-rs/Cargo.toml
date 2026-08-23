@@ -85,6 +85,7 @@ regex = "1"
 croner = "1"
 serde_yaml = "0.9"
 zip = { version = "2", default-features = false, features = ["deflate"] }
+flate2 = "1"
 # email & integrations
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 httpdate = "1"
