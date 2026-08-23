@@ -18,6 +18,7 @@ struct ProductionApp {
     failure_monitor: cordy_service::autopilot_failure_monitor::FailureMonitorRuntime,
     quota_reconciler: cordy_service::autopilot_quota_reconciler::QuotaReconcilerRuntime,
     webhook_delivery: cordy_handler::webhook_delivery_worker::WebhookDeliveryRuntime,
+    scheduler: cordy_scheduler::ManagerRuntime,
 }
 
 struct VcsWebhookConfig {
@@ -276,12 +277,29 @@ async fn build_production_router(
         )
         .start(root_cancel.child_token());
     let webhook_delivery = webhook_worker.start(root_cancel.child_token());
+    let scheduler = cordy_scheduler::Manager::new(
+        state.pool.clone(),
+        cordy_scheduler::ManagerOptions::default(),
+    );
+    if let Err(error) =
+        scheduler.register(cordy_scheduler::task_usage_hourly_job(state.pool.clone()))
+    {
+        tracing::warn!(%error, "scheduler: failed to register task usage hourly rollup job");
+    }
+    if let Err(error) = scheduler.register(cordy_scheduler::autopilot_schedule_dispatch_job(
+        state.pool.clone(),
+        state.autopilots.clone(),
+    )) {
+        tracing::warn!(%error, "scheduler: failed to register autopilot schedule dispatch job");
+    }
+    let scheduler = scheduler.start(root_cancel.child_token())?;
     Ok(ProductionApp {
         router: cordy_handler::build_router_from_state(state),
         root_cancel,
         failure_monitor,
         quota_reconciler,
         webhook_delivery,
+        scheduler,
     })
 }
 
@@ -406,6 +424,7 @@ async fn main() -> anyhow::Result<()> {
         failure_monitor,
         quota_reconciler,
         webhook_delivery,
+        scheduler,
     } = app;
     let serve_result = axum::serve(
         listener,
@@ -414,12 +433,13 @@ async fn main() -> anyhow::Result<()> {
     .with_graceful_shutdown(shutdown_signal(root_cancel.clone()))
     .await;
     root_cancel.cancel();
-    let (failure_shutdown, quota_shutdown, webhook_shutdown) = tokio::join!(
+    let (failure_shutdown, quota_shutdown, webhook_shutdown, scheduler_shutdown) = tokio::join!(
         failure_monitor
             .shutdown(cordy_service::autopilot_failure_monitor::DEFAULT_SHUTDOWN_TIMEOUT),
         quota_reconciler
             .shutdown(cordy_service::autopilot_quota_reconciler::DEFAULT_SHUTDOWN_TIMEOUT),
         webhook_delivery.shutdown(cordy_handler::webhook_delivery_worker::DEFAULT_SHUTDOWN_TIMEOUT),
+        scheduler.shutdown(),
     );
     match failure_shutdown {
         cordy_service::autopilot_failure_monitor::ShutdownOutcome::TimedOut => {
@@ -447,6 +467,15 @@ async fn main() -> anyhow::Result<()> {
             tracing::error!("webhook delivery worker supervisor panicked during shutdown");
         }
         _ => {}
+    }
+    match scheduler_shutdown {
+        cordy_scheduler::ShutdownOutcome::TimedOut => {
+            tracing::warn!("scheduler exceeded shutdown deadline and was aborted");
+        }
+        cordy_scheduler::ShutdownOutcome::Panicked => {
+            tracing::error!("scheduler task panicked during shutdown");
+        }
+        cordy_scheduler::ShutdownOutcome::Stopped => {}
     }
     serve_result?;
     Ok(())
