@@ -115,6 +115,17 @@ impl DaemonControl {
         }
     }
 
+    /// Snapshot/subscribe access for the machine-level claim poller. The same
+    /// canonical runtime set drives both WebSocket authentication and task
+    /// routing, preventing a reconnect/claim split-brain.
+    pub(crate) fn runtime_ids(&self) -> Vec<String> {
+        self.runtimes_tx.borrow().clone()
+    }
+
+    pub(crate) fn subscribe_runtime_ids(&self) -> watch::Receiver<Vec<String>> {
+        self.runtimes_tx.subscribe()
+    }
+
     pub(crate) async fn run(self: Arc<Self>, ctx: Ctx) {
         let ws = tokio::spawn(Arc::clone(&self).task_wakeup_loop(ctx.child()));
         let http = tokio::spawn(Arc::clone(&self).heartbeat_supervisor(ctx.child()));

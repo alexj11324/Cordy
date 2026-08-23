@@ -36,6 +36,7 @@ cordy-db = { path = "../cordy-db" }
 cordy-protocol = { path = "../cordy-protocol" }
 cordy-realtime = { path = "../cordy-realtime" }
 cordy-config = { path = "../cordy-config" }
+cordy-task-failure = { path = "../cordy-task-failure" }
 # S9 lane D (plugin_hook_mcp / remote_mcp_broker): local MCP servers + upstream client
 axum = { workspace = true }
 http = { workspace = true }

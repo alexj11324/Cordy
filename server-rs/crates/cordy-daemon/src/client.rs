@@ -110,6 +110,15 @@ pub(crate) fn is_task_not_found_error(err: &ClientError) -> bool {
     )
 }
 
+/// `isTaskNotFoundError` over the `anyhow::Result` surface returned by client
+/// methods. Request helpers preserve either the concrete [`RequestError`] or
+/// its [`ClientError`] wrapper in the error chain.
+pub(crate) fn is_task_not_found_anyhow(err: &anyhow::Error) -> bool {
+    request_error(err).is_some_and(|req| {
+        req.status_code == 404 && req.body.to_lowercase().contains("task not found")
+    })
+}
+
 /// `isUnauthorizedError` (client.go:65): a 401 from the server.
 pub(crate) fn is_unauthorized_error(err: &ClientError) -> bool {
     matches!(err.as_request(), Some(req) if req.status_code == 401)
@@ -566,6 +575,26 @@ impl Client {
             ctx,
             &format!("/api/daemon/tasks/{task_id}/messages"),
             json!({ "messages": messages }),
+        )
+        .await
+    }
+
+    /// `ReportTaskUsage` (client.go:464): token usage is best-effort and is
+    /// reported before every terminal/cancel branch so interrupted runs are
+    /// not silently omitted from billing telemetry.
+    pub(crate) async fn report_task_usage(
+        &self,
+        ctx: &crate::repocache::Ctx,
+        task_id: &str,
+        usage: &[crate::types::TaskUsageEntry],
+    ) -> anyhow::Result<()> {
+        if usage.is_empty() {
+            return Ok(());
+        }
+        self.post_json_unit(
+            ctx,
+            &format!("/api/daemon/tasks/{task_id}/usage"),
+            json!({ "usage": usage }),
         )
         .await
     }
@@ -1401,7 +1430,7 @@ pub(crate) const DEFAULT_TERMINAL_RETRY_SCHEDULE: &[Duration] = &[
 /// 408/429 — versus permanent 4xx. Non-request errors (transport-level) are
 /// transient by definition. Callers separately bail on parent-context
 /// cancellation.
-fn is_transient_error(err: &anyhow::Error) -> bool {
+pub(crate) fn is_transient_error(err: &anyhow::Error) -> bool {
     let Some(req) = request_error(err) else {
         return true;
     };

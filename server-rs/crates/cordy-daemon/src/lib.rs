@@ -30,6 +30,7 @@ pub mod identity;
 pub mod manager;
 pub mod poisoned;
 pub mod reconcile;
+pub mod task_execution;
 pub mod thread_name;
 pub mod types;
 pub mod wakeup;

@@ -475,6 +475,7 @@ dependencies = [
  "cordy-protocol",
  "cordy-realtime",
  "cordy-remotemcp",
+ "cordy-task-failure",
  "futures-util",
  "hex",
  "http",
