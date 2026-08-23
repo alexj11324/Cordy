@@ -18,6 +18,23 @@ struct VcsWebhookConfig {
     secret_box: Option<cordy_util::secretbox::SecretBox>,
 }
 
+struct MetricsRuntime {
+    shutdown: tokio_util::sync::CancellationToken,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl MetricsRuntime {
+    async fn shutdown(self) {
+        self.shutdown.cancel();
+        if tokio::time::timeout(Duration::from_secs(3), self.task)
+            .await
+            .is_err()
+        {
+            tracing::warn!("metrics server did not exit within shutdown timeout");
+        }
+    }
+}
+
 impl VcsWebhookConfig {
     #[cfg(test)]
     fn disabled() -> Self {
@@ -282,7 +299,7 @@ async fn main() -> anyhow::Result<()> {
     let db = cordy_db::connect(&cfg.database).await?;
     let hub = Arc::new(cordy_realtime::hub::Hub::new());
     let metrics_config = cordy_metrics::Config::from_env();
-    let (business_metrics, http_metrics) = if metrics_config.enabled() {
+    let (business_metrics, http_metrics, metrics_runtime) = if metrics_config.enabled() {
         let registry = cordy_metrics::Registry::new(cordy_metrics::registry::RegistryOptions {
             pool: Some(Arc::new(db.clone())),
             realtime: Some(&cordy_realtime::M),
@@ -300,14 +317,22 @@ async fn main() -> anyhow::Result<()> {
         if !cordy_metrics::is_loopback_addr(&effective_metrics_addr) {
             tracing::warn!(addr = %metrics_addr, "metrics listener is not loopback-only; restrict access with private networking, allowlists, or proxy auth");
         }
-        tokio::spawn(async move {
-            if let Err(error) = cordy_metrics::server::serve(metrics_addr, gatherer).await {
+        let shutdown = tokio_util::sync::CancellationToken::new();
+        let serve_shutdown = shutdown.clone();
+        let task = tokio::spawn(async move {
+            if let Err(error) =
+                cordy_metrics::server::serve(metrics_addr, gatherer, serve_shutdown).await
+            {
                 tracing::error!(%error, "metrics server stopped");
             }
         });
-        (Some(business), Some(http))
+        (
+            Some(business),
+            Some(http),
+            Some(MetricsRuntime { shutdown, task }),
+        )
     } else {
-        (None, None)
+        (None, None, None)
     };
     let github_client = cordy_ghsnapshot::Client::new_from_env()?;
     let attachment_storage = cordy_handler::attachment_storage::from_env(
@@ -355,6 +380,9 @@ async fn main() -> anyhow::Result<()> {
     .with_graceful_shutdown(shutdown_signal())
     .await;
     realtime.shutdown().await;
+    if let Some(metrics_runtime) = metrics_runtime {
+        metrics_runtime.shutdown().await;
+    }
     serve_result?;
     Ok(())
 }
