@@ -96,7 +96,13 @@ async fn main() -> anyhow::Result<()> {
     } else {
         (None, None)
     };
-    let github_client = cordy_ghsnapshot::Client::new_from_env()?;
+    let github_client = match cordy_ghsnapshot::Client::new_from_env() {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::warn!(%error, "invalid GitHub App configuration; snapshot pipeline disabled");
+            None
+        }
+    };
     let app = build_production_router(
         db,
         hub,

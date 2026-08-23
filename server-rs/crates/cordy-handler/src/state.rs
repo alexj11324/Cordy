@@ -197,6 +197,28 @@ impl cordy_service::task_service::TaskWakeupNotifier for DaemonTaskWakeup {
     }
 }
 
+fn fanout_workspace_event(hub: &Hub, event: &cordy_events::Event) {
+    if event.workspace_id.is_empty() {
+        return;
+    }
+    let Ok(frame) = serde_json::to_vec(&serde_json::json!({
+        "type": event.event_type,
+        "payload": event.payload,
+        "actor_id": event.actor_id,
+        "actor_type": event.actor_type,
+    })) else {
+        return;
+    };
+    let event_id = uuid::Uuid::now_v7().to_string();
+    cordy_realtime::M.record_event(&event.event_type);
+    hub.broadcast_to_scope_dedup(
+        cordy_realtime::SCOPE_WORKSPACE,
+        &event.workspace_id,
+        &frame,
+        &event_id,
+    );
+}
+
 /// Handler-layer state shared by all axum extractors.
 #[derive(Clone)]
 pub struct HandlerState {
@@ -330,9 +352,11 @@ impl HandlerState {
         let pool = self.pool.clone();
         let event_pool = pool.clone();
         let bus = self.bus.clone();
+        let hub = self.hub.clone();
         let on_applied: cordy_ghsnapshot::OnApplied = Arc::new(move |pull_request_id| {
             let pool = event_pool.clone();
             let bus = bus.clone();
+            let hub = hub.clone();
             tokio::spawn(async move {
                 let Ok(Some(pull_request)) =
                     cordy_db::queries::github_snapshot::get_git_hub_pull_request_by_id(
@@ -353,7 +377,7 @@ impl HandlerState {
                 };
                 let payload =
                     crate::issue_pull_request::github_model_response(pull_request.clone(), true);
-                bus.publish(&cordy_events::Event {
+                let event = cordy_events::Event {
                     event_type: cordy_protocol::EVENT_PULL_REQUEST_UPDATED.into(),
                     workspace_id: pull_request.workspace_id.to_string(),
                     actor_type: "system".into(),
@@ -362,7 +386,11 @@ impl HandlerState {
                         "linked_issue_ids": issue_ids.into_iter().flatten().map(|id| id.to_string()).collect::<Vec<_>>(),
                     }),
                     ..Default::default()
-                });
+                };
+                bus.publish(&event);
+                if let Some(hub) = hub.as_deref() {
+                    fanout_workspace_event(hub, &event);
+                }
             });
         });
         let manager = Arc::new(cordy_ghsnapshot::Manager::new(
@@ -435,6 +463,38 @@ mod tests {
         assert!(Arc::ptr_eq(
             state.tasks.metrics.get().expect("task metrics configured"),
             &metrics
+        ));
+    }
+
+    #[test]
+    fn snapshot_event_fanout_reaches_only_its_workspace() {
+        let hub = Hub::new();
+        let (_target_id, mut target_rx) = hub.register("user-1", "workspace-1");
+        let (_other_id, mut other_rx) = hub.register("user-2", "workspace-2");
+        let event = cordy_events::Event {
+            event_type: cordy_protocol::EVENT_PULL_REQUEST_UPDATED.into(),
+            workspace_id: "workspace-1".into(),
+            actor_type: "system".into(),
+            payload: serde_json::json!({"pull_request": {"id": "pr-1"}}),
+            ..Default::default()
+        };
+
+        fanout_workspace_event(&hub, &event);
+
+        let frame = target_rx.try_recv().expect("workspace event frame");
+        let frame: serde_json::Value = serde_json::from_slice(&frame).expect("valid event json");
+        assert_eq!(
+            frame,
+            serde_json::json!({
+                "type": cordy_protocol::EVENT_PULL_REQUEST_UPDATED,
+                "payload": {"pull_request": {"id": "pr-1"}},
+                "actor_id": "",
+                "actor_type": "system",
+            })
+        );
+        assert!(matches!(
+            other_rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
         ));
     }
 }
