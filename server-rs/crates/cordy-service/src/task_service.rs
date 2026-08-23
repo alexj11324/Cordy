@@ -1831,7 +1831,7 @@ impl TaskService {
     /// thread-parent / squad-leader hop from an agent-authored comment is a
     /// delegation; a member mention is direct_human.
     #[allow(clippy::too_many_arguments)]
-    pub(crate) async fn enqueue_mention_task(
+    pub async fn enqueue_mention_task(
         &self,
         issue: &Issue,
         agent_id: Uuid,

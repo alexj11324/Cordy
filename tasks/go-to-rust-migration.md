@@ -268,6 +268,14 @@ server-rs/
 
 **S9 第一批集成验收（20260822）：cordy-daemon 全 crate clippy --all-targets -D warnings 0 错误、144 测试全过；全 workspace clippy 0 错误、881 测试全过（737→881）。**
 
+**S9 第二批（A1+A2，20260822）：types(782)/helpers(359)/wsrpc(819)/client(2115)/config(1680)/identity(439)/canonical_path(281)/thread_name(132)/poisoned(466)/reconcile(418)/health(1099)/wakeup(1010)/diskusage(1257) 全落地 ≈10.9k 行。集成验收：cordy-daemon clippy -D warnings 0 错误、266 测试；全 workspace clippy 0 错误、1003 测试全过（881→1003）。dead_code 以模块级 allow+S9-integration 标注待 Daemon 核心接线后移除。**
+
+| 第三批车道 | 范围 | 状态 |
+|---|---|---|
+| C2 | agents_probe/agents_refresh/local_skills/skill_cache/prompt/artifact_matcher/claude_plugins/slash_skill ≈3k 行 | 🔄 运行中 |
+| D | auto_update/local_directory/openclaw_runtime_config/plugin_hook_mcp/remote_mcp_broker/runtime_mcp ≈2.3k 行 | 🔄 运行中 |
+| B（最后） | daemon.go 核心 8,814 行——Daemon/Manager 装配点，依赖全部叶子模块 API，等 C2/D 落地后发车 | ⏳ 排队 |
+
 > 教训：前两轮车道卡死源于"先批量读完所有源再动笔"的长读阶段——重发时改为逐文件读写交替的早写节奏后恢复健康。
 
 后续排队：A 车道(client/wsrpc/config/types/health/wakeup/diskusage/identity/poisoned/reconcile/canonical_path/thread_name/helpers ≈5.5k) → B 车道(daemon.go 核心 8814 + agents_probe/refresh/local_skills/skill_cache/prompt/artifact_matcher/claude_plugins/slash_skill) → D 车道(auto_update/local_directory/openclaw_runtime_config/plugin_hook_mcp/remote_mcp_broker/runtime_mcp)

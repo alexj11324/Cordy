@@ -5,14 +5,25 @@
 //! on axum. Routes are ported domain-by-domain; each domain module exposes a
 //! `router()` merged into the app router in this file.
 
+pub mod claim_comments;
+pub mod claim_response;
+pub mod daemon;
+pub mod daemon_ws;
 pub mod error;
 pub mod health;
+pub mod mcp_merge;
+pub mod pending_store;
+pub mod profile_json;
+pub mod squad_briefing;
 pub mod state;
+pub mod task_json;
+pub mod timefmt;
 pub mod workspace;
 pub mod ws;
 
 use std::sync::Arc;
 
+use axum::middleware;
 use axum::routing::get;
 use axum::Router;
 use cordy_realtime::hub::Hub;
@@ -44,9 +55,46 @@ pub fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<Hub>>) -> Router {
         ),
     };
 
+    if let Some(hub) = state.hub.as_ref() {
+        hub.set_authorizer(Arc::new(ws::DbScopeAuthorizer::new(state.tasks.clone())));
+    }
+
+    let daemon_auth_state = cordy_middleware::daemon_auth::DaemonAuthState {
+        pool: state.pool.clone(),
+        pat_cache: state.pat_cache.clone(),
+        daemon_cache: cordy_auth::daemon_token_cache::DaemonTokenCache::disabled(),
+    };
+    let daemon_routes = daemon::router().layer(middleware::from_fn_with_state(
+        daemon_auth_state,
+        cordy_middleware::daemon_auth::daemon_auth_middleware,
+    ));
+
     Router::new()
         .merge(health::router())
         .merge(workspace::router())
+        .merge(daemon_routes)
         .route("/ws", get(ws::ws_handler))
         .with_state(state)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn daemon_routes_are_mounted_behind_daemon_auth() {
+        let response = build_router(None, None)
+            .oneshot(
+                Request::post("/api/daemon/heartbeat")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
 }

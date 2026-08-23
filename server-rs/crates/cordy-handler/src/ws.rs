@@ -27,7 +27,7 @@ use cordy_db::queries::{member, personal_access_token, workspace};
 use cordy_middleware::auth::decode_jwt_claims;
 use cordy_realtime::broadcaster::{SCOPE_CHAT, SCOPE_TASK, SCOPE_USER, SCOPE_WORKSPACE};
 use cordy_realtime::hub::PatResolver as _;
-use cordy_realtime::hub::{ClientHandle, Hub};
+use cordy_realtime::hub::{ClientHandle, Hub, ScopeAuthorizer};
 use cordy_realtime::metrics::M;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
@@ -41,6 +41,59 @@ const PING_PERIOD_SECS: u64 = PONG_WAIT_SECS * 9 / 10;
 /// client legitimately sends is the token auth frame (<1 KiB); without a cap
 /// one connection can grow the buffered message unbounded (Go hub.go comment).
 const INBOUND_READ_LIMIT: usize = 64 * 1024;
+const WRITE_WAIT_SECS: u64 = 10;
+
+/// DB-backed ownership check for task/chat subscriptions. The hub's legacy
+/// seam is synchronous, so the point lookup is bridged with `block_in_place`;
+/// the async WebSocket task itself is never nested through `Handle::block_on`.
+pub struct DbScopeAuthorizer {
+    tasks: Arc<cordy_service::task_service::TaskService>,
+}
+
+impl DbScopeAuthorizer {
+    pub fn new(tasks: Arc<cordy_service::task_service::TaskService>) -> Self {
+        Self { tasks }
+    }
+}
+
+impl ScopeAuthorizer for DbScopeAuthorizer {
+    fn authorize_scope(
+        &self,
+        _user_id: &str,
+        workspace_id: &str,
+        scope_type: &str,
+        scope_id: &str,
+    ) -> anyhow::Result<bool> {
+        let workspace_id = uuid::Uuid::parse_str(workspace_id)?;
+        let scope_id = uuid::Uuid::parse_str(scope_id)?;
+        let tasks = self.tasks.clone();
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                match scope_type {
+                    SCOPE_TASK => {
+                        let Some(task) =
+                            cordy_db::queries::agent::get_agent_task(&tasks.pool, scope_id).await?
+                        else {
+                            return Ok(false);
+                        };
+                        Ok(tasks
+                            .resolve_task_workspace_id(&task)
+                            .await
+                            .is_some_and(|resolved| resolved == workspace_id.to_string()))
+                    }
+                    SCOPE_CHAT => Ok(cordy_db::queries::chat::get_chat_session_in_workspace(
+                        &tasks.pool,
+                        scope_id,
+                        workspace_id,
+                    )
+                    .await?
+                    .is_some()),
+                    _ => Ok(false),
+                }
+            })
+        })
+    }
+}
 
 /// GET /ws — upgrade + auth handshake, then spawn read/write pumps.
 ///
@@ -437,12 +490,23 @@ async fn write_pump<S>(
             item = rx.recv() => {
                 match item {
                     Some(data) => {
-                        if let Err(e) = sink.send(Message::Text(
+                        let write = sink.send(Message::Text(
                             String::from_utf8_lossy(&data).into_owned().into(),
-                        )).await {
-                            tracing::warn!(error = %e, user_id = %user_id,
-                                workspace_id = %workspace_id, "websocket write error");
-                            return;
+                        ));
+                        match tokio::time::timeout(
+                            Duration::from_secs(WRITE_WAIT_SECS), write,
+                        ).await {
+                            Ok(Ok(())) => {}
+                            Ok(Err(e)) => {
+                                tracing::warn!(error = %e, user_id = %user_id,
+                                    workspace_id = %workspace_id, "websocket write error");
+                                return;
+                            }
+                            Err(_) => {
+                                tracing::warn!(user_id = %user_id,
+                                    workspace_id = %workspace_id, "websocket write timeout");
+                                return;
+                            }
                         }
                     }
                     // Hub dropped our sender (unregister/evict) → Go writes an
@@ -454,7 +518,10 @@ async fn write_pump<S>(
                 }
             }
             _ = ping.tick() => {
-                if sink.send(Message::Ping(Default::default())).await.is_err() {
+                if tokio::time::timeout(
+                    Duration::from_secs(WRITE_WAIT_SECS),
+                    sink.send(Message::Ping(Default::default())),
+                ).await.map_or(true, |result| result.is_err()) {
                     return;
                 }
             }
@@ -654,8 +721,6 @@ async fn first_message_auth(socket: &mut WebSocket) -> Result<String, Option<&'s
         Ok(Some(Ok(_))) => Err(Some(r#"{"error":"expected auth message as first frame"}"#)),
     }
 }
-
-const WRITE_WAIT_SECS: u64 = 10;
 
 /// Sends a text frame directly over the socket during the handshake phase
 /// (before the pumps take ownership) — Go `writeWSAuthFrame`.
