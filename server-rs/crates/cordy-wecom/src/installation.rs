@@ -356,15 +356,15 @@ pub fn as_bot_ownership_error(err: &anyhow::Error) -> Option<BotOwnershipError> 
 const PG_UNIQUE_VIOLATION: &str = "23505";
 
 fn is_unique_violation(err: &anyhow::Error) -> bool {
-    err.chain()
-        .any(|cause| cause.is::<sqlx::postgres::PgDatabaseError>())
-        || err
-            .chain()
-            .filter_map(|cause| cause.downcast_ref::<sqlx::Error>())
-            .any(|e| {
+    err.chain().any(|cause| {
+        cause
+            .downcast_ref::<sqlx::postgres::PgDatabaseError>()
+            .is_some_and(|db| db.code() == PG_UNIQUE_VIOLATION)
+            || cause.downcast_ref::<sqlx::Error>().is_some_and(|e| {
                 e.as_database_error()
-                    .is_some_and(|d| d.code().map(|c| c == PG_UNIQUE_VIOLATION).unwrap_or(false))
+                    .is_some_and(|d| d.code().is_some_and(|c| c == PG_UNIQUE_VIOLATION))
             })
+    })
 }
 
 /// A lightweight pre-write check for required fields. It does NOT verify
