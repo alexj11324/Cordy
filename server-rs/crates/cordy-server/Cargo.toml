@@ -25,11 +25,13 @@ cordy-service = { path = "../cordy-service" }
 cordy-slack = { path = "../cordy-slack" }
 cordy-telegram = { path = "../cordy-telegram" }
 cordy-util = { path = "../cordy-util" }
+cordy-wecom = { path = "../cordy-wecom" }
 
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 axum = { workspace = true }
 chrono = { workspace = true }
+http-body-util = { workspace = true }
 redis = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }

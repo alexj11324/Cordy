@@ -48,4 +48,5 @@ cordy-channel = { path = "../cordy-channel" }
 cordy-channel-engine = { path = "../cordy-channel-engine" }
 cordy-db = { path = "../cordy-db" }
 cordy-events = { path = "../cordy-events" }
+cordy-protocol = { path = "../cordy-protocol" }
 cordy-util = { path = "../cordy-util" }

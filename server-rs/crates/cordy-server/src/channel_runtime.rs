@@ -52,6 +52,7 @@ impl ChannelRuntime {
         configure_slack(state, cfg, &services, &router, storage.as_ref(), &registry);
         configure_dingtalk(state, cfg, &router, storage.as_ref(), &registry);
         configure_telegram(state, cfg, &router, &registry, &cancel);
+        configure_wecom(state, cfg, &router, storage.as_ref(), &registry);
 
         let channel_types = registry.types();
         if channel_types.is_empty() {
@@ -353,6 +354,93 @@ fn configure_telegram(
     );
 }
 
+fn configure_wecom(
+    state: &cordy_handler::HandlerState,
+    cfg: &cordy_config::Config,
+    router: &Arc<ChannelRouter>,
+    storage: Option<&Arc<ChannelStorage>>,
+    registry: &Arc<cordy_channel::Registry>,
+) {
+    let secret_box = match channel_secret_box("CORDY_WECOM_SECRET_KEY") {
+        Ok(Some(secret_box)) => secret_box,
+        Ok(None) => {
+            tracing::info!("wecom channel runtime disabled: CORDY_WECOM_SECRET_KEY not set");
+            return;
+        }
+        Err(error) => {
+            tracing::error!(%error, "wecom channel runtime disabled: invalid secret key");
+            return;
+        }
+    };
+    let senders = Arc::new(cordy_wecom::senders_registry::SendersRegistry::new());
+    let binding = Arc::new(cordy_wecom::replier::DbBindingMinter::new(
+        state.pool.clone(),
+    ));
+    let replier = Arc::new(cordy_wecom::replier::OutboundReplier::new(
+        cordy_wecom::replier::OutboundReplierConfig {
+            binding: Some(binding),
+            senders: senders.clone(),
+            app_url: app_url(cfg),
+            binding_path: String::new(),
+        },
+    ));
+    let media = storage.and_then(|storage| {
+        match cordy_wecom::media_ingest::WecomMediaResolver::new(
+            storage.clone(),
+            Arc::new(cordy_channel_engine::resolvers::DbMediaIntentLedger::new(
+                state.pool.clone(),
+            )),
+            Some(senders.clone()),
+        ) {
+            Ok(media) => Some(Arc::new(media)
+                as Arc<dyn cordy_channel_engine::resolvers::MediaResolver>),
+            Err(error) => {
+                tracing::error!(%error, "wecom inbound media disabled: guarded HTTP client unavailable");
+                None
+            }
+        }
+    });
+    router.register(
+        cordy_wecom::type_wecom(),
+        cordy_wecom::resolvers::new_wecom_resolver_set(state.pool.clone(), Some(replier), media),
+    );
+
+    let mut outbound = cordy_wecom::outbound_media::Outbound::new(state.pool.clone())
+        .with_senders(senders.clone())
+        .with_app_url(
+            std::env::var("WECOM_APP_URL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| app_url(cfg)),
+        );
+    if let Some(storage) = storage {
+        outbound = outbound.with_attachments(storage.clone());
+    }
+    Arc::new(outbound).register(&state.bus);
+    cordy_wecom::wecom_channel::register_wecom(
+        registry,
+        cordy_wecom::wecom_channel::ChannelDeps {
+            credentials: Some(Arc::new(
+                cordy_wecom::credentials::SecretboxCredentialsResolver::new(secret_box),
+            )),
+            senders: Some(senders),
+            metrics: None,
+            dialer: None,
+            ws_url: String::new(),
+        },
+    );
+    if cfg
+        .redis
+        .url
+        .as_deref()
+        .is_some_and(|url| !url.trim().is_empty())
+    {
+        tracing::warn!(
+            "wecom outbound uses the lease-holder's in-process WebSocket; run a single server replica until cross-replica outbound routing is configured"
+        );
+    }
+}
+
 fn channel_secret_box(env_name: &str) -> anyhow::Result<Option<cordy_util::secretbox::SecretBox>> {
     if std::env::var(env_name)
         .unwrap_or_default()
@@ -525,6 +613,45 @@ impl cordy_dingtalk::media::MediaStorage for ChannelStorage {
 
     fn object_url(&self, key: &str) -> String {
         self.inner.object_url(key)
+    }
+}
+
+#[async_trait]
+impl cordy_wecom::media_ingest::MediaStorage for ChannelStorage {
+    async fn upload(
+        &self,
+        key: &str,
+        data: Vec<u8>,
+        content_type: &str,
+        filename: &str,
+    ) -> anyhow::Result<String> {
+        self.inner.upload(key, data, content_type, filename).await
+    }
+
+    fn object_url(&self, key: &str) -> String {
+        self.inner.object_url(key)
+    }
+}
+
+#[async_trait]
+impl cordy_wecom::outbound_media::MediaObjectStore for ChannelStorage {
+    fn key_from_url(&self, raw_url: &str) -> String {
+        self.inner.key_from_url(raw_url).unwrap_or_default()
+    }
+
+    async fn get_object(&self, key: &str, max_bytes: usize) -> anyhow::Result<Vec<u8>> {
+        use http_body_util::BodyExt as _;
+
+        if key.is_empty() {
+            anyhow::bail!("attachment URL is not owned by configured storage");
+        }
+        let range = format!("bytes=0-{max_bytes}");
+        let object = self.inner.get(key, Some(&range)).await?;
+        let bytes = object.body.collect().await?.to_bytes();
+        if bytes.len() > max_bytes {
+            anyhow::bail!("attachment exceeds WeCom upload limit");
+        }
+        Ok(bytes.to_vec())
     }
 }
 
