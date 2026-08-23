@@ -120,8 +120,7 @@ impl InstallationService {
             .box_
             .open(&inst.app_secret_encrypted)
             .map_err(|e| anyhow::anyhow!("decrypt app_secret: {e}"))?;
-        String::from_utf8(plain)
-            .map_err(|e| anyhow::anyhow!("decrypt app_secret: not utf-8: {e}"))
+        String::from_utf8(plain).map_err(|e| anyhow::anyhow!("decrypt app_secret: not utf-8: {e}"))
     }
 
     /// The workspace-scoped lookup helper. Internal callers (Dispatcher) use
@@ -151,10 +150,7 @@ impl InstallationService {
     /// Returns every installation rooted at the workspace, active and
     /// revoked, oldest first. The status column lets the UI distinguish
     /// "wired up" from "torn down but kept for audit".
-    pub async fn list_by_workspace(
-        &self,
-        workspace_id: Uuid,
-    ) -> anyhow::Result<Vec<Installation>> {
+    pub async fn list_by_workspace(&self, workspace_id: Uuid) -> anyhow::Result<Vec<Installation>> {
         self.queries
             .list_lark_installations_by_workspace(workspace_id)
             .await
@@ -196,8 +192,7 @@ impl CredentialsResolver for InstallationService {
 }
 
 /// Builds the per-installation transport credentials from an installation row
-/// + decrypted secret. Shared by the Patcher and the OutcomeReplier (Go:
-/// duplicated private helpers on both structs).
+/// + decrypted secret. Shared by the Patcher and the OutcomeReplier.
 pub fn installation_credentials_for(
     creds_resolver: &dyn CredentialsResolver,
     inst: &Installation,
@@ -221,10 +216,7 @@ pub fn installation_credentials_for(
 impl crate::ws_connector::CredentialsProvider for InstallationService {
     /// Supplies the plaintext credentials a connector needs for its endpoint
     /// bootstrap; mirrors Go hub.go's credentials provider wiring.
-    async fn credentials(
-        &self,
-        inst: &Installation,
-    ) -> anyhow::Result<InstallationCredentials> {
+    async fn credentials(&self, inst: &Installation) -> anyhow::Result<InstallationCredentials> {
         installation_credentials_for(self, inst)
     }
 }

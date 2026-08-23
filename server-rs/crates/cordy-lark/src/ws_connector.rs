@@ -53,6 +53,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::client::InstallationCredentials;
 use crate::connector::{EventConnector, EventEmitter};
+use crate::feishu_types::InboundMessage;
 use crate::inbound_enricher::Enricher;
 use crate::store::Installation;
 use crate::types::OpenId;
@@ -61,7 +62,6 @@ use crate::ws_frame::{
     new_ack_frame, new_ping_frame, new_pong_frame, unmarshal_frame, FRAME_HEADER_TYPE_KEY,
     FRAME_HEADER_TYPE_PING, FRAME_METHOD_CONTROL,
 };
-use crate::feishu_types::InboundMessage;
 
 /// WebSocket binary opcode (RFC 6455).
 const OPCODE_BINARY: u8 = 2;
@@ -118,6 +118,7 @@ pub trait WsDialer: Send + Sync {
         &self,
         url: &str,
         request_headers: Vec<(String, String)>,
+        write_timeout: Duration,
     ) -> anyhow::Result<Arc<dyn WsConn>>;
 }
 
@@ -235,6 +236,14 @@ impl WsConnectorConfig {
 /// Validates the supplied config and returns a reusable connector.
 pub struct WsLongConnConnector {
     cfg: WsConnectorConfig,
+}
+
+impl std::fmt::Debug for WsLongConnConnector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The config's dyn seams are not Debug; never render credentials.
+        f.debug_struct("WsLongConnConnector")
+            .finish_non_exhaustive()
+    }
 }
 
 impl WsLongConnConnector {
@@ -364,9 +373,7 @@ impl WsLongConnConnector {
             // are accepted silently.
             if frame.method == FRAME_METHOD_CONTROL {
                 if frame.header_value(FRAME_HEADER_TYPE_KEY) == FRAME_HEADER_TYPE_PING {
-                    if let Err(werr) =
-                        self.write_frame(&conn, &new_pong_frame(service_id)).await
-                    {
+                    if let Err(werr) = self.write_frame(&conn, &new_pong_frame(service_id)).await {
                         tracing::warn!(error = %werr, "lark ws connector: pong write failed");
                     }
                 }
@@ -380,7 +387,8 @@ impl WsLongConnConnector {
             // "we got it" before we actually have the assembled payload.
             let (sum, seq, msg_id) = parse_chunk_headers(&frame);
             let payload: Vec<u8> = if sum > 1 {
-                let Some(assembled) = assembler.admit(&msg_id, sum, seq, &frame.payload.unwrap_or_default()) else {
+                let frame_payload = frame.payload.clone().unwrap_or_default();
+                let Some(assembled) = assembler.admit(&msg_id, sum, seq, &frame_payload) else {
                     tracing::debug!(
                         message_id = %msg_id,
                         seq,
@@ -444,7 +452,7 @@ impl WsLongConnConnector {
                 Some(enricher) => {
                     match tokio::time::timeout(
                         self.cfg.enrich_timeout,
-                        enricher.enrich(msg, creds.clone()),
+                        enricher.enrich(msg.clone(), creds.clone()),
                     )
                     .await
                     {
@@ -500,17 +508,27 @@ impl EventConnector for WsLongConnConnector {
         inst: Installation,
         emit: EventEmitter,
     ) -> anyhow::Result<()> {
-        let provider = self.cfg.credentials_provider.as_ref().expect("validated at new");
-        let fetcher = self.cfg.endpoint_fetcher.as_ref().expect("validated at new");
+        let provider = self
+            .cfg
+            .credentials_provider
+            .as_ref()
+            .expect("validated at new");
+        let fetcher = self
+            .cfg
+            .endpoint_fetcher
+            .as_ref()
+            .expect("validated at new");
         let dialer = self.cfg.dialer.as_ref().expect("validated at new");
 
-        let creds = provider.credentials(&inst).await.map_err(|e| {
-            anyhow::anyhow!("resolve credentials: {e:#}")
-        })?;
+        let creds = provider
+            .credentials(&inst)
+            .await
+            .map_err(|e| anyhow::anyhow!("resolve credentials: {e:#}"))?;
 
-        let endpoint = fetcher.endpoint(creds.clone()).await.map_err(|e| {
-            anyhow::anyhow!("resolve ws endpoint: {e:#}")
-        })?;
+        let endpoint = fetcher
+            .endpoint(creds.clone())
+            .await
+            .map_err(|e| anyhow::anyhow!("resolve ws endpoint: {e:#}"))?;
 
         // Server-pushed PingInterval beats the static default; this is the
         // SDK behaviour. A zero (server omitted the field) falls back to our
@@ -522,7 +540,11 @@ impl EventConnector for WsLongConnConnector {
         };
 
         let conn = dialer
-            .dial(&endpoint.url, endpoint.headers.clone())
+            .dial(
+                &endpoint.url,
+                endpoint.headers.clone(),
+                self.cfg.write_timeout,
+            )
             .await
             .map_err(|e| anyhow::anyhow!("dial ws: {e:#}"))?;
 
@@ -551,7 +573,14 @@ impl EventConnector for WsLongConnConnector {
         );
 
         let result = self
-            .read_loop(ctx, Arc::clone(&conn), &inst, creds, endpoint.service_id, emit)
+            .read_loop(
+                ctx,
+                Arc::clone(&conn),
+                &inst,
+                creds,
+                endpoint.service_id,
+                emit,
+            )
             .await;
 
         run_ctx.cancel();
@@ -612,11 +641,11 @@ async fn ping_loop(
 // Production dialer over tokio-tungstenite (Go: GorillaDialer).
 // ---------------------------------------------------------------------------
 
-type TungsteniteStream =
-    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
-
 enum Outbound {
-    Message(tokio_tungstenite::tungstenite::Message),
+    Message {
+        message: tokio_tungstenite::tungstenite::Message,
+        result: tokio::sync::oneshot::Sender<anyhow::Result<()>>,
+    },
     Close,
 }
 
@@ -643,9 +672,7 @@ impl WsConn for ActorWsConn {
         let mut rx = self.inbound_rx.lock().await;
         match rx.recv().await {
             Some(Ok(InboundItem::Message(mt, raw))) => Ok((mt, raw)),
-            Some(Ok(InboundItem::ServerClosed)) | None => {
-                Err(ServerClosedConnection.into())
-            }
+            Some(Ok(InboundItem::ServerClosed)) | None => Err(ServerClosedConnection.into()),
             Some(Err(err)) => Err(err),
         }
     }
@@ -659,11 +686,17 @@ impl WsConn for ActorWsConn {
             OPCODE_BINARY => tokio_tungstenite::tungstenite::Message::Binary(data),
             other => anyhow::bail!("unsupported websocket opcode {other}"),
         };
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
         self.outbound_tx
-            .send(Outbound::Message(msg))
+            .send(Outbound::Message {
+                message: msg,
+                result: result_tx,
+            })
             .await
             .map_err(|_| anyhow::anyhow!("use of closed connection"))?;
-        Ok(())
+        result_rx
+            .await
+            .map_err(|_| anyhow::anyhow!("connection closed before write completed"))?
     }
 
     fn close(&self) {
@@ -705,6 +738,7 @@ impl WsDialer for TungsteniteDialer {
         &self,
         url: &str,
         request_headers: Vec<(String, String)>,
+        write_timeout: Duration,
     ) -> anyhow::Result<Arc<dyn WsConn>> {
         use futures_util::{SinkExt, StreamExt};
         use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -714,9 +748,8 @@ impl WsDialer for TungsteniteDialer {
             .into_client_request()
             .map_err(|e| anyhow::anyhow!("invalid ws url {url:?}: {e}"))?;
         for (k, v) in request_headers {
-            let name =
-                tokio_tungstenite::tungstenite::http::HeaderName::from_bytes(k.as_bytes())
-                    .map_err(|e| anyhow::anyhow!("invalid header name {k:?}: {e}"))?;
+            let name = tokio_tungstenite::tungstenite::http::HeaderName::from_bytes(k.as_bytes())
+                .map_err(|e| anyhow::anyhow!("invalid header name {k:?}: {e}"))?;
             let value = tokio_tungstenite::tungstenite::http::HeaderValue::from_str(&v)
                 .map_err(|e| anyhow::anyhow!("invalid header value {v:?}: {e}"))?;
             request.headers_mut().insert(name, value);
@@ -724,7 +757,9 @@ impl WsDialer for TungsteniteDialer {
 
         let (ws, _resp) = tokio::time::timeout(self.handshake_timeout, connect_async(request))
             .await
-            .map_err(|_| anyhow::anyhow!("ws handshake timed out after {:?}", self.handshake_timeout))?
+            .map_err(|_| {
+                anyhow::anyhow!("ws handshake timed out after {:?}", self.handshake_timeout)
+            })?
             .map_err(|e| anyhow::anyhow!("ws handshake failed: {e}"))?;
 
         let (mut sink, mut stream) = ws.split();
@@ -749,8 +784,15 @@ impl WsDialer for TungsteniteDialer {
                     }
                     cmd = outbound_rx.recv() => {
                         match cmd {
-                            Some(Outbound::Message(m)) => {
-                                if sink.send(m).await.is_err() {
+                            Some(Outbound::Message { message, result }) => {
+                                let write = tokio::time::timeout(write_timeout, sink.send(message)).await;
+                                let (reply, failed) = match write {
+                                    Ok(Ok(())) => (Ok(()), false),
+                                    Ok(Err(err)) => (Err(anyhow::anyhow!("ws write: {err}")), true),
+                                    Err(_) => (Err(anyhow::anyhow!("ws write timed out after {write_timeout:?}")), true),
+                                };
+                                let _ = result.send(reply);
+                                if failed {
                                     break;
                                 }
                             }
@@ -831,7 +873,10 @@ where
         F: Fn(Installation) -> Fut + Send + Sync,
         Fut: std::future::Future<Output = anyhow::Result<InstallationCredentials>> + Send,
     {
-        async fn credentials(&self, inst: &Installation) -> anyhow::Result<InstallationCredentials> {
+        async fn credentials(
+            &self,
+            inst: &Installation,
+        ) -> anyhow::Result<InstallationCredentials> {
             (self.0)(inst.clone()).await
         }
     }
@@ -861,17 +906,12 @@ where
 /// Convenience constructor mirroring Go's FrameDecoderFunc.
 pub fn frame_decoder_fn<F>(f: F) -> Arc<dyn FrameDecoder>
 where
-    F: Fn(&[u8], &Installation) -> anyhow::Result<Option<InboundMessage>>
-        + Send
-        + Sync
-        + 'static,
+    F: Fn(&[u8], &Installation) -> anyhow::Result<Option<InboundMessage>> + Send + Sync + 'static,
 {
     struct Wrapper<F>(F);
     impl<F> FrameDecoder for Wrapper<F>
     where
-        F: Fn(&[u8], &Installation) -> anyhow::Result<Option<InboundMessage>>
-            + Send
-            + Sync,
+        F: Fn(&[u8], &Installation) -> anyhow::Result<Option<InboundMessage>> + Send + Sync,
     {
         fn decode(
             &self,
@@ -927,5 +967,27 @@ mod tests {
             endpoint.ping_interval
         };
         assert_eq!(effective, Duration::from_secs(120));
+    }
+
+    #[tokio::test]
+    async fn actor_write_waits_for_the_socket_result() {
+        let (outbound_tx, mut outbound_rx) = mpsc::channel(1);
+        let (_inbound_tx, inbound_rx) = mpsc::channel(1);
+        let conn = Arc::new(ActorWsConn {
+            outbound_tx,
+            inbound_rx: tokio::sync::Mutex::new(inbound_rx),
+            closed: CancellationToken::new(),
+        });
+
+        let writer = {
+            let conn = Arc::clone(&conn);
+            tokio::spawn(async move { conn.write_message(OPCODE_BINARY, vec![1, 2, 3]).await })
+        };
+        let Some(Outbound::Message { result, .. }) = outbound_rx.recv().await else {
+            panic!("expected queued websocket message");
+        };
+        assert!(!writer.is_finished());
+        result.send(Ok(())).expect("writer still waiting");
+        writer.await.unwrap().unwrap();
     }
 }

@@ -404,7 +404,7 @@ impl cordy_channel_engine::resolvers::Auditor for Auditor {
             TYPE_SLACK,
             &event_type,
             &reason.0,
-            inst_id,
+            Some(inst_id),
             opt_str(&msg.source.chat_id),
             opt_str(&msg.event_id),
             opt_str(&msg.message_id),

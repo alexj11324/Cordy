@@ -81,7 +81,7 @@ regex = "1"
 croner = "1"
 serde_yaml = "0.9"
 # email & integrations
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 # ring is the single crypto provider across the graph (sqlx/reqwest/jsonwebtoken
 # all enable rustls/ring); default features would also pull aws-lc-rs, and two
 # compiled-in providers make ClientConfig::builder() ambiguous (panic).

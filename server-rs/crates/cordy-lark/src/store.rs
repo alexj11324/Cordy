@@ -75,7 +75,7 @@ pub struct UserBinding {
 }
 
 /// The flat view of a channel_chat_session_binding row.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ChatSessionBinding {
     pub id: Uuid,
     pub chat_session_id: Uuid,
@@ -169,11 +169,7 @@ struct FeishuInstallConfig {
 /// The JSON shape of channel_user_binding.config.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FeishuBindingConfig {
-    #[serde(
-        rename = "union_id",
-        default,
-        skip_serializing_if = "String::is_empty"
-    )]
+    #[serde(rename = "union_id", default, skip_serializing_if = "String::is_empty")]
     pub union_id: String,
 }
 
