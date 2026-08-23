@@ -1,4 +1,9 @@
 use async_trait::async_trait;
+use aws_config::{default_provider::credentials::DefaultCredentialsChain, Region};
+use aws_credential_types::{
+    provider::{ProvideCredentials, SharedCredentialsProvider},
+    Credentials,
+};
 use axum::body::Body;
 use hmac::{Hmac, Mac};
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -179,14 +184,12 @@ pub struct S3Storage {
     endpoint: Url,
     custom_endpoint: bool,
     path_style: bool,
-    access_key: String,
-    secret_key: String,
-    session_token: Option<String>,
+    credentials: SharedCredentialsProvider,
     cdn_domain: Option<String>,
 }
 
 impl S3Storage {
-    pub fn from_env() -> anyhow::Result<Option<Self>> {
+    pub async fn from_env() -> anyhow::Result<Option<Self>> {
         let Some(bucket) = env("S3_BUCKET") else {
             return Ok(None);
         };
@@ -207,17 +210,12 @@ impl S3Storage {
             std::env::var("S3_USE_PATH_STYLE").ok().as_deref(),
             custom.is_some(),
         );
-        let access_key = env("AWS_ACCESS_KEY_ID");
-        let secret_key = env("AWS_SECRET_ACCESS_KEY");
-        let (access_key, secret_key) = match (access_key, secret_key) {
-            (Some(access_key), Some(secret_key)) => (access_key, secret_key),
-            (None, None) => anyhow::bail!(
-                "S3_BUCKET requires AWS credentials; the Rust server does not yet support the IAM credential chain"
-            ),
-            _ => anyhow::bail!(
-                "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be configured together"
-            ),
-        };
+        let credentials = SharedCredentialsProvider::new(
+            DefaultCredentialsChain::builder()
+                .region(Region::new(region.clone()))
+                .build()
+                .await,
+        );
         Ok(Some(Self {
             client: reqwest::Client::new(),
             bucket,
@@ -225,9 +223,7 @@ impl S3Storage {
             endpoint,
             custom_endpoint: custom.is_some(),
             path_style,
-            access_key,
-            secret_key,
-            session_token: env("AWS_SESSION_TOKEN"),
+            credentials,
             cdn_domain: env("CLOUDFRONT_DOMAIN"),
         }))
     }
@@ -256,6 +252,7 @@ impl S3Storage {
         payload_hash: &str,
         now: chrono::DateTime<chrono::Utc>,
         extra: &HeaderMap,
+        credentials: &Credentials,
     ) -> anyhow::Result<HeaderMap> {
         let date = now.format("%Y%m%d").to_string();
         let timestamp = now.format("%Y%m%dT%H%M%SZ").to_string();
@@ -270,7 +267,7 @@ impl S3Storage {
             ("x-amz-content-sha256".to_string(), payload_hash.to_string()),
             ("x-amz-date".to_string(), timestamp.clone()),
         ];
-        if let Some(token) = &self.session_token {
+        if let Some(token) = credentials.session_token() {
             canonical.push(("x-amz-security-token".to_string(), token.trim().to_string()));
         }
         for (name, value) in extra {
@@ -301,7 +298,7 @@ impl S3Storage {
             hex::encode(Sha256::digest(canonical_request.as_bytes()))
         );
         let k_date = hmac_bytes(
-            format!("AWS4{}", self.secret_key).as_bytes(),
+            format!("AWS4{}", credentials.secret_access_key()).as_bytes(),
             date.as_bytes(),
         )?;
         let k_region = hmac_bytes(&k_date, self.region.as_bytes())?;
@@ -311,10 +308,10 @@ impl S3Storage {
         let mut headers = HeaderMap::new();
         headers.insert("x-amz-content-sha256", HeaderValue::from_str(payload_hash)?);
         headers.insert("x-amz-date", HeaderValue::from_str(&timestamp)?);
-        if let Some(token) = &self.session_token {
+        if let Some(token) = credentials.session_token() {
             headers.insert("x-amz-security-token", HeaderValue::from_str(token)?);
         }
-        headers.insert(reqwest::header::AUTHORIZATION, HeaderValue::from_str(&format!("AWS4-HMAC-SHA256 Credential={}/{scope}, SignedHeaders={signed}, Signature={signature}", self.access_key))?);
+        headers.insert(reqwest::header::AUTHORIZATION, HeaderValue::from_str(&format!("AWS4-HMAC-SHA256 Credential={}/{scope}, SignedHeaders={signed}, Signature={signature}", credentials.access_key_id()))?);
         Ok(headers)
     }
     async fn execute(
@@ -327,8 +324,19 @@ impl S3Storage {
         let url = self.request_url(key)?;
         let bytes = body.unwrap_or_default();
         let hash = hex::encode(Sha256::digest(&bytes));
-        let mut headers =
-            self.signed_headers(method.as_str(), &url, &hash, chrono::Utc::now(), &extra)?;
+        let credentials = self
+            .credentials
+            .provide_credentials()
+            .await
+            .map_err(|error| anyhow::anyhow!("resolve AWS credentials: {error}"))?;
+        let mut headers = self.signed_headers(
+            method.as_str(),
+            &url,
+            &hash,
+            chrono::Utc::now(),
+            &extra,
+            &credentials,
+        )?;
         headers.extend(extra);
         let response = self
             .client
@@ -449,11 +457,11 @@ impl AttachmentStorage for S3Storage {
     }
 }
 
-pub fn from_env(
+pub async fn from_env(
     local_dir: Option<&str>,
     local_base: Option<&str>,
 ) -> anyhow::Result<Arc<dyn AttachmentStorage>> {
-    if let Some(s3) = S3Storage::from_env()? {
+    if let Some(s3) = S3Storage::from_env().await? {
         return Ok(Arc::new(s3));
     }
     Ok(Arc::new(LocalStorage::new(
@@ -603,6 +611,32 @@ mod tests {
         assert!(store.get(".x.tmp", None).await.is_err());
     }
 
+    fn test_credentials(session_token: Option<&str>) -> Credentials {
+        Credentials::new(
+            "key",
+            "secret",
+            session_token.map(str::to_string),
+            None,
+            "attachment-storage-test",
+        )
+    }
+
+    #[derive(Debug)]
+    struct MissingCredentials;
+
+    impl ProvideCredentials for MissingCredentials {
+        fn provide_credentials<'a>(
+            &'a self,
+        ) -> aws_credential_types::provider::future::ProvideCredentials<'a>
+        where
+            Self: 'a,
+        {
+            aws_credential_types::provider::future::ProvideCredentials::ready(Err(
+                aws_credential_types::provider::error::CredentialsError::not_loaded_no_source(),
+            ))
+        }
+    }
+
     #[test]
     fn s3_unicode_key_round_trips_through_stored_url() {
         let store = S3Storage {
@@ -612,9 +646,7 @@ mod tests {
             endpoint: Url::parse("https://s3.us-west-2.amazonaws.com").unwrap(),
             custom_endpoint: false,
             path_style: false,
-            access_key: "key".into(),
-            secret_key: "secret".into(),
-            session_token: None,
+            credentials: SharedCredentialsProvider::new(test_credentials(None)),
             cdn_domain: None,
         };
         let key = "workspaces/w/file.微信";
@@ -635,9 +667,7 @@ mod tests {
             endpoint: Url::parse(endpoint).unwrap(),
             custom_endpoint,
             path_style,
-            access_key: "key".into(),
-            secret_key: "secret".into(),
-            session_token: None,
+            credentials: SharedCredentialsProvider::new(test_credentials(None)),
             cdn_domain: None,
         }
     }
@@ -691,6 +721,7 @@ mod tests {
                 &hex::encode(Sha256::digest(b"body")),
                 chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
                 &extra,
+                &test_credentials(None),
             )
             .unwrap();
         let authorization = headers
@@ -700,6 +731,43 @@ mod tests {
             .unwrap();
         assert!(authorization
             .contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-storage-class"));
+    }
+
+    #[test]
+    fn sigv4_signs_temporary_credential_session_token() {
+        let store = test_s3("https://s3.us-west-2.amazonaws.com", false, true);
+        let url = store.request_url("object").unwrap();
+        let headers = store
+            .signed_headers(
+                "GET",
+                &url,
+                &hex::encode(Sha256::digest([])),
+                chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+                &HeaderMap::new(),
+                &test_credentials(Some("temporary-session-token")),
+            )
+            .unwrap();
+        assert_eq!(
+            headers.get("x-amz-security-token").unwrap(),
+            "temporary-session-token"
+        );
+        assert!(headers
+            .get(reqwest::header::AUTHORIZATION)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token"));
+    }
+
+    #[tokio::test]
+    async fn missing_credentials_fail_before_the_storage_request() {
+        let mut store = test_s3("http://127.0.0.1:9", true, true);
+        store.credentials = SharedCredentialsProvider::new(MissingCredentials);
+        let error = store
+            .execute(reqwest::Method::GET, "object", None, HeaderMap::new())
+            .await
+            .unwrap_err();
+        assert!(error.to_string().starts_with("resolve AWS credentials:"));
     }
 
     #[test]

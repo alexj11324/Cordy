@@ -9,6 +9,8 @@ license.workspace = true
 anyhow = { workspace = true }
 axum = { workspace = true, features = ["ws", "multipart"] }
 async-trait = { workspace = true }
+aws-config = { workspace = true }
+aws-credential-types = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
