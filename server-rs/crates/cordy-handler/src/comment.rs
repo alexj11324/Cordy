@@ -4,7 +4,7 @@ use axum::body::Bytes;
 use axum::extract::{Extension, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use cordy_db::models::{Comment, CommentReaction};
 use cordy_db::queries::{attachment, comment, issue as issue_q, reaction};
@@ -18,6 +18,10 @@ use crate::state::HandlerState;
 
 pub fn router() -> Router<HandlerState> {
     Router::new()
+        .route(
+            "/api/issues/{id}/comments",
+            get(crate::comment_list::list_comments),
+        )
         .route(
             "/api/comments/{comment_id}/resolve",
             post(resolve).delete(unresolve),
@@ -51,7 +55,7 @@ async fn load_comment(
     }
 }
 
-fn reaction_json(reaction: &CommentReaction) -> Value {
+pub(crate) fn reaction_json(reaction: &CommentReaction) -> Value {
     json!({
         "id": reaction.id,
         "comment_id": reaction.comment_id,
@@ -128,7 +132,11 @@ async fn comment_json(state: &HandlerState, comment: &Comment) -> Value {
     )
 }
 
-fn comment_json_with_related(comment: &Comment, reactions: Value, attachments: Value) -> Value {
+pub(crate) fn comment_json_with_related(
+    comment: &Comment,
+    reactions: Value,
+    attachments: Value,
+) -> Value {
     let mut response = serde_json::Map::new();
     response.insert("id".into(), json!(comment.id));
     response.insert("issue_id".into(), json!(comment.issue_id));
