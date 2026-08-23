@@ -11,6 +11,7 @@ members = [
     "crates/cordy-db",
     "crates/cordy-dingtalk",
     "crates/cordy-events",
+    "crates/cordy-handler",
     "crates/cordy-ghsnapshot",
     "crates/cordy-lark",
     "crates/cordy-metrics",
@@ -38,7 +39,7 @@ license = "UNLICENSED"
 [workspace.dependencies]
 # async runtime & web
 tokio = { version = "1", features = ["full"] }
-axum = "0.8"
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "ws", "matched-path", "original-uri", "tower-log", "tracing"] }
 # data
 sqlx = { version = "0.8", features = [
     "runtime-tokio",
