@@ -9,16 +9,17 @@ pub mod config;
 pub mod error;
 
 use anyhow::{bail, Context, Result};
-use api::{http_timeout, ApiClient};
+use api::{http_timeout, ApiClient, NetworkError};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use config::Environment;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write;
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use url::Url;
+use url::{form_urlencoded, Url};
 
 pub const CLIENT_VERSION: &str = env!("CORDY_BUILD_VERSION");
 pub const BUILD_COMMIT: &str = env!("CORDY_BUILD_COMMIT");
@@ -72,6 +73,8 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    #[command(about = "Work with issues")]
+    Issue(IssueArgs),
     #[command(about = "Authenticate cordy with Cordy")]
     Auth(AuthArgs),
     #[command(about = "Manage configuration for cordy")]
@@ -85,6 +88,70 @@ enum Command {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
         output: VersionOutput,
     },
+}
+
+#[derive(Debug, Args)]
+struct IssueArgs {
+    #[command(subcommand)]
+    command: IssueCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum IssueCommand {
+    #[command(about = "List issues in the workspace")]
+    List(IssueListArgs),
+}
+
+#[derive(Debug, Args)]
+struct IssueListArgs {
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+    #[arg(long, help = "Show full UUIDs in table output")]
+    full_id: bool,
+    #[arg(long, help = "Filter by status")]
+    status: Option<String>,
+    #[arg(long, help = "Filter by priority")]
+    priority: Option<String>,
+    #[arg(
+        long,
+        help = "Filter by assignee name (member, agent, or squad; fuzzy match)"
+    )]
+    assignee: Option<String>,
+    #[arg(
+        long,
+        help = "Filter by assignee UUID — member, agent, or squad (mutually exclusive with --assignee)"
+    )]
+    assignee_id: Option<String>,
+    #[arg(long, help = "Filter by project ID")]
+    project: Option<String>,
+    #[arg(
+        long,
+        value_delimiter = ',',
+        help = "Filter by metadata key=value (repeatable; combined with AND). Value is JSON-parsed: 'true'/'false' → bool, numbers → number, otherwise string. Wrap as '\"42\"' to force a string when the value would otherwise sniff as a number."
+    )]
+    metadata: Vec<String>,
+    #[arg(
+        long,
+        default_value_t = 50,
+        help = "Maximum number of issues to return"
+    )]
+    limit: i64,
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Number of issues to skip (for pagination)"
+    )]
+    offset: i64,
+    #[arg(
+        long,
+        help = "Sort column: position (default, manual board order), title, created_at, start_date, due_date, priority"
+    )]
+    sort: Option<String>,
+    #[arg(
+        long,
+        help = "Sort direction (asc or desc); requires --sort to be a non-position column (position is always ascending)"
+    )]
+    direction: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -333,6 +400,9 @@ async fn run_with_input<R: Read>(
     input: &mut R,
 ) -> Result<RunOutput> {
     match &cli.command {
+        Command::Issue(IssueArgs {
+            command: IssueCommand::List(args),
+        }) => run_issue_list(cli, environment, args).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -901,6 +971,524 @@ fn parse_go_duration(value: &str) -> Option<f64> {
     }
     const MAX_GO_DURATION_SECONDS: f64 = i64::MAX as f64 / 1_000_000_000.0;
     (seconds.is_finite() && seconds <= MAX_GO_DURATION_SECONDS).then_some(sign * seconds)
+}
+
+const VALID_ISSUE_SORT_COLUMNS: &[&str] = &[
+    "position",
+    "title",
+    "created_at",
+    "start_date",
+    "due_date",
+    "priority",
+];
+
+#[derive(Debug, Default, Deserialize)]
+struct IssueListResponse {
+    #[serde(default)]
+    issues: Value,
+    #[serde(default)]
+    total: Value,
+}
+
+#[derive(Debug, Serialize)]
+struct IssueListEnvelope<'a> {
+    has_more: bool,
+    issues: &'a [Value],
+    limit: i64,
+    offset: i64,
+    total: i64,
+}
+
+async fn run_issue_list(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueListArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    if workspace_id.is_empty() {
+        if environment.in_daemon_managed_execution_context() {
+            bail!(
+                "workspace_id is required: CORDY_WORKSPACE_ID must be set by the daemon in agent execution context (no fallback to user config)"
+            );
+        }
+        bail!(
+            "workspace_id is required: use --workspace-id flag, set CORDY_WORKSPACE_ID env, or run 'cordy config set workspace_id <id>'"
+        );
+    }
+
+    let query = build_issue_list_query(&client, &workspace_id, args).await?;
+    let path = format!("/api/issues?{query}");
+    let result: IssueListResponse = client.get_json(&path).await.context("list issues")?;
+    let issues = result.issues.as_array().cloned().unwrap_or_default();
+    let total = result.total.as_f64().unwrap_or_default() as i64;
+
+    let stdout = match args.output {
+        OutputFormat::Json => format!(
+            "{}\n",
+            serde_json::to_string_pretty(&IssueListEnvelope {
+                has_more: args.offset + issues.len() as i64 < total,
+                issues: &issues,
+                limit: args.limit,
+                offset: args.offset,
+                total,
+            })?
+        ),
+        OutputFormat::Table => {
+            let actors = load_issue_actor_names(&client, &workspace_id, &issues).await;
+            format_issue_list_table(&issues, args.full_id, &actors)
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+async fn build_issue_list_query(
+    client: &ApiClient,
+    workspace_id: &str,
+    args: &IssueListArgs,
+) -> Result<String> {
+    let mut params = BTreeMap::<String, String>::new();
+    params.insert("workspace_id".into(), workspace_id.into());
+    if let Some(status) = args.status.as_deref().filter(|value| !value.is_empty()) {
+        params.insert("status".into(), status.into());
+    }
+    if let Some(priority) = args.priority.as_deref().filter(|value| !value.is_empty()) {
+        params.insert("priority".into(), priority.into());
+    }
+    if args.limit > 0 {
+        params.insert("limit".into(), args.limit.to_string());
+    }
+    if args.offset > 0 {
+        params.insert("offset".into(), args.offset.to_string());
+    }
+
+    if args.assignee.is_some() && args.assignee_id.is_some() {
+        bail!("--assignee and --assignee-id are mutually exclusive");
+    }
+    if let Some(id) = &args.assignee_id {
+        let id = resolve_issue_assignee_id(client, workspace_id, id)
+            .await
+            .context("resolve assignee")?;
+        params.insert("assignee_id".into(), id);
+    } else if let Some(name) = &args.assignee {
+        let id = resolve_issue_assignee_name(client, workspace_id, name)
+            .await
+            .context("resolve assignee")?;
+        params.insert("assignee_id".into(), id);
+    }
+
+    if let Some(project) = args.project.as_deref().filter(|value| !value.is_empty()) {
+        params.insert(
+            "project_id".into(),
+            resolve_issue_project_id(client, workspace_id, project).await?,
+        );
+    }
+    if !args.metadata.is_empty() {
+        params.insert("metadata".into(), build_metadata_filter(&args.metadata)?);
+    }
+    if let Some(sort) = args.sort.as_deref().filter(|value| !value.is_empty()) {
+        if !VALID_ISSUE_SORT_COLUMNS.contains(&sort) {
+            bail!(
+                "invalid --sort {sort:?}; valid values: {}",
+                VALID_ISSUE_SORT_COLUMNS.join(", ")
+            );
+        }
+        params.insert("sort".into(), sort.into());
+    }
+    if let Some(direction) = args.direction.as_deref().filter(|value| !value.is_empty()) {
+        let direction = direction.to_ascii_lowercase();
+        if direction != "asc" && direction != "desc" {
+            bail!(
+                "invalid --direction {:?}; valid values: asc, desc",
+                args.direction.as_deref().unwrap_or_default()
+            );
+        }
+        if matches!(args.sort.as_deref(), None | Some("") | Some("position")) {
+            bail!(
+                "--direction requires --sort to be one of title, created_at, start_date, due_date, priority; position (the default manual board order) is always ascending"
+            );
+        }
+        params.insert("direction".into(), direction);
+    }
+
+    let mut serializer = form_urlencoded::Serializer::new(String::new());
+    for (key, value) in params {
+        serializer.append_pair(&key, &value);
+    }
+    Ok(serializer.finish())
+}
+
+fn build_metadata_filter(pairs: &[String]) -> Result<String> {
+    let mut values = BTreeMap::<String, Value>::new();
+    for pair in pairs {
+        let Some((key, raw)) = pair.split_once('=') else {
+            bail!("--metadata {pair:?} must be in key=value form");
+        };
+        if key.is_empty() {
+            bail!("--metadata {pair:?} must be in key=value form");
+        }
+        if values.contains_key(key) {
+            bail!("--metadata key {key:?} given more than once; combine into a single filter");
+        }
+        let parsed = serde_json::from_str::<Value>(raw).ok();
+        let value = match parsed {
+            Some(value @ (Value::String(_) | Value::Bool(_) | Value::Number(_))) => value,
+            _ => Value::String(raw.into()),
+        };
+        values.insert(key.into(), value);
+    }
+    serde_json::to_string(&values).context("encode metadata filter")
+}
+
+#[derive(Clone, Debug)]
+struct IssueActor {
+    actor_type: &'static str,
+    id: String,
+    name: String,
+    email: String,
+    archived: bool,
+}
+
+async fn fetch_issue_actors(
+    client: &ApiClient,
+    workspace_id: &str,
+) -> [Result<Vec<IssueActor>>; 3] {
+    let members =
+        retry_actor_get::<Vec<Value>>(client, &format!("/api/workspaces/{workspace_id}/members"))
+            .await
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|item| IssueActor {
+                        actor_type: "member",
+                        id: value_string(item, "user_id"),
+                        name: value_string(item, "name"),
+                        email: value_string(item, "email"),
+                        archived: false,
+                    })
+                    .collect()
+            });
+    let agents = retry_actor_get::<Vec<Value>>(
+        client,
+        &format!(
+            "/api/agents?workspace_id={}",
+            form_urlencoded::byte_serialize(workspace_id.as_bytes()).collect::<String>()
+        ),
+    )
+    .await
+    .map(|items| {
+        items
+            .iter()
+            .map(|item| IssueActor {
+                actor_type: "agent",
+                id: value_string(item, "id"),
+                name: value_string(item, "name"),
+                email: String::new(),
+                archived: false,
+            })
+            .collect()
+    });
+    let squads = retry_actor_get::<Vec<Value>>(client, "/api/squads")
+        .await
+        .map(|items| {
+            items
+                .iter()
+                .map(|item| IssueActor {
+                    actor_type: "squad",
+                    id: value_string(item, "id"),
+                    name: value_string(item, "name"),
+                    email: String::new(),
+                    archived: !value_string(item, "archived_at").is_empty(),
+                })
+                .collect()
+        });
+    [members, agents, squads]
+}
+
+async fn retry_actor_get<T: DeserializeOwned>(client: &ApiClient, path: &str) -> Result<T> {
+    let delays = [100_u64, 250];
+    for (attempt, delay) in [0_u64, 100, 250].into_iter().enumerate() {
+        if delay > 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+        }
+        match client.get_json(path).await {
+            Ok(value) => return Ok(value),
+            Err(error)
+                if error.downcast_ref::<NetworkError>().is_some() && attempt < delays.len() => {}
+            Err(error) => return Err(error),
+        }
+    }
+    unreachable!("actor resolver retry loop always returns")
+}
+
+async fn resolve_issue_assignee_id(
+    client: &ApiClient,
+    workspace_id: &str,
+    raw: &str,
+) -> Result<String> {
+    let input = raw.trim();
+    if !is_canonical_uuid(input) {
+        bail!("expected a canonical UUID, got {raw:?}");
+    }
+    let actors = fetch_issue_actors(client, workspace_id).await;
+    if actors.iter().all(Result::is_err) {
+        bail!(
+            "failed to resolve assignee: {}; {}; {}",
+            actors[0].as_ref().unwrap_err(),
+            actors[1].as_ref().unwrap_err(),
+            actors[2].as_ref().unwrap_err()
+        );
+    }
+    if let Some(actor) = actors
+        .iter()
+        .filter_map(|result| result.as_ref().ok())
+        .flatten()
+        .find(|actor| actor.id.eq_ignore_ascii_case(input))
+    {
+        return Ok(actor.id.clone());
+    }
+    bail!("no member, agent, or squad found with ID {input:?}")
+}
+
+async fn resolve_issue_assignee_name(
+    client: &ApiClient,
+    workspace_id: &str,
+    raw: &str,
+) -> Result<String> {
+    let input = normalize_assignee_input(raw);
+    if input.is_empty() {
+        bail!("no member, agent, or squad found matching {raw:?}");
+    }
+    let actors = fetch_issue_actors(client, workspace_id).await;
+    if actors.iter().all(Result::is_err) {
+        let errors = actors
+            .iter()
+            .enumerate()
+            .map(|(index, result)| {
+                let kind = ["members", "agents", "squads"][index];
+                format!("fetch {kind}: {}", result.as_ref().unwrap_err())
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        bail!("failed to resolve assignee: {errors}");
+    }
+    let actors = actors
+        .iter()
+        .filter_map(|result| result.as_ref().ok())
+        .flatten()
+        .filter(|actor| !actor.archived)
+        .collect::<Vec<_>>();
+    let mut buckets = [Vec::new(), Vec::new(), Vec::new()];
+    for actor in actors {
+        let short_id = display_id(&actor.id, false);
+        if actor.id.eq_ignore_ascii_case(&input)
+            || short_id.eq_ignore_ascii_case(&input)
+            || (!actor.email.is_empty() && actor.email.eq_ignore_ascii_case(&input))
+        {
+            buckets[0].push(actor);
+        } else if actor.name.eq_ignore_ascii_case(&input) {
+            buckets[1].push(actor);
+        } else if actor
+            .name
+            .to_ascii_lowercase()
+            .contains(&input.to_ascii_lowercase())
+        {
+            buckets[2].push(actor);
+        }
+    }
+    for bucket in buckets {
+        match bucket.as_slice() {
+            [] => {}
+            [actor] => return Ok(actor.id.clone()),
+            actors => {
+                let matches = actors
+                    .iter()
+                    .map(|actor| {
+                        format!(
+                            "  {} {:?} ({})",
+                            actor.actor_type,
+                            actor.name,
+                            display_id(&actor.id, false)
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                bail!("ambiguous assignee {input:?}; matches:\n{matches}");
+            }
+        }
+    }
+    bail!("no member, agent, or squad found matching {input:?}")
+}
+
+fn normalize_assignee_input(raw: &str) -> String {
+    let input = raw.trim();
+    if let Some(marker) = input.find("](mention://") {
+        if input.starts_with('[') && input.ends_with(')') {
+            let target = &input[marker + 12..input.len() - 1];
+            if let Some((kind, id)) = target.split_once('/') {
+                if matches!(kind, "member" | "agent" | "squad") {
+                    return id.into();
+                }
+            }
+        }
+    }
+    input.trim_start_matches(['@', '＠']).trim().to_string()
+}
+
+async fn resolve_issue_project_id(
+    client: &ApiClient,
+    workspace_id: &str,
+    raw: &str,
+) -> Result<String> {
+    let input = raw.trim();
+    if is_canonical_uuid(input) {
+        return Ok(input.into());
+    }
+    let compact = input.replace('-', "").to_ascii_lowercase();
+    if compact.len() < 4 {
+        bail!("resolve project: expected a full UUID or at least 4 hex characters, got {raw:?}");
+    }
+    if !compact.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        bail!(
+            "resolve project: expected a UUID prefix containing only hex characters, got {raw:?}"
+        );
+    }
+    let path = format!(
+        "/api/projects?workspace_id={}",
+        form_urlencoded::byte_serialize(workspace_id.as_bytes()).collect::<String>()
+    );
+    let result: Value = client.get_json(&path).await.context("resolve project")?;
+    let mut candidates = result
+        .get("projects")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|project| compact_uuid(&value_string(project, "id")).starts_with(&compact))
+        .collect::<Vec<_>>();
+    candidates.sort_by_key(|project| value_string(project, "id"));
+    match candidates.as_slice() {
+        [project] => Ok(value_string(project, "id")),
+        [] => bail!(
+            "no project found matching id prefix {raw:?}; run the list command with --full-id to copy the full UUID"
+        ),
+        projects => {
+            let matches = projects
+                .iter()
+                .map(|project| format!("  {}", value_string(project, "id")))
+                .collect::<Vec<_>>()
+                .join("\n");
+            bail!(
+                "ambiguous project id prefix {raw:?}; matches:\n{matches}\nUse more characters or run the list command with --full-id"
+            )
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct IssueActorNames(HashMap<String, String>);
+
+async fn load_issue_actor_names(
+    client: &ApiClient,
+    workspace_id: &str,
+    issues: &[Value],
+) -> IssueActorNames {
+    let needed = issues
+        .iter()
+        .filter_map(|issue| issue.get("assignee_type").and_then(Value::as_str))
+        .collect::<Vec<_>>();
+    if needed.is_empty() {
+        return IssueActorNames::default();
+    }
+    let mut names = HashMap::new();
+    let paths = [
+        (
+            "member",
+            format!("/api/workspaces/{workspace_id}/members"),
+            "user_id",
+        ),
+        (
+            "agent",
+            format!(
+                "/api/agents?workspace_id={}",
+                form_urlencoded::byte_serialize(workspace_id.as_bytes()).collect::<String>()
+            ),
+            "id",
+        ),
+        ("squad", "/api/squads".into(), "id"),
+    ];
+    for (actor_type, path, id_field) in paths {
+        if !needed.contains(&actor_type) {
+            continue;
+        }
+        if let Ok(items) = client.get_json::<Vec<Value>>(&path).await {
+            for item in items {
+                let id = value_string(&item, id_field);
+                let name = value_string(&item, "name");
+                if !id.is_empty() && !name.is_empty() {
+                    names.insert(format!("{actor_type}:{id}"), name);
+                }
+            }
+        }
+    }
+    IssueActorNames(names)
+}
+
+fn format_issue_list_table(issues: &[Value], full_id: bool, actors: &IssueActorNames) -> String {
+    let mut rows = Vec::with_capacity(issues.len() + 1);
+    let mut headers = vec![
+        "KEY".into(),
+        "TITLE".into(),
+        "STATUS".into(),
+        "PRIORITY".into(),
+        "ASSIGNEE".into(),
+        "START DATE".into(),
+        "DUE DATE".into(),
+    ];
+    if full_id {
+        headers.insert(1, "ID".into());
+    }
+    rows.push(headers);
+    for issue in issues {
+        let id = value_string(issue, "id");
+        let key = match value_string(issue, "identifier") {
+            value if value.is_empty() => id.clone(),
+            value => value,
+        };
+        let actor_type = value_string(issue, "assignee_type");
+        let actor_id = value_string(issue, "assignee_id");
+        let assignee = if actor_type.is_empty() || actor_id.is_empty() {
+            String::new()
+        } else {
+            let actor_key = format!("{actor_type}:{actor_id}");
+            actors
+                .0
+                .get(&actor_key)
+                .map_or_else(|| actor_key.clone(), |name| format!("{actor_type}:{name}"))
+        };
+        let date = |field| {
+            value_string(issue, field)
+                .chars()
+                .take(10)
+                .collect::<String>()
+        };
+        let mut row = vec![
+            key,
+            value_string(issue, "title"),
+            value_string(issue, "status"),
+            value_string(issue, "priority"),
+            assignee,
+            date("start_date"),
+            date("due_date"),
+        ];
+        if full_id {
+            row.insert(1, id);
+        }
+        rows.push(row);
+    }
+    format_table(&rows)
 }
 
 async fn run_user_profile_get(
@@ -1917,6 +2505,298 @@ mod tests {
                 command: WorkspaceCommand::Update(args),
             }) => args,
             _ => panic!("expected workspace update"),
+        }
+    }
+
+    fn issue_list_args(cli: &Cli) -> &IssueListArgs {
+        match &cli.command {
+            Command::Issue(IssueArgs {
+                command: IssueCommand::List(args),
+            }) => args,
+            _ => panic!("expected issue list"),
+        }
+    }
+
+    #[test]
+    fn issue_list_parser_matches_go_registry_flags() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "list",
+            "--output",
+            "json",
+            "--full-id",
+            "--status",
+            "custom_status",
+            "--priority",
+            "urgent",
+            "--assignee-id",
+            "11111111-1111-1111-1111-111111111111",
+            "--project",
+            "abcd",
+            "--metadata",
+            "ready=true",
+            "--metadata",
+            "score=42",
+            "--limit",
+            "20",
+            "--offset",
+            "5",
+            "--sort",
+            "created_at",
+            "--direction",
+            "DESC",
+        ])
+        .expect("issue list CLI");
+        let args = issue_list_args(&cli);
+        assert_eq!(args.output, OutputFormat::Json);
+        assert!(args.full_id);
+        assert_eq!(args.status.as_deref(), Some("custom_status"));
+        assert_eq!(args.priority.as_deref(), Some("urgent"));
+        assert_eq!(args.project.as_deref(), Some("abcd"));
+        assert_eq!(
+            args.metadata,
+            vec![String::from("ready=true"), String::from("score=42")]
+        );
+        assert_eq!((args.limit, args.offset), (20, 5));
+        assert_eq!(args.sort.as_deref(), Some("created_at"));
+        assert_eq!(args.direction.as_deref(), Some("DESC"));
+    }
+
+    #[test]
+    fn issue_list_metadata_filter_infers_primitives_and_rejects_duplicates() {
+        let encoded = build_metadata_filter(&[
+            "ready=true".into(),
+            "score=42".into(),
+            "forced=\"42\"".into(),
+            "label=alpha".into(),
+        ])
+        .expect("metadata filter");
+        let filter: Value = serde_json::from_str(&encoded).expect("metadata JSON");
+        assert_eq!(filter["ready"], Value::Bool(true));
+        assert_eq!(filter["score"], 42);
+        assert_eq!(filter["forced"], "42");
+        assert_eq!(filter["label"], "alpha");
+
+        let error = build_metadata_filter(&["ready=true".into(), "ready=false".into()])
+            .expect_err("duplicate metadata key");
+        assert!(error.to_string().contains("given more than once"));
+        let error =
+            build_metadata_filter(&["missing-separator".into()]).expect_err("metadata key=value");
+        assert!(error.to_string().contains("key=value form"));
+    }
+
+    #[test]
+    fn issue_list_table_matches_go_columns_full_id_dates_and_actor_fallback() {
+        let issues = vec![serde_json::json!({
+            "id": "11111111-1111-1111-1111-111111111111",
+            "identifier": "CORD-18",
+            "title": "Migrate CLI",
+            "status": "in_progress",
+            "priority": "high",
+            "assignee_type": "agent",
+            "assignee_id": "22222222-2222-2222-2222-222222222222",
+            "start_date": "2026-08-23T10:11:12Z",
+            "due_date": "2026-08-30T00:00:00Z"
+        })];
+        let actors = IssueActorNames(HashMap::from([(
+            "agent:22222222-2222-2222-2222-222222222222".into(),
+            "CordyBot".into(),
+        )]));
+        let table = format_issue_list_table(&issues, true, &actors);
+        assert!(table.starts_with("KEY"));
+        assert!(table.contains("ID"));
+        assert!(table.contains("CORD-18"));
+        assert!(table.contains("11111111-1111-1111-1111-111111111111"));
+        assert!(table.contains("agent:CordyBot"));
+        assert!(table.contains("2026-08-23"));
+        assert!(table.contains("2026-08-30"));
+
+        let fallback = format_issue_list_table(&issues, false, &IssueActorNames::default());
+        assert!(fallback.contains("agent:22222222-2222-2222-2222-222222222222"));
+        assert!(!fallback.lines().next().unwrap_or_default().contains(" ID "));
+    }
+
+    #[tokio::test]
+    async fn issue_list_resolves_filters_and_sends_go_query_and_json_envelope() {
+        let captured = Arc::new(Mutex::new(None::<String>));
+        let captured_by_issues = Arc::clone(&captured);
+        let app = Router::new()
+            .route(
+                "/api/workspaces/workspace-1/members",
+                get(|| async {
+                    Json(serde_json::json!([{
+                        "user_id": "11111111-1111-1111-1111-111111111111",
+                        "name": "Ada Lovelace",
+                        "email": "ada@example.com"
+                    }]))
+                }),
+            )
+            .route("/api/agents", get(|| async { Json(serde_json::json!([])) }))
+            .route("/api/squads", get(|| async { Json(serde_json::json!([])) }))
+            .route(
+                "/api/projects",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "projects": [{
+                            "id": "abcd0000-0000-0000-0000-000000000000",
+                            "title": "Rust migration",
+                            "status": "active"
+                        }]
+                    }))
+                }),
+            )
+            .route(
+                "/api/issues",
+                get(move |request: Request| {
+                    let captured = Arc::clone(&captured_by_issues);
+                    async move {
+                        assert_eq!(request.headers()["authorization"], "Bearer token-1");
+                        assert_eq!(request.headers()["x-workspace-id"], "workspace-1");
+                        *captured.lock().expect("capture query") =
+                            request.uri().query().map(Into::into);
+                        Json(serde_json::json!({
+                            "issues": [{
+                                "id": "issue-1",
+                                "identifier": "CORD-18",
+                                "title": "Migrate CLI"
+                            }],
+                            "total": 3
+                        }))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "list",
+            "--output",
+            "json",
+            "--status",
+            "custom_status",
+            "--priority",
+            "high",
+            "--assignee",
+            "Ada",
+            "--project",
+            "abcd",
+            "--metadata",
+            "ready=true",
+            "--limit",
+            "2",
+            "--offset",
+            "1",
+            "--sort",
+            "created_at",
+            "--direction",
+            "DESC",
+        ])
+        .expect("issue list CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("issue list");
+        let envelope: Value = serde_json::from_str(&output.stdout).expect("list JSON");
+        assert_eq!(envelope["total"], 3);
+        assert_eq!(envelope["limit"], 2);
+        assert_eq!(envelope["offset"], 1);
+        assert_eq!(envelope["has_more"], Value::Bool(true));
+        assert_eq!(envelope["issues"][0]["identifier"], "CORD-18");
+
+        let query = captured
+            .lock()
+            .expect("captured query")
+            .clone()
+            .expect("query");
+        let query = form_urlencoded::parse(query.as_bytes())
+            .into_owned()
+            .collect::<HashMap<_, _>>();
+        assert_eq!(query["workspace_id"], "workspace-1");
+        assert_eq!(query["status"], "custom_status");
+        assert_eq!(query["priority"], "high");
+        assert_eq!(query["limit"], "2");
+        assert_eq!(query["offset"], "1");
+        assert_eq!(query["assignee_id"], "11111111-1111-1111-1111-111111111111");
+        assert_eq!(query["project_id"], "abcd0000-0000-0000-0000-000000000000");
+        assert_eq!(query["metadata"], r#"{"ready":true}"#);
+        assert_eq!(query["sort"], "created_at");
+        assert_eq!(query["direction"], "desc");
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn issue_list_rejects_invalid_sort_direction_and_conflicting_assignee_flags() {
+        let client = ApiClient::new(
+            "http://127.0.0.1:1".into(),
+            "workspace-1".into(),
+            "token".into(),
+            String::new(),
+            String::new(),
+            std::time::Duration::from_secs(1),
+            CLIENT_VERSION,
+        )
+        .expect("client");
+        for (argv, expected) in [
+            (
+                vec!["cordy", "issue", "list", "--sort", "nonsense"],
+                "invalid --sort",
+            ),
+            (
+                vec!["cordy", "issue", "list", "--direction", "desc"],
+                "--direction requires --sort",
+            ),
+            (
+                vec![
+                    "cordy",
+                    "issue",
+                    "list",
+                    "--sort",
+                    "created_at",
+                    "--direction",
+                    "sideways",
+                ],
+                "invalid --direction",
+            ),
+            (
+                vec![
+                    "cordy",
+                    "issue",
+                    "list",
+                    "--sort",
+                    "position",
+                    "--direction",
+                    "asc",
+                ],
+                "--direction requires --sort",
+            ),
+            (
+                vec![
+                    "cordy",
+                    "issue",
+                    "list",
+                    "--assignee",
+                    "Ada",
+                    "--assignee-id",
+                    "11111111-1111-1111-1111-111111111111",
+                ],
+                "mutually exclusive",
+            ),
+        ] {
+            let cli = Cli::try_parse_from(argv).expect("CLI");
+            let error = build_issue_list_query(&client, "workspace-1", issue_list_args(&cli))
+                .await
+                .expect_err("validation error");
+            assert!(error.to_string().contains(expected), "{error:#}");
         }
     }
 
