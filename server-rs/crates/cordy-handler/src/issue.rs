@@ -56,6 +56,10 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/issues/{id}/attachments", get(list_attachments))
         .route("/api/issues/{id}/active-task", get(get_active_tasks))
         .route("/api/issues/{id}/task-runs", get(list_task_runs))
+        .route(
+            "/api/issues/{id}/pull-requests",
+            get(crate::issue_pull_request::list),
+        )
         .route("/api/issues/{id}/tasks/{task_id}/cancel", post(cancel_task))
         .route("/api/issues/{id}/metadata", get(list_issue_metadata))
         .route(

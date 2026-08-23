@@ -23,6 +23,7 @@ pub mod error;
 pub mod feedback;
 pub mod health;
 pub mod issue;
+pub mod issue_pull_request;
 pub mod issue_status;
 pub mod issue_view_preference;
 pub mod label;
@@ -309,6 +310,7 @@ mod tests {
             "/api/issues/CORD-14/active-task",
             "/api/issues/CORD-14/task-runs",
             "/api/issues/CORD-14/comments",
+            "/api/issues/CORD-14/pull-requests",
             "/api/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/messages",
             "/api/me",
             "/api/issue-view-preferences?scope_type=workspace",
