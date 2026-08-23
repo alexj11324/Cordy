@@ -226,7 +226,7 @@ pub struct S3Storage {
 }
 
 impl S3Storage {
-    pub async fn from_env() -> anyhow::Result<Option<Self>> {
+    pub async fn from_env(cloudfront_domain: Option<&str>) -> anyhow::Result<Option<Self>> {
         let Some(bucket) = env("S3_BUCKET") else {
             return Ok(None);
         };
@@ -253,7 +253,14 @@ impl S3Storage {
             endpoint,
             path_style,
             credentials,
-            cdn_domain: env("CLOUDFRONT_DOMAIN"),
+            // This value must come from the same already-loaded Config used
+            // to build the CloudFront signer. Reading the environment again
+            // would split config-file deployments between a signed policy
+            // and an S3-origin object URL.
+            cdn_domain: cloudfront_domain
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
         }))
     }
     fn request_url(&self, key: &str) -> anyhow::Result<Url> {
@@ -530,8 +537,9 @@ impl AttachmentStorage for S3Storage {
 pub async fn from_env(
     local_dir: Option<&str>,
     local_base: Option<&str>,
+    cloudfront_domain: Option<&str>,
 ) -> anyhow::Result<Arc<dyn AttachmentStorage>> {
-    if let Some(s3) = S3Storage::from_env().await? {
+    if let Some(s3) = S3Storage::from_env(cloudfront_domain).await? {
         return Ok(Arc::new(s3));
     }
     Ok(Arc::new(LocalStorage::new(
@@ -717,6 +725,30 @@ mod tests {
             .unwrap()
             .as_str()
             .contains("%25"));
+    }
+
+    #[test]
+    fn s3_object_url_uses_injected_cloudfront_domain() {
+        let store = S3Storage {
+            client: reqwest::Client::new(),
+            bucket: "bucket".into(),
+            region: "us-west-2".into(),
+            endpoint: Url::parse("https://s3.us-west-2.amazonaws.com").unwrap(),
+            path_style: false,
+            credentials: SharedCredentialsProvider::new(aws_credential_types::Credentials::new(
+                "key",
+                "secret",
+                None,
+                None,
+                "attachment-test",
+            )),
+            cdn_domain: Some("cdn.example.test".into()),
+        };
+        assert_eq!(
+            store.object_url("workspaces/w/file.txt"),
+            "https://cdn.example.test/workspaces/w/file.txt"
+        );
+        assert!(store.has_public_base_url());
     }
 
     #[test]

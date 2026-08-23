@@ -313,6 +313,7 @@ async fn main() -> anyhow::Result<()> {
     let attachment_storage = cordy_handler::attachment_storage::from_env(
         cfg.storage.local_upload_dir.as_deref(),
         cfg.storage.local_upload_base_url.as_deref(),
+        cfg.storage.cloudfront_domain.as_deref(),
     )
     .await?;
     let attachment_frame_ancestors = cordy_handler::allowed_origins();
