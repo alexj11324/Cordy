@@ -306,7 +306,7 @@ async fn fetch_bytes(http: &reqwest::Client, raw_url: &str) -> anyhow::Result<(V
         // The signed query string is a short-lived bearer credential; strip it
         // from any error that escapes so it is never logged or persisted (Go
         // unwraps *url.Error for the same reason).
-        let resp = http
+        let mut resp = http
             .get(current.clone())
             .timeout(IMAGE_FETCH_TIMEOUT)
             .send()
@@ -344,15 +344,17 @@ async fn fetch_bytes(http: &reqwest::Client, raw_url: &str) -> anyhow::Result<(V
         if !status.is_success() {
             anyhow::bail!("download image: http {}", status.as_u16());
         }
-        let data = resp
-            .bytes()
+        let capacity = resp
+            .content_length()
+            .unwrap_or_default()
+            .min(MAX_INBOUND_IMAGE_BYTES as u64) as usize;
+        let mut data = Vec::with_capacity(capacity);
+        while let Some(chunk) = resp
+            .chunk()
             .await
-            .map_err(|e| anyhow::anyhow!("read image: {e}"))?;
-        if data.len() > MAX_INBOUND_IMAGE_BYTES {
-            anyhow::bail!(
-                "image exceeds the {} MB limit",
-                MAX_INBOUND_IMAGE_BYTES >> 20
-            );
+            .map_err(|_| anyhow::anyhow!("read image response failed"))?
+        {
+            append_bounded(&mut data, &chunk, MAX_INBOUND_IMAGE_BYTES)?;
         }
         // Sniff the real type off the first 512 bytes rather than trusting the
         // response header, then admit only known image types.
@@ -361,8 +363,16 @@ async fn fetch_bytes(http: &reqwest::Client, raw_url: &str) -> anyhow::Result<(V
         if let Some(semi) = sniffed.find(';') {
             sniffed = sniffed[..semi].trim().to_string();
         }
-        return Ok((data.to_vec(), sniffed));
+        return Ok((data, sniffed));
     }
+}
+
+fn append_bounded(data: &mut Vec<u8>, chunk: &[u8], limit: usize) -> anyhow::Result<()> {
+    if chunk.len() > limit.saturating_sub(data.len()) {
+        anyhow::bail!("image exceeds the {} MB limit", limit >> 20);
+    }
+    data.extend_from_slice(chunk);
+    Ok(())
 }
 
 /// Minimal DetectContentType equivalent covering the signatures DingTalk
@@ -696,6 +706,17 @@ async fn fetch_by_code(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounded_download_buffer_rejects_chunk_before_exceeding_limit() {
+        let mut data = vec![1, 2, 3];
+        append_bounded(&mut data, &[4, 5], 5).unwrap();
+        assert_eq!(data, vec![1, 2, 3, 4, 5]);
+
+        let err = append_bounded(&mut data, &[6], 5).unwrap_err();
+        assert!(err.to_string().contains("image exceeds"));
+        assert_eq!(data, vec![1, 2, 3, 4, 5]);
+    }
 
     #[test]
     fn address_matrix_matches_go_blocklist() {
