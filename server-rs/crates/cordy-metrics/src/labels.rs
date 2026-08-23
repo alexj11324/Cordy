@@ -143,6 +143,7 @@ pub(crate) const BUSINESS_METRIC_LABELS: &[(&str, &[&str])] = &[
         "cordy_autopilot_quota_decision_total",
         &[ACTION, SOURCE, RESULT],
     ),
+    ("cordy_autopilot_failure_monitor_total", &[ACTION, OUTCOME]),
 ];
 
 /// High-cardinality label names that must never appear on a business metric:

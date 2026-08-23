@@ -210,7 +210,7 @@ pub async fn create_inbox_item(
     recipient_id: Uuid,
     type_: &str,
     severity: &str,
-    issue_id: Uuid,
+    issue_id: Option<Uuid>,
     title: &str,
     body: Option<&str>,
     actor_type: Option<&str>,

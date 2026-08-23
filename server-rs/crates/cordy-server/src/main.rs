@@ -8,8 +8,15 @@ use axum::Router;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio_util::sync::CancellationToken;
 
 const PENDING_STORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+
+struct ProductionApp {
+    router: Router,
+    root_cancel: CancellationToken,
+    failure_monitor: cordy_service::autopilot_failure_monitor::FailureMonitorRuntime,
+}
 
 struct VcsWebhookConfig {
     enabled: bool,
@@ -187,7 +194,7 @@ async fn build_production_router(
     attachment_storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
     attachment_frame_ancestors: Vec<String>,
     vcs: VcsWebhookConfig,
-) -> anyhow::Result<Router> {
+) -> anyhow::Result<ProductionApp> {
     let feature_flags = Arc::new(cordy_service::feature_flags::ConfiguredFlags::from_env()?);
     let entitlements = autopilot_entitlements(cfg);
     let mut state = cordy_handler::HandlerState::new(
@@ -247,7 +254,44 @@ async fn build_production_router(
         .start_plugin_event_dispatcher()
         .start_autopilot_quota_reconciler()
         .start_webhook_delivery_worker();
-    Ok(cordy_handler::build_router_from_state(state))
+    let root_cancel = CancellationToken::new();
+    let failure_metrics = state.business_metrics.clone().map(|metrics| {
+        metrics as Arc<dyn cordy_service::autopilot_failure_monitor::FailureMonitorMetrics>
+    });
+    let failure_monitor = cordy_service::autopilot_failure_monitor::AutopilotFailureMonitor::new(
+        state.pool.clone(),
+        state.bus.clone(),
+        failure_metrics,
+        cordy_service::autopilot_failure_monitor::FailureMonitorConfig::from_env(),
+    )
+    .start(root_cancel.child_token());
+    Ok(ProductionApp {
+        router: cordy_handler::build_router_from_state(state),
+        root_cancel,
+        failure_monitor,
+    })
+}
+
+async fn shutdown_signal(root_cancel: CancellationToken) {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("install SIGTERM handler");
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => {
+                if let Err(error) = result {
+                    tracing::error!(%error, "failed to listen for shutdown signal");
+                }
+            }
+            _ = terminate.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    if let Err(error) = tokio::signal::ctrl_c().await {
+        tracing::error!(%error, "failed to listen for shutdown signal");
+    }
+    root_cancel.cancel();
 }
 
 fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
@@ -343,11 +387,31 @@ async fn main() -> anyhow::Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, "listening");
-    axum::serve(
+    let ProductionApp {
+        router,
+        root_cancel,
+        failure_monitor,
+    } = app;
+    let serve_result = axum::serve(
         listener,
-        app.into_make_service_with_connect_info::<SocketAddr>(),
+        router.into_make_service_with_connect_info::<SocketAddr>(),
     )
-    .await?;
+    .with_graceful_shutdown(shutdown_signal(root_cancel.clone()))
+    .await;
+    root_cancel.cancel();
+    let shutdown = failure_monitor
+        .shutdown(cordy_service::autopilot_failure_monitor::DEFAULT_SHUTDOWN_TIMEOUT)
+        .await;
+    match shutdown {
+        cordy_service::autopilot_failure_monitor::ShutdownOutcome::TimedOut => {
+            tracing::warn!("autopilot failure monitor exceeded shutdown deadline and was aborted");
+        }
+        cordy_service::autopilot_failure_monitor::ShutdownOutcome::Panicked => {
+            tracing::error!("autopilot failure monitor task panicked during shutdown");
+        }
+        _ => {}
+    }
+    serve_result?;
     Ok(())
 }
 
@@ -406,7 +470,8 @@ mod tests {
             VcsWebhookConfig::disabled(),
         )
         .await
-        .unwrap();
+        .unwrap()
+        .router;
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(1),
             router.oneshot(
@@ -450,7 +515,8 @@ mod tests {
             VcsWebhookConfig::disabled(),
         )
         .await
-        .unwrap();
+        .unwrap()
+        .router;
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(1),
             router.oneshot(

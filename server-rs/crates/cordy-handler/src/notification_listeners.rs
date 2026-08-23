@@ -653,7 +653,7 @@ async fn create_and_publish(pool: &PgPool, bus: &Bus, event: &Event, spec: Inbox
         spec.recipient_id,
         spec.notif_type,
         spec.severity,
-        spec.issue_id,
+        Some(spec.issue_id),
         spec.title,
         spec.body,
         actor_type,

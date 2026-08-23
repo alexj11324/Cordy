@@ -90,12 +90,12 @@ struct AutopilotRuleConfigSummary<'a> {
 /// Appends one rule-version snapshot for a substantive publish (MUL-4302
 /// §3.4). Shared by handler publish paths (tx-scoped via the caller's
 /// executor) and the failure monitor's system-pause. System publishers pass
-/// the nil UUID with type "system".
+/// `None` with type "system".
 pub async fn record_autopilot_rule_version(
     executor: &PgPool,
     ap: &Autopilot,
     published_by_type: &str,
-    published_by_id: Uuid,
+    published_by_id: Option<Uuid>,
 ) -> anyhow::Result<()> {
     let summary = AutopilotRuleConfigSummary {
         assignee_type: &ap.assignee_type,
@@ -2267,7 +2267,7 @@ impl AutopilotService {
                 sub.user_id,
                 "issue_subscribed",
                 "info",
-                issue.id,
+                Some(issue.id),
                 &issue.title,
                 None,
                 Some("agent"),
