@@ -439,6 +439,14 @@ mod tests {
             Request::delete("/api/projects/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/resources/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
                 .body(Body::empty())
                 .unwrap(),
+            Request::delete("/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"member_type":"agent","member_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12"}"#))
+                .unwrap(),
+            Request::patch("/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members/role")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"member_type":"agent","member_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12","role":"reviewer"}"#))
+                .unwrap(),
             Request::post("/api/issue-views")
                 .header("content-type", "application/json")
                 .body(Body::from(
