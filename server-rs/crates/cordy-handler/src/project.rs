@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 
+use axum::body::Bytes;
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::{HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -11,6 +12,7 @@ use cordy_db::models::Project;
 use cordy_db::queries::{project, project_resource};
 use cordy_middleware::workspace::WorkspaceContext;
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
 use crate::error::error_response;
@@ -23,8 +25,14 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/projects/search", get(search))
         .route("/api/projects", get(list))
         .route("/api/projects/", get(list))
-        .route("/api/projects/{id}", get(get_one))
-        .route("/api/projects/{id}/", get(get_one))
+        .route(
+            "/api/projects/{id}",
+            get(get_one).put(update).delete(remove),
+        )
+        .route(
+            "/api/projects/{id}/",
+            get(get_one).put(update).delete(remove),
+        )
 }
 
 #[derive(Debug, Serialize)]
@@ -128,6 +136,287 @@ async fn get_one(
         };
     let (stats, counts) = project_enrichment(&state, &[found.id]).await;
     Json(enrich(ProjectResponse::from(found), &stats, &counts)).into_response()
+}
+
+const PROJECT_STATUSES: &[&str] = &["planned", "in_progress", "paused", "completed", "cancelled"];
+const PROJECT_PRIORITIES: &[&str] = &["urgent", "high", "medium", "low", "none"];
+
+#[derive(Default, Deserialize)]
+struct UpdateRequest {
+    title: Option<String>,
+    description: Option<String>,
+    icon: Option<String>,
+    status: Option<String>,
+    priority: Option<String>,
+    lead_type: Option<String>,
+    lead_id: Option<String>,
+    start_date: Option<String>,
+    due_date: Option<String>,
+}
+
+fn decode_update(body: &[u8]) -> Result<(UpdateRequest, Map<String, Value>), ()> {
+    let value = serde_json::from_slice::<Value>(body).map_err(|_| ())?;
+    match value {
+        Value::Object(fields) => {
+            let request = serde_json::from_value(Value::Object(fields.clone())).map_err(|_| ())?;
+            Ok((request, fields))
+        }
+        Value::Null => Ok((UpdateRequest::default(), Map::new())),
+        _ => Err(()),
+    }
+}
+
+fn validate_enum(field: &str, value: &str, allowed: &[&str]) -> Result<(), String> {
+    if allowed.contains(&value) {
+        Ok(())
+    } else {
+        Err(format!(
+            "invalid {field} {value:?}; valid values: {}",
+            allowed.join(", ")
+        ))
+    }
+}
+
+fn calendar_date(value: &str, field: &str) -> Result<Option<chrono::NaiveDate>, String> {
+    if value.is_empty() {
+        return Ok(None);
+    }
+    chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .map(Some)
+        .map_err(|_| format!("invalid {field} format, expected YYYY-MM-DD"))
+}
+
+fn check_violation(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<sqlx::Error>()
+        .and_then(sqlx::Error::as_database_error)
+        .and_then(|error| error.code())
+        .is_some_and(|code| code == "23514")
+}
+
+fn publish_project(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    event_type: &str,
+    payload: Value,
+) {
+    state.bus.publish(&cordy_events::Event {
+        event_type: event_type.into(),
+        workspace_id: context.member.workspace_id.to_string(),
+        actor_type: "member".into(),
+        actor_id: context.member.user_id.to_string(),
+        payload,
+        ..Default::default()
+    });
+}
+
+async fn update(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(raw_id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let id = match Uuid::parse_str(raw_id.trim()) {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid project id"),
+    };
+    let existing =
+        match project::get_project_in_workspace(&state.pool, id, context.member.workspace_id).await
+        {
+            Ok(Some(project)) => project,
+            Ok(None) | Err(_) => return error_response(StatusCode::NOT_FOUND, "project not found"),
+        };
+    let (request, fields) = match decode_update(&body) {
+        Ok(decoded) => decoded,
+        Err(()) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    if let Some(status) = request.status.as_deref() {
+        if let Err(message) = validate_enum("status", status, PROJECT_STATUSES) {
+            return error_response(StatusCode::BAD_REQUEST, &message);
+        }
+    }
+    if let Some(priority) = request.priority.as_deref() {
+        if let Err(message) = validate_enum("priority", priority, PROJECT_PRIORITIES) {
+            return error_response(StatusCode::BAD_REQUEST, &message);
+        }
+    }
+    let description = if fields.contains_key("description") {
+        request.description.as_deref()
+    } else {
+        existing.description.as_deref()
+    };
+    let icon = if fields.contains_key("icon") {
+        request.icon.as_deref()
+    } else {
+        existing.icon.as_deref()
+    };
+    let lead_type = if fields.contains_key("lead_type") {
+        request.lead_type.as_deref()
+    } else {
+        existing.lead_type.as_deref()
+    };
+    let lead_id = if fields.contains_key("lead_id") {
+        match request.lead_id.as_deref() {
+            Some(raw) => match Uuid::parse_str(raw) {
+                Ok(id) => Some(id),
+                Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid lead_id"),
+            },
+            None => None,
+        }
+    } else {
+        existing.lead_id
+    };
+    let start_date = if fields.contains_key("start_date") {
+        match request.start_date.as_deref() {
+            Some(value) => match calendar_date(value, "start_date") {
+                Ok(date) => date,
+                Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
+            },
+            None => None,
+        }
+    } else {
+        existing.start_date
+    };
+    let due_date = if fields.contains_key("due_date") {
+        match request.due_date.as_deref() {
+            Some(value) => match calendar_date(value, "due_date") {
+                Ok(date) => date,
+                Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
+            },
+            None => None,
+        }
+    } else {
+        existing.due_date
+    };
+    let updated = match project::update_project(
+        &state.pool,
+        existing.id,
+        context.member.workspace_id,
+        request.title.as_deref(),
+        description,
+        icon,
+        request.status.as_deref(),
+        request.priority.as_deref(),
+        lead_type,
+        lead_id,
+        start_date,
+        due_date,
+    )
+    .await
+    {
+        Ok(Some(project)) => project,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "project not found"),
+        Err(error) if check_violation(&error) => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "project update rejected: a field value failed a database constraint",
+            )
+        }
+        Err(error) => {
+            tracing::warn!(%error, %id, "project update failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update project",
+            );
+        }
+    };
+    let (stats, counts) = project_enrichment(&state, &[updated.id]).await;
+    let response = enrich(ProjectResponse::from(updated), &stats, &counts);
+    publish_project(
+        &state,
+        &context,
+        cordy_protocol::EVENT_PROJECT_UPDATED,
+        json!({ "project": &response }),
+    );
+    Json(response).into_response()
+}
+
+async fn remove(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(raw_id): Path<String>,
+) -> Response {
+    let id = match Uuid::parse_str(raw_id.trim()) {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid project id"),
+    };
+    match project::get_project_in_workspace(&state.pool, id, context.member.workspace_id).await {
+        Ok(Some(_)) => {}
+        Ok(None) | Err(_) => return error_response(StatusCode::NOT_FOUND, "project not found"),
+    }
+    if !matches!(context.member.role.as_str(), "owner" | "admin") {
+        return error_response(StatusCode::FORBIDDEN, "insufficient workspace role");
+    }
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, %id, "failed to begin project delete");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to start transaction",
+            );
+        }
+    };
+    match project::lock_project_for_delete(&mut *transaction, id, context.member.workspace_id).await
+    {
+        Ok(Some(_)) => {}
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "project not found"),
+        Err(error) => {
+            tracing::warn!(%error, %id, "failed to lock project");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to lock project");
+        }
+    }
+    if let Err(error) = cordy_db::queries::chat::clear_chat_session_project_by_project(
+        &mut *transaction,
+        id,
+        context.member.workspace_id,
+    )
+    .await
+    {
+        tracing::warn!(%error, %id, "failed to clear project chat context");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to clear project chat context",
+        );
+    }
+    if let Err(error) = cordy_db::queries::issue_view::delete_issue_views_by_project_scope(
+        &mut *transaction,
+        context.member.workspace_id,
+        id,
+    )
+    .await
+    {
+        tracing::warn!(%error, %id, "failed to delete project views");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to delete project views",
+        );
+    }
+    match project::delete_project(&mut *transaction, id, context.member.workspace_id).await {
+        Ok(1) => {}
+        Ok(_) => return error_response(StatusCode::NOT_FOUND, "project not found"),
+        Err(error) => {
+            tracing::warn!(%error, %id, "failed to delete project");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to delete project",
+            );
+        }
+    }
+    if let Err(error) = transaction.commit().await {
+        tracing::warn!(%error, %id, "failed to commit project delete");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to commit project delete",
+        );
+    }
+    publish_project(
+        &state,
+        &context,
+        cordy_protocol::EVENT_PROJECT_DELETED,
+        json!({ "project_id": id.to_string() }),
+    );
+    StatusCode::NO_CONTENT.into_response()
 }
 
 async fn project_enrichment(
@@ -409,6 +698,40 @@ mod tests {
         assert_eq!(parse_positive(&Some("0".into()), 20), 20);
         assert_eq!(parse_positive(&Some("75".into()), 20).min(50), 50);
         assert_eq!(parse_non_negative(&Some("-1".into()), 0), 0);
+    }
+
+    #[test]
+    fn update_decoder_preserves_nullable_field_presence() {
+        let (request, fields) = decode_update(
+            br#"{"description":null,"icon":"rocket","start_date":"","unknown":true}"#,
+        )
+        .unwrap();
+        assert!(fields.contains_key("description"));
+        assert!(request.description.is_none());
+        assert_eq!(request.icon.as_deref(), Some("rocket"));
+        assert_eq!(request.start_date.as_deref(), Some(""));
+        assert!(decode_update(br#"{"status":"planned"} trailing"#).is_err());
+        let (request, fields) = decode_update(b"null").unwrap();
+        assert!(fields.is_empty());
+        assert!(request.title.is_none());
+        assert!(decode_update(b"[]").is_err());
+    }
+
+    #[test]
+    fn project_update_validation_matches_go_contract() {
+        assert!(validate_enum("status", "in_progress", PROJECT_STATUSES).is_ok());
+        assert!(validate_enum("status", "active", PROJECT_STATUSES)
+            .unwrap_err()
+            .contains("planned, in_progress, paused, completed, cancelled"));
+        assert_eq!(
+            calendar_date("2026-08-23", "start_date").unwrap(),
+            chrono::NaiveDate::from_ymd_opt(2026, 8, 23)
+        );
+        assert_eq!(calendar_date("", "due_date").unwrap(), None);
+        assert_eq!(
+            calendar_date("08/23/2026", "due_date").unwrap_err(),
+            "invalid due_date format, expected YYYY-MM-DD"
+        );
     }
 
     #[test]
