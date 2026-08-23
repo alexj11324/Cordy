@@ -12,10 +12,12 @@ use std::{
     path::{Component, Path, PathBuf},
     sync::Arc,
 };
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio_util::io::ReaderStream;
 use url::Url;
 
 type HmacSha256 = Hmac<Sha256>;
+pub const MAX_STREAM_UPLOAD_BYTES: i64 = 100 << 20;
 
 #[async_trait]
 pub trait AttachmentStorage: Send + Sync {
@@ -28,6 +30,19 @@ pub trait AttachmentStorage: Send + Sync {
     ) -> anyhow::Result<String>;
     async fn get(&self, key: &str, range: Option<&str>) -> anyhow::Result<StoredObject>;
     async fn delete(&self, key: &str) -> anyhow::Result<()>;
+    async fn upload_stream(
+        &self,
+        _key: &str,
+        _body: Box<dyn AsyncRead + Send + Unpin>,
+        _size_bytes: i64,
+        _content_type: &str,
+        _filename: &str,
+    ) -> anyhow::Result<String> {
+        anyhow::bail!("attachment storage does not support streaming uploads")
+    }
+    fn supports_streaming_uploads(&self) -> bool {
+        false
+    }
     async fn presign_get(&self, _key: &str, _ttl: std::time::Duration) -> anyhow::Result<String> {
         anyhow::bail!("attachment storage does not support presigned downloads")
     }
@@ -125,9 +140,54 @@ impl AttachmentStorage for LocalStorage {
         }
         Ok(self.object_url(key))
     }
+    async fn upload_stream(
+        &self,
+        key: &str,
+        body: Box<dyn AsyncRead + Send + Unpin>,
+        size_bytes: i64,
+        content_type: &str,
+        filename: &str,
+    ) -> anyhow::Result<String> {
+        validate_stream_size(size_bytes)?;
+        let path = self.path(key)?;
+        let parent = path
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("invalid storage key"))?;
+        tokio::fs::create_dir_all(parent).await?;
+        let name = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .ok_or_else(|| anyhow::anyhow!("invalid storage key"))?;
+        let tmp = parent.join(format!(".{name}.tmp"));
+        let result = async {
+            let mut file = tokio::fs::File::create(&tmp).await?;
+            let mut limited = body.take(size_bytes as u64 + 1);
+            let copied = tokio::io::copy(&mut limited, &mut file).await?;
+            anyhow::ensure!(
+                copied == size_bytes as u64,
+                "stream length does not match declared size"
+            );
+            file.flush().await?;
+            drop(file);
+            tokio::fs::rename(&tmp, &path).await?;
+            anyhow::Ok(())
+        }
+        .await;
+        if let Err(error) = result {
+            let _ = tokio::fs::remove_file(&tmp).await;
+            return Err(error);
+        }
+        write_local_metadata(&path, key, content_type, filename).await;
+        Ok(self.object_url(key))
+    }
+    fn supports_streaming_uploads(&self) -> bool {
+        true
+    }
     async fn get(&self, key: &str, range: Option<&str>) -> anyhow::Result<StoredObject> {
-        let data = tokio::fs::read(self.path(key)?).await?;
-        let meta = tokio::fs::read(format!("{}.meta.json", self.path(key)?.display()))
+        let path = self.path(key)?;
+        let mut file = tokio::fs::File::open(&path).await?;
+        let total = file.metadata().await?.len();
+        let meta = tokio::fs::read(format!("{}.meta.json", path.display()))
             .await
             .ok()
             .and_then(|v| serde_json::from_slice::<serde_json::Value>(&v).ok());
@@ -141,22 +201,22 @@ impl AttachmentStorage for LocalStorage {
             .and_then(|v| v.get("filename"))
             .and_then(|v| v.as_str())
             .map(str::to_string);
-        let total = data.len() as u64;
         if let Some(raw) = range.filter(|raw| !raw.contains(',') && total > 0) {
             let (start, end) =
                 parse_range(raw, total).ok_or_else(|| anyhow::anyhow!("invalid range"))?;
-            let bytes = data[start as usize..=end as usize].to_vec();
+            let length = end - start + 1;
+            file.seek(std::io::SeekFrom::Start(start)).await?;
             return Ok(StoredObject {
-                content_length: Some(bytes.len() as u64),
+                content_length: Some(length),
                 content_range: Some(format!("bytes {start}-{end}/{total}")),
                 status: reqwest::StatusCode::PARTIAL_CONTENT,
-                body: Body::from(bytes),
+                body: Body::from_stream(ReaderStream::new(file.take(length))),
                 content_type,
                 filename,
             });
         }
         Ok(StoredObject {
-            body: Body::from(data),
+            body: Body::from_stream(ReaderStream::new(file)),
             content_length: Some(total),
             content_range: None,
             status: reqwest::StatusCode::OK,
@@ -167,6 +227,9 @@ impl AttachmentStorage for LocalStorage {
     async fn delete(&self, key: &str) -> anyhow::Result<()> {
         let path = self.path(key)?;
         let _ = tokio::fs::remove_file(format!("{}.meta.json", path.display())).await;
+        if let Some(tmp) = local_temp_path(&path) {
+            let _ = tokio::fs::remove_file(tmp).await;
+        }
         match tokio::fs::remove_file(path).await {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -188,6 +251,41 @@ impl AttachmentStorage for LocalStorage {
     fn is_local(&self) -> bool {
         true
     }
+}
+
+async fn write_local_metadata(path: &Path, key: &str, content_type: &str, filename: &str) {
+    if filename.is_empty() {
+        return;
+    }
+    let metadata = serde_json::json!({"filename": filename, "content_type": content_type});
+    let body = match serde_json::to_vec(&metadata) {
+        Ok(body) => body,
+        Err(error) => {
+            tracing::warn!(%error, %key, "local upload metadata serialization failed");
+            return;
+        }
+    };
+    if let Err(error) = tokio::fs::write(format!("{}.meta.json", path.display()), body).await {
+        tracing::warn!(%error, %key, "local upload metadata write failed");
+    }
+}
+
+fn validate_stream_size(size_bytes: i64) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        size_bytes > 0,
+        "streaming upload requires a positive content length"
+    );
+    anyhow::ensure!(
+        size_bytes <= MAX_STREAM_UPLOAD_BYTES,
+        "streaming upload exceeds the 100 MiB limit"
+    );
+    Ok(())
+}
+
+fn local_temp_path(path: &Path) -> Option<PathBuf> {
+    let parent = path.parent()?;
+    let name = path.file_name()?.to_str()?;
+    Some(parent.join(format!(".{name}.tmp")))
 }
 
 #[derive(Clone)]
@@ -374,6 +472,51 @@ impl S3Storage {
         Ok(response)
     }
 
+    async fn execute_stream(
+        &self,
+        key: &str,
+        body: Box<dyn AsyncRead + Send + Unpin>,
+        size_bytes: i64,
+        mut extra: HeaderMap,
+    ) -> anyhow::Result<()> {
+        validate_stream_size(size_bytes)?;
+        let url = self.request_url(key)?;
+        let credentials = self
+            .credentials
+            .provide_credentials()
+            .await
+            .map_err(|error| anyhow::anyhow!("resolve AWS credentials: {error}"))?;
+        let mut headers = self.signed_headers(
+            "PUT",
+            &url,
+            "UNSIGNED-PAYLOAD",
+            chrono::Utc::now(),
+            &extra,
+            &credentials,
+        )?;
+        extra.insert(
+            reqwest::header::CONTENT_LENGTH,
+            HeaderValue::from_str(&size_bytes.to_string())?,
+        );
+        headers.extend(extra);
+        let response = self
+            .client
+            .put(url)
+            .headers(headers)
+            .body(reqwest::Body::wrap_stream(exact_reader_stream(
+                body,
+                size_bytes as u64,
+            )))
+            .send()
+            .await?;
+        anyhow::ensure!(
+            response.status().is_success(),
+            "object storage returned {}",
+            response.status()
+        );
+        Ok(())
+    }
+
     async fn presigned_get(
         &self,
         key: &str,
@@ -522,6 +665,41 @@ impl AttachmentStorage for S3Storage {
             filename: None,
         })
     }
+    async fn upload_stream(
+        &self,
+        key: &str,
+        body: Box<dyn AsyncRead + Send + Unpin>,
+        size_bytes: i64,
+        content_type: &str,
+        filename: &str,
+    ) -> anyhow::Result<String> {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            HeaderValue::from_str(content_type)?,
+        );
+        headers.insert(
+            reqwest::header::CONTENT_DISPOSITION,
+            HeaderValue::from_str(&content_disposition(content_type, filename, false))?,
+        );
+        headers.insert(
+            reqwest::header::CACHE_CONTROL,
+            HeaderValue::from_static("max-age=432000,public"),
+        );
+        headers.insert(
+            "x-amz-storage-class",
+            HeaderValue::from_static(if self.custom_endpoint {
+                "STANDARD"
+            } else {
+                "INTELLIGENT_TIERING"
+            }),
+        );
+        self.execute_stream(key, body, size_bytes, headers).await?;
+        Ok(self.object_url(key))
+    }
+    fn supports_streaming_uploads(&self) -> bool {
+        true
+    }
     async fn delete(&self, key: &str) -> anyhow::Result<()> {
         self.execute(reqwest::Method::DELETE, key, None, HeaderMap::new())
             .await
@@ -597,6 +775,102 @@ pub async fn from_env(
         local_base.unwrap_or("").to_string(),
     )?))
 }
+
+#[derive(Clone)]
+pub struct ChannelMediaStorage {
+    inner: Arc<dyn AttachmentStorage>,
+}
+
+impl ChannelMediaStorage {
+    pub fn new(inner: Arc<dyn AttachmentStorage>) -> Self {
+        Self { inner }
+    }
+}
+
+impl cordy_lark::media_ingest::MediaStorage for ChannelMediaStorage {
+    fn upload(
+        &self,
+        key: &str,
+        data: Vec<u8>,
+        content_type: &str,
+        filename: &str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + '_>> {
+        let key = key.to_string();
+        let content_type = content_type.to_string();
+        let filename = filename.to_string();
+        Box::pin(async move {
+            self.inner
+                .upload(&key, data, &content_type, &filename)
+                .await
+                .map(|_| ())
+        })
+    }
+
+    fn object_url(&self, key: &str) -> String {
+        self.inner.object_url(key)
+    }
+
+    fn as_stream_storage(&self) -> Option<&dyn cordy_lark::media_ingest::MediaStreamStorage> {
+        self.inner.supports_streaming_uploads().then_some(self)
+    }
+}
+
+#[async_trait]
+impl cordy_lark::media_ingest::MediaStreamStorage for ChannelMediaStorage {
+    async fn upload_stream(
+        &self,
+        ctx: tokio_util::sync::CancellationToken,
+        key: &str,
+        body: Box<dyn AsyncRead + Send + Unpin>,
+        size_bytes: i64,
+        content_type: &str,
+        filename: &str,
+    ) -> anyhow::Result<()> {
+        tokio::select! {
+            _ = ctx.cancelled() => anyhow::bail!("channel media upload cancelled"),
+            result = self.inner.upload_stream(key, body, size_bytes, content_type, filename) => result.map(|_| ()),
+        }
+    }
+}
+
+#[async_trait]
+impl cordy_wecom::media_ingest::MediaStorage for ChannelMediaStorage {
+    async fn upload(
+        &self,
+        key: &str,
+        data: Vec<u8>,
+        content_type: &str,
+        filename: &str,
+    ) -> anyhow::Result<String> {
+        self.inner.upload(key, data, content_type, filename).await
+    }
+
+    fn object_url(&self, key: &str) -> String {
+        self.inner.object_url(key)
+    }
+
+    fn as_stream_storage(&self) -> Option<&dyn cordy_wecom::media_ingest::MediaStreamStorage> {
+        self.inner.supports_streaming_uploads().then_some(self)
+    }
+}
+
+#[async_trait]
+impl cordy_wecom::media_ingest::MediaStreamStorage for ChannelMediaStorage {
+    async fn upload_stream(
+        &self,
+        ctx: tokio_util::sync::CancellationToken,
+        key: &str,
+        body: Box<dyn AsyncRead + Send + Unpin>,
+        size_bytes: i64,
+        content_type: &str,
+        filename: &str,
+    ) -> anyhow::Result<String> {
+        tokio::select! {
+            _ = ctx.cancelled() => anyhow::bail!("channel media upload cancelled"),
+            result = self.inner.upload_stream(key, body, size_bytes, content_type, filename) => result,
+        }
+    }
+}
 fn env(name: &str) -> Option<String> {
     std::env::var(name)
         .ok()
@@ -641,6 +915,36 @@ fn canonical_query(pairs: &[(String, String)]) -> String {
         .map(|(name, value)| format!("{name}={value}"))
         .collect::<Vec<_>>()
         .join("&")
+}
+fn exact_reader_stream(
+    body: Box<dyn AsyncRead + Send + Unpin>,
+    size: u64,
+) -> impl futures_util::Stream<Item = Result<Vec<u8>, std::io::Error>> + Send {
+    futures_util::stream::try_unfold((body, size), |(mut body, remaining)| async move {
+        if remaining == 0 {
+            return Ok(None);
+        }
+        let mut chunk = vec![0; remaining.min(64 << 10) as usize];
+        let read = body.read(&mut chunk).await?;
+        if read == 0 {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "stream ended before its declared content length",
+            ));
+        }
+        chunk.truncate(read);
+        let remaining = remaining - read as u64;
+        if remaining == 0 {
+            let mut extra = [0u8; 1];
+            if body.read(&mut extra).await? != 0 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "stream exceeded its declared content length",
+                ));
+            }
+        }
+        Ok(Some((chunk, (body, remaining))))
+    })
 }
 fn same_origin(left: &Url, right: &Url) -> bool {
     left.scheme().eq_ignore_ascii_case(right.scheme())
@@ -781,6 +1085,71 @@ mod tests {
         assert!(store.get("../secret", None).await.is_err());
         assert!(store.get("x.meta.json", None).await.is_err());
         assert!(store.get(".x.tmp", None).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn local_stream_upload_is_atomic_and_checks_exact_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStorage::new(dir.path().to_path_buf(), String::new()).unwrap();
+        let key = "workspaces/w/media.bin";
+        store
+            .upload(key, b"old".to_vec(), "application/octet-stream", "old.bin")
+            .await
+            .unwrap();
+        assert!(store
+            .upload_stream(
+                key,
+                Box::new(std::io::Cursor::new(b"too-long".to_vec())),
+                3,
+                "application/octet-stream",
+                "new.bin",
+            )
+            .await
+            .is_err());
+        let old = store.get(key, None).await.unwrap();
+        assert_eq!(old.body.collect().await.unwrap().to_bytes(), &b"old"[..]);
+
+        store
+            .upload_stream(
+                key,
+                Box::new(std::io::Cursor::new(b"replacement".to_vec())),
+                11,
+                "application/octet-stream",
+                "new.bin",
+            )
+            .await
+            .unwrap();
+        let replacement = store.get(key, None).await.unwrap();
+        assert_eq!(
+            replacement.body.collect().await.unwrap().to_bytes(),
+            &b"replacement"[..]
+        );
+        assert!(!local_temp_path(&store.path(key).unwrap()).unwrap().exists());
+    }
+
+    #[tokio::test]
+    async fn exact_reader_stream_rejects_short_and_long_bodies() {
+        use futures_util::StreamExt;
+
+        let mut exact = Box::pin(exact_reader_stream(
+            Box::new(std::io::Cursor::new(b"exact".to_vec())),
+            5,
+        ));
+        assert_eq!(exact.next().await.unwrap().unwrap(), b"exact");
+        assert!(exact.next().await.is_none());
+
+        let mut short = Box::pin(exact_reader_stream(
+            Box::new(std::io::Cursor::new(b"short".to_vec())),
+            6,
+        ));
+        assert_eq!(short.next().await.unwrap().unwrap(), b"short");
+        assert!(short.next().await.unwrap().is_err());
+
+        let mut long = Box::pin(exact_reader_stream(
+            Box::new(std::io::Cursor::new(b"longer".to_vec())),
+            4,
+        ));
+        assert!(long.next().await.unwrap().is_err());
     }
 
     fn test_credentials(session_token: Option<&str>) -> Credentials {

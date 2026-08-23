@@ -275,6 +275,8 @@ pub struct HandlerState {
     pub daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
     /// Attachment object store. None is the explicit unconfigured test path.
     pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
+    /// Production Lark/WeCom media adapter over the same object store.
+    pub channel_media_storage: Option<Arc<crate::attachment_storage::ChannelMediaStorage>>,
     pub attachment_frame_ancestors: Vec<String>,
     pub attachment_download: AttachmentDownloadSettings,
     /// On-demand Slack channel history reader. `None` means Slack history is
@@ -360,6 +362,7 @@ impl HandlerState {
             vcs_secret_box: None,
             daemon_hub: Some(daemon_hub),
             attachment_storage: None,
+            channel_media_storage: None,
             attachment_frame_ancestors: Vec::new(),
             attachment_download: AttachmentDownloadSettings::default(),
             slack_history: None,
@@ -429,6 +432,9 @@ impl HandlerState {
         frame_ancestors: Vec<String>,
         download: AttachmentDownloadSettings,
     ) -> Self {
+        self.channel_media_storage = Some(Arc::new(
+            crate::attachment_storage::ChannelMediaStorage::new(storage.clone()),
+        ));
         self.attachment_storage = Some(storage);
         self.attachment_frame_ancestors = frame_ancestors;
         self.attachment_download = download;
