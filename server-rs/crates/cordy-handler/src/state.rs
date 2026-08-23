@@ -77,6 +77,9 @@ pub struct HandlerState {
     /// Production event-hook workers and their bus subscriptions. `None` in
     /// lightweight tests and before production side effects are started.
     plugin_events: Option<Arc<PluginEventDispatcher>>,
+    /// Guards production Autopilot listener registration against duplicate
+    /// terminal side effects when startup builders are composed more than once.
+    autopilot_listeners_started: bool,
     /// Boot-time bearer token for `/health/realtime`. Empty enables the
     /// direct-loopback-only development policy.
     pub realtime_metrics_token: String,
@@ -172,6 +175,7 @@ impl HandlerState {
             callbacks: Some(Arc::new(CallbackTokens::new())),
             callback_base_url: String::new(),
             plugin_events: None,
+            autopilot_listeners_started: false,
             realtime_metrics_token: std::env::var("REALTIME_METRICS_TOKEN")
                 .unwrap_or_default()
                 .trim()
@@ -329,6 +333,18 @@ impl HandlerState {
         );
         dispatcher.start();
         self.plugin_events = Some(dispatcher);
+        self
+    }
+
+    /// Wires the issue/task terminal events that settle linked Autopilot runs.
+    /// Lightweight state construction stays side-effect free; production calls
+    /// this only after the shared Autopilot service has its final dependencies.
+    pub fn start_autopilot_event_listeners(mut self) -> Self {
+        if self.autopilot_listeners_started {
+            return self;
+        }
+        crate::autopilot_listeners::register(self.bus.as_ref(), self.autopilots.clone());
+        self.autopilot_listeners_started = true;
         self
     }
 
