@@ -2656,7 +2656,7 @@ async fn issue_response(state: &HandlerState, issue: Issue) -> Response {
     Json(response).into_response()
 }
 
-async fn mutation_actor(
+pub(crate) async fn mutation_actor(
     state: &HandlerState,
     context: &WorkspaceContext,
     headers: &HeaderMap,
@@ -4008,7 +4008,7 @@ impl From<&IssueSubscriber> for SubscriberResponse {
 }
 
 #[derive(Debug, Serialize)]
-struct AttachmentResponse {
+pub(crate) struct AttachmentResponse {
     id: String,
     workspace_id: String,
     issue_id: Option<String>,
