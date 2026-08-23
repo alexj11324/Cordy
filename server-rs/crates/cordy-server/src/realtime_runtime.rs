@@ -121,12 +121,14 @@ impl RealtimeRuntime {
         &mut self,
         bus: &cordy_events::Bus,
         daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
+        daemon_notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
     ) {
         if let Some(relay) = &self.relay {
             if self.relay_mode != Some(RelayMode::Legacy) {
                 if let Some(daemon_hub) = daemon_hub {
                     relay.set_daemon_runtime_deliverer(daemon_hub);
                 }
+                daemon_notifier.set_relay(Some(relay.clone()));
             }
             relay.clone().start(self.shutdown.clone());
         }

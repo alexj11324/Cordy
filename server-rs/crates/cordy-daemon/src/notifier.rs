@@ -23,7 +23,7 @@
 //!   client.
 
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use cordy_realtime::{RelayPublisher, SCOPE_DAEMON_RUNTIME};
@@ -38,13 +38,26 @@ use crate::hub::{
 /// every API node can attempt local delivery.
 pub struct RelayNotifier {
     local: Option<Arc<DaemonHub>>,
-    relay: Option<Arc<dyn RelayPublisher>>,
+    relay: RwLock<Option<Arc<dyn RelayPublisher>>>,
 }
 
 impl RelayNotifier {
     /// `local`/`relay` are optional exactly like the Go nil-able fields.
     pub fn new(local: Option<Arc<DaemonHub>>, relay: Option<Arc<dyn RelayPublisher>>) -> Self {
-        Self { local, relay }
+        Self {
+            local,
+            relay: RwLock::new(relay),
+        }
+    }
+
+    /// Installs or removes the cross-node publisher without replacing the
+    /// notifier shared by handler state and the task service.
+    pub fn set_relay(&self, relay: Option<Arc<dyn RelayPublisher>>) {
+        *self.relay.write().unwrap_or_else(|e| e.into_inner()) = relay;
+    }
+
+    fn relay(&self) -> Option<Arc<dyn RelayPublisher>> {
+        self.relay.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub async fn notify_task_available(&self, runtime_id: &str, task_id: &str) {
@@ -55,7 +68,7 @@ impl RelayNotifier {
         if let Some(local) = &self.local {
             local.notify_task_available_with_event(runtime_id, task_id, &event_id);
         }
-        let Some(relay) = &self.relay else {
+        let Some(relay) = self.relay() else {
             return;
         };
         let Some(frame) = task_available_frame(runtime_id, task_id) else {
@@ -91,7 +104,7 @@ impl RelayNotifier {
         if let Some(local) = &self.local {
             local.notify_runtime_profiles_changed_with_event(workspace_id, profile_id, &event_id);
         }
-        let Some(relay) = &self.relay else {
+        let Some(relay) = self.relay() else {
             return;
         };
         let Some(frame) = runtime_profiles_changed_frame(workspace_id, profile_id) else {
@@ -122,7 +135,7 @@ impl RelayNotifier {
         if let Some(local) = &self.local {
             local.notify_workspaces_changed_with_event(user_id, &event_id);
         }
-        let Some(relay) = &self.relay else {
+        let Some(relay) = self.relay() else {
             return;
         };
         let Some(frame) = workspaces_changed_frame() else {
@@ -163,7 +176,7 @@ impl RelayNotifier {
         if let Some(local) = &self.local {
             local.notify_pending_work_with_event(runtime_id, kind, &event_id);
         }
-        let Some(relay) = &self.relay else {
+        let Some(relay) = self.relay() else {
             return;
         };
         let Some(frame) = pending_work_frame(runtime_id, kind) else {

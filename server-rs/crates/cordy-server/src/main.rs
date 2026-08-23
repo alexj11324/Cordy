@@ -246,7 +246,11 @@ async fn build_production_router(
         .start_autopilot_quota_reconciler()
         .start_webhook_delivery_worker();
     let mut realtime = realtime_runtime::RealtimeRuntime::from_env(hub).await;
-    realtime.attach(&state.bus, state.daemon_hub.clone());
+    realtime.attach(
+        &state.bus,
+        state.daemon_hub.clone(),
+        state.daemon_notifier.clone(),
+    );
     Ok((cordy_handler::build_router_from_state(state), realtime))
 }
 

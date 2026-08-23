@@ -14,7 +14,7 @@ use cordy_service::plugin_token::CallbackTokens;
 use cordy_service::task_service::TaskService;
 
 struct DaemonTaskWakeup {
-    hub: Arc<cordy_daemon::hub::DaemonHub>,
+    notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
 }
 
 struct DaemonMessageMetrics {
@@ -27,9 +27,12 @@ impl cordy_daemon::hub::MessageKindRecorder for DaemonMessageMetrics {
     }
 }
 
+#[async_trait::async_trait]
 impl cordy_service::task_service::TaskWakeupNotifier for DaemonTaskWakeup {
-    fn notify_task_available(&self, runtime_id: &str, task_id: &str) {
-        self.hub.notify_task_available(runtime_id, task_id);
+    async fn notify_task_available(&self, runtime_id: &str, task_id: &str) {
+        self.notifier
+            .notify_task_available(runtime_id, task_id)
+            .await;
     }
 }
 
@@ -96,6 +99,9 @@ pub struct HandlerState {
     /// Daemon WebSocket hub (cordy-daemon). `None` only in tests — the WS
     /// endpoint reports 503 and daemons fall back to HTTP polling.
     pub daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
+    /// Local-first daemon wakeup publisher. Production runtime installs the
+    /// shared Redis relay for sharded/dual modes before the router is served.
+    pub daemon_notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
     /// Attachment object store. None is the explicit unconfigured test path.
     pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
     pub attachment_frame_ancestors: Vec<String>,
@@ -116,9 +122,13 @@ impl HandlerState {
     pub fn new(pool: sqlx::PgPool, pat_cache: PatCache, hub: Option<Arc<Hub>>) -> Self {
         let bus = Arc::new(cordy_events::Bus::new());
         let daemon_hub = Arc::new(cordy_daemon::hub::DaemonHub::new());
+        let daemon_notifier = Arc::new(cordy_daemon::notifier::RelayNotifier::new(
+            Some(daemon_hub.clone()),
+            None,
+        ));
         let task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier> =
             Arc::new(DaemonTaskWakeup {
-                hub: daemon_hub.clone(),
+                notifier: daemon_notifier.clone(),
             });
         let mut task_service = TaskService::new(pool.clone(), bus.clone());
         task_service.wakeup = Some(Arc::downgrade(&task_wakeup));
@@ -180,6 +190,7 @@ impl HandlerState {
             vcs_integration_enabled: false,
             vcs_secret_box: None,
             daemon_hub: Some(daemon_hub),
+            daemon_notifier,
             attachment_storage: None,
             attachment_frame_ancestors: Vec::new(),
             slack_history: None,

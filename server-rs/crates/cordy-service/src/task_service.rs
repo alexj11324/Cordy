@@ -212,8 +212,9 @@ pub trait ComposioOverlayBuilder: Send + Sync {
 }
 
 /// Wakeup seam used by dispatch to nudge runtimes.
+#[async_trait::async_trait]
 pub trait TaskWakeupNotifier: Send + Sync {
-    fn notify_task_available(&self, runtime_id: &str, task_id: &str);
+    async fn notify_task_available(&self, runtime_id: &str, task_id: &str);
 }
 
 /// Quick-create task context stored in `agent_task_queue.context`.
@@ -1149,7 +1150,9 @@ impl TaskService {
         // the wakeup alone still unblocks the daemon's next poll.
         if let Some(wakeup) = self.wakeup.as_ref().and_then(|w| w.upgrade()) {
             if let Some(runtime_id) = runtime_id {
-                wakeup.notify_task_available(&runtime_id.to_string(), task_id.unwrap_or(""));
+                wakeup
+                    .notify_task_available(&runtime_id.to_string(), task_id.unwrap_or(""))
+                    .await;
             }
         }
     }
