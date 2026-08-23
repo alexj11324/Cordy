@@ -80,6 +80,9 @@ pub struct HandlerState {
     /// Guards production Autopilot listener registration against duplicate
     /// terminal side effects when startup builders are composed more than once.
     autopilot_listeners_started: bool,
+    /// Guards subscriber/activity listener registration against duplicate
+    /// side effects when startup builders are composed more than once.
+    subscriber_activity_listeners_started: bool,
     /// Boot-time bearer token for `/health/realtime`. Empty enables the
     /// direct-loopback-only development policy.
     pub realtime_metrics_token: String,
@@ -176,6 +179,7 @@ impl HandlerState {
             callback_base_url: String::new(),
             plugin_events: None,
             autopilot_listeners_started: false,
+            subscriber_activity_listeners_started: false,
             realtime_metrics_token: std::env::var("REALTIME_METRICS_TOKEN")
                 .unwrap_or_default()
                 .trim()
@@ -345,6 +349,17 @@ impl HandlerState {
         }
         crate::autopilot_listeners::register(self.bus.as_ref(), self.autopilots.clone());
         self.autopilot_listeners_started = true;
+        self
+    }
+
+    /// Wires the subscriber and activity side effects in their Go registration
+    /// order. Lightweight state construction remains side-effect free.
+    pub fn start_subscriber_activity_listeners(mut self) -> Self {
+        if self.subscriber_activity_listeners_started {
+            return self;
+        }
+        crate::subscriber_activity_listeners::register(self.bus.clone(), self.pool.clone());
+        self.subscriber_activity_listeners_started = true;
         self
     }
 

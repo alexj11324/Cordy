@@ -75,6 +75,7 @@ mod skill_import;
 pub mod squad;
 pub mod squad_briefing;
 pub mod state;
+mod subscriber_activity_listeners;
 pub mod task;
 pub mod task_json;
 pub mod timefmt;

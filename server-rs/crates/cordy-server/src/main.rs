@@ -241,6 +241,7 @@ async fn build_production_router(
     }
     let state = install_pending_stores(state, redis_url)
         .await
+        .start_subscriber_activity_listeners()
         .start_autopilot_event_listeners()
         .start_plugin_event_dispatcher()
         .start_autopilot_quota_reconciler()

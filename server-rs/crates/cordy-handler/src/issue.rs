@@ -2299,7 +2299,7 @@ async fn record_squad_evaluated(
         issue.workspace_id,
         issue.id,
         Some("agent"),
-        actor_id,
+        Some(actor_id),
         "squad_leader_evaluated",
         &details,
         cordy_db::dbid::new_v7(),
@@ -4824,11 +4824,6 @@ RETURNING *"#,
     if attachments_changed {
         publish_issue_attachments_changed(state, &updated, &actor_type, actor_id, task_id);
     }
-    if previous.assignee_type != updated.assignee_type
-        || previous.assignee_id != updated.assignee_id
-    {
-        record_assignee_activity(state, &previous, &updated, &actor_type, actor_id).await;
-    }
     let assignee_changed = previous.assignee_type != updated.assignee_type
         || previous.assignee_id != updated.assignee_id;
     let status_changed = previous.status != updated.status;
@@ -5171,6 +5166,20 @@ async fn publish_issue_updated(
             "status_changed": previous.status != issue.status,
             "priority_changed": previous.priority != issue.priority,
             "project_changed": previous.project_id != issue.project_id,
+            "start_date_changed": previous.start_date != issue.start_date,
+            "due_date_changed": previous.due_date != issue.due_date,
+            "description_changed": previous.description != issue.description,
+            "title_changed": previous.title != issue.title,
+            "prev_title": previous.title,
+            "prev_assignee_type": previous.assignee_type,
+            "prev_assignee_id": previous.assignee_id.map(|id| id.to_string()),
+            "prev_status": previous.status,
+            "prev_priority": previous.priority,
+            "prev_start_date": previous.start_date.map(|date| date.format("%Y-%m-%d").to_string()),
+            "prev_due_date": previous.due_date.map(|date| date.format("%Y-%m-%d").to_string()),
+            "prev_description": previous.description,
+            "creator_type": previous.creator_type,
+            "creator_id": previous.creator_id.to_string(),
         }),
         task_id: task_id.map(|id| id.to_string()).unwrap_or_default(),
         chat_session_id: String::new(),
@@ -5256,35 +5265,6 @@ fn publish_issue_attachments_changed(
         task_id: task_id.map(|id| id.to_string()).unwrap_or_default(),
         chat_session_id: String::new(),
     });
-}
-
-async fn record_assignee_activity(
-    state: &HandlerState,
-    previous: &Issue,
-    issue: &Issue,
-    actor_type: &str,
-    actor_id: Uuid,
-) {
-    let details = json!({
-        "from_type": previous.assignee_type,
-        "from_id": previous.assignee_id.map(|id| id.to_string()),
-        "to_type": issue.assignee_type,
-        "to_id": issue.assignee_id.map(|id| id.to_string()),
-    });
-    if let Err(error) = cordy_db::queries::activity::create_activity(
-        &state.pool,
-        issue.workspace_id,
-        issue.id,
-        Some(actor_type),
-        actor_id,
-        "assignee_changed",
-        &details,
-        cordy_db::dbid::new_v7(),
-    )
-    .await
-    {
-        tracing::warn!(%error, issue_id = %issue.id, "failed to record assignee activity");
-    }
 }
 
 fn terminal_category(category: &str) -> bool {
