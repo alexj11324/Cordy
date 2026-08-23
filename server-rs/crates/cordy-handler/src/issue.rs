@@ -51,6 +51,7 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/issues/{id}/move", post(move_issue))
         .route("/api/issues/{id}/children", get(list_child_issues))
         .route("/api/issues/{id}/usage", get(get_issue_usage))
+        .route("/api/issues/{id}/attachments", get(list_attachments))
         .route("/api/issues/{id}/metadata", get(list_issue_metadata))
         .route(
             "/api/issues/{id}/metadata/{key}",
@@ -1648,6 +1649,34 @@ async fn get_issue_usage(
             error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to get issue usage",
+            )
+        }
+    }
+}
+
+async fn list_attachments(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+) -> Response {
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+
+    match attachment::list_attachments_by_issue(&state.pool, issue.id, issue.workspace_id).await {
+        Ok(attachments) => Json(
+            attachments
+                .iter()
+                .map(AttachmentResponse::from)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(error) => {
+            tracing::warn!(%error, issue_id = %issue.id, "failed to list attachments");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list attachments",
             )
         }
     }
@@ -4192,5 +4221,18 @@ mod tests {
                 "task_count": 10,
             })
         );
+    }
+
+    #[test]
+    fn attachment_list_response_matches_go_stable_url_contract() {
+        let attachment =
+            fixture_attachment(Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f13").unwrap());
+        let response = serde_json::to_value(AttachmentResponse::from(&attachment)).unwrap();
+        let stable_url = format!("/api/attachments/{}/download", attachment.id);
+        assert_eq!(response["download_url"], stable_url);
+        assert_eq!(response["markdown_url"], stable_url);
+        assert_eq!(response["created_at"], "2026-08-23T03:30:00Z");
+        assert_eq!(response["issue_id"], fixture_issue().id.to_string());
+        assert!(response.get("task_id").is_none());
     }
 }
