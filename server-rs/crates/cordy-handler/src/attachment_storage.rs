@@ -177,6 +177,7 @@ pub struct S3Storage {
     bucket: String,
     region: String,
     endpoint: Url,
+    custom_endpoint: bool,
     path_style: bool,
     access_key: String,
     secret_key: String,
@@ -189,6 +190,12 @@ impl S3Storage {
         let Some(bucket) = env("S3_BUCKET") else {
             return Ok(None);
         };
+        if bucket.contains("amazonaws.com") {
+            tracing::warn!(
+                value = bucket,
+                "S3_BUCKET looks like an endpoint hostname; configure only the bucket name"
+            );
+        }
         let region = env("S3_REGION").unwrap_or_else(|| "us-west-2".into());
         let custom = env("AWS_ENDPOINT_URL");
         let endpoint = Url::parse(
@@ -196,20 +203,27 @@ impl S3Storage {
                 .as_deref()
                 .unwrap_or(&format!("https://s3.{region}.amazonaws.com")),
         )?;
-        let path_style = env("S3_USE_PATH_STYLE")
-            .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
-            .unwrap_or(custom.is_some());
-        let access_key = env("AWS_ACCESS_KEY_ID").ok_or_else(|| {
-            anyhow::anyhow!("AWS_ACCESS_KEY_ID is required when S3_BUCKET is set")
-        })?;
-        let secret_key = env("AWS_SECRET_ACCESS_KEY").ok_or_else(|| {
-            anyhow::anyhow!("AWS_SECRET_ACCESS_KEY is required when S3_BUCKET is set")
-        })?;
+        let path_style = s3_use_path_style(
+            std::env::var("S3_USE_PATH_STYLE").ok().as_deref(),
+            custom.is_some(),
+        );
+        let access_key = env("AWS_ACCESS_KEY_ID");
+        let secret_key = env("AWS_SECRET_ACCESS_KEY");
+        let (access_key, secret_key) = match (access_key, secret_key) {
+            (Some(access_key), Some(secret_key)) => (access_key, secret_key),
+            (None, None) => anyhow::bail!(
+                "S3_BUCKET requires AWS credentials; the Rust server does not yet support the IAM credential chain"
+            ),
+            _ => anyhow::bail!(
+                "AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be configured together"
+            ),
+        };
         Ok(Some(Self {
             client: reqwest::Client::new(),
             bucket,
             region,
             endpoint,
+            custom_endpoint: custom.is_some(),
             path_style,
             access_key,
             secret_key,
@@ -221,17 +235,17 @@ impl S3Storage {
         if key.is_empty() || key.split('/').any(|v| v == "." || v == "..") {
             anyhow::bail!("invalid storage key")
         }
-        let encoded = key.split('/').map(aws_encode).collect::<Vec<_>>().join("/");
         let mut url = self.endpoint.clone();
+        let base_path = url.path().trim_end_matches('/').to_string();
         if self.path_style {
-            url.set_path(&format!("/{}/{encoded}", aws_encode(&self.bucket)));
+            url.set_path(&format!("{base_path}/{}/{key}", self.bucket));
         } else {
             let host = self
                 .endpoint
                 .host_str()
                 .ok_or_else(|| anyhow::anyhow!("S3 endpoint has no host"))?;
             url.set_host(Some(&format!("{}.{host}", self.bucket)))?;
-            url.set_path(&format!("/{encoded}"));
+            url.set_path(&format!("{base_path}/{key}"));
         }
         Ok(url)
     }
@@ -241,6 +255,7 @@ impl S3Storage {
         url: &Url,
         payload_hash: &str,
         now: chrono::DateTime<chrono::Utc>,
+        extra: &HeaderMap,
     ) -> anyhow::Result<HeaderMap> {
         let date = now.format("%Y%m%d").to_string();
         let timestamp = now.format("%Y%m%dT%H%M%SZ").to_string();
@@ -250,14 +265,32 @@ impl S3Storage {
         let host = url
             .port()
             .map_or_else(|| hostname.to_string(), |port| format!("{hostname}:{port}"));
-        let mut canonical_headers =
-            format!("host:{host}\nx-amz-content-sha256:{payload_hash}\nx-amz-date:{timestamp}\n");
-        let mut signed = "host;x-amz-content-sha256;x-amz-date".to_string();
+        let mut canonical = vec![
+            ("host".to_string(), host),
+            ("x-amz-content-sha256".to_string(), payload_hash.to_string()),
+            ("x-amz-date".to_string(), timestamp.clone()),
+        ];
         if let Some(token) = &self.session_token {
-            canonical_headers.push_str(&format!("x-amz-security-token:{}\n", token.trim()));
-            signed.push_str(";x-amz-security-token");
+            canonical.push(("x-amz-security-token".to_string(), token.trim().to_string()));
         }
-        let canonical = format!(
+        for (name, value) in extra {
+            let name = name.as_str();
+            if name.starts_with("x-amz-") && !canonical.iter().any(|(existing, _)| existing == name)
+            {
+                canonical.push((name.to_string(), canonical_header_value(value)?));
+            }
+        }
+        canonical.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        let signed = canonical
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>()
+            .join(";");
+        let canonical_headers = canonical
+            .iter()
+            .map(|(name, value)| format!("{name}:{value}\n"))
+            .collect::<String>();
+        let canonical_request = format!(
             "{method}\n{}\n{}\n{canonical_headers}\n{signed}\n{payload_hash}",
             url.path(),
             url.query().unwrap_or("")
@@ -265,7 +298,7 @@ impl S3Storage {
         let scope = format!("{date}/{}/s3/aws4_request", self.region);
         let to_sign = format!(
             "AWS4-HMAC-SHA256\n{timestamp}\n{scope}\n{}",
-            hex::encode(Sha256::digest(canonical.as_bytes()))
+            hex::encode(Sha256::digest(canonical_request.as_bytes()))
         );
         let k_date = hmac_bytes(
             format!("AWS4{}", self.secret_key).as_bytes(),
@@ -294,7 +327,8 @@ impl S3Storage {
         let url = self.request_url(key)?;
         let bytes = body.unwrap_or_default();
         let hash = hex::encode(Sha256::digest(&bytes));
-        let mut headers = self.signed_headers(method.as_str(), &url, &hash, chrono::Utc::now())?;
+        let mut headers =
+            self.signed_headers(method.as_str(), &url, &hash, chrono::Utc::now(), &extra)?;
         headers.extend(extra);
         let response = self
             .client
@@ -327,6 +361,18 @@ impl AttachmentStorage for S3Storage {
         headers.insert(
             reqwest::header::CONTENT_DISPOSITION,
             HeaderValue::from_str(&content_disposition(content_type, filename, false))?,
+        );
+        headers.insert(
+            reqwest::header::CACHE_CONTROL,
+            HeaderValue::from_static("max-age=432000,public"),
+        );
+        headers.insert(
+            "x-amz-storage-class",
+            HeaderValue::from_static(if self.custom_endpoint {
+                "STANDARD"
+            } else {
+                "INTELLIGENT_TIERING"
+            }),
         );
         self.execute(reqwest::Method::PUT, key, Some(body), headers)
             .await?;
@@ -388,6 +434,13 @@ impl AttachmentStorage for S3Storage {
     fn object_url(&self, key: &str) -> String {
         if let Some(domain) = &self.cdn_domain {
             format!("https://{}/{key}", domain.trim_end_matches('/'))
+        } else if !self.custom_endpoint && self.bucket.contains('.') {
+            let Ok(mut url) = Url::parse(&format!("https://s3.{}.amazonaws.com", self.region))
+            else {
+                return String::new();
+            };
+            url.set_path(&format!("/{}/{key}", self.bucket));
+            url.to_string()
         } else {
             self.request_url(key)
                 .map(|u| u.to_string())
@@ -413,6 +466,27 @@ fn env(name: &str) -> Option<String> {
         .ok()
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
+}
+fn s3_use_path_style(raw: Option<&str>, endpoint_configured: bool) -> bool {
+    let default = endpoint_configured;
+    let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
+        return default;
+    };
+    match raw.to_ascii_lowercase().as_str() {
+        "1" | "t" | "true" | "y" | "yes" | "on" => true,
+        "0" | "f" | "false" | "n" | "no" | "off" => false,
+        _ => {
+            tracing::warn!(value = raw, default, "invalid S3_USE_PATH_STYLE value");
+            default
+        }
+    }
+}
+fn canonical_header_value(value: &HeaderValue) -> anyhow::Result<String> {
+    Ok(value
+        .to_str()?
+        .split_ascii_whitespace()
+        .collect::<Vec<_>>()
+        .join(" "))
 }
 fn hmac_bytes(key: &[u8], body: &[u8]) -> anyhow::Result<Vec<u8>> {
     let mut mac =
@@ -536,6 +610,7 @@ mod tests {
             bucket: "bucket".into(),
             region: "us-west-2".into(),
             endpoint: Url::parse("https://s3.us-west-2.amazonaws.com").unwrap(),
+            custom_endpoint: false,
             path_style: false,
             access_key: "key".into(),
             secret_key: "secret".into(),
@@ -550,6 +625,91 @@ mod tests {
             .unwrap()
             .as_str()
             .contains("%25"));
+    }
+
+    fn test_s3(endpoint: &str, custom_endpoint: bool, path_style: bool) -> S3Storage {
+        S3Storage {
+            client: reqwest::Client::new(),
+            bucket: "bucket".into(),
+            region: "us-west-2".into(),
+            endpoint: Url::parse(endpoint).unwrap(),
+            custom_endpoint,
+            path_style,
+            access_key: "key".into(),
+            secret_key: "secret".into(),
+            session_token: None,
+            cdn_domain: None,
+        }
+    }
+
+    #[test]
+    fn s3_path_style_boolean_matches_go() {
+        for value in ["1", "t", "true", "y", "yes", "on", " TRUE "] {
+            assert!(s3_use_path_style(Some(value), false), "{value}");
+        }
+        for value in ["0", "f", "false", "n", "no", "off", " FALSE "] {
+            assert!(!s3_use_path_style(Some(value), true), "{value}");
+        }
+        assert!(!s3_use_path_style(None, false));
+        assert!(s3_use_path_style(None, true));
+        assert!(s3_use_path_style(Some("invalid"), true));
+        assert!(!s3_use_path_style(Some("invalid"), false));
+    }
+
+    #[test]
+    fn custom_endpoint_keeps_base_path_for_both_addressing_styles() {
+        let path = test_s3("https://objects.example.test/base", true, true)
+            .request_url("workspaces/a file.txt")
+            .unwrap();
+        assert_eq!(
+            path.as_str(),
+            "https://objects.example.test/base/bucket/workspaces/a%20file.txt"
+        );
+
+        let virtual_host = test_s3("https://objects.example.test/base", true, false)
+            .request_url("workspaces/a file.txt")
+            .unwrap();
+        assert_eq!(
+            virtual_host.as_str(),
+            "https://bucket.objects.example.test/base/workspaces/a%20file.txt"
+        );
+    }
+
+    #[test]
+    fn sigv4_signs_amz_extension_headers() {
+        let store = test_s3("https://s3.us-west-2.amazonaws.com", false, true);
+        let url = store.request_url("object").unwrap();
+        let mut extra = HeaderMap::new();
+        extra.insert(
+            "x-amz-storage-class",
+            HeaderValue::from_static("INTELLIGENT_TIERING"),
+        );
+        let headers = store
+            .signed_headers(
+                "PUT",
+                &url,
+                &hex::encode(Sha256::digest(b"body")),
+                chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+                &extra,
+            )
+            .unwrap();
+        let authorization = headers
+            .get(reqwest::header::AUTHORIZATION)
+            .unwrap()
+            .to_str()
+            .unwrap();
+        assert!(authorization
+            .contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-storage-class"));
+    }
+
+    #[test]
+    fn dotted_aws_bucket_uses_tls_safe_public_url() {
+        let mut store = test_s3("https://s3.us-west-2.amazonaws.com", false, false);
+        store.bucket = "assets.example.com".into();
+        assert_eq!(
+            store.object_url("workspaces/a file.txt"),
+            "https://s3.us-west-2.amazonaws.com/assets.example.com/workspaces/a%20file.txt"
+        );
     }
 
     #[test]
