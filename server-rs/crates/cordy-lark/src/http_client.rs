@@ -31,7 +31,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::client::{
-    AddReactionParams, ApiClient, ApiClientNotConfigured, BindingPromptParams, BotInfo,
+    AddReactionParams, ApiClient, BindingPromptParams, BotInfo,
     DeleteReactionParams, DownloadResourceParams, DownloadedResource, DownloadedResourceStream,
     InstallationCredentials, LarkMessage, LarkMessageMention, ListMessagesParams, PatchCardParams,
     ReplyTarget, SendCardParams, SendMarkdownCardParams, SendTextParams,
