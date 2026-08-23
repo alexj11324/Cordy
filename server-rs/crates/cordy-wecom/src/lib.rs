@@ -64,6 +64,7 @@ pub mod media_stream;
 pub mod media_upload;
 pub mod metrics;
 pub mod outbound_media;
+pub mod outbound_relay;
 pub mod replier;
 pub mod resolvers;
 pub mod senders_registry;

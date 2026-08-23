@@ -14,6 +14,7 @@ use cordy_channel_engine::resolvers::{
     OutboundReplier as ReplierSeam, Outcome, ResolvedInstallation, Result as EngineResult,
 };
 
+use crate::outbound_relay::OutboundRelay;
 use crate::senders_registry::SendersRegistry;
 
 const AGENT_OFFLINE_TEXT: &str = "⚠️ 智能体当前不在线，你的消息已收到，等它上线后会处理。";
@@ -106,6 +107,7 @@ impl BindingMinter for DbBindingMinter {
 pub struct OutboundReplierConfig {
     pub binding: Option<Arc<dyn BindingMinter>>,
     pub senders: Arc<SendersRegistry>,
+    pub relay: Option<Arc<OutboundRelay>>,
     pub app_url: String,
     pub binding_path: String,
 }
@@ -113,6 +115,7 @@ pub struct OutboundReplierConfig {
 pub struct OutboundReplier {
     binding: Option<Arc<dyn BindingMinter>>,
     senders: Arc<SendersRegistry>,
+    relay: Option<Arc<OutboundRelay>>,
     app_url: String,
     binding_path: String,
 }
@@ -130,6 +133,7 @@ impl OutboundReplier {
         Self {
             binding: cfg.binding,
             senders: cfg.senders,
+            relay: cfg.relay,
             app_url: cfg.app_url.trim_end_matches('/').to_string(),
             binding_path,
         }
@@ -212,11 +216,7 @@ impl OutboundReplier {
         user_id: &str,
         text: &str,
     ) -> anyhow::Result<()> {
-        let sender = self
-            .senders
-            .get(inst.id)
-            .ok_or_else(|| anyhow::anyhow!("wecom: connection not ready"))?;
-        sender.send_text_ctx(ctx, user_id, 1, text).await
+        self.post_target(ctx, inst.id, user_id, 1, text).await
     }
 
     async fn post(
@@ -229,17 +229,33 @@ impl OutboundReplier {
         if msg.source.chat_id.is_empty() {
             anyhow::bail!("wecom: missing chat_id");
         }
-        let sender = self
-            .senders
-            .get(inst.id)
+        self.post_target(
+            ctx,
+            inst.id,
+            &msg.source.chat_id,
+            crate::ws_frame::aibot_chat_type_from_channel(&msg.source.chat_type),
+            text,
+        )
+        .await
+    }
+
+    async fn post_target(
+        &self,
+        ctx: &CancellationToken,
+        installation_id: Uuid,
+        chat_id: &str,
+        chat_type: i64,
+        text: &str,
+    ) -> anyhow::Result<()> {
+        if let Some(sender) = self.senders.get(installation_id) {
+            return sender.send_text_ctx(ctx, chat_id, chat_type, text).await;
+        }
+        let relay = self
+            .relay
+            .as_ref()
             .ok_or_else(|| anyhow::anyhow!("wecom: connection not ready"))?;
-        sender
-            .send_text_ctx(
-                ctx,
-                &msg.source.chat_id,
-                crate::ws_frame::aibot_chat_type_from_channel(&msg.source.chat_type),
-                text,
-            )
+        relay
+            .send_text(ctx, installation_id, chat_id, chat_type, text)
             .await
     }
 }

@@ -24,7 +24,12 @@ use crate::ws_sender::WsSender;
 /// A goroutine-safe installation_id → wsSender map.
 #[derive(Default)]
 pub struct SendersRegistry {
-    by_key: RwLock<HashMap<String, Arc<WsSender>>>,
+    by_key: RwLock<HashMap<String, SenderEntry>>,
+}
+
+struct SenderEntry {
+    sender: Arc<WsSender>,
+    generation: String,
 }
 
 impl SendersRegistry {
@@ -39,7 +44,16 @@ impl SendersRegistry {
         self.by_key
             .write()
             .unwrap_or_else(|e| e.into_inner())
-            .insert(id.to_string(), sender);
+            .insert(
+                id.to_string(),
+                SenderEntry {
+                    sender,
+                    // UUIDv7 is fixed-width and time ordered. The Redis owner
+                    // publisher uses it to keep a draining predecessor from
+                    // overwriting a successor during lease rollover.
+                    generation: Uuid::now_v7().to_string(),
+                },
+            );
     }
 
     /// Removes this installation's entry, but only if `sender` is still the
@@ -54,7 +68,9 @@ impl SendersRegistry {
     pub fn clear(&self, id: Uuid, sender: &Arc<WsSender>) {
         let mut by_key = self.by_key.write().unwrap_or_else(|e| e.into_inner());
         let key = id.to_string();
-        let same = by_key.get(&key).is_some_and(|cur| Arc::ptr_eq(cur, sender));
+        let same = by_key
+            .get(&key)
+            .is_some_and(|cur| Arc::ptr_eq(&cur.sender, sender));
         if !same {
             return;
         }
@@ -69,7 +85,19 @@ impl SendersRegistry {
             .read()
             .unwrap_or_else(|e| e.into_inner())
             .get(&id.to_string())
-            .cloned()
+            .map(|entry| entry.sender.clone())
+    }
+
+    /// Snapshot of locally connected installations and their connection
+    /// generations. Used by the Redis outbound relay's ownership heartbeat;
+    /// sender handles never leave this process.
+    pub fn ownership_snapshot(&self) -> Vec<(Uuid, String)> {
+        self.by_key
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .filter_map(|(id, entry)| id.parse().ok().map(|id| (id, entry.generation.clone())))
+            .collect()
     }
 }
 

@@ -24,6 +24,7 @@ pub struct ChannelRuntime {
     supervisor: Option<tokio::task::JoinHandle<()>>,
     media_reconciler: Option<tokio::task::JoinHandle<()>>,
     maintenance: Vec<tokio::task::JoinHandle<()>>,
+    wecom_relay: Option<Arc<cordy_wecom::outbound_relay::OutboundRelay>>,
     router: Arc<ChannelRouter>,
 }
 
@@ -54,8 +55,10 @@ impl ChannelRuntime {
         configure_slack(state, cfg, &services, &router, storage.as_ref(), &registry);
         configure_dingtalk(state, cfg, &router, storage.as_ref(), &registry);
         configure_telegram(state, cfg, &router, &registry, &cancel);
-        configure_wecom(state, cfg, &router, storage.as_ref(), &registry);
         let mut maintenance = Vec::new();
+        let (wecom_relay, wecom_tasks) =
+            configure_wecom(state, cfg, &router, storage.as_ref(), &registry, &cancel)?;
+        maintenance.extend(wecom_tasks);
         if let Some(handle) =
             configure_lark(state, cfg, &router, storage.as_ref(), &registry, &cancel)?
         {
@@ -123,6 +126,7 @@ impl ChannelRuntime {
             supervisor,
             media_reconciler,
             maintenance,
+            wecom_relay,
             router,
         }))
     }
@@ -137,6 +141,22 @@ impl ChannelRuntime {
         }
         for handle in self.maintenance.drain(..) {
             let _ = handle.await;
+        }
+        if let Some(relay) = self.wecom_relay.take() {
+            let metrics = relay.metrics();
+            tracing::info!(
+                published = metrics.published,
+                publish_errors = metrics.publish_errors,
+                received = metrics.received,
+                completed = metrics.completed,
+                replayed = metrics.replayed,
+                owner_misses = metrics.owner_misses,
+                rollovers = metrics.rollovers,
+                timeouts = metrics.timeouts,
+                ambiguous = metrics.ambiguous,
+                transport_errors = metrics.transport_errors,
+                "wecom outbound relay stopped"
+            );
         }
         let drain = CancellationToken::new();
         let deadline = drain.clone();
@@ -372,19 +392,49 @@ fn configure_wecom(
     router: &Arc<ChannelRouter>,
     storage: Option<&Arc<ChannelStorage>>,
     registry: &Arc<cordy_channel::Registry>,
-) {
+    cancel: &CancellationToken,
+) -> anyhow::Result<(
+    Option<Arc<cordy_wecom::outbound_relay::OutboundRelay>>,
+    Vec<tokio::task::JoinHandle<()>>,
+)> {
     let secret_box = match channel_secret_box("CORDY_WECOM_SECRET_KEY") {
         Ok(Some(secret_box)) => secret_box,
         Ok(None) => {
             tracing::info!("wecom channel runtime disabled: CORDY_WECOM_SECRET_KEY not set");
-            return;
+            return Ok((None, Vec::new()));
         }
         Err(error) => {
             tracing::error!(%error, "wecom channel runtime disabled: invalid secret key");
-            return;
+            return Ok((None, Vec::new()));
         }
     };
     let senders = Arc::new(cordy_wecom::senders_registry::SendersRegistry::new());
+    let relay_url = std::env::var("WECOM_OUTBOUND_RELAY_REDIS_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            std::env::var("CHANNEL_WS_LEASE_REDIS_URL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .or_else(|| {
+            cfg.redis
+                .url
+                .clone()
+                .filter(|value| !value.trim().is_empty())
+        });
+    let relay = relay_url
+        .as_deref()
+        .map(|url| {
+            cordy_wecom::outbound_relay::OutboundRelay::new(
+                url,
+                &std::env::var("WECOM_OUTBOUND_RELAY_NAMESPACE").unwrap_or_default(),
+                senders.clone(),
+            )
+        })
+        .transpose()
+        .context("build WeCom outbound relay")?
+        .map(Arc::new);
     let binding = Arc::new(cordy_wecom::replier::DbBindingMinter::new(
         state.pool.clone(),
     ));
@@ -392,6 +442,7 @@ fn configure_wecom(
         cordy_wecom::replier::OutboundReplierConfig {
             binding: Some(binding),
             senders: senders.clone(),
+            relay: relay.clone(),
             app_url: app_url(cfg),
             binding_path: String::new(),
         },
@@ -428,7 +479,18 @@ fn configure_wecom(
     if let Some(storage) = storage {
         outbound = outbound.with_attachments(storage.clone());
     }
-    Arc::new(outbound).register(&state.bus);
+    if let Some(relay) = &relay {
+        outbound = outbound.with_relay(relay.clone());
+    }
+    let outbound = Arc::new(outbound);
+    outbound.register(&state.bus);
+    let relay_tasks = relay
+        .as_ref()
+        .map(|relay| {
+            let handler: Arc<dyn cordy_wecom::outbound_relay::RelayEventHandler> = outbound.clone();
+            relay.start(handler, cancel.clone())
+        })
+        .unwrap_or_default();
     cordy_wecom::wecom_channel::register_wecom(
         registry,
         cordy_wecom::wecom_channel::ChannelDeps {
@@ -441,16 +503,15 @@ fn configure_wecom(
             ws_url: String::new(),
         },
     );
-    if cfg
-        .redis
-        .url
-        .as_deref()
-        .is_some_and(|url| !url.trim().is_empty())
-    {
-        tracing::warn!(
-            "wecom outbound uses the lease-holder's in-process WebSocket; run a single server replica until cross-replica outbound routing is configured"
+    if let Some(relay) = &relay {
+        tracing::info!(
+            node_id = relay.node_id(),
+            "wecom cross-replica outbound relay enabled"
         );
+    } else {
+        tracing::info!("wecom outbound relay disabled: Redis URL not configured; using direct local connection path");
     }
+    Ok((relay, relay_tasks))
 }
 
 fn configure_lark(
