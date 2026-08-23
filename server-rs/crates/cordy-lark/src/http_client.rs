@@ -36,7 +36,7 @@ use crate::client::{
     InstallationCredentials, LarkMessage, LarkMessageMention, ListMessagesParams, PatchCardParams,
     ReplyTarget, SendCardParams, SendMarkdownCardParams, SendTextParams,
 };
-use crate::types::{ChatId, Region};
+use crate::types::{ChatId, OpenId};
 
 /// The default cap on one message-resource download. Exported so the
 /// channel-media settle invariant test can assert the reconciler's settle
@@ -58,7 +58,7 @@ const TOKEN_SAFETY_MARGIN: Duration = Duration::from_secs(60);
 /// The per-call HTTP timeout. Lark's API is normally well under 1s; we leave
 /// headroom for cross-region latency from a self-hosted Cordy deployment to
 /// feishu.cn.
-const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Feishu caps message resources at 100 MiB. Keep the local transport guard
 /// aligned with that contract; detached media processing keeps large
@@ -103,7 +103,7 @@ pub struct ApiError {
 }
 
 impl ApiError {
-    fn new(op: &str, code: i64, msg: impl Into<String>) -> Self {
+    pub(crate) fn new(op: &str, code: i64, msg: impl Into<String>) -> Self {
         Self {
             op: op.to_string(),
             code,
@@ -149,7 +149,7 @@ pub(crate) fn truncate(s: &str, n: usize) -> String {
 }
 
 /// Configures the production Lark HTTP ApiClient.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct HttpClientConfig {
     /// Optional deployment-wide override for the Lark open-platform root,
     /// e.g. "https://open.feishu.cn" or "https://open.larksuite.com". When
@@ -176,18 +176,6 @@ pub struct HttpClientConfig {
 
     /// Overridable for deterministic token-expiry tests.
     pub now: Option<fn() -> DateTime<Utc>>,
-}
-
-impl Default for HttpClientConfig {
-    fn default() -> Self {
-        Self {
-            base_url: String::new(),
-            http_client: None,
-            resource_http_client: None,
-            resource_download_timeout: None,
-            now: None,
-        }
-    }
 }
 
 impl HttpClientConfig {
@@ -1229,7 +1217,6 @@ impl HttpApiClient {
         p: DownloadResourceParams,
     ) -> anyhow::Result<DownloadedResourceStream> {
         use futures_util::StreamExt;
-        use tokio::io::AsyncReadExt as _;
         use tokio_util::io::StreamReader;
 
         if p.message_id.is_empty() {
@@ -1326,7 +1313,7 @@ impl HttpApiClient {
                 body: Box::new(std::io::Cursor::new(raw_body)),
                 content_type,
                 filename: filename_from_content_disposition(&disposition),
-                size_bytes,
+                size_bytes: size,
             });
         }
 
@@ -1336,8 +1323,8 @@ impl HttpApiClient {
             content_type
         };
         let mut read = 0usize;
-        let byte_stream = resp.bytes_stream().map(move |chunk| {
-            let chunk = chunk.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        let byte_stream = resp.bytes_stream().map(move |result| {
+            let chunk = result.map_err(std::io::Error::other)?;
             read = read.saturating_add(chunk.len());
             if read > MAX_MESSAGE_RESOURCE_BYTES {
                 return Err(std::io::Error::new(
@@ -1366,7 +1353,7 @@ async fn read_bounded(resp: reqwest::Response, cap: usize) -> anyhow::Result<Vec
 
     let byte_stream = resp
         .bytes_stream()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+        .map(|r| r.map_err(std::io::Error::other));
     let mut reader = StreamReader::new(byte_stream).take(cap as u64 + 1);
     let mut buf = Vec::new();
     tokio::io::AsyncReadExt::read_to_end(&mut reader, &mut buf).await?;
@@ -1551,6 +1538,7 @@ pub(crate) fn binding_prompt_template(bind_url: &str) -> anyhow::Result<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::Region;
 
     #[test]
     fn truncate_respects_char_boundaries() {
