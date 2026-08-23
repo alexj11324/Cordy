@@ -279,6 +279,14 @@ impl HandlerState {
         self
     }
 
+    /// Applies the merged TOML+environment realtime metrics credential. The
+    /// constructor's environment fallback remains available to lightweight
+    /// tests, while production uses the already-loaded config snapshot.
+    pub fn with_realtime_metrics_token(mut self, raw: Option<&str>) -> Self {
+        self.realtime_metrics_token = raw.unwrap_or_default().trim().to_string();
+        self
+    }
+
     /// Builds the pending-request stores from a Redis client (Go
     /// NewRedis{Update,ModelList,LocalSkill*}Store wiring). Callers without
     /// Redis keep `None` fields — the disabled path degrades exactly like Go's

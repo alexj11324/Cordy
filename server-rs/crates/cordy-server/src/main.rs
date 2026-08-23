@@ -50,7 +50,8 @@ async fn main() -> anyhow::Result<()> {
         cordy_auth::pat_cache::PatCache::disabled(),
         Some(Arc::new(cordy_realtime::hub::Hub::new())),
     )
-    .with_attachment_storage(storage, download);
+    .with_attachment_storage(storage, download)
+    .with_realtime_metrics_token(cfg.redis.realtime_metrics_token.as_deref());
     let app = cordy_handler::build_router_from_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
