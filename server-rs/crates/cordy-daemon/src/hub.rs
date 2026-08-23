@@ -1205,6 +1205,12 @@ impl DaemonHub {
     }
 }
 
+impl cordy_realtime::DaemonRuntimeDeliverer for DaemonHub {
+    fn deliver_daemon_runtime(&self, scope_id: &str, frame: &[u8], event_id: &str) {
+        DaemonHub::deliver_daemon_runtime(self, scope_id, frame, event_id);
+    }
+}
+
 // ---- frame builders (shared with notifier.rs) ------------------------------
 
 fn marshal_message(r#type: &str, payload: Value) -> Option<Vec<u8>> {

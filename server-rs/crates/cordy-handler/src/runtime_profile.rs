@@ -147,10 +147,11 @@ fn profile_response(profile: &RuntimeProfile) -> Value {
     crate::profile_json::profile_to_map(profile)
 }
 
-fn notify_profile_changed(state: &HandlerState, workspace_id: Uuid, profile_id: Uuid) {
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_runtime_profiles_changed(&workspace_id.to_string(), &profile_id.to_string());
-    }
+async fn notify_profile_changed(state: &HandlerState, workspace_id: Uuid, profile_id: Uuid) {
+    state
+        .daemon_notifier
+        .notify_runtime_profiles_changed(&workspace_id.to_string(), &profile_id.to_string())
+        .await;
 }
 
 fn publish_daemon_register(
@@ -277,7 +278,7 @@ async fn create(
     .await
     {
         Ok(Some(profile)) => {
-            notify_profile_changed(&state, workspace_id, profile.id);
+            notify_profile_changed(&state, workspace_id, profile.id).await;
             publish_daemon_register(
                 &state,
                 workspace_id,
@@ -381,7 +382,7 @@ RETURNING command_name, created_at, created_by, description, display_name,
 
     match updated {
         Ok(Some(profile)) => {
-            notify_profile_changed(&state, workspace_id, profile.id);
+            notify_profile_changed(&state, workspace_id, profile.id).await;
             publish_daemon_register(
                 &state,
                 workspace_id,
@@ -469,6 +470,48 @@ async fn teardown_runtime(
     })
 }
 
+fn agent_broadcast_response(agent: &Agent) -> Value {
+    let mut response = serde_json::to_value(agent).unwrap_or_else(|_| json!({}));
+    let Some(object) = response.as_object_mut() else {
+        return json!({});
+    };
+
+    let env_count = agent.custom_env.as_object().map_or(0, serde_json::Map::len);
+    object.remove("custom_env");
+    object.insert("has_custom_env".into(), json!(env_count > 0));
+    object.insert("custom_env_key_count".into(), json!(env_count));
+
+    let has_mcp_config = agent
+        .mcp_config
+        .as_ref()
+        .and_then(Value::as_object)
+        .is_some_and(|config| !config.is_empty());
+    object.insert("mcp_config".into(), json!({}));
+    object.insert("mcp_config_redacted".into(), json!(has_mcp_config));
+
+    let has_composio = agent
+        .composio_toolkit_allowlist
+        .as_ref()
+        .is_some_and(|allowlist| !allowlist.is_empty());
+    object.insert("composio_toolkit_allowlist".into(), Value::Null);
+    object.insert(
+        "composio_toolkit_allowlist_redacted".into(),
+        json!(has_composio),
+    );
+
+    if let Some(gateway) = object
+        .get_mut("runtime_config")
+        .and_then(Value::as_object_mut)
+        .and_then(|config| config.get_mut("gateway"))
+        .and_then(Value::as_object_mut)
+    {
+        if gateway.contains_key("token") {
+            gateway.insert("token".into(), json!("***"));
+        }
+    }
+    response
+}
+
 fn publish_teardown(state: &HandlerState, workspace_id: Uuid, user_id: Uuid, teardown: &Teardown) {
     for agent in &teardown.unbound_agents {
         state.bus.publish(&cordy_events::Event {
@@ -476,7 +519,7 @@ fn publish_teardown(state: &HandlerState, workspace_id: Uuid, user_id: Uuid, tea
             workspace_id: workspace_id.to_string(),
             actor_type: "member".into(),
             actor_id: user_id.to_string(),
-            payload: json!({ "agent": agent }),
+            payload: json!({ "agent": agent_broadcast_response(agent) }),
             ..Default::default()
         });
     }
@@ -638,7 +681,7 @@ async fn delete_profile(
             .await;
         publish_teardown(&state, workspace_id, context.member.user_id, teardown);
     }
-    notify_profile_changed(&state, workspace_id, profile_id);
+    notify_profile_changed(&state, workspace_id, profile_id).await;
     publish_daemon_register(
         &state,
         workspace_id,

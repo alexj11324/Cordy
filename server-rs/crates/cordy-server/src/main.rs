@@ -27,6 +27,25 @@ impl VcsWebhookConfig {
     }
 }
 
+fn configured_url(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+fn realtime_relay_url(redis: &cordy_config::RedisConfig) -> Option<&str> {
+    configured_url(redis.realtime_relay_url.as_deref())
+        .or_else(|| configured_url(redis.url.as_deref()))
+}
+
+fn daemon_fanout_enabled(raw: Option<&str>) -> bool {
+    !matches!(
+        raw.map(str::trim)
+            .unwrap_or_default()
+            .to_ascii_lowercase()
+            .as_str(),
+        "legacy"
+    )
+}
+
 #[cfg(test)]
 fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<cordy_realtime::hub::Hub>>) -> Router {
     cordy_handler::build_router(db, hub)
@@ -46,15 +65,45 @@ async fn install_pending_stores(
             return state;
         }
     };
+    let wiring = state.clone().with_redis(client);
+    match tokio::time::timeout(PENDING_STORE_CONNECT_TIMEOUT, wiring).await {
+        Ok(Ok(wired)) => wired,
+        Ok(Err(_)) | Err(_) => {
+            tracing::warn!("Redis is unavailable; runtime pending requests are disabled");
+            state
+        }
+    }
+}
+
+async fn install_daemon_relay(
+    state: cordy_handler::HandlerState,
+    redis_url: Option<&str>,
+) -> cordy_handler::HandlerState {
+    let Some(redis_url) = configured_url(redis_url) else {
+        return state;
+    };
+    let client = match redis::Client::open(redis_url) {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::warn!(%error, "realtime relay Redis URL is invalid; daemon fanout is local-only");
+            return state;
+        }
+    };
     match tokio::time::timeout(
         PENDING_STORE_CONNECT_TIMEOUT,
-        state.clone().with_redis(client),
+        state.clone().with_daemon_relay(client),
     )
     .await
     {
         Ok(Ok(wired)) => wired,
-        Ok(Err(_)) | Err(_) => {
-            tracing::warn!("Redis is unavailable; runtime pending requests are disabled");
+        Ok(Err(error)) => {
+            tracing::warn!(%error, "realtime relay Redis is unavailable; daemon fanout is local-only");
+            state
+        }
+        Err(_) => {
+            tracing::warn!(
+                "realtime relay Redis connection timed out; daemon fanout is local-only"
+            );
             state
         }
     }
@@ -157,6 +206,11 @@ async fn build_production_router(
         tracing::warn!("public-route rate limiting disabled: REDIS_URL not configured");
     }
     let state = install_pending_stores(state, redis_url).await;
+    let state = if daemon_fanout_enabled(cfg.redis.realtime_relay_mode.as_deref()) {
+        install_daemon_relay(state, realtime_relay_url(&cfg.redis)).await
+    } else {
+        state
+    };
     start_plugin_event_dispatcher(&state);
     cordy_handler::build_router_from_state(state)
 }

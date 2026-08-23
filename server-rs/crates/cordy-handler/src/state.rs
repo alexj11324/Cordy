@@ -198,6 +198,16 @@ impl cordy_service::task_service::TaskWakeupNotifier for DaemonTaskWakeup {
     }
 }
 
+struct DaemonRelayGuard {
+    relay: Arc<cordy_realtime::sharded_stream_relay::ShardedStreamRelay<cordy_realtime::hub::Hub>>,
+}
+
+impl Drop for DaemonRelayGuard {
+    fn drop(&mut self) {
+        self.relay.stop();
+    }
+}
+
 fn fanout_workspace_event(hub: &Hub, event: &cordy_events::Event) {
     if event.workspace_id.is_empty() {
         return;
@@ -281,6 +291,10 @@ pub struct HandlerState {
     pub daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
     /// Shared attachment/object storage and its one download URL policy.
     /// #70 extends this seam; it must not create a second policy or signer.
+    /// Relay-aware daemon notifier. It always targets the local hub and, when
+    /// Redis is configured, publishes the same hint for other API replicas.
+    pub daemon_notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
+    _daemon_relay: Option<Arc<DaemonRelayGuard>>,
     pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
     pub attachment_download: AttachmentDownloadSettings,
     pub attachment_frame_ancestors: Vec<String>,
@@ -346,7 +360,12 @@ impl HandlerState {
             rate_limit_client: None,
             vcs_integration_enabled: false,
             vcs_secret_box: None,
-            daemon_hub: Some(daemon_hub),
+            daemon_hub: Some(daemon_hub.clone()),
+            daemon_notifier: Arc::new(cordy_daemon::notifier::RelayNotifier::new(
+                Some(daemon_hub.clone()),
+                None,
+            )),
+            _daemon_relay: None,
             attachment_storage: None,
             attachment_download: AttachmentDownloadSettings::default(),
             attachment_frame_ancestors: Vec::new(),
@@ -527,6 +546,35 @@ impl HandlerState {
         self.local_skill_import_store = Some(Arc::new(
             crate::pending_store::LocalSkillImportStore::new(conn.clone()),
         ));
+        Ok(self)
+    }
+
+    /// Starts the shared Redis relay and upgrades daemon notifications from
+    /// local-only delivery to local-plus-cross-replica delivery.
+    pub async fn with_daemon_relay(mut self, client: redis::Client) -> anyhow::Result<Self> {
+        let Some(realtime_hub) = self.hub.clone() else {
+            return Ok(self);
+        };
+        let Some(daemon_hub) = self.daemon_hub.clone() else {
+            return Ok(self);
+        };
+        let relay = Arc::new(
+            cordy_realtime::sharded_stream_relay::ShardedStreamRelay::new(
+                realtime_hub,
+                client,
+                None,
+                cordy_realtime::sharded_stream_relay::ShardedStreamRelayConfig::default(),
+            )
+            .await?,
+        );
+        relay.set_daemon_runtime_deliverer(daemon_hub.clone());
+        relay.start();
+        let publisher: Arc<dyn cordy_realtime::RelayPublisher> = relay.clone();
+        self.daemon_notifier = Arc::new(cordy_daemon::notifier::RelayNotifier::new(
+            Some(daemon_hub),
+            Some(publisher),
+        ));
+        self._daemon_relay = Some(Arc::new(DaemonRelayGuard { relay }));
         Ok(self)
     }
 
