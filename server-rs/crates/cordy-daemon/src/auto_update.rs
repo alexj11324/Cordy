@@ -146,13 +146,24 @@ async fn detect_self_version(ctx: &Ctx, path: &str) -> anyhow::Result<String> {
 
 /// `fetchLatestRelease` (update.go:255–274): latest cordy release from the
 /// GitHub API.
-async fn fetch_latest_release() -> anyhow::Result<Option<GitHubRelease>> {
-    let client = reqwest::Client::builder()
+const GITHUB_USER_AGENT: &str = concat!("cordy-daemon/", env!("CARGO_PKG_VERSION"));
+
+fn github_release_client() -> anyhow::Result<reqwest::Client> {
+    reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
-        .map_err(|err| anyhow!("{err}"))?;
-    let response = client
+        .map_err(|err| anyhow!("{err}"))
+}
+
+fn github_release_request(client: &reqwest::Client) -> reqwest::RequestBuilder {
+    client
         .get("https://api.github.com/repos/cordy-ai/cordy/releases/latest")
+        .header(reqwest::header::USER_AGENT, GITHUB_USER_AGENT)
+}
+
+async fn fetch_latest_release() -> anyhow::Result<Option<GitHubRelease>> {
+    let client = github_release_client()?;
+    let response = github_release_request(&client)
         .header("Accept", "application/vnd.github+json")
         .send()
         .await
@@ -664,6 +675,22 @@ mod tests {
                 })
             }),
         }
+    }
+
+    #[test]
+    fn github_release_request_sets_user_agent() {
+        let client = github_release_client().unwrap();
+        let request = github_release_request(&client)
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            request
+                .headers()
+                .get(reqwest::header::USER_AGENT)
+                .unwrap(),
+            GITHUB_USER_AGENT
+        );
     }
 
     async fn try_auto_update_with(host: &FakeHost, probes: &AutoUpdateProbes) {
