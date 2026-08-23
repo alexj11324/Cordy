@@ -359,6 +359,12 @@ pub(crate) fn ensure_codex_memory_config(config_path: &str) -> anyhow::Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, MutexGuard};
+
+    fn lock_memory_env() -> MutexGuard<'static, ()> {
+        static LOCK: Mutex<()> = Mutex::new(());
+        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     // Port of TestRenderCordyMemoryBlocks: table vs dotted-key forms for both
     // managed blocks.
@@ -441,6 +447,7 @@ mod tests {
     // both blocks adapt to existing tables and stay byte-stable across reruns.
     #[test]
     fn test_ensure_codex_memory_config_idempotent_and_layout_aware() {
+        let _guard = lock_memory_env();
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp
             .path()
@@ -497,6 +504,7 @@ mod tests {
     // feature on (config left untouched).
     #[test]
     fn test_codex_memory_escape_hatch() {
+        let _guard = lock_memory_env();
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp
             .path()
