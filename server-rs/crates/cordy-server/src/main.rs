@@ -70,7 +70,8 @@ async fn build_production_router(
     attachment_storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
     attachment_frame_ancestors: Vec<String>,
     vcs: VcsWebhookConfig,
-) -> Router {
+) -> anyhow::Result<Router> {
+    let feature_flags = Arc::new(cordy_service::feature_flags::ConfiguredFlags::from_env()?);
     let mut state = cordy_handler::HandlerState::new(
         db,
         cordy_auth::pat_cache::PatCache::disabled(),
@@ -88,6 +89,8 @@ async fn build_production_router(
     ))
     .with_rate_limit_trusted_proxies(cfg.urls.rate_limit_trusted_proxies.as_deref())
     .with_attachment_storage(attachment_storage, attachment_frame_ancestors)
+    .with_plugins_from_env()
+    .with_feature_flags(feature_flags)
     .with_public_config(cordy_handler::config::PublicConfigSettings {
         cdn_domain: cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
         cdn_signed: cfg.storage.cloudfront_key_pair_id.is_some()
@@ -116,7 +119,7 @@ async fn build_production_router(
         tracing::warn!("public-route rate limiting disabled: REDIS_URL not configured");
     }
     let state = install_pending_stores(state, redis_url).await;
-    cordy_handler::build_router_from_state(state)
+    Ok(cordy_handler::build_router_from_state(state))
 }
 
 fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
@@ -207,7 +210,7 @@ async fn main() -> anyhow::Result<()> {
             secret_box: vcs_secret_box,
         },
     )
-    .await;
+    .await?;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -274,7 +277,8 @@ mod tests {
             Vec::new(),
             VcsWebhookConfig::disabled(),
         )
-        .await;
+        .await
+        .unwrap();
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(1),
             router.oneshot(
@@ -317,7 +321,8 @@ mod tests {
             Vec::new(),
             VcsWebhookConfig::disabled(),
         )
-        .await;
+        .await
+        .unwrap();
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(1),
             router.oneshot(
@@ -397,6 +402,7 @@ mod tests {
             Vec::new(),
             VcsWebhookConfig::disabled(),
         )
-        .await;
+        .await
+        .unwrap();
     }
 }

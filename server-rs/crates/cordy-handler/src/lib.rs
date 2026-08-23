@@ -44,6 +44,7 @@ pub mod notification;
 pub mod pat;
 pub mod pending_store;
 pub mod pin;
+pub mod plugin_action;
 pub mod profile_json;
 pub mod project;
 pub mod property;
@@ -344,6 +345,13 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .route_layer(middleware::from_fn_with_state(auth_state, auth_middleware));
+    let plugin_action = plugin_action::router().route_layer(middleware::from_fn_with_state(
+        AuthState {
+            pool: state.pool.clone(),
+            pat_cache: state.pat_cache.clone(),
+        },
+        cordy_middleware::plugin_auth::plugin_auth,
+    ));
     let daemon = daemon::router().route_layer(middleware::from_fn_with_state(
         daemon_auth_state,
         daemon_auth_middleware,
@@ -376,6 +384,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(config::router())
         .merge(contact_sales)
         .merge(vcs_webhook::router())
+        .merge(plugin_action)
         .merge(authenticated)
         .merge(daemon)
         .route("/ws", get(ws::ws_handler))
@@ -486,6 +495,11 @@ mod tests {
             "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/local-skills/request-1",
             "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/local-skills/import/request-1",
             "/api/working-agents",
+            "/api/v1/plugin/context",
+            "/api/v1/plugin/issues/CORD-14",
+            "/api/v1/plugin/issues/CORD-14/comments",
+            "/api/v1/plugin/storage/workspace",
+            "/api/v1/plugin/storage/workspace/key",
         ] {
             let response = build_router(None, None)
                 .oneshot(Request::get(uri).body(Body::empty()).unwrap())
@@ -725,6 +739,21 @@ mod tests {
             Request::patch("/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"custom_name":"Prod Box"}"#))
+                .unwrap(),
+            Request::patch("/api/v1/plugin/issues/CORD-14")
+                .body(Body::from(r#"{"title":"Updated"}"#))
+                .unwrap(),
+            Request::post("/api/v1/plugin/issues/CORD-14/comments")
+                .body(Body::from(r#"{"content":"hello"}"#))
+                .unwrap(),
+            Request::post("/api/v1/plugin/hooks/summarize")
+                .body(Body::from(r#"{"trigger":"manual"}"#))
+                .unwrap(),
+            Request::put("/api/v1/plugin/storage/workspace/key")
+                .body(Body::from(r#"{"value":"saved"}"#))
+                .unwrap(),
+            Request::delete("/api/v1/plugin/storage/workspace/key")
+                .body(Body::empty())
                 .unwrap(),
         ] {
             let response = build_router(None, None).oneshot(request).await.unwrap();

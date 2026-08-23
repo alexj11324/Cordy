@@ -3892,7 +3892,7 @@ async fn labels_for_issues(
     Ok(labels)
 }
 
-async fn issue_prefix(state: &HandlerState, workspace_id: Uuid) -> String {
+pub(crate) async fn issue_prefix(state: &HandlerState, workspace_id: Uuid) -> String {
     workspace::get_workspace(&state.pool, workspace_id)
         .await
         .ok()
@@ -4166,7 +4166,7 @@ fn timestamp(value: chrono::DateTime<chrono::Utc>) -> String {
 }
 
 #[derive(Debug, Serialize)]
-struct IssueResponse {
+pub(crate) struct IssueResponse {
     id: String,
     workspace_id: String,
     number: i32,
@@ -4202,7 +4202,7 @@ struct IssueResponse {
 }
 
 impl IssueResponse {
-    fn from_issue(issue: &Issue, prefix: &str) -> Self {
+    pub(crate) fn from_issue(issue: &Issue, prefix: &str) -> Self {
         Self {
             id: issue.id.to_string(),
             workspace_id: issue.workspace_id.to_string(),

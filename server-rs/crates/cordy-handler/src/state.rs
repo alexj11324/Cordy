@@ -176,6 +176,33 @@ impl HandlerState {
         self
     }
 
+    pub fn with_feature_flags(
+        mut self,
+        flags: Arc<dyn cordy_service::feature_flags::FlagSource>,
+    ) -> Self {
+        self.feature_flags = Some(flags);
+        self
+    }
+
+    /// Replaces the lightweight test plugin service with production env
+    /// wiring, including the encryption/signing key and callback URL.
+    pub fn with_plugins_from_env(mut self) -> Self {
+        let mut plugins = PluginService::new_from_env(self.pool.clone());
+        if let Ok(key) = cordy_util::secretbox::load_key("CORDY_PLUGIN_SECRET_KEY") {
+            plugins.secrets = cordy_util::secretbox::SecretBox::new(&key).ok();
+        }
+        self.plugins = Arc::new(plugins);
+        self.callback_base_url = std::env::var("CORDY_PUBLIC_URL")
+            .unwrap_or_default()
+            .trim()
+            .trim_end_matches('/')
+            .to_string();
+        if !self.callback_base_url.is_empty() {
+            self.callback_base_url.push_str("/api/v1/plugin");
+        }
+        self
+    }
+
     pub fn with_observability(
         mut self,
         business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
