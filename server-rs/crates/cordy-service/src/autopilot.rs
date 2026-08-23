@@ -1268,6 +1268,20 @@ pub enum QuotaAdmissionError {
     Internal(String),
 }
 
+/// Keeps the concrete quota rejection available to anyhow callers. Wrapping
+/// the `QuotaAdmissionError::Exceeded` enum itself would make downstream
+/// `downcast_ref::<AutopilotQuotaExceededError>()` checks miss the inner
+/// rejection and incorrectly treat a terminal quota decision as retryable.
+fn webhook_admission_error(error: QuotaAdmissionError) -> anyhow::Error {
+    const CONTEXT: &str = "admit webhook delivery: create run";
+    match error {
+        QuotaAdmissionError::Exceeded(error) => anyhow::Error::new(error).context(CONTEXT),
+        error @ (QuotaAdmissionError::InvalidSource(_) | QuotaAdmissionError::Internal(_)) => {
+            anyhow::Error::new(error).context(CONTEXT)
+        }
+    }
+}
+
 fn quota_admission_internal(context: &str, e: impl std::fmt::Display) -> QuotaAdmissionError {
     QuotaAdmissionError::Internal(format!("{context}: {e}"))
 }
@@ -2657,7 +2671,7 @@ impl AutopilotService {
                 .await?
             {
                 Some(run) => Ok(run),
-                None => Err(anyhow::anyhow!("admit webhook delivery: create run: {err}")),
+                None => Err(webhook_admission_error(err)),
             },
         }
     }
@@ -2886,5 +2900,26 @@ impl AutopilotService {
             )
             .await?;
         Ok(outcome.run)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn webhook_admission_preserves_typed_quota_rejection() {
+        let quota = AutopilotQuotaExceededError {
+            used: 10,
+            reserved: 1,
+            limit: 10,
+            reset_at: Utc::now(),
+        };
+        let error = webhook_admission_error(QuotaAdmissionError::Exceeded(quota));
+
+        assert!(error
+            .downcast_ref::<AutopilotQuotaExceededError>()
+            .is_some());
+        assert!(error.to_string().contains("admit webhook delivery"));
     }
 }

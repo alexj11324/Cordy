@@ -285,6 +285,24 @@ fn dedupe(provider: &str, headers: &HeaderMap) -> (Option<String>, Option<&'stat
     (None, None)
 }
 
+/// Rejected signatures are terminal at the initial INSERT. Besides making a
+/// failed follow-up update non-dispatchable, this keeps them outside the
+/// partial dedupe index so a bad attempt cannot collide with or impersonate a
+/// valid provider delivery.
+fn rejected_signature(signature_status: &str) -> bool {
+    matches!(signature_status, "missing" | "invalid")
+}
+
+fn webhook_dedupe_conflict(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<sqlx::Error>()
+        .and_then(sqlx::Error::as_database_error)
+        .is_some_and(|database| {
+            database.code().as_deref() == Some("23505")
+                && database.constraint() == Some("idx_webhook_delivery_dedupe")
+        })
+}
+
 fn event_allowed(filters: Option<&Value>, envelope: &Value) -> bool {
     let Some(filters) = filters.and_then(Value::as_array) else {
         return true;
@@ -431,20 +449,15 @@ async fn webhook(
     } else {
         trigger.provider.trim()
     };
-    let (dedupe_key, dedupe_source) = dedupe(provider, &headers);
-    if let Some(key) = dedupe_key.as_deref() {
-        if let Ok(Some(existing)) = webhook_delivery::get_webhook_delivery_by_trigger_and_dedupe(
-            &state.pool,
-            trigger_id,
-            Some(key),
-        )
-        .await
-        {
-            state.notify_webhook_delivery();
-            return duplicate_response(&state, existing).await;
-        }
-    }
     let sig = signature_status(trigger.signing_secret.as_deref(), &headers, &raw);
+    let signature_rejected = rejected_signature(sig);
+    if signature_rejected {
+        state
+            .webhook_rate_limits
+            .charge_bad_credential(&client_ip)
+            .await;
+    }
+    let (dedupe_key, dedupe_source) = dedupe(provider, &headers);
     let event = envelope
         .get("event")
         .and_then(Value::as_str)
@@ -458,7 +471,11 @@ async fn webhook(
         provider,
         event,
         sig,
-        "queued",
+        if signature_rejected {
+            "rejected"
+        } else {
+            "queued"
+        },
         &selected_headers(&headers),
         dedupe_key.as_deref(),
         dedupe_source,
@@ -472,7 +489,7 @@ async fn webhook(
     .await
     {
         Ok(Some(value)) => value,
-        Err(error) if dedupe_key.is_some() => {
+        Err(error) if dedupe_key.is_some() && webhook_dedupe_conflict(&error) => {
             tracing::debug!(%error, "autopilot webhook concurrent dedupe collision");
             match webhook_delivery::get_webhook_delivery_by_trigger_and_dedupe(
                 &state.pool,
@@ -485,18 +502,26 @@ async fn webhook(
                     state.notify_webhook_delivery();
                     return duplicate_response(&state, existing).await;
                 }
-                _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error"),
+                Ok(None) => {
+                    tracing::error!(trigger_id = %trigger_id, "webhook dedupe conflict row disappeared");
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+                }
+                Err(error) => {
+                    tracing::error!(%error, trigger_id = %trigger_id, "webhook dedupe conflict lookup failed");
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+                }
             }
         }
-        Ok(None) | Err(_) => {
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
+        Ok(None) => {
+            tracing::error!("webhook delivery insert returned no row");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+        }
+        Err(error) => {
+            tracing::error!(%error, trigger_id = %trigger_id, "webhook delivery insert failed");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
         }
     };
-    if matches!(sig, "missing" | "invalid") {
-        state
-            .webhook_rate_limits
-            .charge_bad_credential(&client_ip)
-            .await;
+    if signature_rejected {
         let reason = if sig == "missing" {
             "missing_signature"
         } else {
@@ -550,12 +575,8 @@ async fn webhook(
         }
         return Json(response).into_response();
     }
-    let service = cordy_service::autopilot::AutopilotService::new(
-        state.pool.clone(),
-        state.bus.clone(),
-        state.tasks.clone(),
-    );
-    let run = match service
+    let run = match state
+        .autopilots
         .admit_autopilot_webhook_delivery(&rule, trigger_id, &envelope, delivery.id)
         .await
     {
@@ -645,6 +666,18 @@ mod tests {
         let value = normalize(br#"{"action":"opened","number":1}"#, &headers).unwrap();
         assert_eq!(value["event"], "github.pull_request.opened");
         assert!(normalize(b"true", &HeaderMap::new()).is_err());
+    }
+
+    #[test]
+    fn rejected_signatures_are_terminal_before_persistence() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-github-delivery", "delivery-1".parse().unwrap());
+
+        assert!(!rejected_signature("valid"));
+        assert!(!rejected_signature("not_required"));
+        assert!(rejected_signature("invalid"));
+        assert!(rejected_signature("missing"));
+        assert_eq!(dedupe("github", &headers).0.as_deref(), Some("delivery-1"));
     }
 
     #[tokio::test]
