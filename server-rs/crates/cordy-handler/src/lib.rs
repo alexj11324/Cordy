@@ -11,6 +11,7 @@
 #![allow(clippy::result_large_err)]
 
 pub mod agent_aggregation;
+pub mod agent_builder;
 pub mod claim_comments;
 pub mod claim_response;
 pub mod cli_token;
@@ -204,6 +205,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
                 issue::require_issue_workspace,
             )),
         )
+        .merge(
+            agent_builder::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
         .merge(cli_token::router())
         .merge(client_usage::router())
         .merge(feedback::router())
@@ -385,6 +392,7 @@ mod tests {
             "/api/agent-activity-30d",
             "/api/agent-run-counts",
             "/api/agent-task-snapshot",
+            "/api/agent-builder/sessions",
             "/api/properties",
             "/api/properties/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/projects",
@@ -518,6 +526,22 @@ mod tests {
                 .unwrap(),
             Request::post("/api/inbox/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/unarchive")
                 .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/agent-builder/sessions")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"runtime_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f11"}"#,
+                ))
+                .unwrap(),
+            Request::patch("/api/agent-builder/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runtime")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    r#"{"runtime_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12"}"#,
+                ))
+                .unwrap(),
+            Request::put("/api/agent-builder/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/draft")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"draft":{"name":"Migration"}}"#))
                 .unwrap(),
             Request::post("/api/issue-views")
                 .header("content-type", "application/json")
