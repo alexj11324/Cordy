@@ -41,13 +41,11 @@ use crate::wsrpc::{
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum ControlEvent {
     Connected { runtime_ids: Vec<String> },
-    Disconnected,
     TaskAvailable(TaskAvailablePayload),
     HeartbeatAck(DaemonHeartbeatAckPayload),
     RuntimeGone { runtime_id: String },
     RuntimeProfilesChanged(RuntimeProfilesChangedPayload),
     WorkspacesChanged,
-    PendingWork(PendingWorkPayload),
 }
 
 #[derive(Default)]
@@ -73,7 +71,7 @@ pub(crate) struct DaemonControl {
     daemon_id: String,
     heartbeat_interval: Duration,
     runtimes_tx: watch::Sender<Vec<String>>,
-    events: mpsc::Sender<ControlEvent>,
+    events: mpsc::UnboundedSender<ControlEvent>,
     ws_rpc: Arc<WsRpcClient>,
     claim: Mutex<ClaimState>,
     ws_heartbeat_acks: Mutex<HashMap<String, Instant>>,
@@ -86,7 +84,7 @@ impl DaemonControl {
         server_base_url: impl Into<String>,
         daemon_id: impl Into<String>,
         heartbeat_interval: Duration,
-        events: mpsc::Sender<ControlEvent>,
+        events: mpsc::UnboundedSender<ControlEvent>,
     ) -> Arc<Self> {
         let (runtimes_tx, _) = watch::channel(Vec::new());
         Arc::new(Self {
@@ -327,8 +325,6 @@ impl DaemonControl {
         }
         self.ws_rpc.attach(None);
         self.ws_heartbeat_acks.lock().unwrap().clear();
-        self.emit(ControlEvent::Disconnected);
-
         match end {
             ConnectionEnd::Cancelled if ctx.err().is_some() => Ok(()),
             other => Err(other),
@@ -396,7 +392,6 @@ impl DaemonControl {
             EVENT_DAEMON_PENDING_WORK => {
                 if let Ok(payload) = serde_json::from_value::<PendingWorkPayload>(message.payload) {
                     if !payload.runtime_id.is_empty() {
-                        self.emit(ControlEvent::PendingWork(payload.clone()));
                         if self.try_begin_pending_work(&payload.runtime_id) {
                             let control = Arc::clone(self);
                             let root_ctx = ctx.child();
@@ -611,8 +606,8 @@ impl DaemonControl {
     }
 
     fn emit(&self, event: ControlEvent) {
-        if let Err(err) = self.events.try_send(event) {
-            tracing::debug!(error = %err, "daemon control event dropped: consumer backlog");
+        if self.events.send(event).is_err() {
+            tracing::debug!("daemon control event consumer stopped");
         }
     }
 }
@@ -679,7 +674,7 @@ mod tests {
     use tokio_tungstenite::accept_hdr_async;
     use tokio_tungstenite::tungstenite::handshake::server::{Request, Response};
 
-    async fn next_event(rx: &mut mpsc::Receiver<ControlEvent>) -> ControlEvent {
+    async fn next_event(rx: &mut mpsc::UnboundedReceiver<ControlEvent>) -> ControlEvent {
         tokio::time::timeout(Duration::from_secs(2), rx.recv())
             .await
             .expect("event timeout")
@@ -739,7 +734,7 @@ mod tests {
 
         let client = Arc::new(Client::new(format!("http://{address}")));
         client.set_token("token");
-        let (events_tx, mut events_rx) = mpsc::channel(16);
+        let (events_tx, mut events_rx) = mpsc::unbounded_channel();
         let control = DaemonControl::new(
             client,
             format!("http://{address}"),
@@ -772,7 +767,7 @@ mod tests {
     #[test]
     fn heartbeat_freshness_is_cleared_on_disconnect_boundary() {
         let client = Arc::new(Client::new("http://127.0.0.1"));
-        let (events, _) = mpsc::channel(1);
+        let (events, _) = mpsc::unbounded_channel();
         let control = DaemonControl::new(
             client,
             "http://127.0.0.1",
@@ -793,7 +788,7 @@ mod tests {
     #[test]
     fn runtime_set_is_sorted_deduplicated_and_stable() {
         let client = Arc::new(Client::new("http://127.0.0.1"));
-        let (events, _) = mpsc::channel(1);
+        let (events, _) = mpsc::unbounded_channel();
         let control = DaemonControl::new(
             client,
             "http://127.0.0.1",
@@ -811,7 +806,7 @@ mod tests {
     #[test]
     fn pending_work_is_owned_coalesced_and_rate_limited() {
         let client = Arc::new(Client::new("http://127.0.0.1"));
-        let (events, _) = mpsc::channel(1);
+        let (events, _) = mpsc::unbounded_channel();
         let control = DaemonControl::new(
             client,
             "http://127.0.0.1",
