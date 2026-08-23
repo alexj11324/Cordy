@@ -406,13 +406,13 @@ RETURNING command_name, created_at, created_by, description, display_name,
 }
 
 #[derive(Default)]
-struct Teardown {
-    unbound_agents: Vec<Agent>,
-    cancelled_tasks: Vec<AgentTaskQueue>,
-    paused_autopilots: Vec<Autopilot>,
+pub(crate) struct Teardown {
+    pub(crate) unbound_agents: Vec<Agent>,
+    pub(crate) cancelled_tasks: Vec<AgentTaskQueue>,
+    pub(crate) paused_autopilots: Vec<Autopilot>,
 }
 
-async fn teardown_runtime(
+pub(crate) async fn teardown_runtime(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     runtime_id: Uuid,
 ) -> anyhow::Result<Teardown> {
@@ -469,7 +469,12 @@ async fn teardown_runtime(
     })
 }
 
-fn publish_teardown(state: &HandlerState, workspace_id: Uuid, user_id: Uuid, teardown: &Teardown) {
+pub(crate) fn publish_teardown(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    teardown: &Teardown,
+) {
     for agent in &teardown.unbound_agents {
         state.bus.publish(&cordy_events::Event {
             event_type: EVENT_AGENT_STATUS.to_string(),

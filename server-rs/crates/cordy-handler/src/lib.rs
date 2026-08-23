@@ -18,6 +18,8 @@ pub mod attachment;
 pub mod attachment_storage;
 pub mod auth;
 pub mod autopilot;
+pub mod autopilot_webhook;
+pub mod avatar;
 pub mod binding_redeem;
 pub mod chat_api;
 mod chat_title;
@@ -31,12 +33,14 @@ pub mod comment;
 pub mod comment_list;
 pub mod composio;
 pub mod config;
+pub mod connectors;
 pub mod contact_sales;
 pub mod daemon;
 pub mod daemon_ws;
 pub mod dashboard;
 pub mod error;
 pub mod feedback;
+pub mod github;
 pub mod health;
 pub mod inbox;
 pub mod invitation;
@@ -50,6 +54,7 @@ pub mod label;
 pub mod mcp_merge;
 pub mod me;
 pub mod notification;
+pub mod onboarding_shim;
 pub mod pat;
 pub mod pending_store;
 pub mod pin;
@@ -72,6 +77,7 @@ pub mod state;
 pub mod task;
 pub mod task_json;
 pub mod timefmt;
+pub mod vcs;
 pub mod vcs_webhook;
 pub mod webhook_delivery_worker;
 pub mod workspace;
@@ -282,6 +288,54 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
                 cordy_middleware::workspace::require_workspace,
             )),
         )
+        .merge(
+            vcs::member_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(state.pool.clone(), "id"),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            vcs::admin_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url_with_roles(
+                    state.pool.clone(),
+                    "id",
+                    vec!["owner".into(), "admin".into()],
+                ),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            github::member_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(state.pool.clone(), "id"),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            github::admin_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url_with_roles(
+                    state.pool.clone(),
+                    "id",
+                    vec!["owner".into(), "admin".into()],
+                ),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            connectors::member_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(state.pool.clone(), "id"),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            connectors::admin_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url_with_roles(
+                    state.pool.clone(),
+                    "id",
+                    vec!["owner".into(), "admin".into()],
+                ),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
         .merge(attachment::authenticated_router())
         .merge(
             agent_aggregation::router().route_layer(middleware::from_fn_with_state(
@@ -340,6 +394,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .merge(me::router())
+        .merge(onboarding_shim::router())
         .merge(
             dashboard::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
@@ -374,7 +429,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             ),
         )
         .merge(
-            cloud_billing::subscription_admin_router(cloud_runtime_proxy).route_layer(
+            cloud_billing::subscription_admin_router(cloud_runtime_proxy.clone()).route_layer(
                 middleware::from_fn_with_state(
                     WorkspaceGuardState::with_roles(
                         state.pool.clone(),
@@ -511,8 +566,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(session::public_router())
         .merge(workspace::public_router())
         .merge(attachment::public_router())
+        .merge(avatar::router())
+        .merge(autopilot_webhook::router())
+        .merge(github::public_router())
         .merge(config::router())
         .merge(contact_sales)
+        .merge(cloud_billing::stripe_webhook_router(cloud_runtime_proxy))
         .merge(vcs_webhook::router())
         .merge(composio::public_router().with_state::<HandlerState>(composio_state))
         .merge(plugin_action)

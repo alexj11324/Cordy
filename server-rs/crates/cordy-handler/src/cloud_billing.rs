@@ -44,6 +44,69 @@ pub fn billing_router(proxy: Arc<dyn CloudRuntimeProxy>) -> Router<HandlerState>
         .layer(Extension(proxy))
 }
 
+/// Public Stripe ingress. The fleet verifies Stripe's signature; this edge
+/// preserves the exact signed bytes and signature header and never attaches a
+/// Cordy user identity.
+pub fn stripe_webhook_router(proxy: Arc<dyn CloudRuntimeProxy>) -> Router<HandlerState> {
+    Router::new()
+        .route("/api/webhooks/stripe", post(stripe_webhook))
+        .layer(Extension(proxy))
+}
+
+async fn stripe_webhook(
+    Extension(cloud): Extension<Arc<dyn CloudRuntimeProxy>>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    if !cloud.enabled() {
+        return unavailable();
+    }
+    let Some(signature) = headers.get("stripe-signature").cloned() else {
+        return error_response(StatusCode::UNAUTHORIZED, "missing Stripe-Signature header");
+    };
+    let body = match read_raw_body(body).await {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    let mut forwarded = HeaderMap::new();
+    forwarded.insert("stripe-signature", signature);
+    if let Some(content_type) = headers.get(header::CONTENT_TYPE).cloned() {
+        forwarded.insert(header::CONTENT_TYPE, content_type);
+    }
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    match cloud
+        .execute(CloudRuntimeRequest {
+            method: Method::POST,
+            path: "/api/v1/webhooks/stripe".into(),
+            query: None,
+            body,
+            headers: forwarded,
+            user_id: String::new(),
+            request_id,
+        })
+        .await
+    {
+        Ok(response) => upstream_response(response),
+        Err(CloudRuntimeError::Disabled) => unavailable(),
+        Err(CloudRuntimeError::InvalidBaseUrl) => error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "cloud runtime is misconfigured",
+        ),
+        Err(CloudRuntimeError::Timeout) => error_response(
+            StatusCode::GATEWAY_TIMEOUT,
+            "cloud runtime request timed out",
+        ),
+        Err(error) => {
+            tracing::warn!(%error, "Stripe webhook proxy failed");
+            error_response(StatusCode::BAD_GATEWAY, "cloud runtime request failed")
+        }
+    }
+}
+
 /// Member-readable subscription routes. Mount behind `RequireWorkspaceMember`.
 pub fn subscription_member_router(proxy: Arc<dyn CloudRuntimeProxy>) -> Router<HandlerState> {
     Router::new()
@@ -461,6 +524,23 @@ fn idempotency_headers(headers: &HeaderMap) -> HeaderMap {
 }
 
 async fn read_json_body(body: Body) -> Result<Vec<u8>, Response> {
+    let output = read_raw_body(body).await?;
+    if output.iter().all(u8::is_ascii_whitespace) {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "request body is required",
+        ));
+    }
+    if serde_json::from_slice::<serde_json::Value>(&output).is_err() {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid request body",
+        ));
+    }
+    Ok(output)
+}
+
+async fn read_raw_body(body: Body) -> Result<Vec<u8>, Response> {
     let mut stream = body.into_data_stream();
     let mut output = Vec::new();
     while let Some(chunk) = stream.next().await {
@@ -473,18 +553,6 @@ async fn read_json_body(body: Body) -> Result<Vec<u8>, Response> {
             ));
         }
         output.extend_from_slice(&chunk);
-    }
-    if output.iter().all(u8::is_ascii_whitespace) {
-        return Err(error_response(
-            StatusCode::BAD_REQUEST,
-            "request body is required",
-        ));
-    }
-    if serde_json::from_slice::<serde_json::Value>(&output).is_err() {
-        return Err(error_response(
-            StatusCode::BAD_REQUEST,
-            "invalid request body",
-        ));
     }
     Ok(output)
 }
@@ -674,6 +742,50 @@ mod tests {
         assert_eq!(request.query.as_deref(), Some("page=2&page_size=50"));
         assert_eq!(request.user_id, "user-1");
         assert_eq!(request.request_id, "request-1");
+    }
+
+    #[tokio::test]
+    async fn stripe_webhook_preserves_signed_bytes_and_has_no_user() {
+        let cloud = Arc::new(FakeProxy::default());
+        let body = b" {\"id\":\"evt_1\"}\n";
+        let result = stripe_webhook_router(cloud.clone())
+            .with_state(test_state(false))
+            .oneshot(
+                Request::post("/api/webhooks/stripe")
+                    .header("stripe-signature", "t=1,v1=abc")
+                    .header("content-type", "application/json; charset=utf-8")
+                    .body(Body::from(body.as_slice()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.status(), StatusCode::OK);
+        let request = cloud.request.lock().await.take().unwrap();
+        assert_eq!(request.body, body);
+        assert!(request.user_id.is_empty());
+        assert_eq!(
+            request
+                .headers
+                .get("stripe-signature")
+                .and_then(|value| value.to_str().ok()),
+            Some("t=1,v1=abc")
+        );
+    }
+
+    #[tokio::test]
+    async fn stripe_webhook_rejects_missing_signature_before_proxy() {
+        let cloud = Arc::new(FakeProxy::default());
+        let result = stripe_webhook_router(cloud.clone())
+            .with_state(test_state(false))
+            .oneshot(
+                Request::post("/api/webhooks/stripe")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.status(), StatusCode::UNAUTHORIZED);
+        assert!(cloud.request.lock().await.is_none());
     }
 
     #[tokio::test]
