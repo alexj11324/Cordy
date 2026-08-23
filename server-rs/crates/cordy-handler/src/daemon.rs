@@ -191,6 +191,25 @@ pub(crate) fn daemon_id_of(ext: Option<DaemonContext>) -> String {
     ext.and_then(|d| d.daemon_id).unwrap_or_default()
 }
 
+pub(crate) fn daemon_context_from_headers(headers: &HeaderMap) -> Option<DaemonContext> {
+    let workspace_id = headers
+        .get(cordy_middleware::daemon_auth::DAEMON_WORKSPACE_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
+    let daemon_id = headers
+        .get(cordy_middleware::daemon_auth::DAEMON_ID_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
+    if workspace_id.is_none() && daemon_id.is_none() {
+        return None;
+    }
+    Some(DaemonContext {
+        workspace_id,
+        daemon_id,
+        auth_path: cordy_middleware::daemon_auth::DAEMON_AUTH_PATH_DAEMON_TOKEN,
+    })
+}
+
 pub(crate) struct Access<'a> {
     state: &'a HandlerState,
     headers: &'a HeaderMap,
@@ -225,6 +244,7 @@ async fn check_daemon_workspace_access(
     if workspace_id.is_empty() {
         return Err(error_response(StatusCode::NOT_FOUND, "not found"));
     }
+    let daemon_ctx = daemon_ctx.or_else(|| daemon_context_from_headers(access.headers));
     let daemon_ws = daemon_workspace_id(daemon_ctx.clone());
     if !daemon_ws.is_empty() {
         if daemon_ws != workspace_id {
@@ -341,7 +361,7 @@ async fn list_workspaces(
             }
         }
     } else {
-        let daemon_ws = daemon_workspace_id(None);
+        let daemon_ws = daemon_workspace_id(daemon_context_from_headers(&headers));
         if daemon_ws.is_empty() {
             return error_response(
                 StatusCode::UNAUTHORIZED,
@@ -427,7 +447,7 @@ async fn deregister(
             }
         };
         let ws_id = rt.workspace_id.to_string();
-        let daemon_ws = daemon_workspace_id(None);
+        let daemon_ws = daemon_workspace_id(daemon_context_from_headers(&headers));
         let ok = if !daemon_ws.is_empty() {
             daemon_ws == ws_id
         } else {
@@ -514,7 +534,7 @@ async fn heartbeat(
 
     let access = Access::new(&state, &headers);
     let ws_id = rt.workspace_id.to_string();
-    let daemon_ws = daemon_workspace_id(None);
+    let daemon_ws = daemon_workspace_id(daemon_context_from_headers(&headers));
     if !daemon_ws.is_empty() {
         if daemon_ws != ws_id {
             return error_response(StatusCode::FORBIDDEN, "workspace denied");
@@ -769,8 +789,8 @@ async fn register(
     };
 
     // Resolve owner: daemon tokens keep any existing owner on upsert (zero UUID).
-    let mut owner_id = Uuid::nil();
-    let daemon_ws = daemon_workspace_id(None);
+    let mut owner_id = None;
+    let daemon_ws = daemon_workspace_id(daemon_context_from_headers(&headers));
     if !daemon_ws.is_empty() {
         if daemon_ws != req.workspace_id {
             return error_response(StatusCode::NOT_FOUND, "workspace not found");
@@ -778,7 +798,7 @@ async fn register(
     } else {
         let user_id = request_user_id(&headers);
         match access_get_member(&state, &headers, &user_id, &req.workspace_id).await {
-            Some(m) => owner_id = m.user_id,
+            Some(m) => owner_id = Some(m.user_id),
             None => return error_response(StatusCode::NOT_FOUND, "workspace not found"),
         }
     }
@@ -816,10 +836,19 @@ async fn register(
         } else {
             "online"
         };
+        let capabilities: Vec<&str> = headers
+            .get("x-client-capabilities")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .collect();
         let metadata = json!({
             "version": rt_req.version,
             "cli_version": req.cli_version,
             "launched_by": req.launched_by,
+            "client_capabilities": capabilities,
         });
         let is_custom = !rt_req.profile_id.trim().is_empty();
 
@@ -886,7 +915,7 @@ async fn register(
             )
             .await;
             match up {
-                Ok(Some(row)) => {
+                Ok(Some(mut row)) => {
                     if let Err(e) = tx.commit().await {
                         tracing::error!(error = %e, "register: commit profile runtime failed");
                         return error_response(
@@ -894,6 +923,15 @@ async fn register(
                             &format!("failed to register runtime: {e}"),
                         );
                     }
+                    row.custom_name = inherit_machine_custom_name(
+                        &state,
+                        row.id,
+                        row.workspace_id,
+                        row.daemon_id.as_deref(),
+                        row.custom_name.as_deref(),
+                        row.inserted,
+                    )
+                    .await;
                     provider = profile.protocol_family;
                     upsert_row_to_json(&row)
                 }
@@ -927,9 +965,18 @@ async fn register(
             )
             .await
             {
-                Ok(Some(row)) => {
+                Ok(Some(mut row)) => {
                     merge_legacy_runtimes(&state, &row, ws_uuid, &provider, &req.legacy_daemon_ids)
                         .await;
+                    row.custom_name = inherit_machine_custom_name(
+                        &state,
+                        row.id,
+                        row.workspace_id,
+                        row.daemon_id.as_deref(),
+                        row.custom_name.as_deref(),
+                        row.inserted,
+                    )
+                    .await;
                     upsert_row_to_json(&row)
                 }
                 Ok(None) => {
@@ -987,6 +1034,14 @@ async fn register(
         } else {
             command_name
         };
+        let capabilities: Vec<&str> = headers
+            .get("x-client-capabilities")
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or("")
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .collect();
         let metadata = json!({
             "version": "",
             "cli_version": req.cli_version,
@@ -994,6 +1049,7 @@ async fn register(
             "runtime_profile_registration_error": true,
             "runtime_profile_failure_reason": reason,
             "command_name": resolved_command,
+            "client_capabilities": capabilities,
         });
         let up = runtime::upsert_agent_runtime_with_profile(
             &mut *tx,
@@ -1010,8 +1066,18 @@ async fn register(
         )
         .await;
         match up {
-            Ok(Some(_)) => {
-                let _ = tx.commit().await;
+            Ok(Some(row)) => {
+                if tx.commit().await.is_ok() {
+                    let _ = inherit_machine_custom_name(
+                        &state,
+                        row.id,
+                        row.workspace_id,
+                        row.daemon_id.as_deref(),
+                        row.custom_name.as_deref(),
+                        row.inserted,
+                    )
+                    .await;
+                }
             }
             _ => {
                 tracing::warn!(
@@ -1077,6 +1143,51 @@ fn upsert_row_to_json<T: serde::Serialize>(row: &T) -> Value {
         }
     }
     v
+}
+
+async fn inherit_machine_custom_name(
+    state: &HandlerState,
+    runtime_id: Option<Uuid>,
+    workspace_id: Option<Uuid>,
+    daemon_id: Option<&str>,
+    current_name: Option<&str>,
+    inserted: bool,
+) -> Option<String> {
+    if !inserted || current_name.is_some() {
+        return current_name.map(str::to_string);
+    }
+    let (Some(runtime_id), Some(workspace_id), Some(daemon_id)) = (
+        runtime_id,
+        workspace_id,
+        daemon_id.filter(|value| !value.is_empty()),
+    ) else {
+        return None;
+    };
+    let Ok(names) =
+        runtime::list_daemon_custom_names(&state.pool, workspace_id, Some(daemon_id), runtime_id)
+            .await
+    else {
+        return None;
+    };
+    let mut shared: Option<&str> = None;
+    for name in &names {
+        let Some(name) = name
+            .as_deref()
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+        else {
+            return None;
+        };
+        if shared.is_some_and(|existing| existing != name) {
+            return None;
+        }
+        shared = Some(name);
+    }
+    let shared = shared?.to_string();
+    match runtime::update_agent_runtime_custom_name(&state.pool, Some(&shared), runtime_id).await {
+        Ok(Some(_)) => Some(shared),
+        _ => None,
+    }
 }
 
 async fn merge_legacy_runtimes(
@@ -1350,8 +1461,9 @@ async fn claim_tasks_by_runtime(
     let mut by_id: HashMap<Uuid, &AgentRuntime> = HashMap::new();
     for rt in &runtimes {
         let ws_id = rt.workspace_id.to_string();
-        let ok = match daemon_workspace_id(None).is_empty() {
-            false => daemon_workspace_id(None) == ws_id,
+        let daemon_workspace = daemon_workspace_id(daemon_context_from_headers(&headers));
+        let ok = match daemon_workspace.is_empty() {
+            false => daemon_workspace == ws_id,
             true => {
                 let user_id = request_user_id(&headers);
                 !user_id.is_empty()
@@ -1911,16 +2023,23 @@ async fn resolve_task_skill_bundles(
         return Json(json!({ "bundles": [] })).into_response();
     }
     let (bundles, _) = state.tasks.load_agent_skill_bundles(task.agent_id).await;
+    let mut selected = Vec::with_capacity(req.skills.len());
     for r in &req.skills {
         if r.id.is_empty() || r.source.is_empty() || r.hash.is_empty() {
             return error_response(StatusCode::BAD_REQUEST, "invalid skill ref");
         }
-        let found = bundles.iter().any(|b| b.source == r.source && b.id == r.id);
-        if !found {
+        let Some(found) = bundles
+            .iter()
+            .find(|b| b.source == r.source && b.id == r.id)
+        else {
             return error_response(StatusCode::NOT_FOUND, "skill bundle not found");
+        };
+        if r.source == cordy_service::skill_bundle::SOURCE_PLUGIN && found.hash != r.hash {
+            return error_response(StatusCode::CONFLICT, "skill bundle changed");
         }
+        selected.push(found.clone());
     }
-    Json(json!({ "bundles": bundles })).into_response()
+    Json(json!({ "bundles": selected })).into_response()
 }
 
 // ---------------------------------------------------------------------------
@@ -2150,6 +2269,7 @@ async fn complete_task(
         .await
     {
         Ok(task) => {
+            state.tasks.notify_task_finished(&task);
             revoke_tokens_best_effort(&state, task.id).await;
             tracing::info!(task_id = %task_id, agent_id = %task.agent_id, "task completed");
             Json(crate::task_json::task_to_map(&task, &ws_id)).into_response()
@@ -2301,19 +2421,18 @@ async fn report_task_usage(
         return error_response(StatusCode::BAD_REQUEST, "invalid request body");
     };
     let task_uuid = Uuid::parse_str(task_id.trim()).unwrap();
+    let runtime_provider = match task.runtime_id {
+        Some(rid) => match runtime::get_agent_runtime(&state.pool, rid).await {
+            Ok(Some(rt)) => normalize_provider(&rt.provider),
+            _ => String::new(),
+        },
+        None => String::new(),
+    };
     for u in &req.usage {
         let provider = normalize_provider(&u.provider);
         let provider = if provider.is_empty() {
             // Backfill from the runtime so generic ids like `auto` still price.
-            match task.runtime_id {
-                Some(rid) => futures_executor_block(async {
-                    match runtime::get_agent_runtime(&state.pool, rid).await {
-                        Ok(Some(rt)) => normalize_provider(&rt.provider),
-                        _ => String::new(),
-                    }
-                }),
-                None => String::new(),
-            }
+            runtime_provider.clone()
         } else {
             provider
         };
@@ -2350,12 +2469,6 @@ async fn report_task_usage(
             .await;
     }
     Json(json!({ "status": "ok" })).into_response()
-}
-
-// Blocking wrapper kept local to the usage backfill path; the runtime lookup
-// is a single-row point read and the endpoint is daemon-only.
-fn futures_executor_block<F: std::future::Future>(fut: F) -> F::Output {
-    tokio::runtime::Handle::current().block_on(fut)
 }
 
 // ---------------------------------------------------------------------------
@@ -2432,10 +2545,9 @@ async fn report_task_messages(
         // Redact secret-shaped substrings before persisting or broadcasting.
         let content = cordy_service::redact::text(&msg.content);
         let output = cordy_service::redact::text(&msg.output);
-        let input = msg
-            .input
-            .as_ref()
-            .map(|m| Value::Object(cordy_service::redact::input_map(m)));
+        let input = msg.input.as_ref().map(|m| {
+            sanitize_json_for_postgres(Value::Object(cordy_service::redact::input_map(m)))
+        });
         let type_ = sanitize(&msg.type_);
         let tool = sanitize(&msg.tool);
         let content = sanitize(&content);
@@ -2729,9 +2841,9 @@ async fn batch_issue_gc_check(
     body: Option<Json<BatchGcRequest>>,
 ) -> Response {
     let access = Access::new(&state, &headers);
-    let ws_uuid = Uuid::parse_str(workspace_id.trim())
-        .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid workspace_id"))
-        .unwrap();
+    let Ok(ws_uuid) = Uuid::parse_str(workspace_id.trim()) else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid workspace_id");
+    };
     if check_daemon_workspace_access(&access, None, &workspace_id)
         .await
         .is_err()
@@ -2773,27 +2885,21 @@ async fn batch_issue_gc_check(
     // ONE resolver for the whole batch so an all-built-in batch costs zero
     // catalog reads (MUL-6243).
     let mut resolver = issue_status_svc::Resolver::new(ws_uuid);
-    let items: Vec<Value> = req
-        .issue_ids
-        .iter()
-        .zip(parsed.iter())
-        .map(|(raw, uuid)| {
-            match by_id.get(uuid) {
-                Some((status, updated_at)) => {
-                    // Canonical status resolved server-side so daemons that
-                    // predate custom statuses keep making correct GC decisions.
-                    let effective = futures_executor_block(resolver.effective(&state.pool, status));
-                    json!({
-                        "id": raw,
-                        "found": true,
-                        "status": effective,
-                        "updated_at": updated_at.map(crate::timefmt::rfc3339),
-                    })
-                }
-                None => json!({ "id": raw, "found": false }),
+    let mut items: Vec<Value> = Vec::with_capacity(req.issue_ids.len());
+    for (raw, uuid) in req.issue_ids.iter().zip(parsed.iter()) {
+        match by_id.get(uuid) {
+            Some((status, updated_at)) => {
+                let effective = resolver.effective(&state.pool, status).await;
+                items.push(json!({
+                    "id": raw,
+                    "found": true,
+                    "status": effective,
+                    "updated_at": updated_at.map(crate::timefmt::rfc3339),
+                }));
             }
-        })
-        .collect();
+            None => items.push(json!({ "id": raw, "found": false })),
+        }
+    }
     Json(json!({ "issues": items })).into_response()
 }
 
@@ -3622,6 +3728,22 @@ fn sanitize_null_bytes(s: &str) -> String {
     s.replace('\0', "")
 }
 
+fn sanitize_json_for_postgres(value: Value) -> Value {
+    match value {
+        Value::String(value) => Value::String(sanitize_null_bytes(&value)),
+        Value::Array(values) => {
+            Value::Array(values.into_iter().map(sanitize_json_for_postgres).collect())
+        }
+        Value::Object(values) => Value::Object(
+            values
+                .into_iter()
+                .map(|(key, value)| (sanitize_null_bytes(&key), sanitize_json_for_postgres(value)))
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
 /// Go validateFilePath: rejects absolute paths and `..` escapes so a daemon
 /// cannot write outside the skill's file namespace.
 fn validate_file_path(p: &str) -> bool {
@@ -3702,6 +3824,21 @@ mod tests {
         let repos = parse_workspace_repos(&raw);
         assert_eq!(repos.len(), 1);
         assert_eq!(repos[0]["url"], "https://x.com/a");
+    }
+
+    #[test]
+    fn sanitize_json_for_postgres_removes_nested_nuls() {
+        let value = json!({
+            "outer\0key": ["a\0b", {"inner": "c\0d"}],
+            "number": 7,
+        });
+        assert_eq!(
+            sanitize_json_for_postgres(value),
+            json!({
+                "outerkey": ["ab", {"inner": "cd"}],
+                "number": 7,
+            })
+        );
     }
 
     // Contract: a missing runtime row maps to 404 (daemon drops + re-registers)

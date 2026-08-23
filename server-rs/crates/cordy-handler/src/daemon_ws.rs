@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use axum::body::Bytes;
 use axum::extract::ws::{Message, WebSocket};
-use axum::extract::{Query as AxumQuery, State, WebSocketUpgrade};
+use axum::extract::{Extension, Query as AxumQuery, State, WebSocketUpgrade};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
 use cordy_daemon::hub::{ClientIdentity, DaemonHub};
@@ -40,6 +40,7 @@ const PING_PERIOD_SECS: u64 = PONG_WAIT_SECS * 9 / 10;
 pub async fn daemon_ws_handler(
     State(state): State<HandlerState>,
     AxumQuery(query): AxumQuery<std::collections::HashMap<String, String>>,
+    daemon_ext: Option<Extension<DaemonContext>>,
     headers: HeaderMap,
     upgrade: WebSocketUpgrade,
 ) -> Response {
@@ -71,9 +72,7 @@ pub async fn daemon_ws_handler(
         );
     }
 
-    // DaemonContext arrives via the DaemonAuth middleware layer; axum
-    // extensions carry it here once that lane mounts this router.
-    let daemon_ctx: Option<DaemonContext> = None;
+    let daemon_ctx = daemon_ext.map(|Extension(ctx)| ctx);
 
     let access = Access::new(&state, &headers);
     let mut workspace_ids: Vec<String> = Vec::new();
@@ -115,6 +114,8 @@ pub async fn daemon_ws_handler(
     upgrade
         .protocols(["daemon"])
         .write_buffer_size(0)
+        .max_message_size(cordy_daemon::hub::MAX_FRAME_READ_BYTES)
+        .max_frame_size(cordy_daemon::hub::MAX_FRAME_READ_BYTES)
         .on_upgrade(move |socket| async move {
             serve_daemon_socket(hub, identity, socket).await;
         })
@@ -148,11 +149,10 @@ async fn serve_daemon_socket(hub: Arc<DaemonHub>, identity: ClientIdentity, sock
                 frame = rx.recv() => {
                     match frame {
                         Some(frame) => {
-                            // Go sets a 10s write deadline per message; axum has no
-                            // per-write timeout without wrapping the sink — a stuck
-                            // TCP peer is instead reaped by the reader's pong window
-                            // and teardown drops the sender.
-                            if sink.send(Message::Binary(Bytes::from(frame))).await.is_err() {
+                            if tokio::time::timeout(
+                                cordy_daemon::hub::WRITE_WAIT,
+                                sink.send(Message::Binary(Bytes::from(frame))),
+                            ).await.map_or(true, |result| result.is_err()) {
                                 break;
                             }
                         }
@@ -160,7 +160,10 @@ async fn serve_daemon_socket(hub: Arc<DaemonHub>, identity: ClientIdentity, sock
                     }
                 }
                 _ = ticker.tick() => {
-                    if sink.send(Message::Ping(Bytes::new())).await.is_err() {
+                    if tokio::time::timeout(
+                        cordy_daemon::hub::WRITE_WAIT,
+                        sink.send(Message::Ping(Bytes::new())),
+                    ).await.map_or(true, |result| result.is_err()) {
                         break;
                     }
                 }
@@ -170,7 +173,11 @@ async fn serve_daemon_socket(hub: Arc<DaemonHub>, identity: ClientIdentity, sock
     });
 
     // readPump: parse frames and dispatch through the hub's shared bookkeeping.
-    while let Some(msg) = stream.next().await {
+    loop {
+        let msg = match tokio::time::timeout(cordy_daemon::hub::PONG_WAIT, stream.next()).await {
+            Ok(Some(msg)) => msg,
+            Ok(None) | Err(_) => break,
+        };
         let raw = match msg {
             Ok(Message::Text(text)) => Some(text.as_bytes().to_vec()),
             Ok(Message::Binary(bytes)) => Some(bytes.to_vec()),
@@ -182,7 +189,7 @@ async fn serve_daemon_socket(hub: Arc<DaemonHub>, identity: ClientIdentity, sock
             }
         };
         let Some(raw) = raw else { continue };
-        if raw.len() > 64 * 1024 {
+        if raw.len() > cordy_daemon::hub::MAX_FRAME_READ_BYTES {
             tracing::debug!(daemon_id = %identity.daemon_id, "daemon websocket frame over 64 KiB read limit");
             break;
         }
