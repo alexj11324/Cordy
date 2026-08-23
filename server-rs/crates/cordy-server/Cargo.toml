@@ -14,6 +14,8 @@ cordy-config = { path = "../cordy-config" }
 cordy-auth = { path = "../cordy-auth" }
 cordy-analytics = { path = "../cordy-analytics" }
 cordy-db = { path = "../cordy-db" }
+cordy-daemon = { path = "../cordy-daemon" }
+cordy-events = { path = "../cordy-events" }
 cordy-handler = { path = "../cordy-handler" }
 cordy-ghsnapshot = { path = "../cordy-ghsnapshot" }
 cordy-metrics = { path = "../cordy-metrics" }
@@ -27,6 +29,7 @@ redis = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 

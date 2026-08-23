@@ -9,6 +9,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+mod realtime_runtime;
+
 const PENDING_STORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
 struct VcsWebhookConfig {
@@ -187,7 +189,7 @@ async fn build_production_router(
     attachment_storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
     attachment_frame_ancestors: Vec<String>,
     vcs: VcsWebhookConfig,
-) -> anyhow::Result<Router> {
+) -> anyhow::Result<(Router, realtime_runtime::RealtimeRuntime)> {
     let feature_flags = Arc::new(cordy_service::feature_flags::ConfiguredFlags::from_env()?);
     let entitlements = autopilot_entitlements(cfg);
     let mut state = cordy_handler::HandlerState::new(
@@ -243,7 +245,9 @@ async fn build_production_router(
         .await
         .start_autopilot_quota_reconciler()
         .start_webhook_delivery_worker();
-    Ok(cordy_handler::build_router_from_state(state))
+    let mut realtime = realtime_runtime::RealtimeRuntime::from_env(hub).await;
+    realtime.attach(&state.bus, state.daemon_hub.clone());
+    Ok((cordy_handler::build_router_from_state(state), realtime))
 }
 
 fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
@@ -320,7 +324,7 @@ async fn main() -> anyhow::Result<()> {
     let vcs_secret_box = cordy_util::secretbox::load_key("CORDY_VCS_SECRET_KEY")
         .ok()
         .and_then(|key| cordy_util::secretbox::SecretBox::new(&key).ok());
-    let app = build_production_router(
+    let (app, realtime) = build_production_router(
         db,
         hub,
         business_metrics,
@@ -339,12 +343,40 @@ async fn main() -> anyhow::Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, "listening");
-    axum::serve(
+    let serve_result = axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
-    .await?;
+    .with_graceful_shutdown(shutdown_signal())
+    .await;
+    realtime.shutdown().await;
+    serve_result?;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::error!(%error, "failed to install Ctrl-C handler");
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => tracing::error!(%error, "failed to install SIGTERM handler"),
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {},
+        () = terminate => {},
+    }
 }
 
 #[cfg(test)]
@@ -390,7 +422,7 @@ mod tests {
             .unwrap_or_else(|_| unreachable!("static test URL is valid"));
         let mut cfg = cordy_config::Config::default();
         cfg.redis.url = Some("redis://127.0.0.1:1/".into());
-        let router = build_production_router(
+        let (router, realtime) = build_production_router(
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
             None,
@@ -415,6 +447,7 @@ mod tests {
         .await
         .expect("unavailable Redis must not block the request")
         .expect("response");
+        realtime.shutdown().await;
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
@@ -434,7 +467,7 @@ mod tests {
         let redis_url = format!("redis://{address}/");
         let mut cfg = cordy_config::Config::default();
         cfg.redis.url = Some(redis_url);
-        let router = build_production_router(
+        let (router, realtime) = build_production_router(
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
             None,
@@ -460,6 +493,7 @@ mod tests {
         .expect("unresponsive Redis must not block the request")
         .expect("response");
         black_hole.abort();
+        realtime.shutdown().await;
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
@@ -515,7 +549,7 @@ mod tests {
         let mut cfg = cordy_config::Config::default();
         cfg.redis.url = Some("not a redis URL".into());
         cfg.urls.rate_limit_trusted_proxies = Some("10.0.0.0/8".into());
-        let _router = build_production_router(
+        let (_router, realtime) = build_production_router(
             pool,
             Arc::new(cordy_realtime::hub::Hub::new()),
             None,
@@ -528,5 +562,6 @@ mod tests {
         )
         .await
         .unwrap();
+        realtime.shutdown().await;
     }
 }

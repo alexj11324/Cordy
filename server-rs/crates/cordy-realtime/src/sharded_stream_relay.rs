@@ -188,6 +188,7 @@ pub struct ShardedStreamRelay<H: HubFanout> {
     stream_generation: Vec<AtomicU64>,
 
     daemon_runtime: Mutex<Option<Arc<dyn DaemonRuntimeDeliverer>>>,
+    tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
 
 impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
@@ -216,6 +217,7 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
             stream_seen: (0..shards).map(|_| AtomicBool::new(false)).collect(),
             stream_generation: (0..shards).map(|_| AtomicU64::new(0)).collect(),
             daemon_runtime: Mutex::new(None),
+            tasks: Mutex::new(Vec::new()),
         })
     }
 
@@ -249,7 +251,7 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
             .clone_from(&self.node_id);
 
         let state = self.clone();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             // Initial connectivity probe — failures are logged but not fatal;
             // the loops retry and keep the connected gauge honest.
             let connected = state.ping_write().await.is_ok();
@@ -284,6 +286,10 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
             // Drain remaining tasks after cancellation.
             while set.join_next().await.is_some() {}
         });
+        self.tasks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(handle);
     }
 
     async fn ping_write(&self) -> anyhow::Result<()> {
@@ -296,6 +302,18 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
     pub fn stop(&self) {
         self.stopping.store(true, Ordering::Relaxed);
         self.shutdown.cancel();
+    }
+
+    pub async fn wait(&self) {
+        let handles: Vec<_> = self
+            .tasks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .drain(..)
+            .collect();
+        for handle in handles {
+            let _ = handle.await;
+        }
     }
 
     fn shard_for(&self, scope_type: &str, scope_id: &str) -> usize {
@@ -754,6 +772,40 @@ impl<H: HubFanout + 'static> Broadcaster for ShardedStreamRelay<H> {
     }
 
     // broadcast_to_workspace inherits the default SCOPE_WORKSPACE delegation.
+}
+
+#[async_trait]
+impl<H: HubFanout + 'static> crate::relay_lifecycle::ManagedRelay for ShardedStreamRelay<H> {
+    fn node_id(&self) -> String {
+        self.node_id()
+    }
+
+    fn start(self: Arc<Self>, shutdown: CancellationToken) {
+        ShardedStreamRelay::start(&self);
+        let relay = self.clone();
+        let handle = tokio::spawn(async move {
+            tokio::select! {
+                () = shutdown.cancelled() => relay.stop(),
+                () = relay.shutdown.cancelled() => {}
+            }
+        });
+        self.tasks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(handle);
+    }
+
+    fn stop(&self) {
+        ShardedStreamRelay::stop(self);
+    }
+
+    async fn wait(&self) {
+        ShardedStreamRelay::wait(self).await;
+    }
+
+    fn set_daemon_runtime_deliverer(&self, deliverer: Arc<dyn DaemonRuntimeDeliverer>) {
+        ShardedStreamRelay::set_daemon_runtime_deliverer(self, deliverer);
+    }
 }
 
 #[cfg(test)]

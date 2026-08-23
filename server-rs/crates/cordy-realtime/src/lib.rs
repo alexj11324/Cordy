@@ -22,4 +22,6 @@ pub use broadcaster::{
     SCOPE_TASK, SCOPE_USER, SCOPE_WORKSPACE,
 };
 pub use metrics::{Metrics, M};
+pub use redis_relay::{DualWriteBroadcaster, RedisRelay};
 pub use relay_lifecycle::{ManagedRelay, MirroredRelay};
+pub use sharded_stream_relay::{ShardedStreamRelay, ShardedStreamRelayConfig};

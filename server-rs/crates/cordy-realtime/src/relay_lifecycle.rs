@@ -22,7 +22,7 @@ pub trait ManagedRelay: RelayPublisher + Broadcaster {
     fn node_id(&self) -> String;
 
     /// Starts background consumer tasks; they stop when `shutdown` fires.
-    fn start(&self, shutdown: CancellationToken);
+    fn start(self: Arc<Self>, shutdown: CancellationToken);
 
     /// Signals background tasks to stop.
     fn stop(&self);
@@ -158,9 +158,9 @@ impl ManagedRelay for MirroredRelay {
         self.primary.node_id()
     }
 
-    fn start(&self, shutdown: CancellationToken) {
-        self.primary.start(shutdown.clone());
-        self.mirror.start(shutdown);
+    fn start(self: Arc<Self>, shutdown: CancellationToken) {
+        self.primary.clone().start(shutdown.clone());
+        self.mirror.clone().start(shutdown);
         *M.node_id.write().unwrap_or_else(|e| e.into_inner()) = self.node_id();
     }
 
@@ -253,7 +253,7 @@ mod tests {
         fn node_id(&self) -> String {
             format!("node-{}", self.name)
         }
-        fn start(&self, _shutdown: CancellationToken) {
+        fn start(self: Arc<Self>, _shutdown: CancellationToken) {
             self.started.store(true, Ordering::Relaxed);
         }
         fn stop(&self) {
@@ -328,9 +328,9 @@ mod tests {
         M.reset();
         let primary = MockRelay::new("primary");
         let mirror = MockRelay::new("mirror");
-        let relay = MirroredRelay::new(primary.clone(), mirror.clone());
+        let relay = Arc::new(MirroredRelay::new(primary.clone(), mirror.clone()));
 
-        relay.start(CancellationToken::new());
+        relay.clone().start(CancellationToken::new());
         assert!(primary.started.load(Ordering::Relaxed));
         assert!(mirror.started.load(Ordering::Relaxed));
         assert_eq!(M.node_id.read().unwrap().as_str(), "node-primary");
