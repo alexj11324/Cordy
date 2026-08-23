@@ -495,7 +495,7 @@ ORDER BY pr.pr_created_at DESC
 type ListPullRequestsByIssueRow struct {
 	ID                  pgtype.UUID        `json:"id"`
 	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
-	InstallationID      int64              `json:"installation_id"`
+	InstallationID      pgtype.Int8        `json:"installation_id"`
 	RepoOwner           string             `json:"repo_owner"`
 	RepoName            string             `json:"repo_name"`
 	PrNumber            int32              `json:"pr_number"`
@@ -703,7 +703,7 @@ RETURNING id, workspace_id, installation_id, repo_owner, repo_name, pr_number, t
 
 type UpsertGitHubPullRequestParams struct {
 	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
-	InstallationID      int64              `json:"installation_id"`
+	InstallationID      pgtype.Int8        `json:"installation_id"`
 	RepoOwner           string             `json:"repo_owner"`
 	RepoName            string             `json:"repo_name"`
 	PrNumber            int32              `json:"pr_number"`

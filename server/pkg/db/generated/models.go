@@ -399,7 +399,7 @@ type ChannelOutboundCardMessage struct {
 type ChannelUserBinding struct {
 	ID             pgtype.UUID        `json:"id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
-	CordyUserID  pgtype.UUID        `json:"cordy_user_id"`
+	CordyUserID    pgtype.UUID        `json:"cordy_user_id"`
 	InstallationID pgtype.UUID        `json:"installation_id"`
 	ChannelType    string             `json:"channel_type"`
 	ChannelUserID  string             `json:"channel_user_id"`
@@ -606,7 +606,7 @@ type GithubPendingInstallation struct {
 type GithubPullRequest struct {
 	ID                  pgtype.UUID        `json:"id"`
 	WorkspaceID         pgtype.UUID        `json:"workspace_id"`
-	InstallationID      int64              `json:"installation_id"`
+	InstallationID      pgtype.Int8        `json:"installation_id"`
 	RepoOwner           string             `json:"repo_owner"`
 	RepoName            string             `json:"repo_name"`
 	PrNumber            int32              `json:"pr_number"`
@@ -895,7 +895,7 @@ type LarkOutboundCardMessage struct {
 type LarkUserBinding struct {
 	ID             pgtype.UUID        `json:"id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
-	CordyUserID  pgtype.UUID        `json:"cordy_user_id"`
+	CordyUserID    pgtype.UUID        `json:"cordy_user_id"`
 	InstallationID pgtype.UUID        `json:"installation_id"`
 	LarkOpenID     string             `json:"lark_open_id"`
 	UnionID        pgtype.Text        `json:"union_id"`

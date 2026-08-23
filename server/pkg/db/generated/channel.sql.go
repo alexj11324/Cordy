@@ -477,7 +477,7 @@ RETURNING id, workspace_id, cordy_user_id, installation_id, channel_type, channe
 
 type CreateChannelUserBindingParams struct {
 	WorkspaceID    pgtype.UUID `json:"workspace_id"`
-	CordyUserID  pgtype.UUID `json:"cordy_user_id"`
+	CordyUserID    pgtype.UUID `json:"cordy_user_id"`
 	InstallationID pgtype.UUID `json:"installation_id"`
 	ChannelType    string      `json:"channel_type"`
 	ChannelUserID  string      `json:"channel_user_id"`
@@ -687,7 +687,7 @@ WHERE workspace_id = $1 AND cordy_user_id = $2
 `
 
 type DeleteChannelUserBindingsByWorkspaceMemberParams struct {
-	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	CordyUserID pgtype.UUID `json:"cordy_user_id"`
 }
 
@@ -711,9 +711,9 @@ LIMIT 1
 `
 
 type FindChannelBindingForMemberParams struct {
-	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	WorkspaceID pgtype.UUID `json:"workspace_id"`
 	CordyUserID pgtype.UUID `json:"cordy_user_id"`
-	ChannelType   string      `json:"channel_type"`
+	ChannelType string      `json:"channel_type"`
 }
 
 // Outbound notification lookup: given a Cordy member and a channel_type,
