@@ -26,6 +26,7 @@ pub mod daemon_ws;
 pub mod error;
 pub mod feedback;
 pub mod health;
+pub mod inbox;
 pub mod invitation;
 pub mod issue;
 pub mod issue_property_value;
@@ -231,6 +232,10 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .merge(me::router())
+        .merge(inbox::router().route_layer(middleware::from_fn_with_state(
+            WorkspaceGuardState::member_only(state.pool.clone()),
+            cordy_middleware::workspace::require_workspace,
+        )))
         .merge(pat::router())
         .merge(attachment_access::authenticated_router())
         .merge(attachment_routes)
@@ -389,6 +394,10 @@ mod tests {
             "/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members",
             "/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members/status",
+            "/api/inbox",
+            "/api/inbox/archived",
+            "/api/inbox/unread-count",
+            "/api/inbox/unread-summary",
             "/api/working-agents",
         ] {
             let response = build_router(None, None)
@@ -474,6 +483,30 @@ mod tests {
             Request::patch("/api/squads/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/members/role")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"member_type":"agent","member_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12","role":"reviewer"}"#))
+                .unwrap(),
+            Request::post("/api/inbox/mark-all-read")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/inbox/archive-all")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/inbox/archive-all-read")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/inbox/archive-completed")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/inbox/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/read")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/inbox/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/unread")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/inbox/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/archive")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/inbox/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/unarchive")
+                .body(Body::empty())
                 .unwrap(),
             Request::post("/api/issue-views")
                 .header("content-type", "application/json")
