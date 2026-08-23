@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -135,13 +136,40 @@ type TungsteniteStream =
 /// a write — the same single-reader/single-writer contract gorilla enforces,
 /// serialized rather than split.
 pub struct TungsteniteConn {
-    inner: Arc<tokio::sync::Mutex<Option<TungsteniteStream>>>,
+    read: Arc<tokio::sync::Mutex<Option<SplitStream<TungsteniteStream>>>>,
+    write: Arc<
+        tokio::sync::Mutex<
+            Option<SplitSink<TungsteniteStream, tokio_tungstenite::tungstenite::Message>>,
+        >,
+    >,
 }
 
 impl TungsteniteConn {
     fn new(stream: TungsteniteStream) -> Self {
+        let (write, read) = stream.split();
         Self {
-            inner: Arc::new(tokio::sync::Mutex::new(Some(stream))),
+            read: Arc::new(tokio::sync::Mutex::new(Some(read))),
+            write: Arc::new(tokio::sync::Mutex::new(Some(write))),
+        }
+    }
+
+    async fn write_frame(
+        &self,
+        message: tokio_tungstenite::tungstenite::Message,
+        deadline: Option<Instant>,
+    ) -> anyhow::Result<()> {
+        let mut guard = self.write.lock().await;
+        let write_one = async {
+            let sink = guard
+                .as_mut()
+                .ok_or_else(|| anyhow::anyhow!("wecom: use of closed connection"))?;
+            sink.send(message).await.map_err(anyhow::Error::new)
+        };
+        match deadline {
+            Some(d) => tokio::time::timeout_at(d.into(), write_one)
+                .await
+                .map_err(|_| anyhow::anyhow!("wecom: write deadline exceeded"))?,
+            None => write_one.await,
         }
     }
 }
@@ -149,7 +177,7 @@ impl TungsteniteConn {
 #[async_trait]
 impl WsConn for TungsteniteConn {
     async fn read_message(&self, deadline: Option<Instant>) -> anyhow::Result<Vec<u8>> {
-        let mut guard = self.inner.lock().await;
+        let mut guard = self.read.lock().await;
         let read_one = async {
             let stream = guard
                 .as_mut()
@@ -161,10 +189,14 @@ impl WsConn for TungsteniteConn {
                     .transpose()?
                     .ok_or_else(|| anyhow::anyhow!("wecom: websocket stream ended"))?;
                 match msg {
-                    // Control frames are transport-level: tungstenite queues
-                    // the pong for the next flush, and neither surfaces here.
-                    tokio_tungstenite::tungstenite::Message::Ping(_)
-                    | tokio_tungstenite::tungstenite::Message::Pong(_) => continue,
+                    tokio_tungstenite::tungstenite::Message::Ping(data) => {
+                        self.write_frame(
+                            tokio_tungstenite::tungstenite::Message::Pong(data),
+                            deadline,
+                        )
+                        .await?;
+                    }
+                    tokio_tungstenite::tungstenite::Message::Pong(_) => continue,
                     tokio_tungstenite::tungstenite::Message::Close(frame) => {
                         anyhow::bail!(
                             "wecom: websocket closed by peer ({})",
@@ -185,30 +217,21 @@ impl WsConn for TungsteniteConn {
     }
 
     async fn write_message(&self, data: String, deadline: Option<Instant>) -> anyhow::Result<()> {
-        let mut guard = self.inner.lock().await;
-        let write_one = async {
-            let stream = guard
-                .as_mut()
-                .ok_or_else(|| anyhow::anyhow!("wecom: use of closed connection"))?;
-            stream
-                .send(tokio_tungstenite::tungstenite::Message::text(data))
-                .await
-                .map_err(|e| anyhow::anyhow!(e))
-        };
-        match deadline {
-            Some(d) => tokio::time::timeout_at(d.into(), write_one)
-                .await
-                .map_err(|_| anyhow::anyhow!("wecom: write deadline exceeded"))?,
-            None => write_one.await,
-        }
+        self.write_frame(
+            tokio_tungstenite::tungstenite::Message::text(data),
+            deadline,
+        )
+        .await
     }
 
     async fn close(&self) {
-        let mut guard = self.inner.lock().await;
-        if let Some(mut stream) = guard.take() {
+        let mut write = self.write.lock().await;
+        if let Some(mut sink) = write.take() {
             // Best effort: a peer already gone refuses the close handshake.
-            let _ = SinkExt::close(&mut stream).await;
+            let _ = SinkExt::close(&mut sink).await;
         }
+        drop(write);
+        *self.read.lock().await = None;
     }
 }
 
