@@ -154,14 +154,14 @@ impl PluginActor {
     }
 }
 
-fn plugins_enabled(state: &HandlerState) -> bool {
+pub(crate) fn plugins_enabled(state: &HandlerState) -> bool {
     state
         .feature_flags
         .as_deref()
         .is_some_and(cordy_service::feature_flags::plugins_v1_enabled)
 }
 
-fn plugin_error(error: &PluginError, fallback: &str) -> Response {
+pub(crate) fn plugin_error(error: &PluginError, fallback: &str) -> Response {
     let status = match error.kind {
         PluginErrorKind::Invalid => StatusCode::BAD_REQUEST,
         PluginErrorKind::NotFound => StatusCode::NOT_FOUND,
