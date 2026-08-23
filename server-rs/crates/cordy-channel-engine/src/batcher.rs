@@ -73,6 +73,24 @@ struct PendingEntry {
     deadline: std::time::Instant,
 }
 
+struct InflightGuard {
+    batcher: std::sync::Weak<PendingBatcher>,
+    count: usize,
+}
+
+impl Drop for InflightGuard {
+    fn drop(&mut self) {
+        let Some(batch) = self.batcher.upgrade() else {
+            return;
+        };
+        let mut inflight = batch.inflight.lock().unwrap_or_else(|e| e.into_inner());
+        *inflight -= self.count;
+        if *inflight == 0 {
+            batch.inflight_zero.notify_waiters();
+        }
+    }
+}
+
 impl PendingBatcher {
     /// Returns a batcher with the given silence window. A zero window
     /// falls back to [`DEFAULT_CHAT_RUN_BATCH_WINDOW`] (Go treats any
@@ -109,13 +127,14 @@ impl PendingBatcher {
     /// the flush inline rather than dropping it (the shutdown race where
     /// a message arrives after the drain has begun).
     pub fn schedule<F: Fn() + Send + Sync + 'static>(self: &Arc<Self>, key: &str, flush: F) {
-        if self.stopped.is_cancelled() {
-            flush();
-            return;
-        }
         let flush = Arc::new(flush);
         {
             let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            if self.stopped.is_cancelled() {
+                drop(inner);
+                flush();
+                return;
+            }
             inner.seq += 1;
             let gen = inner.seq;
             let deadline = std::time::Instant::now() + self.window;
@@ -200,20 +219,16 @@ impl PendingBatcher {
         if due.is_empty() {
             return;
         }
-        {
-            *self.inflight.lock().unwrap_or_else(|e| e.into_inner()) += due.len();
-        }
+        let due_len = due.len();
+        *self.inflight.lock().unwrap_or_else(|e| e.into_inner()) += due_len;
         let this = Arc::downgrade(self);
         tokio::spawn(async move {
+            let _guard = InflightGuard {
+                batcher: this,
+                count: due_len,
+            };
             for flush in due {
                 flush();
-            }
-            if let Some(batch) = this.upgrade() {
-                let mut n = batch.inflight.lock().unwrap_or_else(|e| e.into_inner());
-                *n -= 1;
-                if *n == 0 {
-                    batch.inflight_zero.notify_waiters();
-                }
             }
         });
     }
@@ -223,9 +238,9 @@ impl PendingBatcher {
     /// from graceful shutdown AFTER inbound delivery has stopped. After
     /// flush_all the batcher is terminal: later schedule calls run inline.
     pub async fn flush_all(&self) {
-        self.stopped.cancel();
         let entries: Vec<Arc<dyn Fn() + Send + Sync>> = {
             let mut inner = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            self.stopped.cancel();
             let mut entries = Vec::with_capacity(inner.pending.len());
             for (_, e) in inner.pending.drain() {
                 e.cancel.cancel();
@@ -308,6 +323,9 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(80)).await;
         assert_eq!(a.load(Ordering::SeqCst), 1);
         assert_eq!(c.load(Ordering::SeqCst), 1);
+        tokio::time::timeout(Duration::from_millis(100), b.flush_all())
+            .await
+            .expect("completed due callbacks must not strand inflight accounting");
     }
 
     #[tokio::test]
