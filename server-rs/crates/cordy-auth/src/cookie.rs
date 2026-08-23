@@ -4,6 +4,7 @@
 use hmac::{Hmac, Mac};
 use rand::RngCore;
 use sha2::Sha256;
+use std::sync::OnceLock;
 
 pub const AUTH_COOKIE_NAME: &str = "cordy_auth";
 pub const CSRF_COOKIE_NAME: &str = "cordy_csrf";
@@ -12,6 +13,7 @@ pub const CSRF_COOKIE_NAME: &str = "cordy_csrf";
 pub const DEFAULT_AUTH_TOKEN_TTL_SECS: i64 = 30 * 24 * 3600;
 
 const TEN_YEARS_SECS: i64 = 10 * 365 * 24 * 3600;
+static AUTH_TOKEN_TTL_SECS: OnceLock<i64> = OnceLock::new();
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -104,6 +106,15 @@ pub fn auth_token_ttl_secs(raw: Option<&str>) -> i64 {
         }
     }
     DEFAULT_AUTH_TOKEN_TTL_SECS
+}
+
+/// Process-wide effective auth token lifetime. The environment is read once,
+/// matching Go's `sync.Once` configuration contract.
+pub fn auth_token_ttl() -> i64 {
+    *AUTH_TOKEN_TTL_SECS.get_or_init(|| {
+        let raw = std::env::var("AUTH_TOKEN_TTL").ok();
+        auth_token_ttl_secs(raw.as_deref())
+    })
 }
 
 /// Resolves the cookie Domain attribute. An IP literal (optionally

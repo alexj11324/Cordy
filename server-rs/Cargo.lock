@@ -362,6 +362,7 @@ dependencies = [
  "chrono",
  "hex",
  "hmac",
+ "jsonwebtoken",
  "rand 0.8.7",
  "redis",
  "serde",

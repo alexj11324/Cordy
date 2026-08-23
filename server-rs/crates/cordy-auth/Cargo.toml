@@ -10,6 +10,7 @@ anyhow = { workspace = true }
 chrono = { workspace = true }
 hex = { workspace = true }
 hmac = { workspace = true }
+jsonwebtoken = { workspace = true }
 rand = { workspace = true }
 redis = { workspace = true }
 serde = { workspace = true }
