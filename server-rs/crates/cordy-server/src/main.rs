@@ -19,6 +19,7 @@ struct ProductionApp {
     quota_reconciler: cordy_service::autopilot_quota_reconciler::QuotaReconcilerRuntime,
     webhook_delivery: cordy_handler::webhook_delivery_worker::WebhookDeliveryRuntime,
     scheduler: cordy_scheduler::ManagerRuntime,
+    channel_media: Option<cordy_service::channel_media_reconciler::ChannelMediaReconcilerRuntime>,
 }
 
 struct VcsWebhookConfig {
@@ -192,6 +193,7 @@ async fn build_production_router(
     hub: Arc<cordy_realtime::hub::Hub>,
     business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
+    channel_media_metrics: Option<Arc<cordy_metrics::ChannelMediaReconcilerMetrics>>,
     github_client: Option<cordy_ghsnapshot::Client>,
     cfg: &cordy_config::Config,
     attachment_storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
@@ -277,6 +279,19 @@ async fn build_production_router(
         )
         .start(root_cancel.child_token());
     let webhook_delivery = webhook_worker.start(root_cancel.child_token());
+    let channel_media = state.attachment_storage.as_ref().map(|storage| {
+        let deleter = Arc::new(
+            cordy_handler::attachment_storage::AttachmentMediaDeleter::new(storage.clone()),
+        );
+        Arc::new(
+            cordy_service::channel_media_reconciler::ChannelMediaReconciler::new(
+                state.pool.clone(),
+                deleter,
+                channel_media_metrics,
+            ),
+        )
+        .start(root_cancel.child_token())
+    });
     let scheduler = cordy_scheduler::Manager::new(
         state.pool.clone(),
         cordy_scheduler::ManagerOptions::default(),
@@ -300,6 +315,7 @@ async fn build_production_router(
         quota_reconciler,
         webhook_delivery,
         scheduler,
+        channel_media,
     })
 }
 
@@ -323,6 +339,15 @@ async fn shutdown_signal(root_cancel: CancellationToken) {
         tracing::error!(%error, "failed to listen for shutdown signal");
     }
     root_cancel.cancel();
+}
+
+async fn shutdown_channel_media(
+    runtime: Option<cordy_service::channel_media_reconciler::ChannelMediaReconcilerRuntime>,
+) -> Option<cordy_service::channel_media_reconciler::ChannelMediaShutdownOutcome> {
+    match runtime {
+        Some(runtime) => Some(runtime.shutdown().await),
+        None => None,
+    }
 }
 
 fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
@@ -352,7 +377,7 @@ async fn main() -> anyhow::Result<()> {
     let db = cordy_db::connect(&cfg.database).await?;
     let hub = Arc::new(cordy_realtime::hub::Hub::new());
     let metrics_config = cordy_metrics::Config::from_env();
-    let (business_metrics, http_metrics) = if metrics_config.enabled() {
+    let (business_metrics, http_metrics, channel_media_metrics) = if metrics_config.enabled() {
         let registry = cordy_metrics::Registry::new(cordy_metrics::registry::RegistryOptions {
             pool: Some(Arc::new(db.clone())),
             realtime: Some(&cordy_realtime::M),
@@ -364,6 +389,7 @@ async fn main() -> anyhow::Result<()> {
         });
         let business = registry.business.clone();
         let http = registry.http.clone();
+        let channel_media = registry.channel_media.clone();
         let gatherer = Arc::new(registry.gatherer.clone());
         let metrics_addr = metrics_config.addr.clone();
         let effective_metrics_addr = cordy_metrics::server::normalized_bind_addr(&metrics_addr);
@@ -375,9 +401,9 @@ async fn main() -> anyhow::Result<()> {
                 tracing::error!(%error, "metrics server stopped");
             }
         });
-        (Some(business), Some(http))
+        (Some(business), Some(http), Some(channel_media))
     } else {
-        (None, None)
+        (None, None, None)
     };
     let github_client = cordy_ghsnapshot::Client::new_from_env()?;
     let attachment_storage = cordy_handler::attachment_storage::from_env(
@@ -404,6 +430,7 @@ async fn main() -> anyhow::Result<()> {
         hub,
         business_metrics,
         http_metrics,
+        channel_media_metrics,
         github_client,
         &cfg,
         attachment_storage,
@@ -425,6 +452,7 @@ async fn main() -> anyhow::Result<()> {
         quota_reconciler,
         webhook_delivery,
         scheduler,
+        channel_media,
     } = app;
     let serve_result = axum::serve(
         listener,
@@ -433,13 +461,20 @@ async fn main() -> anyhow::Result<()> {
     .with_graceful_shutdown(shutdown_signal(root_cancel.clone()))
     .await;
     root_cancel.cancel();
-    let (failure_shutdown, quota_shutdown, webhook_shutdown, scheduler_shutdown) = tokio::join!(
+    let (
+        failure_shutdown,
+        quota_shutdown,
+        webhook_shutdown,
+        scheduler_shutdown,
+        channel_media_shutdown,
+    ) = tokio::join!(
         failure_monitor
             .shutdown(cordy_service::autopilot_failure_monitor::DEFAULT_SHUTDOWN_TIMEOUT),
         quota_reconciler
             .shutdown(cordy_service::autopilot_quota_reconciler::DEFAULT_SHUTDOWN_TIMEOUT),
         webhook_delivery.shutdown(cordy_handler::webhook_delivery_worker::DEFAULT_SHUTDOWN_TIMEOUT),
         scheduler.shutdown(),
+        shutdown_channel_media(channel_media),
     );
     match failure_shutdown {
         cordy_service::autopilot_failure_monitor::ShutdownOutcome::TimedOut => {
@@ -476,6 +511,16 @@ async fn main() -> anyhow::Result<()> {
             tracing::error!("scheduler task panicked during shutdown");
         }
         cordy_scheduler::ShutdownOutcome::Stopped => {}
+    }
+    match channel_media_shutdown {
+        Some(cordy_service::channel_media_reconciler::ChannelMediaShutdownOutcome::TimedOut) => {
+            tracing::warn!("channel media reconciler exceeded shutdown deadline and was aborted");
+        }
+        Some(cordy_service::channel_media_reconciler::ChannelMediaShutdownOutcome::Panicked) => {
+            tracing::error!("channel media reconciler task panicked during shutdown");
+        }
+        Some(cordy_service::channel_media_reconciler::ChannelMediaShutdownOutcome::Stopped)
+        | None => {}
     }
     serve_result?;
     Ok(())
@@ -530,6 +575,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             &cfg,
             test_attachment_storage(),
             Vec::new(),
@@ -572,6 +618,7 @@ mod tests {
         let router = build_production_router(
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
             None,
             None,
             None,
@@ -654,6 +701,7 @@ mod tests {
         let _router = build_production_router(
             pool,
             Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
             None,
             None,
             None,

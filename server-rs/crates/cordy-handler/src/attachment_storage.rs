@@ -30,6 +30,26 @@ pub trait AttachmentStorage: Send + Sync {
     }
 }
 
+/// Narrow adapter used by the channel-media reconciler. It delegates to the
+/// exact `AttachmentStorage` instance owned by `HandlerState`, so uploads,
+/// reads, and cleanup cannot drift onto differently configured backends.
+pub struct AttachmentMediaDeleter {
+    storage: Arc<dyn AttachmentStorage>,
+}
+
+impl AttachmentMediaDeleter {
+    pub fn new(storage: Arc<dyn AttachmentStorage>) -> Self {
+        Self { storage }
+    }
+}
+
+#[async_trait]
+impl cordy_service::channel_media_reconciler::MediaObjectDeleter for AttachmentMediaDeleter {
+    async fn delete_object(&self, key: &str) -> anyhow::Result<()> {
+        self.storage.delete(key).await
+    }
+}
+
 pub struct StoredObject {
     pub body: Body,
     pub content_length: Option<u64>,
