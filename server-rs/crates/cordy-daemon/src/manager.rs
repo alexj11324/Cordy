@@ -391,14 +391,14 @@ impl DaemonControl {
             EVENT_DAEMON_WORKSPACES_CHANGED => self.emit(ControlEvent::WorkspacesChanged),
             EVENT_DAEMON_PENDING_WORK => {
                 if let Ok(payload) = serde_json::from_value::<PendingWorkPayload>(message.payload) {
-                    if !payload.runtime_id.is_empty() {
-                        if self.try_begin_pending_work(&payload.runtime_id) {
-                            let control = Arc::clone(self);
-                            let root_ctx = ctx.child();
-                            tokio::spawn(async move {
-                                control.serve_pending_work(root_ctx, payload).await;
-                            });
-                        }
+                    if !payload.runtime_id.is_empty()
+                        && self.try_begin_pending_work(&payload.runtime_id)
+                    {
+                        let control = Arc::clone(self);
+                        let root_ctx = ctx.child();
+                        tokio::spawn(async move {
+                            control.serve_pending_work(root_ctx, payload).await;
+                        });
                     }
                 }
             }
@@ -682,6 +682,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::result_large_err)] // tungstenite's required handshake callback error type
     async fn real_websocket_negotiates_heartbeat_and_claim_rpc() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
