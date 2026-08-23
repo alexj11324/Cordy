@@ -20,7 +20,7 @@ use chrono::{NaiveDate, SecondsFormat};
 use cordy_db::models::{Attachment, Issue, IssueLabel, IssueReaction};
 use cordy_db::queries::{
     agent, agent_invocation_target, attachment, issue as issue_q, issue_label, issue_reaction,
-    member, squad, workspace,
+    member, squad, subscriber, workspace,
 };
 use cordy_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use cordy_service::issue_service::{
@@ -47,11 +47,23 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/issues/batch-update", post(batch_update_issues))
         .route("/api/issues/{id}", get(get_issue).put(update_issue))
         .route("/api/issues/{id}/", get(get_issue).put(update_issue))
+        .route("/api/issues/{id}/move", post(move_issue))
         .route("/api/issues/{id}/children", get(list_child_issues))
         .route("/api/issues/{id}/metadata", get(list_issue_metadata))
         .route(
             "/api/issues/{id}/metadata/{key}",
             axum::routing::put(set_issue_metadata_key).delete(delete_issue_metadata_key),
+        )
+        .route(
+            "/api/issues/{id}/reactions",
+            post(add_issue_reaction).delete(remove_issue_reaction),
+        )
+        .route("/api/issues/{id}/subscribers", get(list_issue_subscribers))
+        .route("/api/issues/{id}/subscribe", post(subscribe_to_issue))
+        .route("/api/issues/{id}/unsubscribe", post(unsubscribe_from_issue))
+        .route(
+            "/api/issues/{id}/unsubscribe/subtree",
+            post(unsubscribe_from_issue_subtree),
         )
         .route(
             "/api/issues/{id}/labels",
@@ -61,6 +73,497 @@ pub fn router() -> Router<HandlerState> {
             "/api/issues/{id}/labels/{label_id}",
             axum::routing::delete(detach_label),
         )
+}
+
+async fn move_anchor_position(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    id: Option<Uuid>,
+) -> Result<Option<f64>, Response> {
+    let Some(id) = id else { return Ok(None) };
+    sqlx::query_scalar::<_, f64>("SELECT position FROM issue WHERE workspace_id=$1 AND id=$2")
+        .bind(workspace_id)
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to resolve move anchor");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to resolve move anchor",
+            )
+        })?
+        .map(Some)
+        .ok_or_else(|| {
+            error_response(
+                StatusCode::BAD_REQUEST,
+                "move anchor not found in this workspace",
+            )
+        })
+}
+
+fn move_position(
+    current: f64,
+    before: Option<f64>,
+    after: Option<f64>,
+) -> Result<f64, &'static str> {
+    let position = match (before, after) {
+        (Some(before), Some(after)) if before < after => before + (after - before) / 2.0,
+        (Some(_), Some(_)) => return Err("move anchors are stale or out of order"),
+        (Some(before), None) => before + 1.0,
+        (None, Some(after)) => after - 1.0,
+        (None, None) => current,
+    };
+    if !position.is_finite()
+        || before.is_some_and(|value| position <= value)
+        || after.is_some_and(|value| position >= value)
+    {
+        return Err("move anchors are too close; refresh and retry");
+    }
+    Ok(position)
+}
+
+async fn move_issue(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let current = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let mut fields = match update_object(&body) {
+        Ok(fields) => fields,
+        Err(response) => return response,
+    };
+    const ALLOWED: &[&str] = &[
+        "status",
+        "assignee_type",
+        "assignee_id",
+        "parent_issue_id",
+        "project_id",
+        "before_id",
+        "after_id",
+        "expected_revision",
+    ];
+    if let Some(field) = fields
+        .keys()
+        .find(|field| !ALLOWED.contains(&field.as_str()))
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            &format!("unsupported move field: {field}"),
+        );
+    }
+    if !fields.contains_key("before_id") {
+        return error_response(StatusCode::BAD_REQUEST, "before_id is required");
+    }
+    if !fields.contains_key("after_id") {
+        return error_response(StatusCode::BAD_REQUEST, "after_id is required");
+    }
+    let decode = |name: &str| -> Result<Option<Uuid>, Response> {
+        match fields.get(name) {
+            Some(Value::Null) => Ok(None),
+            Some(Value::String(value)) => Uuid::parse_str(value)
+                .map(Some)
+                .map_err(|_| error_response(StatusCode::BAD_REQUEST, &format!("invalid {name}"))),
+            _ => Err(error_response(
+                StatusCode::BAD_REQUEST,
+                &format!("{name} must be a UUID or null"),
+            )),
+        }
+    };
+    let before_id = match decode("before_id") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let after_id = match decode("after_id") {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    if before_id == Some(current.id) || after_id == Some(current.id) {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "move anchor cannot be the moved issue",
+        );
+    }
+    if before_id.is_some() && before_id == after_id {
+        return error_response(StatusCode::BAD_REQUEST, "move anchors must be distinct");
+    }
+    let before = match move_anchor_position(&state, current.workspace_id, before_id).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let after = match move_anchor_position(&state, current.workspace_id, after_id).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let position = match move_position(current.position, before, after) {
+        Ok(value) => value,
+        Err(message) => return error_response(StatusCode::CONFLICT, message),
+    };
+    fields.remove("before_id");
+    fields.remove("after_id");
+    fields.insert("position".into(), json!(position));
+    match apply_issue_update(&state, &context, current, &fields).await {
+        Ok(issue) => issue_response(&state, issue).await,
+        Err(response) => response,
+    }
+}
+
+async fn list_issue_subscribers(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+) -> Response {
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    match subscriber::list_issue_subscribers(&state.pool, issue.id).await {
+        Ok(subscribers) => Json(subscribers).into_response(),
+        Err(error) => {
+            tracing::warn!(%error, "failed to list subscribers");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list subscribers",
+            )
+        }
+    }
+}
+
+#[derive(Default, Deserialize)]
+struct SubscriberRequest {
+    user_id: Option<Uuid>,
+    user_type: Option<String>,
+}
+
+async fn subscriber_target(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    headers: &HeaderMap,
+    request: SubscriberRequest,
+) -> Result<(String, Uuid), Response> {
+    let (caller_type, caller_id) = request_actor(headers, context);
+    let user_type = request.user_type.unwrap_or_else(|| caller_type.into());
+    let user_id = request.user_id.unwrap_or(caller_id);
+    if !matches!(user_type.as_str(), "member" | "agent") {
+        return Err(error_response(
+            StatusCode::FORBIDDEN,
+            "target user is not a member of this workspace",
+        ));
+    }
+    let table = if user_type == "member" {
+        "member"
+    } else {
+        "agent"
+    };
+    let key = if user_type == "member" {
+        "user_id"
+    } else {
+        "id"
+    };
+    let statement = format!("SELECT 1 FROM {table} WHERE {key}=$1 AND workspace_id=$2");
+    let exists = sqlx::query(&statement)
+        .bind(user_id)
+        .bind(context.member.workspace_id)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to verify subscriber target");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to verify subscriber",
+            )
+        })?;
+    if exists.is_none() {
+        return Err(error_response(
+            StatusCode::FORBIDDEN,
+            "target user is not a member of this workspace",
+        ));
+    }
+    Ok((user_type, user_id))
+}
+
+async fn subscribe_to_issue(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    request: Option<Json<SubscriberRequest>>,
+) -> Response {
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let target = subscriber_target(
+        &state,
+        &context,
+        &headers,
+        request.map(|Json(value)| value).unwrap_or_default(),
+    )
+    .await;
+    let (user_type, user_id) = match target {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    if let Err(error) = subscriber::subscribe_to_issue_explicitly(
+        &state.pool,
+        issue.id,
+        &user_type,
+        user_id,
+        "manual",
+    )
+    .await
+    {
+        tracing::warn!(%error, "failed to subscribe");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to subscribe");
+    }
+    let (actor_type, actor_id) = request_actor(&headers, &context);
+    state.bus.publish(&cordy_events::Event {
+        event_type: "subscriber:added".into(), workspace_id: context.workspace_id.clone(),
+        actor_type: actor_type.into(), actor_id: actor_id.to_string(),
+        payload: json!({ "issue_id": issue.id, "user_type": user_type, "user_id": user_id, "reason": "manual" }),
+        ..Default::default()
+    });
+    Json(json!({ "subscribed": true })).into_response()
+}
+
+async fn unsubscribe_from_issue(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    request: Option<Json<SubscriberRequest>>,
+) -> Response {
+    unsubscribe(
+        &state,
+        &context,
+        &id,
+        &headers,
+        request.map(|Json(v)| v).unwrap_or_default(),
+        false,
+    )
+    .await
+}
+
+async fn unsubscribe_from_issue_subtree(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    request: Option<Json<SubscriberRequest>>,
+) -> Response {
+    unsubscribe(
+        &state,
+        &context,
+        &id,
+        &headers,
+        request.map(|Json(v)| v).unwrap_or_default(),
+        true,
+    )
+    .await
+}
+
+async fn unsubscribe(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    raw_id: &str,
+    headers: &HeaderMap,
+    request: SubscriberRequest,
+    subtree: bool,
+) -> Response {
+    let issue = match resolve_issue(state, context, raw_id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let (user_type, user_id) = match subscriber_target(state, context, headers, request).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let removed = if subtree {
+        let mut transaction = match state.pool.begin().await {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::warn!(%error, "failed to unsubscribe");
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to unsubscribe");
+            }
+        };
+        if let Err(error) =
+            subscriber::lock_subscriber_writes(&mut *transaction, issue.workspace_id, user_id).await
+        {
+            tracing::warn!(%error, "failed to lock subscriber writes");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to unsubscribe");
+        }
+        match subscriber::unsubscribe_from_issue_subtree(
+            &mut *transaction,
+            issue.id,
+            &user_type,
+            user_id,
+        )
+        .await
+        {
+            Ok(ids) => {
+                if let Err(error) = transaction.commit().await {
+                    tracing::warn!(%error, "failed to commit unsubscribe");
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to unsubscribe",
+                    );
+                }
+                ids.into_iter().flatten().collect::<Vec<_>>()
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to unsubscribe subtree");
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to unsubscribe");
+            }
+        }
+    } else {
+        if let Err(error) =
+            subscriber::remove_issue_subscriber(&state.pool, issue.id, &user_type, user_id).await
+        {
+            tracing::warn!(%error, "failed to unsubscribe");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to unsubscribe");
+        }
+        vec![issue.id]
+    };
+    let (actor_type, actor_id) = request_actor(headers, context);
+    for issue_id in removed {
+        state.bus.publish(&cordy_events::Event {
+            event_type: "subscriber:removed".into(),
+            workspace_id: context.workspace_id.clone(),
+            actor_type: actor_type.into(),
+            actor_id: actor_id.to_string(),
+            payload: json!({ "issue_id": issue_id, "user_type": user_type, "user_id": user_id }),
+            ..Default::default()
+        });
+    }
+    Json(json!({ "subscribed": false })).into_response()
+}
+
+fn request_actor(headers: &HeaderMap, context: &WorkspaceContext) -> (&'static str, Uuid) {
+    headers
+        .get("x-agent-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .map_or(("member", context.member.user_id), |id| ("agent", id))
+}
+
+#[derive(Deserialize)]
+struct ReactionRequest {
+    emoji: String,
+}
+
+async fn add_issue_reaction(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<ReactionRequest>,
+) -> Response {
+    if request.emoji.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "emoji is required");
+    }
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let (actor_type, actor_id) = request_actor(&headers, &context);
+    match issue_reaction::add_issue_reaction(
+        &state.pool,
+        issue.id,
+        issue.workspace_id,
+        actor_type,
+        actor_id,
+        &request.emoji,
+    )
+    .await
+    {
+        Ok(Some(reaction)) => {
+            if reaction.issue_revision > 0 {
+                state.bus.publish(&cordy_events::Event {
+                    event_type: "issue:reaction_added".into(),
+                    workspace_id: context.workspace_id.clone(),
+                    actor_type: actor_type.into(),
+                    actor_id: actor_id.to_string(),
+                    payload: json!({
+                        "reaction": reaction,
+                        "issue_id": issue.id,
+                        "issue_title": issue.title,
+                        "issue_status": issue.status,
+                        "creator_type": issue.creator_type,
+                        "creator_id": issue.creator_id,
+                        "issue_revision": reaction.issue_revision,
+                    }),
+                    ..Default::default()
+                });
+            }
+            (StatusCode::CREATED, Json(reaction)).into_response()
+        }
+        Ok(None) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to add reaction"),
+        Err(error) => {
+            tracing::warn!(%error, "failed to add issue reaction");
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to add reaction")
+        }
+    }
+}
+
+async fn remove_issue_reaction(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<ReactionRequest>,
+) -> Response {
+    if request.emoji.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "emoji is required");
+    }
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let (actor_type, actor_id) = request_actor(&headers, &context);
+    match issue_reaction::remove_issue_reaction(
+        &state.pool,
+        issue.id,
+        actor_type,
+        actor_id,
+        &request.emoji,
+    )
+    .await
+    {
+        Ok(Some(removed)) => {
+            if removed.changed {
+                state.bus.publish(&cordy_events::Event {
+                    event_type: "issue:reaction_removed".into(),
+                    workspace_id: context.workspace_id.clone(),
+                    actor_type: actor_type.into(),
+                    actor_id: actor_id.to_string(),
+                    payload: json!({
+                        "issue_id": issue.id,
+                        "emoji": request.emoji,
+                        "actor_type": actor_type,
+                        "actor_id": actor_id,
+                        "issue_revision": removed.issue_revision,
+                    }),
+                    ..Default::default()
+                });
+            }
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(None) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to remove reaction",
+        ),
+        Err(error) => {
+            tracing::warn!(%error, "failed to remove issue reaction");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to remove reaction",
+            )
+        }
+    }
 }
 
 fn valid_metadata_key(key: &str) -> bool {
