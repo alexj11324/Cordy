@@ -1254,12 +1254,10 @@ pub(crate) fn pending_work_frame(runtime_id: &str, kind: &str) -> Option<Vec<u8>
 pub(crate) mod test_support {
     //! Shared by hub.rs AND notifier.rs tests: both assert on the global [`M`]
     //! counters, so all such tests must serialise on this one mutex.
-    use std::sync::Mutex as StdMutex;
+    static METRICS_GUARD: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-    static METRICS_GUARD: StdMutex<()> = StdMutex::new(());
-
-    pub(crate) fn lock_metrics() -> std::sync::MutexGuard<'static, ()> {
-        METRICS_GUARD.lock().unwrap_or_else(|e| e.into_inner())
+    pub(crate) async fn lock_metrics() -> tokio::sync::MutexGuard<'static, ()> {
+        METRICS_GUARD.lock().await
     }
 
     pub(crate) fn reset_metrics() {
@@ -1409,9 +1407,9 @@ mod tests {
 
     // ---- routing tables (WS-dial tests from hub_test.go, minus the socket) --
 
-    #[test]
-    fn notify_task_available_reaches_runtime_room() {
-        let _guard = lock_metrics();
+    #[tokio::test]
+    async fn notify_task_available_reaches_runtime_room() {
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = DaemonHub::new();
@@ -1437,9 +1435,9 @@ mod tests {
         drop(client);
     }
 
-    #[test]
-    fn notify_runtime_profiles_changed_reaches_workspace_room() {
-        let _guard = lock_metrics();
+    #[tokio::test]
+    async fn notify_runtime_profiles_changed_reaches_workspace_room() {
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = DaemonHub::new();
@@ -1463,9 +1461,9 @@ mod tests {
         assert_eq!(payload["runtime_profile_id"], "profile-1");
     }
 
-    #[test]
-    fn notify_workspaces_changed_supports_account_only_connection() {
-        let _guard = lock_metrics();
+    #[tokio::test]
+    async fn notify_workspaces_changed_supports_account_only_connection() {
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = DaemonHub::new();
@@ -1486,9 +1484,9 @@ mod tests {
         assert_eq!(r#type, EVENT_DAEMON_WORKSPACES_CHANGED);
     }
 
-    #[test]
-    fn notify_pending_work_carries_kind_and_dedups_duplicate_event() {
-        let _guard = lock_metrics();
+    #[tokio::test]
+    async fn notify_pending_work_carries_kind_and_dedups_duplicate_event() {
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = DaemonHub::new();
@@ -1524,9 +1522,9 @@ mod tests {
         assert_eq!(M.wakeup_delivered_miss.load(Ordering::Relaxed), 0);
     }
 
-    #[test]
-    fn notify_pending_work_ignores_empty_runtime() {
-        let _guard = lock_metrics();
+    #[tokio::test]
+    async fn notify_pending_work_ignores_empty_runtime() {
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = DaemonHub::new();
@@ -1547,9 +1545,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn deliver_daemon_runtime_routes_by_payload_not_shard_key() {
-        let _guard = lock_metrics();
+    #[tokio::test]
+    async fn deliver_daemon_runtime_routes_by_payload_not_shard_key() {
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = DaemonHub::new();
@@ -1614,9 +1612,9 @@ mod tests {
         hub.unregister(client.id);
     }
 
-    #[test]
-    fn slow_clients_are_evicted_and_counted() {
-        let _guard = lock_metrics();
+    #[tokio::test]
+    async fn slow_clients_are_evicted_and_counted() {
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = DaemonHub::new();
@@ -2127,8 +2125,8 @@ mod tests {
 
     // ---- metrics snapshot shape ----------------------------------------------
 
-    #[test]
-    fn metrics_snapshot_keys_match_go() {
+    #[tokio::test]
+    async fn metrics_snapshot_keys_match_go() {
         let m = Metrics::new();
         m.connects_total.store(1, Ordering::Relaxed);
         m.wakeup_delivered_hit.store(2, Ordering::Relaxed);
@@ -2152,13 +2150,15 @@ mod tests {
     // first, publishes to the relay with the same event id, and the loopback
     // delivery through deliver_daemon_runtime must be deduped.
 
+    /// One recorded relay publish: (scope_type, scope_id, frame, event_id).
+    type RecordedPublish = (String, String, Vec<u8>, String);
+
     /// Port of localFirstDaemonRelayPublisher: records the publish and asserts
     /// the local fanout already queued a frame before the relay publish ran.
-    type RelayRecord = StdMutex<Option<(String, String, Vec<u8>, String)>>;
     struct LocalFirstRelayPublisher {
         rx: Arc<StdMutex<mpsc::Receiver<Vec<u8>>>>,
         called: StdMutex<bool>,
-        record: RelayRecord,
+        record: StdMutex<Option<RecordedPublish>>,
     }
 
     #[async_trait]
@@ -2189,10 +2189,12 @@ mod tests {
         }
     }
 
+    /// (shared rx handle, publisher) pair for loopback-dedup assertions.
     type LoopbackRelay = (
         Arc<StdMutex<mpsc::Receiver<Vec<u8>>>>,
         Arc<LocalFirstRelayPublisher>,
     );
+
     fn attach_loopback_relay(
         client: &Arc<DaemonClient>,
         rx: mpsc::Receiver<Vec<u8>>,
@@ -2208,10 +2210,8 @@ mod tests {
     }
 
     #[tokio::test]
-    // Serial metrics lock is intentionally held across awaits in this test.
-    #[allow(clippy::await_holding_lock)]
     async fn relay_notifier_dedups_local_redis_loopback() {
-        let _guard = lock_metrics();
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = Arc::new(DaemonHub::new());
@@ -2257,10 +2257,8 @@ mod tests {
     }
 
     #[tokio::test]
-    // Serial metrics lock is intentionally held across awaits in this test.
-    #[allow(clippy::await_holding_lock)]
     async fn relay_notifier_dedups_runtime_profiles_changed_loopback() {
-        let _guard = lock_metrics();
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = Arc::new(DaemonHub::new());
@@ -2312,10 +2310,8 @@ mod tests {
     }
 
     #[tokio::test]
-    // Serial metrics lock is intentionally held across awaits in this test.
-    #[allow(clippy::await_holding_lock)]
     async fn relay_notifier_dedups_workspaces_changed_loopback() {
-        let _guard = lock_metrics();
+        let _guard = lock_metrics().await;
         reset_metrics();
 
         let hub = Arc::new(DaemonHub::new());

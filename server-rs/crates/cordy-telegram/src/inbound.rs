@@ -191,7 +191,7 @@ pub fn normalize_text(text: &str, bot_username: &str) -> String {
 /// human's message while mentioning the bot in a group.
 fn enrich_with_quoted_human_message(
     instruction: &str,
-    _chat_id: i64,
+    chat_id: i64,
     quoted: &TelegramMessage,
 ) -> String {
     let mut quoted_text = quoted.text.clone();
@@ -211,7 +211,7 @@ fn enrich_with_quoted_human_message(
     // integers so quoting only matters for strings.
     let block = format!(
         "<quoted_message message_id=\"{}\" sender=\"{}\" type=\"{}\">\n{}\n</quoted_message>",
-        crate::message_key(0, quoted.message_id),
+        crate::message_key(chat_id, quoted.message_id),
         go_quote(&sender),
         go_quote(&MsgType::unknown().0),
         quoted_text
@@ -260,53 +260,39 @@ fn message_entity_text(text: &str, entity: &MessageEntity) -> Option<String> {
 }
 
 fn contains_bot_mention(text: &str, bot_username: &str) -> bool {
-    let token = format!("@{}", bot_username.to_lowercase());
-    if token.is_empty() {
-        return false;
-    }
-    let lower = text.to_lowercase();
-    let lower_bytes = lower.as_bytes();
-    let token_bytes = token.as_bytes();
-    let mut start = 0;
-    loop {
-        let Some(i) = lower[start..].find(&token) else {
-            return false;
-        };
-        let i = start + i;
-        let end = i + token_bytes.len();
-        if end == lower.len() || !is_telegram_username_byte(lower_bytes[end]) {
-            return true;
-        }
-        start = end;
-    }
+    bot_mention_ranges(text, bot_username).next().is_some()
 }
 
 fn remove_bot_mentions(text: &str, bot_username: &str) -> String {
-    let token = format!("@{}", bot_username.to_lowercase());
-    let lower = text.to_lowercase();
     let mut out = String::with_capacity(text.len());
     let mut start = 0;
-    while start < text.len() {
-        let Some(i_rel) = lower[start..].find(&token) else {
-            out.push_str(&text[start..]);
-            break;
-        };
-        let i = start + i_rel;
-        let end = i + token.len();
-        if end < lower.len() && is_telegram_username_byte(lower.as_bytes()[end]) {
-            // Longer username continuing after @bot — keep scanning past it.
-            out.push_str(&text[start..end]);
-            start = end;
-            continue;
-        }
+    for (i, end) in bot_mention_ranges(text, bot_username) {
         out.push_str(&text[start..i]);
         start = end;
     }
+    out.push_str(&text[start..]);
     out
 }
 
+fn bot_mention_ranges<'a>(
+    text: &'a str,
+    bot_username: &'a str,
+) -> impl Iterator<Item = (usize, usize)> + 'a {
+    text.match_indices('@').filter_map(move |(start, _)| {
+        let name_start = start + 1;
+        let name_len = text[name_start..]
+            .bytes()
+            .take_while(|byte| is_telegram_username_byte(*byte))
+            .count();
+        let end = name_start + name_len;
+        text[name_start..end]
+            .eq_ignore_ascii_case(bot_username)
+            .then_some((start, end))
+    })
+}
+
 fn is_telegram_username_byte(b: u8) -> bool {
-    b == b'_' || b.is_ascii_lowercase() || b.is_ascii_digit()
+    b == b'_' || b.is_ascii_alphanumeric()
 }
 
 fn sender_display_name(u: &TelegramUser) -> String {
@@ -500,6 +486,7 @@ mod tests {
 
         let removed = remove_bot_mentions("@mybot please @mybotfan stay", "mybot");
         assert_eq!(removed, " please @mybotfan stay");
+        assert_eq!(remove_bot_mentions("İİ @MYBOT hi", "mybot"), "İİ  hi");
     }
 
     #[test]
@@ -509,6 +496,7 @@ mod tests {
         let enriched = enrich_with_quoted_human_message("fix this", -100, &quoted);
         assert!(enriched.starts_with("<quoted_message "));
         assert!(enriched.contains("earlier human words"));
+        assert!(enriched.contains("message_id=\"-100:"));
         assert!(enriched.ends_with("\n\nfix this"));
 
         // Empty instruction returns just the block.

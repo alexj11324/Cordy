@@ -461,21 +461,33 @@ async fn send_hook_request(
             .map_err(|e| {
                 PluginError::with_source(PluginErrorKind::Invalid, "build hook request", e)
             })?;
-        let response = client.send(request).await.map_err(|e| match e {
-            cordy_remotemcp::Error::CallTimeout => PluginError::with_source(
-                PluginErrorKind::Unavailable,
-                "hook endpoint did not answer in time",
-                Box::new(std::io::Error::new(
-                    std::io::ErrorKind::TimedOut,
-                    "call timeout",
-                )),
-            ),
-            other => PluginError::with_source(
-                PluginErrorKind::Unavailable,
-                "hook endpoint did not answer",
-                Box::new(other),
-            ),
-        })?;
+        let response = tokio::time::timeout(timeout, client.send(request))
+            .await
+            .map_err(|_| {
+                PluginError::with_source(
+                    PluginErrorKind::Unavailable,
+                    "hook endpoint did not answer in time",
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "hook timeout",
+                    )),
+                )
+            })?
+            .map_err(|e| match e {
+                cordy_remotemcp::Error::CallTimeout => PluginError::with_source(
+                    PluginErrorKind::Unavailable,
+                    "hook endpoint did not answer in time",
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::TimedOut,
+                        "call timeout",
+                    )),
+                ),
+                other => PluginError::with_source(
+                    PluginErrorKind::Unavailable,
+                    "hook endpoint did not answer",
+                    Box::new(other),
+                ),
+            })?;
         let (parts, body) = response.into_parts();
         let status = parts.status;
         if !(200..300).contains(&status.as_u16()) {

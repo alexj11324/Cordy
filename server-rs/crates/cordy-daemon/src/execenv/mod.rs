@@ -14,8 +14,7 @@ pub mod codex_skill_strip;
 pub mod codex_user_skills;
 pub mod context;
 pub mod cursor_mcp;
-// execenv/execenv.rs: module_inception is intentional — the Rust file tree
-// mirrors the Go package layout one-to-one.
+// Mirrors the Go file name execenv.go one-to-one per the module map above.
 #[allow(clippy::module_inception)]
 pub mod execenv;
 pub mod git;

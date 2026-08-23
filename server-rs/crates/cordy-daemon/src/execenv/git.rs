@@ -21,11 +21,12 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::execenv::execenv::join_path;
 use anyhow::{bail, Context};
 use regex::Regex;
 use tokio::process::Command;
 use tracing::warn;
+
+use super::execenv::join_path;
 
 /// DetectGitRepo checks if dir is inside a git repository (regular or bare).
 /// Returns the git root path and true if found.

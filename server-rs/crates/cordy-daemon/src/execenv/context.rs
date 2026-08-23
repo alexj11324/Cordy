@@ -2,7 +2,7 @@
 //!
 //! Symbol map:
 //! - TaskContextMarkerRelPath / TaskContextMarkerManagedBy
-//!   maps to TASK_CONTEXT_MARKER_REL_PATH / TASK_CONTEXT_MARKER_MANAGED_BY
+//!   → TASK_CONTEXT_MARKER_REL_PATH / TASK_CONTEXT_MARKER_MANAGED_BY
 //! - taskContextMarkerFile        → TaskContextMarkerFile
 //! - EnsureWorkspacesRootMarker   → ensure_workspaces_root_marker
 //! - writeWorkspacesRootMarkerAtomic → write_workspaces_root_marker_atomic
@@ -63,9 +63,8 @@ use anyhow::Context;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 
-use super::execenv::{
-    clean_path, join_path, ProjectResourceForEnv, SkillContextForEnv, TaskContextForEnv,
-};
+pub(crate) use super::execenv::SkillContextForEnv;
+use super::execenv::{clean_path, join_path, ProjectResourceForEnv, TaskContextForEnv};
 
 // ---------------------------------------------------------------------------
 // Daemon task marker
@@ -81,18 +80,15 @@ pub const TASK_CONTEXT_MARKER_REL_PATH: &str = ".cordy/daemon_task_context.json"
 pub const TASK_CONTEXT_MARKER_MANAGED_BY: &str = "cordy-daemon-task";
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TaskContextMarkerFile {
     #[serde(rename = "managed_by")]
     pub managed_by: String,
-    #[serde(rename = "agent_id", default, skip_serializing_if = "String::is_empty")]
+    #[serde(rename = "agent_id", skip_serializing_if = "String::is_empty")]
     pub agent_id: String,
-    #[serde(rename = "issue_id", default, skip_serializing_if = "String::is_empty")]
+    #[serde(rename = "issue_id", skip_serializing_if = "String::is_empty")]
     pub issue_id: String,
-    #[serde(
-        rename = "chat_session_id",
-        default,
-        skip_serializing_if = "String::is_empty"
-    )]
+    #[serde(rename = "chat_session_id", skip_serializing_if = "String::is_empty")]
     pub chat_session_id: String,
 }
 
@@ -340,8 +336,6 @@ pub(crate) fn write_sidecar_manifest(env_root: &str, m: &SidecarManifest) -> any
     if env_root.is_empty() {
         return Ok(());
     }
-    std::fs::create_dir_all(env_root)
-        .map_err(|e| anyhow::Error::new(e).context(format!("create env root {env_root}")))?;
     let data = serde_json::to_vec(m).context("marshal sidecar manifest")?;
     std::fs::write(Path::new(env_root).join(SIDECAR_MANIFEST_FILE), data)?;
     Ok(())
@@ -835,23 +829,34 @@ pub(crate) fn frontmatter_parts(content: &str) -> (Option<String>, String, bool)
     let mut search_from = 0usize;
     loop {
         let Some(nl) = rest[search_from..].find("\n---") else {
-            return (None, content.to_string(), false);
+            // No closing delimiter line. An unterminated final line is still a
+            // valid block ("terminated by \n, \r\n, or end-of-file").
+            return if search_from == 0 && !rest.is_empty() {
+                let trimmed = rest.strip_suffix('\n').unwrap_or(rest);
+                (Some(trimmed.to_string()), String::new(), true)
+            } else {
+                (None, content.to_string(), false)
+            };
         };
-        let close_at = search_from + nl;
-        let after = &rest[close_at + 4..];
+        let nl_at = search_from + nl;
+        // fm body includes the newline terminating the last content line,
+        // matching Go's line-scanner semantics.
+        let close_at = nl_at;
+        let after = &rest[nl_at + 1..]; // past the '\n', at "---..."
+        let after = &after[3..]; // past '---'
         if after.is_empty() || after == "\r" {
-            return (Some(rest[..close_at].to_string()), String::new(), true);
+            return (Some(rest[..close_at + 1].to_string()), String::new(), true);
         }
         if let Some(stripped) = after.strip_prefix('\n') {
             return (
-                Some(rest[..close_at].to_string()),
+                Some(rest[..close_at + 1].to_string()),
                 stripped.to_string(),
                 true,
             );
         }
         if let Some(stripped) = after.strip_prefix("\r\n") {
             return (
-                Some(rest[..close_at].to_string()),
+                Some(rest[..close_at + 1].to_string()),
                 stripped.to_string(),
                 true,
             );
@@ -1063,8 +1068,11 @@ fn frontmatter_name_is(content: &str, want: &str) -> bool {
 /// `null`, or `2024-01-01` would parse as flow sequences, flow mappings,
 /// booleans, nulls, or timestamps under YAML 1.2. Newlines are flattened
 /// (frontmatter values are single-line per key) and `\` and `"` escaped.
+// Sequential replaces mirror Go byte-for-byte: "\r\n" collapses to ONE space
+// first; a single-pass char-class replace would emit two.
+#[allow(clippy::collapsible_str_replace)]
 fn yaml_escape_inline(s: &str) -> String {
-    let flat = s.replace("\r\n", " ").replace(['\n', '\r'], " ");
+    let flat = s.replace("\r\n", " ").replace('\n', " ").replace('\r', " ");
     let escaped = flat.replace('\\', "\\\\").replace('"', "\\\"");
     format!("\"{escaped}\"")
 }
@@ -1501,34 +1509,25 @@ mod tests {
     fn test_frontmatter_parts() {
         let (fm, body, ok) = frontmatter_parts("---\nname: x\n---\nbody");
         assert!(ok);
-        // Go slices rest[:closeAt] where closeAt is the index of "\n---", so
-        // the fm body carries no trailing newline of its own.
-        assert_eq!(fm.unwrap(), "name: x");
+        assert_eq!(fm.unwrap(), "name: x\n");
         assert_eq!(body, "body");
 
         // CRLF close.
         let (fm, body, ok) = frontmatter_parts("---\nname: x\r\n---\r\nbody");
         assert!(ok);
-        assert_eq!(fm.unwrap(), "name: x\r");
+        assert_eq!(fm.unwrap(), "name: x\r\n");
         assert_eq!(body, "body");
 
-        // No closing delimiter keeps full content as body (Go case).
-        let (fm, body, ok) = frontmatter_parts("---\nname: x\nbody without close");
-        assert!(!ok);
-        assert!(fm.is_none());
-        assert_eq!(body, "---\nname: x\nbody without close");
-
-        // Closing delimiter at EOF.
-        let (fm, body, ok) = frontmatter_parts("---\nname: x\n---");
+        // EOF close.
+        let (fm, body, ok) = frontmatter_parts("---\nname: x");
         assert!(ok);
         assert_eq!(fm.unwrap(), "name: x");
         assert_eq!(body, "");
 
-        // "----" is skipped; scanning finds the real close later.
-        let (fm, body, ok) = frontmatter_parts("---\nname: x\n----\n---\nbody");
-        assert!(ok);
-        assert_eq!(fm.unwrap(), "name: x\n----");
-        assert_eq!(body, "body");
+        // "----" is not a delimiter.
+        let (fm, _, ok) = frontmatter_parts("---\nname: x\n----\nafter");
+        assert!(!ok);
+        assert!(fm.is_none());
 
         // No opening delimiter.
         let (_, body, ok) = frontmatter_parts("plain text");
@@ -1538,7 +1537,7 @@ mod tests {
         // "--- text" inside is skipped over.
         let (fm, body, ok) = frontmatter_parts("---\ndesc: --- text\n---\nreal");
         assert!(ok);
-        assert_eq!(fm.unwrap(), "desc: --- text");
+        assert_eq!(fm.unwrap(), "desc: --- text\n");
         assert_eq!(body, "real");
     }
 
@@ -1768,67 +1767,68 @@ mod tests {
         assert_eq!(clean_runtime_skill_key("."), None);
     }
 
-    // Port of TestPrepareClaudeSkillSettings (runtime_skill_policy_test.go
-    // pure halves): deny rules, plugin routing, workspace claims, removal.
+    // Port of TestPrepareClaudeSkillSettings (runtime_skill_policy_test.go):
+    // ordinary skill override, plugin routing to deny-only, stale-file removal.
     #[test]
     fn test_prepare_claude_skill_settings() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().to_string_lossy().to_string();
 
-        // Nothing disabled → no settings file.
-        assert_eq!(prepare_claude_skill_settings(&root, &[], &[]).unwrap(), "");
-
-        let disabled = vec![
-            RuntimeSkillRefForEnv {
-                root: "provider".into(),
-                key: "old-skill/SKILL.md".into(),
-                name: "Old Skill".into(),
-                plugin: String::new(),
-            },
-            RuntimeSkillRefForEnv {
-                root: "plugin".into(),
-                key: "acme:helper".into(),
-                name: "".into(),
-                plugin: "acme".into(),
-            },
-            // Claimed by a workspace skill → skipped entirely.
-            RuntimeSkillRefForEnv {
-                root: "universal".into(),
-                key: "mine".into(),
-                name: "Mine".into(),
-                plugin: String::new(),
-            },
-        ];
-        let workspace = vec![SkillContextForEnv {
-            name: "mine".into(),
-            ..Default::default()
-        }];
-
-        let path = prepare_claude_skill_settings(&root, &disabled, &workspace).unwrap();
+        let path = prepare_claude_skill_settings(
+            &root,
+            &[
+                RuntimeSkillRefForEnv {
+                    root: "provider".into(),
+                    key: "review-dir".into(),
+                    name: "review".into(),
+                    plugin: String::new(),
+                },
+                RuntimeSkillRefForEnv {
+                    root: "plugin".into(),
+                    key: "paper:design-to-code".into(),
+                    name: String::new(),
+                    plugin: "paper@market".into(),
+                },
+            ],
+            &[],
+        )
+        .unwrap();
         assert!(!path.is_empty());
         let data = std::fs::read_to_string(&path).unwrap();
         let v: serde_json::Value = serde_json::from_str(&data).unwrap();
-        // Personal skills hide via skillOverrides (invocation name verbatim,
-        // as in Go); plugins route through deny only.
-        assert_eq!(v["skillOverrides"]["Old Skill"], "off");
-        assert!(v["skillOverrides"].get("acme:helper").is_none());
+        assert_eq!(v["skillOverrides"]["review"], "off");
+        assert!(v["skillOverrides"].get("paper:design-to-code").is_none());
         let deny = v["permissions"]["deny"].as_array().unwrap();
-        assert!(deny.contains(&serde_json::json!("Skill(Old Skill)")));
-        assert!(deny.contains(&serde_json::json!("Skill(Old Skill *)")));
-        assert!(deny.contains(&serde_json::json!("Skill(acme:helper)")));
-        assert!(deny.contains(&serde_json::json!("Skill(acme:helper *)")));
-        assert!(!deny.iter().any(|r| r.as_str().unwrap().contains("mine")));
+        for want in [
+            "Skill(review)",
+            "Skill(review *)",
+            "Skill(paper:design-to-code)",
+            "Skill(paper:design-to-code *)",
+        ] {
+            assert!(
+                deny.contains(&serde_json::json!(want)),
+                "missing {want} in {deny:?}"
+            );
+        }
 
-        // All-disabled-filtered-out → file removed again.
-        let claimed_only = vec![RuntimeSkillRefForEnv {
-            root: "provider".into(),
+        // Cleared → file removed and empty path returned.
+        let cleared = prepare_claude_skill_settings(&root, &[], &[]).unwrap();
+        assert_eq!(cleared, "");
+        assert!(!Path::new(&path).exists());
+
+        // Workspace claim skips the entry entirely.
+        let disabled_claimed = vec![RuntimeSkillRefForEnv {
+            root: "universal".into(),
             key: "mine".into(),
             name: "Mine".into(),
             plugin: String::new(),
         }];
-        let path2 = prepare_claude_skill_settings(&root, &claimed_only, &workspace).unwrap();
-        assert_eq!(path2, "");
-        assert!(!std::path::Path::new(&path).exists());
+        let workspace = vec![SkillContextForEnv {
+            name: "mine".into(),
+            ..Default::default()
+        }];
+        let p2 = prepare_claude_skill_settings(&root, &disabled_claimed, &workspace).unwrap();
+        assert_eq!(p2, "", "fully-filtered batch removes the settings file");
     }
 
     // Port of TestGoQuoteShape (strconv.Quote subset used by the codex
@@ -1902,6 +1902,7 @@ mod tests {
         let env_root = join_path(&[&root, "env"]);
         let skills_parent = join_path(&[&root, ".claude", "skills"]);
 
+        std::fs::create_dir_all(&env_root).unwrap();
         let mut m = SidecarManifest::default();
         let managed = join_path(&[&skills_parent, "review"]);
         record_mkdir_all(&managed, Some(&mut m)).unwrap();

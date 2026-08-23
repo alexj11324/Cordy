@@ -2,7 +2,7 @@
 //!
 //! Symbol map:
 //! - taskKind (+kindIssue/kindAutopilotRunOnly/kindQuickCreate/kindChat)
-//!   maps to TaskKind enum
+//!   → TaskKind enum
 //! - classifyTask                           → classify_task
 //! - taskKind.hasIssueContext               → TaskKind::has_issue_context
 
