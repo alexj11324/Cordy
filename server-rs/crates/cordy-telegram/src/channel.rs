@@ -43,7 +43,7 @@ impl Channel for TelegramChannel {
             };
             let updates = match updates {
                 Ok(updates) => updates,
-                Err(error) if ctx.is_cancelled() => return Ok(()),
+                Err(_) if ctx.is_cancelled() => return Ok(()),
                 Err(error)
                     if error
                         .chain()
