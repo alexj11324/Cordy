@@ -12,6 +12,7 @@
 
 pub mod agent_aggregation;
 pub mod agent_builder;
+pub mod agent_mcp;
 pub mod attachment;
 pub mod attachment_storage;
 pub mod auth;
@@ -268,6 +269,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
                 cordy_middleware::workspace::require_workspace,
             )),
         )
+        .merge(
+            agent_mcp::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                issue::require_issue_workspace,
+            )),
+        )
         .merge(cli_token::router())
         .merge(client_usage::router())
         .merge(feedback::router())
@@ -519,6 +526,7 @@ mod tests {
             "/api/agent-run-counts",
             "/api/agent-task-snapshot",
             "/api/agent-builder/sessions",
+            "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/mcp-servers",
             "/api/skills",
             "/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/files",
@@ -724,6 +732,23 @@ mod tests {
                     r#"{"runtime_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12"}"#,
                 ))
                 .unwrap(),
+            Request::post(
+                "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/mcp-servers",
+            )
+            .body(Body::from(
+                r#"{"server_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12"}"#,
+            ))
+            .unwrap(),
+            Request::put(
+                "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/mcp-servers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/enabled",
+            )
+            .body(Body::from(r#"{"enabled":true}"#))
+            .unwrap(),
+            Request::delete(
+                "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/mcp-servers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
+            )
+            .body(Body::empty())
+            .unwrap(),
             Request::put("/api/agent-builder/sessions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/draft")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"draft":{"name":"Migration"}}"#))
