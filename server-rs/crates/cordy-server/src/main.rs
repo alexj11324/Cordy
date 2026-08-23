@@ -14,6 +14,26 @@ fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<cordy_realtime::hub::H
     cordy_handler::build_router(db, hub)
 }
 
+fn build_production_router(
+    db: sqlx::PgPool,
+    hub: Arc<cordy_realtime::hub::Hub>,
+    business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
+    http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
+    storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
+    download: cordy_handler::state::AttachmentDownloadSettings,
+    realtime_metrics_token: Option<&str>,
+) -> Router {
+    let state = cordy_handler::HandlerState::new(
+        db,
+        cordy_auth::pat_cache::PatCache::disabled(),
+        Some(hub),
+    )
+    .with_attachment_storage(storage, download)
+    .with_realtime_metrics_token(realtime_metrics_token)
+    .with_observability(business_metrics, http_metrics);
+    cordy_handler::build_router_from_state(state)
+}
+
 fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
     if cfg.is_production() {
         cordy_auth::jwt::validate_jwt_secret(cfg.auth.jwt_secret.as_deref().unwrap_or(""))
@@ -45,14 +65,44 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
     let download = cordy_handler::state::AttachmentDownloadSettings::from_config(&cfg).await?;
-    let state = cordy_handler::HandlerState::new(
+    let hub = Arc::new(cordy_realtime::hub::Hub::new());
+    let metrics_config = cordy_metrics::Config::from_env();
+    let (business_metrics, http_metrics) = if metrics_config.enabled() {
+        let registry = cordy_metrics::Registry::new(cordy_metrics::registry::RegistryOptions {
+            pool: Some(Arc::new(db.clone())),
+            realtime: Some(&cordy_realtime::M),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            commit: option_env!("CORDY_GIT_COMMIT")
+                .unwrap_or("unknown")
+                .to_string(),
+            sampler: None,
+        });
+        let business = registry.business.clone();
+        let http = registry.http.clone();
+        let gatherer = Arc::new(registry.gatherer.clone());
+        let metrics_addr = metrics_config.addr.clone();
+        let effective_metrics_addr = cordy_metrics::server::normalized_bind_addr(&metrics_addr);
+        if !cordy_metrics::is_loopback_addr(&effective_metrics_addr) {
+            tracing::warn!(addr = %metrics_addr, "metrics listener is not loopback-only; restrict access with private networking, allowlists, or proxy auth");
+        }
+        tokio::spawn(async move {
+            if let Err(error) = cordy_metrics::server::serve(metrics_addr, gatherer).await {
+                tracing::error!(%error, "metrics server stopped");
+            }
+        });
+        (Some(business), Some(http))
+    } else {
+        (None, None)
+    };
+    let app = build_production_router(
         db,
-        cordy_auth::pat_cache::PatCache::disabled(),
-        Some(Arc::new(cordy_realtime::hub::Hub::new())),
-    )
-    .with_attachment_storage(storage, download)
-    .with_realtime_metrics_token(cfg.redis.realtime_metrics_token.as_deref());
-    let app = cordy_handler::build_router_from_state(state);
+        hub,
+        business_metrics,
+        http_metrics,
+        storage,
+        download,
+        cfg.redis.realtime_metrics_token.as_deref(),
+    );
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;

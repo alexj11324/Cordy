@@ -181,6 +181,16 @@ struct DaemonTaskWakeup {
     hub: Arc<cordy_daemon::hub::DaemonHub>,
 }
 
+struct DaemonMessageMetrics {
+    metrics: Arc<cordy_metrics::BusinessMetrics>,
+}
+
+impl cordy_daemon::hub::MessageKindRecorder for DaemonMessageMetrics {
+    fn record_daemon_ws_message_received(&self, kind: &str) {
+        self.metrics.record_daemon_ws_message_received(kind);
+    }
+}
+
 impl cordy_service::task_service::TaskWakeupNotifier for DaemonTaskWakeup {
     fn notify_task_available(&self, runtime_id: &str, task_id: &str) {
         self.hub.notify_task_available(runtime_id, task_id);
@@ -196,6 +206,10 @@ pub struct HandlerState {
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
     pub bus: Arc<cordy_events::Bus>,
+    /// Prometheus business counters. None when METRICS_ADDR is disabled.
+    pub business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
+    /// HTTP request metrics. None when METRICS_ADDR is disabled.
+    pub http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
     /// Feature flag source. `None` fails closed for rollout-gated writes.
     pub feature_flags: Option<Arc<dyn cordy_service::feature_flags::FlagSource>>,
     /// Task domain service (Go h.TaskService).
@@ -248,6 +262,8 @@ impl HandlerState {
             pat_cache,
             hub,
             bus,
+            business_metrics: None,
+            http_metrics: None,
             feature_flags: None,
             tasks,
             issues,
@@ -284,6 +300,21 @@ impl HandlerState {
     /// tests, while production uses the already-loaded config snapshot.
     pub fn with_realtime_metrics_token(mut self, raw: Option<&str>) -> Self {
         self.realtime_metrics_token = raw.unwrap_or_default().trim().to_string();
+        self
+    }
+
+    pub fn with_observability(
+        mut self,
+        business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
+        http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
+    ) -> Self {
+        if let (Some(hub), Some(metrics)) = (self.daemon_hub.as_ref(), business_metrics.as_ref()) {
+            hub.set_message_kind_recorder(Some(Arc::new(DaemonMessageMetrics {
+                metrics: metrics.clone(),
+            })));
+        }
+        self.business_metrics = business_metrics;
+        self.http_metrics = http_metrics;
         self
     }
 

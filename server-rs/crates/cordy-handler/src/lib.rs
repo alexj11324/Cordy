@@ -154,9 +154,9 @@ pub fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<Hub>>) -> Router {
     build_router_from_state(state)
 }
 
-/// Assemble routes from a fully configured state. Production uses this entry
-/// point so storage, CloudFront and attachment download mode all come from the
-/// same loaded configuration; lightweight tests retain [`build_router`].
+/// Assemble the HTTP router from fully wired state. Production uses this
+/// entry point so observability, storage, and download policy all come from
+/// the same loaded configuration; tests retain [`build_router`].
 pub fn build_router_from_state(state: HandlerState) -> Router {
     if let Some(hub) = state.hub.as_ref() {
         hub.set_authorizer(Arc::new(ws::DbScopeAuthorizer::new(state.tasks.clone())));
@@ -230,7 +230,8 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         daemon_auth_middleware,
     ));
 
-    Router::new()
+    let http_metrics = state.http_metrics.clone();
+    let app = Router::new()
         .merge(health::router())
         .merge(session::public_router())
         .merge(workspace::public_router())
@@ -241,6 +242,20 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .route("/ws", get(ws::ws_handler))
         .with_state(state)
         .layer(cors_layer())
+        .layer(middleware::from_fn(
+            cordy_middleware::request_logger::request_logger,
+        ))
+        .layer(middleware::from_fn(
+            cordy_middleware::client::client_metadata,
+        ));
+
+    match http_metrics {
+        Some(metrics) => app.layer(middleware::from_fn_with_state(
+            metrics,
+            cordy_metrics::http::middleware,
+        )),
+        None => app,
+    }
 }
 
 #[cfg(test)]
@@ -313,6 +328,12 @@ mod tests {
                 .unwrap(),
             Request::patch("/api/me")
                 .body(Body::from(r#"{"name":"Alex"}"#))
+                .unwrap(),
+            Request::patch("/api/me/onboarding")
+                .body(Body::from(r#"{"questionnaire":{}}"#))
+                .unwrap(),
+            Request::post("/api/me/onboarding/complete")
+                .body(Body::empty())
                 .unwrap(),
             Request::post("/api/share-links/join")
                 .body(Body::from(r#"{"code":"invite"}"#))

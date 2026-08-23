@@ -6,7 +6,6 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::Ordering::Relaxed;
-use std::sync::Arc;
 
 use prometheus::core::{Collector, Desc};
 use prometheus::proto::{self, MetricFamily};
@@ -14,7 +13,7 @@ use prometheus::proto::{self, MetricFamily};
 use cordy_realtime::Metrics as RealtimeMetrics;
 
 pub struct RealtimeCollector {
-    metrics: Option<Arc<RealtimeMetrics>>,
+    metrics: Option<&'static RealtimeMetrics>,
     descs: Vec<Desc>,
 }
 
@@ -56,7 +55,7 @@ const I_STREAM_MEMORY: usize = 23; // labeled "stream"
 const I_STREAM_PTTL: usize = 24; // labeled "stream"
 
 impl RealtimeCollector {
-    pub fn new(metrics: Arc<RealtimeMetrics>) -> Self {
+    pub fn new(metrics: &'static RealtimeMetrics) -> Self {
         let plain = |name: &str, help: &str| desc(name, help, &[]);
         let descs = vec![
             plain("cordy_realtime_connects_total", "Total realtime WebSocket connections opened."),
