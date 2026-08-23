@@ -5,6 +5,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use chrono::{DateTime, Utc};
+use cordy_db::models::GithubPullRequest;
 use cordy_db::queries::{github, vcs};
 use cordy_middleware::workspace::WorkspaceContext;
 use serde::Serialize;
@@ -13,7 +14,7 @@ use crate::error::error_response;
 use crate::state::HandlerState;
 
 #[derive(Debug, Serialize)]
-struct PullRequestResponse {
+pub(crate) struct PullRequestResponse {
     id: String,
     provider: String,
     workspace_id: String,
@@ -74,10 +75,71 @@ fn aggregate_checks(failed: i64, passed: i64, pending: i64, total: i64) -> Optio
     }
 }
 
-fn github_response(row: github::ListPullRequestsByIssueRow) -> PullRequestResponse {
-    // HandlerState does not yet carry the S7 ghsnapshot manager. This is the
-    // exact Go PRRefresh-disabled projection: stored snapshot fields remain
-    // hidden until the manager wiring slice lands.
+fn rollup_conclusion(
+    rollup: Option<&str>,
+    failed: i64,
+    running: i64,
+    passed: i64,
+) -> Option<String> {
+    let rollup = rollup.filter(|value| !value.is_empty())?;
+    match rollup.to_ascii_uppercase().as_str() {
+        "FAILURE" | "ERROR" => Some("failed".into()),
+        "PENDING" | "EXPECTED" => Some("pending".into()),
+        "SUCCESS" => Some("passed".into()),
+        _ if failed > 0 => Some("failed".into()),
+        _ if running > 0 => Some("pending".into()),
+        _ if passed > 0 => Some("passed".into()),
+        _ => None,
+    }
+}
+
+fn github_response(
+    row: github::ListPullRequestsByIssueRow,
+    snapshot_enabled: bool,
+) -> PullRequestResponse {
+    let snapshot_available = snapshot_enabled
+        && row.snapshot_fetched_at.is_some()
+        && !row.snapshot_head_sha.is_empty()
+        && row.snapshot_head_sha == row.head_sha;
+    let snapshot_stale = snapshot_available
+        && matches!(row.state.as_str(), "open" | "draft")
+        && row
+            .snapshot_fetched_at
+            .is_some_and(|at| Utc::now().signed_duration_since(at).num_minutes() > 30);
+    let mergeable = snapshot_available
+        .then(|| {
+            row.api_mergeable
+                .as_deref()
+                .filter(|value| !value.is_empty())
+        })
+        .flatten()
+        .map(str::to_ascii_lowercase);
+    let merge_state_status = snapshot_available
+        .then(|| {
+            row.api_merge_state_status
+                .as_deref()
+                .filter(|value| !value.is_empty())
+        })
+        .flatten()
+        .map(str::to_ascii_lowercase);
+    let checks_rollup = snapshot_available
+        .then(|| {
+            row.checks_rollup_state
+                .as_deref()
+                .filter(|value| !value.is_empty())
+        })
+        .flatten()
+        .map(str::to_ascii_lowercase);
+    let checks_conclusion = snapshot_available
+        .then(|| {
+            rollup_conclusion(
+                row.checks_rollup_state.as_deref(),
+                row.checks_failed,
+                row.checks_running,
+                row.checks_passed,
+            )
+        })
+        .flatten();
     PullRequestResponse {
         id: id(row.id),
         provider: "github".into(),
@@ -96,9 +158,80 @@ fn github_response(row: github::ListPullRequestsByIssueRow) -> PullRequestRespon
         pr_created_at: timestamp(row.pr_created_at),
         pr_updated_at: timestamp(row.pr_updated_at),
         mergeable_state: row.mergeable_state,
+        mergeable,
+        merge_state_status,
+        snapshot_available: Some(snapshot_available),
+        checks_rollup,
+        checks_conclusion,
+        checks_total: if snapshot_available {
+            row.checks_total
+        } else {
+            0
+        },
+        checks_passed: if snapshot_available {
+            row.checks_passed
+        } else {
+            0
+        },
+        checks_failed: if snapshot_available {
+            row.checks_failed
+        } else {
+            0
+        },
+        checks_running: if snapshot_available {
+            row.checks_running
+        } else {
+            0
+        },
+        checks_pending: if snapshot_available {
+            row.checks_running
+        } else {
+            0
+        },
+        failed_check_names: if snapshot_available {
+            row.failed_check_names.unwrap_or_default()
+        } else {
+            Vec::new()
+        },
+        snapshot_stale,
+        snapshot_fetched_at: snapshot_available
+            .then(|| optional_timestamp(row.snapshot_fetched_at))
+            .flatten(),
+        additions: row.additions,
+        deletions: row.deletions,
+        changed_files: row.changed_files,
+    }
+}
+
+pub(crate) fn github_model_response(
+    row: GithubPullRequest,
+    snapshot_enabled: bool,
+) -> serde_json::Value {
+    let snapshot_available = snapshot_enabled
+        && row.snapshot_fetched_at.is_some()
+        && !row.snapshot_head_sha.is_empty()
+        && row.snapshot_head_sha == row.head_sha;
+    serde_json::json!(PullRequestResponse {
+        id: row.id.to_string(),
+        provider: "github".into(),
+        workspace_id: row.workspace_id.to_string(),
+        repo_owner: row.repo_owner,
+        repo_name: row.repo_name,
+        number: row.pr_number,
+        title: row.title,
+        state: row.state,
+        html_url: row.html_url,
+        branch: row.branch,
+        author_login: row.author_login,
+        author_avatar_url: row.author_avatar_url,
+        merged_at: optional_timestamp(row.merged_at),
+        closed_at: optional_timestamp(row.closed_at),
+        pr_created_at: crate::timefmt::rfc3339(row.pr_created_at),
+        pr_updated_at: crate::timefmt::rfc3339(row.pr_updated_at),
+        mergeable_state: row.mergeable_state,
         mergeable: None,
         merge_state_status: None,
-        snapshot_available: Some(false),
+        snapshot_available: Some(snapshot_available),
         checks_rollup: None,
         checks_conclusion: None,
         checks_total: 0,
@@ -112,7 +245,7 @@ fn github_response(row: github::ListPullRequestsByIssueRow) -> PullRequestRespon
         additions: row.additions,
         deletions: row.deletions,
         changed_files: row.changed_files,
-    }
+    })
 }
 
 fn vcs_response(row: vcs::ListVCSPullRequestsByIssueRow) -> PullRequestResponse {
@@ -188,9 +321,26 @@ pub(crate) async fn list(
             );
         }
     };
+    let snapshot_enabled = state.github_snapshots.enabled();
+    for row in &github_rows {
+        if let Some(installation_id) = row.installation_id {
+            let current_snapshot = (row.snapshot_fetched_at.is_some()
+                && !row.snapshot_head_sha.is_empty()
+                && row.snapshot_head_sha == row.head_sha)
+                .then_some(row.snapshot_fetched_at)
+                .flatten();
+            state.github_snapshots.maybe_enqueue_on_view(
+                installation_id,
+                row.repo_owner.clone(),
+                row.repo_name.clone(),
+                row.pr_number,
+                current_snapshot,
+            );
+        }
+    }
     let mut pull_requests = github_rows
         .into_iter()
-        .map(github_response)
+        .map(|row| github_response(row, snapshot_enabled))
         .chain(vcs_rows.into_iter().map(vcs_response))
         .collect::<Vec<_>>();
     pull_requests.sort_by(|left, right| right.pr_created_at.cmp(&left.pr_created_at));
@@ -207,5 +357,18 @@ mod tests {
         assert_eq!(aggregate_checks(0, 4, 2, 6).as_deref(), Some("pending"));
         assert_eq!(aggregate_checks(0, 4, 0, 4).as_deref(), Some("passed"));
         assert_eq!(aggregate_checks(0, 0, 0, 0), None);
+    }
+
+    #[test]
+    fn rollup_mapping_never_treats_absent_checks_as_passed() {
+        assert_eq!(rollup_conclusion(None, 0, 0, 4), None);
+        assert_eq!(
+            rollup_conclusion(Some("SUCCESS"), 0, 0, 4).as_deref(),
+            Some("passed")
+        );
+        assert_eq!(
+            rollup_conclusion(Some("OTHER"), 1, 0, 4).as_deref(),
+            Some("failed")
+        );
     }
 }

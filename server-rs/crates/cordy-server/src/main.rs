@@ -22,6 +22,7 @@ fn build_production_router(
     storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
     download: cordy_handler::state::AttachmentDownloadSettings,
     realtime_metrics_token: Option<&str>,
+    github_client: Option<cordy_ghsnapshot::Client>,
 ) -> Router {
     let state = cordy_handler::HandlerState::new(
         db,
@@ -30,7 +31,8 @@ fn build_production_router(
     )
     .with_attachment_storage(storage, download)
     .with_realtime_metrics_token(realtime_metrics_token)
-    .with_observability(business_metrics, http_metrics);
+    .with_observability(business_metrics, http_metrics)
+    .with_github_snapshots(github_client);
     cordy_handler::build_router_from_state(state)
 }
 
@@ -94,6 +96,7 @@ async fn main() -> anyhow::Result<()> {
     } else {
         (None, None)
     };
+    let github_client = cordy_ghsnapshot::Client::new_from_env()?;
     let app = build_production_router(
         db,
         hub,
@@ -102,6 +105,7 @@ async fn main() -> anyhow::Result<()> {
         storage,
         download,
         cfg.redis.realtime_metrics_token.as_deref(),
+        github_client,
     );
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
