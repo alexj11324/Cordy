@@ -337,10 +337,7 @@ impl SlackChannel {
                     .map_err(|err| anyhow::anyhow!("decode app_mention: {err}"))?;
                 inbound_from_app_mention(e, &m, &self.bot_user_id, mention_re.as_ref())
             }
-            // Every other inner type carrying a channel is treated as the
-            // message event (message / message.channels / …); events without
-            // one are lifecycle noise.
-            _ if !inner.get("channel").is_none() => {
+            "message" => {
                 let m: MessageEvent = serde_json::from_value(inner.clone())
                     .map_err(|err| anyhow::anyhow!("decode message: {err}"))?;
                 inbound_from_message(e, &m, &self.bot_user_id, mention_re.as_ref())

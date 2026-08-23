@@ -325,7 +325,11 @@ pub fn terminal_send_params(call: &TerminalCall) -> Option<SendMessageParams> {
     };
     Some(SendMessageParams {
         chat_id: 0, // filled by the caller (reply.chat_id)
-        text: text.clone(),
+        text: if *parse_html {
+            format_html(text)
+        } else {
+            text.clone()
+        },
         parse_mode: if *parse_html {
             "HTML".into()
         } else {
@@ -414,7 +418,9 @@ impl ChatScheduleRegistry {
             if !Self::make_room_locked(&mut chats, &self.fallback, now) {
                 return None;
             }
-            chats.insert(key.clone(), ChatSchedule::new(bot_key.to_string(), chat_id));
+            let mut schedule = ChatSchedule::new(bot_key.to_string(), chat_id);
+            schedule.backoff_till = self.fallback.till(bot_key, now);
+            chats.insert(key.clone(), schedule);
         }
         let schedule = chats.get_mut(&key).unwrap();
         schedule.refs += 1;

@@ -175,7 +175,6 @@ fn lift_links(s: &str, links: &mut Vec<(String, String)>) -> String {
                         if rest.as_bytes()[paren] == b')' && paren > 0 {
                             let label = &s[i + 1..label_end];
                             let url = &rest[..paren];
-                            out.push_str(&s[..i]);
                             out.push_str("\x00LINK\x00");
                             links.push((label.to_string(), url.to_string()));
                             let consumed = label_end + 2 + url.len() + 1;
@@ -336,6 +335,10 @@ mod tests {
         );
         // A link containing spaces in the URL is not matched (Go's [^)\s]+).
         assert_eq!(format_inline("[a](u v)"), "[a](u v)");
+        assert_eq!(
+            format_inline("See [docs](https://example.com)"),
+            r#"See <a href="https://example.com">docs</a>"#
+        );
     }
 
     #[test]
