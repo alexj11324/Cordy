@@ -1171,13 +1171,10 @@ async fn inherit_machine_custom_name(
     };
     let mut shared: Option<&str> = None;
     for name in &names {
-        let Some(name) = name
+        let name = name
             .as_deref()
             .map(str::trim)
-            .filter(|name| !name.is_empty())
-        else {
-            return None;
-        };
+            .filter(|name| !name.is_empty())?;
         if shared.is_some_and(|existing| existing != name) {
             return None;
         }

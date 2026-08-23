@@ -4,6 +4,11 @@
 //! `server/internal/realtime` WS pump (HandleWebSocket/readPump/writePump),
 //! on axum. Routes are ported domain-by-domain; each domain module exposes a
 //! `router()` merged into the app router in this file.
+//!
+//! Handler validation helpers intentionally return complete Axum responses so
+//! every rejection preserves the Go wire shape at its source.
+
+#![allow(clippy::result_large_err)]
 
 pub mod claim_comments;
 pub mod claim_response;
@@ -20,6 +25,7 @@ pub mod pat;
 pub mod pending_store;
 pub mod pin;
 pub mod profile_json;
+pub mod quick_action;
 pub mod squad_briefing;
 pub mod state;
 pub mod task_json;
@@ -171,6 +177,12 @@ pub fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<Hub>>) -> Router {
             WorkspaceGuardState::member_only(state.pool.clone()),
             issue::require_issue_workspace,
         )))
+        .merge(
+            quick_action::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                issue::require_issue_workspace,
+            )),
+        )
         .merge(
             notification::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
