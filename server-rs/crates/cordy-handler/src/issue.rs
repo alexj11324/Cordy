@@ -1,13 +1,14 @@
 //! Core issue routes — S8 authenticated issue-domain slice.
 //!
-//! Ports the stable list/query, detail, create, children, and label-read
-//! contracts from `server/internal/handler/issue.go` and `label.go`. The
+//! Ports the stable list/query, detail, create/update/batch-update, children,
+//! and issue-label contracts from `server/internal/handler/issue.go` and `label.go`. The
 //! workspace middleware resolves slugs/ids, verifies membership, and stamps a
 //! `WorkspaceContext` before these handlers run.
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use axum::body::Bytes;
 use axum::extract::rejection::JsonRejection;
 use axum::extract::{Extension, Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -22,7 +23,9 @@ use cordy_db::queries::{
     member, squad, workspace,
 };
 use cordy_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
-use cordy_service::issue_service::{IssueCreateError, IssueCreateOpts, IssueCreateParams};
+use cordy_service::issue_service::{
+    IssueCreateError, IssueCreateOpts, IssueCreateParams, IssueTriggerInput, IssueTriggerProbe,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::{FromRow, Postgres, QueryBuilder};
@@ -38,10 +41,18 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/issues", get(list_issues).post(create_issue))
         .route("/api/issues/", get(list_issues).post(create_issue))
         .route("/api/issues/query", post(query_issues))
-        .route("/api/issues/{id}", get(get_issue))
-        .route("/api/issues/{id}/", get(get_issue))
+        .route("/api/issues/batch-update", post(batch_update_issues))
+        .route("/api/issues/{id}", get(get_issue).put(update_issue))
+        .route("/api/issues/{id}/", get(get_issue).put(update_issue))
         .route("/api/issues/{id}/children", get(list_child_issues))
-        .route("/api/issues/{id}/labels", get(list_labels_for_issue))
+        .route(
+            "/api/issues/{id}/labels",
+            get(list_labels_for_issue).post(attach_label),
+        )
+        .route(
+            "/api/issues/{id}/labels/{label_id}",
+            axum::routing::delete(detach_label),
+        )
 }
 
 /// Workspace guard for the issue group. Kept here because this slice needs a
@@ -766,6 +777,740 @@ async fn list_labels_for_issue(
             tracing::warn!(%error, issue_id = %issue.id, "failed to list issue labels");
             error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to list labels")
         }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum UpdateField<T> {
+    Missing,
+    Null,
+    Value(T),
+}
+
+impl<T> UpdateField<T> {
+    fn is_present(&self) -> bool {
+        !matches!(self, Self::Missing)
+    }
+}
+
+fn update_field<T: serde::de::DeserializeOwned>(
+    fields: &serde_json::Map<String, Value>,
+    name: &str,
+) -> Result<UpdateField<T>, Response> {
+    let Some(value) = fields.get(name) else {
+        return Ok(UpdateField::Missing);
+    };
+    if value.is_null() {
+        return Ok(UpdateField::Null);
+    }
+    serde_json::from_value(value.clone())
+        .map(UpdateField::Value)
+        .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid request body"))
+}
+
+fn update_object(body: &[u8]) -> Result<serde_json::Map<String, Value>, Response> {
+    match serde_json::from_slice::<Value>(body) {
+        Ok(Value::Object(fields)) => Ok(fields),
+        _ => Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid request body",
+        )),
+    }
+}
+
+async fn update_issue(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let previous = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let fields = match update_object(&body) {
+        Ok(fields) => fields,
+        Err(response) => return response,
+    };
+    match apply_issue_update(&state, &context, previous, &fields).await {
+        Ok(issue) => issue_response(&state, issue).await,
+        Err(response) => response,
+    }
+}
+
+async fn apply_issue_update(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    previous: Issue,
+    fields: &serde_json::Map<String, Value>,
+) -> Result<Issue, Response> {
+    let expected_revision = match update_field::<i64>(fields, "expected_revision")? {
+        UpdateField::Value(value) if value > 0 => Some(value),
+        UpdateField::Missing | UpdateField::Null => None,
+        UpdateField::Value(_) => {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "expected_revision must be a positive integer",
+            ))
+        }
+    };
+    if let Some(expected) = expected_revision {
+        if expected != previous.revision {
+            return Err(revision_conflict(&previous, expected, previous.revision));
+        }
+    }
+    let suppress_run = match update_field::<bool>(fields, "suppress_run")? {
+        UpdateField::Value(value) => value,
+        UpdateField::Missing | UpdateField::Null => false,
+    };
+    let handoff_note = match update_field::<String>(fields, "handoff_note")? {
+        UpdateField::Value(value) => value,
+        UpdateField::Missing | UpdateField::Null => String::new(),
+    };
+    let attachment_ids = match update_field::<Vec<String>>(fields, "attachment_ids")? {
+        UpdateField::Value(values) => uuid_strings(&values, "attachment_ids")
+            .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?,
+        UpdateField::Missing | UpdateField::Null => Vec::new(),
+    };
+
+    let mut next = previous.clone();
+    if let UpdateField::Value(value) = update_field::<String>(fields, "title")? {
+        next.title = value;
+    }
+    if let UpdateField::Value(value) = update_field::<String>(fields, "description")? {
+        next.description = Some(value);
+    }
+    if let UpdateField::Value(value) = update_field::<String>(fields, "status")? {
+        next.status =
+            match cordy_service::issue_status::resolve(&state.pool, previous.workspace_id, &value)
+                .await
+            {
+                Ok(entry) => entry.key,
+                Err(_) => return Err(invalid_status(state, previous.workspace_id, &value).await),
+            };
+    }
+    if let UpdateField::Value(value) = update_field::<String>(fields, "priority")? {
+        if !PRIORITIES.contains(&value.as_str()) {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                &format!(
+                    "invalid priority: {value} (must be one of: {})",
+                    PRIORITIES.join(", ")
+                ),
+            ));
+        }
+        next.priority = value;
+    }
+    if let UpdateField::Value(value) = update_field::<f64>(fields, "position")? {
+        if !value.is_finite() {
+            return Err(error_response(StatusCode::BAD_REQUEST, "invalid position"));
+        }
+        next.position = value;
+    }
+
+    let assignee_type = update_field::<String>(fields, "assignee_type")?;
+    let assignee_id = update_field::<String>(fields, "assignee_id")?;
+    let assignee_touched = assignee_type.is_present() || assignee_id.is_present();
+    match assignee_type {
+        UpdateField::Missing => {}
+        UpdateField::Null => next.assignee_type = None,
+        UpdateField::Value(value) => next.assignee_type = Some(value),
+    }
+    match assignee_id {
+        UpdateField::Missing => {}
+        UpdateField::Null => next.assignee_id = None,
+        UpdateField::Value(value) => {
+            next.assignee_id = Some(
+                Uuid::parse_str(&value)
+                    .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid assignee_id"))?,
+            )
+        }
+    }
+    if assignee_touched {
+        validate_assignee(state, previous.workspace_id, &next).await?;
+    }
+
+    let start_date = update_field::<String>(fields, "start_date")?;
+    if start_date.is_present() {
+        next.start_date = match start_date {
+            UpdateField::Missing | UpdateField::Null => None,
+            UpdateField::Value(value) if value.is_empty() => None,
+            UpdateField::Value(value) => {
+                Some(NaiveDate::parse_from_str(&value, "%Y-%m-%d").map_err(|_| {
+                    error_response(
+                        StatusCode::BAD_REQUEST,
+                        "invalid start_date format, expected YYYY-MM-DD",
+                    )
+                })?)
+            }
+        };
+    }
+    let due_date = update_field::<String>(fields, "due_date")?;
+    if due_date.is_present() {
+        next.due_date = match due_date {
+            UpdateField::Missing | UpdateField::Null => None,
+            UpdateField::Value(value) if value.is_empty() => None,
+            UpdateField::Value(value) => {
+                Some(NaiveDate::parse_from_str(&value, "%Y-%m-%d").map_err(|_| {
+                    error_response(
+                        StatusCode::BAD_REQUEST,
+                        "invalid due_date format, expected YYYY-MM-DD",
+                    )
+                })?)
+            }
+        };
+    }
+
+    let parent = update_field::<String>(fields, "parent_issue_id")?;
+    if parent.is_present() {
+        next.parent_issue_id = match parent {
+            UpdateField::Missing | UpdateField::Null => None,
+            UpdateField::Value(value) => {
+                let parent_id = Uuid::parse_str(&value).map_err(|_| {
+                    error_response(StatusCode::BAD_REQUEST, "invalid parent_issue_id")
+                })?;
+                validate_parent(state, &previous, parent_id).await?;
+                Some(parent_id)
+            }
+        };
+    }
+
+    let project = update_field::<String>(fields, "project_id")?;
+    if project.is_present() {
+        next.project_id = match project {
+            UpdateField::Missing | UpdateField::Null => None,
+            UpdateField::Value(value) => {
+                let project_id = Uuid::parse_str(&value)
+                    .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid project_id"))?;
+                match cordy_db::queries::project::get_project_in_workspace(
+                    &state.pool,
+                    project_id,
+                    previous.workspace_id,
+                )
+                .await
+                {
+                    Ok(Some(_)) => Some(project_id),
+                    Ok(None) => {
+                        return Err(error_response(
+                            StatusCode::BAD_REQUEST,
+                            "project not found in this workspace",
+                        ))
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, %project_id, "failed to validate issue project");
+                        return Err(error_response(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "failed to validate project",
+                        ));
+                    }
+                }
+            }
+        };
+    }
+
+    let stage = update_field::<i32>(fields, "stage")?;
+    if stage.is_present() {
+        next.stage = match stage {
+            UpdateField::Missing | UpdateField::Null => None,
+            UpdateField::Value(value) if value >= 1 => Some(value),
+            UpdateField::Value(_) => {
+                return Err(error_response(
+                    StatusCode::BAD_REQUEST,
+                    "stage must be >= 1",
+                ))
+            }
+        };
+    }
+
+    let did_change = issue_mutable_fields_differ(&previous, &next);
+    if !did_change && attachment_ids.is_empty() {
+        return Ok(previous);
+    }
+    let did_activity = issue_activity_fields_differ(&previous, &next);
+    let mut updated = if did_change {
+        let updated = sqlx::query_as::<_, Issue>(
+        r#"UPDATE issue SET
+title = $3, description = $4, status = $5, priority = $6,
+assignee_type = $7, assignee_id = $8, position = $9, start_date = $10,
+due_date = $11, parent_issue_id = $12, project_id = $13, stage = $14,
+revision = revision + 1, updated_at = now(),
+last_activity_at = CASE WHEN $15 THEN GREATEST(COALESCE(last_activity_at, updated_at), now()) ELSE last_activity_at END
+WHERE id = $1 AND workspace_id = $2
+  AND ($16::bigint IS NULL OR revision = $16)
+RETURNING *"#,
+    )
+        .bind(previous.id)
+        .bind(previous.workspace_id)
+        .bind(&next.title)
+        .bind(&next.description)
+        .bind(&next.status)
+        .bind(&next.priority)
+        .bind(&next.assignee_type)
+        .bind(next.assignee_id)
+        .bind(next.position)
+        .bind(next.start_date)
+        .bind(next.due_date)
+        .bind(next.parent_issue_id)
+        .bind(next.project_id)
+        .bind(next.stage)
+        .bind(did_activity)
+        .bind(expected_revision)
+        .fetch_optional(&state.pool)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, issue_id = %previous.id, "failed to update issue");
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
+        })?;
+        let Some(updated) = updated else {
+            let actual =
+                issue_q::get_issue_in_workspace(&state.pool, previous.id, previous.workspace_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|issue| issue.revision)
+                    .unwrap_or(previous.revision);
+            return Err(revision_conflict(
+                &previous,
+                expected_revision.unwrap_or(previous.revision),
+                actual,
+            ));
+        };
+        updated
+    } else {
+        previous.clone()
+    };
+    if !attachment_ids.is_empty() {
+        let linked = cordy_db::queries::attachment::link_attachments_to_issue(
+            &state.pool,
+            previous.id,
+            previous.workspace_id,
+            attachment_ids,
+            !did_change,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, issue_id = %previous.id, "failed to link issue attachments");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to link issue attachments",
+            )
+        })?;
+        if linked.is_some_and(|result| result.linked_count > 0) {
+            if let Ok(Some(current)) =
+                issue_q::get_issue_in_workspace(&state.pool, previous.id, previous.workspace_id)
+                    .await
+            {
+                updated = current;
+            }
+        }
+    }
+    publish_issue_updated(state, context, &previous, &updated).await;
+    let assignee_changed = previous.assignee_type != updated.assignee_type
+        || previous.assignee_id != updated.assignee_id;
+    let status_changed = previous.status != updated.status;
+    if !suppress_run {
+        let trigger = state
+            .issues
+            .will_enqueue_run(
+                IssueTriggerInput {
+                    issue: updated.clone(),
+                    prev_status: previous.status.clone(),
+                    is_create: false,
+                    assignee_changed,
+                    status_changed,
+                },
+                IssueTriggerProbe {
+                    can_access_agent: None,
+                    is_self_loop: None,
+                    suppress_active_self_assignment: None,
+                },
+            )
+            .await;
+        if trigger.is_some() {
+            if let Err(error) = state
+                .tasks
+                .enqueue_task_for_issue_with_handoff(
+                    &updated,
+                    &handoff_note,
+                    Some(context.member.user_id),
+                )
+                .await
+            {
+                tracing::warn!(%error, issue_id = %updated.id, "failed to enqueue updated issue");
+            }
+        }
+    }
+    Ok(updated)
+}
+
+fn revision_conflict(issue: &Issue, expected: i64, actual: i64) -> Response {
+    (
+        StatusCode::CONFLICT,
+        Json(json!({
+            "error": "resource changed since it was loaded",
+            "code": "revision_conflict",
+            "resource_type": "issue",
+            "resource_id": issue.id.to_string(),
+            "expected_revision": expected,
+            "actual_revision": actual,
+        })),
+    )
+        .into_response()
+}
+
+fn issue_mutable_fields_differ(left: &Issue, right: &Issue) -> bool {
+    left.title != right.title
+        || left.description != right.description
+        || left.status != right.status
+        || left.priority != right.priority
+        || left.assignee_type != right.assignee_type
+        || left.assignee_id != right.assignee_id
+        || left.position != right.position
+        || left.start_date != right.start_date
+        || left.due_date != right.due_date
+        || left.parent_issue_id != right.parent_issue_id
+        || left.project_id != right.project_id
+        || left.stage != right.stage
+}
+
+fn issue_activity_fields_differ(left: &Issue, right: &Issue) -> bool {
+    left.title != right.title
+        || left.description != right.description
+        || left.status != right.status
+        || left.priority != right.priority
+        || left.assignee_type != right.assignee_type
+        || left.assignee_id != right.assignee_id
+        || left.start_date != right.start_date
+        || left.due_date != right.due_date
+        || left.parent_issue_id != right.parent_issue_id
+        || left.project_id != right.project_id
+        || left.stage != right.stage
+}
+
+async fn validate_assignee(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    issue: &Issue,
+) -> Result<(), Response> {
+    let (Some(kind), Some(id)) = (issue.assignee_type.as_deref(), issue.assignee_id) else {
+        if issue.assignee_type.is_none() && issue.assignee_id.is_none() {
+            return Ok(());
+        }
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "assignee_type and assignee_id must be set together",
+        ));
+    };
+    let table = match kind {
+        "member" => "member",
+        "agent" => "agent",
+        "squad" => "squad",
+        _ => {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid assignee_type",
+            ))
+        }
+    };
+    let query = format!("SELECT EXISTS(SELECT 1 FROM {table} WHERE id = $1 AND workspace_id = $2)");
+    match sqlx::query_scalar::<_, bool>(&query)
+        .bind(id)
+        .bind(workspace_id)
+        .fetch_one(&state.pool)
+        .await
+    {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "assignee not found in this workspace",
+        )),
+        Err(error) => {
+            tracing::warn!(%error, %id, kind, "failed to validate issue assignee");
+            Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to validate assignee",
+            ))
+        }
+    }
+}
+
+async fn validate_parent(
+    state: &HandlerState,
+    issue: &Issue,
+    parent_id: Uuid,
+) -> Result<(), Response> {
+    if parent_id == issue.id {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "an issue cannot be its own parent",
+        ));
+    }
+    let mut cursor = parent_id;
+    for _ in 0..10 {
+        let parent = issue_q::get_issue_in_workspace(&state.pool, cursor, issue.workspace_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, %parent_id, "failed to validate parent issue");
+                error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to validate parent issue",
+                )
+            })?;
+        let Some(parent) = parent else {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "parent issue not found in this workspace",
+            ));
+        };
+        let Some(ancestor) = parent.parent_issue_id else {
+            return Ok(());
+        };
+        if ancestor == issue.id {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "circular parent relationship detected",
+            ));
+        }
+        cursor = ancestor;
+    }
+    Ok(())
+}
+
+async fn issue_response(state: &HandlerState, issue: Issue) -> Response {
+    let mut response =
+        IssueResponse::from_issue(&issue, &issue_prefix(state, issue.workspace_id).await);
+    response.status_category = Some(
+        cordy_service::issue_status::effective(&state.pool, issue.workspace_id, &issue.status)
+            .await,
+    );
+    Json(response).into_response()
+}
+
+async fn publish_issue_updated(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    previous: &Issue,
+    issue: &Issue,
+) {
+    let prefix = issue_prefix(state, issue.workspace_id).await;
+    let category =
+        cordy_service::issue_status::effective(&state.pool, issue.workspace_id, &issue.status)
+            .await;
+    let mut response = IssueResponse::from_issue(issue, &prefix);
+    response.status_category = Some(category);
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::EVENT_ISSUE_UPDATED.to_string(),
+        workspace_id: issue.workspace_id.to_string(),
+        actor_type: "member".to_string(),
+        actor_id: context.member.user_id.to_string(),
+        payload: json!({
+            "issue": response,
+            "assignee_changed": previous.assignee_type != issue.assignee_type || previous.assignee_id != issue.assignee_id,
+            "status_changed": previous.status != issue.status,
+            "priority_changed": previous.priority != issue.priority,
+            "project_changed": previous.project_id != issue.project_id,
+        }),
+        task_id: String::new(),
+        chat_session_id: String::new(),
+    });
+}
+
+async fn batch_update_issues(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    body: Bytes,
+) -> Response {
+    let root = match update_object(&body) {
+        Ok(fields) => fields,
+        Err(response) => return response,
+    };
+    let issue_ids = match root.get("issue_ids").cloned() {
+        Some(value) => match serde_json::from_value::<Vec<String>>(value) {
+            Ok(ids) if !ids.is_empty() => ids,
+            _ => return error_response(StatusCode::BAD_REQUEST, "issue_ids is required"),
+        },
+        None => return error_response(StatusCode::BAD_REQUEST, "issue_ids is required"),
+    };
+    let updates = match root.get("updates") {
+        Some(Value::Object(fields)) => fields,
+        _ => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    let mutation_keys = [
+        "title",
+        "description",
+        "status",
+        "priority",
+        "position",
+        "assignee_type",
+        "assignee_id",
+        "start_date",
+        "due_date",
+        "parent_issue_id",
+        "project_id",
+        "stage",
+    ];
+    if !mutation_keys.iter().any(|key| updates.contains_key(*key)) {
+        return Json(json!({ "updated": 0 })).into_response();
+    }
+
+    let mut updated = 0usize;
+    for raw_id in issue_ids {
+        let Ok(id) = Uuid::parse_str(&raw_id) else {
+            continue;
+        };
+        let previous =
+            match issue_q::get_issue_in_workspace(&state.pool, id, context.member.workspace_id)
+                .await
+            {
+                Ok(Some(issue)) => issue,
+                _ => continue,
+            };
+        if apply_issue_update(&state, &context, previous, updates)
+            .await
+            .is_ok()
+        {
+            updated += 1;
+        }
+    }
+    Json(json!({ "updated": updated })).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct AttachLabelRequest {
+    label_id: String,
+}
+
+async fn attach_label(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+    Json(request): Json<AttachLabelRequest>,
+) -> Response {
+    if request.label_id.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "label_id is required");
+    }
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let label_id = match Uuid::parse_str(&request.label_id) {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid label_id"),
+    };
+    let label = match issue_label::get_label(&state.pool, label_id, issue.workspace_id).await {
+        Ok(Some(label)) if label.resource_type == "issue" => label,
+        Ok(Some(_)) => return error_response(StatusCode::NOT_FOUND, "issue label not found"),
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "label not found"),
+        Err(error) => {
+            tracing::warn!(%error, %label_id, "failed to load issue label");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to attach label");
+        }
+    };
+    let result = match issue_label::attach_label_to_issue(
+        &state.pool,
+        issue.id,
+        label.id,
+        issue.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(result)) => result,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "label not found"),
+        Err(error) => {
+            tracing::warn!(%error, %label_id, "failed to attach issue label");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to attach label");
+        }
+    };
+    label_mutation_response(
+        &state,
+        &context,
+        &issue,
+        result.changed,
+        result.issue_revision,
+    )
+    .await
+}
+
+async fn detach_label(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path((id, label_id)): Path<(String, String)>,
+) -> Response {
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let label_id = match Uuid::parse_str(&label_id) {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid label id"),
+    };
+    match issue_label::get_label(&state.pool, label_id, issue.workspace_id).await {
+        Ok(Some(label)) if label.resource_type == "issue" => {}
+        Ok(Some(_)) => return error_response(StatusCode::NOT_FOUND, "issue label not found"),
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "label not found"),
+        Err(error) => {
+            tracing::warn!(%error, %label_id, "failed to load issue label");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to detach label");
+        }
+    }
+    let result = match issue_label::detach_label_from_issue(
+        &state.pool,
+        issue.id,
+        label_id,
+        issue.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(result)) => result,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "label not found"),
+        Err(error) => {
+            tracing::warn!(%error, %label_id, "failed to detach issue label");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to detach label");
+        }
+    };
+    label_mutation_response(
+        &state,
+        &context,
+        &issue,
+        result.changed,
+        result.issue_revision,
+    )
+    .await
+}
+
+async fn label_mutation_response(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    issue: &Issue,
+    changed: bool,
+    revision: i64,
+) -> Response {
+    let labels = match labels_for_issues(state, issue.workspace_id, &[issue.id]).await {
+        Ok(mut labels) => labels.remove(&issue.id).unwrap_or_default(),
+        Err(error) => {
+            tracing::warn!(%error, issue_id = %issue.id, "failed to reload issue labels");
+            return Json(json!({})).into_response();
+        }
+    };
+    if changed {
+        state.bus.publish(&cordy_events::Event {
+            event_type: cordy_protocol::EVENT_ISSUE_LABELS_CHANGED.to_string(),
+            workspace_id: issue.workspace_id.to_string(),
+            actor_type: "member".to_string(),
+            actor_id: context.member.user_id.to_string(),
+            payload: json!({
+                "issue_id": issue.id.to_string(),
+                "labels": labels,
+                "issue_revision": revision,
+            }),
+            task_id: String::new(),
+            chat_session_id: String::new(),
+        });
+    }
+    if revision > 0 {
+        Json(json!({ "labels": labels, "issue_revision": revision })).into_response()
+    } else {
+        Json(json!({ "labels": labels })).into_response()
     }
 }
 
@@ -1752,8 +2497,43 @@ mod tests {
     }
 
     #[test]
+    fn update_parser_distinguishes_missing_null_and_value() {
+        let fields = update_object(br#"{"assignee_id":null,"stage":4}"#).unwrap();
+        assert!(matches!(
+            update_field::<String>(&fields, "assignee_id").unwrap(),
+            UpdateField::Null
+        ));
+        assert!(matches!(
+            update_field::<i32>(&fields, "stage").unwrap(),
+            UpdateField::Value(4)
+        ));
+        assert!(matches!(
+            update_field::<String>(&fields, "project_id").unwrap(),
+            UpdateField::Missing
+        ));
+    }
+
+    #[test]
     fn legacy_prefix_fallback_matches_frozen_go_rule() {
         assert_eq!(legacy_issue_prefix("Frontend Team"), "FRO");
         assert_eq!(legacy_issue_prefix("前端团队"), "WS");
+    }
+
+    #[test]
+    fn position_only_update_does_not_count_as_activity() {
+        let issue = fixture_issue();
+        let mut moved = issue.clone();
+        moved.position = issue.position + 1.0;
+        assert!(issue_mutable_fields_differ(&issue, &moved));
+        assert!(!issue_activity_fields_differ(&issue, &moved));
+    }
+
+    #[test]
+    fn status_update_counts_as_activity() {
+        let issue = fixture_issue();
+        let mut updated = issue.clone();
+        updated.status = "in_review".into();
+        assert!(issue_mutable_fields_differ(&issue, &updated));
+        assert!(issue_activity_fields_differ(&issue, &updated));
     }
 }

@@ -209,6 +209,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn authenticated_issue_mutations_reject_anonymous_requests() {
+        for request in [
+            Request::put("/api/issues/CORD-14/")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"status":"in_review"}"#))
+                .unwrap(),
+            Request::post("/api/issues/batch-update")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"issue_ids":[],"updates":{}}"#))
+                .unwrap(),
+        ] {
+            let response = build_router(None, None).oneshot(request).await.unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
+    }
+
+    #[tokio::test]
     async fn daemon_routes_are_mounted_and_protected() {
         let response = build_router(None, None)
             .oneshot(
