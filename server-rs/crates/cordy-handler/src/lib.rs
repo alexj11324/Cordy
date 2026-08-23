@@ -323,6 +323,8 @@ mod tests {
             "/api/issue-view-preferences?scope_type=workspace",
             "/api/agent-activity-30d",
             "/api/agent-run-counts",
+            "/api/agent-task-snapshot",
+            "/api/working-agents",
         ] {
             let response = build_router(None, None)
                 .oneshot(Request::get(uri).body(Body::empty()).unwrap())
