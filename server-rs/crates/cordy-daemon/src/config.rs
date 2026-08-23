@@ -816,11 +816,7 @@ fn parse_shell_words(s: &str) -> Option<Vec<String>> {
             }
             '\\' => {
                 started = true;
-                if let Some(n) = chars.next() {
-                    cur.push(n);
-                } else {
-                    return None;
-                }
+                cur.push(chars.next()?);
             }
             _ => {
                 started = true;

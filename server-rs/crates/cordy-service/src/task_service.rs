@@ -3041,10 +3041,9 @@ impl TaskService {
             ));
         }
 
-        let task;
         let mut cancelled_chat_message = None;
 
-        if opts.queued_only {
+        let task = if opts.queued_only {
             if opts.queue_action != "edit" && opts.queue_action != "remove" {
                 return Err(TaskServiceError::Internal(
                     "queue action must be edit or remove".into(),
@@ -3066,7 +3065,7 @@ impl TaskService {
                 .settle_queued_chat_input(&mut tx, &cancelled, &opts.queue_action)
                 .await?;
             tx.commit().await.map_err(TaskServiceError::Sql)?;
-            task = cancelled;
+            cancelled
         } else {
             // The status flip and the chat resume-pointer advance commit
             // together; split apart, `cancelled` becomes visible while the
@@ -3108,8 +3107,8 @@ impl TaskService {
                     })?;
             }
             tx.commit().await.map_err(TaskServiceError::Sql)?;
-            task = cancelled;
-        }
+            cancelled
+        };
 
         tracing::info!(task_id = %task.id, issue_id = ?task.issue_id, "task cancelled");
         self.capture_task_cancelled(&task).await;

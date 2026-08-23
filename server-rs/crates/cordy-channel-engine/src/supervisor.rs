@@ -961,7 +961,10 @@ pub(crate) fn jitter(d: Duration) -> Duration {
         return d;
     }
     let delta = millis / 2;
-    let spread = rand::thread_rng().gen_range(0..=(2 * delta));
+    if delta == 0 {
+        return d;
+    }
+    let spread = rand::thread_rng().gen_range(0..(2 * delta));
     Duration::from_millis(millis - delta + spread)
 }
 
@@ -1028,6 +1031,7 @@ mod tests {
                 "{j:?}"
             );
         }
+        assert_eq!(jitter(Duration::from_millis(1)), Duration::from_millis(1));
     }
 
     #[test]
