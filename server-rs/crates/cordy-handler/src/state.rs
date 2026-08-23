@@ -26,6 +26,17 @@ pub struct HandlerState {
     pub callbacks: Option<Arc<CallbackTokens>>,
     /// Absolute base URL used in hook callback_url; empty omits the field.
     pub callback_base_url: String,
+    /// Redis-backed pending request stores (update / model list / local
+    /// skills). `None` matches Go's nil-store path: every probe reports an
+    /// empty queue and report endpoints answer 404, which daemons treat as a
+    /// dropped one-shot report.
+    pub update_store: Option<Arc<crate::pending_store::UpdateStore>>,
+    pub model_list_store: Option<Arc<crate::pending_store::ModelListStore>>,
+    pub local_skill_list_store: Option<Arc<crate::pending_store::LocalSkillListStore>>,
+    pub local_skill_import_store: Option<Arc<crate::pending_store::LocalSkillImportStore>>,
+    /// Daemon WebSocket hub (cordy-daemon). `None` only in tests — the WS
+    /// endpoint reports 503 and daemons fall back to HTTP polling.
+    pub daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
 }
 
 impl HandlerState {
@@ -42,6 +53,32 @@ impl HandlerState {
             plugins,
             callbacks: Some(Arc::new(CallbackTokens::new())),
             callback_base_url: String::new(),
+            update_store: None,
+            model_list_store: None,
+            local_skill_list_store: None,
+            local_skill_import_store: None,
+            daemon_hub: None,
         }
+    }
+
+    /// Builds the pending-request stores from a Redis client (Go
+    /// NewRedis{Update,ModelList,LocalSkill*}Store wiring). Callers without
+    /// Redis keep `None` fields — the disabled path degrades exactly like Go's
+    /// nil-store behavior.
+    pub async fn with_redis(mut self, client: redis::Client) -> Result<Self, redis::RedisError> {
+        let conn = client.get_connection_manager().await?;
+        self.update_store = Some(Arc::new(crate::pending_store::UpdateStore::new(
+            conn.clone(),
+        )));
+        self.model_list_store = Some(Arc::new(crate::pending_store::ModelListStore::new(
+            conn.clone(),
+        )));
+        self.local_skill_list_store = Some(Arc::new(
+            crate::pending_store::LocalSkillListStore::new(conn.clone()),
+        ));
+        self.local_skill_import_store = Some(Arc::new(
+            crate::pending_store::LocalSkillImportStore::new(conn),
+        ));
+        Ok(self)
     }
 }

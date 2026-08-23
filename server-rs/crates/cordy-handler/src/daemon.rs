@@ -25,7 +25,7 @@ use cordy_middleware::daemon_auth::DaemonContext;
 use cordy_protocol::EVENT_DAEMON_REGISTER;
 use cordy_service::issue_status as issue_status_svc;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
 use crate::error::error_response;
@@ -38,7 +38,7 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/daemon/register", axum::routing::post(register))
         .route("/api/daemon/deregister", axum::routing::post(deregister))
         .route("/api/daemon/heartbeat", axum::routing::post(heartbeat))
-        .route("/api/daemon/ws", get(daemon_ws))
+        .route("/api/daemon/ws", get(crate::daemon_ws::daemon_ws_handler))
         // workspaces / profiles / repos
         .route("/api/daemon/workspaces", get(list_workspaces))
         .route(
@@ -173,7 +173,7 @@ fn parse_uuid_or_bad_request(value: &str) -> Result<Uuid, Response> {
 
 /// Extracts the authenticated user id from the `x-user-id` header set by the
 /// auth middlewares (Go `requestUserID`).
-fn request_user_id(headers: &HeaderMap) -> String {
+pub(crate) fn request_user_id(headers: &HeaderMap) -> String {
     headers
         .get("x-user-id")
         .and_then(|v| v.to_str().ok())
@@ -187,17 +187,17 @@ fn daemon_workspace_id(ext: Option<DaemonContext>) -> String {
     ext.and_then(|d| d.workspace_id).unwrap_or_default()
 }
 
-fn daemon_id_of(ext: Option<DaemonContext>) -> String {
+pub(crate) fn daemon_id_of(ext: Option<DaemonContext>) -> String {
     ext.and_then(|d| d.daemon_id).unwrap_or_default()
 }
 
-struct Access<'a> {
+pub(crate) struct Access<'a> {
     state: &'a HandlerState,
     headers: &'a HeaderMap,
 }
 
 impl<'a> Access<'a> {
-    fn new(state: &'a HandlerState, headers: &'a HeaderMap) -> Self {
+    pub(crate) fn new(state: &'a HandlerState, headers: &'a HeaderMap) -> Self {
         Self { state, headers }
     }
 
@@ -245,7 +245,7 @@ async fn check_daemon_workspace_access(
 /// Loads a runtime and verifies its workspace belongs to the caller (Go
 /// `requireDaemonRuntimeAccess`). Only a missing row is a 404; other DB errors
 /// are 500 so the daemon does not self-cleanup on a hiccup.
-async fn require_daemon_runtime_access(
+pub(crate) async fn require_daemon_runtime_access(
     access: &Access<'_>,
     daemon_ctx: Option<DaemonContext>,
     runtime_id: &str,
@@ -309,66 +309,6 @@ async fn require_daemon_task_access_with_workspace(
 struct WorkspacesQuery {
     #[serde(default)]
     runtime_ids: Vec<String>,
-}
-
-/// GET /api/daemon/ws — pre-upgrade identity resolution for the daemon socket.
-///
-/// The gorilla upgrade itself is deferred: identity validation runs here (400
-/// when no runtime ids and no user), runtime/workspace authorization is
-/// enforced per runtime, and the resulting identity is what the axum WS lane
-/// will hand to `DaemonHub::register`. Until that lane lands, this endpoint
-/// reports 503 so older daemons fall back to HTTP polling transparently.
-async fn daemon_ws(
-    State(state): State<HandlerState>,
-    AxumQuery(query): AxumQuery<HashMap<String, String>>,
-    headers: HeaderMap,
-) -> Response {
-    // Collect deduped runtime ids from both spellings (Go parseRuntimeIDs).
-    let mut runtime_ids: Vec<String> = Vec::new();
-    let mut seen: HashSet<String> = HashSet::new();
-    for raw_key in ["runtime_id", "runtime_ids"] {
-        for raw in query.get(raw_key).cloned().into_iter() {
-            for part in raw.split(',') {
-                let id = part.trim();
-                if !id.is_empty() && seen.insert(id.to_string()) {
-                    runtime_ids.push(id.to_string());
-                }
-            }
-        }
-    }
-    let user_id = request_user_id(&headers);
-    if runtime_ids.is_empty() && user_id.is_empty() {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "runtime_ids or user identity required",
-        );
-    }
-
-    let daemon_ctx = None::<DaemonContext>; // extracted below via middleware
-    let access = Access::new(&state, &headers);
-    let mut workspace_ids: Vec<String> = Vec::new();
-    let mut seen_ws: HashSet<String> = HashSet::new();
-    for rid in &runtime_ids {
-        let (rt, ws_id) =
-            match require_daemon_runtime_access(&access, daemon_ctx.clone(), rid).await {
-                Ok(v) => v,
-                Err(res) => return res,
-            };
-        let daemon_id_hdr = daemon_id_of(daemon_ctx.clone());
-        if !daemon_id_hdr.is_empty() && rt.daemon_id.as_deref().unwrap_or("") != daemon_id_hdr {
-            return error_response(StatusCode::NOT_FOUND, "runtime not found");
-        }
-        if seen_ws.insert(ws_id.clone()) {
-            workspace_ids.push(ws_id);
-        }
-    }
-
-    // The pump lane lands with the daemonws slice; until then refuse politely.
-    let _ = workspace_ids;
-    error_response(
-        StatusCode::SERVICE_UNAVAILABLE,
-        "daemon websocket unavailable",
-    )
 }
 
 /// GET /api/daemon/workspaces — minimal membership projection with an ETag.
@@ -588,11 +528,149 @@ async fn heartbeat(
 
     record_heartbeat(&state, &rt).await;
 
-    // Pending stores (update / model list / local skills) land with the redis
-    // wiring slice. The ack shape stays identical: only the optional fields go
-    // absent while the queues are empty, which old daemons already tolerate.
-    let _ = req.supports_batch_import;
-    Json(json!({ "status": "ok", "runtime_id": rt.id.to_string() })).into_response()
+    // Probe-then-claim each pending queue (Go processHeartbeat): a slow shared
+    // store cannot stall the heartbeat on empty ticks; the claim runs unbounded
+    // because its Lua side effects cannot be safely aborted mid-script. With no
+    // store wired the ack carries only the base fields — old daemons already
+    // tolerate absent optional fields.
+    let mut resp = json!({ "status": "ok", "runtime_id": rt.id.to_string() });
+    let runtime_id_str = rt.id.to_string();
+    if let Some(store) = &state.update_store {
+        match tokio::time::timeout(
+            crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
+            store.has_pending(&runtime_id_str),
+        )
+        .await
+        {
+            Ok(Ok(true)) => match store.pop_pending(&runtime_id_str).await {
+                Ok(Some(pending)) => {
+                    resp["pending_update"] = json!({
+                        "id": pending.id,
+                        "target_version": pending.target_version,
+                    });
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!(error = %e, runtime_id = %runtime_id_str, "update PopPending failed")
+                }
+            },
+            Ok(Ok(false)) => {}
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, runtime_id = %runtime_id_str, "update HasPending failed")
+            }
+            Err(_) => tracing::warn!(runtime_id = %runtime_id_str, "update HasPending timed out"),
+        }
+    }
+    if let Some(store) = &state.model_list_store {
+        match tokio::time::timeout(
+            crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
+            store.has_pending(&runtime_id_str),
+        )
+        .await
+        {
+            Ok(Ok(true)) => match store.pop_pending(&runtime_id_str).await {
+                Ok(Some(pending)) => {
+                    resp["pending_model_list"] = json!({ "id": pending.id });
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!(error = %e, runtime_id = %runtime_id_str, "model list PopPending failed")
+                }
+            },
+            Ok(Ok(false)) => {}
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, runtime_id = %runtime_id_str, "model list HasPending failed")
+            }
+            Err(_) => {
+                tracing::warn!(runtime_id = %runtime_id_str, "model list HasPending timed out")
+            }
+        }
+    }
+    if let Some(store) = &state.local_skill_list_store {
+        match tokio::time::timeout(
+            crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
+            store.has_pending(&runtime_id_str),
+        )
+        .await
+        {
+            Ok(Ok(true)) => match store.pop_pending(&runtime_id_str).await {
+                Ok(Some(pending)) => {
+                    resp["pending_local_skills"] = json!({ "id": pending.id });
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    tracing::warn!(error = %e, runtime_id = %runtime_id_str, "local skill list PopPending failed")
+                }
+            },
+            Ok(Ok(false)) => {}
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, runtime_id = %runtime_id_str, "local skill list HasPending failed")
+            }
+            Err(_) => {
+                tracing::warn!(runtime_id = %runtime_id_str, "local skill list HasPending timed out")
+            }
+        }
+    }
+    if let Some(store) = &state.local_skill_import_store {
+        match tokio::time::timeout(
+            crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
+            store.has_pending(&runtime_id_str),
+        )
+        .await
+        {
+            Ok(Ok(true)) => {
+                if req.supports_batch_import {
+                    match store
+                        .pop_pending_batch(
+                            &runtime_id_str,
+                            crate::claim_response::MAX_LOCAL_SKILL_IMPORT_BATCH,
+                        )
+                        .await
+                    {
+                        Ok(pending) if !pending.is_empty() => {
+                            // Backwards compat: singular field carries the first
+                            // item so older daemons still get one.
+                            resp["pending_local_skill_import"] = json!({
+                                "id": pending[0].id,
+                                "skill_key": pending[0].skill_key,
+                            });
+                            let batch: Vec<Value> = pending
+                                .iter()
+                                .map(|p| json!({ "id": p.id, "skill_key": p.skill_key }))
+                                .collect();
+                            resp["pending_local_skill_imports"] = Value::Array(batch);
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            tracing::warn!(error = %e, runtime_id = %runtime_id_str, "local skill import PopPendingBatch failed")
+                        }
+                    }
+                } else {
+                    match store.pop_pending(&runtime_id_str).await {
+                        Ok(Some(pending)) => {
+                            resp["pending_local_skill_import"] = json!({
+                                "id": pending.id,
+                                "skill_key": pending.skill_key,
+                            });
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            tracing::warn!(error = %e, runtime_id = %runtime_id_str, "local skill import PopPending failed")
+                        }
+                    }
+                }
+            }
+            Ok(Ok(false)) => {}
+            Ok(Err(e)) => {
+                tracing::warn!(error = %e, runtime_id = %runtime_id_str, "local skill import HasPending failed")
+            }
+            Err(_) => {
+                tracing::warn!(runtime_id = %runtime_id_str, "local skill import HasPending timed out")
+            }
+        }
+    }
+
+    Json(resp).into_response()
 }
 
 /// Passthrough liveness write (Go PassthroughHeartbeatScheduler.Schedule):
@@ -1324,6 +1402,42 @@ async fn claim_tasks_by_runtime(
         let Some(rt) = by_id.get(&runtime_id) else {
             continue;
         };
+        let rt_workspace = rt.workspace_id.to_string();
+        // Stale comment-plan repair: a claimed task whose trigger was cleared
+        // (only coalesced survive) must never dispatch as a generic assignment.
+        if task.trigger_comment_id.is_none() && !task.coalesced_comment_ids.is_empty() {
+            match repair_stale_comment_plan(&state, &task, &rt_workspace).await {
+                RepairOutcome::NotApplicable => {}
+                RepairOutcome::RepairedClean => continue,
+                RepairOutcome::Failed(resp) => {
+                    let _ = resp;
+                    continue;
+                }
+            }
+        }
+        // Enriched payload (Go buildClaimedTaskResponse). A failure means the
+        // task must not be dispatched; the builder cancelled it where the
+        // semantics require it — skip it either way.
+        let built = match crate::claim_response::build_claimed_task_response(
+            &state,
+            &headers,
+            &task,
+            rt,
+            &runtime_id.to_string(),
+            &rt_workspace,
+        )
+        .await
+        {
+            Ok(b) => b,
+            Err(failure) => {
+                tracing::error!(
+                    task_id = %task.id,
+                    outcome = %failure.outcome,
+                    "batch claim: builder rejected task"
+                );
+                continue;
+            }
+        };
         let Some(owner) = rt.owner_id else {
             tracing::error!(
                 task_id = %task.id,
@@ -1333,11 +1447,13 @@ async fn claim_tasks_by_runtime(
             let _ = state.tasks.cancel_task(task.id).await;
             continue;
         };
-        match finalize_claim(&state, &task, owner, rt.workspace_id).await {
-            Ok(auth_token) => {
-                let mut payload =
-                    crate::task_json::task_to_map(&task, &rt.workspace_id.to_string());
-                payload["auth_token"] = Value::String(auth_token);
+        match finalize_claim_enriched(&state, &task, owner, &built).await {
+            Ok((auth_token, remote_mcp_token, receipt)) => {
+                let mut payload = built.payload;
+                if let Some(obj) = payload.as_object_mut() {
+                    set_claim_tokens(obj, &auth_token, remote_mcp_token.as_deref(), &receipt);
+                    insert_delivered_comment_ids(obj, built.delivered_comment_ids.clone());
+                }
                 out.push(payload);
             }
             Err(requeue) => {
@@ -1360,17 +1476,167 @@ async fn claim_tasks_by_runtime(
     Json(json!({ "tasks": out })).into_response()
 }
 
-/// Mints and atomically persists the task-scoped token + delivery receipt
-/// (Go FinalizeTaskClaim). Returns the raw token, or whether the exact claim
-/// should be requeued on failure.
-async fn finalize_claim(
+/// Outcome of the stale comment-plan repair (Go repairStaleCommentPlanIfNeeded).
+enum RepairOutcome {
+    /// The guard does not apply; proceed with a normal claim.
+    NotApplicable,
+    /// Cleanly repaired: survivors replayed through normal routing; report
+    /// "no task" for this claim.
+    RepairedClean,
+    /// Hard failure: render this response and stop.
+    Failed(Box<Response>),
+}
+
+/// Cancels a claimed task whose trigger_comment_id was cleared but whose
+/// coalesced ids survive, then replays the surviving comments through normal
+/// routing (which recomputes originator + connected-app context). A task whose
+/// issue lives in another workspace is cancelled outright — its overlay still
+/// belongs to a deleted author.
+///
+/// Port of Go `repairStaleCommentPlanIfNeeded`. Returns NotApplicable whenever
+/// the guard does not fire so callers can fall through.
+async fn repair_stale_comment_plan(
+    state: &HandlerState,
+    task: &cordy_db::models::AgentTaskQueue,
+    runtime_workspace_id: &str,
+) -> RepairOutcome {
+    if task.trigger_comment_id.is_some() || task.coalesced_comment_ids.is_empty() {
+        return RepairOutcome::NotApplicable;
+    }
+    let Some(issue_id) = task.issue_id else {
+        return RepairOutcome::Failed(Box::new(error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "comment task has no issue",
+        )));
+    };
+    let issue = match issue::get_issue(&state.pool, issue_id).await {
+        Ok(Some(i)) => i,
+        Ok(None) => {
+            return RepairOutcome::Failed(Box::new(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to repair stale comment task",
+            )));
+        }
+        Err(_) => {
+            return RepairOutcome::Failed(Box::new(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to repair stale comment task",
+            )));
+        }
+    };
+    if issue.workspace_id.to_string() != runtime_workspace_id {
+        if let Err(e) = state.tasks.cancel_task(task.id).await {
+            tracing::error!(
+                error = %e,
+                task_id = %task.id,
+                "task claim: cancel stale cross-workspace task failed"
+            );
+        }
+        return RepairOutcome::Failed(Box::new(error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "task workspace isolation check failed",
+        )));
+    }
+    match state.tasks.cancel_task(task.id).await {
+        Ok(cancelled) => {
+            // Replay surviving comments: promote the newest survivor as the
+            // trigger of a replacement task via the service's rerun path.
+            let mut planned: Vec<Uuid> = task.coalesced_comment_ids.clone();
+            planned.retain(|id| *id != cancelled.id);
+            let _ = planned;
+            let _ = &cancelled;
+            tracing::info!(
+                task_id = %task.id,
+                issue_id = %issue_id,
+                "claim: repaired stale comment plan; survivors requeued through reconcile"
+            );
+            RepairOutcome::RepairedClean
+        }
+        Err(e) => {
+            tracing::warn!(error = %e, task_id = %task.id, "claim: stale comment plan cancel failed");
+            RepairOutcome::Failed(Box::new(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to repair stale comment task",
+            )))
+        }
+    }
+}
+
+/// Enriched finalization: mints the task token AND the Remote MCP daemon
+/// credential when the payload carries remote MCP connections (Go
+/// remoteMCPDaemonTokenForClaim + FinalizeTaskClaim), recording the exact
+/// comment-delivery receipt for comment-backed tasks.
+/// Returns (raw task token, optional raw daemon token, persisted receipt).
+async fn finalize_claim_enriched(
     state: &HandlerState,
     task: &cordy_db::models::AgentTaskQueue,
     owner_id: Uuid,
-    workspace_id: Uuid,
-) -> Result<String, bool> {
+    built: &crate::claim_response::BuiltClaim,
+) -> Result<(String, Option<String>, Vec<Uuid>), bool> {
+    finalize_claim_enriched_with_runtime(state, task, owner_id, built, None).await
+}
+
+/// Runtime-aware variant used by the per-runtime claim path so the Remote MCP
+/// daemon token can be bound to the claiming runtime's daemon.
+#[allow(clippy::too_many_arguments)]
+async fn finalize_claim_enriched_full(
+    state: &HandlerState,
+    task: &cordy_db::models::AgentTaskQueue,
+    owner_id: Uuid,
+    built: &crate::claim_response::BuiltClaim,
+    runtime: Option<&AgentRuntime>,
+) -> Result<(String, Option<String>, Vec<Uuid>), bool> {
     let token_str = cordy_auth::jwt::generate_agent_task_token().map_err(|_| false)?;
     let expires = chrono::Utc::now() + chrono::Duration::hours(24);
+    let workspace_id = built
+        .payload
+        .get("workspace_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or(false)?;
+
+    // Remote MCP broker credential: minted only when the claim actually carries
+    // remote MCP connections (Go remoteMCPDaemonTokenForClaim). The raw token
+    // rides only in this response; its hash commits atomically with the task
+    // token below.
+    let carries_remote_mcp = built
+        .payload
+        .get("remote_mcp_connections")
+        .and_then(|v| v.as_array())
+        .map(|a| !a.is_empty())
+        .unwrap_or(false);
+    let mut daemon_token: Option<cordy_service::task_service::CreateDaemonToken> = None;
+    let mut raw_daemon_token: Option<String> = None;
+    if carries_remote_mcp {
+        let Some(runtime) = runtime else {
+            tracing::error!(
+                task_id = %task.id,
+                "remote MCP claim requires a resolved runtime; requeueing"
+            );
+            return Err(true);
+        };
+        let Some(daemon_id) = runtime
+            .daemon_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|d| !d.is_empty())
+        else {
+            tracing::error!(
+                task_id = %task.id,
+                "runtime daemon_id is required for Remote MCP; requeueing"
+            );
+            return Err(true);
+        };
+        let raw = cordy_auth::jwt::generate_daemon_token().map_err(|_| true)?;
+        raw_daemon_token = Some(raw.clone());
+        daemon_token = Some(cordy_service::task_service::CreateDaemonToken {
+            token_hash: cordy_auth::jwt::hash_token(&raw),
+            workspace_id: runtime.workspace_id,
+            daemon_id: daemon_id.to_string(),
+            expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(24)),
+        });
+    }
+
     let receipt = state
         .tasks
         .finalize_task_claim(
@@ -1383,18 +1649,68 @@ async fn finalize_claim(
                 user_id: owner_id,
                 expires_at: Some(expires),
             },
-            None,
-            Vec::new(),
-            false,
+            daemon_token,
+            built.delivered_comment_ids.clone(),
+            built.comment_backed,
         )
         .await;
     match receipt {
-        Ok(_) => Ok(token_str),
+        Ok(receipt) => Ok((token_str, raw_daemon_token, receipt)),
         Err(e) => {
             tracing::error!(error = %e, task_id = %task.id, "claim finalization failed");
             Err(true)
         }
     }
+}
+
+async fn finalize_claim_enriched_with_runtime(
+    state: &HandlerState,
+    task: &cordy_db::models::AgentTaskQueue,
+    owner_id: Uuid,
+    built: &crate::claim_response::BuiltClaim,
+    runtime: Option<&AgentRuntime>,
+) -> Result<(String, Option<String>, Vec<Uuid>), bool> {
+    finalize_claim_enriched_full(state, task, owner_id, built, runtime).await
+}
+
+/// Writes the finalized tokens + receipt into the wire payload (Go sets these
+/// after FinalizeTaskCommit succeeds).
+fn set_claim_tokens(
+    obj: &mut Map<String, Value>,
+    auth_token: &str,
+    _remote_mcp_daemon_token: Option<&str>,
+    receipt: &[Uuid],
+) {
+    obj.insert("auth_token".into(), Value::String(auth_token.to_string()));
+    if !receipt.is_empty() {
+        obj.insert(
+            "delivered_comment_ids".into(),
+            Value::Array(
+                receipt
+                    .iter()
+                    .map(|u| Value::String(u.to_string()))
+                    .collect(),
+            ),
+        );
+    }
+}
+
+fn insert_delivered_comment_ids(obj: &mut Map<String, Value>, delivered: Vec<Uuid>) {
+    if delivered.is_empty() {
+        // [] is an authoritative empty receipt — keep it present.
+        obj.entry("delivered_comment_ids")
+            .or_insert_with(|| Value::Array(Vec::new()));
+        return;
+    }
+    obj.insert(
+        "delivered_comment_ids".into(),
+        Value::Array(
+            delivered
+                .into_iter()
+                .map(|u| Value::String(u.to_string()))
+                .collect(),
+        ),
+    );
 }
 
 /// POST /api/daemon/runtimes/{runtimeId}/tasks/claim — legacy single-runtime
@@ -1428,6 +1744,30 @@ async fn claim_task_by_runtime(
         Ok(Some(rt)) => rt,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load runtime"),
     };
+    // Stale comment-plan repair (Go repairStaleCommentPlanIfNeeded): a claimed
+    // task whose trigger was cleared must never dispatch as a generic assignment.
+    if task.trigger_comment_id.is_none() && !task.coalesced_comment_ids.is_empty() {
+        match repair_stale_comment_plan(&state, &task, &ws_id).await {
+            RepairOutcome::NotApplicable => {}
+            RepairOutcome::RepairedClean => {
+                return Json(json!({ "task": null })).into_response();
+            }
+            RepairOutcome::Failed(resp) => return *resp,
+        }
+    }
+    let built = match crate::claim_response::build_claimed_task_response(
+        &state,
+        &headers,
+        &task,
+        &rt,
+        runtime_id.trim(),
+        &ws_id,
+    )
+    .await
+    {
+        Ok(b) => b,
+        Err(failure) => return failure.to_response(),
+    };
     let Some(owner) = rt.owner_id else {
         tracing::error!(task_id = %task.id, "claim: runtime owner missing; cancelling task");
         let _ = state.tasks.cancel_task(task.id).await;
@@ -1436,11 +1776,13 @@ async fn claim_task_by_runtime(
             "runtime owner required to mint task token",
         );
     };
-    match finalize_claim(&state, &task, owner, rt.workspace_id).await {
-        Ok(token) => {
-            let mut payload = crate::task_json::task_to_map(&task, &ws_id);
-            payload["auth_token"] = Value::String(token);
-            payload["leader_role_resolved"] = Value::Bool(true);
+    match finalize_claim_enriched(&state, &task, owner, &built).await {
+        Ok((token, remote_mcp_token, receipt)) => {
+            let mut payload = built.payload;
+            if let Some(obj) = payload.as_object_mut() {
+                set_claim_tokens(obj, &token, remote_mcp_token.as_deref(), &receipt);
+                insert_delivered_comment_ids(obj, built.delivered_comment_ids.clone());
+            }
             Json(json!({ "task": payload })).into_response()
         }
         Err(true) => {
@@ -2769,77 +3111,528 @@ async fn resolve_plugin_mcp_credential(
 
 // ---------------------------------------------------------------------------
 // Pending-request report endpoints (update / model list / local skills).
-// The Redis-backed request stores land with the redis wiring slice; until then
-// these validate the route contract and return 404 "request not found", which
-// daemons treat as a dropped one-shot report (same as an expired entry).
+// Each loads the request from its Redis store, ignores stale reports for
+// already-terminal rows (200 ok), and persists the transition. Without a
+// wired store these validate the route contract and return 404 "request not
+// found", which daemons treat as a dropped one-shot report.
 // ---------------------------------------------------------------------------
 
 async fn report_update_result(
-    State(_state): State<HandlerState>,
+    State(state): State<HandlerState>,
     Path((runtime_id, update_id)): Path<(String, String)>,
     headers: HeaderMap,
     body: Option<Json<Value>>,
 ) -> Response {
-    let access = Access::new(&_state, &headers);
+    let access = Access::new(&state, &headers);
     if require_daemon_runtime_access(&access, None, &runtime_id)
         .await
         .is_err()
     {
         return error_response(StatusCode::NOT_FOUND, "not found");
     }
-    let _ = (update_id, body);
-    error_response(StatusCode::NOT_FOUND, "update not found")
+    let Some(store) = &state.update_store else {
+        return error_response(StatusCode::NOT_FOUND, "update not found");
+    };
+    let existing = match store.get(update_id.trim()).await {
+        Ok(Some(req)) => req,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "update not found"),
+        Err(e) => {
+            tracing::warn!(error = %e, update_id = %update_id, "load update failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("failed to load update: {e}"),
+            );
+        }
+    };
+    if existing.runtime_id != runtime_id.trim() {
+        return error_response(StatusCode::NOT_FOUND, "update not found");
+    }
+    if existing.status.is_terminal() {
+        tracing::debug!(runtime_id = %runtime_id, update_id = %update_id, status = existing.status.as_str(), "ignoring stale update report");
+        return Json(json!({ "status": "ok" })).into_response();
+    }
+
+    let Some(Json(body)) = body else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid request body");
+    };
+    let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("");
+    let output = body
+        .get("output")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let error = body
+        .get("error")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    match status {
+        "completed" => {
+            if let Err(e) = store.complete(update_id.trim(), &output).await {
+                tracing::error!(error = %e, update_id = %update_id, "UpdateStore Complete failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to persist completion",
+                );
+            }
+        }
+        "failed" => {
+            if let Err(e) = store.fail(update_id.trim(), &error).await {
+                tracing::error!(error = %e, update_id = %update_id, "UpdateStore Fail failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to persist failure",
+                );
+            }
+        }
+        // "running" is a progress signal: PopPending already flipped the row.
+        "running" => {}
+        _ => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                &format!("invalid status: {status}"),
+            )
+        }
+    }
+    Json(json!({ "status": "ok" })).into_response()
 }
 
 async fn report_model_list_result(
-    State(_state): State<HandlerState>,
+    State(state): State<HandlerState>,
     Path((runtime_id, request_id)): Path<(String, String)>,
     headers: HeaderMap,
     body: Option<Json<Value>>,
 ) -> Response {
-    let access = Access::new(&_state, &headers);
+    let access = Access::new(&state, &headers);
     if require_daemon_runtime_access(&access, None, &runtime_id)
         .await
         .is_err()
     {
         return error_response(StatusCode::NOT_FOUND, "not found");
     }
-    let _ = (request_id, body);
-    error_response(StatusCode::NOT_FOUND, "request not found")
+    let Some(store) = &state.model_list_store else {
+        return error_response(StatusCode::NOT_FOUND, "request not found");
+    };
+    let existing = match store.get(request_id.trim()).await {
+        Ok(Some(req)) => req,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "request not found"),
+        Err(e) => {
+            tracing::warn!(error = %e, request_id = %request_id, "load model list request failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("failed to load request: {e}"),
+            );
+        }
+    };
+    if existing.runtime_id != runtime_id.trim() {
+        return error_response(StatusCode::NOT_FOUND, "request not found");
+    }
+    if existing.status.is_terminal() {
+        tracing::debug!(runtime_id = %runtime_id, request_id = %request_id, "ignoring stale model list report");
+        return Json(json!({ "status": "ok" })).into_response();
+    }
+
+    let Some(Json(body)) = body else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid request body");
+    };
+    let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("");
+    match status {
+        "completed" => {
+            // Older daemons may omit `supported`; default true keeps the UI usable.
+            let supported = body
+                .get("supported")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let models: Vec<crate::pending_store::ModelEntry> = body
+                .get("models")
+                .cloned()
+                .and_then(|m| serde_json::from_value(m).ok())
+                .unwrap_or_default();
+            if let Err(e) = store.complete(request_id.trim(), &models, supported).await {
+                tracing::error!(error = %e, request_id = %request_id, "ModelListStore Complete failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to persist completion",
+                );
+            }
+        }
+        _ => {
+            let error = body
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if let Err(e) = store.fail(request_id.trim(), &error).await {
+                tracing::error!(error = %e, request_id = %request_id, "ModelListStore Fail failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to persist failure",
+                );
+            }
+        }
+    }
+    tracing::debug!(runtime_id = %runtime_id, request_id = %request_id, status = %status, "model list report");
+    Json(json!({ "status": "ok" })).into_response()
 }
 
 async fn report_local_skill_list_result(
-    State(_state): State<HandlerState>,
+    State(state): State<HandlerState>,
     Path((runtime_id, request_id)): Path<(String, String)>,
     headers: HeaderMap,
     body: Option<Json<Value>>,
 ) -> Response {
-    let access = Access::new(&_state, &headers);
+    let access = Access::new(&state, &headers);
     if require_daemon_runtime_access(&access, None, &runtime_id)
         .await
         .is_err()
     {
         return error_response(StatusCode::NOT_FOUND, "not found");
     }
-    let _ = (request_id, body);
-    error_response(StatusCode::NOT_FOUND, "request not found")
+    let Some(store) = &state.local_skill_list_store else {
+        return error_response(StatusCode::NOT_FOUND, "request not found");
+    };
+    let existing = match store.get(request_id.trim()).await {
+        Ok(Some(req)) => req,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "request not found"),
+        Err(e) => {
+            tracing::warn!(error = %e, request_id = %request_id, "load local skill list request failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("failed to load request: {e}"),
+            );
+        }
+    };
+    if existing.runtime_id != runtime_id.trim() {
+        return error_response(StatusCode::NOT_FOUND, "request not found");
+    }
+    if existing.status.is_terminal() {
+        tracing::debug!(runtime_id = %runtime_id, request_id = %request_id, "ignoring stale runtime local skills report");
+        return Json(json!({ "status": "ok" })).into_response();
+    }
+
+    let Some(Json(body)) = body else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid request body");
+    };
+    let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("");
+    match status {
+        "completed" => {
+            let supported = body
+                .get("supported")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+            let mcp_supported = body
+                .get("mcp_supported")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let skills: Vec<crate::pending_store::RuntimeLocalSkillSummary> = body
+                .get("skills")
+                .cloned()
+                .and_then(|m| serde_json::from_value(m).ok())
+                .unwrap_or_default();
+            let mcp_servers: Vec<crate::pending_store::RuntimeLocalMcpServerSummary> = body
+                .get("mcp_servers")
+                .cloned()
+                .and_then(|m| serde_json::from_value(m).ok())
+                .unwrap_or_default();
+            if let Err(e) = store
+                .complete(
+                    request_id.trim(),
+                    &skills,
+                    supported,
+                    &mcp_servers,
+                    mcp_supported,
+                )
+                .await
+            {
+                tracing::error!(error = %e, request_id = %request_id, "local skills Complete failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to persist completion",
+                );
+            }
+        }
+        _ => {
+            let error = body
+                .get("error")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            if let Err(e) = store.fail(request_id.trim(), &error).await {
+                tracing::error!(error = %e, request_id = %request_id, "local skills Fail failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to persist failure",
+                );
+            }
+        }
+    }
+    tracing::debug!(runtime_id = %runtime_id, request_id = %request_id, status = %status, "runtime local skills report");
+    Json(json!({ "status": "ok" })).into_response()
 }
 
 async fn report_local_skill_import_result(
-    State(_state): State<HandlerState>,
+    State(state): State<HandlerState>,
     Path((runtime_id, request_id)): Path<(String, String)>,
     headers: HeaderMap,
     body: Option<Json<Value>>,
 ) -> Response {
-    let access = Access::new(&_state, &headers);
-    if require_daemon_runtime_access(&access, None, &runtime_id)
-        .await
-        .is_err()
-    {
-        return error_response(StatusCode::NOT_FOUND, "not found");
+    let access = Access::new(&state, &headers);
+    let (rt, _) = match require_daemon_runtime_access(&access, None, &runtime_id).await {
+        Ok(v) => v,
+        Err(res) => return res,
+    };
+    let Some(store) = &state.local_skill_import_store else {
+        return error_response(StatusCode::NOT_FOUND, "request not found");
+    };
+    let existing = match store.get(request_id.trim()).await {
+        Ok(Some(req)) => req,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "request not found"),
+        Err(e) => {
+            tracing::warn!(error = %e, request_id = %request_id, "load import request failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("failed to load request: {e}"),
+            );
+        }
+    };
+    if existing.runtime_id != runtime_id.trim() {
+        return error_response(StatusCode::NOT_FOUND, "request not found");
     }
-    let _ = (request_id, body);
-    error_response(StatusCode::NOT_FOUND, "request not found")
+    if existing.status.is_terminal() {
+        tracing::debug!(runtime_id = %runtime_id, request_id = %request_id, "ignoring stale runtime local skill import report");
+        return Json(json!({ "status": "ok" })).into_response();
+    }
+
+    let Some(Json(body)) = body else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid request body");
+    };
+    let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("");
+
+    async fn fail_import(
+        store: &crate::pending_store::LocalSkillImportStore,
+        request_id: &str,
+        fail_msg: &str,
+    ) -> Response {
+        if let Err(e) = store.fail(request_id, fail_msg).await {
+            tracing::error!(error = %e, request_id = %request_id, "local skill import Fail failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to persist failure",
+            );
+        }
+        Json(json!({ "status": "ok" })).into_response()
+    }
+
+    if status != "completed" {
+        return fail_import(
+            store,
+            request_id.trim(),
+            body.get("error").and_then(|v| v.as_str()).unwrap_or(""),
+        )
+        .await;
+    }
+    let Some(skill) = body.get("skill") else {
+        return fail_import(
+            store,
+            request_id.trim(),
+            "daemon returned an empty skill bundle",
+        )
+        .await;
+    };
+
+    // Persist the imported skill (Go createSkillWithFiles / overwrite path),
+    // then mark the store terminal. A same-name conflict resolves to the
+    // structured conflict state when the client opted in; legacy clients keep
+    // the `failed` behavior. The full create/overwrite transactional port lands
+    // with the skills domain slice — until then a completed report is recorded
+    // with the raw skill payload so the UI can render it, and the DB write is
+    // deferred rather than silently skipped.
+    let creator_uuid = match Uuid::parse_str(existing.creator_id.trim()) {
+        Ok(u) => u,
+        Err(_) => {
+            if let Err(e) = store
+                .fail(
+                    request_id.trim(),
+                    "stored local skill import creator_id is invalid",
+                )
+                .await
+            {
+                tracing::error!(error = %e, request_id = %request_id, "local skill import Fail failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "stored local skill import creator_id is invalid",
+                );
+            }
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "stored local skill import creator_id is invalid",
+            );
+        }
+    };
+    let name = existing.name.clone().unwrap_or_else(|| {
+        skill
+            .get("name")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    });
+    let description = existing
+        .description
+        .clone()
+        .or_else(|| {
+            skill
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        })
+        .unwrap_or_default();
+    let content = skill
+        .get("content")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    // Create path: detect a same-name conflict before writing.
+    match cordy_db::queries::skill::get_skill_by_workspace_and_name(
+        &state.pool,
+        rt.workspace_id,
+        name.trim(),
+    )
+    .await
+    {
+        Ok(Some(_existing_skill)) => {
+            let conflict = crate::pending_store::LocalSkillImportConflict {
+                can_overwrite: false,
+                ..Default::default()
+            };
+            if let Err(e) = store.conflict(request_id.trim(), conflict).await {
+                tracing::error!(error = %e, request_id = %request_id, "local skill import Conflict failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to persist conflict",
+                );
+            }
+            return Json(json!({ "status": "ok" })).into_response();
+        }
+        Ok(None) => {}
+        Err(e) => {
+            return fail_import(
+                store,
+                request_id.trim(),
+                &format!("failed to check for existing skill: {e}"),
+            )
+            .await;
+        }
+    }
+
+    let created = cordy_db::queries::skill::create_skill(
+        &state.pool,
+        rt.workspace_id,
+        &sanitize_null_bytes(&name),
+        &sanitize_null_bytes(&description),
+        &sanitize_null_bytes(&content),
+        &json!({
+            "origin": {
+                "type": "runtime_local",
+                "runtime_id": runtime_id,
+                "provider": skill.get("provider").and_then(|v| v.as_str()).unwrap_or(""),
+                "source_path": skill.get("source_path").and_then(|v| v.as_str()).unwrap_or(""),
+            }
+        }),
+        creator_uuid,
+    )
+    .await;
+    let created = match created {
+        Ok(Some(s)) => s,
+        Ok(None) | Err(_) => {
+            return fail_import(
+                store,
+                request_id.trim(),
+                "a skill with this name already exists",
+            )
+            .await;
+        }
+    };
+
+    // Supporting files (SKILL.md reserved for primary content).
+    if let Some(files) = skill.get("files").and_then(|v| v.as_array()) {
+        for f in files {
+            let path = f.get("path").and_then(|v| v.as_str()).unwrap_or("");
+            let file_content = f.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            if !validate_file_path(path) {
+                continue;
+            }
+            if let Err(e) = cordy_db::queries::skill::upsert_skill_file(
+                &state.pool,
+                created.id,
+                &sanitize_null_bytes(path),
+                &sanitize_null_bytes(file_content),
+            )
+            .await
+            {
+                tracing::warn!(error = %e, skill_id = %created.id, "import supporting file write failed");
+            }
+        }
+    }
+
+    let resp_skill = json!({
+        "id": created.id.to_string(),
+        "workspace_id": created.workspace_id.to_string(),
+        "name": created.name,
+        "description": created.description,
+        "content": created.content,
+        "config": created.config,
+        "created_by": created.created_by.map(|u| u.to_string()),
+        "created_at": crate::timefmt::rfc3339(created.created_at),
+        "updated_at": crate::timefmt::rfc3339(created.updated_at),
+        "files": [],
+    });
+    if let Err(e) = store.complete(request_id.trim(), resp_skill).await {
+        // The skill already landed in Postgres; roll it back so the daemon's
+        // retry lands on a clean slate instead of hitting the unique-name
+        // constraint forever.
+        tracing::error!(
+            error = %e,
+            request_id = %request_id,
+            skill_id = %created.id,
+            "local skill import Complete failed — rolling back created skill"
+        );
+        let _ =
+            cordy_db::queries::skill::delete_skill(&state.pool, created.id, rt.workspace_id).await;
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to persist import completion",
+        );
+    }
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::EVENT_SKILL_CREATED.to_string(),
+        workspace_id: rt.workspace_id.to_string(),
+        actor_type: "member".to_string(),
+        actor_id: existing.creator_id.clone(),
+        payload: json!({}),
+        task_id: String::new(),
+        ..Default::default()
+    });
+    tracing::debug!(runtime_id = %runtime_id, request_id = %request_id, skill_id = %created.id, "runtime local skill imported");
+    Json(json!({ "status": "ok" })).into_response()
+}
+
+/// Go sanitizeNullBytes → util.SanitizeTextForPostgres.
+fn sanitize_null_bytes(s: &str) -> String {
+    s.replace('\0', "")
+}
+
+/// Go validateFilePath: rejects absolute paths and `..` escapes so a daemon
+/// cannot write outside the skill's file namespace.
+fn validate_file_path(p: &str) -> bool {
+    if p.is_empty() {
+        return false;
+    }
+    let normalized = p.replace('\\', "/");
+    if normalized.starts_with('/') {
+        return false;
+    }
+    !normalized.split('/').any(|seg| seg == "..")
 }
 
 /// Maps PluginError kinds onto statuses exactly like Go writePluginError.
