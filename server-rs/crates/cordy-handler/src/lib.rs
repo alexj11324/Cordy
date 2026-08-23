@@ -418,6 +418,13 @@ mod tests {
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"name":"Impact"}"#))
                 .unwrap(),
+            Request::put("/api/projects/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"status":"in_progress"}"#))
+                .unwrap(),
+            Request::delete("/api/projects/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::empty())
+                .unwrap(),
             Request::post("/api/issue-views")
                 .header("content-type", "application/json")
                 .body(Body::from(
