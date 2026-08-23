@@ -50,6 +50,7 @@ pub struct RealtimeRuntime {
     relay_mode: Option<RelayMode>,
     shutdown: CancellationToken,
     forwarder: Option<RealtimeForwarder>,
+    daemon_notifier: Option<Arc<cordy_daemon::notifier::RelayNotifier>>,
 }
 
 impl RealtimeRuntime {
@@ -72,6 +73,7 @@ impl RealtimeRuntime {
                 relay_mode: None,
                 shutdown,
                 forwarder: None,
+                daemon_notifier: None,
             };
         };
 
@@ -91,6 +93,7 @@ impl RealtimeRuntime {
                     relay_mode: None,
                     shutdown,
                     forwarder: None,
+                    daemon_notifier: None,
                 };
             }
             Err(_) => {
@@ -101,6 +104,7 @@ impl RealtimeRuntime {
                     relay_mode: None,
                     shutdown,
                     forwarder: None,
+                    daemon_notifier: None,
                 };
             }
         };
@@ -114,6 +118,7 @@ impl RealtimeRuntime {
             relay_mode: Some(mode),
             shutdown,
             forwarder: None,
+            daemon_notifier: None,
         }
     }
 
@@ -129,6 +134,7 @@ impl RealtimeRuntime {
                     relay.set_daemon_runtime_deliverer(daemon_hub);
                 }
                 daemon_notifier.set_relay(Some(relay.clone()));
+                self.daemon_notifier = Some(daemon_notifier);
             }
             relay.clone().start(self.shutdown.clone());
         }
@@ -138,6 +144,9 @@ impl RealtimeRuntime {
     pub async fn shutdown(mut self) {
         if let Some(forwarder) = self.forwarder.take() {
             forwarder.shutdown().await;
+        }
+        if let Some(notifier) = self.daemon_notifier.take() {
+            notifier.set_relay(None);
         }
         self.shutdown.cancel();
         if let Some(relay) = self.relay {

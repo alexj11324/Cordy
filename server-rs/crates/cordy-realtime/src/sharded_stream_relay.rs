@@ -614,7 +614,7 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
                     for (id, fields) in messages {
                         *last_id = id.clone();
                         M.redis_xread_total.fetch_add(1, Ordering::Relaxed);
-                        self.deliver_fields(&fields);
+                        self.deliver_fields(&fields).await;
                     }
                 }
                 true
@@ -636,7 +636,7 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
         }
     }
 
-    fn deliver_fields(&self, fields: &[(String, String)]) {
+    async fn deliver_fields(&self, fields: &[(String, String)]) {
         if let Some(ev) = Envelope::from_field_pairs(fields) {
             if ev.scope.is_empty() || ev.scope_id.is_empty() {
                 return;
@@ -646,8 +646,7 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone();
-            let hub = self.hub.clone();
-            tokio::spawn(deliver_envelope(hub, daemon_runtime, ev));
+            deliver_envelope(self.hub.clone(), daemon_runtime, ev).await;
         }
     }
 

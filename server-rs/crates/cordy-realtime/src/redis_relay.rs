@@ -377,7 +377,7 @@ impl RedisRelay {
                     {
                         for (id, fields) in messages {
                             M.redis_xread_total.fetch_add(1, Ordering::Relaxed);
-                            self.deliver_fields(key, &fields);
+                            self.deliver_fields(key, &fields).await;
                             // Ack after delivery so a crash re-delivers.
                             let mut w = self.write_conn_handle();
                             let acked: Result<i64, _> = redis::cmd("XACK")
@@ -433,7 +433,7 @@ impl RedisRelay {
         }
     }
 
-    fn deliver_fields(&self, key: &ScopeKey, fields: &[(String, String)]) {
+    async fn deliver_fields(&self, key: &ScopeKey, fields: &[(String, String)]) {
         if let Some(mut ev) = Envelope::from_field_pairs(fields) {
             if ev.scope.is_empty() {
                 ev.scope = key.scope_type.clone();
@@ -446,8 +446,7 @@ impl RedisRelay {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone();
-            let hub = self.hub.clone();
-            tokio::spawn(deliver_envelope(hub, daemon_runtime, ev));
+            deliver_envelope(self.hub.clone(), daemon_runtime, ev).await;
         }
     }
 
