@@ -16,6 +16,7 @@ pub mod claim_response;
 pub mod cli_token;
 pub mod client_usage;
 pub mod comment;
+pub mod comment_list;
 pub mod daemon;
 pub mod daemon_ws;
 pub mod error;
@@ -107,6 +108,8 @@ fn cors_layer() -> CorsLayer {
     ];
     let exposed_headers = [
         HeaderName::from_static("x-comments-truncated"),
+        HeaderName::from_static("x-cordy-next-before"),
+        HeaderName::from_static("x-cordy-next-before-id"),
         HeaderName::from_static("x-timeline-truncated"),
     ];
 
@@ -305,6 +308,7 @@ mod tests {
             "/api/issues/CORD-14/attachments",
             "/api/issues/CORD-14/active-task",
             "/api/issues/CORD-14/task-runs",
+            "/api/issues/CORD-14/comments",
             "/api/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/messages",
             "/api/me",
             "/api/issue-view-preferences?scope_type=workspace",

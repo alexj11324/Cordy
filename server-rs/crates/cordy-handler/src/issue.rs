@@ -3512,7 +3512,7 @@ async fn can_member_invoke_agent(
         })
 }
 
-async fn resolve_issue(
+pub(crate) async fn resolve_issue(
     state: &HandlerState,
     context: &WorkspaceContext,
     raw: &str,
