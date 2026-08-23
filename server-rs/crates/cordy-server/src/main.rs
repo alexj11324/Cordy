@@ -69,6 +69,83 @@ fn realtime_relay_mode(raw: Option<&str>) -> RealtimeRelayMode {
     }
 }
 
+fn positive_env_usize(name: &str, default: usize) -> usize {
+    let Ok(raw) = std::env::var(name) else {
+        return default;
+    };
+    match raw.trim().parse::<usize>().ok().filter(|value| *value > 0) {
+        Some(value) => value,
+        None => {
+            tracing::warn!(
+                name,
+                value = raw,
+                default,
+                "invalid positive integer; using default"
+            );
+            default
+        }
+    }
+}
+
+fn positive_env_i64(name: &str, default: i64) -> i64 {
+    let Ok(raw) = std::env::var(name) else {
+        return default;
+    };
+    match raw.trim().parse::<i64>().ok().filter(|value| *value > 0) {
+        Some(value) => value,
+        None => {
+            tracing::warn!(
+                name,
+                value = raw,
+                default,
+                "invalid positive integer; using default"
+            );
+            default
+        }
+    }
+}
+
+fn realtime_relay_config() -> cordy_realtime::sharded_stream_relay::ShardedStreamRelayConfig {
+    use cordy_realtime::sharded_stream_relay::ShardedStreamRelayConfig;
+
+    let mut config = ShardedStreamRelayConfig::default();
+    config.shards = positive_env_usize("REALTIME_RELAY_SHARDS", config.shards);
+    config.stream_max_len = positive_env_i64("REALTIME_RELAY_STREAM_MAXLEN", config.stream_max_len);
+    config.read_count = positive_env_i64("REALTIME_RELAY_XREAD_COUNT", config.read_count);
+    config.read_block = duration_env("REALTIME_RELAY_XREAD_BLOCK", config.read_block, false);
+    config.replay_grace = duration_env("REALTIME_RELAY_REPLAY_GRACE", config.replay_grace, false);
+    config.trim_horizon = duration_env(
+        "REALTIME_RELAY_TRIM_HORIZON",
+        config.replay_grace * 2,
+        false,
+    );
+    config.stream_ttl = duration_env(
+        "REALTIME_RELAY_STREAM_TTL",
+        config.trim_horizon + config.replay_grace,
+        false,
+    );
+    config.ttl_refresh_interval = duration_env(
+        "REALTIME_RELAY_TTL_REFRESH_INTERVAL",
+        config.ttl_refresh_interval,
+        false,
+    );
+    config.maintenance_interval = duration_env(
+        "REALTIME_RELAY_MAINTENANCE_INTERVAL",
+        config.maintenance_interval,
+        false,
+    );
+    config.stream_ttl_enabled = parse_go_bool(
+        std::env::var("REALTIME_RELAY_STREAM_TTL_ENABLED")
+            .ok()
+            .as_deref(),
+        false,
+    );
+    if let Err(error) = config.validate() {
+        tracing::warn!(%error, "invalid realtime relay retention config; normalizing");
+    }
+    config.normalized()
+}
+
 fn parse_go_bool(raw: Option<&str>, default: bool) -> bool {
     match raw.map(str::trim).filter(|value| !value.is_empty()) {
         None => default,
@@ -218,6 +295,7 @@ async fn install_pending_stores(
 async fn install_daemon_relay(
     state: cordy_handler::HandlerState,
     redis_url: Option<&str>,
+    config: cordy_realtime::sharded_stream_relay::ShardedStreamRelayConfig,
 ) -> cordy_handler::HandlerState {
     let Some(redis_url) = configured_url(redis_url) else {
         return state;
@@ -229,7 +307,7 @@ async fn install_daemon_relay(
             return state;
         }
     };
-    let wiring = state.clone().with_daemon_relay(client);
+    let wiring = state.clone().with_daemon_relay(client, config);
     match tokio::time::timeout(PENDING_STORE_CONNECT_TIMEOUT, wiring).await {
         Ok(Ok(wired)) => wired,
         Ok(Err(error)) => {
@@ -317,7 +395,12 @@ async fn build_production_router(
     let relay_mode = realtime_relay_mode(cfg.redis.realtime_relay_mode.as_deref());
     let state = install_pending_stores(state, redis_url).await;
     let state = if relay_mode.daemon_fanout_enabled() {
-        install_daemon_relay(state, realtime_relay_url(&cfg.redis)).await
+        install_daemon_relay(
+            state,
+            realtime_relay_url(&cfg.redis),
+            realtime_relay_config(),
+        )
+        .await
     } else {
         tracing::info!(
             "daemon websocket wakeup: Redis fanout disabled in legacy realtime relay mode"

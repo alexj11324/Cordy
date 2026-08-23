@@ -602,7 +602,11 @@ impl HandlerState {
 
     /// Starts the shared Redis relay and upgrades daemon notifications from
     /// local-only delivery to local-plus-cross-replica delivery.
-    pub async fn with_daemon_relay(mut self, client: redis::Client) -> anyhow::Result<Self> {
+    pub async fn with_daemon_relay(
+        mut self,
+        client: redis::Client,
+        config: cordy_realtime::sharded_stream_relay::ShardedStreamRelayConfig,
+    ) -> anyhow::Result<Self> {
         let Some(realtime_hub) = self.hub.clone() else {
             return Ok(self);
         };
@@ -614,7 +618,7 @@ impl HandlerState {
                 realtime_hub,
                 client,
                 None,
-                cordy_realtime::sharded_stream_relay::ShardedStreamRelayConfig::default(),
+                config,
             )
             .await?,
         );
