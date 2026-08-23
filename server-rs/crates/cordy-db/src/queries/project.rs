@@ -32,7 +32,7 @@ pub async fn create_project(
     icon: Option<&str>,
     status: &str,
     lead_type: Option<&str>,
-    lead_id: Uuid,
+    lead_id: Option<Uuid>,
     priority: &str,
     start_date: Option<chrono::NaiveDate>,
     due_date: Option<chrono::NaiveDate>,
