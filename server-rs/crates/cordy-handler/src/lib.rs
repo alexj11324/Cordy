@@ -45,6 +45,7 @@ pub mod project;
 pub mod property;
 pub mod quick_action;
 pub mod runtime;
+pub mod runtime_requests;
 pub mod runtime_usage;
 pub mod session;
 pub mod skill;
@@ -252,6 +253,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .merge(
+            runtime_requests::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
             runtime_usage::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 cordy_middleware::workspace::require_workspace,
@@ -453,6 +460,10 @@ mod tests {
             "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/usage/by-agent",
             "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/usage/by-hour",
             "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/activity",
+            "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/update/request-1",
+            "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/models/request-1",
+            "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/local-skills/request-1",
+            "/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/local-skills/import/request-1",
             "/api/working-agents",
         ] {
             let response = build_router(None, None)
@@ -562,6 +573,20 @@ mod tests {
                 .unwrap(),
             Request::post("/api/inbox/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/unarchive")
                 .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/update")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"target_version":"v1.2.3"}"#))
+                .unwrap(),
+            Request::post("/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/models")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/local-skills")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/runtimes/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/local-skills/import")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"skill_key":"review-helper"}"#))
                 .unwrap(),
             Request::post("/api/agent-builder/sessions")
                 .header("content-type", "application/json")

@@ -7,13 +7,44 @@
 use axum::Router;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
+
+const PENDING_STORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[cfg(test)]
 fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<cordy_realtime::hub::Hub>>) -> Router {
     cordy_handler::build_router(db, hub)
 }
 
-fn build_production_router(
+async fn install_pending_stores(
+    state: cordy_handler::HandlerState,
+    redis_url: Option<&str>,
+) -> cordy_handler::HandlerState {
+    let Some(redis_url) = redis_url.map(str::trim).filter(|url| !url.is_empty()) else {
+        return state;
+    };
+    let client = match redis::Client::open(redis_url) {
+        Ok(client) => client,
+        Err(_) => {
+            tracing::warn!("REDIS_URL is invalid; runtime pending requests are disabled");
+            return state;
+        }
+    };
+    match tokio::time::timeout(
+        PENDING_STORE_CONNECT_TIMEOUT,
+        state.clone().with_redis(client),
+    )
+    .await
+    {
+        Ok(Ok(wired)) => wired,
+        Ok(Err(_)) | Err(_) => {
+            tracing::warn!("Redis is unavailable; runtime pending requests are disabled");
+            state
+        }
+    }
+}
+
+async fn build_production_router(
     db: sqlx::PgPool,
     hub: Arc<cordy_realtime::hub::Hub>,
     business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
@@ -36,6 +67,7 @@ fn build_production_router(
             }
         }
     }
+    let state = install_pending_stores(state, redis_url).await;
     cordy_handler::build_router_from_state(state)
 }
 
@@ -100,7 +132,8 @@ async fn main() -> anyhow::Result<()> {
         http_metrics,
         github_client,
         cfg.redis.url.as_deref(),
-    );
+    )
+    .await;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -151,7 +184,8 @@ mod tests {
             None,
             None,
             Some("redis://127.0.0.1:1/"),
-        );
+        )
+        .await;
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(1),
             router.oneshot(
@@ -188,7 +222,8 @@ mod tests {
             None,
             None,
             Some(&redis_url),
-        );
+        )
+        .await;
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(1),
             router.oneshot(
@@ -217,5 +252,37 @@ mod tests {
 
         cfg.auth.jwt_secret = Some("a-long-random-production-secret".into());
         assert!(validate_auth_config(&cfg).is_ok());
+    }
+
+    #[tokio::test]
+    async fn invalid_redis_config_keeps_pending_stores_fail_closed() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = cordy_handler::HandlerState::new(
+            pool,
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let state = install_pending_stores(state, Some("not-a-redis-url")).await;
+        assert!(state.update_store.is_none());
+        assert!(state.model_list_store.is_none());
+        assert!(state.local_skill_list_store.is_none());
+        assert!(state.local_skill_import_store.is_none());
+    }
+
+    #[tokio::test]
+    async fn unreachable_redis_does_not_block_server_startup() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = cordy_handler::HandlerState::new(
+            pool,
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let started = tokio::time::Instant::now();
+        let state = install_pending_stores(state, Some("redis://192.0.2.1:6379/")).await;
+        assert!(started.elapsed() <= PENDING_STORE_CONNECT_TIMEOUT + Duration::from_secs(1));
+        assert!(state.update_store.is_none());
+        assert!(state.model_list_store.is_none());
+        assert!(state.local_skill_list_store.is_none());
+        assert!(state.local_skill_import_store.is_none());
     }
 }
