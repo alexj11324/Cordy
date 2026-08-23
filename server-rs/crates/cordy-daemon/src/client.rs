@@ -361,7 +361,7 @@ impl Client {
         // batchClaimRequestTimeout); reqwest's per-request timeout below
         // provides the same client-side bound.
         let resp: Resp = self
-            .post_json(
+            .post_json_with_timeout(
                 ctx,
                 "/api/daemon/tasks/claim",
                 json!({
@@ -369,6 +369,7 @@ impl Client {
                     "runtime_ids": runtime_ids,
                     "max_tasks": max_tasks,
                 }),
+                BATCH_CLAIM_REQUEST_TIMEOUT,
             )
             .await?;
         Ok(resp.tasks)
@@ -579,7 +580,7 @@ impl Client {
         if !retired_session_id.is_empty() {
             body.insert("retired_session_id".into(), json!(retired_session_id));
         }
-        self.post_json_with_retry(
+        self.post_json_unit_with_retry(
             ctx,
             &format!("/api/daemon/tasks/{task_id}/complete"),
             Value::Object(body),
@@ -629,7 +630,7 @@ impl Client {
         if !retired_session_id.is_empty() {
             body.insert("retired_session_id".into(), json!(retired_session_id));
         }
-        self.post_json_with_retry(
+        self.post_json_unit_with_retry(
             ctx,
             &format!("/api/daemon/tasks/{task_id}/fail"),
             Value::Object(body),
@@ -726,7 +727,7 @@ impl Client {
         if !ack.failure_reason.is_empty() {
             body.insert("failure_reason".into(), json!(ack.failure_reason));
         }
-        self.post_json_with_retry(
+        self.post_json_unit_with_retry(
             ctx,
             &format!("/api/daemon/tasks/{task_id}/cancel-ack"),
             Value::Object(body),
@@ -1245,12 +1246,11 @@ impl Client {
         let resp = match resp {
             Ok(resp) => resp,
             Err(err) => {
-                let err = ClientError::Other(err);
-                if !is_issue_gc_batch_unsupported(&err) {
-                    return Err(match err {
-                        ClientError::Request(req) => req.into(),
-                        ClientError::Other(other) => other,
-                    });
+                let unsupported = request_error(&err).is_some_and(|req| {
+                    req.status_code == 404 && req.body.trim() == "404 page not found"
+                });
+                if !unsupported {
+                    return Err(err);
                 }
                 self.issue_gc_batch_state.lock().unwrap().legacy_enabled = true;
                 return Ok(self.get_legacy_issue_gc_checks(ctx, issue_ids).await);
@@ -1378,16 +1378,20 @@ pub(crate) const DEFAULT_TERMINAL_RETRY_SCHEDULE: &[Duration] = &[
 /// transient by definition. Callers separately bail on parent-context
 /// cancellation.
 fn is_transient_error(err: &anyhow::Error) -> bool {
-    let Some(client_err) = err.downcast_ref::<ClientError>() else {
-        return true;
-    };
-    let Some(req) = client_err.as_request() else {
+    let Some(req) = request_error(err) else {
         return true;
     };
     if req.status_code >= 500 {
         return true;
     }
     req.status_code == 408 || req.status_code == 429
+}
+
+fn request_error(err: &anyhow::Error) -> Option<&RequestError> {
+    err.downcast_ref::<RequestError>().or_else(|| {
+        err.downcast_ref::<ClientError>()
+            .and_then(ClientError::as_request)
+    })
 }
 
 impl Client {
@@ -1433,6 +1437,42 @@ impl Client {
         }
         unreachable!("loop returns on attempt == len(schedule)")
     }
+
+    /// Retry variant for terminal acknowledgements whose response body is not
+    /// part of the protocol. Successful bodies are drained rather than parsed.
+    async fn post_json_unit_with_retry(
+        &self,
+        ctx: &crate::repocache::Ctx,
+        path: &str,
+        req_body: Value,
+        schedule: &[Duration],
+    ) -> anyhow::Result<()> {
+        let mut last_err: Option<anyhow::Error> = None;
+        for attempt in 0..=schedule.len() {
+            if let Some(cancelled) = ctx.err() {
+                return Err(last_err.unwrap_or_else(|| anyhow::anyhow!(cancelled)));
+            }
+            match self.post_json_unit(ctx, path, req_body.clone()).await {
+                Ok(()) => return Ok(()),
+                Err(err) => {
+                    if !is_transient_error(&err) {
+                        return Err(err);
+                    }
+                    last_err = Some(err);
+                    if attempt >= schedule.len() {
+                        return Err(last_err.expect("set above"));
+                    }
+                    tokio::select! {
+                        () = tokio::time::sleep(schedule[attempt]) => {}
+                        () = ctx.cancelled() => {
+                            return Err(last_err.expect("set above"));
+                        }
+                    }
+                }
+            }
+        }
+        unreachable!("loop returns on attempt == len(schedule)")
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1450,10 +1490,21 @@ impl Client {
         path: &str,
         req_body: Value,
     ) -> anyhow::Result<R> {
-        let builder = self.builder_post(path, req_body.clone())?;
+        self.post_json_with_timeout(ctx, path, req_body, CONTROL_PLANE_TIMEOUT)
+            .await
+    }
+
+    async fn post_json_with_timeout<R: DeserializeOwned>(
+        &self,
+        ctx: &crate::repocache::Ctx,
+        path: &str,
+        req_body: Value,
+        timeout: Duration,
+    ) -> anyhow::Result<R> {
+        let builder = self.builder_post(path, req_body)?;
         let opt = self
             .execute_json::<R>(
-                apply_ctx_deadline(builder, ctx, CONTROL_PLANE_TIMEOUT),
+                apply_ctx_deadline(builder, ctx, timeout),
                 ctx.clone(),
                 true,
                 "POST",
@@ -1576,22 +1627,30 @@ impl Client {
         if let Some(cancelled) = ctx.err() {
             anyhow::bail!("{cancelled}");
         }
-        let resp = builder.send().await.map_err(anyhow::Error::from)?;
-        let status = resp.status();
-        if status.as_u16() >= 400 {
-            return Err(RequestError {
-                path: resp.url().path().to_string(),
-                status_code: status.as_u16(),
-                body: body_limited(resp, 4096).await,
-                method,
+        tokio::select! {
+            () = ctx.cancelled() => {
+                anyhow::bail!(ctx.cause())
             }
-            .into());
+            result = async move {
+                let resp = builder.send().await.map_err(anyhow::Error::from)?;
+                let status = resp.status();
+                if status.as_u16() >= 400 {
+                    return Err(RequestError {
+                        path: resp.url().path().to_string(),
+                        status_code: status.as_u16(),
+                        body: body_limited(resp, 4096).await,
+                        method,
+                    }
+                    .into());
+                }
+                if !expect_resp {
+                    cdp_discard(resp).await;
+                    return Ok(None);
+                }
+                let parsed: R = resp.json().await.map_err(anyhow::Error::from)?;
+                Ok(Some(parsed))
+            } => result,
         }
-        if !expect_resp {
-            return Ok(None);
-        }
-        let parsed: R = resp.json().await.map_err(anyhow::Error::from)?;
-        Ok(Some(parsed))
     }
 }
 
@@ -1619,4 +1678,73 @@ async fn body_limited(resp: reqwest::Response, limit: usize) -> String {
 /// Drains and discards a response body (Go's io.Copy(io.Discard)).
 async fn cdp_discard(resp: reqwest::Response) {
     let _ = resp.bytes().await;
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    fn serve_once(delay: Duration, body: &'static [u8]) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 4096];
+            let _ = stream.read(&mut request);
+            std::thread::sleep(delay);
+            let header = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(header.as_bytes());
+            let _ = stream.write_all(body);
+        });
+        format!("http://{address}")
+    }
+
+    fn request_error_with_status(status_code: u16) -> anyhow::Error {
+        RequestError {
+            path: "/test".to_string(),
+            status_code,
+            body: String::new(),
+            method: "POST",
+        }
+        .into()
+    }
+
+    #[test]
+    fn retry_classification_handles_direct_request_errors() {
+        assert!(!is_transient_error(&request_error_with_status(400)));
+        assert!(is_transient_error(&request_error_with_status(408)));
+        assert!(is_transient_error(&request_error_with_status(429)));
+        assert!(is_transient_error(&request_error_with_status(500)));
+    }
+
+    #[tokio::test]
+    async fn unit_post_discards_non_json_success_body() {
+        let client = Client::new(serve_once(Duration::ZERO, b"not-json"));
+
+        client
+            .post_json_unit(&crate::repocache::Ctx::new(), "/terminal", json!({}))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn in_flight_request_observes_parent_cancellation() {
+        let client = Client::new(serve_once(Duration::from_millis(250), b"{}"));
+        let ctx = crate::repocache::Ctx::new();
+        let cancel_ctx = ctx.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            cancel_ctx.cancel_with(crate::repocache::CancelCause::Cancelled);
+        });
+        let started = std::time::Instant::now();
+
+        let result = client.post_json::<Value>(&ctx, "/cancel", json!({})).await;
+
+        assert!(result.is_err());
+        assert!(started.elapsed() < Duration::from_millis(150));
+    }
 }

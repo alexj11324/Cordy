@@ -286,14 +286,17 @@ pub fn validate_media_url(raw: &str) -> anyhow::Result<()> {
     if !matches!(url.scheme(), "http" | "https") {
         anyhow::bail!("wecom: media url scheme refused");
     }
-    if url
-        .host_str()
-        .and_then(|host| host.parse::<IpAddr>().ok())
-        .is_some()
-    {
+    if url.host_str().is_some_and(is_numeric_host) {
         return Err(anyhow::Error::new(MediaAddrBlocked));
     }
     Ok(())
+}
+
+fn is_numeric_host(host: &str) -> bool {
+    host.trim_start_matches('[')
+        .trim_end_matches(']')
+        .parse::<IpAddr>()
+        .is_ok()
 }
 
 fn redirect_policy() -> reqwest::redirect::Policy {
@@ -301,12 +304,7 @@ fn redirect_policy() -> reqwest::redirect::Policy {
         if attempt.previous().len() >= 5 {
             attempt.error("wecom: media download: too many redirects")
         } else {
-            if attempt
-                .url()
-                .host_str()
-                .and_then(|host| host.parse::<IpAddr>().ok())
-                .is_some()
-            {
+            if attempt.url().host_str().is_some_and(is_numeric_host) {
                 attempt.error(MediaAddrBlocked)
             } else if !matches!(attempt.url().scheme(), "http" | "https") {
                 let scheme = attempt.url().scheme().to_string();
@@ -324,9 +322,18 @@ fn redirect_policy() -> reqwest::redirect::Policy {
 mod tests {
     use super::*;
     use std::net::Ipv6Addr;
+    use std::sync::{Mutex, MutexGuard};
+
+    fn lock_allowed_prefixes() -> MutexGuard<'static, ()> {
+        static LOCK: Mutex<()> = Mutex::new(());
+        let guard = LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        set_media_allowed_prefixes(&[]);
+        guard
+    }
 
     #[test]
     fn loopback_and_private_are_refused_even_when_allow_listed() {
+        let _guard = lock_allowed_prefixes();
         assert!(!public_addr_only(IpAddr::from([127, 0, 0, 1])));
         assert!(!public_addr_only(IpAddr::from([10, 0, 0, 1])));
         assert!(!public_addr_only(IpAddr::from([192, 168, 1, 1])));
@@ -345,6 +352,7 @@ mod tests {
 
     #[test]
     fn cgnat_is_reserved_but_reopenable() {
+        let _guard = lock_allowed_prefixes();
         let tailscale = IpAddr::from([100, 101, 102, 103]);
         assert!(!public_addr_only(tailscale));
         set_media_allowed_prefixes(&["100.64.0.0/10".to_string()]);
@@ -354,6 +362,7 @@ mod tests {
 
     #[test]
     fn fake_ip_range_is_reopenable_for_proxy_deployments() {
+        let _guard = lock_allowed_prefixes();
         let fake_ip = IpAddr::from([198, 18, 0, 1]);
         assert!(!public_addr_only(fake_ip));
         set_media_allowed_prefixes(&["198.18.0.0/15".to_string()]);
@@ -363,6 +372,7 @@ mod tests {
 
     #[test]
     fn translation_space_is_never_reopenable() {
+        let _guard = lock_allowed_prefixes();
         set_media_allowed_prefixes(&["::/0".to_string()]);
         // NAT64 well-known prefix wrapping the metadata endpoint.
         let nat64 = IpAddr::from(Ipv6Addr::new(0x64, 0xff9b, 0, 0, 0, 0, 0xa9fe, 0xa9fe));
@@ -375,6 +385,7 @@ mod tests {
 
     #[test]
     fn documentation_and_test_nets_are_refused() {
+        let _guard = lock_allowed_prefixes();
         assert!(!public_addr_only(IpAddr::from([192, 0, 2, 1])));
         assert!(!public_addr_only(IpAddr::from([198, 51, 100, 7])));
         assert!(!public_addr_only(IpAddr::from([203, 0, 113, 9])));
@@ -386,6 +397,7 @@ mod tests {
 
     #[test]
     fn public_addresses_pass() {
+        let _guard = lock_allowed_prefixes();
         assert!(public_addr_only(IpAddr::from([8, 8, 8, 8])));
         assert!(public_addr_only(IpAddr::from([1, 1, 1, 1])));
         assert!(public_addr_only(IpAddr::from(Ipv6Addr::new(
@@ -402,6 +414,7 @@ mod tests {
 
     #[test]
     fn ipv4_mapped_ipv6_is_unmapped_before_checks() {
+        let _guard = lock_allowed_prefixes();
         let mapped = IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x7f00, 1));
         assert!(!public_addr_only(mapped));
         let mapped_public = IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x0808, 0x0808));
@@ -410,6 +423,7 @@ mod tests {
 
     #[test]
     fn unparseable_cidrs_are_reported_not_applied() {
+        let _guard = lock_allowed_prefixes();
         let errs = set_media_allowed_prefixes(&[
             "not-a-cidr".to_string(),
             "  ".to_string(),

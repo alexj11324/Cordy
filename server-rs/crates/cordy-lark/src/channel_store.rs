@@ -22,10 +22,9 @@
 //!   executor-generic, so transactional callers (registration finalize)
 //!   either use the `_with(executor, …)` variants below or pass the tx
 //!   connection directly.
-//! - The generated record_channel_inbound_drop binds installation_id as a
-//!   non-optional UUID; an installation-less event is recorded with the nil
-//!   UUID (Go wrote NULL). The reconciler sweep
-//!   (null_channel_inbound_audit_installation_id) normalizes both shapes.
+//! - `record_channel_inbound_drop` keeps installation_id optional so an
+//!   installation-less event remains SQL NULL, matching Go's invalid
+//!   pgtype.UUID representation.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
@@ -59,10 +58,10 @@ use crate::params::{
     UpsertInstallationParams,
 };
 use crate::store::{
-    binding_token_from_row, chat_session_binding_from_row, dedup_from_row,
-    encode_binding_config, encode_install_config, installation_from_row, outbound_card_from_row,
-    user_binding_from_row, BindingTokenRow, ChatSessionBinding, InboundMessageDedup,
-    Installation, OutboundCardMessage, UserBinding,
+    binding_token_from_row, chat_session_binding_from_row, dedup_from_row, encode_binding_config,
+    encode_install_config, installation_from_row, outbound_card_from_row, user_binding_from_row,
+    BindingTokenRow, ChatSessionBinding, InboundMessageDedup, Installation, OutboundCardMessage,
+    UserBinding,
 };
 
 /// The channel_type discriminator for every row this Feishu-backed store
@@ -77,7 +76,8 @@ pub struct ErrNoRows;
 
 /// Reports whether err is the store's not-found sentinel.
 pub fn is_no_rows(err: &anyhow::Error) -> bool {
-    err.chain().any(|cause| cause.downcast_ref::<ErrNoRows>().is_some())
+    err.chain()
+        .any(|cause| cause.downcast_ref::<ErrNoRows>().is_some())
 }
 
 /// The Postgres SQLSTATE for a unique-constraint violation. A rebind upsert
@@ -119,9 +119,11 @@ impl ChannelStore {
         workspace_id: Uuid,
         user_id: Uuid,
     ) -> anyhow::Result<bool> {
-        Ok(get_member_by_user_and_workspace(&self.pool, user_id, workspace_id)
-            .await?
-            .is_some())
+        Ok(
+            get_member_by_user_and_workspace(&self.pool, user_id, workspace_id)
+                .await?
+                .is_some(),
+        )
     }
 
     // ---- installation ----
@@ -139,8 +141,7 @@ impl ChannelStore {
     }
 
     pub async fn get_lark_installation(&self, id: Uuid) -> anyhow::Result<Installation> {
-        let Some(row) = get_channel_installation(&self.pool, id, CHANNEL_TYPE_FEISHU).await?
-        else {
+        let Some(row) = get_channel_installation(&self.pool, id, CHANNEL_TYPE_FEISHU).await? else {
             return Err(ErrNoRows.into());
         };
         installation_from_row(row)
@@ -168,12 +169,8 @@ impl ChannelStore {
         workspace_id: Uuid,
     ) -> anyhow::Result<Vec<Installation>> {
         installations_from_rows(
-            list_channel_installations_by_workspace(
-                &self.pool,
-                workspace_id,
-                CHANNEL_TYPE_FEISHU,
-            )
-            .await?,
+            list_channel_installations_by_workspace(&self.pool, workspace_id, CHANNEL_TYPE_FEISHU)
+                .await?,
         )
     }
 
@@ -265,9 +262,13 @@ impl ChannelStore {
         &self,
         arg: AcquireWsLeaseParams,
     ) -> anyhow::Result<Installation> {
-        let Some(row) =
-            acquire_channel_ws_lease(&self.pool, arg.new_token.as_deref(), arg.new_expires_at, arg.id)
-                .await?
+        let Some(row) = acquire_channel_ws_lease(
+            &self.pool,
+            arg.new_token.as_deref(),
+            arg.new_expires_at,
+            arg.id,
+        )
+        .await?
         else {
             return Err(ErrNoRows.into());
         };
@@ -310,12 +311,9 @@ impl ChannelStore {
         &self,
         arg: GetChatSessionBindingParams,
     ) -> anyhow::Result<ChatSessionBinding> {
-        let Some(row) = get_channel_chat_session_binding(
-            &self.pool,
-            arg.installation_id,
-            &arg.channel_chat_id,
-        )
-        .await?
+        let Some(row) =
+            get_channel_chat_session_binding(&self.pool, arg.installation_id, &arg.channel_chat_id)
+                .await?
         else {
             return Err(ErrNoRows.into());
         };
@@ -360,12 +358,8 @@ impl ChannelStore {
         &self,
         arg: ClaimInboundDedupParams,
     ) -> anyhow::Result<InboundMessageDedup> {
-        let Some(row) = claim_channel_inbound_dedup(
-            &self.pool,
-            arg.installation_id,
-            &arg.message_id,
-        )
-        .await?
+        let Some(row) =
+            claim_channel_inbound_dedup(&self.pool, arg.installation_id, &arg.message_id).await?
         else {
             return Err(ErrNoRows.into());
         };
@@ -401,8 +395,11 @@ impl ChannelStore {
     // ---- audit ----
 
     /// Writes a non-content drop audit row. An installation-less event passes
-    /// the nil UUID (port note in the module docs).
-    pub async fn record_lark_inbound_drop(&self, arg: RecordInboundDropParams) -> anyhow::Result<()> {
+    /// None so the audit row preserves SQL NULL.
+    pub async fn record_lark_inbound_drop(
+        &self,
+        arg: RecordInboundDropParams,
+    ) -> anyhow::Result<()> {
         record_channel_inbound_drop(
             &self.pool,
             CHANNEL_TYPE_FEISHU,
@@ -501,13 +498,10 @@ impl ChannelStore {
 /// Transaction-capable core of [`ChannelStore::upsert_lark_installation`]:
 /// registration finalize runs reclaim + upsert + installer-bind inside ONE
 /// transaction, passing `&mut *tx` here.
-pub async fn upsert_lark_installation_with<E>(
-    executor: E,
+pub async fn upsert_lark_installation_with(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     arg: UpsertInstallationParams,
-) -> anyhow::Result<Installation>
-where
-    E: sqlx::Executor<'_, Database = sqlx::Postgres>,
-{
+) -> anyhow::Result<Installation> {
     let cfg = encode_install_config(&Installation {
         app_id: arg.app_id.clone(),
         app_secret_encrypted: arg.app_secret_encrypted.clone(),
@@ -534,15 +528,12 @@ where
 
 /// Transaction-capable core of
 /// [`ChannelStore::reclaim_dead_installation_by_app_id`].
-pub async fn reclaim_dead_installation_with<E>(
-    executor: E,
+pub async fn reclaim_dead_installation_with(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
     agent_id: Uuid,
     app_id: &str,
-) -> anyhow::Result<()>
-where
-    E: sqlx::Executor<'_, Database = sqlx::Postgres>,
-{
+) -> anyhow::Result<()> {
     // No rows just means nothing was dead — a no-op, not a failure.
     reclaim_dead_channel_installation_by_app_id(
         executor,
@@ -558,13 +549,10 @@ where
 /// Transaction-capable core of [`ChannelStore::create_lark_user_binding`]:
 /// the installer-bind commits alongside the installation insert inside the
 /// registration transaction.
-pub async fn create_lark_user_binding_with<E>(
-    executor: E,
+pub async fn create_lark_user_binding_with(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     arg: CreateUserBindingParams,
-) -> anyhow::Result<UserBinding>
-where
-    E: sqlx::Executor<'_, Database = sqlx::Postgres>,
-{
+) -> anyhow::Result<UserBinding> {
     let cfg = encode_binding_config(&UserBinding {
         union_id: arg.union_id.clone(),
         ..UserBinding::default()
@@ -590,13 +578,10 @@ where
 /// Transaction-capable core of [`ChannelStore::consume_lark_binding_token`]
 /// for redeem_and_bind, which must run consume + membership + binding insert
 /// in one transaction.
-pub async fn consume_lark_binding_token_with<E>(
-    executor: E,
+pub async fn consume_lark_binding_token_with(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     token_hash: &str,
-) -> anyhow::Result<BindingTokenRow>
-where
-    E: sqlx::Executor<'_, Database = sqlx::Postgres>,
-{
+) -> anyhow::Result<BindingTokenRow> {
     let Some(row) = consume_channel_binding_token(executor, token_hash).await? else {
         return Err(ErrNoRows.into());
     };
@@ -605,7 +590,9 @@ where
 
 /// Maps a slice of channel_installation rows to domain Installations,
 /// surfacing the first config-decode error.
-fn installations_from_rows(rows: Vec<cordy_db::models::ChannelInstallation>) -> anyhow::Result<Vec<Installation>> {
+fn installations_from_rows(
+    rows: Vec<cordy_db::models::ChannelInstallation>,
+) -> anyhow::Result<Vec<Installation>> {
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
         out.push(installation_from_row(row)?);

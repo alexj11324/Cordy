@@ -107,6 +107,12 @@ impl RemoteMCPBrokerSet {
     }
 }
 
+impl Drop for RemoteMCPBrokerSet {
+    fn drop(&mut self) {
+        self.close();
+    }
+}
+
 /// Startup outcome of [`start_task_remote_mcp_brokers`] (go:55 signature):
 /// config fragment, diagnostics for degraded optional connections, the live
 /// set, and any fatal startup error — mirroring Go's 4-value return.
@@ -818,6 +824,18 @@ mod tests {
             assert!(provider_supports_remote_mcp_broker(provider), "{provider}");
         }
         assert!(!provider_supports_remote_mcp_broker("deveco"));
+    }
+
+    #[test]
+    fn dropping_broker_set_cancels_started_brokers() {
+        let token = CancellationToken::new();
+        let observed = token.clone();
+        let mut set = RemoteMCPBrokerSet::default();
+        set.push(token);
+
+        drop(set);
+
+        assert!(observed.is_cancelled());
     }
 
     #[test]

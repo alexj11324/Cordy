@@ -524,9 +524,7 @@ impl LocalPathLocker {
         tokio::pin!(acquire);
         tokio::select! {
             guard = &mut acquire => {
-                drop(guard);
                 entry.set_holder(task_id);
-                let guard = entry.lock.clone().lock_owned().await;
                 Ok(PathLockRelease {
                     entry,
                     guard: Some(guard),
