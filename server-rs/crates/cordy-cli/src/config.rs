@@ -75,7 +75,7 @@ impl Environment {
 
     pub fn config_path(&self, profile: &str) -> Result<PathBuf> {
         if let Some(root) = self.trimmed(TASK_CONFIG_ROOT_ENV) {
-            let root = PathBuf::from(root);
+            let root = normalize_path(Path::new(root));
             if !root.is_absolute() {
                 bail!("{TASK_CONFIG_ROOT_ENV} must be an absolute path");
             }
@@ -149,6 +149,40 @@ impl Environment {
         Ok(true)
     }
 
+    pub fn load_profile_document(&self, profile: &str) -> Result<Value> {
+        let path = self.config_path(profile)?;
+        read_config_document(&path)
+    }
+
+    pub fn set_profile_value(&self, profile: &str, key: &str, value: Option<Value>) -> Result<()> {
+        let path = self.config_path(profile)?;
+        let directory = path.parent().context("resolve CLI config directory")?;
+        ensure_config_directory(directory, self.trimmed(TASK_CONFIG_ROOT_ENV))?;
+        let lock_path = directory.join(".config.lock");
+        let lock = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .context("open CLI config lock")?;
+        restrict_file_permissions(&lock_path)?;
+        lock.lock().context("lock CLI config")?;
+
+        let mut document = read_config_document(&path)?;
+        let object = document
+            .as_object_mut()
+            .context("parse CLI config: expected a JSON object")?;
+        match value {
+            Some(value) => {
+                object.insert(key.into(), value);
+            }
+            None => {
+                object.remove(key);
+            }
+        }
+        write_json_atomically(&path, &document)
+    }
+
     pub fn in_agent_execution_context(&self) -> bool {
         self.raw("CORDY_AGENT_ID")
             .is_some_and(|value| !value.is_empty())
@@ -212,6 +246,56 @@ impl Environment {
     }
 }
 
+fn normalize_path(path: &Path) -> PathBuf {
+    let mut normalized = PathBuf::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            _ => normalized.push(component.as_os_str()),
+        }
+    }
+    normalized
+}
+
+fn read_config_document(path: &Path) -> Result<Value> {
+    let data = match fs::read(path) {
+        Ok(data) => data,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Value::Object(serde_json::Map::new()))
+        }
+        Err(error) => return Err(error).context("read CLI config"),
+    };
+    let document: Value = serde_json::from_slice(&data).context("parse CLI config")?;
+    if !document.is_object() {
+        bail!("parse CLI config: expected a JSON object");
+    }
+    Ok(document)
+}
+
+fn ensure_config_directory(directory: &Path, task_root: Option<&str>) -> Result<()> {
+    fs::create_dir_all(directory).context("create CLI config directory")?;
+    let Some(task_root) = task_root else {
+        return Ok(());
+    };
+    let task_root = Path::new(task_root);
+    let mut current = directory;
+    loop {
+        restrict_directory_permissions(current)?;
+        if current == task_root {
+            return Ok(());
+        }
+        current = current.parent().with_context(|| {
+            format!(
+                "task-local CLI config directory {:?} escapes root {:?}",
+                directory, task_root
+            )
+        })?;
+    }
+}
+
 fn write_json_atomically(path: &Path, document: &Value) -> Result<()> {
     let directory = path.parent().context("resolve CLI config directory")?;
     let mut data = serde_json::to_vec_pretty(document).context("encode CLI config")?;
@@ -257,6 +341,18 @@ fn create_config_temp_file(directory: &Path) -> Result<(File, PathBuf)> {
 fn restrict_file_permissions(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(0o600)).context("chmod CLI config file")
+}
+
+#[cfg(unix)]
+fn restrict_directory_permissions(path: &Path) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
+        .context("restrict task-local CLI config directory")
+}
+
+#[cfg(not(unix))]
+fn restrict_directory_permissions(_path: &Path) -> Result<()> {
+    Ok(())
 }
 
 #[cfg(not(unix))]

@@ -58,10 +58,29 @@ pub struct Cli {
 enum Command {
     #[command(about = "Authenticate cordy with Cordy")]
     Auth(AuthArgs),
+    #[command(about = "Manage configuration for cordy")]
+    Config(ConfigArgs),
     #[command(about = "Work with your user account")]
     User(UserArgs),
     #[command(about = "Work with workspaces")]
     Workspace(WorkspaceArgs),
+}
+
+#[derive(Debug, Args)]
+struct ConfigArgs {
+    #[command(subcommand)]
+    command: Option<ConfigCommand>,
+}
+
+#[derive(Debug, Subcommand)]
+enum ConfigCommand {
+    #[command(about = "Show current CLI configuration")]
+    Show {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
+    #[command(about = "Set a CLI configuration value")]
+    Set { key: String, value: String },
 }
 
 #[derive(Debug, Args)]
@@ -292,6 +311,15 @@ async fn run_with_input<R: Read>(
         Command::Auth(AuthArgs {
             command: AuthCommand::Logout,
         }) => run_auth_logout(cli, environment),
+        Command::Config(ConfigArgs { command: None }) => {
+            run_config_show(cli, environment, OutputFormat::Table)
+        }
+        Command::Config(ConfigArgs {
+            command: Some(ConfigCommand::Show { output }),
+        }) => run_config_show(cli, environment, *output),
+        Command::Config(ConfigArgs {
+            command: Some(ConfigCommand::Set { key, value }),
+        }) => run_config_set(cli, environment, key, value),
         Command::User(UserArgs {
             command:
                 UserCommand::Profile(ProfileArgs {
@@ -503,6 +531,324 @@ fn display_token_prefix(token: &str) -> String {
     } else {
         token.into()
     }
+}
+
+const CONFIG_SET_SUPPORTED_KEYS: &[&str] = &[
+    "server_url",
+    "app_url",
+    "workspace_id",
+    "device_name",
+    "runtime_name",
+    "workspaces_root",
+    "max_concurrent_tasks",
+    "poll_interval",
+    "heartbeat_interval",
+    "agent_timeout",
+    "codex_semantic_inactivity_timeout",
+    "codex_handshake_timeout",
+    "disable_auto_update",
+    "auto_update_check_interval",
+    "disable_auto_reload",
+];
+
+fn run_config_show(
+    cli: &Cli,
+    environment: &Environment,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    require_task_local_config_root(environment)?;
+    let path = environment.config_path(&cli.profile)?;
+    let document = environment.load_profile_document(&cli.profile)?;
+    let values = config_display_values(&document)?;
+    let stdout = match output {
+        OutputFormat::Table => format_config_table(&path, &cli.profile, &values),
+        OutputFormat::Json => {
+            let mut object = serde_json::Map::new();
+            object.insert(
+                "config_file".into(),
+                Value::String(path.display().to_string()),
+            );
+            if !cli.profile.is_empty() {
+                object.insert("profile".into(), Value::String(cli.profile.clone()));
+            }
+            for (key, value) in values {
+                object.insert(key.into(), value);
+            }
+            format!(
+                "{}\n",
+                serde_json::to_string_pretty(&Value::Object(object))?
+            )
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn run_config_set(
+    cli: &Cli,
+    environment: &Environment,
+    key: &str,
+    value: &str,
+) -> Result<RunOutput> {
+    require_task_local_config_root(environment)?;
+    let (stored, displayed) = validate_config_set(key, value, environment)?;
+    environment.set_profile_value(&cli.profile, key, stored)?;
+    Ok(RunOutput {
+        stdout: String::new(),
+        stderr: format!("Set {key} = {displayed}\n"),
+    })
+}
+
+fn config_display_values(document: &Value) -> Result<Vec<(&'static str, Value)>> {
+    let object = document
+        .as_object()
+        .context("parse CLI config: expected a JSON object")?;
+    let string = |key: &'static str| -> Result<Value> {
+        match object.get(key) {
+            None | Some(Value::Null) => Ok(Value::Null),
+            Some(Value::String(value)) if value.is_empty() => Ok(Value::Null),
+            Some(Value::String(value)) => Ok(Value::String(value.clone())),
+            Some(_) => bail!("parse CLI config: field {key:?} must be a string"),
+        }
+    };
+    let integer = |key: &'static str| -> Result<Value> {
+        match object.get(key) {
+            None | Some(Value::Null) => Ok(Value::Null),
+            Some(Value::Number(value)) if value.as_i64() == Some(0) => Ok(Value::Null),
+            Some(Value::Number(value)) if value.as_i64().is_some() => {
+                Ok(Value::Number(value.clone()))
+            }
+            Some(_) => bail!("parse CLI config: field {key:?} must be an integer"),
+        }
+    };
+    let boolean = |key: &'static str| -> Result<Value> {
+        match object.get(key) {
+            None | Some(Value::Null) => Ok(Value::Bool(false)),
+            Some(Value::Bool(value)) => Ok(Value::Bool(*value)),
+            Some(_) => bail!("parse CLI config: field {key:?} must be a boolean"),
+        }
+    };
+    Ok(vec![
+        ("server_url", string("server_url")?),
+        ("app_url", string("app_url")?),
+        ("workspace_id", string("workspace_id")?),
+        ("device_name", string("device_name")?),
+        ("runtime_name", string("runtime_name")?),
+        ("workspaces_root", string("workspaces_root")?),
+        ("max_concurrent_tasks", integer("max_concurrent_tasks")?),
+        ("poll_interval", string("poll_interval")?),
+        ("heartbeat_interval", string("heartbeat_interval")?),
+        ("agent_timeout", string("agent_timeout")?),
+        (
+            "codex_semantic_inactivity_timeout",
+            string("codex_semantic_inactivity_timeout")?,
+        ),
+        (
+            "codex_handshake_timeout",
+            string("codex_handshake_timeout")?,
+        ),
+        ("disable_auto_update", boolean("disable_auto_update")?),
+        (
+            "auto_update_check_interval",
+            string("auto_update_check_interval")?,
+        ),
+        ("disable_auto_reload", boolean("disable_auto_reload")?),
+    ])
+}
+
+fn format_config_table(path: &Path, profile: &str, values: &[(&str, Value)]) -> String {
+    let mut output = format!("Config file: {}\n", path.display());
+    if !profile.is_empty() {
+        let _ = writeln!(output, "Profile:      {profile}");
+    }
+    for (key, value) in values {
+        let rendered = match (*key, value) {
+            ("agent_timeout", Value::String(value))
+                if parse_go_duration(value).is_ok_and(|duration| duration == 0.0) =>
+            {
+                format!("{value} (disabled)")
+            }
+            (_, Value::String(value)) => value.clone(),
+            (_, Value::Bool(value)) => value.to_string(),
+            (_, Value::Number(value)) => value.to_string(),
+            _ => "(not set)".into(),
+        };
+        let label = format!("{key}:");
+        let _ = writeln!(output, "{label:<34} {rendered}");
+    }
+    output
+}
+
+fn validate_config_set(
+    key: &str,
+    value: &str,
+    environment: &Environment,
+) -> Result<(Option<Value>, String)> {
+    let clear = || (None, String::new());
+    match key {
+        "server_url" => validate_url_config(value, key, &["http", "https", "ws", "wss"]),
+        "app_url" => validate_url_config(value, key, &["http", "https"]),
+        "workspace_id" | "device_name" | "runtime_name" => Ok(if value.is_empty() {
+            clear()
+        } else {
+            (Some(Value::String(value.into())), value.into())
+        }),
+        "workspaces_root" => {
+            let value = value.trim();
+            if value.is_empty() {
+                return Ok(clear());
+            }
+            let path = Path::new(value);
+            let absolute = if path.is_absolute() {
+                lexical_normalize(path)
+            } else {
+                lexical_normalize(&environment.current_dir().join(path))
+            };
+            let value = absolute.display().to_string();
+            Ok((Some(Value::String(value.clone())), value))
+        }
+        "max_concurrent_tasks" => {
+            if value.is_empty() {
+                return Ok(clear());
+            }
+            let number = value.parse::<i64>().with_context(|| {
+                format!("max_concurrent_tasks must be an integer: invalid value {value:?}")
+            })?;
+            if number < 0 {
+                bail!("max_concurrent_tasks must be >= 0 (got {number})");
+            }
+            Ok(if number == 0 {
+                clear()
+            } else {
+                (Some(Value::Number(number.into())), value.into())
+            })
+        }
+        "poll_interval" => validate_positive_duration(key, value, false),
+        "heartbeat_interval"
+        | "codex_semantic_inactivity_timeout"
+        | "codex_handshake_timeout"
+        | "auto_update_check_interval" => validate_positive_duration(key, value, true),
+        "agent_timeout" => {
+            if value.is_empty() {
+                return Ok(clear());
+            }
+            let duration = parse_go_duration(value).with_context(|| {
+                format!(
+                    "agent_timeout must be a Go duration (e.g. 10m, 0s to disable): invalid value {value:?}"
+                )
+            })?;
+            if duration < 0.0 {
+                bail!(
+                    "agent_timeout must be >= 0 (got {value}); use 0s to disable the cap or \"\" to clear the persisted value"
+                );
+            }
+            Ok((Some(Value::String(value.into())), value.into()))
+        }
+        "disable_auto_update" | "disable_auto_reload" => {
+            if value.is_empty() {
+                return Ok(clear());
+            }
+            let parsed = parse_go_bool(value)
+                .with_context(|| format!("{key} must be 'true' or 'false' (got {value:?})"))?;
+            Ok(if parsed {
+                (Some(Value::Bool(true)), value.into())
+            } else {
+                clear()
+            })
+        }
+        _ => bail!(
+            "unknown config key {key:?} (supported: {})",
+            CONFIG_SET_SUPPORTED_KEYS.join(", ")
+        ),
+    }
+}
+
+fn validate_url_config(
+    value: &str,
+    key: &str,
+    schemes: &[&str],
+) -> Result<(Option<Value>, String)> {
+    if value.is_empty() {
+        return Ok((None, String::new()));
+    }
+    let url = Url::parse(value).with_context(|| format!("{key} must be a valid URL"))?;
+    if url.host_str().is_none() {
+        bail!("{key} must be a valid URL with a host");
+    }
+    if !schemes.contains(&url.scheme()) {
+        bail!("{key} must use one of: {}", schemes.join(", "));
+    }
+    Ok((Some(Value::String(value.into())), value.into()))
+}
+
+fn validate_positive_duration(
+    key: &str,
+    value: &str,
+    trim: bool,
+) -> Result<(Option<Value>, String)> {
+    if value.is_empty() {
+        return Ok((None, String::new()));
+    }
+    let stored = if trim { value.trim() } else { value };
+    let duration = parse_go_duration(stored).with_context(|| {
+        format!("{key} must be a Go duration (e.g. 10s, 500ms): invalid value {value:?}")
+    })?;
+    if duration <= 0.0 {
+        bail!("{key} must be positive (got {stored}); use `config set {key} \"\"` to clear it");
+    }
+    Ok((Some(Value::String(stored.into())), stored.into()))
+}
+
+fn parse_go_bool(value: &str) -> Option<bool> {
+    match value {
+        "1" | "t" | "T" | "TRUE" | "true" | "True" => Some(true),
+        "0" | "f" | "F" | "FALSE" | "false" | "False" => Some(false),
+        _ => None,
+    }
+}
+
+fn parse_go_duration(value: &str) -> Option<f64> {
+    if value.is_empty() || value.trim() != value {
+        return None;
+    }
+    let (sign, mut rest) = match value.as_bytes().first() {
+        Some(b'-') => (-1.0, &value[1..]),
+        Some(b'+') => (1.0, &value[1..]),
+        _ => (1.0, value),
+    };
+    if rest.is_empty() {
+        return None;
+    }
+    if rest == "0" {
+        return Some(0.0 * sign);
+    }
+    let mut seconds = 0.0_f64;
+    while !rest.is_empty() {
+        let number_len = rest
+            .char_indices()
+            .take_while(|(_, character)| character.is_ascii_digit() || *character == '.')
+            .map(|(index, character)| index + character.len_utf8())
+            .last()?;
+        let number = rest[..number_len].parse::<f64>().ok()?;
+        rest = &rest[number_len..];
+        let (unit, multiplier) = [
+            ("ns", 1e-9),
+            ("us", 1e-6),
+            ("µs", 1e-6),
+            ("ms", 1e-3),
+            ("s", 1.0),
+            ("m", 60.0),
+            ("h", 3600.0),
+        ]
+        .into_iter()
+        .find(|(unit, _)| rest.starts_with(unit))?;
+        rest = &rest[unit.len()..];
+        seconds += number * multiplier;
+    }
+    const MAX_GO_DURATION_SECONDS: f64 = i64::MAX as f64 / 1_000_000_000.0;
+    (seconds.is_finite() && seconds <= MAX_GO_DURATION_SECONDS).then_some(sign * seconds)
 }
 
 async fn run_user_profile_get(
@@ -1482,6 +1828,198 @@ mod tests {
             }) => args,
             _ => panic!("expected workspace update"),
         }
+    }
+
+    #[tokio::test]
+    async fn config_show_table_and_json_exclude_credentials_and_unknown_fields() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let profile_path = home.path().join(".cordy/profiles/dev/config.json");
+        fs::create_dir_all(profile_path.parent().expect("profile parent")).expect("profile dir");
+        fs::write(
+            &profile_path,
+            r#"{
+  "server_url": "https://api.example.com",
+  "workspace_id": "workspace-1",
+  "agent_timeout": "0s",
+  "disable_auto_update": true,
+  "token": "mul_secret",
+  "future_secret": "do-not-print"
+}"#,
+        )
+        .expect("profile config");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+
+        let table = Cli::try_parse_from(["cordy", "--profile", "dev", "config"])
+            .expect("config default-show CLI");
+        let output = run_with_input(&table, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("config table");
+        assert!(output.stdout.contains("Profile:      dev"));
+        assert!(output.stdout.contains("agent_timeout:"));
+        assert!(output.stdout.contains("0s (disabled)"));
+        assert!(output.stdout.contains("disable_auto_update:"));
+        assert!(!output.stdout.contains("mul_secret"));
+        assert!(!output.stdout.contains("do-not-print"));
+
+        let json = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            "dev",
+            "config",
+            "show",
+            "--output",
+            "json",
+        ])
+        .expect("config JSON CLI");
+        let output = run_with_input(&json, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("config JSON");
+        let config: Value = serde_json::from_str(&output.stdout).expect("config JSON output");
+        assert_eq!(config["profile"], "dev");
+        assert_eq!(config["server_url"], "https://api.example.com");
+        assert_eq!(config["disable_auto_update"], true);
+        assert!(config.get("token").is_none());
+        assert!(config.get("future_secret").is_none());
+    }
+
+    #[tokio::test]
+    async fn config_set_is_profile_scoped_and_preserves_unrelated_fields() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let default_path = home.path().join(".cordy/config.json");
+        let profile_path = home.path().join(".cordy/profiles/dev/config.json");
+        fs::create_dir_all(default_path.parent().expect("default parent")).expect("default dir");
+        fs::create_dir_all(profile_path.parent().expect("profile parent")).expect("profile dir");
+        let default_bytes = br#"{"server_url":"https://default.example","token":"mul_default"}"#;
+        fs::write(&default_path, default_bytes).expect("default config");
+        fs::write(
+            &profile_path,
+            r#"{"token":"mul_dev","future":{"keep":true}}"#,
+        )
+        .expect("profile config");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+
+        for (key, value, expected) in [
+            (
+                "server_url",
+                "https://api.dev.example",
+                "https://api.dev.example",
+            ),
+            ("heartbeat_interval", " 5s ", "5s"),
+            ("max_concurrent_tasks", "4", "4"),
+            ("disable_auto_reload", "true", "true"),
+        ] {
+            let cli =
+                Cli::try_parse_from(["cordy", "--profile", "dev", "config", "set", key, value])
+                    .expect("config set CLI");
+            let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .await
+                .expect("config set");
+            assert_eq!(output.stderr, format!("Set {key} = {expected}\n"));
+        }
+        let saved: Value = serde_json::from_slice(&fs::read(&profile_path).expect("saved profile"))
+            .expect("saved JSON");
+        assert_eq!(saved["token"], "mul_dev");
+        assert_eq!(saved["future"]["keep"], true);
+        assert_eq!(saved["heartbeat_interval"], "5s");
+        assert_eq!(saved["max_concurrent_tasks"], 4);
+        assert_eq!(saved["disable_auto_reload"], true);
+        assert_eq!(
+            fs::read(&default_path).expect("default unchanged"),
+            default_bytes
+        );
+    }
+
+    #[test]
+    fn config_set_whitelist_and_validation_match_registry_contract() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let root = cwd.path().join("data/cordy").display().to_string();
+        let valid = [
+            ("server_url", "https://api.example.com"),
+            ("app_url", "https://app.example.com"),
+            ("workspace_id", "workspace-1"),
+            ("device_name", "host-a"),
+            ("runtime_name", "runtime-a"),
+            ("workspaces_root", "data/cordy"),
+            ("max_concurrent_tasks", "8"),
+            ("poll_interval", "1m30s"),
+            ("heartbeat_interval", " 5s "),
+            ("agent_timeout", "0s"),
+            ("codex_semantic_inactivity_timeout", "15m"),
+            ("codex_handshake_timeout", "45s"),
+            ("disable_auto_update", "TRUE"),
+            ("auto_update_check_interval", "12h"),
+            ("disable_auto_reload", "false"),
+        ];
+        for (key, value) in valid {
+            let (_, displayed) =
+                validate_config_set(key, value, &environment).expect("valid config value");
+            if key == "workspaces_root" {
+                assert_eq!(displayed, root);
+            }
+        }
+        for (key, value, message) in [
+            ("token", "secret", "unknown config key"),
+            ("server_url", "not a URL", "valid URL"),
+            ("app_url", "ftp://example.com", "must use one of"),
+            ("max_concurrent_tasks", "-1", ">= 0"),
+            ("poll_interval", "0s", "positive"),
+            ("heartbeat_interval", "abc", "duration"),
+            ("agent_timeout", "-1s", ">= 0"),
+            ("disable_auto_update", "maybe", "true"),
+        ] {
+            assert!(validate_config_set(key, value, &environment)
+                .expect_err("invalid config value")
+                .to_string()
+                .contains(message));
+        }
+    }
+
+    #[tokio::test]
+    async fn config_commands_fail_closed_without_task_local_root() {
+        let home = tempfile::tempdir().expect("owner home");
+        let cwd = tempfile::tempdir().expect("task cwd");
+        let owner_path = home.path().join(".cordy/config.json");
+        fs::create_dir_all(owner_path.parent().expect("owner parent")).expect("owner dir");
+        let owner_bytes = br#"{"server_url":"https://owner.invalid","token":"mul_owner"}"#;
+        fs::write(&owner_path, owner_bytes).expect("owner config");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_AGENT_ID", "agent-1");
+        environment.set("CORDY_TASK_ID", "task-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "config",
+            "set",
+            "server_url",
+            "https://task.example",
+        ])
+        .expect("task config set CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("missing task root");
+        assert!(error.to_string().contains("task-local Cordy config root"));
+        assert_eq!(fs::read(&owner_path).expect("owner unchanged"), owner_bytes);
+
+        let task_root = tempfile::tempdir().expect("task root");
+        environment.set(
+            config::TASK_CONFIG_ROOT_ENV,
+            task_root.path().display().to_string(),
+        );
+        run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("task-local config set");
+        let task: Value = serde_json::from_slice(
+            &fs::read(task_root.path().join("config.json")).expect("task config"),
+        )
+        .expect("task config JSON");
+        assert_eq!(task["server_url"], "https://task.example");
+        assert_eq!(
+            fs::read(&owner_path).expect("owner still unchanged"),
+            owner_bytes
+        );
     }
 
     #[tokio::test]
