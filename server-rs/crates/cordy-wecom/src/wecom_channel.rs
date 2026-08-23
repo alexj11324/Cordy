@@ -27,6 +27,7 @@ use uuid::Uuid;
 use cordy_channel::capability::Capability;
 use cordy_channel::channel::{BuiltChannel, Channel, Config, Factory, FactoryFuture, Type};
 use cordy_channel::handler::InboundHandler;
+use cordy_channel::LeaseGeneration;
 
 use crate::credential_probe::{classify_subscribe_ack, is_credentials_rejected};
 use crate::credentials::CredentialsResolver;
@@ -117,6 +118,7 @@ pub struct WecomChannel {
     /// The process-wide installation→sender registry. We hold a reference so
     /// connect can register itself on entry and clear on exit.
     senders: Option<Arc<SendersRegistry>>,
+    generation: Arc<LeaseGeneration>,
     /// The health sink. Never called directly — go through `metrics`, which is
     /// always a safe-to-call sink.
     metrics: Arc<dyn Metrics>,
@@ -172,7 +174,10 @@ impl Channel for WecomChannel {
             }
         };
 
-        let sender = Arc::new(WsSender::new(conn.clone()));
+        let sender = Arc::new(WsSender::with_generation(
+            conn.clone(),
+            self.generation.clone(),
+        ));
 
         // Subscribe — auth the connection. Any error here yields the loop back
         // to the Supervisor for backoff + retry.
@@ -189,7 +194,11 @@ impl Channel for WecomChannel {
         // sender for a dead connection is never dispatched to.
         let registered = match (&self.senders, self.installation_id != Uuid::nil()) {
             (Some(reg), true) => {
-                reg.set(self.installation_id, sender.clone());
+                reg.set(
+                    self.installation_id,
+                    sender.clone(),
+                    self.generation.clone(),
+                );
                 true
             }
             _ => false,
@@ -350,7 +359,7 @@ impl Channel for WecomChannel {
         let _ = ping_handle.await;
         if registered {
             if let Some(reg) = &self.senders {
-                reg.clear(self.installation_id, &sender);
+                reg.clear(self.installation_id, &self.generation);
             }
         }
         conn.close().await;
@@ -655,6 +664,7 @@ fn new_wecom_factory(deps: ChannelDeps) -> Factory {
                 dialer: deps.dialer.clone().unwrap_or_else(default_dialer),
                 ws_url: deps.ws_url.clone(),
                 senders: deps.senders.clone(),
+                generation: cfg.generation.unwrap_or_else(LeaseGeneration::standalone),
                 metrics: or_nop_metrics(deps.metrics.clone()),
             }) as BuiltChannel)
         })
@@ -789,6 +799,7 @@ mod tests {
             dialer,
             ws_url: String::new(),
             senders: None,
+            generation: LeaseGeneration::standalone(),
             metrics: Arc::new(crate::metrics::NopMetrics),
         }
     }
@@ -1015,6 +1026,7 @@ mod tests {
             raw: json!({"bot_id": "bot-9", "secret_encrypted": null}),
             id: Some(Uuid::now_v7()),
             handler: Some(InboundHandler::new(|_ctx, _msg| Box::pin(async { Ok(()) }))),
+            generation: None,
         };
         let built = rt.block_on(factory(cfg)).unwrap();
         assert_eq!(built.r#type(), crate::type_wecom());
@@ -1032,6 +1044,7 @@ mod tests {
             raw: json!({"bot_id": "b"}),
             id: None,
             handler: None,
+            generation: None,
         };
         assert!(factory(cfg).await.is_err());
 
@@ -1045,6 +1058,7 @@ mod tests {
             raw: json!({}),
             id: None,
             handler: None,
+            generation: None,
         };
         let err = match factory(cfg).await {
             Ok(_) => panic!("expected factory error"),

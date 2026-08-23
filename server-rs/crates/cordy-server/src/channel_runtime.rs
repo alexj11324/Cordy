@@ -15,7 +15,7 @@ use cordy_channel_engine::resolvers::{
     IssueCreator, RouterIssueCreateParams, RouterIssueOutcome, SessionReader, TaskEnqueuer,
 };
 use cordy_channel_engine::router::{Router as ChannelRouter, RouterConfig};
-use cordy_channel_engine::supervisor::{Supervisor, SupervisorConfig};
+use cordy_channel_engine::supervisor::{LeaseMetrics, Supervisor, SupervisorConfig};
 
 type ChannelSupervisor = Supervisor<PostgresChannelStore, RuntimeLeaseStore>;
 
@@ -32,6 +32,7 @@ impl ChannelRuntime {
     pub async fn start(
         state: &cordy_handler::HandlerState,
         cfg: &cordy_config::Config,
+        lease_metrics: Option<Arc<cordy_metrics::ChannelLeaseMetrics>>,
     ) -> anyhow::Result<Option<Self>> {
         let services = Arc::new(ChannelServices {
             pool: state.pool.clone(),
@@ -96,7 +97,8 @@ impl ChannelRuntime {
                 registry,
                 handler,
                 supervisor_config_from_env(),
-                None,
+                lease_metrics
+                    .map(|metrics| Arc::new(RuntimeLeaseMetrics(metrics)) as Arc<dyn LeaseMetrics>),
             )?;
             let run_cancel = cancel.clone();
             Some(tokio::spawn(supervisor.run_owned(run_cancel)))
@@ -167,6 +169,30 @@ impl ChannelRuntime {
         if !self.router.drain(&drain).await {
             tracing::warn!("channel router drain deadline reached");
         }
+    }
+}
+
+struct RuntimeLeaseMetrics(Arc<cordy_metrics::ChannelLeaseMetrics>);
+
+impl LeaseMetrics for RuntimeLeaseMetrics {
+    fn record_lease_operation(&self, operation: &str, outcome: &str) {
+        self.0.record_lease_operation(operation, outcome);
+    }
+
+    fn set_active_lease_owners(&self, count: f64) {
+        self.0.set_active_lease_owners(count);
+    }
+
+    fn set_owners_with_renewal_errors(&self, count: f64) {
+        self.0.set_owners_with_renewal_errors(count);
+    }
+
+    fn set_last_successful_renewal(&self, at: chrono::DateTime<chrono::Utc>) {
+        self.0.set_last_successful_renewal_at(at.timestamp());
+    }
+
+    fn observe_takeover_latency(&self, delay: Duration) {
+        self.0.observe_takeover_latency(delay.as_secs_f64());
     }
 }
 

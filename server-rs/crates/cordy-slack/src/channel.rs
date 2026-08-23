@@ -545,6 +545,7 @@ mod tests {
                 raw: serde_json::json!({"app_id": "A1", "bot_token_encrypted": enc(b"xoxb")}),
                 id: None,
                 handler: None,
+                generation: None,
             })
             .await
         {
@@ -565,6 +566,7 @@ mod tests {
                 }),
                 id: None,
                 handler: None,
+                generation: None,
             })
             .await
             .unwrap();

@@ -14,9 +14,9 @@
 //! boot-time Replier reach the per-installation live connection without
 //! threading the Channel through the engine.
 
-use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
+use cordy_channel::{GenerationRegistry, LeaseGeneration};
 use uuid::Uuid;
 
 use crate::ws_sender::WsSender;
@@ -24,12 +24,7 @@ use crate::ws_sender::WsSender;
 /// A goroutine-safe installation_id → wsSender map.
 #[derive(Default)]
 pub struct SendersRegistry {
-    by_key: RwLock<HashMap<String, SenderEntry>>,
-}
-
-struct SenderEntry {
-    sender: Arc<WsSender>,
-    generation: String,
+    by_key: GenerationRegistry<Uuid, WsSender>,
 }
 
 impl SendersRegistry {
@@ -40,23 +35,11 @@ impl SendersRegistry {
         Self::default()
     }
 
-    pub fn set(&self, id: Uuid, sender: Arc<WsSender>) {
-        self.by_key
-            .write()
-            .unwrap_or_else(|e| e.into_inner())
-            .insert(
-                id.to_string(),
-                SenderEntry {
-                    sender,
-                    // UUIDv7 is fixed-width and time ordered. The Redis owner
-                    // publisher uses it to keep a draining predecessor from
-                    // overwriting a successor during lease rollover.
-                    generation: Uuid::now_v7().to_string(),
-                },
-            );
+    pub fn set(&self, id: Uuid, sender: Arc<WsSender>, generation: Arc<LeaseGeneration>) {
+        self.by_key.insert(id, sender, generation);
     }
 
-    /// Removes this installation's entry, but only if `sender` is still the
+    /// Removes this installation's entry only if `generation` is still the
     /// one registered under it. A generation that is shutting down must not
     /// evict its own successor: connect installs on entry and clears on exit,
     /// so when a lease flips while the old socket is still draining, the two
@@ -65,39 +48,22 @@ impl SendersRegistry {
     /// connection is up, and every outbound push resolves to None — the bot
     /// goes silent with nothing in the log to say why, until the next
     /// reconnect happens to re-register.
-    pub fn clear(&self, id: Uuid, sender: &Arc<WsSender>) {
-        let mut by_key = self.by_key.write().unwrap_or_else(|e| e.into_inner());
-        let key = id.to_string();
-        let same = by_key
-            .get(&key)
-            .is_some_and(|cur| Arc::ptr_eq(&cur.sender, sender));
-        if !same {
-            return;
-        }
-        by_key.remove(&key);
+    pub fn clear(&self, id: Uuid, generation: &Arc<LeaseGeneration>) {
+        self.by_key.remove(&id, generation);
     }
 
     /// Returns the live wsSender for an installation, or None when no
     /// connection is currently held. Callers MUST treat None as "connection
     /// not ready" — the Supervisor may be mid-reconnect after a lease flip.
     pub fn get(&self, id: Uuid) -> Option<Arc<WsSender>> {
-        self.by_key
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .get(&id.to_string())
-            .map(|entry| entry.sender.clone())
+        self.by_key.get(&id).map(|handle| handle.value().clone())
     }
 
     /// Snapshot of locally connected installations and their connection
     /// generations. Used by the Redis outbound relay's ownership heartbeat;
     /// sender handles never leave this process.
     pub fn ownership_snapshot(&self) -> Vec<(Uuid, String)> {
-        self.by_key
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .iter()
-            .filter_map(|(id, entry)| id.parse().ok().map(|id| (id, entry.generation.clone())))
-            .collect()
+        self.by_key.routing_snapshot()
     }
 }
 
@@ -132,15 +98,16 @@ mod tests {
         assert!(reg.get(id).is_none());
 
         let s1 = sender();
-        reg.set(id, s1.clone());
+        let g1 = LeaseGeneration::standalone();
+        reg.set(id, s1.clone(), g1.clone());
         assert!(Arc::ptr_eq(&reg.get(id).unwrap(), &s1));
 
         // A different generation's clear does not evict the winner.
-        let s2 = sender();
-        reg.clear(id, &s2);
+        let g2 = LeaseGeneration::standalone();
+        reg.clear(id, &g2);
         assert!(reg.get(id).is_some());
 
-        reg.clear(id, &s1);
+        reg.clear(id, &g1);
         assert!(reg.get(id).is_none());
     }
 
@@ -150,7 +117,7 @@ mod tests {
         let a = Uuid::now_v7();
         let b = Uuid::now_v7();
         let s = sender();
-        reg.set(a, s.clone());
+        reg.set(a, s.clone(), LeaseGeneration::standalone());
         assert!(reg.get(b).is_none());
         assert!(reg.get(a).is_some());
     }

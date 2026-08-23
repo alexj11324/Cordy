@@ -33,6 +33,7 @@
 
 pub mod capability;
 pub mod channel;
+pub mod generation;
 pub mod handler;
 pub mod history;
 pub mod member_text;
@@ -41,6 +42,7 @@ pub mod registry;
 
 pub use capability::Capability;
 pub use channel::{BuiltChannel, Channel, Config, Factory, FactoryFuture, Type};
+pub use generation::{GenerationExpired, GenerationHandle, GenerationRegistry, LeaseGeneration};
 pub use handler::{HandlerFuture, InboundHandler};
 pub use history::{HistoryMessage, HistoryOptions, HistoryPage, HistoryRole};
 pub use member_text::break_markdown_link_adjacency;

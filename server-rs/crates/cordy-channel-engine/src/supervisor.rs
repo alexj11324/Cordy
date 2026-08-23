@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use tokio_util::sync::CancellationToken;
 
-use cordy_channel::{BuiltChannel, Config as ChannelConfig, Registry};
+use cordy_channel::{BuiltChannel, Config as ChannelConfig, LeaseGeneration, Registry};
 
 use crate::ids::new_node_id;
 use crate::lease::{AcquireLeaseParams, LeaseError, LeaseStore, ReleaseLeaseParams};
@@ -317,7 +317,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
     pub async fn run_owned(self: Arc<Self>, ctx: CancellationToken) {
         // First sweep immediately so a freshly-restarted server doesn't
         // wait a full poll_interval before picking up its installations.
-        self.sweep(&ctx).await;
+        self.run_once(&ctx).await;
 
         let mut ticker = tokio::time::interval(self.cfg.poll_interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -328,7 +328,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                     return;
                 }
                 _ = ticker.tick() => {
-                    self.sweep(&ctx).await;
+                    self.run_once(&ctx).await;
                 }
             }
         }
@@ -343,7 +343,10 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
     /// revoked installations are cancelled. Supervisors whose installation
     /// row rotated credentials are cancelled and replaced inline so the
     /// new channel picks up the fresh row.
-    async fn sweep(self: &Arc<Self>, ctx: &CancellationToken) {
+    /// Runs one deterministic discovery/acquisition pass. Production calls
+    /// this from the polling loop; tests and maintenance tooling can inject a
+    /// clock and exercise one pass without owning a background task.
+    pub async fn run_once(self: &Arc<Self>, ctx: &CancellationToken) {
         let rows = match self.store.list_active_installations().await {
             Ok(rows) => rows,
             Err(err) => {
@@ -592,6 +595,8 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
 
                     // Build the platform channel via the registry, run it
                     // under a child token, and renew the lease in parallel.
+                    let run_ctx = ctx.child_token();
+                    let generation = LeaseGeneration::new(lease_tok.clone(), run_ctx.clone());
                     let built: anyhow::Result<BuiltChannel> = self
                         .registry
                         .build(ChannelConfig {
@@ -599,11 +604,13 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                             id: Some(inst.id),
                             raw: inst.config.clone(),
                             handler: Some(self.handler.clone()),
+                            generation: Some(generation.clone()),
                         })
                         .await;
                     let ch = match built {
                         Ok(ch) => ch,
                         Err(err) => {
+                            generation.revoke();
                             tracing::error!(
                                 error = %err,
                                 "channel engine: build channel failed"
@@ -618,7 +625,6 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                         }
                     };
 
-                    let run_ctx = ctx.child_token();
                     let renew_this = Arc::clone(self);
                     let renew_run = run_ctx.clone();
                     let renew_inst_id = inst.id;
@@ -640,7 +646,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
 
                     let started_at = self.cfg.now();
                     let run_result = ch.connect(run_ctx.clone()).await;
-                    run_ctx.cancel();
+                    generation.revoke();
                     let _ = renewed.await;
                     self.disconnect_channel(&ch, &id).await;
                     self.release_lease(&inst.id, &lease_tok).await;
@@ -688,14 +694,20 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
     ) -> Result<Option<DateTime<Utc>>, LeaseError> {
         let started = self.cfg.now();
         let ttl = self.cfg.ttl_chrono();
-        self.lease_store
+        match self
+            .lease_store
             .try_acquire(AcquireLeaseParams {
                 id: *inst_id,
                 token: token.to_string(),
                 expires_at: started + ttl,
                 ttl,
             })
-            .await?;
+            .await
+        {
+            Ok(()) => {}
+            Err(LeaseError::NotAcquired) => return Ok(None),
+            Err(error) => return Err(error),
+        }
         Ok(Some(
             started + ttl
                 - chrono::Duration::from_std(self.cfg.lease_expiry_safety_margin).unwrap(),
