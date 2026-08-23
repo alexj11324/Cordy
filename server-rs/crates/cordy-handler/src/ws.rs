@@ -1,0 +1,798 @@
+//! WebSocket pump layer — port of `HandleWebSocket`, `readPump`, `writePump`,
+//! `authenticateToken` and the first-message auth handshake from
+//! `server/internal/realtime/hub.go`, on axum's WS upgrade.
+//!
+//! Contract notes (must stay byte-identical with Go):
+//! - Query params: `workspace_id`, or `workspace_slug` resolved via DB.
+//! - Cookie auth (`cordy_auth`) when present, else first-frame auth
+//!   `{"type":"auth","payload":{"token":"..."}}`.
+//! - Frames: `auth_ack` / `auth_error` / `subscribe(_ack|_error)` /
+//!   `unsubscribe_ack` / `ping`→`pong`.
+//! - Read limit 64 KiB (pre-auth enforced), pong deadline 60 s, server ping
+//!   every 54 s. gorilla's pong-handler deadline refresh becomes "any inbound
+//!   frame counts as liveness" — axum auto-replies protocol pings.
+
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+
+use axum::extract::ws::{Message, WebSocket};
+use axum::extract::{ConnectInfo, Extension, Query, State, WebSocketUpgrade};
+use axum::http::{header, HeaderMap, StatusCode};
+use axum::response::{IntoResponse, Response};
+use cordy_auth::cookie::AUTH_COOKIE_NAME;
+use cordy_auth::disabled_users::{is_temporarily_disabled_user, is_temporarily_disabled_user_id};
+use cordy_auth::jwt::hash_token;
+use cordy_db::queries::{member, personal_access_token, workspace};
+use cordy_middleware::auth::decode_jwt_claims;
+use cordy_realtime::broadcaster::{SCOPE_CHAT, SCOPE_TASK, SCOPE_USER, SCOPE_WORKSPACE};
+use cordy_realtime::hub::PatResolver as _;
+use cordy_realtime::hub::{ClientHandle, Hub, ScopeAuthorizer};
+use cordy_realtime::metrics::M;
+use futures_util::{SinkExt, StreamExt};
+use serde_json::{json, Value};
+
+use crate::error::error_response;
+use crate::state::HandlerState;
+
+const PONG_WAIT_SECS: u64 = 60;
+const PING_PERIOD_SECS: u64 = PONG_WAIT_SECS * 9 / 10;
+/// Caps a single inbound message (Go: inboundReadLimit). The largest frame a
+/// client legitimately sends is the token auth frame (<1 KiB); without a cap
+/// one connection can grow the buffered message unbounded (Go hub.go comment).
+const INBOUND_READ_LIMIT: usize = 64 * 1024;
+const WRITE_WAIT_SECS: u64 = 10;
+
+/// DB-backed ownership check for task/chat subscriptions. The hub's legacy
+/// seam is synchronous, so the point lookup is bridged with `block_in_place`;
+/// the async WebSocket task itself is never nested through `Handle::block_on`.
+pub struct DbScopeAuthorizer {
+    tasks: Arc<cordy_service::task_service::TaskService>,
+}
+
+impl DbScopeAuthorizer {
+    pub fn new(tasks: Arc<cordy_service::task_service::TaskService>) -> Self {
+        Self { tasks }
+    }
+}
+
+impl ScopeAuthorizer for DbScopeAuthorizer {
+    fn authorize_scope(
+        &self,
+        _user_id: &str,
+        workspace_id: &str,
+        scope_type: &str,
+        scope_id: &str,
+    ) -> anyhow::Result<bool> {
+        let workspace_id = uuid::Uuid::parse_str(workspace_id)?;
+        let scope_id = uuid::Uuid::parse_str(scope_id)?;
+        let tasks = self.tasks.clone();
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                match scope_type {
+                    SCOPE_TASK => {
+                        let Some(task) =
+                            cordy_db::queries::agent::get_agent_task(&tasks.pool, scope_id).await?
+                        else {
+                            return Ok(false);
+                        };
+                        Ok(tasks
+                            .resolve_task_workspace_id(&task)
+                            .await
+                            .is_some_and(|resolved| resolved == workspace_id.to_string()))
+                    }
+                    SCOPE_CHAT => Ok(cordy_db::queries::chat::get_chat_session_in_workspace(
+                        &tasks.pool,
+                        scope_id,
+                        workspace_id,
+                    )
+                    .await?
+                    .is_some()),
+                    _ => Ok(false),
+                }
+            })
+        })
+    }
+}
+
+/// GET /ws — upgrade + auth handshake, then spawn read/write pumps.
+///
+/// Port of `realtime.HandleWebSocket`. WebSocket handshakes do not inherit
+/// ordinary CORS enforcement, so origin validation happens before upgrade.
+pub async fn ws_handler(
+    State(state): State<HandlerState>,
+    Query(query): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+    connect_info: Option<Extension<ConnectInfo<std::net::SocketAddr>>>,
+    upgrade: WebSocketUpgrade,
+) -> Response {
+    let Some(hub) = state.hub.clone() else {
+        return error_response(StatusCode::SERVICE_UNAVAILABLE, "websocket unavailable");
+    };
+
+    if !check_origin(&headers, connect_info.map(|Extension(info)| info.0.ip())) {
+        return error_response(StatusCode::FORBIDDEN, "websocket origin not allowed");
+    }
+
+    let workspace_id = match resolve_workspace_id(&state, &query).await {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+
+    // Cookie auth branch — when the session cookie is present the identity
+    // must fully validate (including membership) BEFORE the upgrade;
+    // failures answer over plain HTTP exactly like Go's http.Error.
+    let mut user_id = String::new();
+    if let Some(token) = cookie_token(&headers) {
+        let pr = DbPatResolver::new(state.pool.clone(), state.pat_cache.clone());
+        let uid = match authenticate_token(&pr, &token) {
+            Ok(uid) => uid,
+            Err(payload) => return auth_http_error(payload),
+        };
+        if !is_member(&state, &uid, &workspace_id).await {
+            return error_response(StatusCode::FORBIDDEN, "not a member of this workspace");
+        }
+        user_id = uid;
+    }
+
+    let meta = ClientMeta {
+        platform: query.get("client_platform").cloned().unwrap_or_default(),
+        version: query.get("client_version").cloned().unwrap_or_default(),
+        os: query.get("client_os").cloned().unwrap_or_default(),
+    };
+
+    upgrade
+        .max_message_size(INBOUND_READ_LIMIT)
+        .max_frame_size(INBOUND_READ_LIMIT)
+        .on_upgrade(move |socket| async move {
+            post_upgrade(hub, state, socket, user_id, workspace_id, meta).await;
+        })
+}
+
+fn check_origin(headers: &HeaderMap, remote_ip: Option<std::net::IpAddr>) -> bool {
+    let trusted = std::env::var("CORDY_TRUSTED_PROXIES")
+        .ok()
+        .map(|raw| cordy_middleware::ratelimit::parse_trusted_proxies(&raw))
+        .unwrap_or_default();
+    let proxy_trusted =
+        remote_ip.is_some_and(|ip| trusted.iter().any(|network| network.contains(ip)));
+    check_origin_with_policy(headers, proxy_trusted, &allowed_ws_origins())
+}
+
+fn check_origin_with_policy(
+    headers: &HeaderMap,
+    proxy_trusted: bool,
+    allowed_origins: &[String],
+) -> bool {
+    let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) else {
+        return true;
+    };
+    let Some(origin_host) = origin_host(origin) else {
+        return false;
+    };
+
+    if headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|host| origin_host.eq_ignore_ascii_case(host))
+    {
+        return true;
+    }
+
+    if proxy_trusted {
+        if first_forwarded_host(headers).is_some_and(|host| origin_host.eq_ignore_ascii_case(host))
+        {
+            return true;
+        }
+    }
+
+    allowed_origins.iter().any(|allowed| allowed == origin)
+}
+
+fn origin_host(origin: &str) -> Option<String> {
+    origin
+        .parse::<axum::http::Uri>()
+        .ok()?
+        .authority()
+        .map(|authority| authority.as_str().to_string())
+}
+
+fn first_forwarded_host(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("x-forwarded-host")?
+        .to_str()
+        .ok()?
+        .split(',')
+        .next()
+        .map(str::trim)
+        .filter(|host| !host.is_empty())
+}
+
+fn allowed_ws_origins() -> Vec<String> {
+    let raw = ["ALLOWED_ORIGINS", "CORS_ALLOWED_ORIGINS", "FRONTEND_ORIGIN"]
+        .into_iter()
+        .find_map(|name| {
+            std::env::var(name)
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        });
+    raw.map(|value| {
+        value
+            .split(',')
+            .map(str::trim)
+            .filter(|origin| !origin.is_empty())
+            .map(str::to_string)
+            .collect()
+    })
+    .unwrap_or_else(|| {
+        vec![
+            "http://localhost:3000".to_string(),
+            "http://localhost:5173".to_string(),
+            "http://localhost:5174".to_string(),
+        ]
+    })
+}
+
+#[derive(Default, Clone)]
+struct ClientMeta {
+    platform: String,
+    version: String,
+    os: String,
+}
+
+async fn post_upgrade(
+    hub: Arc<Hub>,
+    state: HandlerState,
+    mut socket: WebSocket,
+    mut user_id: String,
+    workspace_id: String,
+    meta: ClientMeta,
+) {
+    // First-message auth (non-cookie clients): read ONE bounded frame before
+    // anything else, mirroring Go's pre-auth SetReadLimit placement.
+    if user_id.is_empty() {
+        let token = match first_message_auth(&mut socket).await {
+            Ok(t) => t,
+            Err(None) => return, // socket already torn down
+            Err(Some(payload)) => {
+                write_auth_error_and_close(&mut socket, payload).await;
+                return;
+            }
+        };
+        let pr = DbPatResolver::new(state.pool.clone(), state.pat_cache.clone());
+        let uid = match authenticate_token(&pr, &token) {
+            Ok(uid) => uid,
+            Err(payload) => {
+                write_auth_error_and_close(&mut socket, payload).await;
+                return;
+            }
+        };
+        if !is_member(&state, &uid, &workspace_id).await {
+            write_auth_error_and_close(
+                &mut socket,
+                r#"{"error":"not a member of this workspace"}"#,
+            )
+            .await;
+            return;
+        }
+        user_id = uid.clone();
+        if !send_direct(&mut socket, r#"{"type":"auth_ack"}"#).await {
+            return;
+        }
+    }
+
+    tracing::info!(
+        user_id = %user_id,
+        workspace_id = %workspace_id,
+        client_platform = %meta.platform,
+        client_version = %meta.version,
+        client_os = %meta.os,
+        "websocket connected"
+    );
+
+    let (client_id, mut rx, client_handle) = hub.register_with_handle(&user_id, &workspace_id);
+    let Some(client) = client_handle else {
+        hub.unregister(client_id);
+        return;
+    };
+
+    // writePump owns the sink half; the reader keeps the stream half.
+    let (mut sink, mut stream) = socket.split();
+    let writer_user = user_id.clone();
+    let writer_ws = workspace_id.clone();
+    let writer = tokio::spawn(async move {
+        write_pump(&mut sink, &mut rx, writer_user, writer_ws).await;
+    });
+
+    read_pump(&hub, &client, &mut stream).await;
+
+    // Reader exited: stop the writer, then unregister (drops the hub's
+    // ClientHandle → sender dropped → any late writer sees None).
+    writer.abort();
+    hub.unregister(client_id);
+}
+
+// ---- pumps ---------------------------------------------------------------
+
+/// Port of Go `Client.readPump`: parses frames and dispatches
+/// subscribe/unsubscribe/ping. Any transport close breaks the loop.
+async fn read_pump<S>(hub: &Arc<Hub>, client: &Arc<ClientHandle>, stream: &mut S)
+where
+    S: StreamExt<Item = Result<Message, axum::Error>> + Unpin,
+{
+    let liveness = tokio::time::sleep(Duration::from_secs(PONG_WAIT_SECS));
+    tokio::pin!(liveness);
+    loop {
+        let msg = tokio::select! {
+            () = &mut liveness => {
+                tracing::warn!(
+                    user_id = %client.user_id,
+                    workspace_id = %client.workspace_id,
+                    "ws: pong deadline exceeded"
+                );
+                break;
+            }
+            msg = stream.next() => msg,
+        };
+        let Some(msg) = msg else {
+            break;
+        };
+        match msg {
+            Ok(Message::Text(text)) => {
+                liveness
+                    .as_mut()
+                    .reset(tokio::time::Instant::now() + Duration::from_secs(PONG_WAIT_SECS));
+                if text.len() > INBOUND_READ_LIMIT {
+                    M.inbound_too_large_total
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    tracing::warn!(
+                        limit_bytes = INBOUND_READ_LIMIT,
+                        user_id = %client.user_id,
+                        workspace_id = %client.workspace_id,
+                        "ws: inbound frame exceeded read limit"
+                    );
+                    break;
+                }
+                handle_frame(hub, client, &text);
+            }
+            Ok(Message::Close(_)) | Err(_) => break,
+            // Binary / Ping / Pong count as liveness; axum answers protocol
+            // pings and the application intentionally ignores their payloads.
+            Ok(_) => liveness
+                .as_mut()
+                .reset(tokio::time::Instant::now() + Duration::from_secs(PONG_WAIT_SECS)),
+        }
+    }
+}
+
+fn handle_frame(hub: &Arc<Hub>, client: &Arc<ClientHandle>, raw: &str) {
+    let parsed: Result<Value, _> = serde_json::from_str(raw);
+    let Ok(frame) = parsed else {
+        tracing::debug!(user_id = %client.user_id, "ws inbound: invalid json");
+        return;
+    };
+    let ftype = frame["type"].as_str().unwrap_or_default();
+    match ftype {
+        "subscribe" | "unsubscribe" => {
+            let scope = frame["payload"]["scope"].as_str().unwrap_or("");
+            let id = frame["payload"]["id"].as_str().unwrap_or("");
+            if scope.is_empty() || id.is_empty() {
+                try_send(
+                    client,
+                    json!({
+                        "type": format!("{ftype}_error"),
+                        "payload": {"scope": scope, "id": id, "error": "invalid payload"}
+                    }),
+                );
+                return;
+            }
+            if ftype == "subscribe" {
+                handle_subscribe(hub, client, scope, id);
+            } else {
+                hub.unsubscribe(client, scope, id);
+                try_send(
+                    client,
+                    json!({
+                        "type": "unsubscribe_ack",
+                        "payload": {"scope": scope, "id": id}
+                    }),
+                );
+            }
+        }
+        "ping" => try_send(client, json!({"type": "pong"})),
+        other => {
+            // Unknown frame — ignore silently for forward compat.
+            tracing::debug!(frame = %other, user_id = %client.user_id, "ws inbound: unknown frame");
+        }
+    }
+}
+
+/// Port of Go `Client.handleSubscribe`: implicit-scope identity guard +
+/// authorizer wiring + ack/error payloads.
+fn handle_subscribe(hub: &Arc<Hub>, client: &Arc<ClientHandle>, scope: &str, id: &str) {
+    match scope {
+        SCOPE_WORKSPACE | SCOPE_USER => {
+            let matches_identity = (scope == SCOPE_WORKSPACE && id == client.workspace_id)
+                || (scope == SCOPE_USER && id == client.user_id);
+            if !matches_identity {
+                M.subscribe_denied_total(scope)
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                try_send(
+                    client,
+                    json!({
+                        "type": "subscribe_error",
+                        "payload": {"scope": scope, "id": id, "error": "forbidden"}
+                    }),
+                );
+                return;
+            }
+            // Already auto-subscribed at connect time; reply ack idempotently.
+            hub.subscribe(client, scope, id);
+        }
+        SCOPE_TASK | SCOPE_CHAT => {
+            if let Err(reason) = hub.authorize_subscription(client, scope, id) {
+                M.subscribe_denied_total(scope)
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                try_send(
+                    client,
+                    json!({
+                        "type": "subscribe_error",
+                        "payload": {"scope": scope, "id": id, "error": reason}
+                    }),
+                );
+                return;
+            }
+            hub.subscribe(client, scope, id);
+        }
+        _ => {
+            M.subscribe_denied_total(scope)
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            try_send(
+                client,
+                json!({
+                    "type": "subscribe_error",
+                    "payload": {"scope": scope, "id": id, "error": "unknown_scope"}
+                }),
+            );
+            return;
+        }
+    }
+    try_send(
+        client,
+        json!({
+            "type": "subscribe_ack",
+            "payload": {"scope": scope, "id": id}
+        }),
+    );
+}
+
+/// Best-effort enqueue (Go `sendJSON`): drops when the queue is full; the
+/// slow client is evicted by the next broadcast cycle.
+fn try_send(client: &Arc<ClientHandle>, v: Value) {
+    let _ = client.sender.try_send(v.to_string().into_bytes());
+}
+
+async fn write_pump<S>(
+    sink: &mut S,
+    rx: &mut tokio::sync::mpsc::Receiver<Vec<u8>>,
+    user_id: String,
+    workspace_id: String,
+) where
+    S: SinkExt<Message> + Unpin,
+    <S as futures_util::Sink<Message>>::Error: std::fmt::Display,
+{
+    let mut ping = tokio::time::interval(Duration::from_secs(PING_PERIOD_SECS));
+    ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ping.reset();
+    loop {
+        tokio::select! {
+            item = rx.recv() => {
+                match item {
+                    Some(data) => {
+                        let write = sink.send(Message::Text(
+                            String::from_utf8_lossy(&data).into_owned().into(),
+                        ));
+                        match tokio::time::timeout(
+                            Duration::from_secs(WRITE_WAIT_SECS), write,
+                        ).await {
+                            Ok(Ok(())) => {}
+                            Ok(Err(e)) => {
+                                tracing::warn!(error = %e, user_id = %user_id,
+                                    workspace_id = %workspace_id, "websocket write error");
+                                return;
+                            }
+                            Err(_) => {
+                                tracing::warn!(user_id = %user_id,
+                                    workspace_id = %workspace_id, "websocket write timeout");
+                                return;
+                            }
+                        }
+                    }
+                    // Hub dropped our sender (unregister/evict) → Go writes an
+                    // empty close message and returns.
+                    None => {
+                        let _ = sink.send(Message::Close(None)).await;
+                        return;
+                    }
+                }
+            }
+            _ = ping.tick() => {
+                if tokio::time::timeout(
+                    Duration::from_secs(WRITE_WAIT_SECS),
+                    sink.send(Message::Ping(Default::default())),
+                ).await.map_or(true, |result| result.is_err()) {
+                    return;
+                }
+            }
+        }
+    }
+}
+
+// ---- auth helpers ----------------------------------------------------------
+
+/// Bridges the sync [`PatResolver`] trait onto async DB code for one token.
+fn resolve_pat(pr: &DbPatResolver, token: &str) -> Option<String> {
+    pr.resolve_token(token)
+}
+
+/// Validates a JWT or PAT string and returns the user ID — port of Go
+/// `authenticateToken`. Error payloads are the exact JSON strings Go writes
+/// back before closing.
+fn authenticate_token(pr: &DbPatResolver, token: &str) -> Result<String, &'static str> {
+    if token.starts_with("mul_") {
+        let Some(user_id) = resolve_pat(pr, token) else {
+            return Err(r#"{"error":"invalid token"}"#);
+        };
+        if is_temporarily_disabled_user_id(&user_id) {
+            return Err(r#"{"error":"account disabled"}"#);
+        }
+        return Ok(user_id);
+    }
+
+    let Some(claims) = decode_jwt_claims(token) else {
+        return Err(r#"{"error":"invalid token"}"#);
+    };
+    let Some(sub) = claims
+        .get("sub")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+    else {
+        return Err(r#"{"error":"invalid claims"}"#);
+    };
+    let email = claims.get("email").and_then(|v| v.as_str()).unwrap_or("");
+    if is_temporarily_disabled_user(sub, email) {
+        return Err(r#"{"error":"account disabled"}"#);
+    }
+    Ok(sub.to_string())
+}
+
+/// DB-backed PAT resolver sharing the middleware PAT cache — Rust analogue of
+/// router.go's `patResolver`, so a revoke through any path invalidates all.
+/// Nil cache degrades to direct DB lookups in Go; [`PatCache::disabled`] is
+/// the equivalent no-op here.
+pub struct DbPatResolver {
+    pool: sqlx::PgPool,
+    pat_cache: cordy_auth::pat_cache::PatCache,
+}
+
+impl DbPatResolver {
+    pub fn new(pool: sqlx::PgPool, pat_cache: cordy_auth::pat_cache::PatCache) -> Self {
+        Self { pool, pat_cache }
+    }
+}
+
+impl cordy_realtime::hub::PatResolver for DbPatResolver {
+    fn resolve_token(&self, token: &str) -> Option<String> {
+        // Sync trait (called once per connection, not per frame) bridged onto
+        // the current runtime; bounded cost per Go's original design note.
+        let pool = self.pool.clone();
+        let cache = self.pat_cache.clone();
+        let hash = hash_token(token);
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                if let Some(user_id) = cache.get(&hash).await {
+                    return Some(user_id);
+                }
+                let pat = personal_access_token::get_personal_access_token_by_hash(&pool, &hash)
+                    .await
+                    .ok()??;
+                let user_id = pat.user_id.to_string();
+                let ttl = cordy_auth::pat_cache::ttl_for_expiry(chrono::Utc::now(), pat.expires_at);
+                cache.set(&hash, &user_id, ttl).await;
+                // Cache miss = first WS auth in this TTL window; refresh
+                // last_used_at without blocking the handshake (Go does `go …`).
+                let p2 = pool.clone();
+                tokio::spawn(async move {
+                    let _ =
+                        personal_access_token::update_personal_access_token_last_used(&p2, pat.id)
+                            .await;
+                });
+                Some(user_id)
+            })
+        })
+    }
+}
+
+async fn is_member(state: &HandlerState, user_id: &str, workspace_id: &str) -> bool {
+    let (Ok(uid), Ok(wid)) = (
+        uuid::Uuid::parse_str(user_id),
+        uuid::Uuid::parse_str(workspace_id),
+    ) else {
+        return false;
+    };
+    member::get_member_by_user_and_workspace(&state.pool, uid, wid)
+        .await
+        .map(|row| row.is_some())
+        .unwrap_or(false)
+}
+
+fn cookie_token(headers: &HeaderMap) -> Option<String> {
+    let cookies = headers.get(header::COOKIE)?.to_str().ok()?;
+    for pair in cookies.split(';') {
+        let pair = pair.trim();
+        if let Some((k, v)) = pair.split_once('=') {
+            if k == AUTH_COOKIE_NAME && !v.is_empty() {
+                return Some(v.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Plain-HTTP rejection before upgrade. Go picks 403 specifically for the
+/// account-disabled body, 401 otherwise.
+fn auth_http_error(payload: &'static str) -> Response {
+    let status = if payload.contains("account disabled") {
+        StatusCode::FORBIDDEN
+    } else {
+        StatusCode::UNAUTHORIZED
+    };
+    (
+        status,
+        [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
+        payload,
+    )
+        .into_response()
+}
+
+// ---- handshake helpers -----------------------------------------------------
+
+/// Resolves workspace_id from query params — port of Go's
+/// workspace_id → workspace_slug fallback (`SlugResolver`).
+async fn resolve_workspace_id(
+    state: &HandlerState,
+    query: &HashMap<String, String>,
+) -> Result<String, Response> {
+    if let Some(id) = non_empty(query.get("workspace_id")) {
+        return Ok(id.to_string());
+    }
+    if let Some(slug) = non_empty(query.get("workspace_slug")) {
+        let Some(ws_row) = workspace::get_workspace_by_slug(&state.pool, slug)
+            .await
+            .unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "ws: slug lookup failed");
+                None
+            })
+        else {
+            return Err(error_response(StatusCode::NOT_FOUND, "workspace not found"));
+        };
+        return Ok(ws_row.id.to_string());
+    }
+    Err(error_response(
+        StatusCode::BAD_REQUEST,
+        "workspace_id or workspace_slug required",
+    ))
+}
+
+fn non_empty(v: Option<&String>) -> Option<&str> {
+    v.map(String::as_str).filter(|s| !s.is_empty())
+}
+
+/// Reads ONE inbound frame with a 10 s bound and extracts the token — port of
+/// Go `firstMessageAuth`. `Err(None)` means the socket already tore down
+/// (caller returns silently); `Err(Some(payload))` is an auth_error body.
+async fn first_message_auth(socket: &mut WebSocket) -> Result<String, Option<&'static str>> {
+    match tokio::time::timeout(Duration::from_secs(WRITE_WAIT_SECS), socket.recv()).await {
+        Err(_) => Err(Some(r#"{"error":"auth timeout or read error"}"#)),
+        Ok(None) => Err(None),
+        Ok(Some(Err(_))) => Err(Some(r#"{"error":"auth timeout or read error"}"#)),
+        Ok(Some(Ok(Message::Close(_)))) => Err(None),
+        Ok(Some(Ok(Message::Text(text)))) => {
+            if text.len() > INBOUND_READ_LIMIT {
+                M.inbound_too_large_total
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                tracing::warn!(
+                    limit_bytes = INBOUND_READ_LIMIT,
+                    "ws: pre-auth frame exceeded read limit"
+                );
+                // gorilla already replied CloseMessageTooBig (1009); writing
+                // an auth_error past that would be data after the close frame.
+                return Err(None);
+            }
+            let parsed: Result<Value, _> = serde_json::from_str(&text);
+            let token: Option<String> = parsed.ok().and_then(|v| {
+                let t = v["payload"]["token"].as_str().unwrap_or("").to_string();
+                (v["type"] == "auth" && !t.is_empty()).then_some(t)
+            });
+            token.ok_or(Some(r#"{"error":"expected auth message as first frame"}"#))
+        }
+        Ok(Some(Ok(_))) => Err(Some(r#"{"error":"expected auth message as first frame"}"#)),
+    }
+}
+
+/// Sends a text frame directly over the socket during the handshake phase
+/// (before the pumps take ownership) — Go `writeWSAuthFrame`.
+async fn send_direct(socket: &mut WebSocket, payload: &str) -> bool {
+    socket
+        .send(Message::Text(payload.to_owned().into()))
+        .await
+        .is_ok()
+}
+
+async fn write_auth_error_and_close(socket: &mut WebSocket, payload: &'static str) {
+    send_direct(socket, payload).await;
+    let _ = socket.close().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    fn headers(host: &str, origin: &str, forwarded_host: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_str(host).unwrap());
+        headers.insert(header::ORIGIN, HeaderValue::from_str(origin).unwrap());
+        if let Some(forwarded_host) = forwarded_host {
+            headers.insert(
+                "x-forwarded-host",
+                HeaderValue::from_str(forwarded_host).unwrap(),
+            );
+        }
+        headers
+    }
+
+    fn origins() -> Vec<String> {
+        vec![
+            "http://localhost:3000".to_string(),
+            "https://cordy.ai".to_string(),
+        ]
+    }
+
+    #[test]
+    fn websocket_origin_policy_matches_go_contract() {
+        let allowed = origins();
+        let empty = HeaderMap::new();
+        assert!(check_origin_with_policy(&empty, false, &allowed));
+        assert!(check_origin_with_policy(
+            &headers("API.Cordy.AI", "https://api.cordy.ai", None),
+            false,
+            &allowed,
+        ));
+        assert!(check_origin_with_policy(
+            &headers("localhost:8080", "http://localhost:3000", None),
+            false,
+            &allowed,
+        ));
+        assert!(!check_origin_with_policy(
+            &headers("api.cordy.ai", "https://evil.example", None),
+            false,
+            &allowed,
+        ));
+    }
+
+    #[test]
+    fn forwarded_host_requires_a_trusted_proxy() {
+        let allowed = origins();
+        let headers = headers(
+            "internal.proxy",
+            "https://public.example",
+            Some("public.example, proxy.internal"),
+        );
+
+        assert!(!check_origin_with_policy(&headers, false, &allowed));
+        assert!(check_origin_with_policy(&headers, true, &allowed));
+    }
+}

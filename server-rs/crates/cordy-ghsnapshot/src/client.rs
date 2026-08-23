@@ -9,7 +9,7 @@
 //! an error message.
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use anyhow::{anyhow, Result};
@@ -18,6 +18,7 @@ use serde::Deserialize;
 use thiserror::Error;
 
 pub const DEFAULT_API_BASE: &str = "https://api.github.com";
+const USER_AGENT: &str = "Cordy-GitHub-Snapshot/1.0";
 
 /// Renew an installation token this long before it actually expires so an
 /// in-flight request never races the expiry boundary. GitHub tokens live
@@ -53,6 +54,7 @@ pub struct Client {
     now: Box<dyn Fn() -> SystemTime + Send + Sync>,
 
     tokens: Mutex<HashMap<i64, CachedToken>>,
+    mint_locks: Mutex<HashMap<i64, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl Client {
@@ -82,10 +84,12 @@ impl Client {
             api_base: DEFAULT_API_BASE.to_string(),
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(20))
+                .user_agent(USER_AGENT)
                 .build()
                 .map_err(|e| anyhow!("build github http client: {e}"))?,
             now: Box::new(SystemTime::now),
             tokens: Mutex::new(HashMap::new()),
+            mint_locks: Mutex::new(HashMap::new()),
         }))
     }
 
@@ -115,10 +119,12 @@ impl Client {
             api_base,
             http: reqwest::Client::builder()
                 .timeout(Duration::from_secs(20))
+                .user_agent(USER_AGENT)
                 .build()
                 .map_err(|e| anyhow!("build github http client: {e}"))?,
             now,
             tokens: Mutex::new(HashMap::new()),
+            mint_locks: Mutex::new(HashMap::new()),
         })
     }
 
@@ -162,6 +168,17 @@ impl Client {
     /// POST /app/installations/{id}/access_tokens when the cache is empty
     /// or within the renew skew of expiry.
     async fn installation_token(&self, installation_id: i64) -> Result<String> {
+        if let Some(tok) = self.cached_token(installation_id) {
+            return Ok(tok);
+        }
+        let mint_lock = {
+            let mut locks = self.mint_locks.lock().unwrap();
+            locks
+                .entry(installation_id)
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                .clone()
+        };
+        let _guard = mint_lock.lock().await;
         if let Some(tok) = self.cached_token(installation_id) {
             return Ok(tok);
         }

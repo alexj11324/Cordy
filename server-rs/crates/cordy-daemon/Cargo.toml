@@ -16,6 +16,7 @@ tracing = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { workspace = true }
 uuid = { workspace = true }
+url = { workspace = true }
 chrono = { workspace = true }
 sqlx = { workspace = true }
 redis = { workspace = true }
@@ -34,3 +35,16 @@ cordy-db = { path = "../cordy-db" }
 cordy-protocol = { path = "../cordy-protocol" }
 cordy-realtime = { path = "../cordy-realtime" }
 cordy-config = { path = "../cordy-config" }
+# S9 lane D (plugin_hook_mcp / remote_mcp_broker): local MCP servers + upstream client
+axum = { workspace = true }
+http = { workspace = true }
+http-body-util = { workspace = true }
+cordy-remotemcp = { path = "../cordy-remotemcp" }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }

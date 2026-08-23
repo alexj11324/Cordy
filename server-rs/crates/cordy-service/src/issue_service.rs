@@ -261,7 +261,6 @@ impl IssueService {
             .await
             .map_err(|e| ic_err("next top position", e))?;
 
-        let nil = Uuid::nil();
         let issue = if p.origin_type.is_some() {
             create_issue_with_origin(
                 &mut *tx,
@@ -271,17 +270,17 @@ impl IssueService {
                 &p.status,
                 &p.priority,
                 p.assignee_type.as_deref(),
-                p.assignee_id.unwrap_or(nil),
+                p.assignee_id.filter(|id| !id.is_nil()),
                 &p.creator_type,
                 p.creator_id,
-                p.parent_issue_id.unwrap_or(nil),
+                p.parent_issue_id.filter(|id| !id.is_nil()),
                 new_position,
                 p.start_date,
                 p.due_date,
                 issue_number,
-                project_id.unwrap_or(nil),
+                project_id.filter(|id| !id.is_nil()),
                 p.origin_type.as_deref(),
-                p.origin_id.unwrap_or(nil),
+                p.origin_id.filter(|id| !id.is_nil()),
                 p.stage,
                 new_v7(),
             )
@@ -295,15 +294,15 @@ impl IssueService {
                 &p.status,
                 &p.priority,
                 p.assignee_type.as_deref(),
-                p.assignee_id.unwrap_or(nil),
+                p.assignee_id.filter(|id| !id.is_nil()),
                 &p.creator_type,
                 p.creator_id,
-                p.parent_issue_id.unwrap_or(nil),
+                p.parent_issue_id.filter(|id| !id.is_nil()),
                 new_position,
                 p.start_date,
                 p.due_date,
                 issue_number,
-                project_id.unwrap_or(nil),
+                project_id.filter(|id| !id.is_nil()),
                 p.stage,
                 new_v7(),
             )

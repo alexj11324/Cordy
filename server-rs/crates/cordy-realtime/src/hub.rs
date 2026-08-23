@@ -189,6 +189,25 @@ impl Hub {
         (id, rx)
     }
 
+    /// [`Hub::register`] variant that also returns the client handle — the WS
+    /// pump layer needs it to dispatch subscribe frames without a hub lookup.
+    pub fn register_with_handle(
+        &self,
+        user_id: &str,
+        workspace_id: &str,
+    ) -> (
+        ClientId,
+        tokio::sync::mpsc::Receiver<Vec<u8>>,
+        Option<std::sync::Arc<ClientHandle>>,
+    ) {
+        let (id, rx) = self.register(user_id, workspace_id);
+        let handle = {
+            let inner = self.inner.read().unwrap_or_else(|e| e.into_inner());
+            inner.clients.get(&id).cloned()
+        };
+        (id, rx, handle)
+    }
+
     /// Drops a client from all rooms and the global set, firing
     /// on-last-subscriber callbacks for any rooms drained as a side effect.
     pub fn unregister(&self, id: ClientId) {
@@ -516,7 +535,10 @@ impl Hub {
     ) -> Result<(), &'static str> {
         let authorizer = self.authorizer.read().unwrap_or_else(|e| e.into_inner());
         match authorizer.as_ref() {
-            None => Ok(()),
+            // Task/chat scopes always require an ownership lookup. Treat
+            // missing wiring as a server-side authorization failure instead
+            // of granting every authenticated workspace member access.
+            None => Err("lookup_failed"),
             Some(a) => {
                 match a.authorize_scope(&client.user_id, &client.workspace_id, scope_type, scope_id)
                 {
@@ -711,5 +733,16 @@ mod tests {
         assert_eq!(snap["connections"], 1);
         assert_eq!(snap["rooms"]["workspace"], 1);
         assert_eq!(snap["rooms"]["user"], 1);
+    }
+
+    #[test]
+    fn absent_scope_authorizer_fails_closed() {
+        let hub = Hub::new();
+        let (client, _, _rx) = make_client(&hub, "u-1", "ws-1");
+
+        assert_eq!(
+            hub.authorize_subscription(&client, "task", "task-1"),
+            Err("lookup_failed")
+        );
     }
 }

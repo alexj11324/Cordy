@@ -22,6 +22,8 @@ use cordy_db::queries::{daemon_token, personal_access_token};
 /// Cloud node PAT prefix. Fail-closed until the Cloud Fleet verifier lands
 /// with the integrations port — mirrors Go when CORDY_CLOUD_FLEET_URL unset.
 const CLOUD_PAT_PREFIX: &str = "mcn_";
+pub const DAEMON_WORKSPACE_HEADER: &str = "x-cordy-daemon-workspace-id";
+pub const DAEMON_ID_HEADER: &str = "x-cordy-daemon-id";
 
 /// Auth path labels exposed via [`DaemonContext`] for telemetry.
 pub const DAEMON_AUTH_PATH_DAEMON_TOKEN: &str = "daemon_token";
@@ -72,6 +74,8 @@ pub async fn daemon_auth_middleware(
     // before any branch can re-stamp it, keeping the contract uniform with
     // the regular Auth middleware.
     req.headers_mut().remove("x-actor-source");
+    req.headers_mut().remove(DAEMON_WORKSPACE_HEADER);
+    req.headers_mut().remove(DAEMON_ID_HEADER);
 
     let Some(auth_header) = req
         .headers()
@@ -101,6 +105,12 @@ pub async fn daemon_auth_middleware(
     if token.starts_with("mdt_") {
         // Cache hit short-circuits the DB lookup entirely.
         if let Some(id) = state.daemon_cache.get(&hash).await {
+            if let Ok(workspace) = id.workspace_id.parse() {
+                req.headers_mut().insert(DAEMON_WORKSPACE_HEADER, workspace);
+            }
+            if let Ok(daemon) = id.daemon_id.parse() {
+                req.headers_mut().insert(DAEMON_ID_HEADER, daemon);
+            }
             req.extensions_mut().insert(DaemonContext {
                 workspace_id: Some(id.workspace_id),
                 daemon_id: Some(id.daemon_id),
@@ -127,6 +137,12 @@ pub async fn daemon_auth_middleware(
             workspace_id: dt.workspace_id.to_string(),
             daemon_id: dt.daemon_id.clone(),
         };
+        if let Ok(workspace) = identity.workspace_id.parse() {
+            req.headers_mut().insert(DAEMON_WORKSPACE_HEADER, workspace);
+        }
+        if let Ok(daemon) = identity.daemon_id.parse() {
+            req.headers_mut().insert(DAEMON_ID_HEADER, daemon);
+        }
         // expires_at is NOT NULL; SQL also filters expired rows.
         let ttl = ttl_for_expiry(chrono::Utc::now(), Some(dt.expires_at));
         state.daemon_cache.set(&hash, &identity, ttl).await;

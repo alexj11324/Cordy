@@ -193,7 +193,7 @@ pub fn prepare_codex_home_with_opts(
     for name in CODEX_COPIED_FILES {
         let src = join_path(&[&shared_home, name]);
         let dst = join_path(&[codex_home, name]);
-        if let Err(err) = super::execenv::copy_file(&src, &dst) {
+        if let Err(err) = sync_copied_file(&src, &dst) {
             tracing::warn!(file = %name, error = %format!("{err:#}"), "execenv: codex-home sync failed");
             if name == "config.toml" {
                 config_sync_err = Some(format!("{err:#}"));
@@ -953,11 +953,11 @@ fn expose_resume_rollout(
 /// link_codex_rollout materialises src at dst without copying its bytes: hard
 /// link first, falling back to a symlink across filesystems.
 fn link_codex_rollout(src: &str, dst: &str) -> anyhow::Result<()> {
+    if std::fs::hard_link(src, dst).is_ok() {
+        return Ok(());
+    }
     #[cfg(unix)]
     {
-        if std::fs::hard_link(src, dst).is_ok() {
-            return Ok(());
-        }
         std::os::unix::fs::symlink(src, dst)?;
         Ok(())
     }
@@ -1073,6 +1073,27 @@ fn materialise_in_codex_home(
         }
     } else {
         bail!("stat codex home {codex_home}");
+    }
+
+    // os.Root also refuses any symlink on the way down, so a reused task home
+    // cannot redirect the write through an intermediate link. Walk every
+    // component before creating or writing anything; ".." is rejected for the
+    // same reason Go's root-scoped calls refuse it.
+    let components: Vec<&str> = rel_path
+        .split(['/', '\\'])
+        .filter(|c| !c.is_empty() && *c != ".")
+        .collect();
+    if components.contains(&"..") {
+        bail!("{key} {rel_path:?} must not traverse outside the task home");
+    }
+    let mut walked = codex_home.to_string();
+    for comp in &components {
+        walked = join_path(&[&walked, comp]);
+        if let Ok(md) = Path::new(&walked).symlink_metadata() {
+            if md.file_type().is_symlink() {
+                bail!("{key} path component {walked} is a symlink; refusing to write through it");
+            }
+        }
     }
 
     let full = join_path(&[codex_home, rel_path]);
@@ -1227,7 +1248,7 @@ fn resolve_codex_config_path(
     shared_home: &str,
     key: &str,
 ) -> anyhow::Result<String> {
-    if config_path.starts_with('/') {
+    if is_absolute_config_path(config_path) {
         return Ok(clean_lexical(config_path));
     }
     if config_path.starts_with("~/") || config_path.starts_with("~\\") {
@@ -1239,6 +1260,15 @@ fn resolve_codex_config_path(
         bail!("{key} {config_path:?} uses unsupported ~user expansion");
     }
     Ok(join_path(&[shared_home, &clean_lexical(config_path)]))
+}
+
+fn is_absolute_config_path(path: &str) -> bool {
+    Path::new(path).is_absolute()
+        || path.starts_with("\\\\")
+        || path
+            .as_bytes()
+            .get(1..3)
+            .is_some_and(|suffix| suffix[0] == b':' && matches!(suffix[1], b'/' | b'\\'))
 }
 
 // ---------------------------------------------------------------------------
@@ -1568,6 +1598,14 @@ mod tests {
             resolve_codex_config_path("rel/file.md", shared, "k").unwrap(),
             "/shared/.codex/rel/file.md"
         );
+        assert_eq!(
+            resolve_codex_config_path(r"C:\models\catalog.json", shared, "k").unwrap(),
+            r"C:\models\catalog.json"
+        );
+        assert_eq!(
+            resolve_codex_config_path(r"\\server\share\instructions.md", shared, "k").unwrap(),
+            r"\\server\share\instructions.md"
+        );
         assert!(resolve_codex_config_path("~other/x", shared, "k").is_err());
         let got = resolve_codex_config_path("~/mine.md", shared, "k").unwrap();
         assert!(got.ends_with("mine.md"), "{got}");
@@ -1650,5 +1688,58 @@ mod tests {
             Some(v) => unsafe { std::env::set_var("CODEX_HOME", v) },
             None => unsafe { std::env::remove_var("CODEX_HOME") },
         }
+    }
+
+    // A symlinked intermediate component must abort the write; a plain nested
+    // path still materialises.
+    #[test]
+    fn test_materialise_in_codex_home_rejects_symlinked_component() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let src = tmp.path().join("src.toml");
+        std::fs::write(&src, "model = \"x\"\n").unwrap();
+
+        // Plain nested path works.
+        materialise_in_codex_home(
+            home.to_str().unwrap(),
+            "plugins/cache/installed.json",
+            src.to_str().unwrap(),
+            "test-plugin",
+        )
+        .expect("plain nested path");
+        let dst = home.join("plugins/cache/installed.json");
+        assert_eq!(std::fs::read_to_string(&dst).unwrap(), "model = \"x\"\n");
+
+        // Symlinked intermediate directory refused.
+        #[cfg(unix)]
+        {
+            let outside = tempfile::tempdir_in(&tmp).unwrap();
+            std::fs::create_dir_all(home.join("evil")).unwrap();
+            std::os::unix::fs::symlink(outside.path(), home.join("plugins").join("link")).unwrap();
+            let err = materialise_in_codex_home(
+                home.to_str().unwrap(),
+                "plugins/link/config.json",
+                src.to_str().unwrap(),
+                "test-escape",
+            )
+            .unwrap_err();
+            let msg = format!("{err:#}");
+            assert!(msg.contains("symlink"), "expected symlink refusal: {msg}");
+            assert!(
+                !outside.path().join("config.json").exists(),
+                "write must not land through the link"
+            );
+        }
+
+        // ".." traversal refused.
+        let err = materialise_in_codex_home(
+            home.to_str().unwrap(),
+            "../escape.toml",
+            src.to_str().unwrap(),
+            "test-dotdot",
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("outside the task home"));
     }
 }

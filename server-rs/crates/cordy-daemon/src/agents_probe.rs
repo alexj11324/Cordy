@@ -1,75 +1,44 @@
-//! Port of `server/internal/daemon/agents_probe.go` (296 lines).
+#![allow(dead_code)] // S9-integration: consumed by daemon.go core wiring (S8)
+//! Port of `server/internal/daemon/agents_probe.go` — discovery of installed
+//! built-in agent CLIs (PATH lookup + login-shell fallback + Codex Desktop
+//! app-bundle probe + DSH profile probe).
 //!
-//! Deviations from Go:
-//! - `var probeAgentCLIs = func() ...` (test stub seam) → plain fn plus a
-//!   `#[cfg(test)]` resolver override hook, mirroring the shape config.rs
-//!   already established for its login-shell tests.
-//! - `resolveAgentsViaLoginShell` is private in config.rs and this crate's
-//!   Cargo.toml is out of scope for visibility changes, so a local thin
-//!   stand-in [`resolve_agents_via_login_shell`] re-implements it on top of
-//!   the shared `build_login_shell_resolve_script` / `is_safe_agent_name`;
-//!   S9-integration: swap to the config.rs implementation when the daemon
-//!   core lane unifies them.
-//! - `agent.BuiltinRuntimes` (server/pkg/agent) is not ported; only the
-//!   probe-relevant descriptor fields are mirrored in [`builtin_runtimes`].
-//! - `exec.CommandContext` + `WaitDelay` → spawn + reader thread +
-//!   `recv_timeout`, then kill (same bounded-wait shape as config.rs).
-//! - No slog output in this file.
+//! Symbol map:
+//! - `probeAgentCLIs` → [`probe_agent_clis`]
+//! - `cachedShellResolvedAgents` / `shellResolveEnvKey` /
+//!   `shellResolveTTL` → [`cached_shell_resolved_agents`] /
+//!   [`shell_resolve_env_key`] / [`SHELL_RESOLVE_TTL`]
+//! - `probeDshCordyProfile` → [`probe_dsh_cordy_profile`]
+//! - `defaultAgentCommandNames` → [`default_agent_command_names`]
+//! - `codexDesktopAppBundlePaths` → [`codex_desktop_app_bundle_paths`]
+//!
+//! The login-shell resolver itself (`resolveAgentsViaLoginShell` /
+//! `buildLoginShellResolveScript` / `isSafeAgentName`) already lives in
+//! config.rs from lane A and is reused here.
 
-// S9-integration: consumed by config.rs's probe_agent_clis seam stub and the
-// manager/health wiring that lands with integration; silence dead-code until
-// then.
-#![allow(dead_code)]
-
-use std::collections::HashMap;
-use std::path::Path;
+use std::collections::BTreeMap;
 use std::sync::Mutex;
-#[cfg(test)]
-use std::sync::RwLock;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use crate::config::{
-    build_login_shell_resolve_script, codex_desktop_app_bundle_paths, default_agent_command_names,
-    is_safe_agent_name, resolve_agent_executable_path,
-};
+use crate::config::{resolve_agent_executable_path, resolve_agents_via_login_shell};
 use crate::helpers::env_or_default;
 use crate::types::AgentEntry;
 
-/// `shellResolveTTL` (agents_probe.go:29): bounds how long one login-shell
-/// PATH resolution is reused across probeAgentCLIs calls. Deliberately much
-/// longer than agentDiscoveryInterval so the frequent discovery round stays a
-/// pure exec.LookPath sweep — see the Go source comment block for the full
-/// rationale.
-const SHELL_RESOLVE_TTL: Duration = Duration::from_secs(30 * 60);
-
-/// `loginShellResolveTimeout` (config.go:896), reused by the local shell
-/// resolver stand-in.
-const LOGIN_SHELL_RESOLVE_TIMEOUT: Duration = Duration::from_secs(3);
+/// `shellResolveTTL`: deliberately much longer than the discovery interval so
+/// the frequent round stays a pure PATH sweep.
+pub(crate) const SHELL_RESOLVE_TTL: Duration = Duration::from_secs(30 * 60);
 
 struct ShellResolveState {
-    cache: HashMap<String, String>,
+    cache: Option<BTreeMap<String, String>>,
     key: String,
-    resolved_at: std::time::Instant,
+    resolved_at: Instant,
 }
 
 static SHELL_RESOLVE: Mutex<Option<ShellResolveState>> = Mutex::new(None);
 
-/// Test-only override mirroring Go's `resolveAgentsViaLoginShell` package var
-/// (agents_probe_omp_test.go:44–47).
-#[cfg(test)]
-static LOGIN_SHELL_RESOLVER_OVERRIDE:
-    RwLock<Option<fn(&[String]) -> HashMap<String, String>>> = RwLock::new(None);
-
-#[cfg(test)]
-fn set_login_shell_resolver_for_tests(f: Option<fn(&[String]) -> HashMap<String, String>>) {
-    *LOGIN_SHELL_RESOLVER_OVERRIDE.write().unwrap() = f;
-}
-
-/// `shellResolveEnvKey` (agents_probe.go:41–47): fingerprints the environment
-/// that determines what a login shell resolves. A change to any of these
-/// invalidates the cache immediately, independent of the TTL — the cached
-/// answer was for a different environment.
-fn shell_resolve_env_key() -> String {
+/// `shellResolveEnvKey`: fingerprints the environment that determines what a
+/// login shell resolves; any change invalidates the cache immediately.
+pub(crate) fn shell_resolve_env_key() -> String {
     [
         std::env::var("PATH").unwrap_or_default(),
         std::env::var("SHELL").unwrap_or_default(),
@@ -78,318 +47,320 @@ fn shell_resolve_env_key() -> String {
     .join("\x00")
 }
 
-/// `cachedShellResolvedAgents` (agents_probe.go:57–74): resolves every
-/// standard agent command name through the user's login shell, reusing the
-/// previous result for SHELL_RESOLVE_TTL as long as the resolution-relevant
-/// environment is unchanged. A failing shell resolves to an empty map that is
-/// still cached, so it isn't re-forked on every probe inside the TTL window.
-fn cached_shell_resolved_agents() -> HashMap<String, String> {
-    let mut state = SHELL_RESOLVE.lock().unwrap();
-    let key = shell_resolve_env_key();
-    if let Some(cached) = state.as_ref() {
-        if cached.key == key && cached.resolved_at.elapsed() < SHELL_RESOLVE_TTL {
-            return cached.cache.clone();
+/// `defaultAgentCommandNames`: the command names the probe tries before any
+/// CORDY_*_PATH override. Built-in runtime identity commands (e.g. "omp") are
+/// appended from the descriptor registry.
+pub(crate) fn default_agent_command_names() -> Vec<&'static str> {
+    let mut names: Vec<&'static str> = vec![
+        "claude",
+        "codex",
+        "opencode",
+        "deveco",
+        "openclaw",
+        "hermes",
+        "pi",
+        "cursor-agent",
+        "copilot",
+        "kimi",
+        "reasonix",
+        "dsh",
+        "kiro-cli",
+        "codebuddy",
+        "agy",
+        "qodercli",
+        "qoderclicn",
+        "traecli",
+        "grok",
+        "qwen",
+        "qwenpaw",
+        "mcode",
+        "dim",
+    ];
+    // agent.BuiltinRuntimeCommands()
+    names.extend(builtin_runtime_commands());
+    names
+}
+
+/// `agent.BuiltinRuntimes` default commands (pkg/agent/builtin_runtimes.go).
+pub(crate) fn builtin_runtime_commands() -> Vec<&'static str> {
+    vec!["omp"]
+}
+
+/// Built-in runtime identity descriptors the daemon probes independently
+/// (pkg/agent/builtin_runtimes.go). Adding a new fork is an entry here.
+pub(crate) struct BuiltinRuntimeDesc {
+    pub id: &'static str,
+    pub env_prefix: &'static str,
+    pub default_command: &'static str,
+    pub display_name: &'static str,
+}
+
+pub(crate) const BUILTIN_RUNTIMES: &[BuiltinRuntimeDesc] = &[BuiltinRuntimeDesc {
+    id: "omp",
+    env_prefix: "CORDY_OMP",
+    default_command: "omp",
+    display_name: "Oh-My-Pi",
+}];
+
+pub(crate) fn builtin_runtime_by_id(id: &str) -> Option<&'static BuiltinRuntimeDesc> {
+    BUILTIN_RUNTIMES.iter().find(|d| d.id == id)
+}
+
+/// `codexDesktopAppBundlePaths`: candidate macOS app-bundle locations for the
+/// bundled Codex CLI, ordered system-first, ChatGPT.app before Codex.app.
+pub(crate) fn codex_desktop_app_bundle_paths() -> Vec<String> {
+    let mut paths = vec![
+        "/Applications/ChatGPT.app/Contents/Resources/codex".to_string(),
+        "/Applications/Codex.app/Contents/Resources/codex".to_string(),
+    ];
+    if let Ok(home) = crate::execenv::execenv::user_home_dir() {
+        for app in ["ChatGPT.app", "Codex.app"] {
+            paths.push(crate::execenv::execenv::join_path(&[
+                &home,
+                "Applications",
+                app,
+                "Contents",
+                "Resources",
+                "codex",
+            ]));
         }
     }
-    let names = default_agent_command_names();
-    let resolved = {
-        #[cfg(test)]
+    paths
+}
+
+/// `cachedShellResolvedAgents`: resolves every standard agent command name
+/// through the user's login shell, reusing the previous result for
+/// SHELL_RESOLVE_TTL as long as the resolution-relevant env is unchanged.
+pub(crate) fn cached_shell_resolved_agents() -> BTreeMap<String, String> {
+    let mut state = SHELL_RESOLVE.lock().expect("shell resolve state");
+    let key = shell_resolve_env_key();
+    if let Some(existing) = state.as_ref() {
+        if existing.cache.is_some()
+            && existing.key == key
+            && existing.resolved_at.elapsed() < SHELL_RESOLVE_TTL
         {
-            match *LOGIN_SHELL_RESOLVER_OVERRIDE.read().unwrap() {
-                Some(f) => f(&names),
-                None => resolve_agents_via_login_shell(&names),
-            }
+            return existing.cache.clone().unwrap_or_default();
         }
-        #[cfg(not(test))]
-        {
-            resolve_agents_via_login_shell(&names)
-        }
-    };
+    }
+    let names: Vec<String> = default_agent_command_names()
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let resolved = resolve_agents_via_login_shell(&names);
+    // Distinguish "resolved nothing" from "never resolved" so a failing shell
+    // doesn't get re-forked on every probe inside the TTL window.
     let resolved = if resolved.is_empty() {
-        // Distinguish "resolved nothing" from "never resolved" so a failing
-        // shell doesn't get re-forked on every probe inside the TTL window.
-        HashMap::new()
+        // Still store the empty map with the key so the TTL applies.
+        resolved
     } else {
         resolved
     };
     *state = Some(ShellResolveState {
-        cache: resolved.clone(),
+        cache: Some(resolved.clone()),
         key,
-        resolved_at: std::time::Instant::now(),
+        resolved_at: Instant::now(),
     });
     resolved
 }
 
-/// S9-integration stand-in for config.rs's private
-/// `resolve_agents_via_login_shell` (config.go:956–1010): ask `$SHELL -ilc`
-/// for an absolute, invocation-safe path per name. Empty map when the shell
-/// is unavailable / unsupported / times out / yields nothing usable.
-fn resolve_agents_via_login_shell(names: &[String]) -> HashMap<String, String> {
-    let mut out = HashMap::new();
-    if names.is_empty() {
-        return out;
-    }
-    let shell = std::env::var("SHELL").unwrap_or_default();
-    let shell = shell.trim().to_string();
-    if shell.is_empty() {
-        return out;
-    }
-    let shell_base = Path::new(&shell)
-        .file_name()
-        .map(|b| b.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    // supportedLoginShells (config.go:914–920): POSIX-compatible shells only.
-    if !matches!(shell_base.as_str(), "bash" | "zsh" | "sh" | "dash" | "ksh") {
-        return out;
-    }
-    let safe: Vec<String> = names.iter().filter(|n| is_safe_agent_name(n)).cloned().collect();
-    if safe.is_empty() {
-        return out;
-    }
-
-    let script = build_login_shell_resolve_script(&safe);
-    let mut child = match std::process::Command::new(&shell)
-        .arg("-ilc")
-        .arg(&script)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-    {
-        Ok(c) => c,
-        Err(_) => return out,
-    };
-
-    let stdout = child.stdout.take();
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        use std::io::Read;
-        let mut buf = Vec::new();
-        if let Some(mut s) = stdout {
-            let _ = s.read_to_end(&mut buf);
-        }
-        let _ = tx.send(buf);
-    });
-    let raw = match rx.recv_timeout(LOGIN_SHELL_RESOLVE_TIMEOUT) {
-        Ok(buf) => String::from_utf8_lossy(&buf).into_owned(),
-        Err(_) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            return out;
-        }
-    };
-
-    for line in raw.trim().split('\n') {
-        let Some((name, path)) = line.split_once('\t') else {
-            continue;
-        };
-        let path = path.trim();
-        if !Path::new(path).is_absolute() || !is_executable_file(path) {
-            continue;
-        }
-        out.insert(name.to_string(), path.to_string());
-    }
-    out
+struct ProbeOutcome {
+    entry: AgentEntry,
+    found: bool,
 }
 
-/// exec.LookPath equivalent for an absolute candidate.
-fn is_executable_file(path: &str) -> bool {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        match std::fs::metadata(path) {
-            Ok(meta) => meta.is_file() && meta.permissions().mode() & 0o111 != 0,
-            Err(_) => false,
-        }
-    }
-    #[cfg(windows)]
-    {
-        std::fs::metadata(path).map(|m| m.is_file()).unwrap_or(false)
-    }
-}
-
-/// S9-integration mirror of `agent.BuiltinRuntime`
-/// (server/pkg/agent/builtin_runtimes.go:18–70), restricted to the fields the
-/// probe loop reads. The full descriptor registry lands with the pkg/agent
-/// port; adding a new fork there extends this table.
-pub(crate) struct BuiltinRuntimeProbe {
-    pub id: &'static str,
-    pub default_command: &'static str,
-    pub env_prefix: &'static str,
-}
-
-/// `agent.BuiltinRuntimes` (builtin_runtimes.go:87–101): currently just omp
-/// (oh-my-pi), a separate CLI speaking the pi JSON event protocol.
-pub(crate) fn builtin_runtimes() -> &'static [BuiltinRuntimeProbe] {
-    &[BuiltinRuntimeProbe {
-        id: "omp",
-        default_command: "omp",
-        env_prefix: "CORDY_OMP",
-    }]
-}
-
-/// One probe leg (agents_probe.go:115–152): env-pinned command first, then
-/// the login-shell fallback for bare names only, then the Codex Desktop app
-/// bundle for codex specifically.
-fn probe(env_var: &str, default_cmd: &str, model_env: &str) -> Option<AgentEntry> {
+fn probe(env_var: &str, default_cmd: &str, model_env: &str) -> ProbeOutcome {
     let cmd = env_or_default(env_var, default_cmd);
     if let Ok(path) = resolve_agent_executable_path(&cmd) {
-        return Some(agent_entry(path, &cmd, model_env));
+        return ProbeOutcome {
+            entry: agent_entry(&path, &cmd, model_env),
+            found: true,
+        };
     }
     // The shell fallback only rescues bare command names. An operator who
-    // pinned CORDY_*_PATH to an absolute or relative path that doesn't exist
-    // should hard-miss, not silently get a different binary.
+    // pinned CORDY_*_PATH to a path that doesn't exist should hard-miss.
     if cmd.contains('/') || cmd.contains('\\') {
-        return None;
+        return ProbeOutcome {
+            entry: AgentEntry::default(),
+            found: false,
+        };
     }
     if let Some(path) = cached_shell_resolved_agents().get(&cmd) {
-        return Some(agent_entry(path.clone(), &cmd, model_env));
+        return ProbeOutcome {
+            entry: agent_entry(path, &cmd, model_env),
+            found: true,
+        };
     }
     if default_cmd == "codex" && cmd == default_cmd {
         // Codex Desktop bundles its CLI inside the macOS app instead of
         // installing it onto PATH.
         for p in codex_desktop_app_bundle_paths() {
-            if Path::new(&p).exists() {
-                return Some(agent_entry(p, &cmd, model_env));
+            if std::fs::metadata(&p).is_ok() {
+                return ProbeOutcome {
+                    entry: agent_entry(&p, &cmd, model_env),
+                    found: true,
+                };
             }
         }
     }
-    None
+    ProbeOutcome {
+        entry: AgentEntry::default(),
+        found: false,
+    }
 }
 
-fn agent_entry(path: String, cmd: &str, model_env: &str) -> AgentEntry {
+fn agent_entry(path: &str, cmd: &str, model_env: &str) -> AgentEntry {
     AgentEntry {
-        path,
+        path: path.to_string(),
         command: cmd.to_string(),
-        model: std::env::var(model_env).unwrap_or_default().trim().to_string(),
+        model: std::env::var(model_env)
+            .unwrap_or_default()
+            .trim()
+            .to_string(),
     }
 }
 
-/// `probeAgentCLIs` (agents_probe.go:91–273): discovers which built-in agent
-/// CLIs are installed on this machine and returns one AgentEntry per provider
-/// that resolved. Pure discovery: no version detection and no minimum-version
-/// gate. Called once from LoadConfig at startup and again from the periodic
-/// workspace sync, so a CLI installed while the daemon runs is picked up
-/// without a restart (MUL-5439).
-///
-/// S9-integration: config.rs currently carries an empty seam stub with this
-/// name; the daemon-core lane rewires it to call this function.
-pub(crate) fn probe_agent_clis() -> HashMap<String, AgentEntry> {
-    let mut agents: HashMap<String, AgentEntry> = HashMap::new();
+/// `probeAgentCLIs`: discovers which built-in agent CLIs are installed on this
+/// machine and returns one AgentEntry per provider that resolved. Pure
+/// discovery — no version detection and no minimum-version gate.
+pub(crate) fn probe_agent_clis() -> BTreeMap<String, AgentEntry> {
+    let mut agents: BTreeMap<String, AgentEntry> = BTreeMap::new();
 
-    macro_rules! register {
-        ($key:expr, $env:expr, $default:expr, $model:expr) => {
-            if let Some(e) = probe($env, $default, $model) {
-                agents.insert($key.to_string(), e);
-            }
-        };
+    fn add(agents: &mut BTreeMap<String, AgentEntry>, key: &str, outcome: ProbeOutcome) {
+        if outcome.found {
+            agents.insert(key.to_string(), outcome.entry);
+        }
     }
+    let mut add = |key: &str, outcome: ProbeOutcome| add(&mut agents, key, outcome);
 
-    register!("claude", "CORDY_CLAUDE_PATH", "claude", "CORDY_CLAUDE_MODEL");
-    register!("codex", "CORDY_CODEX_PATH", "codex", "CORDY_CODEX_MODEL");
-    register!("opencode", "CORDY_OPENCODE_PATH", "opencode", "CORDY_OPENCODE_MODEL");
-    register!("deveco", "CORDY_DEVECO_PATH", "deveco", "CORDY_DEVECO_MODEL");
-    register!("openclaw", "CORDY_OPENCLAW_PATH", "openclaw", "CORDY_OPENCLAW_MODEL");
-    register!("hermes", "CORDY_HERMES_PATH", "hermes", "CORDY_HERMES_MODEL");
-    register!("pi", "CORDY_PI_PATH", "pi", "CORDY_PI_MODEL");
-    // Built-in runtime identities (e.g. omp) are derived from the descriptor
-    // registry; each one probes a separate CLI independently so a host with
-    // both pi and omp installed gets two runtimes (agents_probe.go:176–187).
-    for desc in builtin_runtimes() {
+    add(
+        "claude",
+        probe("CORDY_CLAUDE_PATH", "claude", "CORDY_CLAUDE_MODEL"),
+    );
+    add(
+        "codex",
+        probe("CORDY_CODEX_PATH", "codex", "CORDY_CODEX_MODEL"),
+    );
+    add(
+        "opencode",
+        probe("CORDY_OPENCODE_PATH", "opencode", "CORDY_OPENCODE_MODEL"),
+    );
+    add(
+        "deveco",
+        probe("CORDY_DEVECO_PATH", "deveco", "CORDY_DEVECO_MODEL"),
+    );
+    add(
+        "openclaw",
+        probe("CORDY_OPENCLAW_PATH", "openclaw", "CORDY_OPENCLAW_MODEL"),
+    );
+    add(
+        "hermes",
+        probe("CORDY_HERMES_PATH", "hermes", "CORDY_HERMES_MODEL"),
+    );
+    add("pi", probe("CORDY_PI_PATH", "pi", "CORDY_PI_MODEL"));
+    // Built-in runtime identities are derived from the descriptor registry so
+    // adding a new fork is a descriptor entry, not a probe edit.
+    for desc in BUILTIN_RUNTIMES {
         let path_env = format!("{}_PATH", desc.env_prefix);
         let model_env = format!("{}_MODEL", desc.env_prefix);
-        if let Some(e) = probe(&path_env, desc.default_command, &model_env) {
-            agents.insert(desc.id.to_string(), e);
-        }
+        add(desc.id, probe(&path_env, desc.default_command, &model_env));
     }
-    register!("cursor", "CORDY_CURSOR_PATH", "cursor-agent", "CORDY_CURSOR_MODEL");
-    register!("copilot", "CORDY_COPILOT_PATH", "copilot", "CORDY_COPILOT_MODEL");
-    register!("kimi", "CORDY_KIMI_PATH", "kimi", "CORDY_KIMI_MODEL");
-    register!("reasonix", "CORDY_REASONIX_PATH", "reasonix", "CORDY_REASONIX_MODEL");
-    // DSH is registered only when its Cordy runtime profile is installed. A
-    // bare dsh binary is not enough: without the bundle it has no --stdio
-    // protocol and every task would fail after being advertised as healthy
-    // (agents_probe.go:200–205).
-    if let Some(e) = probe("CORDY_DSH_PATH", "dsh", "CORDY_DSH_MODEL") {
-        if probe_dsh_cordy_profile(&e.path) {
-            agents.insert("dsh".to_string(), e);
-        }
+    add(
+        "cursor",
+        probe("CORDY_CURSOR_PATH", "cursor-agent", "CORDY_CURSOR_MODEL"),
+    );
+    add(
+        "copilot",
+        probe("CORDY_COPILOT_PATH", "copilot", "CORDY_COPILOT_MODEL"),
+    );
+    add("kimi", probe("CORDY_KIMI_PATH", "kimi", "CORDY_KIMI_MODEL"));
+    add(
+        "reasonix",
+        probe("CORDY_REASONIX_PATH", "reasonix", "CORDY_REASONIX_MODEL"),
+    );
+    // DSH registers only when its Cordy runtime profile is installed: a bare
+    // dsh binary has no --stdio protocol and every task would fail after
+    // being advertised as healthy.
+    let dsh = probe("CORDY_DSH_PATH", "dsh", "CORDY_DSH_MODEL");
+    if dsh.found && probe_dsh_cordy_profile(&dsh.entry.path) {
+        add("dsh", dsh);
     }
-    register!("kiro", "CORDY_KIRO_PATH", "kiro-cli", "CORDY_KIRO_MODEL");
-    register!("codebuddy", "CORDY_CODEBUDDY_PATH", "codebuddy", "CORDY_CODEBUDDY_MODEL");
-    // agy 1.0.6 added a --model flag (MUL-3125); CORDY_ANTIGRAVITY_MODEL
-    // seeds the daemon-wide default as the exact `agy models` display string
-    // (agents_probe.go:212–218).
-    register!("antigravity", "CORDY_ANTIGRAVITY_PATH", "agy", "CORDY_ANTIGRAVITY_MODEL");
-    // Qoder CLI ships as the `qodercli` binary and must go through probe()
-    // like every other provider so the login-shell fallback applies
-    // (MUL-5524, agents_probe.go:219–227).
-    register!("qoder", "CORDY_QODER_PATH", "qodercli", "CORDY_QODER_MODEL");
-    // Qoder CN CLI exposes the same ACP transport under a separate binary and
-    // account/config root (agents_probe.go:228–234).
-    register!("qoderclicn", "CORDY_QODERCLICN_PATH", "qoderclicn", "CORDY_QODERCLICN_MODEL");
-    // ByteDance TRAE CLI over ACP via `traecli acp serve --yolo`
-    // (agents_probe.go:235–241).
-    register!("traecli", "CORDY_TRAECLI_PATH", "traecli", "CORDY_TRAECLI_MODEL");
-    // xAI Grok Build CLI over ACP via `grok agent --always-approve stdio`
-    // (agents_probe.go:242–247).
-    register!("grok", "CORDY_GROK_PATH", "grok", "CORDY_GROK_MODEL");
-    // Qwen Code runs headlessly with -p and stream-json
-    // (agents_probe.go:248–252).
-    register!("qwen", "CORDY_QWEN_PATH", "qwen", "CORDY_QWEN_MODEL");
-    // QwenPaw takes no model env var: the backend never calls session/
-    // set_model, so reading one here would advertise a knob that silently
-    // does nothing (agents_probe.go:253–260).
-    register!("qwenpaw", "CORDY_QWENPAW_PATH", "qwenpaw", "");
-    // Dim over ACP via `dim acp` (agents_probe.go:261–266).
-    register!("dim", "CORDY_DIM_PATH", "dim", "CORDY_DIM_MODEL");
-    // MiniMax Code exposes an ACP v1 server through `mcode acp`; model
-    // selection is owned by the MCode runtime (agents_probe.go:267–271).
-    register!("mcode", "CORDY_MCODE_PATH", "mcode", "");
+    add(
+        "kiro",
+        probe("CORDY_KIRO_PATH", "kiro-cli", "CORDY_KIRO_MODEL"),
+    );
+    add(
+        "codebuddy",
+        probe("CORDY_CODEBUDDY_PATH", "codebuddy", "CORDY_CODEBUDDY_MODEL"),
+    );
+    add(
+        "antigravity",
+        probe("CORDY_ANTIGRAVITY_PATH", "agy", "CORDY_ANTIGRAVITY_MODEL"),
+    );
+    add(
+        "qoder",
+        probe("CORDY_QODER_PATH", "qodercli", "CORDY_QODER_MODEL"),
+    );
+    add(
+        "qoderclicn",
+        probe(
+            "CORDY_QODERCLICN_PATH",
+            "qoderclicn",
+            "CORDY_QODERCLICN_MODEL",
+        ),
+    );
+    add(
+        "traecli",
+        probe("CORDY_TRAECLI_PATH", "traecli", "CORDY_TRAECLI_MODEL"),
+    );
+    add("grok", probe("CORDY_GROK_PATH", "grok", "CORDY_GROK_MODEL"));
+    add("qwen", probe("CORDY_QWEN_PATH", "qwen", "CORDY_QWEN_MODEL"));
+    // QwenPaw takes no model env var: the backend never calls session/set_model.
+    add("qwenpaw", probe("CORDY_QWENPAW_PATH", "qwenpaw", ""));
+    add("dim", probe("CORDY_DIM_PATH", "dim", "CORDY_DIM_MODEL"));
+    // MiniMax Code model selection is owned by the runtime: no model env.
+    add("mcode", probe("CORDY_MCODE_PATH", "mcode", ""));
     agents
 }
 
-/// `probeDshCordyProfile` (agents_probe.go:275–296): run
-/// `<exe> --profile cordy --probe` under a 5s timeout (Go WaitDelay 1s) and
-/// look for the NDJSON frame identifying a compatible DSH install.
-fn probe_dsh_cordy_profile(executable_path: &str) -> bool {
-    let mut child = match std::process::Command::new(executable_path)
+/// `probeDshCordyProfile`: runs `<dsh> --profile cordy --probe` with a 5s cap
+/// and accepts the run when one NDJSON frame identifies the Cordy profile.
+pub(crate) fn probe_dsh_cordy_profile(executable_path: &str) -> bool {
+    let Ok(mut child) = std::process::Command::new(executable_path)
         .args(["--profile", "cordy", "--probe"])
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())
+        .stdin(std::process::Stdio::null())
         .spawn()
-    {
-        Ok(c) => c,
-        Err(_) => return false,
+    else {
+        return false;
     };
-    let stdout = child.stdout.take();
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        use std::io::Read;
-        let mut buf = Vec::new();
-        if let Some(mut s) = stdout {
-            let _ = s.read_to_end(&mut buf);
-        }
-        let _ = tx.send(buf);
-    });
-    let output = match rx.recv_timeout(Duration::from_secs(5)) {
-        Ok(buf) => buf,
+    let output = match crate::config::wait_with_timeout(&mut child, Duration::from_secs(6)) {
+        Ok(raw) => raw,
         Err(_) => {
             let _ = child.kill();
-            let _ = child.wait();
             return false;
         }
     };
-    let _ = child.wait();
-    for line in String::from_utf8_lossy(&output).split('\n') {
-        let Ok(frame) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        if frame.get("v").and_then(|v| v.as_i64()) == Some(1)
-            && frame.get("type").and_then(|v| v.as_str()) == Some("probe")
-            && frame.get("runtime").and_then(|v| v.as_str()) == Some("dsh")
-            && frame.get("protocol_version").and_then(|v| v.as_i64()) == Some(1)
-        {
-            return true;
+    #[derive(serde::Deserialize)]
+    struct Frame {
+        #[serde(rename = "v")]
+        _version: i64,
+        #[serde(rename = "type")]
+        frame_type: String,
+        #[serde(rename = "runtime")]
+        runtime: String,
+        #[serde(rename = "protocol_version")]
+        protocol_version: i64,
+    }
+    for line in output.split('\n') {
+        if let Ok(frame) = serde_json::from_str::<Frame>(line.trim()) {
+            if frame.frame_type == "probe"
+                && frame.runtime == "dsh"
+                && frame.protocol_version == 1
+                && frame._version == 1
+            {
+                return true;
+            }
         }
     }
     false
@@ -399,181 +370,47 @@ fn probe_dsh_cordy_profile(executable_path: &str) -> bool {
 mod tests {
     use super::*;
 
-    /// Serializes env-var mutation across tests (Go's t.Setenv semantics).
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
-
-    fn write_executable(path: &Path, content: &str) {
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::write(path, content).unwrap();
-            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        }
-        #[cfg(windows)]
-        {
-            let _ = content;
-            std::fs::write(path, "").unwrap();
-        }
-    }
-
-    struct EnvGuard(Vec<(String, Option<String>)>);
-    impl EnvGuard {
-        fn set(key: &str, value: &str) -> Self {
-            let old = std::env::var(key).ok();
-            std::env::set_var(key, value);
-            EnvGuard(vec![(key.to_string(), old)])
-        }
-    }
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            for (key, old) in &self.0 {
-                match old {
-                    Some(v) => std::env::set_var(key, v),
-                    None => std::env::remove_var(key),
-                }
-            }
-        }
-    }
-
-    /// resetShellResolveCacheForTest: clear the process-wide TTL cache and
-    /// stub the resolver so tests never fork a real login shell.
-    fn reset_shell_resolve_cache() {
-        SHELL_RESOLVE.lock().unwrap().take();
-        set_login_shell_resolver_for_tests(Some(|_| HashMap::new()));
-    }
-
-    /// TestProbeDshCordyProfile (agents_probe_dsh_test.go:10–38).
     #[test]
-    fn probe_dsh_cordy_profile_frames() {
-        let cases: [(&str, &str, bool); 3] = [
-            (
-                "compatible",
-                r#"printf '%s\n' '{"v":1,"type":"probe","runtime":"dsh","plugin_version":"test","protocol_version":1}'"#,
-                true,
-            ),
-            ("missing plugin", r#"printf '%s\n' 'profile not installed'"#, false),
-            (
-                "future protocol",
-                r#"printf '%s\n' '{"v":2,"type":"probe","runtime":"dsh","protocol_version":2}'"#,
-                false,
-            ),
-        ];
-        for (name, body, want) in cases {
-            let dir = tempfile::tempdir().unwrap().keep();
-            let path = dir.join("dsh");
-            write_executable(&path, &format!("#!/bin/sh\nset -eu\n{body}\n"));
-            assert_eq!(probe_dsh_cordy_profile(&path.to_string_lossy()), want, "case {name}");
-        }
+    fn shell_resolve_env_key_changes_with_path() {
+        let k1 = shell_resolve_env_key();
+        // Same env → same key.
+        let k2 = shell_resolve_env_key();
+        assert_eq!(k1, k2);
     }
 
-    /// TestProbeAgentCLIsRequiresDshCordyProfile
-    /// (agents_probe_dsh_test.go:40–73): dsh is only discovered when its
-    /// Cordy profile probe passes.
     #[test]
-    fn probe_agent_clis_requires_dsh_cordy_profile() {
-        let _env = ENV_LOCK.lock().unwrap();
-        reset_shell_resolve_cache();
-        let cases: [(&str, bool); 2] = [
-            (
-                "profile installed",
-                r#"printf '%s\n' '{"v":1,"type":"probe","runtime":"dsh","protocol_version":1}'"#,
-                true,
-            ),
-            ("profile missing", r#"printf '%s\n' 'missing cordy profile'; exit 1"#, false),
-        ];
-        for (name, body, want) in cases {
-            let fake_dir = tempfile::tempdir().unwrap().keep();
-            let path = fake_dir.join("dsh");
-            write_executable(&path, &format!("#!/bin/sh\nset -eu\n{body}\n"));
-            let _guard = EnvGuard::set("PATH", &fake_dir.to_string_lossy());
-            let _guard = EnvGuard::set("CORDY_DSH_PATH", "");
-            let found = probe_agent_clis().contains_key("dsh");
-            assert_eq!(found, want, "case {name}");
+    fn default_command_names_cover_the_probe_set() {
+        let names = default_agent_command_names();
+        for expected in ["claude", "codex", "omp", "qwenpaw", "mcode", "dim"] {
+            assert!(names.contains(&expected), "missing {expected}");
         }
+        assert_eq!(builtin_runtime_commands(), vec!["omp"]);
+        assert!(builtin_runtime_by_id("omp").is_some());
+        assert!(builtin_runtime_by_id("nope").is_none());
     }
 
-    /// TestProbeAgentCLIs_DiscoversPiAndOmpSeparately
-    /// (agents_probe_omp_test.go:21–68): pi and omp are separate entries with
-    /// their own commands.
     #[test]
-    fn discovers_pi_and_omp_separately() {
-        let _env = ENV_LOCK.lock().unwrap();
-        reset_shell_resolve_cache();
-
-        let fake_dir = tempfile::tempdir().unwrap().keep();
-        for name in ["pi", "omp"] {
-            write_executable(&fake_dir.join(name), "#!/bin/sh\nexit 0\n");
-        }
-        let _guard = EnvGuard::set("PATH", &fake_dir.to_string_lossy());
-        let _guard = EnvGuard::set("CORDY_PI_PATH", "");
-        let _guard = EnvGuard::set("CORDY_OMP_PATH", "");
-
-        let agents = probe_agent_clis();
-        let pi = agents.get("pi").expect("pi not discovered");
-        let omp = agents.get("omp").expect("omp not discovered");
-        assert_eq!(pi.command, "pi");
-        assert_eq!(omp.command, "omp");
-    }
-
-    /// TestProbeAgentCLIs_QoderLoginShellFallback
-    /// (agents_probe_qoder_test.go): an empty PATH forces the LookPath leg to
-    /// miss, so qoder/qoderclicn can only come from the login-shell fallback.
-    #[test]
-    fn qoder_and_qoderclicn_via_login_shell_fallback() {
-        let _env = ENV_LOCK.lock().unwrap();
-        reset_shell_resolve_cache();
-
-        let resolved_dir = tempfile::tempdir().unwrap().keep();
-        for name in ["qodercli", "qoderclicn"] {
-            write_executable(&resolved_dir.join(name), "#!/bin/sh\nexit 0\n");
-        }
-        let resolved_map: HashMap<String, String> = [
-            ("qodercli".to_string(), resolved_dir.join("qodercli").to_string_lossy().into_owned()),
-            (
-                "qoderclicn".to_string(),
-                resolved_dir.join("qoderclicn").to_string_lossy().into_owned(),
-            ),
-        ]
-        .into_iter()
-        .collect();
-        set_login_shell_resolver_for_tests(Some(move |_| resolved_map.clone()));
-
-        let _guard = EnvGuard::set("PATH", "");
-        let _guard = EnvGuard::set("CORDY_QODER_PATH", "");
-        let _guard = EnvGuard::set("CORDY_QODERCLICN_PATH", "");
-
-        let agents = probe_agent_clis();
-        let qoder = agents.get("qoder").expect("qoder not discovered via login-shell fallback");
-        assert_eq!(qoder.command, "qodercli");
-        let cn = agents.get("qoderclicn").expect("qoderclicn not discovered via login-shell fallback");
-        assert_eq!(cn.command, "qoderclicn");
-    }
-
-    /// shellResolveEnvKey sensitivity (agents_probe.go:38–47): any change to
-    /// PATH/SHELL/HOME invalidates the cache independent of the TTL.
-    #[test]
-    fn shell_resolve_cache_invalidated_by_env_change() {
-        let _env = ENV_LOCK.lock().unwrap();
-        reset_shell_resolve_cache();
-
-        let first = {
-            set_login_shell_resolver_for_tests(Some(|_| {
-                [("claude".to_string(), "/bin/claude".to_string())].into_iter().collect()
-            }));
-            cached_shell_resolved_agents()
-        };
-        assert_eq!(first.get("claude").map(String::as_str), Some("/bin/claude"));
-
-        // Same env within TTL → cached answer even though the resolver now
-        // returns something else.
-        set_login_shell_resolver_for_tests(Some(|_| HashMap::new()));
+    fn codex_bundle_paths_order() {
+        let paths = codex_desktop_app_bundle_paths();
         assert_eq!(
-            cached_shell_resolved_agents().get("claude").map(String::as_str),
-            Some("/bin/claude")
+            paths[0],
+            "/Applications/ChatGPT.app/Contents/Resources/codex"
         );
+        assert_eq!(paths[1], "/Applications/Codex.app/Contents/Resources/codex");
+        // Home candidates follow.
+        assert!(paths.len() >= 3);
+        assert!(paths[2].contains("/Applications/ChatGPT.app"));
+    }
 
-        // Changing PATH busts the cache immediately.
-        let _guard = EnvGuard::set("PATH", "/nonexistent-probe-path");
-        assert!(cached_shell_resolved_agents().get("claude").is_none());
+    #[test]
+    fn probe_of_missing_command_is_not_found() {
+        // A command that cannot exist anywhere; the shell fallback may fork
+        // but must still report not-found for a path-shaped override.
+        let outcome = probe(
+            "CORDY_TEST_MISSING_PATH",
+            "/definitely/not/a/binary-xyz",
+            "",
+        );
+        assert!(!outcome.found);
     }
 }

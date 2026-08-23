@@ -15,7 +15,9 @@ use cordy_channel_engine::resolvers::{
     IdentityResolver, InstallationResolver, ResolvedIdentity, ResolvedInstallation, ResolverError,
     ResolverSet, SessionBinder, ValidatedInboundResolver,
 };
-use cordy_channel_engine::session::{AppendInput, ChatSession, EnsureSessionInput, SessionTitles};
+use cordy_channel_engine::session::{
+    AppendFence, AppendInput, ChatSession, EnsureSessionInput, SessionTitles,
+};
 use cordy_db::models::ChannelChatSessionBinding;
 use cordy_db::queries::channel::{
     claim_channel_inbound_dedup, get_channel_installation_by_app_id,
@@ -296,6 +298,32 @@ struct SessionBinderImpl {
     session: ChatSession,
 }
 
+struct GroupRouteFence {
+    installation_id: Uuid,
+    chat_id: String,
+    agent_id: Uuid,
+    route_revision: i64,
+}
+
+#[async_trait]
+impl AppendFence for GroupRouteFence {
+    async fn before_write(&self, tx: &mut sqlx::PgConnection) -> anyhow::Result<()> {
+        let locked = lock_ding_talk_group_route_for_append(
+            tx,
+            self.installation_id,
+            &self.chat_id,
+            self.agent_id,
+            self.route_revision,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("lock dingtalk group route for append: {e:#}"))?;
+        if locked.is_none() {
+            return Err(ResolverError::RouteChanged.into());
+        }
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl SessionBinder for SessionBinderImpl {
     async fn ensure_session(&self, p: EnsureSessionParams) -> anyhow::Result<Uuid> {
@@ -389,28 +417,15 @@ impl SessionBinder for SessionBinderImpl {
             force_fresh: p.message.force_fresh,
         };
 
-        // Port note: Go locks the group route INSIDE the append transaction via
-        // an adapter-supplied BeforeWrite hook; the Rust shared session service
-        // does not expose that hook yet. The FOR SHARE route lock is taken on
-        // the pool immediately before the append instead — it still serializes
-        // against reassign's FOR UPDATE on the same row, so a concurrent route
-        // change aborts the append before any write lands; only the
-        // atomicity-with-the-append is relaxed.
-        if p.message.source.chat_type == ChatType::group() {
-            let locked = lock_ding_talk_group_route_for_append(
-                &self.pool,
-                p.installation_id,
-                &p.message.source.chat_id,
-                p.agent_id,
-                p.route_revision,
-            )
+        let fence = (p.message.source.chat_type == ChatType::group()).then(|| GroupRouteFence {
+            installation_id: p.installation_id,
+            chat_id: p.message.source.chat_id.clone(),
+            agent_id: p.agent_id,
+            route_revision: p.route_revision,
+        });
+        self.session
+            .append_user_message_fenced(&input, fence.as_ref().map(|f| f as &dyn AppendFence))
             .await
-            .map_err(|e| anyhow::anyhow!("lock dingtalk group route for append: {e:#}"))?;
-            if locked.is_none() {
-                return Err(ResolverError::RouteChanged.into());
-            }
-        }
-        self.session.append_user_message(&input).await
     }
 
     async fn bind_media(&self, p: BindMediaParams) -> anyhow::Result<()> {
@@ -444,7 +459,7 @@ impl Auditor for AuditorImpl {
             crate::TYPE_DINGTALK,
             "message",
             &reason.0,
-            inst_id,
+            Some(inst_id),
             opt_str(&msg.source.chat_id),
             opt_str(&msg.event_id),
             opt_str(&msg.message_id),

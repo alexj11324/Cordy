@@ -1,169 +1,187 @@
-//! Port of `server/internal/daemon/runtime_mcp.go` (lines 1–547).
+//! Port of `server/internal/daemon/runtime_mcp.go` (547 lines).
 //!
-//! Task-local MCP configuration: merges the runtime's own MCP servers with
-//! the agent's managed entries inside the local daemon so runtime URLs,
-//! headers, commands, and env values never need to leave the machine, plus
-//! the intentionally non-secret inventory shown in Agent capabilities.
+//! Symbol map (Go → Rust):
+//! - `runtimeLocalMcpServerSummary` → [`RuntimeLocalMcpServerSummary`]
+//! - `mergeRuntimeAndAgentMcpConfig` → [`merge_runtime_and_agent_mcp_config`]
+//! - `codebuddyUserMcpConfigPath` → [`codebuddy_user_mcp_config_path`]
+//! - `unmarshalRuntimeMcpConfig` / `stripJSONC` → [`unmarshal_runtime_mcp_config`] / [`strip_jsonc`]
+//! - `loadRuntimeMcpServerConfigs` → [`load_runtime_mcp_server_configs`]
+//! - `normalizeRuntimeMcpEntry` → [`normalize_runtime_mcp_entry`]
+//! - `loadClaudePluginMcpServerConfigs` → [`load_claude_plugin_mcp_server_configs`]
+//! - `listRuntimeLocalMcpServers` / `runtimeMcpSummaries` /
+//!   `listClaudePluginMcpServers` / `nestedRuntimeMcpMap` / `runtimeMcpTransport`
+//!   → same-named snake_case fns
 //!
-//! Deviations from Go:
-//! - `listEnabledClaudePlugins` / `readClaudePluginManifest` /
-//!   `claudePluginComponentPaths` (claude_plugins.go) belong to lane C2:
-//!   fail-closed S9-integration seams here return no plugins until that file
-//!   lands.
-//! - `go-toml/v2` → the workspace `toml` crate decoding straight into
-//!   `serde_json::Value`; `map[string]any` → `serde_json::Value` objects.
-//! - Env-dependent tests serialize on a mutex instead of `t.Setenv`
-//!   (process-global env is not test-scoped in Rust).
+//! Port notes: Go's `json.Marshal(map[string]any)` emits keys sorted;
+//! serde_json's default BTreeMap ordering matches. TOML configs convert
+//! value-by-value. The three `claude_plugins.go` helpers live here
+//! TEMPORARILY — lane B (CORD-12) owns claude_plugins.go and should move
+//! them into its module on landing.
+//!
+//! S9-integration: entry points are wired by the daemon-runner lane.
 
-// S9-integration: dead_code until Daemon core wires this.
 #![allow(dead_code)]
 
-use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use anyhow::Context as _;
-use serde::Serialize;
+use anyhow::{anyhow, Context as _};
 use serde_json::{json, Map, Value};
 
-/// `runtimeLocalMcpServerSummary` (runtime_mcp.go:19–24): the intentionally
-/// non-secret inventory shown in Agent capabilities. Never add command
-/// arguments, URLs, headers, or environment values here: this payload leaves
-/// the user's machine.
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
-pub(crate) struct RuntimeLocalMcpServerSummary {
-    #[serde(rename = "name")]
+/// The intentionally non-secret inventory shown in Agent capabilities
+/// (go:19–24). Never add command arguments, URLs, headers, or environment
+/// values here: this payload leaves the user's machine.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct RuntimeLocalMcpServerSummary {
     pub name: String,
-    #[serde(rename = "transport", skip_serializing_if = "String::is_empty")]
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub transport: String,
-    #[serde(rename = "source", skip_serializing_if = "String::is_empty")]
+    #[serde(skip_serializing_if = "String::is_empty")]
     pub source: String,
-    #[serde(rename = "enabled")]
     pub enabled: bool,
 }
 
-/// `mergeRuntimeAndAgentMcpConfig` (runtime_mcp.go:26–79): builds the
-/// task-local MCP configuration used when an agent has MCP servers managed by
-/// Cordy. Runtime servers are the base layer and the agent's entries win on a
-/// same-name collision.
-///
-/// A nil/null agent config keeps the provider's native inheritance path
-/// intact. A present config (including an empty mcpServers map) opts into the
-/// merged, task-local config so adding one managed server no longer disables
-/// unrelated runtime servers.
+/// Builds the task-local MCP configuration used when an agent has MCP servers
+/// managed by Cordy (go:36–79). Runtime servers form the base layer and the
+/// agent's entries win on a same-name collision. A null agent config is
+/// returned verbatim so the provider's native inheritance path stays intact;
+/// a present config (even an empty mcpServers map) opts into the merged
+/// document so adding one managed server no longer disables unrelated runtime
+/// servers.
 pub(crate) fn merge_runtime_and_agent_mcp_config(
     provider: &str,
-    agent_config: &[u8],
-) -> anyhow::Result<Vec<u8>> {
-    let trimmed = trim_ascii(agent_config);
-    if trimmed.is_empty() || trimmed == b"null" {
-        return Ok(agent_config.to_vec());
-    }
-
-    let (runtime_servers, supported) = match load_runtime_mcp_server_configs(provider) {
-        Ok(result) => result,
-        Err(err) => return Err(err),
-    };
-    if !supported {
-        return Ok(agent_config.to_vec());
-    }
-
-    let agent_document: Value = serde_json::from_slice(trimmed)
-        .context("parse agent MCP config")?;
-    let mut agent_servers: HashMap<String, Value> = HashMap::new();
-    if let Some(servers) = nested_runtime_mcp_map(&agent_document, "mcpServers") {
-        for (name, entry) in servers {
-            agent_servers.insert(name.clone(), entry.clone());
-        }
-    } else if provider == "opencode" {
-        // Older OpenCode agents may store the provider-native top-level `mcp`
-        // map. Its individual entries can still flow through the existing
-        // OpenCode adapter when placed under the canonical mcpServers envelope.
-        if let Some(servers) = nested_runtime_mcp_map(&agent_document, "mcp") {
-            for (name, entry) in servers {
-                agent_servers.insert(name.clone(), entry.clone());
-            }
-        }
-    }
-
-    let mut merged = Map::new();
-    for (name, entry) in &runtime_servers {
-        merged.insert(name.clone(), entry.clone());
-    }
-    for (name, entry) in &agent_servers {
-        merged.insert(name.clone(), entry.clone());
-    }
-
-    let raw = json!({"mcpServers": merged});
-    serde_json::to_vec(&raw).context("marshal merged MCP config")
+    agent_config: &Value,
+) -> anyhow::Result<Option<Value>> {
+    merge_runtime_and_agent_mcp_config_in(&RuntimeMcpEnv::from_process()?, provider, agent_config)
 }
 
-/// `codebuddyUserMcpConfigPath` (runtime_mcp.go:81–113): returns the
-/// user-scope MCP config file CodeBuddy actually reads. The candidate list is
-/// a fallback chain, not a merge; when none exist the first candidate is
-/// returned so the caller's read fails with NotFound and is treated as "no
-/// runtime servers", matching the other providers. Verified against CodeBuddy
-/// 2.x by writing each file in turn and reading back `codebuddy mcp list`.
-pub(crate) fn codebuddy_user_mcp_config_path(home: &str) -> String {
+pub(crate) fn merge_runtime_and_agent_mcp_config_in(
+    env: &RuntimeMcpEnv,
+    provider: &str,
+    agent_config: &Value,
+) -> anyhow::Result<Option<Value>> {
+    if matches!(agent_config, Value::Null) {
+        return Ok(Some(agent_config.clone()));
+    }
+
+    let (runtime_servers, supported) = load_runtime_mcp_server_configs_in(env, provider)?;
+    if !supported {
+        return Ok(Some(agent_config.clone()));
+    }
+
+    let agent_document = agent_config
+        .as_object()
+        .ok_or_else(|| anyhow!("parse agent MCP config: expected a JSON object"))?;
+    let empty = Map::new();
+    let agent_servers: &Map<String, Value> =
+        match nested_runtime_mcp_map(agent_document, "mcpServers") {
+            Some(Value::Object(servers)) => servers,
+            _ if provider == "opencode" => {
+                // Older OpenCode agents may store the provider-native
+                // top-level `mcp` map (go:57–63); its entries flow through
+                // the existing adapter under the canonical mcpServers
+                // envelope.
+                match nested_runtime_mcp_map(agent_document, "mcp") {
+                    Some(Value::Object(servers)) => servers,
+                    _ => &empty,
+                }
+            }
+            _ => &empty,
+        };
+
+    let mut merged = Map::new();
+    merged.extend(runtime_servers);
+    for (name, entry) in agent_servers {
+        merged.insert(name.clone(), entry.clone());
+    }
+    Ok(Some(json!({ "mcpServers": merged })))
+}
+
+/// The user-scope MCP config file CodeBuddy actually reads — the FIRST of the
+/// fallback chain that exists, not a merge (go:97–113): `<configDir>/.mcp.json`
+/// → `<configDir>/mcp.json` → `~/.codebuddy.json`, where configDir is
+/// `$CODEBUDDY_CONFIG_DIR` (default `~/.codebuddy`). When none exist the first
+/// candidate is returned so the caller's read fails as "no runtime servers".
+pub(crate) fn codebuddy_user_mcp_config_path(home: &Path) -> PathBuf {
+    let dir = std::env::var("CODEBUDDY_CONFIG_DIR").unwrap_or_default();
     codebuddy_user_mcp_config_path_in(
         home,
-        std::env::var("CODEBUDDY_CONFIG_DIR").ok().as_deref().map(str::trim),
+        Some(Path::new(dir.trim())).filter(|p| !p.as_os_str().is_empty()),
     )
 }
 
-fn codebuddy_user_mcp_config_path_in(home: &str, config_dir_env: Option<&str>) -> String {
-    let config_dir = match config_dir_env {
-        Some(dir) if !dir.is_empty() => dir.to_string(),
-        _ => Path::new(home).join(".codebuddy").to_string_lossy().to_string(),
-    };
+pub(crate) fn codebuddy_user_mcp_config_path_in(home: &Path, config_dir: Option<&Path>) -> PathBuf {
+    let config_dir = config_dir
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| home.join(".codebuddy"));
     let candidates = [
-        Path::new(&config_dir).join(".mcp.json"),
-        Path::new(&config_dir).join("mcp.json"),
-        Path::new(home).join(".codebuddy.json"),
+        config_dir.join(".mcp.json"),
+        config_dir.join("mcp.json"),
+        home.join(".codebuddy.json"),
     ];
-    for candidate in &candidates {
-        if let Ok(info) = std::fs::metadata(candidate) {
-            if !info.is_dir() {
-                return candidate.to_string_lossy().to_string();
-            }
-        }
-    }
-    candidates[0].to_string_lossy().to_string()
+    candidates
+        .into_iter()
+        .find(|candidate| {
+            std::fs::metadata(candidate)
+                .map(|info| !info.is_dir())
+                .unwrap_or(false)
+        })
+        .unwrap_or_else(|| home.join(".codebuddy").join(".mcp.json"))
 }
 
-/// `unmarshalRuntimeMcpConfig` (runtime_mcp.go:115–139): decodes one runtime's
-/// config file. "jsonc" is JSON with comments and trailing commas, which
-/// CodeBuddy accepts in its MCP files — parsing those as strict JSON would
-/// drop every server behind a single `//`.
-fn unmarshal_runtime_mcp_config(raw: &[u8], format: &str) -> anyhow::Result<Value> {
+/// Decodes one runtime's config file (go:118–139). "jsonc" tolerates comments
+/// and trailing commas — parsing those as strict JSON would drop every server
+/// behind a single `//`.
+fn unmarshal_runtime_mcp_config(raw: &[u8], format: &str) -> anyhow::Result<Map<String, Value>> {
+    let parse_err = |err: String| anyhow!("parse runtime MCP config: {err}");
     match format {
-        "toml" => toml::from_str::<Value>(&String::from_utf8_lossy(raw))
-            .context("parse runtime MCP config"),
-        "jsonc" => {
-            let stripped = strip_jsonc(raw).context("parse runtime MCP config")?;
-            serde_json::from_slice(&stripped).context("parse runtime MCP config")
+        "toml" => {
+            let text = std::str::from_utf8(raw).map_err(|err| parse_err(err.to_string()))?;
+            let value: toml::Value =
+                toml::from_str(text).map_err(|err| parse_err(err.to_string()))?;
+            toml_value_to_json(&value)
+                .as_object()
+                .cloned()
+                .ok_or_else(|| parse_err("expected a table at the top level".into()))
         }
-        _ => serde_json::from_slice(raw).context("parse runtime MCP config"),
+        "jsonc" => {
+            let stripped = strip_jsonc(raw).map_err(|err| parse_err(err.to_string()))?;
+            serde_json::from_slice(&stripped).map_err(|err| parse_err(err.to_string()))
+        }
+        _ => serde_json::from_slice(raw).map_err(|err| parse_err(err.to_string())),
     }
 }
 
-/// `stripJSONC` (runtime_mcp.go:141–240): rewrites JSONC into strict JSON —
-/// `//` and `/* */` comments become spaces and a single trailing comma before
-/// `}` / `]` is dropped. String literals are copied verbatim, so a `//` or a
-/// comma inside a command argument survives.
-///
-/// Output is always the same length as the input — comments and the dropped
-/// comma are blanked, never deleted — so a parse-error offset still points at
-/// the byte the user actually wrote.
-///
-/// Only the LAST comma before a closer is blanked, so genuinely malformed
-/// input stays malformed: `[1,,,]` does not silently become `[1]`. An
-/// unterminated `/*` is an error rather than a blank-to-EOF, so the Agent >
-/// MCP tab cannot list servers out of a file CodeBuddy itself rejects.
-fn strip_jsonc(raw: &[u8]) -> anyhow::Result<Vec<u8>> {
+fn toml_value_to_json(value: &toml::Value) -> Value {
+    match value {
+        toml::Value::String(s) => Value::String(s.clone()),
+        toml::Value::Integer(i) => json!(i),
+        toml::Value::Float(f) => json!(f),
+        toml::Value::Boolean(b) => Value::Bool(*b),
+        toml::Value::Datetime(dt) => Value::String(dt.to_string()),
+        toml::Value::Array(items) => Value::Array(items.iter().map(toml_value_to_json).collect()),
+        toml::Value::Table(table) => {
+            let mut out = Map::new();
+            for (key, item) in table {
+                out.insert(key.clone(), toml_value_to_json(item));
+            }
+            Value::Object(out)
+        }
+    }
+}
+
+/// Rewrites JSONC into strict JSON at constant length (go:161–240): `//` and
+/// `/* */` comments become spaces and only a genuinely trailing comma before
+/// `}` / `]` is blanked. String literals survive verbatim, so a `//` inside a
+/// command argument is untouched. Output length always equals input length so
+/// a parse-error offset still points at the byte the user wrote. An
+/// unterminated `/*` is an error rather than blank-to-EOF, and `/*/` cannot
+/// reuse its opener's `*` as the closer's — a file CodeBuddy itself rejects
+/// must never yield an inventory.
+pub(crate) fn strip_jsonc(raw: &[u8]) -> Result<Vec<u8>, &'static str> {
     let mut out: Vec<u8> = Vec::with_capacity(raw.len());
-    // Offset into out of the one comma still eligible for removal, or None.
-    // Reset by any value token, so only a genuinely trailing comma is dropped.
-    let mut last_comma: Option<usize> = None;
+    // Offset into out of the one comma still eligible for removal, or -1;
+    // reset by any value token, so only a genuinely trailing comma is dropped.
+    let mut last_comma: isize = -1;
     let mut in_string = false;
     let mut escaped = false;
 
@@ -184,143 +202,176 @@ fn strip_jsonc(raw: &[u8]) -> anyhow::Result<Vec<u8>> {
             continue;
         }
 
-        match c {
-            b'"' => {
-                in_string = true;
-                last_comma = None;
-                out.push(c);
+        if c == b'"' {
+            in_string = true;
+            last_comma = -1;
+            out.push(c);
+        } else if c == b'/' && i + 1 < raw.len() && raw[i + 1] == b'/' {
+            // Blank through end of line, preserving the newline itself.
+            while i < raw.len() && raw[i] != b'\n' {
+                out.push(b' ');
+                i += 1;
             }
-            b'/' if i + 1 < raw.len() && raw[i + 1] == b'/' => {
-                // Blank through end of line, preserving the newline itself.
-                while i < raw.len() && raw[i] != b'\n' {
+            if i < raw.len() {
+                out.push(raw[i]);
+            }
+        } else if c == b'/' && i + 1 < raw.len() && raw[i + 1] == b'*' {
+            out.push(b' ');
+            out.push(b' ');
+            i += 2;
+            let mut closed = false;
+            while i < raw.len() {
+                if raw[i] == b'*' && i + 1 < raw.len() && raw[i + 1] == b'/' {
+                    out.push(b' ');
                     out.push(b' ');
                     i += 1;
+                    closed = true;
+                    break;
                 }
-                if i < raw.len() {
-                    out.push(raw[i]);
-                }
+                out.push(if raw[i] == b'\n' { b'\n' } else { b' ' });
+                i += 1;
             }
-            b'/' if i + 1 < raw.len() && raw[i + 1] == b'*' => {
-                // Consume the opener first so `/*/` cannot reuse its own `*`
-                // as the closer's, then blank the body, newlines included, so
-                // line numbers and the total byte count both survive.
-                out.push(b' ');
-                out.push(b' ');
-                i += 2;
-                let mut closed = false;
-                while i < raw.len() {
-                    if raw[i] == b'*' && i + 1 < raw.len() && raw[i + 1] == b'/' {
-                        out.push(b' ');
-                        out.push(b' ');
-                        i += 1; // consume '*'; the loop's increment consumes '/'
-                        closed = true;
-                        break;
-                    }
-                    if raw[i] == b'\n' {
-                        out.push(b'\n');
-                    } else {
-                        out.push(b' ');
-                    }
-                    i += 1;
-                }
-                if !closed {
-                    return Err(anyhow::anyhow!("unterminated block comment"));
-                }
+            if !closed {
+                return Err("unterminated block comment");
             }
-            b',' => {
-                last_comma = Some(out.len());
-                out.push(c);
+        } else if c == b',' {
+            last_comma = out.len() as isize;
+            out.push(c);
+        } else if c == b'}' || c == b']' {
+            if last_comma >= 0 {
+                out[last_comma as usize] = b' ';
             }
-            b'}' | b']' => {
-                if let Some(offset) = last_comma.take() {
-                    out[offset] = b' ';
-                }
-                out.push(c);
-            }
-            b' ' | b'\t' | b'\n' | b'\r' => out.push(c),
-            _ => {
-                last_comma = None;
-                out.push(c);
-            }
+            last_comma = -1;
+            out.push(c);
+        } else if matches!(c, b' ' | b'\t' | b'\n' | b'\r') {
+            out.push(c);
+        } else {
+            last_comma = -1;
+            out.push(c);
         }
         i += 1;
     }
     Ok(out)
 }
 
-/// `loadRuntimeMcpServerConfigs` (runtime_mcp.go:242–316): returns full,
-/// secret-bearing runtime MCP entries for task-local merging. Callers must
-/// never send the result to the server or logs; the public capabilities
-/// endpoint continues to use the redacted summary type above.
-///
-/// Returns `(servers, supported)`; an unsupported provider yields an empty map
-/// and `false`.
+fn user_home_dir() -> anyhow::Result<PathBuf> {
+    #[cfg(unix)]
+    {
+        std::env::var_os("HOME")
+            .filter(|home| !home.is_empty())
+            .map(PathBuf::from)
+            .ok_or_else(|| anyhow!("resolve user home"))
+    }
+    #[cfg(not(unix))]
+    {
+        std::env::var_os("USERPROFILE")
+            .filter(|home| !home.is_empty())
+            .map(PathBuf::from)
+            .ok_or_else(|| anyhow!("resolve user home"))
+    }
+}
+
+/// The environment inputs the runtime MCP loaders read. Production resolves
+/// these from the process environment once per call
+/// ([`RuntimeMcpEnv::from_process`]); tests pass tempdir values directly so
+/// they never race sibling tests that mutate process env.
+#[derive(Debug, Clone, Default)]
+pub(crate) struct RuntimeMcpEnv {
+    pub home: PathBuf,
+    pub codex_home: Option<PathBuf>,
+    pub xdg_config_home: Option<PathBuf>,
+    pub kimi_code_home: Option<PathBuf>,
+    pub codebuddy_config_dir: Option<PathBuf>,
+    pub clawdbot_config_path: Option<PathBuf>,
+    pub openclaw_state_dir: Option<PathBuf>,
+}
+
+impl RuntimeMcpEnv {
+    pub(crate) fn from_process() -> anyhow::Result<Self> {
+        let read = |key: &str| -> Option<PathBuf> {
+            std::env::var(key)
+                .ok()
+                .map(|v| v.trim().to_string())
+                .filter(|v| !v.is_empty())
+                .map(PathBuf::from)
+        };
+        Ok(Self {
+            home: user_home_dir()?,
+            codex_home: read("CODEX_HOME"),
+            xdg_config_home: read("XDG_CONFIG_HOME"),
+            kimi_code_home: read("KIMI_CODE_HOME"),
+            codebuddy_config_dir: read("CODEBUDDY_CONFIG_DIR"),
+            clawdbot_config_path: read("CLAWDBOT_CONFIG_PATH"),
+            openclaw_state_dir: read("OPENCLAW_STATE_DIR"),
+        })
+    }
+
+    fn or(key_dir: &Option<PathBuf>, fallback: PathBuf) -> PathBuf {
+        key_dir.clone().unwrap_or(fallback)
+    }
+
+    fn codex_home(&self) -> PathBuf {
+        Self::or(&self.codex_home, self.home.join(".codex"))
+    }
+
+    fn opencode_config_home(&self) -> PathBuf {
+        Self::or(&self.xdg_config_home, self.home.join(".config"))
+    }
+
+    fn kimi_home(&self) -> PathBuf {
+        Self::or(&self.kimi_code_home, self.home.join(".kimi-code"))
+    }
+
+    fn openclaw_path(&self) -> PathBuf {
+        if let Some(configured) = &self.clawdbot_config_path {
+            return configured.clone();
+        }
+        let state_dir = Self::or(&self.openclaw_state_dir, self.home.join(".openclaw"));
+        state_dir.join("openclaw.json")
+    }
+}
+
+/// Full, secret-bearing runtime MCP entries for task-local merging
+/// (go:246–316). Callers must never send the result to the server or logs;
+/// the capabilities endpoint uses [`list_runtime_local_mcp_servers`]. The
+/// bool reports whether the provider is supported. codebuddy is deliberately
+/// absent from this table (go:256–261): it merges scopes natively on launch,
+/// and pre-merging would lose scope precedence and the approval gate.
 pub(crate) fn load_runtime_mcp_server_configs(
     provider: &str,
-) -> anyhow::Result<(HashMap<String, Value>, bool)> {
-    let home = user_home_dir().context("resolve user home")?;
+) -> anyhow::Result<(Map<String, Value>, bool)> {
+    load_runtime_mcp_server_configs_in(&RuntimeMcpEnv::from_process()?, provider)
+}
 
-    enum Source {
-        File { path: String, key: &'static str, format: &'static str },
-        Unsupported,
-    }
-    let source = match provider {
-        "claude" => Source::File {
-            path: Path::new(&home).join(".claude.json").to_string_lossy().to_string(),
-            key: "mcpServers",
-            format: "json",
-        },
-        // codebuddy is deliberately absent. CodeBuddy loads its own user,
-        // project and local scopes on every launch (codebuddy.go never passes
-        // --strict-mcp-config), and a managed entry already wins a same-name
-        // collision, so the daemon pre-merging them would only duplicate what
-        // the CLI does natively — while losing the scope precedence and the
-        // approval gate that protects project-scope servers.
-        "codex" => {
-            let codex_home = env_trimmed_or("CODEX_HOME", || {
-                Path::new(&home).join(".codex").to_string_lossy().to_string()
-            });
-            Source::File {
-                path: Path::new(&codex_home).join("config.toml").to_string_lossy().to_string(),
-                key: "mcp_servers",
-                format: "toml",
-            }
-        }
-        "cursor" => Source::File {
-            path: Path::new(&home).join(".cursor").join("mcp.json").to_string_lossy().to_string(),
-            key: "mcpServers",
-            format: "json",
-        },
-        "opencode" => {
-            let config_home = env_trimmed_or("XDG_CONFIG_HOME", || {
-                Path::new(&home).join(".config").to_string_lossy().to_string()
-            });
-            Source::File {
-                path: Path::new(&config_home)
-                    .join("opencode")
-                    .join("opencode.json")
-                    .to_string_lossy()
-                    .to_string(),
-                key: "mcp",
-                format: "json",
-            }
-        }
-        "openclaw" => {
-            let path = openclaw_config_path(&home);
-            Source::File { path, key: "mcp.servers", format: "json" }
-        }
-        _ => Source::Unsupported,
+pub(crate) fn load_runtime_mcp_server_configs_in(
+    env: &RuntimeMcpEnv,
+    provider: &str,
+) -> anyhow::Result<(Map<String, Value>, bool)> {
+    let home = &env.home;
+    type Spec = (PathBuf, &'static str, &'static str);
+    let spec: Option<Spec> = match provider {
+        "claude" => Some((home.join(".claude.json"), "mcpServers", "json")),
+        "codex" => Some((env.codex_home().join("config.toml"), "mcp_servers", "toml")),
+        "cursor" => Some((home.join(".cursor").join("mcp.json"), "mcpServers", "json")),
+        "opencode" => Some((
+            env.opencode_config_home()
+                .join("opencode")
+                .join("opencode.json"),
+            "mcp",
+            "json",
+        )),
+        "openclaw" => Some((env.openclaw_path(), "mcp.servers", "json")),
+        _ => None,
+    };
+    let Some((path, key, format)) = spec else {
+        return Ok((Map::new(), false));
     };
 
-    let Source::File { path, key, format } = source else {
-        return Ok((HashMap::new(), false));
-    };
-
-    let mut servers: HashMap<String, Value> = HashMap::new();
+    let mut servers = Map::new();
     match std::fs::read(&path) {
         Ok(raw) => {
             let cfg = unmarshal_runtime_mcp_config(&raw, format)?;
-            if let Some(configured) = nested_runtime_mcp_map(&cfg, key) {
+            if let Some(Value::Object(configured)) = nested_runtime_mcp_map(&cfg, key) {
                 for (name, entry) in configured {
                     servers.insert(
                         name.clone(),
@@ -329,23 +380,26 @@ pub(crate) fn load_runtime_mcp_server_configs(
                 }
             }
         }
-        Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
-            return Err(anyhow::Error::from(err).context("read runtime MCP config"));
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+        Err(err) => {
+            return Err(anyhow!("read runtime MCP config: read {path:?}: {err}"))
+                .context("read runtime MCP config");
         }
-        Err(_) => {}
     }
 
     if provider == "claude" {
-        // User configuration has the same precedence Claude uses: plugin
-        // servers only fill names not already defined by the user.
-        for (name, entry) in load_claude_plugin_mcp_server_configs(&home) {
+        // Same precedence Claude uses: plugin servers only fill names not
+        // already defined by the user (go:306–314).
+        for (name, entry) in load_claude_plugin_mcp_server_configs(home) {
             servers.entry(name).or_insert(entry);
         }
     }
     Ok((servers, true))
 }
 
-/// `normalizeRuntimeMcpEntry` (runtime_mcp.go:318–337).
+/// Cordy's canonical remote shape calls these `headers`; Codex stores them as
+/// `http_headers`. Keep the original key too so less common Codex-specific
+/// settings round-trip (go:318–337).
 fn normalize_runtime_mcp_entry(provider: &str, value: Value) -> Value {
     let Some(entry) = value.as_object() else {
         return value;
@@ -354,140 +408,277 @@ fn normalize_runtime_mcp_entry(provider: &str, value: Value) -> Value {
         return Value::Object(entry.clone());
     }
     let mut entry = entry.clone();
-    // Cordy's canonical remote shape calls these `headers`; Codex stores them
-    // as `http_headers`. Keep the original key as well so less common
-    // Codex-specific settings round-trip through renderCodexMcpServersBlock.
     if let Some(headers) = entry.get("http_headers").cloned() {
         entry.entry("headers".to_string()).or_insert(headers);
     }
     if entry.contains_key("url") && !entry.contains_key("type") {
-        entry.insert("type".into(), Value::String("http".into()));
+        entry.insert("type".to_string(), Value::String("http".to_string()));
     }
     Value::Object(entry)
 }
 
-/// S9-integration seam for `loadClaudePluginMcpServerConfigs`
-/// (runtime_mcp.go:339–369): walks enabled Claude plugins' `.mcp.json` /
-/// manifest MCP files. Empty until lane C2's claude_plugins.rs lands.
-fn load_claude_plugin_mcp_server_configs(_home: &str) -> HashMap<String, Value> {
-    HashMap::new()
+// ---------------------------------------------------------------------------
+// claude_plugins.go helpers — TEMPORARY home; lane B owns the canonical port.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone)]
+struct ClaudePluginInstall {
+    #[allow(dead_code)]
+    id: String,
+    name: String,
+    install_path: String,
 }
 
-/// S9-integration seam for `listClaudePluginMcpServers`
-/// (runtime_mcp.go:482–508). Empty until lane C2's claude_plugins.rs lands.
-fn list_claude_plugin_mcp_servers(_home: &str) -> Vec<RuntimeLocalMcpServerSummary> {
-    Vec::new()
+/// Resolves the current user-scope plugin installs that Claude Code itself
+/// has enabled (claude_plugins.go:38–92). Reading the install registry is
+/// deliberate: recursively scanning ~/.claude/plugins would surface both the
+/// marketplace checkout and every cached version of the same plugin.
+fn list_enabled_claude_plugins(home: &Path) -> Vec<ClaudePluginInstall> {
+    #[derive(serde::Deserialize)]
+    struct Install {
+        #[serde(default)]
+        scope: String,
+        #[serde(default, rename = "installPath")]
+        install_path: String,
+    }
+    #[derive(serde::Deserialize)]
+    struct InstalledFile {
+        #[serde(default)]
+        plugins: std::collections::BTreeMap<String, Vec<Install>>,
+    }
+    #[derive(serde::Deserialize)]
+    struct SettingsFile {
+        #[serde(default, rename = "enabledPlugins")]
+        enabled_plugins: std::collections::BTreeMap<String, bool>,
+    }
+
+    let Ok(settings_raw) = std::fs::read_to_string(home.join(".claude").join("settings.json"))
+    else {
+        return Vec::new();
+    };
+    let Ok(settings) = serde_json::from_str::<SettingsFile>(&settings_raw) else {
+        return Vec::new();
+    };
+    if settings.enabled_plugins.is_empty() {
+        return Vec::new();
+    }
+
+    let Ok(installed_raw) = std::fs::read_to_string(
+        home.join(".claude")
+            .join("plugins")
+            .join("installed_plugins.json"),
+    ) else {
+        return Vec::new();
+    };
+    let Ok(installed) = serde_json::from_str::<InstalledFile>(&installed_raw) else {
+        return Vec::new();
+    };
+
+    let mut plugin_ids: Vec<String> = settings
+        .enabled_plugins
+        .iter()
+        .filter(|(_, enabled)| **enabled)
+        .map(|(id, _)| id.clone())
+        .collect();
+    plugin_ids.sort();
+
+    let mut plugins = Vec::with_capacity(plugin_ids.len());
+    for id in plugin_ids {
+        let Some(installs) = installed.plugins.get(&id) else {
+            continue;
+        };
+        if installs.is_empty() {
+            continue;
+        }
+        // Last entry wins unless a user-scope install exists.
+        let selected = installs
+            .iter()
+            .rev()
+            .find(|install| install.scope == "user")
+            .unwrap_or_else(|| installs.last().expect("checked non-empty above"));
+        let install_path = selected.install_path.trim();
+        if install_path.is_empty() {
+            continue;
+        }
+
+        let mut name = id.split('@').next().unwrap_or("").trim().to_string();
+        if let Some((manifest_name, _)) = read_claude_plugin_manifest(Path::new(install_path)) {
+            if !manifest_name.trim().is_empty() {
+                name = manifest_name.trim().to_string();
+            }
+        }
+        if name.is_empty() {
+            continue;
+        }
+        plugins.push(ClaudePluginInstall {
+            id,
+            name,
+            install_path: install_path.to_string(),
+        });
+    }
+    plugins
 }
 
-/// `listRuntimeLocalMcpServers` (runtime_mcp.go:371–456): the redacted
-/// inventory for one provider. Returns `(summaries, supported)`.
+fn read_claude_plugin_manifest(install_path: &Path) -> Option<(String, Option<Value>)> {
+    #[derive(serde::Deserialize)]
+    struct ManifestFile {
+        #[serde(default)]
+        name: String,
+        #[serde(default, rename = "mcpServers")]
+        mcp_servers: Option<Value>,
+    }
+    let raw =
+        std::fs::read_to_string(install_path.join(".claude-plugin").join("plugin.json")).ok()?;
+    let manifest: ManifestFile = serde_json::from_str(&raw).ok()?;
+    Some((manifest.name, manifest.mcp_servers))
+}
+
+/// Component paths from a plugin manifest's `mcpServers` field: a single path
+/// string or a list; relative paths resolve under installPath and escapes
+/// above it are dropped (claude_plugins.go:106–139).
+fn claude_plugin_component_paths(
+    install_path: &Path,
+    raw: Option<&Value>,
+    default: Option<PathBuf>,
+) -> Vec<PathBuf> {
+    let mut paths: Vec<PathBuf> = default.into_iter().collect();
+    match raw {
+        Some(Value::String(one)) => {
+            if !one.trim().is_empty() {
+                paths.push(PathBuf::from(one.trim()));
+            }
+        }
+        Some(Value::Array(many)) => {
+            for item in many {
+                if let Some(one) = item.as_str() {
+                    if !one.trim().is_empty() {
+                        paths.push(PathBuf::from(one));
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = Vec::with_capacity(paths.len());
+    for candidate in paths {
+        let candidate_text = candidate.to_string_lossy().trim().to_string();
+        if candidate_text.is_empty() {
+            continue;
+        }
+        let candidate_path = Path::new(&candidate_text);
+        let joined = if candidate_path.is_absolute() {
+            PathBuf::from(&candidate_text)
+        } else {
+            install_path.join(candidate_path)
+        };
+        let cleaned = crate::repocache::normalize_lexically(&joined);
+        // Rel(installPath, cleaned): anything outside the install tree is
+        // skipped, mirroring Go's ".." prefix rejection.
+        let Ok(rel) = cleaned.strip_prefix(install_path) else {
+            continue;
+        };
+        if rel.as_os_str().is_empty() {
+            continue;
+        }
+        if seen.insert(cleaned.clone()) {
+            out.push(cleaned);
+        }
+    }
+    out
+}
+
+/// Redacted inventory for Agent capabilities (go:371–456), deduped with user
+/// configuration winning on a same-name collision and sorted
+/// case-insensitively by name.
 pub(crate) fn list_runtime_local_mcp_servers(
     provider: &str,
 ) -> anyhow::Result<(Vec<RuntimeLocalMcpServerSummary>, bool)> {
-    let home = user_home_dir().context("resolve user home")?;
+    list_runtime_local_mcp_servers_in(&RuntimeMcpEnv::from_process()?, provider)
+}
 
-    struct Spec {
-        path: String,
-        key: &'static str,
-        source: &'static str,
-        format: &'static str,
-    }
-    let spec = match provider {
-        "claude" => Spec {
-            path: Path::new(&home).join(".claude.json").to_string_lossy().to_string(),
-            key: "mcpServers",
-            source: "User config",
-            format: "json",
-        },
-        "codebuddy" => Spec {
-            path: codebuddy_user_mcp_config_path(&home),
-            key: "mcpServers",
-            source: "User config",
-            format: "jsonc",
-        },
-        "kimi" => {
-            // Inventory only — kimi is deliberately absent from
-            // load_runtime_mcp_server_configs. `kimi acp` merges this file
-            // with the ephemeral `mcpServers` we send in session/new, so
-            // merging it in again would spawn every user server twice.
-            let kimi_home = env_trimmed_or("KIMI_CODE_HOME", || {
-                Path::new(&home).join(".kimi-code").to_string_lossy().to_string()
-            });
-            Spec {
-                path: Path::new(&kimi_home).join("mcp.json").to_string_lossy().to_string(),
-                key: "mcpServers",
-                source: "User config",
-                format: "json",
-            }
-        }
-        "codex" => {
-            let codex_home = env_trimmed_or("CODEX_HOME", || {
-                Path::new(&home).join(".codex").to_string_lossy().to_string()
-            });
-            Spec {
-                path: Path::new(&codex_home).join("config.toml").to_string_lossy().to_string(),
-                key: "mcp_servers",
-                source: "User config",
-                format: "toml",
-            }
-        }
-        "cursor" => Spec {
-            path: Path::new(&home).join(".cursor").join("mcp.json").to_string_lossy().to_string(),
-            key: "mcpServers",
-            source: "User config",
-            format: "json",
-        },
-        "opencode" => {
-            let config_home = env_trimmed_or("XDG_CONFIG_HOME", || {
-                Path::new(&home).join(".config").to_string_lossy().to_string()
-            });
-            Spec {
-                path: Path::new(&config_home)
-                    .join("opencode")
-                    .join("opencode.json")
-                    .to_string_lossy()
-                    .to_string(),
-                key: "mcp",
-                source: "User config",
-                format: "json",
-            }
-        }
-        "openclaw" => Spec {
-            path: openclaw_config_path(&home),
-            key: "mcp.servers",
-            source: "User config",
-            format: "json",
-        },
-        _ => return Ok((Vec::new(), false)),
+pub(crate) fn list_runtime_local_mcp_servers_in(
+    env: &RuntimeMcpEnv,
+    provider: &str,
+) -> anyhow::Result<(Vec<RuntimeLocalMcpServerSummary>, bool)> {
+    let home = &env.home;
+    type Spec = (PathBuf, &'static str, &'static str, &'static str);
+    let spec: Option<Spec> = match provider {
+        "claude" => Some((
+            home.join(".claude.json"),
+            "mcpServers",
+            "User config",
+            "json",
+        )),
+        "codebuddy" => Some((
+            codebuddy_user_mcp_config_path_in(home, env.codebuddy_config_dir.as_deref()),
+            "mcpServers",
+            "User config",
+            "jsonc",
+        )),
+        // Inventory only — kimi is deliberately absent from
+        // load_runtime_mcp_server_configs (go:384–393): `kimi acp` merges this
+        // file with the ephemeral mcpServers sent in session/new, so merging
+        // it in again would spawn every user server twice.
+        "kimi" => Some((
+            env.kimi_home().join("mcp.json"),
+            "mcpServers",
+            "User config",
+            "json",
+        )),
+        "codex" => Some((
+            env.codex_home().join("config.toml"),
+            "mcp_servers",
+            "User config",
+            "toml",
+        )),
+        "cursor" => Some((
+            home.join(".cursor").join("mcp.json"),
+            "mcpServers",
+            "User config",
+            "json",
+        )),
+        "opencode" => Some((
+            env.opencode_config_home()
+                .join("opencode")
+                .join("opencode.json"),
+            "mcp",
+            "User config",
+            "json",
+        )),
+        "openclaw" => Some((env.openclaw_path(), "mcp.servers", "User config", "json")),
+        _ => None,
     };
 
     let mut out: Vec<RuntimeLocalMcpServerSummary> = Vec::new();
-    match std::fs::read(&spec.path) {
-        Ok(raw) => {
-            let cfg = unmarshal_runtime_mcp_config(&raw, spec.format)?;
-            if let Some(servers) = nested_runtime_mcp_map(&cfg, spec.key) {
-                out.extend(runtime_mcp_summaries(servers, spec.source));
+    let mut supported = false;
+    if let Some((path, key, source, format)) = spec {
+        supported = true;
+        match std::fs::read(&path) {
+            Ok(raw) => {
+                let cfg = unmarshal_runtime_mcp_config(&raw, format)?;
+                if let Some(Value::Object(servers)) = nested_runtime_mcp_map(&cfg, key) {
+                    out.extend(runtime_mcp_summaries(servers, source));
+                }
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => {
+                return Err(anyhow!("read runtime MCP config: read {path:?}: {err}"));
             }
         }
-        Err(err) if err.kind() != std::io::ErrorKind::NotFound => {
-            return Err(anyhow::Error::from(err).context("read runtime MCP config"));
-        }
-        Err(_) => {}
     }
 
     if provider == "claude" {
-        out.extend(list_claude_plugin_mcp_servers(&home));
+        out.extend(list_claude_plugin_mcp_servers(home));
     }
 
-    // User configuration wins on a same-name collision. Plugin entries are
-    // appended afterwards and only fill names the user config did not define.
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = std::collections::BTreeSet::new();
     out.retain(|server| seen.insert(server.name.clone()));
-    out.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    Ok((out, true))
+    out.sort_by_key(|server| server.name.to_lowercase());
+    Ok((out, supported))
 }
 
-/// `runtimeMcpSummaries` (runtime_mcp.go:458–480).
 fn runtime_mcp_summaries(
     servers: &Map<String, Value>,
     source: &str,
@@ -500,11 +691,15 @@ fn runtime_mcp_summaries(
         if name.trim().is_empty() {
             continue;
         }
-        let mut enabled = true;
-        if let Some(flag) = entry.get("enabled").and_then(Value::as_bool) {
-            enabled = flag;
-        }
-        if entry.get("disabled").and_then(Value::as_bool) == Some(true) {
+        let mut enabled = entry
+            .get("enabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        if entry
+            .get("disabled")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
             enabled = false;
         }
         out.push(RuntimeLocalMcpServerSummary {
@@ -517,109 +712,108 @@ fn runtime_mcp_summaries(
     out
 }
 
-/// `nestedRuntimeMcpMap` (runtime_mcp.go:510–528).
-fn nested_runtime_mcp_map<'a>(cfg: &'a Value, path: &str) -> Option<&'a Map<String, Value>> {
-    let mut current = cfg.as_object()?;
-    let parts: Vec<&str> = path.split('.').collect();
-    for (index, part) in parts.iter().enumerate() {
-        let mapped = current.get(*part)?.as_object()?;
-        if index == parts.len() - 1 {
-            return Some(mapped);
+fn list_claude_plugin_mcp_servers(home: &Path) -> Vec<RuntimeLocalMcpServerSummary> {
+    let mut out = Vec::new();
+    for plugin in list_enabled_claude_plugins(home) {
+        let install_path = Path::new(&plugin.install_path);
+        let (_, manifest_mcp_servers) =
+            read_claude_plugin_manifest(install_path).unwrap_or_default();
+        let paths = claude_plugin_component_paths(
+            install_path,
+            manifest_mcp_servers.as_ref(),
+            Some(install_path.join(".mcp.json")),
+        );
+        for path in paths {
+            let Ok(raw) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(cfg) = serde_json::from_str::<Map<String, Value>>(&raw) else {
+                continue;
+            };
+            if let Some(Value::Object(servers)) = nested_runtime_mcp_map(&cfg, "mcpServers") {
+                out.extend(runtime_mcp_summaries(
+                    servers,
+                    &format!("Claude Plugin · {}", plugin.name),
+                ));
+            }
         }
-        current = mapped;
     }
-    None
+    out
 }
 
-/// `runtimeMcpTransport` (runtime_mcp.go:530–547).
-fn runtime_mcp_transport(entry: &Map<String, Value>) -> String {
+/// Dotted-path lookup ("mcp.servers") where every segment must be an object
+/// (go:510–528).
+pub(crate) fn nested_runtime_mcp_map<'a>(
+    cfg: &'a Map<String, Value>,
+    path: &str,
+) -> Option<&'a Value> {
+    let mut current: &Value = cfg.get(path.split('.').next()?)?;
+    for part in path.split('.').skip(1) {
+        current = current.as_object()?.get(part)?;
+    }
+    Some(current)
+}
+
+/// Transport classification for the summary inventory (go:530–547).
+fn load_claude_plugin_mcp_server_configs(home: &Path) -> Map<String, Value> {
+    let mut out = Map::new();
+    for plugin in list_enabled_claude_plugins(home) {
+        let install_path = Path::new(&plugin.install_path);
+        let (_, manifest_mcp_servers) =
+            read_claude_plugin_manifest(install_path).unwrap_or_default();
+        let paths = claude_plugin_component_paths(
+            install_path,
+            manifest_mcp_servers.as_ref(),
+            Some(install_path.join(".mcp.json")),
+        );
+        for path in paths {
+            let Ok(raw) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(cfg) = serde_json::from_str::<Map<String, Value>>(&raw) else {
+                continue;
+            };
+            if let Some(Value::Object(servers)) = nested_runtime_mcp_map(&cfg, "mcpServers") {
+                for (name, entry) in servers {
+                    out.entry(name.clone()).or_insert_with(|| entry.clone());
+                }
+            }
+        }
+    }
+    out
+}
+
+pub(crate) fn runtime_mcp_transport(entry: &Map<String, Value>) -> String {
     let kind = entry.get("type").and_then(Value::as_str).unwrap_or("");
     match kind.to_lowercase().as_str() {
-        "local" | "stdio" => return "stdio".into(),
-        "remote" | "http" | "streamable-http" => return "http".into(),
-        "sse" => return "sse".into(),
+        "local" | "stdio" => return "stdio".to_string(),
+        "remote" | "http" | "streamable-http" => return "http".to_string(),
+        "sse" => return "sse".to_string(),
         _ => {}
     }
     if entry.contains_key("command") {
-        return "stdio".into();
+        return "stdio".to_string();
     }
     if entry.contains_key("url") {
-        return "http".into();
+        return "http".to_string();
     }
-    "unknown".into()
-}
-
-// ---------------------------------------------------------------------------
-// Shared helpers.
-// ---------------------------------------------------------------------------
-
-fn trim_ascii(mut data: &[u8]) -> &[u8] {
-    while let Some(first) = data.first() {
-        if first.is_ascii_whitespace() {
-            data = &data[1..];
-        } else {
-            break;
-        }
-    }
-    while let Some(last) = data.last() {
-        if last.is_ascii_whitespace() {
-            data = &data[..data.len() - 1];
-        } else {
-            break;
-        }
-    }
-    data
-}
-
-fn user_home_dir() -> anyhow::Result<String> {
-    std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
-        .map_err(|_| anyhow::anyhow!("$HOME is not defined"))
-}
-
-fn env_trimmed_or(name: &str, default: impl FnOnce() -> String) -> String {
-    match std::env::var(name) {
-        Ok(value) if !value.trim().is_empty() => value.trim().to_string(),
-        _ => default(),
-    }
-}
-
-/// openclaw's config path resolution (runtime_mcp.go:277–284, 409–416):
-/// CLAWDBOT_CONFIG_PATH wins, then OPENCLAW_STATE_DIR/openclaw.json, then
-/// ~/.openclaw/openclaw.json.
-fn openclaw_config_path(home: &str) -> String {
-    if let Ok(path) = std::env::var("CLAWDBOT_CONFIG_PATH") {
-        if !path.trim().is_empty() {
-            return path.trim().to_string();
-        }
-    }
-    let state_dir = env_trimmed_or("OPENCLAW_STATE_DIR", || {
-        Path::new(home).join(".openclaw").to_string_lossy().to_string()
-    });
-    Path::new(&state_dir).join("openclaw.json").to_string_lossy().to_string()
+    "unknown".to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
 
-    /// Process-global env is not test-scoped in Rust; serialize the tests that
-    /// mirror Go's t.Setenv.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    fn set_env(name: &str, value: Option<&str>) {
-        match value {
-            Some(value) => std::env::set_var(name, value),
-            None => std::env::remove_var(name),
+    fn test_env(home: &Path) -> RuntimeMcpEnv {
+        RuntimeMcpEnv {
+            home: home.to_path_buf(),
+            ..Default::default()
         }
     }
 
-    // ------------------------------------------------------------------
-    // stripJSONC (runtime_mcp_test.go:298–401) — pure logic.
-    // ------------------------------------------------------------------
-
     #[test]
-    fn strip_jsonc_repairs_comments_and_trailing_commas() {
+    fn strip_jsonc_handles_comments_and_trailing_commas() {
         let cases: Vec<(&str, &str, Value)> = vec![
             ("line comment", "{\n// hi\n\"a\":1\n}", json!({"a": 1})),
             ("block comment", "{/* hi */\"a\":1}", json!({"a": 1})),
@@ -641,16 +835,13 @@ mod tests {
             ),
         ];
         for (name, input, want) in cases {
-            let stripped = strip_jsonc(input.as_bytes())
-                .unwrap_or_else(|err| panic!("stripJSONC {name}: {err}"));
+            let stripped = strip_jsonc(input.as_bytes()).unwrap_or_else(|e| panic!("{name}: {e}"));
             let got: Value = serde_json::from_slice(&stripped)
-                .unwrap_or_else(|err| panic!("unmarshal {name}: {err}"));
+                .unwrap_or_else(|e| panic!("{name}: unmarshal {stripped:?}: {e}"));
             assert_eq!(got, want, "case {name}");
         }
     }
 
-    /// A trailing comma that is NOT trailing must survive: blanking it would
-    /// merge two array elements into one.
     #[test]
     fn strip_jsonc_keeps_separator_commas() {
         let stripped = strip_jsonc(br#"["a","b",]"#).unwrap();
@@ -658,23 +849,16 @@ mod tests {
         assert_eq!(got, json!(["a", "b"]));
     }
 
-    /// Repairing only a genuine trailing comma keeps malformed input
-    /// malformed — a config the CLI would reject must not be silently
-    /// accepted here.
     #[test]
     fn strip_jsonc_leaves_malformed_input_invalid() {
-        for input in [r"[1,,,]", r#"{"a":1,,}"#, "[1,,2]"] {
+        for input in ["[1,,,]", r#"{"a":1,,}"#, "[1,,2]"] {
             if let Ok(stripped) = strip_jsonc(input.as_bytes()) {
-                assert!(
-                    serde_json::from_slice::<Value>(&stripped).is_err(),
-                    "{input} must stay invalid"
-                );
+                let parsed: Result<Value, _> = serde_json::from_slice(&stripped);
+                assert!(parsed.is_err(), "{input} must stay invalid");
             }
         }
     }
 
-    /// Comments and the dropped comma are blanked, never deleted, so a
-    /// parse-error offset still points at the byte the user wrote.
     #[test]
     fn strip_jsonc_preserves_byte_length() {
         for input in [
@@ -684,304 +868,233 @@ mod tests {
             "{/**/\"a\":1}",
             "{}",
         ] {
-            let stripped = strip_jsonc(input.as_bytes())
-                .unwrap_or_else(|err| panic!("stripJSONC {input:?}: {err}"));
-            assert_eq!(stripped.len(), input.len(), "{input:?}");
+            let stripped = strip_jsonc(input.as_bytes()).unwrap_or_else(|e| panic!("{input}: {e}"));
+            assert_eq!(stripped.len(), input.len(), "{input}");
         }
     }
 
-    /// A file CodeBuddy itself rejects must not produce an inventory listing;
-    /// blanking an unterminated comment to EOF would have turned the first
-    /// into valid JSON, and letting the opener's `*` double as the closer's
-    /// would have made `/*/` a complete comment.
     #[test]
     fn strip_jsonc_rejects_unterminated_block_comment() {
-        for (name, input) in [
-            ("unterminated", r#"{"mcpServers":{}} /* oops"#),
-            ("opener not closer", "/*/ {\"mcpServers\":{}}"),
-            ("unterminated after opener", "/*"),
+        for input in [
+            r#"{"mcpServers":{}} /* oops"#,
+            "/*/ {\"mcpServers\":{}}",
+            "/*",
         ] {
-            assert!(
-                strip_jsonc(input.as_bytes()).is_err(),
-                "{name}: {input} must fail"
-            );
+            assert!(strip_jsonc(input.as_bytes()).is_err(), "{input}");
         }
     }
 
-    // ------------------------------------------------------------------
-    // codebuddyUserMcpConfigPath (runtime_mcp_test.go:190–239).
-    // ------------------------------------------------------------------
+    #[test]
+    fn merge_claude_combines_and_agent_wins() {
+        let home = tempfile::tempdir().unwrap();
+        fs::write(
+            home.path().join(".claude.json"),
+            r#"{"mcpServers":{"runtime-only":{"command":"runtime-cmd","env":{"TOKEN":"local-secret"}},"shared":{"command":"runtime-shared"}}}"#,
+        )
+        .unwrap();
+
+        let merged = merge_runtime_and_agent_mcp_config_in(
+            &test_env(home.path()),
+            "claude",
+            &json!({"mcpServers":{"shared":{"command":"agent-shared"},"agent-only":{"url":"https://agent.example/mcp"}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let servers = merged["mcpServers"].as_object().unwrap();
+        assert_eq!(servers.len(), 3, "{servers:?}");
+        assert_eq!(servers["shared"]["command"], "agent-shared");
+        assert_eq!(servers["runtime-only"]["command"], "runtime-cmd");
+        assert_eq!(servers["runtime-only"]["env"]["TOKEN"], "local-secret");
+    }
+
+    #[test]
+    fn merge_codex_normalizes_headers() {
+        let home = tempfile::tempdir().unwrap();
+        let config_dir = home.path().join(".codex");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(
+            config_dir.join("config.toml"),
+            "[mcp_servers.docs]\nurl = \"https://runtime.example/mcp\"\nhttp_headers = { Authorization = \"Bearer local-secret\" }\n\n[mcp_servers.fetch]\ncommand = \"uvx\"\nargs = [\"mcp-server-fetch\"]\n",
+        )
+        .unwrap();
+
+        let merged = merge_runtime_and_agent_mcp_config_in(
+            &test_env(home.path()),
+            "codex",
+            &json!({"mcpServers":{"agent":{"command":"node","args":["agent.js"]}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let servers = merged["mcpServers"].as_object().unwrap();
+        assert_eq!(servers.len(), 3, "{servers:?}");
+        assert_eq!(servers["docs"]["type"], "http");
+        assert_eq!(
+            servers["docs"]["headers"]["Authorization"],
+            "Bearer local-secret"
+        );
+    }
+
+    #[test]
+    fn merge_null_keeps_native_inheritance() {
+        // Go's nil / "" / " null" RawMessage forms all arrive as Value::Null
+        // in the daemon-side Task model.
+        let raw = Value::Null;
+        let merged =
+            merge_runtime_and_agent_mcp_config_in(&test_env(Path::new("/tmp")), "claude", &raw)
+                .unwrap();
+        assert_eq!(merged.unwrap(), raw);
+    }
+
+    #[test]
+    fn codebuddy_is_passthrough_and_kimi_too() {
+        let agent_cfg = &json!({"mcpServers":{"agent":{"command":"node"}}});
+        for provider in ["codebuddy", "kimi"] {
+            let merged = merge_runtime_and_agent_mcp_config_in(
+                &test_env(Path::new("/tmp")),
+                provider,
+                agent_cfg,
+            )
+            .unwrap()
+            .unwrap();
+            assert_eq!(&merged, agent_cfg, "{provider}");
+        }
+    }
+
+    #[test]
+    fn unknown_provider_passthrough() {
+        let agent_cfg = &json!({"mcpServers":{"agent":{"command":"node"}}});
+        let merged =
+            merge_runtime_and_agent_mcp_config_in(&test_env(Path::new("/tmp")), "dsh", agent_cfg)
+                .unwrap()
+                .unwrap();
+        assert_eq!(&merged, agent_cfg);
+    }
+
+    #[test]
+    fn opencode_legacy_top_level_mcp_container_survives() {
+        let home = tempfile::tempdir().unwrap();
+        let dir = home.path().join(".config").join("opencode");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("opencode.json"),
+            r#"{"mcp":{"runtime-local":{"command":"runtime-server"}}}"#,
+        )
+        .unwrap();
+        let env = test_env(home.path());
+
+        // Agent with a bound server under mcpServers keeps its legacy entries.
+        let merged = merge_runtime_and_agent_mcp_config_in(
+            &env,
+            "opencode",
+            &json!({"mcpServers":{"shared":{"url":"https://shared.example"}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let servers = merged["mcpServers"].as_object().unwrap();
+        for name in ["runtime-local", "shared"] {
+            assert!(servers.contains_key(name), "{servers:?}");
+        }
+        assert_eq!(servers.len(), 2);
+
+        // An agent with only the legacy container keeps it too.
+        let merged = merge_runtime_and_agent_mcp_config_in(
+            &env,
+            "opencode",
+            &json!({"mcp":{"private":{"command":"private-server"}}}),
+        )
+        .unwrap()
+        .unwrap();
+        let servers = merged["mcpServers"].as_object().unwrap();
+        assert!(servers.contains_key("private") && servers.contains_key("runtime-local"));
+    }
 
     #[test]
     fn codebuddy_user_mcp_config_path_precedence() {
-        let _env = ENV_LOCK.lock().unwrap();
-        set_env("CODEBUDDY_CONFIG_DIR", None);
         let home = tempfile::tempdir().unwrap();
-        let home_str = home.path().to_string_lossy().to_string();
         let config_dir = home.path().join(".codebuddy");
-        std::fs::create_dir_all(&config_dir).unwrap();
+        fs::create_dir_all(&config_dir).unwrap();
 
-        // Nothing on disk: the caller must still get a stable path so the
-        // read fails with NotFound rather than the provider looking
-        // unsupported.
         assert_eq!(
-            codebuddy_user_mcp_config_path_in(&home_str, None),
-            config_dir.join(".mcp.json").to_string_lossy()
+            codebuddy_user_mcp_config_path_in(home.path(), None),
+            config_dir.join(".mcp.json"),
+            "none exist → first candidate"
         );
-
-        let legacy = home.path().join(".codebuddy.json");
-        std::fs::write(&legacy, br#"{"mcpServers":{}}"#).unwrap();
+        fs::write(config_dir.join("mcp.json"), "{}").unwrap();
         assert_eq!(
-            codebuddy_user_mcp_config_path_in(&home_str, None),
-            legacy.to_string_lossy()
+            codebuddy_user_mcp_config_path_in(home.path(), None),
+            config_dir.join("mcp.json")
         );
-
-        let plain = config_dir.join("mcp.json");
-        std::fs::write(&plain, br#"{"mcpServers":{}}"#).unwrap();
+        fs::write(config_dir.join(".mcp.json"), "{}").unwrap();
         assert_eq!(
-            codebuddy_user_mcp_config_path_in(&home_str, None),
-            plain.to_string_lossy(),
-            "mcp.json must win over ~/.codebuddy.json"
-        );
-
-        let dotted = config_dir.join(".mcp.json");
-        std::fs::write(&dotted, br#"{"mcpServers":{}}"#).unwrap();
-        assert_eq!(
-            codebuddy_user_mcp_config_path_in(&home_str, None),
-            dotted.to_string_lossy(),
-            ".mcp.json must win over mcp.json"
+            codebuddy_user_mcp_config_path_in(home.path(), None),
+            config_dir.join(".mcp.json"),
+            "first of the chain wins, not a merge"
         );
     }
 
     #[test]
     fn codebuddy_user_mcp_config_path_honors_config_dir_env() {
-        let _env = ENV_LOCK.lock().unwrap();
         let home = tempfile::tempdir().unwrap();
-        let config_dir = tempfile::tempdir().unwrap();
-        let want = config_dir.path().join(".mcp.json");
-        std::fs::write(&want, br#"{"mcpServers":{}}"#).unwrap();
+        let custom = tempfile::tempdir().unwrap();
+        fs::write(custom.path().join("mcp.json"), "{}").unwrap();
         assert_eq!(
-            codebuddy_user_mcp_config_path_in(
-                &home.path().to_string_lossy(),
-                Some(config_dir.path().to_string_lossy().as_ref()),
-            ),
-            want.to_string_lossy()
+            codebuddy_user_mcp_config_path_in(home.path(), Some(custom.path())),
+            custom.path().join("mcp.json")
         );
     }
 
-    // ------------------------------------------------------------------
-    // Inventory + merge (runtime_mcp_test.go:11–91, 131–184, 241–296,
-    // 405–468).
-    // ------------------------------------------------------------------
-
     #[test]
-    fn list_runtime_local_mcp_servers_codex_redacts_details() {
-        let _env = ENV_LOCK.lock().unwrap();
+    fn list_codebuddy_reads_its_own_config_as_jsonc() {
         let home = tempfile::tempdir().unwrap();
-        set_env("HOME", Some(home.path().to_string_lossy().as_ref()));
-        set_env("CODEX_HOME", None);
-        let config_dir = home.path().join(".codex");
-        std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::write(
-            config_dir.join("config.toml"),
-            concat!(
-                "[mcp_servers.fetch]\n",
-                "command = \"uvx\"\n",
-                "args = [\"mcp-server-fetch\", \"--token\", \"secret\"]\n\n",
-                "[mcp_servers.docs]\n",
-                "url = \"https://secret.example/mcp\"\n",
-                "enabled = false\n",
-            ),
+        let config_dir = home.path().join(".codebuddy");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(
+            config_dir.join(".mcp.json"),
+            "// user comment\n{\"mcpServers\":{\"cb\":{\"type\":\"stdio\",\"command\":\"cb\",\"disabled\":true}}}",
         )
         .unwrap();
+        let (servers, supported) =
+            list_runtime_local_mcp_servers_in(&test_env(home.path()), "codebuddy").unwrap();
+        assert!(supported);
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].name, "cb");
+        assert_eq!(servers[0].transport, "stdio");
+        assert!(!servers[0].enabled);
+        assert_eq!(servers[0].source, "User config");
+    }
 
-        let (servers, supported) = list_runtime_local_mcp_servers("codex").unwrap();
-        assert!(supported && servers.len() == 2, "supported={supported} servers={servers:?}");
-        assert_eq!(servers[0].name, "docs");
+    #[test]
+    fn list_codebuddy_rejects_unterminated_comment() {
+        let home = tempfile::tempdir().unwrap();
+        let config_dir = home.path().join(".codebuddy");
+        fs::create_dir_all(&config_dir).unwrap();
+        fs::write(config_dir.join(".mcp.json"), "{\"mcpServers\":{}} /* oops").unwrap();
+        assert!(list_runtime_local_mcp_servers_in(&test_env(home.path()), "codebuddy").is_err());
+    }
+
+    #[test]
+    fn unknown_provider_inventory_is_empty_and_unsupported() {
+        let (servers, supported) =
+            list_runtime_local_mcp_servers_in(&test_env(Path::new("/tmp")), "dsh").unwrap();
+        assert!(servers.is_empty());
+        assert!(!supported);
+    }
+
+    #[test]
+    fn list_kimi_inventory_only() {
+        let home = tempfile::tempdir().unwrap();
+        let kimi_home = home.path().join(".kimi-code");
+        fs::create_dir_all(&kimi_home).unwrap();
+        fs::write(
+            kimi_home.join("mcp.json"),
+            r#"{"mcpServers":{"k":{"type":"http","url":"https://k.example","enabled":false}}}"#,
+        )
+        .unwrap();
+        let mut env = test_env(home.path());
+        env.kimi_code_home = Some(kimi_home);
+        let (servers, _) = list_runtime_local_mcp_servers_in(&env, "kimi").unwrap();
+        assert_eq!(servers.len(), 1);
         assert_eq!(servers[0].transport, "http");
         assert!(!servers[0].enabled);
-        assert_eq!(servers[1].name, "fetch");
-        assert_eq!(servers[1].transport, "stdio");
-        assert!(servers[1].enabled);
-    }
-
-    #[test]
-    fn list_runtime_local_mcp_servers_claude_missing_config() {
-        let _env = ENV_LOCK.lock().unwrap();
-        let home = tempfile::tempdir().unwrap();
-        set_env("HOME", Some(home.path().to_string_lossy().as_ref()));
-        let (servers, supported) = list_runtime_local_mcp_servers("claude").unwrap();
-        assert!(supported && servers.is_empty(), "supported={supported} servers={servers:?}");
-    }
-
-    #[test]
-    fn list_runtime_local_mcp_servers_unknown_provider() {
-        let _env = ENV_LOCK.lock().unwrap();
-        let home = tempfile::tempdir().unwrap();
-        set_env("HOME", Some(home.path().to_string_lossy().as_ref()));
-        let (servers, supported) = list_runtime_local_mcp_servers("future-runtime").unwrap();
-        assert!(!supported && servers.is_empty());
-    }
-
-    #[test]
-    fn merge_runtime_and_agent_mcp_config_codex_normalizes_headers() {
-        let _env = ENV_LOCK.lock().unwrap();
-        let home = tempfile::tempdir().unwrap();
-        set_env("HOME", Some(home.path().to_string_lossy().as_ref()));
-        set_env("CODEX_HOME", None);
-        let config_dir = home.path().join(".codex");
-        std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::write(
-            config_dir.join("config.toml"),
-            concat!(
-                "[mcp_servers.docs]\n",
-                "url = \"https://runtime.example/mcp\"\n",
-                "http_headers = { Authorization = \"Bearer local-secret\" }\n\n",
-                "[mcp_servers.fetch]\n",
-                "command = \"uvx\"\n",
-                "args = [\"mcp-server-fetch\"]\n",
-            ),
-        )
-        .unwrap();
-
-        let merged = merge_runtime_and_agent_mcp_config(
-            "codex",
-            br#"{"mcpServers":{"agent":{"command":"node","args":["agent.js"]}}}"#,
-        )
-        .unwrap();
-        let document: Value = serde_json::from_slice(&merged).unwrap();
-        let mcp_servers = document.get("mcpServers").unwrap().as_object().unwrap();
-        assert_eq!(mcp_servers.len(), 3, "merged servers = {mcp_servers:?}");
-        let docs = mcp_servers.get("docs").unwrap();
-        assert_eq!(docs.get("type"), Some(&json!("http")));
-        assert_eq!(
-            docs.get("headers").unwrap().get("Authorization"),
-            Some(&json!("Bearer local-secret"))
-        );
-    }
-
-    #[test]
-    fn merge_runtime_and_agent_mcp_config_null_keeps_native_inheritance() {
-        let _env = ENV_LOCK.lock().unwrap();
-        let home = tempfile::tempdir().unwrap();
-        set_env("HOME", Some(home.path().to_string_lossy().as_ref()));
-        for raw in [&b""[..], b"null".as_slice(), b" null ".as_slice()] {
-            let merged = merge_runtime_and_agent_mcp_config("claude", raw).unwrap();
-            assert_eq!(merged, raw);
-        }
-    }
-
-    /// CodeBuddy resolves its own config and loads its own scopes on every
-    /// launch, so `~/.claude.json` is never consulted and plugin servers are
-    /// never attributed to CodeBuddy (the plugin walk is an S9-integration
-    /// seam until lane C2 lands, matching the empty result either way).
-    #[test]
-    fn list_runtime_local_mcp_servers_codebuddy_reads_its_own_config() {
-        let _env = ENV_LOCK.lock().unwrap();
-        let home = tempfile::tempdir().unwrap();
-        set_env("HOME", Some(home.path().to_string_lossy().as_ref()));
-        set_env("CODEBUDDY_CONFIG_DIR", None);
-        let config_dir = home.path().join(".codebuddy");
-        std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::write(
-            home.path().join(".claude.json"),
-            br#"{"mcpServers":{"claude-only":{"command":"claude-cmd"}}}"#,
-        )
-        .unwrap();
-        // JSONC: a comment and a trailing comma must not lose the server.
-        let jsonc = "{\n  // user scope\n  \"mcpServers\": {\n    \"buddy\": { \"command\": \"buddy-cmd\", },\n  },\n}\n";
-        std::fs::write(config_dir.join(".mcp.json"), jsonc).unwrap();
-
-        let (servers, supported) = list_runtime_local_mcp_servers("codebuddy").unwrap();
-        assert!(supported && servers.len() == 1 && servers[0].name == "buddy",
-            "supported={supported} servers={servers:?}");
-    }
-
-    /// CodeBuddy loads its own user/project/local scopes on every launch, so
-    /// the daemon must NOT pre-merge them.
-    #[test]
-    fn merge_runtime_and_agent_mcp_config_codebuddy_is_passthrough() {
-        let _env = ENV_LOCK.lock().unwrap();
-        let home = tempfile::tempdir().unwrap();
-        set_env("HOME", Some(home.path().to_string_lossy().as_ref()));
-        set_env("CODEBUDDY_CONFIG_DIR", None);
-        let config_dir = home.path().join(".codebuddy");
-        std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::write(
-            config_dir.join(".mcp.json"),
-            br#"{"mcpServers":{"local-only":{"command":"local-cmd"}}}"#,
-        )
-        .unwrap();
-
-        let agent_config =
-            br#"{"mcpServers":{"agent-only":{"command":"agent-cmd"}}}"#.as_slice();
-        let merged = merge_runtime_and_agent_mcp_config("codebuddy", agent_config).unwrap();
-        assert_eq!(merged, agent_config, "codebuddy merge must be a passthrough");
-    }
-
-    /// The same unterminated-comment input must reach the caller as a parse
-    /// error, so the inventory surfaces the problem rather than silently
-    /// reporting zero servers.
-    #[test]
-    fn list_runtime_local_mcp_servers_codebuddy_rejects_unterminated_comment() {
-        let _env = ENV_LOCK.lock().unwrap();
-        let home = tempfile::tempdir().unwrap();
-        set_env("HOME", Some(home.path().to_string_lossy().as_ref()));
-        set_env("CODEBUDDY_CONFIG_DIR", None);
-        let config_dir = home.path().join(".codebuddy");
-        std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::write(
-            config_dir.join(".mcp.json"),
-            br#"{"mcpServers":{"buddy":{"command":"buddy-cmd"}}} /* oops"#,
-        )
-        .unwrap();
-
-        assert!(
-            list_runtime_local_mcp_servers("codebuddy").is_err(),
-            "expected a parse error for a config CodeBuddy itself rejects"
-        );
-    }
-
-    #[test]
-    fn list_runtime_local_mcp_servers_kimi() {
-        let _env = ENV_LOCK.lock().unwrap();
-        let home = tempfile::tempdir().unwrap();
-        set_env("HOME", Some(home.path().to_string_lossy().as_ref()));
-        set_env("KIMI_CODE_HOME", None);
-        let kimi_home = home.path().join(".kimi-code");
-        std::fs::create_dir_all(&kimi_home).unwrap();
-        std::fs::write(
-            kimi_home.join("mcp.json"),
-            br#"{"mcpServers":{"paper":{"url":"https://paper.example/mcp"}}}"#,
-        )
-        .unwrap();
-
-        let (servers, supported) = list_runtime_local_mcp_servers("kimi").unwrap();
-        assert!(supported && servers.len() == 1 && servers[0].name == "paper",
-            "supported={supported} servers={servers:?}");
-    }
-
-    /// kimi merges <KIMI_CODE_HOME>/mcp.json with the ephemeral `mcpServers`
-    /// array the ACP backend sends in session/new, and a duplicate name spawns
-    /// the server twice. So kimi is inventory-only: the task-local merge must
-    /// leave the agent's config untouched.
-    #[test]
-    fn merge_runtime_and_agent_mcp_config_kimi_is_passthrough() {
-        let _env = ENV_LOCK.lock().unwrap();
-        let home = tempfile::tempdir().unwrap();
-        set_env("HOME", Some(home.path().to_string_lossy().as_ref()));
-        set_env("KIMI_CODE_HOME", None);
-        let kimi_home = home.path().join(".kimi-code");
-        std::fs::create_dir_all(&kimi_home).unwrap();
-        std::fs::write(
-            kimi_home.join("mcp.json"),
-            br#"{"mcpServers":{"paper":{"url":"https://paper.example/mcp"}}}"#,
-        )
-        .unwrap();
-
-        let agent_config =
-            br#"{"mcpServers":{"agent-only":{"command":"agent-cmd"}}}"#.as_slice();
-        let merged = merge_runtime_and_agent_mcp_config("kimi", agent_config).unwrap();
-        assert_eq!(merged, agent_config, "kimi merge must be a passthrough");
     }
 }

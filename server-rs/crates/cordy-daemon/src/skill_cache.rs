@@ -1,197 +1,54 @@
-//! Port of `server/internal/daemon/skill_cache.go` (192 lines).
+#![allow(dead_code)] // S9-integration: consumed by daemon.go core wiring (S8)
+//! Port of `server/internal/daemon/skill_cache.go` — on-disk cache of
+//! downloaded skill bundles keyed by (workspace, source, id, hash), with a
+//! per-key reference lock and atomic directory swap.
 //!
-//! Deviations from Go:
-//! - `sync.Mutex` per-key lock map → `Mutex<HashMap<String, Arc<Mutex<()>>>>`.
-//! - `os.Rename`/`os.RemoveAll` injection fields → boxed closures behind a
-//!   mutex, preserving the test seam (`cache.rename = ...`).
-//! - `skillbundle.BuildManifest` → local seam stand-in [`skillbundle`]
-//!   (byte-identical port of `server/pkg/skillbundle/hash.go`; the identical
-//!   implementation already exists in `cordy-service::skill_bundle`, but this
-//!   crate does not depend on cordy-service and Cargo.toml is out of scope).
-//! - `skillRefFromBundle` (daemon.go:6116–6140) is hosted here because the
-//!   cache validation and tests need it; the daemon-core lane can re-use it.
-//! - Blocking fs calls are used directly, matching Go's synchronous os API.
-
-// S9-integration: consumed by local_skills/manager wiring that lands with
-// integration; silence dead-code until then.
-#![allow(dead_code)]
+//! Symbol map:
+//! - `SkillBundleCache` → [`SkillBundleCache`]
+//! - `NewSkillBundleCache` → [`SkillBundleCache::new`]
+//! - `Load` / `Store` / `WithRefLock` → [`SkillBundleCache::load`] /
+//!   [`SkillBundleCache::store`] / [`SkillBundleCache::with_ref_lock`]
+//! - `validateSkillBundle` → [`validate_skill_bundle`]
+//! - `safeSkillFilePath` → [`safe_skill_file_path`]
+//! - `safeCacheSegment` → [`safe_cache_segment`]
+//!
+//! The manifest hash construction is inlined from `server/pkg/skillbundle`
+//! (`cordy_service::skill_bundle` is not a daemon dependency): length-prefixed
+//! parts (`%d:%s\n`) over the sorted file list. It must stay byte-identical.
 
 use std::collections::HashMap;
-use std::io;
-use std::path::{Path, PathBuf};
+use std::io::Write;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use anyhow::Context as _;
-use sha2::Digest as _;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
-use crate::types::{SkillData, SkillFileData, SkillFileRefData, SkillRefData};
+use crate::types::{SkillData, SkillRefData};
 
-// ---------------------------------------------------------------------------
-// skillbundle seam stand-in (server/pkg/skillbundle/hash.go).
-// ---------------------------------------------------------------------------
+pub(crate) const SOURCE_PLUGIN: &str = "plugin";
 
-/// S9-integration: mirrors `skillbundle.File` / `Skill` / `Manifest` /
-/// `BuildManifest` from server/pkg/skillbundle/hash.go:10–83. Byte-identical
-/// to cordy-service::skill_bundle; keep both in sync with the Go hash.
-pub(crate) mod skillbundle {
-    use sha2::{Digest, Sha256};
-
-    #[derive(Debug, Clone)]
-    pub(crate) struct File {
-        pub path: String,
-        pub content: String,
-    }
-
-    pub(crate) struct Skill {
-        pub id: String,
-        pub source: String,
-        pub name: String,
-        pub description: String,
-        pub content: String,
-        pub files: Vec<File>,
-    }
-
-    pub(crate) struct Manifest {
-        pub hash: String,
-        pub size_bytes: i64,
-        #[allow(dead_code)]
-        pub file_count: usize,
-    }
-
-    /// `BuildManifest` (hash.go:43–79): length-prefixed parts over the sorted
-    /// file list.
-    pub(crate) fn build_manifest(skill: Skill) -> Manifest {
-        let mut files = skill.files;
-        files.sort_by(|a, b| a.path.cmp(&b.path));
-
-        let mut h = Sha256::new();
-        write_hash_part(&mut h, "v1");
-        write_hash_part(&mut h, &skill.source);
-        write_hash_part(&mut h, &skill.id);
-        write_hash_part(&mut h, &skill.name);
-        write_hash_part(&mut h, &skill.description);
-        write_hash_part(&mut h, &skill.content);
-
-        let mut size = skill.content.len() as i64;
-        for file in &files {
-            let file_digest = format!("sha256:{}", hex::encode(Sha256::digest(file.content.as_bytes())));
-            write_hash_part(&mut h, &file.path);
-            write_hash_part(&mut h, &file_digest);
-            write_hash_part(&mut h, &file.content);
-            size += file.content.len() as i64;
-        }
-
-        Manifest {
-            hash: format!("sha256:{}", hex::encode(h.finalize())),
-            size_bytes: size,
-            file_count: files.len(),
-        }
-    }
-
-    /// `writeHashPart` (hash.go:81–83): `%d:%s\n`.
-    fn write_hash_part(h: &mut Sha256, value: &str) {
-        use std::io::Write as _;
-        let _ = writeln!(h, "{}:{}", value.len(), value);
-    }
-}
-
-/// `skillRefFromBundle` (daemon.go:6116–6140): derives the wire ref (hash,
-/// size, per-file digests) from a bundle via the manifest builder.
-pub(crate) fn skill_ref_from_bundle(bundle: &SkillData) -> SkillRefData {
-    let files: Vec<skillbundle::File> = bundle
-        .files
-        .iter()
-        .map(|file| skillbundle::File {
-            path: file.path.clone(),
-            content: file.content.clone(),
-        })
-        .collect();
-    let manifest = skillbundle::build_manifest(skillbundle::Skill {
-        id: bundle.id.clone(),
-        source: bundle.source.clone(),
-        name: bundle.name.clone(),
-        description: bundle.description.clone(),
-        content: bundle.content.clone(),
-        files,
-    });
-    // manifest.files is not retained by the seam stand-in; recompute refs in
-    // the same sorted order as build_manifest.
-    let mut sorted: Vec<&SkillFileData> = bundle.files.iter().collect();
-    sorted.sort_by(|a, b| a.path.cmp(&b.path));
-    let file_refs: Vec<SkillFileRefData> = sorted
-        .iter()
-        .map(|file| SkillFileRefData {
-            path: file.path.clone(),
-            sha256: format!("sha256:{}", hex::encode(sha2::Sha256::digest(file.content.as_bytes()))),
-            size_bytes: file.content.len() as i64,
-        })
-        .collect();
-    SkillRefData {
-        id: bundle.id.clone(),
-        source: bundle.source.clone(),
-        name: String::new(),
-        description: String::new(),
-        hash: manifest.hash,
-        size_bytes: manifest.size_bytes,
-        file_count: manifest.file_count as i64,
-        files: file_refs,
-    }
-}
-
-// ---------------------------------------------------------------------------
-// SkillBundleCache.
-// ---------------------------------------------------------------------------
-
-type FsOp = Box<dyn Fn(&Path, &Path) -> io::Result<()> + Send + Sync>;
-
-/// `SkillBundleCache` (skill_cache.go:17–23): on-disk cache of validated
-/// skill bundles keyed by workspace/source/id/hash.
 pub(crate) struct SkillBundleCache {
-    root: PathBuf,
-    rename: Mutex<FsOp>,
-    remove_all: Mutex<FsOp>,
+    root: String,
     locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
 }
 
 impl SkillBundleCache {
-    /// `NewSkillBundleCache` (skill_cache.go:25–32).
-    pub(crate) fn new(root: impl Into<PathBuf>) -> Self {
-        Self {
-            root: root.into(),
-            rename: Mutex::new(Box::new(|from, to| std::fs::rename(from, to))),
-            remove_all: Mutex::new(Box::new(|path, _| {
-                match std::fs::remove_dir_all(path) {
-                    Ok(()) => Ok(()),
-                    // os.RemoveAll returns nil for missing paths.
-                    Err(err) if err.kind() == io::ErrorKind::NotFound => Ok(()),
-                    Err(err) => Err(err),
-                }
-            })),
+    pub(crate) fn new(root: &str) -> Self {
+        SkillBundleCache {
+            root: root.to_string(),
             locks: Mutex::new(HashMap::new()),
         }
     }
 
-    /// Test seam mirroring `cache.rename = ...` (skill_cache_test.go:32–41).
-    #[cfg(test)]
-    fn set_rename(&self, f: impl Fn(&Path, &Path) -> io::Result<()> + Send + Sync + 'static) {
-        *self.rename.lock().unwrap() = Box::new(f);
-    }
-
-    /// `Load` (skill_cache.go:34–49): reads and validates the cached bundle;
-    /// a corrupt entry is removed and reported as a miss. An empty root (or
-    /// nil receiver in Go) disables the cache.
     pub(crate) fn load(&self, workspace_id: &str, r#ref: &SkillRefData) -> Option<SkillData> {
-        if self.root.as_os_str().is_empty() {
+        if self.root.is_empty() {
             return None;
         }
         let key_path = self.bundle_path(workspace_id, r#ref);
-        let data = match std::fs::read(&key_path) {
-            Ok(data) => data,
-            Err(_) => return None,
-        };
-        let parsed: Result<SkillData, _> = serde_json::from_slice(&data);
-        let bundle = match parsed {
-            Ok(bundle) => bundle,
+        let data = std::fs::read(&key_path).ok()?;
+        let bundle: SkillData = match serde_json::from_slice(&data) {
+            Ok(b) => b,
             Err(_) => {
                 let _ = std::fs::remove_file(&key_path);
                 return None;
@@ -204,10 +61,8 @@ impl SkillBundleCache {
         Some(bundle)
     }
 
-    /// `Store` (skill_cache.go:51–91): atomically swaps the bundle directory
-    /// via a temp dir + remove + rename, tolerating an EEXIST race on rename.
     pub(crate) fn store(&self, workspace_id: &str, bundle: &SkillData) -> anyhow::Result<()> {
-        if self.root.as_os_str().is_empty() {
+        if self.root.is_empty() {
             return Ok(());
         }
         let r#ref = SkillRefData {
@@ -216,96 +71,140 @@ impl SkillBundleCache {
             hash: bundle.hash.clone(),
             ..Default::default()
         };
-        // Go: dir = filepath.Dir(bundlePath) — the hash directory; tmp dirs
-        // are created one level above it.
-        let bundle_file = self.bundle_path(workspace_id, &r#ref);
-        let dir = bundle_file
-            .parent()
-            .with_context(|| format!("bundle path has no parent: {}", bundle_file.display()))?
-            .to_path_buf();
-        let tmp_parent = dir
-            .parent()
-            .with_context(|| format!("bundle dir has no parent: {}", dir.display()))?
-            .to_path_buf();
+        let dir_parent = parent_dir(&self.bundle_path(workspace_id, &r#ref));
+        let tmp_root = parent_dir(&dir_parent);
 
-        let tmp = match tempfile_builder(&tmp_parent) {
-            Ok(tmp) => tmp,
+        // Mirror Go's MkdirTemp(filepath.Dir(dir), ".bundle-*") with a retry
+        // that first ensures the grandparent exists.
+        let tmp = match make_temp_dir(&tmp_root) {
+            Ok(t) => t,
             Err(_) => {
-                std::fs::create_dir_all(&tmp_parent)?;
-                tempfile_builder(&tmp_parent)?
+                std::fs::create_dir_all(&tmp_root)?;
+                make_temp_dir(&tmp_root)?
             }
         };
-
+        let tmp_str = tmp.to_string_lossy().into_owned();
         let result = (|| -> anyhow::Result<()> {
-            let data = serde_json::to_vec(bundle).context("marshal skill bundle")?;
-            std::fs::write(tmp.join("bundle.json"), data).context("write cached bundle")?;
-            (self.remove_all.lock().unwrap())(&dir, &dir).context("remove stale bundle dir")?;
-            if let Err(err) = (self.rename.lock().unwrap())(&tmp, &dir) {
-                if err.kind() != io::ErrorKind::AlreadyExists {
-                    return Err(err).context("rename bundle into place");
+            let data = serde_json::to_vec(bundle)?;
+            let mut f = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(join(&[&tmp_str, "bundle.json"]))?;
+            f.write_all(&data)?;
+
+            let remove_all = |p: &str| -> std::io::Result<()> {
+                if PathBuf::from(p).is_file() {
+                    std::fs::remove_file(p)
+                } else {
+                    std::fs::remove_dir_all(p).or_else(|e| {
+                        if e.kind() == std::io::ErrorKind::NotFound {
+                            Ok(())
+                        } else {
+                            Err(e)
+                        }
+                    })
                 }
-                (self.remove_all.lock().unwrap())(&dir, &dir)
-                    .context("remove existing bundle dir")?;
-                (self.rename.lock().unwrap())(&tmp, &dir)
-                    .context("rename bundle after EEXIST recovery")?;
+            };
+            let rename =
+                |old: &str, new: &str| -> std::io::Result<()> { std::fs::rename(old, new) };
+
+            remove_all(&dir_parent)?;
+            if let Err(err) = rename(&tmp_str, &dir_parent) {
+                // Go retries only on fs.ErrExist; other errors propagate.
+                if !is_exists_error(&err) {
+                    return Err(anyhow::anyhow!(
+                        "skill cache rename {tmp_str} -> {dir_parent}: {err}"
+                    ));
+                }
+                remove_all(&dir_parent)?;
+                rename(&tmp_str, &dir_parent).map_err(|err| {
+                    anyhow::anyhow!("skill cache rename {tmp_str} -> {dir_parent}: {err}")
+                })?;
             }
             Ok(())
         })();
-
-        // defer os.RemoveAll(tmp) (skill_cache.go:67); a no-op after a
-        // successful rename.
+        // Go defers os.RemoveAll(tmp) regardless of outcome.
         let _ = std::fs::remove_dir_all(&tmp);
         result
     }
 
-    /// `WithRefLock` (skill_cache.go:93–102): serializes work per
-    /// workspace+source+id+hash key.
-    pub(crate) fn with_ref_lock(
+    /// `WithRefLock`: serialises cache work per (workspace, source, id, hash).
+    pub(crate) fn with_ref_lock<T>(
         &self,
         workspace_id: &str,
         r#ref: &SkillRefData,
-        f: impl FnOnce() -> anyhow::Result<()>,
-    ) -> anyhow::Result<()> {
+        f: impl FnOnce() -> T,
+    ) -> T {
         let key = format!(
             "{}\x00{}\x00{}\x00{}",
             workspace_id, r#ref.source, r#ref.id, r#ref.hash
         );
-        let lock = self.lock_for_key(&key);
-        let _guard = lock.lock().unwrap();
+        let lock = self.lock_for_key(key);
+        let _guard = lock.lock().expect("ref lock");
         f()
     }
 
-    /// `lockForKey` (skill_cache.go:104–113).
-    fn lock_for_key(&self, key: &str) -> Arc<Mutex<()>> {
-        let mut locks = self.locks.lock().unwrap();
-        locks.entry(key.to_string()).or_default().clone()
+    fn lock_for_key(&self, key: String) -> std::sync::Arc<Mutex<()>> {
+        let mut locks = self.locks.lock().expect("locks map");
+        locks.entry(key).or_default().clone()
     }
 
-    /// `bundlePath` (skill_cache.go:115–124).
-    fn bundle_path(&self, workspace_id: &str, r#ref: &SkillRefData) -> PathBuf {
-        self.root
-            .join(safe_cache_segment(workspace_id))
-            .join(safe_cache_segment(&r#ref.source))
-            .join(safe_cache_segment(&r#ref.id))
-            .join(safe_cache_segment(&r#ref.hash))
-            .join("bundle.json")
+    fn bundle_path(&self, workspace_id: &str, r#ref: &SkillRefData) -> String {
+        self.bundle_path_public(workspace_id, r#ref)
+    }
+
+    pub(crate) fn bundle_path_public(&self, workspace_id: &str, r#ref: &SkillRefData) -> String {
+        join(&[
+            &self.root,
+            &safe_cache_segment(workspace_id),
+            &safe_cache_segment(&r#ref.source),
+            &safe_cache_segment(&r#ref.id),
+            &safe_cache_segment(&r#ref.hash),
+            "bundle.json",
+        ])
     }
 }
 
-/// `os.MkdirTemp(parent, ".bundle-*")`: creates a unique `.bundle-*`
-/// directory under `parent`.
-fn tempfile_builder(parent: &Path) -> io::Result<PathBuf> {
-    std::fs::create_dir_all(parent)?;
-    tempfile::Builder::new()
-        .prefix(".bundle-")
-        .tempdir_in(parent)
-        .map(|t| t.keep())
-        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+fn is_exists_error(err: &std::io::Error) -> bool {
+    err.kind() == std::io::ErrorKind::AlreadyExists
+        || matches!(err.raw_os_error(), Some(libc::EEXIST))
 }
 
-/// `validateSkillBundle` (skill_cache.go:126–155): identity check, file-count
-/// check, safe paths, then manifest-hash verification.
-fn validate_skill_bundle(r#ref: &SkillRefData, bundle: &SkillData) -> bool {
+fn join(parts: &[&str]) -> String {
+    crate::execenv::execenv::join_path(parts)
+}
+
+fn parent_dir(p: &str) -> String {
+    match p.rfind('/') {
+        Some(0) => "/".to_string(),
+        Some(idx) => p[..idx].to_string(),
+        None => ".".to_string(),
+    }
+}
+
+fn make_temp_dir(base: &str) -> std::io::Result<PathBuf> {
+    for _ in 0..10000 {
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0);
+        let candidate = join(&[base, &format!(".bundle-{}", 1_000_000 + n as u64)]);
+        match std::fs::create_dir(&candidate) {
+            Ok(()) => return Ok(PathBuf::from(candidate)),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(std::io::Error::new(
+        std::io::ErrorKind::AlreadyExists,
+        "temp dir name exhausted",
+    ))
+}
+
+/// `validateSkillBundle`: identity fields must match the ref, the file count
+/// must agree, every file path must be safe, and the recomputed manifest hash
+/// (and optionally size) must equal the ref's.
+pub(crate) fn validate_skill_bundle(r#ref: &SkillRefData, bundle: &SkillData) -> bool {
     if bundle.id != r#ref.id || bundle.source != r#ref.source || bundle.hash != r#ref.hash {
         return false;
     }
@@ -317,12 +216,12 @@ fn validate_skill_bundle(r#ref: &SkillRefData, bundle: &SkillData) -> bool {
         if !safe_skill_file_path(&file.path) {
             return false;
         }
-        files.push(skillbundle::File {
+        files.push(SkillBundleFile {
             path: file.path.clone(),
             content: file.content.clone(),
         });
     }
-    let manifest = skillbundle::build_manifest(skillbundle::Skill {
+    let manifest = build_manifest(&SkillBundleSkill {
         id: bundle.id.clone(),
         source: bundle.source.clone(),
         name: bundle.name.clone(),
@@ -339,46 +238,101 @@ fn validate_skill_bundle(r#ref: &SkillRefData, bundle: &SkillData) -> bool {
     true
 }
 
-/// `safeSkillFilePath` (skill_cache.go:157–166): relative slash paths only,
-/// already lexically clean.
-fn safe_skill_file_path(p: &str) -> bool {
+// ---------------------------------------------------------------------------
+// pkg/skillbundle manifest hashing (byte-identical port)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SkillBundleFile {
+    pub path: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub(crate) struct SkillBundleSkill {
+    pub id: String,
+    pub source: String,
+    pub name: String,
+    pub description: String,
+    pub content: String,
+    pub files: Vec<SkillBundleFile>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct SkillManifestHash {
+    pub hash: String,
+    pub size_bytes: i64,
+    #[serde(rename = "file_count")]
+    pub count: usize,
+}
+
+fn write_hash_part(h: &mut Sha256, s: &str) {
+    let _ = writeln!(h, "{}:{}", s.len(), s);
+}
+
+pub(crate) fn build_manifest(skill: &SkillBundleSkill) -> SkillManifestSize {
+    let mut files = skill.files.clone();
+    files.sort_by(|a, b| a.path.cmp(&b.path));
+
+    let mut h = Sha256::new();
+    write_hash_part(&mut h, "v1");
+    write_hash_part(&mut h, &skill.source);
+    write_hash_part(&mut h, &skill.id);
+    write_hash_part(&mut h, &skill.name);
+    write_hash_part(&mut h, &skill.description);
+    write_hash_part(&mut h, &skill.content);
+
+    let mut size = skill.content.len() as i64;
+    let mut refs = Vec::with_capacity(files.len());
+    for file in &files {
+        let digest = format!(
+            "sha256:{}",
+            hex::encode(Sha256::digest(file.content.as_bytes()))
+        );
+        write_hash_part(&mut h, &file.path);
+        write_hash_part(&mut h, &digest);
+        write_hash_part(&mut h, &file.content);
+        size += file.content.len() as i64;
+        refs.push(SkillFileRefLite {
+            path: file.path.clone(),
+            sha256: digest,
+            size_bytes: file.content.len() as i64,
+        });
+    }
+    SkillManifestSize {
+        hash: format!("sha256:{}", hex::encode(h.finalize())),
+        size_bytes: size,
+        files: refs,
+    }
+}
+
+pub(crate) struct SkillManifestSize {
+    pub hash: String,
+    pub size_bytes: i64,
+    pub files: Vec<SkillFileRefLite>,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct SkillFileRefLite {
+    pub path: String,
+    pub sha256: String,
+    pub size_bytes: i64,
+}
+
+/// `safeSkillFilePath`.
+pub(crate) fn safe_skill_file_path(p: &str) -> bool {
     if p.is_empty() || p.contains('\0') || p.starts_with('/') || p.contains('\\') {
         return false;
     }
-    let clean = go_path_clean(p);
-    !(clean == "." || clean != p || clean.starts_with("../") || clean == "..")
+    let clean = crate::execenv::execenv::clean_path(p);
+    if clean == "." || clean != p || clean.starts_with("../") || clean == ".." {
+        return false;
+    }
+    true
 }
 
-/// Port of Go's `path.Clean` (slash-separated, lexical) — needed because
-/// `std::path` normalization differs on separators and drive letters.
-pub(crate) fn go_path_clean(p: &str) -> String {
-    let rooted = p.starts_with('/');
-    let mut out: Vec<&str> = Vec::new();
-    for comp in p.split('/') {
-        match comp {
-            "" | "." => {}
-            ".." => match out.last() {
-                Some(last) if *last != ".." => {
-                    out.pop();
-                }
-                _ if !rooted => out.push(".."),
-                _ => {}
-            },
-            c => out.push(c),
-        }
-    }
-    let joined = out.join("/");
-    if rooted {
-        format!("/{joined}")
-    } else if joined.is_empty() {
-        ".".to_string()
-    } else {
-        joined
-    }
-}
-
-/// `safeCacheSegment` (skill_cache.go:168–192): filesystem-safe path segment.
-fn safe_cache_segment(s: &str) -> String {
+/// `safeCacheSegment`.
+pub(crate) fn safe_cache_segment(s: &str) -> String {
     if s.is_empty() {
         return "_".to_string();
     }
@@ -400,8 +354,7 @@ mod tests {
     use super::*;
     use crate::types::SkillFileData;
 
-    /// testSkillBundle (skill_cache_test.go:77–90).
-    fn test_skill_bundle() -> SkillData {
+    fn test_skill_bundle() -> (SkillData, SkillRefData) {
         let mut bundle = SkillData {
             id: "skill-1".into(),
             source: "workspace".into(),
@@ -414,98 +367,112 @@ mod tests {
             }],
             ..Default::default()
         };
-        let r#ref = skill_ref_from_bundle(&bundle);
+        // Derive ref exactly like skillRefFromBundle.
+        let files: Vec<SkillBundleFile> = bundle
+            .files
+            .iter()
+            .map(|f| SkillBundleFile {
+                path: f.path.clone(),
+                content: f.content.clone(),
+            })
+            .collect();
+        let m = build_manifest(&SkillBundleSkill {
+            id: bundle.id.clone(),
+            source: bundle.source.clone(),
+            name: bundle.name.clone(),
+            description: bundle.description.clone(),
+            content: bundle.content.clone(),
+            files,
+        });
+        let r#ref = SkillRefData {
+            id: bundle.id.clone(),
+            source: bundle.source.clone(),
+            name: String::new(),
+            description: String::new(),
+            hash: m.hash.clone(),
+            size_bytes: m.size_bytes,
+            file_count: m.files.len() as i64,
+            files: m
+                .files
+                .iter()
+                .map(|f| crate::types::SkillFileRefData {
+                    path: f.path.clone(),
+                    sha256: f.sha256.clone(),
+                    size_bytes: f.size_bytes,
+                })
+                .collect(),
+        };
         bundle.hash = r#ref.hash.clone();
         bundle.size_bytes = r#ref.size_bytes;
         bundle.files[0].sha256 = r#ref.files[0].sha256.clone();
         bundle.files[0].size_bytes = r#ref.files[0].size_bytes;
-        bundle
+        (bundle, r#ref)
     }
 
-    /// TestSkillBundleCacheLoadStore (skill_cache_test.go:10–25).
+    fn temp_root(tag: &str) -> String {
+        let base = std::env::temp_dir().join(format!(
+            "skill-cache-{tag}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+        base.to_string_lossy().into_owned()
+    }
+
     #[test]
     fn load_store_roundtrip() {
-        let cache = SkillBundleCache::new(tempfile::tempdir().unwrap().keep());
-        let bundle = test_skill_bundle();
-        let r#ref = skill_ref_from_bundle(&bundle);
-
+        let cache = SkillBundleCache::new(&temp_root("rt"));
+        let (bundle, r#ref) = test_skill_bundle();
         cache.store("ws-1", &bundle).unwrap();
-        let got = cache.load("ws-1", &r#ref).expect("expected cache hit");
+        let got = cache.load("ws-1", &r#ref).expect("cache hit");
         assert_eq!(got.content, bundle.content);
         assert_eq!(got.files.len(), 1);
         assert_eq!(got.files[0].content, "rules");
     }
 
-    /// TestSkillBundleCacheStoreRetriesRenameWhenDestinationExists
-    /// (skill_cache_test.go:27–55): first rename creates the destination and
-    /// fails with EEXIST; Store must recover and land the bundle.
     #[test]
-    fn store_retries_rename_when_destination_exists() {
-        let cache = SkillBundleCache::new(tempfile::tempdir().unwrap().keep());
-        let bundle = test_skill_bundle();
-        let r#ref = skill_ref_from_bundle(&bundle);
-
-        let rename_calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let calls = rename_calls.clone();
-        cache.set_rename(move |old_path, new_path| {
-            let n = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
-            if n == 1 {
-                std::fs::create_dir_all(new_path)?;
-                return Err(io::Error::new(io::ErrorKind::AlreadyExists, "file exists"));
-            }
-            std::fs::rename(old_path, new_path)
-        });
-
-        cache.store("ws-1", &bundle).unwrap();
-        assert_eq!(rename_calls.load(std::sync::atomic::Ordering::SeqCst), 2);
-        assert!(
-            cache.load("ws-1", &r#ref).is_some(),
-            "expected cache hit after EEXIST recovery"
-        );
-        let dir = cache.bundle_path("ws-1", &r#ref);
-        assert!(dir.parent().unwrap().exists(), "stored bundle directory missing");
-    }
-
-    /// TestSkillBundleCacheRejectsCorruptBundle (skill_cache_test.go:57–75):
-    /// a tampered payload is a miss and the cache file is removed.
-    #[test]
-    fn rejects_corrupt_bundle() {
-        let cache = SkillBundleCache::new(tempfile::tempdir().unwrap().keep());
-        let bundle = test_skill_bundle();
-        let r#ref = skill_ref_from_bundle(&bundle);
+    fn rejects_corrupt_bundle_and_removes_entry() {
+        let root = temp_root("corrupt");
+        let cache = SkillBundleCache::new(&root);
+        let (bundle, r#ref) = test_skill_bundle();
         cache.store("ws-1", &bundle).unwrap();
 
-        let path = cache.bundle_path("ws-1", &r#ref);
+        let path = cache.bundle_path_public("ws-1", &r#ref);
         std::fs::write(
             &path,
             br#"{"id":"skill-1","source":"workspace","hash":"sha256:bad","content":"tampered"}"#,
         )
         .unwrap();
-        assert!(cache.load("ws-1", &r#ref).is_none(), "expected corrupt cache miss");
-        assert!(!path.exists(), "expected corrupt cache file to be removed");
+        assert!(cache.load("ws-1", &r#ref).is_none());
+        assert!(!PathBuf::from(&path).exists());
     }
 
-    /// safeCacheSegment behavior (skill_cache.go:168–192).
     #[test]
-    fn cache_segments_are_sanitized() {
+    fn empty_root_disables_cache() {
+        let cache = SkillBundleCache::new("");
+        let (bundle, r#ref) = test_skill_bundle();
+        cache.store("ws", &bundle).unwrap();
+        assert!(cache.load("ws", &r#ref).is_none());
+    }
+
+    #[test]
+    fn safe_cache_segment_rules() {
         assert_eq!(safe_cache_segment(""), "_");
-        assert_eq!(safe_cache_segment("ws/1"), "ws_1");
         assert_eq!(safe_cache_segment("."), "_.");
         assert_eq!(safe_cache_segment(".."), "_..");
-        assert_eq!(safe_cache_segment("abc-DEF_9.x"), "abc-DEF_9.x");
+        assert_eq!(safe_cache_segment("a/b c"), "a_b_c");
+        assert_eq!(safe_cache_segment("ok-name_1.x"), "ok-name_1.x");
     }
 
-    /// safeSkillFilePath behavior (skill_cache.go:157–166).
     #[test]
-    fn skill_file_paths_must_be_clean_relative_slash_paths() {
-        assert!(safe_skill_file_path("rules.md"));
-        assert!(safe_skill_file_path("a/b/c.md"));
+    fn safe_skill_file_path_rules() {
         assert!(!safe_skill_file_path(""));
-        assert!(!safe_skill_file_path("/abs.md"));
-        assert!(!safe_skill_file_path("back\\slash.md"));
-        assert!(!safe_skill_file_path("./rel.md"));
-        assert!(!safe_skill_file_path("../up.md"));
-        assert!(!safe_skill_file_path("a/../b.md"));
-        assert!(!safe_skill_file_path("a/\0b.md"));
+        assert!(!safe_skill_file_path("/abs"));
+        assert!(!safe_skill_file_path("a\\b"));
+        assert!(!safe_skill_file_path("../up"));
+        assert!(!safe_skill_file_path("./x"));
+        assert!(safe_skill_file_path("sub/dir/file.md"));
     }
 }

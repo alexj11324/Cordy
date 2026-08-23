@@ -1150,7 +1150,7 @@ pub async fn upsert_agent_runtime(
     status: &str,
     device_info: &str,
     metadata: &serde_json::Value,
-    owner_id: Uuid,
+    owner_id: Option<Uuid>,
 ) -> anyhow::Result<Option<UpsertAgentRuntimeRow>> {
     let row = sqlx::query(
         r#"INSERT INTO agent_runtime (
@@ -1243,7 +1243,7 @@ pub async fn upsert_agent_runtime_with_profile(
     status: &str,
     device_info: &str,
     metadata: &serde_json::Value,
-    owner_id: Uuid,
+    owner_id: Option<Uuid>,
     profile_id: Uuid,
 ) -> anyhow::Result<Option<UpsertAgentRuntimeWithProfileRow>> {
     let row = sqlx::query(
