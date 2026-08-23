@@ -3568,6 +3568,7 @@ func TestAttachPullRequestToIssue_WebhookIdempotentAndBackfills(t *testing.T) {
 	if !row.MergeableState.Valid || row.MergeableState.String != "clean" {
 		t.Errorf("mergeable_state = %+v, want clean", row.MergeableState)
 	}
+	webhookRow := row
 
 	rec2 := attachPRViaAPI(t, created.ID,
 		fmt.Sprintf("https://github.com/acme/%s/pull/%d", repo, number), nil)
@@ -3582,17 +3583,46 @@ func TestAttachPullRequestToIssue_WebhookIdempotentAndBackfills(t *testing.T) {
 	if linkCount != 1 {
 		t.Fatalf("re-attach duplicated the link: %d rows, want 1", linkCount)
 	}
-	preserved, err := testHandler.Queries.GetGitHubPullRequest(ctx, db.GetGitHubPullRequestParams{
+	// The App fetch above deliberately fails, so attach only has URL identity.
+	// It must not downgrade metadata already mirrored by the webhook.
+	afterAttach, err := testHandler.Queries.GetGitHubPullRequest(ctx, db.GetGitHubPullRequestParams{
 		WorkspaceID: parseUUID(testWorkspaceID), RepoOwner: "acme", RepoName: repo, PrNumber: number,
 	})
 	if err != nil {
-		t.Fatalf("load re-attached PR: %v", err)
+		t.Fatalf("GetGitHubPullRequest after re-attach: %v", err)
 	}
-	if !preserved.InstallationID.Valid || preserved.InstallationID.Int64 != installationID {
-		t.Errorf("re-attach must preserve installation_id, got %+v", preserved.InstallationID)
+	if afterAttach.InstallationID != webhookRow.InstallationID ||
+		afterAttach.Title != webhookRow.Title ||
+		afterAttach.State != webhookRow.State ||
+		afterAttach.HtmlUrl != webhookRow.HtmlUrl ||
+		afterAttach.Branch != webhookRow.Branch ||
+		afterAttach.AuthorLogin != webhookRow.AuthorLogin ||
+		afterAttach.PrCreatedAt != webhookRow.PrCreatedAt ||
+		afterAttach.PrUpdatedAt != webhookRow.PrUpdatedAt ||
+		afterAttach.HeadSha != webhookRow.HeadSha ||
+		afterAttach.MergeableState != webhookRow.MergeableState {
+		t.Fatalf("identity-only re-attach downgraded webhook metadata:\n before=%+v\n after=%+v", webhookRow, afterAttach)
 	}
-	if !strings.HasPrefix(preserved.Title, "Fix ") || preserved.HeadSha != "headabc" {
-		t.Errorf("re-attach downgraded webhook metadata: title=%q head=%q", preserved.Title, preserved.HeadSha)
+
+	var linkedByType pgtype.Text
+	var linkedByID pgtype.UUID
+	var closeIntent, referenceOnly bool
+	if err := testPool.QueryRow(ctx, `
+		SELECT linked_by_type, linked_by_id, close_intent, reference_only
+		FROM issue_pull_request
+		WHERE issue_id = $1 AND pull_request_id = $2`,
+		parseUUID(created.ID), afterAttach.ID,
+	).Scan(&linkedByType, &linkedByID, &closeIntent, &referenceOnly); err != nil {
+		t.Fatalf("load link after re-attach: %v", err)
+	}
+	if !closeIntent {
+		t.Error("re-attach cleared close_intent established by the webhook")
+	}
+	if referenceOnly {
+		t.Error("explicit attach must promote a reference-only link to a working PR")
+	}
+	if !linkedByType.Valid || linkedByType.String == "system" || !linkedByID.Valid {
+		t.Errorf("explicit attach must replace system attribution, got type=%+v id=%+v", linkedByType, linkedByID)
 	}
 }
 
@@ -3689,14 +3719,25 @@ func TestAttachPullRequestToIssue_DoesNotTouchReferenceOnlyMentions(t *testing.T
 		t.Fatalf("bare body mention must stay hidden from the working-PR list, got %d rows", len(rows))
 	}
 
-	// Attaching a different PR explicitly keeps both rules side by side:
-	// the hidden mention stays hidden, the attached one shows up.
-	rec := attachPRViaAPI(t, created.ID, "https://github.com/acme/"+repo+"/pull/13", nil)
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("attach: expected 201, got %d", rec.Code)
+	// Explicitly attaching that same PR promotes the existing link to a visible
+	// working PR, but does not manufacture close intent.
+	rec := attachPRViaAPI(t, created.ID, "https://github.com/acme/"+repo+"/pull/12", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("attach existing webhook PR: expected 200, got %d", rec.Code)
 	}
 	prs := listIssuePRsViaAPI(t, created.ID)
-	if len(prs) != 1 || prs[0].Number != 13 {
-		t.Fatalf("list must show exactly the attached PR (#13), got %+v", prs)
+	if len(prs) != 1 || prs[0].Number != 12 {
+		t.Fatalf("list must show exactly the explicitly attached PR (#12), got %+v", prs)
+	}
+	var referenceOnly, closeIntent bool
+	if err := testPool.QueryRow(ctx, `
+		SELECT reference_only, close_intent
+		FROM issue_pull_request
+		WHERE issue_id = $1`, parseUUID(created.ID),
+	).Scan(&referenceOnly, &closeIntent); err != nil {
+		t.Fatalf("load promoted link: %v", err)
+	}
+	if referenceOnly || closeIntent {
+		t.Errorf("promoted link = reference_only=%v close_intent=%v, want false/false", referenceOnly, closeIntent)
 	}
 }

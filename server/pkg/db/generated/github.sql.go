@@ -11,6 +11,127 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const attachGitHubPullRequest = `-- name: AttachGitHubPullRequest :one
+INSERT INTO github_pull_request (
+    workspace_id, installation_id, repo_owner, repo_name, pr_number,
+    title, state, html_url, branch, author_login, author_avatar_url,
+    merged_at, closed_at, pr_created_at, pr_updated_at,
+    head_sha, mergeable_state,
+    additions, deletions, changed_files
+) VALUES (
+    $1, $2, $3, $4, $5,
+    $6, $7, $8, $15, $16, $17,
+    $18, $19, $9, $10,
+    $11, NULL,
+    $12, $13, $14
+)
+ON CONFLICT (workspace_id, repo_owner, repo_name, pr_number) DO UPDATE SET
+    installation_id = CASE
+        WHEN $20::boolean THEN COALESCE(EXCLUDED.installation_id, github_pull_request.installation_id)
+        ELSE github_pull_request.installation_id
+    END,
+    title = CASE WHEN $20::boolean THEN EXCLUDED.title ELSE github_pull_request.title END,
+    state = CASE WHEN $20::boolean THEN EXCLUDED.state ELSE github_pull_request.state END,
+    html_url = CASE WHEN $20::boolean THEN EXCLUDED.html_url ELSE github_pull_request.html_url END,
+    branch = CASE WHEN $20::boolean THEN EXCLUDED.branch ELSE github_pull_request.branch END,
+    author_login = CASE WHEN $20::boolean THEN EXCLUDED.author_login ELSE github_pull_request.author_login END,
+    author_avatar_url = CASE WHEN $20::boolean THEN EXCLUDED.author_avatar_url ELSE github_pull_request.author_avatar_url END,
+    merged_at = CASE WHEN $20::boolean THEN EXCLUDED.merged_at ELSE github_pull_request.merged_at END,
+    closed_at = CASE WHEN $20::boolean THEN EXCLUDED.closed_at ELSE github_pull_request.closed_at END,
+    pr_updated_at = CASE WHEN $20::boolean THEN EXCLUDED.pr_updated_at ELSE github_pull_request.pr_updated_at END,
+    head_sha = CASE WHEN $20::boolean THEN EXCLUDED.head_sha ELSE github_pull_request.head_sha END,
+    additions = CASE WHEN $20::boolean THEN EXCLUDED.additions ELSE github_pull_request.additions END,
+    deletions = CASE WHEN $20::boolean THEN EXCLUDED.deletions ELSE github_pull_request.deletions END,
+    changed_files = CASE WHEN $20::boolean THEN EXCLUDED.changed_files ELSE github_pull_request.changed_files END,
+    updated_at = now()
+RETURNING id, workspace_id, installation_id, repo_owner, repo_name, pr_number, title, state, html_url, branch, author_login, author_avatar_url, merged_at, closed_at, pr_created_at, pr_updated_at, created_at, updated_at, head_sha, mergeable_state, additions, deletions, changed_files, api_mergeable, api_merge_state_status, checks_rollup_state, snapshot_head_sha, snapshot_fetched_at
+`
+
+type AttachGitHubPullRequestParams struct {
+	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
+	InstallationID   pgtype.Int8        `json:"installation_id"`
+	RepoOwner        string             `json:"repo_owner"`
+	RepoName         string             `json:"repo_name"`
+	PrNumber         int32              `json:"pr_number"`
+	Title            string             `json:"title"`
+	State            string             `json:"state"`
+	HtmlUrl          string             `json:"html_url"`
+	PrCreatedAt      pgtype.Timestamptz `json:"pr_created_at"`
+	PrUpdatedAt      pgtype.Timestamptz `json:"pr_updated_at"`
+	HeadSha          string             `json:"head_sha"`
+	Additions        int32              `json:"additions"`
+	Deletions        int32              `json:"deletions"`
+	ChangedFiles     int32              `json:"changed_files"`
+	Branch           pgtype.Text        `json:"branch"`
+	AuthorLogin      pgtype.Text        `json:"author_login"`
+	AuthorAvatarUrl  pgtype.Text        `json:"author_avatar_url"`
+	MergedAt         pgtype.Timestamptz `json:"merged_at"`
+	ClosedAt         pgtype.Timestamptz `json:"closed_at"`
+	MetadataComplete bool               `json:"metadata_complete"`
+}
+
+// Explicit attach may have either complete App-fetched metadata or only the
+// identity parsed from a URL. On conflict, the identity-only path must never
+// replace metadata already supplied by a webhook. Complete App metadata is
+// authoritative for the mirrored fields, while snapshot fields remain owned
+// by the snapshot pipeline.
+func (q *Queries) AttachGitHubPullRequest(ctx context.Context, arg AttachGitHubPullRequestParams) (GithubPullRequest, error) {
+	row := q.db.QueryRow(ctx, attachGitHubPullRequest,
+		arg.WorkspaceID,
+		arg.InstallationID,
+		arg.RepoOwner,
+		arg.RepoName,
+		arg.PrNumber,
+		arg.Title,
+		arg.State,
+		arg.HtmlUrl,
+		arg.PrCreatedAt,
+		arg.PrUpdatedAt,
+		arg.HeadSha,
+		arg.Additions,
+		arg.Deletions,
+		arg.ChangedFiles,
+		arg.Branch,
+		arg.AuthorLogin,
+		arg.AuthorAvatarUrl,
+		arg.MergedAt,
+		arg.ClosedAt,
+		arg.MetadataComplete,
+	)
+	var i GithubPullRequest
+	err := row.Scan(
+		&i.ID,
+		&i.WorkspaceID,
+		&i.InstallationID,
+		&i.RepoOwner,
+		&i.RepoName,
+		&i.PrNumber,
+		&i.Title,
+		&i.State,
+		&i.HtmlUrl,
+		&i.Branch,
+		&i.AuthorLogin,
+		&i.AuthorAvatarUrl,
+		&i.MergedAt,
+		&i.ClosedAt,
+		&i.PrCreatedAt,
+		&i.PrUpdatedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.HeadSha,
+		&i.MergeableState,
+		&i.Additions,
+		&i.Deletions,
+		&i.ChangedFiles,
+		&i.ApiMergeable,
+		&i.ApiMergeStateStatus,
+		&i.ChecksRollupState,
+		&i.SnapshotHeadSha,
+		&i.SnapshotFetchedAt,
+	)
+	return i, err
+}
+
 const createGitHubInstallation = `-- name: CreateGitHubInstallation :one
 INSERT INTO github_installation (
     workspace_id, installation_id, account_login, account_type, account_avatar_url, connected_by_id
@@ -292,24 +413,34 @@ INSERT INTO issue_pull_request (
     $1, $2, $4, $5, $3, $6
 )
 ON CONFLICT (issue_id, pull_request_id) DO UPDATE SET
+    linked_by_type = CASE
+        WHEN $7::boolean THEN issue_pull_request.linked_by_type
+        ELSE EXCLUDED.linked_by_type
+    END,
+    linked_by_id = CASE
+        WHEN $7::boolean THEN issue_pull_request.linked_by_id
+        ELSE EXCLUDED.linked_by_id
+    END,
     close_intent = CASE
-        WHEN $7 THEN issue_pull_request.close_intent
+        WHEN $8::boolean THEN issue_pull_request.close_intent
         ELSE EXCLUDED.close_intent
     END,
     reference_only = CASE
-        WHEN $7 THEN issue_pull_request.reference_only
+        WHEN $9::boolean THEN issue_pull_request.reference_only
         ELSE EXCLUDED.reference_only
     END
 `
 
 type LinkIssueToPullRequestParams struct {
-	IssueID             pgtype.UUID `json:"issue_id"`
-	PullRequestID       pgtype.UUID `json:"pull_request_id"`
-	CloseIntent         bool        `json:"close_intent"`
-	LinkedByType        pgtype.Text `json:"linked_by_type"`
-	LinkedByID          pgtype.UUID `json:"linked_by_id"`
-	ReferenceOnly       bool        `json:"reference_only"`
-	PreserveCloseIntent bool        `json:"preserve_close_intent"`
+	IssueID               pgtype.UUID `json:"issue_id"`
+	PullRequestID         pgtype.UUID `json:"pull_request_id"`
+	CloseIntent           bool        `json:"close_intent"`
+	LinkedByType          pgtype.Text `json:"linked_by_type"`
+	LinkedByID            pgtype.UUID `json:"linked_by_id"`
+	ReferenceOnly         bool        `json:"reference_only"`
+	PreserveLinkedBy      bool        `json:"preserve_linked_by"`
+	PreserveCloseIntent   bool        `json:"preserve_close_intent"`
+	PreserveReferenceOnly bool        `json:"preserve_reference_only"`
 }
 
 // =====================
@@ -322,9 +453,12 @@ type LinkIssueToPullRequestParams struct {
 // keeping the merge-time decision stable.
 //
 // reference_only marks a link justified ONLY by a bare body mention (no closing
-// keyword, no title/branch reference). It follows the same preserve gate as
-// close_intent so a post-terminal edit can't retroactively hide a PR that did
-// the work. The issue's PR list filters these out (see ListPullRequestsByIssue).
+// keyword, no title/branch reference). Webhooks preserve it alongside
+// close_intent after terminal events, while explicit attach can independently
+// promote the link to a visible working PR without changing close_intent.
+// Explicit attach also replaces webhook system attribution; later webhooks
+// preserve the human/agent attribution. The issue's PR list filters
+// reference-only links out (see ListPullRequestsByIssue).
 func (q *Queries) LinkIssueToPullRequest(ctx context.Context, arg LinkIssueToPullRequestParams) error {
 	_, err := q.db.Exec(ctx, linkIssueToPullRequest,
 		arg.IssueID,
@@ -333,7 +467,9 @@ func (q *Queries) LinkIssueToPullRequest(ctx context.Context, arg LinkIssueToPul
 		arg.LinkedByType,
 		arg.LinkedByID,
 		arg.ReferenceOnly,
+		arg.PreserveLinkedBy,
 		arg.PreserveCloseIntent,
+		arg.PreserveReferenceOnly,
 	)
 	return err
 }

@@ -53,7 +53,7 @@ records close intent; on merge, that close intent can move the linked issue to
 **Reference-only links (hidden from the PR list).** A key that appears **only**
 as a bare mention in the body — no closing keyword, and not in the title or
 branch — still writes a link row, but the row is flagged `reference_only` and
-**Excluded from `cordy issue pull-requests`** (and the issue's right-side PR
+**excluded from `cordy issue pull-requests`** (and the issue's right-side PR
 list in the UI). This keeps passing mentions like `Related MUL-2759` or
 `Follow up in MUL-2759` from surfacing an unrelated PR as if it were working on
 that issue. To make a PR show up for an issue, either attach it explicitly with
@@ -87,7 +87,8 @@ Still put a routable issue key in the PR title, body, or branch so the webhook's
 identifier scan can link (and re-link) the PR as a fallback — but that scan is no
 longer the only way the sidebar lights up. If the PR should close the issue on
 merge, keep putting the key immediately after a closing keyword in the title or
-body; attaching never records close intent:
+body; attaching never creates close intent and preserves any intent the webhook
+already recorded:
 
 ```text
 MUL-2759: fix login redirect        # links only
@@ -98,7 +99,9 @@ Division of labor: the write-back answers "which PR is this" at creation time.
 CI status, mergeability, merge events, and merge-time auto-close still come from
 the GitHub App integration — attaching does not fake any of them. Without an
 installation, the attached card shows number + URL until a webhook backfills the
-full metadata.
+full metadata. Re-attaching after a webhook cannot replace that metadata with
+URL-only fallback values, and later webhooks preserve the explicit user/agent
+attribution recorded by attach.
 
 In the final issue comment, include the PR URL when a PR exists. If the task did
 not produce a PR because no code changed or the user asked not to create one, say

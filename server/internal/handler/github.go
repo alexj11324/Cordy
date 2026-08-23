@@ -1005,13 +1005,15 @@ func (h *Handler) ListPullRequestsForIssue(w http.ResponseWriter, r *http.Reques
 		// older than the view TTL, kick an async refresh. Non-blocking — the
 		// current (possibly stale) response is returned immediately and the
 		// fresh snapshot arrives via the pull_request:updated realtime event.
-		h.PRRefresh.MaybeEnqueueOnView(
-			row.InstallationID.Int64, row.RepoOwner, row.RepoName, row.PrNumber,
-			row.SnapshotFetchedAt.Time,
-			row.SnapshotFetchedAt.Valid &&
-				row.SnapshotHeadSha != "" &&
-				row.SnapshotHeadSha == row.HeadSha,
-		)
+		if row.InstallationID.Valid {
+			h.PRRefresh.MaybeEnqueueOnView(
+				row.InstallationID.Int64, row.RepoOwner, row.RepoName, row.PrNumber,
+				row.SnapshotFetchedAt.Time,
+				row.SnapshotFetchedAt.Valid &&
+					row.SnapshotHeadSha != "" &&
+					row.SnapshotHeadSha == row.HeadSha,
+			)
+		}
 	}
 	// PRs from token-based providers (Forgejo / Gitea / GitLab) share the same
 	// card list. They live in their own provider-tagged tables, so they merge
@@ -1193,9 +1195,10 @@ func normalizeAttachState(raw *string) (string, error) {
 // identifier scan. The PR row is upserted into github_pull_request with the
 // same shape the webhook mirror produces, then linked to the issue with
 // reference_only=false — this is an explicit working-PR attachment, not a bare
-// body mention. Attach never sets close_intent: merge-time auto-close still
-// requires a literal Closes/Fixes/Resolves PREFIX-N in the title/body, parsed
-// only by the webhook path. When the workspace has a GitHub App installation,
+// body mention. Attach never creates close_intent and preserves any value the
+// webhook already recorded: merge-time auto-close still requires a literal
+// Closes/Fixes/Resolves PREFIX-N in the title/body, parsed only by the webhook
+// path. When the workspace has a GitHub App installation,
 // full metadata is pulled through the App API (matching the webhook upsert);
 // without one the row still lands (number + URL minimum) with a NULL
 // installation_id that a later webhook ON CONFLICT backfills.
@@ -1274,7 +1277,7 @@ func (h *Handler) AttachPullRequestToIssue(w http.ResponseWriter, r *http.Reques
 	} else if reqBody.Title != nil && strings.TrimSpace(*reqBody.Title) != "" {
 		title = strings.TrimSpace(*reqBody.Title)
 	}
-	existingPR, lookupErr := h.Queries.GetGitHubPullRequest(ctx, db.GetGitHubPullRequestParams{
+	_, lookupErr := h.Queries.GetGitHubPullRequest(ctx, db.GetGitHubPullRequestParams{
 		WorkspaceID: issue.WorkspaceID,
 		RepoOwner:   owner,
 		RepoName:    repo,
@@ -1285,29 +1288,6 @@ func (h *Handler) AttachPullRequestToIssue(w http.ResponseWriter, r *http.Reques
 		slog.Warn("github: attach lookup pr failed", "err", lookupErr)
 		writeError(w, http.StatusInternalServerError, "failed to attach pull request")
 		return
-	}
-	if meta == nil && !isNew {
-		// A transient GitHub failure during a re-attach must not downgrade a
-		// webhook-populated row to app-less placeholder metadata.
-		installationID = existingPR.InstallationID
-		title = existingPR.Title
-		state = existingPR.State
-		if existingPR.Branch.Valid {
-			preservedBranch := existingPR.Branch.String
-			branch = &preservedBranch
-		} else {
-			branch = nil
-		}
-		headSha = existingPR.HeadSha
-		authorLogin = existingPR.AuthorLogin.String
-		avatarURL = existingPR.AuthorAvatarUrl.String
-		mergedAt = existingPR.MergedAt
-		closedAt = existingPR.ClosedAt
-		prCreatedAt = existingPR.PrCreatedAt
-		prUpdatedAt = existingPR.PrUpdatedAt
-		additions = existingPR.Additions
-		deletions = existingPR.Deletions
-		changedFiles = existingPR.ChangedFiles
 	}
 
 	var branchText pgtype.Text
@@ -1323,28 +1303,27 @@ func (h *Handler) AttachPullRequestToIssue(w http.ResponseWriter, r *http.Reques
 	} else if reqBody.AuthorLogin != nil && *reqBody.AuthorLogin != "" {
 		authorText = strToText(strings.TrimSpace(*reqBody.AuthorLogin))
 	}
-	pr, err := h.Queries.UpsertGitHubPullRequest(ctx, db.UpsertGitHubPullRequestParams{
-		WorkspaceID:         issue.WorkspaceID,
-		InstallationID:      installationID,
-		RepoOwner:           owner,
-		RepoName:            repo,
-		PrNumber:            number,
-		Title:               title,
-		State:               state,
-		HtmlUrl:             fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, number),
-		Branch:              branchText,
-		AuthorLogin:         authorText,
-		AuthorAvatarUrl:     avatarText,
-		MergedAt:            mergedAt,
-		ClosedAt:            closedAt,
-		PrCreatedAt:         prCreatedAt,
-		PrUpdatedAt:         prUpdatedAt,
-		HeadSha:             headSha,
-		MergeableState:      pgtype.Text{},
-		ClearMergeableState: pgtype.Bool{Bool: false, Valid: true},
-		Additions:           additions,
-		Deletions:           deletions,
-		ChangedFiles:        changedFiles,
+	pr, err := h.Queries.AttachGitHubPullRequest(ctx, db.AttachGitHubPullRequestParams{
+		WorkspaceID:      issue.WorkspaceID,
+		InstallationID:   installationID,
+		RepoOwner:        owner,
+		RepoName:         repo,
+		PrNumber:         number,
+		Title:            title,
+		State:            state,
+		HtmlUrl:          fmt.Sprintf("https://github.com/%s/%s/pull/%d", owner, repo, number),
+		Branch:           branchText,
+		AuthorLogin:      authorText,
+		AuthorAvatarUrl:  avatarText,
+		MergedAt:         mergedAt,
+		ClosedAt:         closedAt,
+		PrCreatedAt:      prCreatedAt,
+		PrUpdatedAt:      prUpdatedAt,
+		HeadSha:          headSha,
+		Additions:        additions,
+		Deletions:        deletions,
+		ChangedFiles:     changedFiles,
+		MetadataComplete: meta != nil,
 	})
 	if err != nil {
 		slog.Warn("github: attach upsert pr failed", "err", err)
@@ -1362,13 +1341,15 @@ func (h *Handler) AttachPullRequestToIssue(w http.ResponseWriter, r *http.Reques
 		linkedByID = id
 	}
 	if err := h.Queries.LinkIssueToPullRequest(ctx, db.LinkIssueToPullRequestParams{
-		IssueID:             issue.ID,
-		PullRequestID:       pr.ID,
-		CloseIntent:         false,
-		ReferenceOnly:       false,
-		PreserveCloseIntent: false,
-		LinkedByType:        strToText(linkedByType),
-		LinkedByID:          linkedByID,
+		IssueID:               issue.ID,
+		PullRequestID:         pr.ID,
+		CloseIntent:           false,
+		ReferenceOnly:         false,
+		PreserveCloseIntent:   true,
+		PreserveReferenceOnly: false,
+		PreserveLinkedBy:      false,
+		LinkedByType:          strToText(linkedByType),
+		LinkedByID:            linkedByID,
 	}); err != nil {
 		slog.Warn("github: attach link failed", "err", err)
 		writeError(w, http.StatusInternalServerError, "failed to link pull request")
@@ -2030,13 +2011,15 @@ func (h *Handler) mirrorPullRequestForWorkspace(ctx context.Context, wsID pgtype
 			_, qualifies := qualifyingIdents[id]
 			referenceOnly := !qualifies
 			if err := h.Queries.LinkIssueToPullRequest(ctx, db.LinkIssueToPullRequestParams{
-				IssueID:             issue.ID,
-				PullRequestID:       pr.ID,
-				CloseIntent:         closeIntent,
-				ReferenceOnly:       referenceOnly,
-				PreserveCloseIntent: preserveCloseIntent,
-				LinkedByType:        strToText("system"),
-				LinkedByID:          pgtype.UUID{},
+				IssueID:               issue.ID,
+				PullRequestID:         pr.ID,
+				CloseIntent:           closeIntent,
+				ReferenceOnly:         referenceOnly,
+				PreserveCloseIntent:   preserveCloseIntent,
+				PreserveReferenceOnly: preserveCloseIntent,
+				PreserveLinkedBy:      true,
+				LinkedByType:          strToText("system"),
+				LinkedByID:            pgtype.UUID{},
 			}); err != nil {
 				slog.Warn("github: link failed", "err", err)
 				continue
