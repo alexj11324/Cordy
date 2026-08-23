@@ -10,6 +10,7 @@
 
 #![allow(clippy::result_large_err)]
 
+pub mod agent_aggregation;
 pub mod attachment_access;
 pub mod attachment_storage;
 pub mod avatar;
@@ -193,6 +194,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         issue::require_issue_workspace,
     ));
     let authenticated = workspace::authenticated_router()
+        .merge(
+            agent_aggregation::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                issue::require_issue_workspace,
+            )),
+        )
         .merge(cli_token::router())
         .merge(client_usage::router())
         .merge(feedback::router())
@@ -314,6 +321,8 @@ mod tests {
             "/api/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/messages",
             "/api/me",
             "/api/issue-view-preferences?scope_type=workspace",
+            "/api/agent-activity-30d",
+            "/api/agent-run-counts",
         ] {
             let response = build_router(None, None)
                 .oneshot(Request::get(uri).body(Body::empty()).unwrap())
