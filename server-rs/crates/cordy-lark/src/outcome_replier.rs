@@ -228,12 +228,7 @@ impl LarkOutcomeReplier {
             )
             .await
             .map_err(|e| anyhow::anyhow!("mint binding token: {e:#}"))?;
-        let bind_url = format!("{}{}?token={}", self.app_url, self.binding_path, {
-            use url::form_urlencoded::Serializer;
-            let mut ser = Serializer::new(String::new());
-            ser.append_pair("token", &token.raw);
-            ser.finish()
-        });
+        let bind_url = binding_url(&self.app_url, &self.binding_path, &token.raw);
         let creds = self.installation_credentials(inst).await?;
         self.client
             .send_binding_prompt_card(BindingPromptParams {
@@ -337,6 +332,13 @@ impl LarkOutcomeReplier {
         crate::installation::installation_credentials_for(self.credentials.as_ref(), inst)
             .map_err(|e| anyhow::anyhow!("decrypt app_secret: {e:#}"))
     }
+}
+
+fn binding_url(app_url: &str, binding_path: &str, raw_token: &str) -> String {
+    use url::form_urlencoded::Serializer;
+    let mut query = Serializer::new(String::new());
+    query.append_pair("token", raw_token);
+    format!("{app_url}{binding_path}?{}", query.finish())
 }
 
 /// Composes the user-facing confirmation. Identifier always wins over a bare
@@ -474,6 +476,14 @@ mod tests {
         assert_eq!(
             issue_duplicate_text(&dup_bare, ""),
             "Not created — active issue #9 already exists."
+        );
+    }
+
+    #[test]
+    fn binding_url_encodes_the_raw_token_once() {
+        assert_eq!(
+            binding_url("https://cordy.example", "/lark/bind", "a+b=c"),
+            "https://cordy.example/lark/bind?token=a%2Bb%3Dc"
         );
     }
 

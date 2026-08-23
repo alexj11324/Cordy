@@ -1217,7 +1217,6 @@ impl HttpApiClient {
         p: DownloadResourceParams,
     ) -> anyhow::Result<DownloadedResourceStream> {
         use futures_util::StreamExt;
-        use tokio::io::AsyncReadExt as _;
         use tokio_util::io::StreamReader;
 
         if p.message_id.is_empty() {
@@ -1271,6 +1270,15 @@ impl HttpApiClient {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .to_string();
+        if resp
+            .content_length()
+            .is_some_and(|size| size > MAX_MESSAGE_RESOURCE_BYTES as u64)
+        {
+            anyhow::bail!(
+                "lark http client: download resource: resource exceeds {} bytes",
+                MAX_MESSAGE_RESOURCE_BYTES
+            );
+        }
 
         if !status.is_success() {
             let raw_body = read_bounded(resp, MAX_MESSAGE_RESOURCE_BYTES).await?;
@@ -1314,10 +1322,19 @@ impl HttpApiClient {
         } else {
             content_type
         };
-        let byte_stream = resp
-            .bytes_stream()
-            .map(|r| r.map_err(std::io::Error::other));
-        let reader = StreamReader::new(byte_stream).take(MAX_MESSAGE_RESOURCE_BYTES as u64);
+        let mut read = 0usize;
+        let byte_stream = resp.bytes_stream().map(move |result| {
+            let chunk = result.map_err(std::io::Error::other)?;
+            read = read.saturating_add(chunk.len());
+            if read > MAX_MESSAGE_RESOURCE_BYTES {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "lark resource exceeds download limit",
+                ));
+            }
+            Ok(chunk)
+        });
+        let reader = StreamReader::new(byte_stream);
         Ok(DownloadedResourceStream {
             body: Box::new(reader),
             content_type,

@@ -22,10 +22,9 @@
 //!   executor-generic, so transactional callers (registration finalize)
 //!   either use the `_with(executor, …)` variants below or pass the tx
 //!   connection directly.
-//! - The generated record_channel_inbound_drop binds installation_id as a
-//!   non-optional UUID; an installation-less event is recorded with the nil
-//!   UUID (Go wrote NULL). The reconciler sweep
-//!   (null_channel_inbound_audit_installation_id) normalizes both shapes.
+//! - `record_channel_inbound_drop` keeps installation_id optional so an
+//!   installation-less event remains SQL NULL, matching Go's invalid
+//!   pgtype.UUID representation.
 
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
@@ -396,7 +395,7 @@ impl ChannelStore {
     // ---- audit ----
 
     /// Writes a non-content drop audit row. An installation-less event passes
-    /// the nil UUID (port note in the module docs).
+    /// None so the audit row preserves SQL NULL.
     pub async fn record_lark_inbound_drop(
         &self,
         arg: RecordInboundDropParams,

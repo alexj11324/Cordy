@@ -82,6 +82,14 @@ impl ChunkAssembler {
         // is small (Lark caps in-flight chunked events per connection).
         self.gc_expired_locked(&mut buf);
 
+        if buf
+            .get(message_id)
+            .is_some_and(|entry| entry.chunks.len() != sum)
+        {
+            buf.remove(message_id);
+            return None;
+        }
+
         let entry = buf.entry(message_id.to_string()).or_insert_with(|| {
             let mut chunks = Vec::with_capacity(sum);
             chunks.resize_with(sum, || None);
@@ -196,6 +204,14 @@ mod tests {
         assert_eq!(a.admit("m", 2, 0, b"x"), None);
         assert_eq!(a.pending_count(), 1);
         assert_eq!(a.admit("m", 2, 1, b"y"), Some(b"xy".to_vec()));
+    }
+
+    #[test]
+    fn inconsistent_chunk_count_is_dropped_without_indexing() {
+        let a = ChunkAssembler::new(Duration::from_secs(1));
+        assert_eq!(a.admit("m", 2, 0, b"a"), None);
+        assert_eq!(a.admit("m", 3, 2, b"c"), None);
+        assert_eq!(a.pending_count(), 0);
     }
 
     #[test]

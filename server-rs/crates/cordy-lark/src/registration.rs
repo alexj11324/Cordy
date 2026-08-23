@@ -418,6 +418,15 @@ impl RegistrationClient {
                 ..PollResult::default()
             };
         }
+        if resp.client_id.is_empty() != resp.client_secret.is_empty() {
+            return PollResult {
+                err: Some(RegistrationError::new(
+                    "invalid_response",
+                    "success response contained only one credential",
+                )),
+                ..PollResult::default()
+            };
+        }
 
         match resp.error.as_str() {
             "authorization_pending" | "slow_down" => PollResult {
@@ -692,6 +701,18 @@ mod tests {
             "https://accounts.feishu.cn",
         );
         assert_eq!(partial.err.unwrap().code, "invalid_response");
+
+        for (client_id, client_secret) in [("cli_x", ""), ("", "sec")] {
+            let partial_credential = c.process_poll_response(
+                PollResponse {
+                    client_id: client_id.into(),
+                    client_secret: client_secret.into(),
+                    ..Default::default()
+                },
+                "https://accounts.feishu.cn",
+            );
+            assert_eq!(partial_credential.err.unwrap().code, "invalid_response");
+        }
     }
 
     #[test]

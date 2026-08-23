@@ -1322,7 +1322,7 @@ pub async fn record_channel_inbound_drop(
     channel_type: &str,
     event_type: &str,
     drop_reason: &str,
-    installation_id: Uuid,
+    installation_id: Option<Uuid>,
     channel_chat_id: Option<&str>,
     channel_event_id: Option<&str>,
     channel_message_id: Option<&str>,

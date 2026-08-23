@@ -99,13 +99,16 @@ impl MediaResolver for FeishuMediaResolver {
 
     async fn resolve_media(
         &self,
-        _ctx: CancellationToken,
+        ctx: CancellationToken,
         inst: &ResolvedInstallation,
         _sender: &ResolvedIdentity,
         _session_id: Uuid,
         chat_message_id: Uuid,
         mut msg: ChannelMessage,
     ) -> ChannelMessage {
+        if ctx.is_cancelled() {
+            return msg;
+        }
         let lm = match lark_msg_from_raw(&msg) {
             Ok(lm) => lm,
             Err(err) => {
@@ -145,6 +148,9 @@ impl MediaResolver for FeishuMediaResolver {
         };
 
         for (res_index, res) in resources.iter().enumerate() {
+            if ctx.is_cancelled() {
+                return msg;
+            }
             let key = media_object_key(inst, chat_message_id, res);
             let link = self.storage.object_url(&key);
             // Persist the upload intent BEFORE any write can happen. Every
@@ -152,7 +158,7 @@ impl MediaResolver for FeishuMediaResolver {
             // the store may still be processing), resolve deadline, crash —
             // simply leaves this row for the reconciler; nothing is ever
             // deleted inline.
-            let owned = match self
+            let pending = self
                 .ledger
                 .record_pending_media_object(RecordPendingMediaObjectParams {
                     storage_key: key.clone(),
@@ -160,9 +166,11 @@ impl MediaResolver for FeishuMediaResolver {
                     chat_message_id,
                     storage_url: link.clone(),
                     installation_id: inst.id,
-                })
-                .await
-            {
+                });
+            let owned = match tokio::select! {
+                _ = ctx.cancelled() => return msg,
+                result = pending => result,
+            } {
                 Ok(owned) => owned,
                 Err(err) => {
                     // No durable intent, no upload — fail-safe direction.
@@ -185,17 +193,18 @@ impl MediaResolver for FeishuMediaResolver {
                 );
                 continue;
             }
-            let got = match self
-                .download_resource(
-                    &creds,
-                    DownloadResourceParams {
-                        message_id: res.message_id.clone(),
-                        file_key: res.key.clone(),
-                        r#type: res.fetch_type.clone(),
-                    },
-                )
-                .await
-            {
+            let download = self.download_resource(
+                &creds,
+                DownloadResourceParams {
+                    message_id: res.message_id.clone(),
+                    file_key: res.key.clone(),
+                    r#type: res.fetch_type.clone(),
+                },
+            );
+            let got = match tokio::select! {
+                _ = ctx.cancelled() => return msg,
+                result = download => result,
+            } {
                 Ok(g) => g,
                 Err(err) => {
                     log_media_warn(
@@ -209,10 +218,11 @@ impl MediaResolver for FeishuMediaResolver {
             };
             let content_type = media_content_type(res, &got);
             let filename = media_filename(&lm, res, &got, &content_type, res_index);
-            match self
-                .upload_resource(_ctx.clone(), &key, got, &content_type, &filename)
-                .await
-            {
+            let upload = self.upload_resource(ctx.clone(), &key, got, &content_type, &filename);
+            match tokio::select! {
+                _ = ctx.cancelled() => return msg,
+                result = upload => result,
+            } {
                 Ok(size_bytes) => {
                     msg.media_refs.push(MediaRef {
                         r#type: res.kind.clone(),
@@ -632,6 +642,45 @@ fn first_non_empty(values: &[&String]) -> String {
 mod tests {
     use super::*;
 
+    struct PanicCredentials;
+
+    impl CredentialsResolver for PanicCredentials {
+        fn decrypt_app_secret(&self, _inst: &Installation) -> anyhow::Result<String> {
+            panic!("cancelled resolver must not decrypt credentials")
+        }
+    }
+
+    struct PanicStorage;
+
+    impl MediaStorage for PanicStorage {
+        fn upload(
+            &self,
+            _key: &str,
+            _data: Vec<u8>,
+            _content_type: &str,
+            _filename: &str,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + '_>>
+        {
+            panic!("cancelled resolver must not upload")
+        }
+
+        fn object_url(&self, _key: &str) -> String {
+            panic!("cancelled resolver must not derive an object URL")
+        }
+    }
+
+    struct PanicLedger;
+
+    #[async_trait]
+    impl MediaIntentLedger for PanicLedger {
+        async fn record_pending_media_object(
+            &self,
+            _p: RecordPendingMediaObjectParams,
+        ) -> anyhow::Result<bool> {
+            panic!("cancelled resolver must not write an intent")
+        }
+    }
+
     fn lm(message_type: &str, content: &str) -> InboundMessage {
         InboundMessage {
             message_type: message_type.to_string(),
@@ -639,6 +688,35 @@ mod tests {
             content: content.to_string(),
             ..Default::default()
         }
+    }
+
+    #[tokio::test]
+    async fn cancelled_resolve_returns_before_any_io() {
+        let resolver = FeishuMediaResolver::new(
+            Arc::new(crate::client::StubApiClient::new()),
+            Arc::new(PanicCredentials),
+            Arc::new(PanicStorage),
+            Arc::new(PanicLedger),
+        );
+        let ctx = CancellationToken::new();
+        ctx.cancel();
+        let msg = ChannelMessage {
+            message_id: "om_cancelled".to_string(),
+            ..Default::default()
+        };
+        let got = resolver
+            .resolve_media(
+                ctx,
+                &ResolvedInstallation::default(),
+                &ResolvedIdentity {
+                    user_id: Uuid::nil(),
+                },
+                Uuid::nil(),
+                Uuid::nil(),
+                msg,
+            )
+            .await;
+        assert_eq!(got.message_id, "om_cancelled");
     }
 
     #[test]

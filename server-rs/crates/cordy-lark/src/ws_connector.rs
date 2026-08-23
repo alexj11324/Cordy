@@ -118,6 +118,7 @@ pub trait WsDialer: Send + Sync {
         &self,
         url: &str,
         request_headers: Vec<(String, String)>,
+        write_timeout: Duration,
     ) -> anyhow::Result<Arc<dyn WsConn>>;
 }
 
@@ -539,7 +540,11 @@ impl EventConnector for WsLongConnConnector {
         };
 
         let conn = dialer
-            .dial(&endpoint.url, endpoint.headers.clone())
+            .dial(
+                &endpoint.url,
+                endpoint.headers.clone(),
+                self.cfg.write_timeout,
+            )
             .await
             .map_err(|e| anyhow::anyhow!("dial ws: {e:#}"))?;
 
@@ -637,7 +642,10 @@ async fn ping_loop(
 // ---------------------------------------------------------------------------
 
 enum Outbound {
-    Message(tokio_tungstenite::tungstenite::Message),
+    Message {
+        message: tokio_tungstenite::tungstenite::Message,
+        result: tokio::sync::oneshot::Sender<anyhow::Result<()>>,
+    },
     Close,
 }
 
@@ -678,11 +686,17 @@ impl WsConn for ActorWsConn {
             OPCODE_BINARY => tokio_tungstenite::tungstenite::Message::Binary(data),
             other => anyhow::bail!("unsupported websocket opcode {other}"),
         };
+        let (result_tx, result_rx) = tokio::sync::oneshot::channel();
         self.outbound_tx
-            .send(Outbound::Message(msg))
+            .send(Outbound::Message {
+                message: msg,
+                result: result_tx,
+            })
             .await
             .map_err(|_| anyhow::anyhow!("use of closed connection"))?;
-        Ok(())
+        result_rx
+            .await
+            .map_err(|_| anyhow::anyhow!("connection closed before write completed"))?
     }
 
     fn close(&self) {
@@ -724,6 +738,7 @@ impl WsDialer for TungsteniteDialer {
         &self,
         url: &str,
         request_headers: Vec<(String, String)>,
+        write_timeout: Duration,
     ) -> anyhow::Result<Arc<dyn WsConn>> {
         use futures_util::{SinkExt, StreamExt};
         use tokio_tungstenite::tungstenite::client::IntoClientRequest;
@@ -769,8 +784,15 @@ impl WsDialer for TungsteniteDialer {
                     }
                     cmd = outbound_rx.recv() => {
                         match cmd {
-                            Some(Outbound::Message(m)) => {
-                                if sink.send(m).await.is_err() {
+                            Some(Outbound::Message { message, result }) => {
+                                let write = tokio::time::timeout(write_timeout, sink.send(message)).await;
+                                let (reply, failed) = match write {
+                                    Ok(Ok(())) => (Ok(()), false),
+                                    Ok(Err(err)) => (Err(anyhow::anyhow!("ws write: {err}")), true),
+                                    Err(_) => (Err(anyhow::anyhow!("ws write timed out after {write_timeout:?}")), true),
+                                };
+                                let _ = result.send(reply);
+                                if failed {
                                     break;
                                 }
                             }
@@ -945,5 +967,27 @@ mod tests {
             endpoint.ping_interval
         };
         assert_eq!(effective, Duration::from_secs(120));
+    }
+
+    #[tokio::test]
+    async fn actor_write_waits_for_the_socket_result() {
+        let (outbound_tx, mut outbound_rx) = mpsc::channel(1);
+        let (_inbound_tx, inbound_rx) = mpsc::channel(1);
+        let conn = Arc::new(ActorWsConn {
+            outbound_tx,
+            inbound_rx: tokio::sync::Mutex::new(inbound_rx),
+            closed: CancellationToken::new(),
+        });
+
+        let writer = {
+            let conn = Arc::clone(&conn);
+            tokio::spawn(async move { conn.write_message(OPCODE_BINARY, vec![1, 2, 3]).await })
+        };
+        let Some(Outbound::Message { result, .. }) = outbound_rx.recv().await else {
+            panic!("expected queued websocket message");
+        };
+        assert!(!writer.is_finished());
+        result.send(Ok(())).expect("writer still waiting");
+        writer.await.unwrap().unwrap();
     }
 }

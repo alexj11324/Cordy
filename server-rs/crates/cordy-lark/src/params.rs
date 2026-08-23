@@ -124,9 +124,9 @@ pub struct ReleaseInboundDedupParams {
 pub struct RecordInboundDropParams {
     pub event_type: String,
     pub drop_reason: String,
-    /// The nil UUID stands in for Go's invalid pgtype.UUID (an
-    /// installation-less event).
-    pub installation_id: Uuid,
+    /// None preserves Go's invalid pgtype.UUID as SQL NULL for an
+    /// installation-less event.
+    pub installation_id: Option<Uuid>,
     pub channel_chat_id: Option<String>,
     pub channel_event_id: Option<String>,
     pub channel_message_id: Option<String>,
