@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use axum::extract::ws::{Message, WebSocket};
-use axum::extract::{Query, State, WebSocketUpgrade};
+use axum::extract::{ConnectInfo, Extension, Query, State, WebSocketUpgrade};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use cordy_auth::cookie::AUTH_COOKIE_NAME;
@@ -44,19 +44,22 @@ const INBOUND_READ_LIMIT: usize = 64 * 1024;
 
 /// GET /ws — upgrade + auth handshake, then spawn read/write pumps.
 ///
-/// Port of `realtime.HandleWebSocket`. The gorilla origin allowlist is not
-/// reproduced here: cross-origin browser traffic already passes the shared
-/// CORS layer, and native clients are same-origin by construction (see Go
-/// checkOrigin's own rationale).
+/// Port of `realtime.HandleWebSocket`. WebSocket handshakes do not inherit
+/// ordinary CORS enforcement, so origin validation happens before upgrade.
 pub async fn ws_handler(
     State(state): State<HandlerState>,
     Query(query): Query<HashMap<String, String>>,
     headers: HeaderMap,
+    connect_info: Option<Extension<ConnectInfo<std::net::SocketAddr>>>,
     upgrade: WebSocketUpgrade,
 ) -> Response {
     let Some(hub) = state.hub.clone() else {
         return error_response(StatusCode::SERVICE_UNAVAILABLE, "websocket unavailable");
     };
+
+    if !check_origin(&headers, connect_info.map(|Extension(info)| info.0.ip())) {
+        return error_response(StatusCode::FORBIDDEN, "websocket origin not allowed");
+    }
 
     let workspace_id = match resolve_workspace_id(&state, &query).await {
         Ok(id) => id,
@@ -85,8 +88,96 @@ pub async fn ws_handler(
         os: query.get("client_os").cloned().unwrap_or_default(),
     };
 
-    upgrade.on_upgrade(move |socket| async move {
-        post_upgrade(hub, state, socket, user_id, workspace_id, meta).await;
+    upgrade
+        .max_message_size(INBOUND_READ_LIMIT)
+        .max_frame_size(INBOUND_READ_LIMIT)
+        .on_upgrade(move |socket| async move {
+            post_upgrade(hub, state, socket, user_id, workspace_id, meta).await;
+        })
+}
+
+fn check_origin(headers: &HeaderMap, remote_ip: Option<std::net::IpAddr>) -> bool {
+    let trusted = std::env::var("CORDY_TRUSTED_PROXIES")
+        .ok()
+        .map(|raw| cordy_middleware::ratelimit::parse_trusted_proxies(&raw))
+        .unwrap_or_default();
+    let proxy_trusted =
+        remote_ip.is_some_and(|ip| trusted.iter().any(|network| network.contains(ip)));
+    check_origin_with_policy(headers, proxy_trusted, &allowed_ws_origins())
+}
+
+fn check_origin_with_policy(
+    headers: &HeaderMap,
+    proxy_trusted: bool,
+    allowed_origins: &[String],
+) -> bool {
+    let Some(origin) = headers.get(header::ORIGIN).and_then(|v| v.to_str().ok()) else {
+        return true;
+    };
+    let Some(origin_host) = origin_host(origin) else {
+        return false;
+    };
+
+    if headers
+        .get(header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|host| origin_host.eq_ignore_ascii_case(host))
+    {
+        return true;
+    }
+
+    if proxy_trusted {
+        if first_forwarded_host(headers).is_some_and(|host| origin_host.eq_ignore_ascii_case(host))
+        {
+            return true;
+        }
+    }
+
+    allowed_origins.iter().any(|allowed| allowed == origin)
+}
+
+fn origin_host(origin: &str) -> Option<String> {
+    origin
+        .parse::<axum::http::Uri>()
+        .ok()?
+        .authority()
+        .map(|authority| authority.as_str().to_string())
+}
+
+fn first_forwarded_host(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get("x-forwarded-host")?
+        .to_str()
+        .ok()?
+        .split(',')
+        .next()
+        .map(str::trim)
+        .filter(|host| !host.is_empty())
+}
+
+fn allowed_ws_origins() -> Vec<String> {
+    let raw = ["ALLOWED_ORIGINS", "CORS_ALLOWED_ORIGINS", "FRONTEND_ORIGIN"]
+        .into_iter()
+        .find_map(|name| {
+            std::env::var(name)
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+        });
+    raw.map(|value| {
+        value
+            .split(',')
+            .map(str::trim)
+            .filter(|origin| !origin.is_empty())
+            .map(str::to_string)
+            .collect()
+    })
+    .unwrap_or_else(|| {
+        vec![
+            "http://localhost:3000".to_string(),
+            "http://localhost:5173".to_string(),
+            "http://localhost:5174".to_string(),
+        ]
     })
 }
 
@@ -177,9 +268,28 @@ async fn read_pump<S>(hub: &Arc<Hub>, client: &Arc<ClientHandle>, stream: &mut S
 where
     S: StreamExt<Item = Result<Message, axum::Error>> + Unpin,
 {
-    while let Some(msg) = stream.next().await {
+    let liveness = tokio::time::sleep(Duration::from_secs(PONG_WAIT_SECS));
+    tokio::pin!(liveness);
+    loop {
+        let msg = tokio::select! {
+            () = &mut liveness => {
+                tracing::warn!(
+                    user_id = %client.user_id,
+                    workspace_id = %client.workspace_id,
+                    "ws: pong deadline exceeded"
+                );
+                break;
+            }
+            msg = stream.next() => msg,
+        };
+        let Some(msg) = msg else {
+            break;
+        };
         match msg {
             Ok(Message::Text(text)) => {
+                liveness
+                    .as_mut()
+                    .reset(tokio::time::Instant::now() + Duration::from_secs(PONG_WAIT_SECS));
                 if text.len() > INBOUND_READ_LIMIT {
                     M.inbound_too_large_total
                         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -194,8 +304,11 @@ where
                 handle_frame(hub, client, &text);
             }
             Ok(Message::Close(_)) | Err(_) => break,
-            // Binary / Ping / Pong: ignored (axum answers protocol pings).
-            Ok(_) => {}
+            // Binary / Ping / Pong count as liveness; axum answers protocol
+            // pings and the application intentionally ignores their payloads.
+            Ok(_) => liveness
+                .as_mut()
+                .reset(tokio::time::Instant::now() + Duration::from_secs(PONG_WAIT_SECS)),
         }
     }
 }
@@ -556,4 +669,65 @@ async fn send_direct(socket: &mut WebSocket, payload: &str) -> bool {
 async fn write_auth_error_and_close(socket: &mut WebSocket, payload: &'static str) {
     send_direct(socket, payload).await;
     let _ = socket.close().await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    fn headers(host: &str, origin: &str, forwarded_host: Option<&str>) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, HeaderValue::from_str(host).unwrap());
+        headers.insert(header::ORIGIN, HeaderValue::from_str(origin).unwrap());
+        if let Some(forwarded_host) = forwarded_host {
+            headers.insert(
+                "x-forwarded-host",
+                HeaderValue::from_str(forwarded_host).unwrap(),
+            );
+        }
+        headers
+    }
+
+    fn origins() -> Vec<String> {
+        vec![
+            "http://localhost:3000".to_string(),
+            "https://cordy.ai".to_string(),
+        ]
+    }
+
+    #[test]
+    fn websocket_origin_policy_matches_go_contract() {
+        let allowed = origins();
+        let empty = HeaderMap::new();
+        assert!(check_origin_with_policy(&empty, false, &allowed));
+        assert!(check_origin_with_policy(
+            &headers("API.Cordy.AI", "https://api.cordy.ai", None),
+            false,
+            &allowed,
+        ));
+        assert!(check_origin_with_policy(
+            &headers("localhost:8080", "http://localhost:3000", None),
+            false,
+            &allowed,
+        ));
+        assert!(!check_origin_with_policy(
+            &headers("api.cordy.ai", "https://evil.example", None),
+            false,
+            &allowed,
+        ));
+    }
+
+    #[test]
+    fn forwarded_host_requires_a_trusted_proxy() {
+        let allowed = origins();
+        let headers = headers(
+            "internal.proxy",
+            "https://public.example",
+            Some("public.example, proxy.internal"),
+        );
+
+        assert!(!check_origin_with_policy(&headers, false, &allowed));
+        assert!(check_origin_with_policy(&headers, true, &allowed));
+    }
 }

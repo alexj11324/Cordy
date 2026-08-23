@@ -946,6 +946,7 @@ where
     I: IntoIterator<Item: AsRef<str>>,
 {
     let mut cmd = Command::new("git");
+    cmd.kill_on_drop(true);
     cmd.arg("-C").arg(dir);
     for a in args {
         cmd.arg(a.as_ref());
