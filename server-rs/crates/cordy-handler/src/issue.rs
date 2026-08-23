@@ -14,7 +14,7 @@ use axum::extract::{DefaultBodyLimit, Extension, Path, Query, Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use chrono::{NaiveDate, SecondsFormat};
 use cordy_db::models::{
@@ -22,8 +22,8 @@ use cordy_db::models::{
 };
 use cordy_db::queries::issue_reaction::AddIssueReactionRow;
 use cordy_db::queries::{
-    agent, agent_invocation_target, attachment, issue as issue_q, issue_label, issue_reaction,
-    member, squad, subscriber, task_usage, user, workspace,
+    agent, agent_invocation_target, attachment, issue as issue_q, issue_label, issue_property,
+    issue_reaction, member, squad, subscriber, task_usage, user, workspace,
 };
 use cordy_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use cordy_service::issue_service::{
@@ -67,6 +67,10 @@ pub fn router() -> Router<HandlerState> {
         .route(
             "/api/issues/{id}/metadata/{key}",
             axum::routing::put(set_issue_metadata_key).delete(delete_issue_metadata_key),
+        )
+        .route(
+            "/api/issues/{id}/properties/{property_id}",
+            delete(unset_issue_property),
         )
         .route(
             "/api/issues/{id}/reactions",
@@ -640,6 +644,76 @@ async fn list_issue_metadata(
         Ok(issue) => Json(json!({ "metadata": issue.metadata })).into_response(),
         Err(response) => response,
     }
+}
+
+async fn unset_issue_property(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path((raw_issue, raw_property)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    let property_id = match Uuid::parse_str(raw_property.trim()) {
+        Ok(property_id) => property_id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid property id"),
+    };
+    let issue = match resolve_issue(&state, &context, &raw_issue).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    match issue_property::get_issue_property(&state.pool, property_id, issue.workspace_id).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "property not found"),
+        Err(error) => {
+            tracing::warn!(%error, %property_id, "failed to resolve property before unset");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to unset property",
+            );
+        }
+    }
+    let updated = match issue_property::delete_issue_property_value(
+        &state.pool,
+        &property_id.to_string(),
+        issue.id,
+        issue.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(updated)) => updated,
+        Ok(None) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to unset property",
+            )
+        }
+        Err(error) => {
+            tracing::warn!(%error, issue_id = %issue.id, %property_id, "failed to unset property");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to unset property",
+            );
+        }
+    };
+    let properties = object_or_empty(updated.properties.clone());
+    let (actor_type, actor_id, task_id) = mutation_actor(&state, &context, &headers).await;
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::EVENT_ISSUE_PROPERTIES_CHANGED.into(),
+        workspace_id: updated.workspace_id.to_string(),
+        actor_type,
+        actor_id: actor_id.to_string(),
+        payload: json!({
+            "issue_id": updated.id,
+            "properties": properties.clone(),
+            "issue_revision": updated.revision,
+        }),
+        task_id: task_id.map(|id| id.to_string()).unwrap_or_default(),
+        chat_session_id: String::new(),
+    });
+    Json(json!({
+        "properties": properties,
+        "issue_revision": updated.revision,
+    }))
+    .into_response()
 }
 
 #[derive(Deserialize)]
