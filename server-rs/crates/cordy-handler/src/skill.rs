@@ -6,7 +6,7 @@
 //! present in the Rust service layer.
 
 use axum::body::Bytes;
-use axum::extract::{Extension, Path, State};
+use axum::extract::{DefaultBodyLimit, Extension, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -21,12 +21,40 @@ use uuid::Uuid;
 use crate::error::error_response;
 use crate::state::HandlerState;
 
+// Imported skills may contain 8 MiB of supporting files plus the primary
+// SKILL.md. The editor writes that complete bundle back as JSON, whose string
+// escaping can expand a decoded byte by up to 6x. Keep the request bounded
+// while leaving enough room for every supported bundle and its metadata.
+const MAX_SKILL_WRITE_BODY: usize = 64 << 20;
+
 pub fn router() -> Router<HandlerState> {
     Router::new()
-        .route("/api/skills", get(list).post(create))
-        .route("/api/skills/", get(list).post(create))
-        .route("/api/skills/{id}", get(get_one).put(update).delete(delete))
-        .route("/api/skills/{id}/", get(get_one).put(update).delete(delete))
+        .route(
+            "/api/skills",
+            get(list)
+                .post(create)
+                .layer(DefaultBodyLimit::max(MAX_SKILL_WRITE_BODY)),
+        )
+        .route(
+            "/api/skills/",
+            get(list)
+                .post(create)
+                .layer(DefaultBodyLimit::max(MAX_SKILL_WRITE_BODY)),
+        )
+        .route(
+            "/api/skills/{id}",
+            get(get_one)
+                .put(update)
+                .delete(delete)
+                .layer(DefaultBodyLimit::max(MAX_SKILL_WRITE_BODY)),
+        )
+        .route(
+            "/api/skills/{id}/",
+            get(get_one)
+                .put(update)
+                .delete(delete)
+                .layer(DefaultBodyLimit::max(MAX_SKILL_WRITE_BODY)),
+        )
         .route(
             "/api/skills/{id}/labels",
             get(list_labels).post(attach_label),
@@ -35,7 +63,12 @@ pub fn router() -> Router<HandlerState> {
             "/api/skills/{id}/labels/{label_id}",
             axum::routing::delete(detach_label),
         )
-        .route("/api/skills/{id}/files", get(list_files).put(upsert_file))
+        .route(
+            "/api/skills/{id}/files",
+            get(list_files)
+                .put(upsert_file)
+                .layer(DefaultBodyLimit::max(MAX_SKILL_WRITE_BODY)),
+        )
         .route(
             "/api/skills/{id}/files/{file_id}",
             axum::routing::delete(delete_file),
