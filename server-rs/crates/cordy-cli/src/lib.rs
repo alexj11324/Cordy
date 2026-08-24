@@ -172,6 +172,62 @@ enum RuntimeCommand {
         #[arg(long, help = "Wait for update to complete")]
         wait: bool,
     },
+    #[command(about = "Manage custom runtime profiles")]
+    Profile(RuntimeProfileArgs),
+}
+
+#[derive(Debug, Args)]
+struct RuntimeProfileArgs {
+    #[command(subcommand)]
+    command: RuntimeProfileCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum RuntimeProfileCommand {
+    #[command(about = "List custom runtime profiles in the workspace")]
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
+    #[command(about = "Create a custom runtime profile")]
+    Create(RuntimeProfileCreateArgs),
+    #[command(about = "Update a custom runtime profile")]
+    Update(RuntimeProfileUpdateArgs),
+    #[command(about = "Delete a custom runtime profile")]
+    Delete {
+        #[arg(value_name = "PROFILE-ID")]
+        profile_id: String,
+    },
+}
+
+#[derive(Debug, Args)]
+struct RuntimeProfileCreateArgs {
+    #[arg(long, help = "Supported backend the profile routes to (required)")]
+    protocol_family: Option<String>,
+    #[arg(long, help = "Executable the daemon resolves on PATH (required)")]
+    command_name: Option<String>,
+    #[arg(long, help = "Human-readable profile name (required)")]
+    display_name: Option<String>,
+    #[arg(long, default_value = "", help = "Optional description")]
+    description: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct RuntimeProfileUpdateArgs {
+    #[arg(value_name = "PROFILE-ID")]
+    profile_id: String,
+    #[arg(long, help = "New display name")]
+    display_name: Option<String>,
+    #[arg(long, help = "New command name")]
+    command_name: Option<String>,
+    #[arg(long, help = "New description")]
+    description: Option<String>,
+    #[arg(long, num_args = 0..=1, default_missing_value = "true", help = "Enable or disable the profile")]
+    enabled: Option<bool>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -2590,6 +2646,30 @@ async fn run_with_input<R: Read>(
             )
             .await
         }
+        Command::Runtime(RuntimeArgs {
+            command:
+                RuntimeCommand::Profile(RuntimeProfileArgs {
+                    command: RuntimeProfileCommand::List { output },
+                }),
+        }) => run_runtime_profile_list(cli, environment, *output).await,
+        Command::Runtime(RuntimeArgs {
+            command:
+                RuntimeCommand::Profile(RuntimeProfileArgs {
+                    command: RuntimeProfileCommand::Create(args),
+                }),
+        }) => run_runtime_profile_create(cli, environment, args).await,
+        Command::Runtime(RuntimeArgs {
+            command:
+                RuntimeCommand::Profile(RuntimeProfileArgs {
+                    command: RuntimeProfileCommand::Update(args),
+                }),
+        }) => run_runtime_profile_update(cli, environment, args).await,
+        Command::Runtime(RuntimeArgs {
+            command:
+                RuntimeCommand::Profile(RuntimeProfileArgs {
+                    command: RuntimeProfileCommand::Delete { profile_id },
+                }),
+        }) => run_runtime_profile_delete(cli, environment, profile_id).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -2958,6 +3038,211 @@ fn format_runtime_update_result(
     };
     Ok(RunOutput {
         stdout,
+        stderr: String::new(),
+    })
+}
+
+const RUNTIME_PROTOCOL_FAMILIES: &[&str] = &[
+    "claude",
+    "codebuddy",
+    "codex",
+    "copilot",
+    "opencode",
+    "deveco",
+    "openclaw",
+    "hermes",
+    "pi",
+    "cursor",
+    "kimi",
+    "reasonix",
+    "dsh",
+    "kiro",
+    "antigravity",
+    "qoder",
+    "qoderclicn",
+    "traecli",
+    "grok",
+    "qwen",
+    "qwenpaw",
+    "mcode",
+    "dim",
+];
+
+#[derive(Debug, Deserialize)]
+struct RuntimeProfileListResponse {
+    #[serde(default)]
+    runtime_profiles: Vec<Value>,
+}
+
+fn runtime_profiles_path(workspace_id: &str) -> String {
+    format!("/api/workspaces/{workspace_id}/runtime-profiles")
+}
+
+async fn run_runtime_profile_list(
+    cli: &Cli,
+    environment: &Environment,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = required_workspace_id(cli, environment)?;
+    let response: RuntimeProfileListResponse = client
+        .get_json(&runtime_profiles_path(&workspace_id))
+        .await
+        .context("list runtime profiles")?;
+    output_runtime_profiles(&response.runtime_profiles, output, false)
+}
+
+async fn run_runtime_profile_create(
+    cli: &Cli,
+    environment: &Environment,
+    args: &RuntimeProfileCreateArgs,
+) -> Result<RunOutput> {
+    let family = args
+        .protocol_family
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .context("--protocol-family is required")?;
+    let command_name = args
+        .command_name
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .context("--command-name is required")?;
+    let display_name = args
+        .display_name
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .context("--display-name is required")?;
+    if !RUNTIME_PROTOCOL_FAMILIES.contains(&family) {
+        bail!(
+            "invalid --protocol-family {:?}: must be one of {}",
+            family,
+            RUNTIME_PROTOCOL_FAMILIES.join(", ")
+        );
+    }
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = required_workspace_id(cli, environment)?;
+    let mut body = serde_json::Map::from_iter([
+        ("display_name".into(), Value::String(display_name.into())),
+        ("protocol_family".into(), Value::String(family.into())),
+        ("command_name".into(), Value::String(command_name.into())),
+    ]);
+    if !args.description.is_empty() {
+        body.insert(
+            "description".into(),
+            Value::String(args.description.clone()),
+        );
+    }
+    let profile: Value = client
+        .post_json(&runtime_profiles_path(&workspace_id), &body)
+        .await
+        .context("create runtime profile")?;
+    output_runtime_profiles(&[profile], args.output, true)
+}
+
+async fn run_runtime_profile_update(
+    cli: &Cli,
+    environment: &Environment,
+    args: &RuntimeProfileUpdateArgs,
+) -> Result<RunOutput> {
+    let mut body = serde_json::Map::new();
+    for (key, value) in [
+        ("display_name", &args.display_name),
+        ("command_name", &args.command_name),
+        ("description", &args.description),
+    ] {
+        if let Some(value) = value {
+            body.insert(key.into(), Value::String(value.clone()));
+        }
+    }
+    if let Some(enabled) = args.enabled {
+        body.insert("enabled".into(), Value::Bool(enabled));
+    }
+    if body.is_empty() {
+        bail!("no fields to update: pass at least one of --display-name, --command-name, --description, --enabled");
+    }
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = required_workspace_id(cli, environment)?;
+    let profile: Value = client
+        .patch_json(
+            &format!(
+                "{}/{}",
+                runtime_profiles_path(&workspace_id),
+                args.profile_id
+            ),
+            &body,
+        )
+        .await
+        .context("update runtime profile")?;
+    output_runtime_profiles(&[profile], args.output, true)
+}
+
+async fn run_runtime_profile_delete(
+    cli: &Cli,
+    environment: &Environment,
+    profile_id: &str,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = required_workspace_id(cli, environment)?;
+    let path = format!("{}/{profile_id}", runtime_profiles_path(&workspace_id));
+    if let Err(error) = client.delete(&path).await {
+        if error
+            .downcast_ref::<HttpError>()
+            .is_some_and(|http| http.status_code == 409)
+        {
+            let message = error
+                .downcast_ref::<HttpError>()
+                .map(|http| http.body.trim())
+                .filter(|body| !body.is_empty())
+                .unwrap_or("profile still has active agents bound to it");
+            bail!("cannot delete runtime profile {profile_id}: {message}");
+        }
+        return Err(error).context("delete runtime profile");
+    }
+    Ok(RunOutput {
+        stdout: format!("Deleted runtime profile {profile_id}\n"),
+        stderr: String::new(),
+    })
+}
+
+fn output_runtime_profiles(
+    profiles: &[Value],
+    output: OutputFormat,
+    single: bool,
+) -> Result<RunOutput> {
+    if output == OutputFormat::Json {
+        let value = if single {
+            &profiles[0]
+        } else {
+            return Ok(RunOutput {
+                stdout: format!("{}\n", serde_json::to_string_pretty(profiles)?),
+                stderr: String::new(),
+            });
+        };
+        return Ok(RunOutput {
+            stdout: format!("{}\n", serde_json::to_string_pretty(value)?),
+            stderr: String::new(),
+        });
+    }
+    let mut profiles = profiles.to_vec();
+    profiles.sort_by_key(|profile| value_string(profile, "display_name"));
+    let mut rows = vec![vec![
+        "ID".into(),
+        "DISPLAY_NAME".into(),
+        "PROTOCOL_FAMILY".into(),
+        "COMMAND_NAME".into(),
+        "ENABLED".into(),
+    ]];
+    rows.extend(profiles.iter().map(|profile| {
+        vec![
+            value_string(profile, "id"),
+            value_string(profile, "display_name"),
+            value_string(profile, "protocol_family"),
+            value_string(profile, "command_name"),
+            value_string(profile, "enabled"),
+        ]
+    }));
+    Ok(RunOutput {
+        stdout: format_table(&rows),
         stderr: String::new(),
     })
 }
@@ -12930,6 +13215,168 @@ mod tests {
             .stdout,
             "Update timeout: daemon timeout\n"
         );
+    }
+
+    #[tokio::test]
+    async fn runtime_profile_registry_commands_match_go_contract() {
+        let collection = "/api/workspaces/workspace-1/runtime-profiles";
+        let resource = "/api/workspaces/workspace-1/runtime-profiles/profile-1";
+        let app = Router::new()
+            .route(
+                collection,
+                get(|| async {
+                    Json(serde_json::json!({"runtime_profiles":[
+                        {"id":"profile-2","display_name":"Zulu","protocol_family":"codex","command_name":"z","enabled":true},
+                        {"id":"profile-1","display_name":"Alpha","protocol_family":"claude","command_name":"a","enabled":false}
+                    ]}))
+                })
+                .post(|Json(body): Json<Value>| async move {
+                    assert_eq!(body["protocol_family"], "codex");
+                    assert_eq!(body["command_name"], "wrapper");
+                    assert_eq!(body["display_name"], "Wrapper");
+                    assert!(body.get("description").is_none());
+                    Json(serde_json::json!({
+                        "id":"profile-1","display_name":"Wrapper","protocol_family":"codex",
+                        "command_name":"wrapper","enabled":true,"server_only":"preserved"
+                    }))
+                }),
+            )
+            .route(
+                resource,
+                patch(|Json(body): Json<Value>| async move {
+                    assert_eq!(body, serde_json::json!({"description":"","enabled":false}));
+                    Json(serde_json::json!({
+                        "id":"profile-1","display_name":"Wrapper","protocol_family":"codex",
+                        "command_name":"wrapper","description":"","enabled":false
+                    }))
+                })
+                .delete(|| async { axum::http::StatusCode::NO_CONTENT }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let list = Cli::try_parse_from(["cordy", "runtime", "profile", "list"])
+            .expect("runtime profile list CLI");
+        let listed = run_with_input(&list, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list runtime profiles");
+        assert!(
+            listed.stdout.find("Alpha").expect("Alpha") < listed.stdout.find("Zulu").expect("Zulu")
+        );
+
+        let create = Cli::try_parse_from([
+            "cordy",
+            "runtime",
+            "profile",
+            "create",
+            "--protocol-family",
+            "codex",
+            "--command-name",
+            "wrapper",
+            "--display-name",
+            "Wrapper",
+        ])
+        .expect("runtime profile create CLI");
+        let created = run_with_input(&create, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("create runtime profile");
+        assert_eq!(
+            serde_json::from_str::<Value>(&created.stdout).expect("JSON")["server_only"],
+            "preserved"
+        );
+
+        let update = Cli::try_parse_from([
+            "cordy",
+            "runtime",
+            "profile",
+            "update",
+            "profile-1",
+            "--description",
+            "",
+            "--enabled=false",
+        ])
+        .expect("runtime profile update CLI");
+        run_with_input(&update, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("update runtime profile");
+
+        let delete = Cli::try_parse_from(["cordy", "runtime", "profile", "delete", "profile-1"])
+            .expect("runtime profile delete CLI");
+        let deleted = run_with_input(&delete, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("delete runtime profile");
+        assert_eq!(deleted.stdout, "Deleted runtime profile profile-1\n");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn runtime_profile_validates_create_update_and_delete_conflict() {
+        let app = Router::new().route(
+            "/api/workspaces/workspace-1/runtime-profiles/profile-1",
+            delete_route(|| async {
+                (
+                    axum::http::StatusCode::CONFLICT,
+                    "active agents remain bound",
+                )
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let invalid = Cli::try_parse_from([
+            "cordy",
+            "runtime",
+            "profile",
+            "create",
+            "--protocol-family",
+            "unknown",
+            "--command-name",
+            "wrapper",
+            "--display-name",
+            "Wrapper",
+        ])
+        .expect("invalid family parses for runtime validation");
+        let error = run_with_input(&invalid, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("invalid protocol family");
+        assert!(error.to_string().contains("must be one of"));
+
+        let empty_update =
+            Cli::try_parse_from(["cordy", "runtime", "profile", "update", "profile-1"])
+                .expect("empty runtime profile update CLI");
+        let error = run_with_input(
+            &empty_update,
+            &environment,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .await
+        .expect_err("no fields");
+        assert!(error.to_string().contains("no fields to update"));
+
+        let delete = Cli::try_parse_from(["cordy", "runtime", "profile", "delete", "profile-1"])
+            .expect("runtime profile delete CLI");
+        let error = run_with_input(&delete, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("profile conflict");
+        assert_eq!(
+            error.to_string(),
+            "cannot delete runtime profile profile-1: active agents remain bound"
+        );
+        server.abort();
     }
 
     async fn test_server() -> (String, tokio::task::JoinHandle<()>) {
