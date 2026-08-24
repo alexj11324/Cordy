@@ -96,6 +96,7 @@ type Result<T> = std::result::Result<T, UpdateExecutorError>;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct UpdateRequest {
     pub target_version: Option<String>,
+    pub current_version: Option<String>,
     pub download_timeout: Option<Duration>,
 }
 
@@ -115,6 +116,11 @@ impl UpdateRequest {
         self.download_timeout = Some(timeout);
         self
     }
+
+    pub fn with_current_version(mut self, current_version: impl Into<String>) -> Self {
+        self.current_version = Some(current_version.into());
+        self
+    }
 }
 
 /// Installation method reported by the typed update boundary. It intentionally
@@ -132,6 +138,7 @@ pub enum UpdateInstallMethod {
 pub struct UpdateOutcome {
     pub method: UpdateInstallMethod,
     pub resolved_version: Option<String>,
+    pub already_current: bool,
     pub latest_query_failed: bool,
     pub message: String,
 }
@@ -213,18 +220,35 @@ impl UpdateExecutor {
         let timeout =
             validate_download_timeout(request.download_timeout.unwrap_or(DOWNLOAD_TIMEOUT))?;
 
-        if let Some(target) = request.target_version.as_deref() {
+        let requested_version = request.target_version.as_deref();
+        let current_version = request.current_version.as_deref();
+        if let Some(target) = requested_version {
             validate_target_version(target)?;
+            if current_version.is_some_and(|current| same_release_version(target, current)) {
+                return Ok(already_current_outcome(
+                    install_method(&self.install_method),
+                    Some(normalize_release_tag(target)),
+                ));
+            }
         }
 
         match &self.install_method {
             InstallMethod::Homebrew { .. } => {
                 let (latest_tag, latest_query_failed) =
                     resolve_homebrew_latest(self.fetch_latest_release_tag().await);
+                if let (Some(latest), Some(current)) = (latest_tag.as_deref(), current_version) {
+                    if same_release_version(latest, current) {
+                        return Ok(already_current_outcome(
+                            UpdateInstallMethod::Homebrew,
+                            latest_tag,
+                        ));
+                    }
+                }
                 let message = self.update_homebrew().await.map_err(anyhow::Error::from)?;
                 Ok(UpdateOutcome {
                     method: UpdateInstallMethod::Homebrew,
                     resolved_version: latest_tag,
+                    already_current: false,
                     latest_query_failed,
                     message,
                 })
@@ -234,6 +258,12 @@ impl UpdateExecutor {
                     Some(target) => normalize_release_tag(&target),
                     None => self.fetch_latest_release_tag().await?,
                 };
+                if current_version.is_some_and(|current| same_release_version(&target, current)) {
+                    return Ok(already_current_outcome(
+                        UpdateInstallMethod::Direct,
+                        Some(target),
+                    ));
+                }
                 let message = self
                     .update_direct_with_timeout(&target, timeout)
                     .await
@@ -241,6 +271,7 @@ impl UpdateExecutor {
                 Ok(UpdateOutcome {
                     method: UpdateInstallMethod::Direct,
                     resolved_version: Some(target),
+                    already_current: false,
                     latest_query_failed: false,
                     message,
                 })
@@ -532,6 +563,30 @@ fn validate_target_version(version: &str) -> Result<()> {
         ));
     }
     Ok(())
+}
+
+fn install_method(method: &InstallMethod) -> UpdateInstallMethod {
+    match method {
+        InstallMethod::Direct => UpdateInstallMethod::Direct,
+        InstallMethod::Homebrew { .. } => UpdateInstallMethod::Homebrew,
+    }
+}
+
+fn same_release_version(left: &str, right: &str) -> bool {
+    normalize_release_tag(left) == normalize_release_tag(right)
+}
+
+fn already_current_outcome(
+    method: UpdateInstallMethod,
+    resolved_version: Option<String>,
+) -> UpdateOutcome {
+    UpdateOutcome {
+        method,
+        resolved_version,
+        already_current: true,
+        latest_query_failed: false,
+        message: "Already up to date.".to_string(),
+    }
 }
 
 fn validate_download_timeout(timeout: Duration) -> Result<Duration> {
@@ -1083,8 +1138,22 @@ mod tests {
         let request =
             UpdateRequest::for_target("1.2.3").with_download_timeout(Duration::from_secs(7));
         assert_eq!(request.target_version.as_deref(), Some("1.2.3"));
+        assert_eq!(request.current_version, None);
         assert_eq!(request.download_timeout, Some(Duration::from_secs(7)));
         assert_eq!(UpdateRequest::latest(), UpdateRequest::default());
+    }
+
+    #[test]
+    fn already_current_decision_normalizes_v_prefix_without_downloading() {
+        let request = UpdateRequest::latest().with_current_version("v1.2.3");
+        assert_eq!(request.current_version.as_deref(), Some("v1.2.3"));
+        assert!(same_release_version("1.2.3", "v1.2.3"));
+        assert!(!same_release_version("1.2.4", "v1.2.3"));
+
+        let outcome = already_current_outcome(UpdateInstallMethod::Direct, Some("v1.2.3".into()));
+        assert!(outcome.already_current);
+        assert_eq!(outcome.message, "Already up to date.");
+        assert!(!outcome.latest_query_failed);
     }
 
     #[test]
