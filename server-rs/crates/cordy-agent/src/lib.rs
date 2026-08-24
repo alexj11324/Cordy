@@ -6,6 +6,7 @@
 //! metadata alone never manufactures a backend that cannot execute.
 
 pub mod codebuddy;
+pub mod codebuddy_discovery;
 pub mod command;
 pub mod contract;
 pub mod mcp;
