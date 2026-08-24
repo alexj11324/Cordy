@@ -852,8 +852,9 @@
       error redaction, and presentation now live in
       `cordy-cli/src/update_commands.rs`; daemon detection/download/install
       remains behind its typed facade. Scoped rustfmt/diff-check pass; no
-      Cargo was run. The serial subagent owns review/minimal fixes; pro owns
-      Ready PR, gate, and merge.
+      Cargo was run. The serial subagent reviewed exact head `9f8451e2` and
+      found no issue (environment lacked a rustfmt binary for a second pass);
+      pro owns Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
