@@ -7,6 +7,8 @@
 
 use std::collections::HashMap;
 use std::io::{Cursor, Read};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::body::to_bytes;
@@ -38,6 +40,8 @@ const MAX_FILE_SIZE: usize = 1 << 20;
 const MAX_TOTAL_SIZE: usize = 8 << 20;
 const MAX_FILE_COUNT: usize = 256;
 const MAX_ARCHIVE_UPLOAD_SIZE: usize = 16 << 20;
+const MAX_ARCHIVE_ENTRY_COUNT: usize = MAX_FILE_COUNT * 2;
+const MAX_ARCHIVE_UNCOMPRESSED_SIZE: usize = MAX_TOTAL_SIZE * 2;
 const FETCH_TIMEOUT: Duration = Duration::from_secs(45);
 const SEARCH_STATS_LIMIT: usize = 10;
 const DOWNLOAD_CONCURRENCY: usize = 8;
@@ -321,6 +325,7 @@ impl ImportedSkill {
 enum ImportError {
     Bad(String),
     Cap(String),
+    ArchiveLimit(String),
     Unavailable(String),
     Timeout,
     Upstream(String),
@@ -329,7 +334,7 @@ enum ImportError {
 impl std::fmt::Display for ImportError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Bad(message) | Self::Cap(message) | Self::Unavailable(message) | Self::Upstream(message) => formatter.write_str(message),
+            Self::Bad(message) | Self::Cap(message) | Self::ArchiveLimit(message) | Self::Unavailable(message) | Self::Upstream(message) => formatter.write_str(message),
             Self::Timeout => formatter.write_str("skill import timed out fetching source files; the skill may be too large or the source too slow"),
         }
     }
@@ -338,7 +343,7 @@ impl std::fmt::Display for ImportError {
 fn import_error_response(error: ImportError) -> Response {
     let status = match error {
         ImportError::Bad(_) => StatusCode::BAD_REQUEST,
-        ImportError::Cap(_) => StatusCode::PAYLOAD_TOO_LARGE,
+        ImportError::Cap(_) | ImportError::ArchiveLimit(_) => StatusCode::PAYLOAD_TOO_LARGE,
         ImportError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
         ImportError::Timeout => StatusCode::GATEWAY_TIMEOUT,
         ImportError::Upstream(_) => StatusCode::BAD_GATEWAY,
@@ -370,6 +375,11 @@ fn detect_source(raw: &str) -> Result<(Source, String), ImportError> {
         .map_err(|error| ImportError::Bad(format!("invalid URL: {error}")))?;
     if parsed.scheme() != "https" {
         return Err(ImportError::Bad("skill source must use https".into()));
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(ImportError::Bad(
+            "skill source URL must not contain credentials".into(),
+        ));
     }
     let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
     match host.as_str() {
@@ -494,8 +504,24 @@ async fn archive_from_request(
             "a skill archive file is required (form field \"file\")",
         )
     })?;
-    let imported = parse_archive(&data, &filename)
-        .map_err(|error| error_response(StatusCode::BAD_REQUEST, &error.to_string()))?;
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let cancel_on_drop = CancelArchiveOnDrop(cancelled.clone());
+    let parse_cancelled = cancelled.clone();
+    let archive_data = data.to_vec();
+    let archive_filename = filename.clone();
+    let imported = tokio::task::spawn_blocking(move || {
+        parse_archive_with_cancel(&archive_data, &archive_filename, &parse_cancelled)
+    })
+    .await
+    .map_err(|error| {
+        tracing::error!(%error, "skill archive parser task failed");
+        error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to parse uploaded archive",
+        )
+    })?
+    .map_err(import_error_response)?;
+    drop(cancel_on_drop);
     Ok((
         imported,
         if strategy.is_empty() {
@@ -1104,14 +1130,12 @@ async fn add_files_via_crawl(
         }
     }
     files.sort_by(|left, right| left.0.cmp(&right.0));
-    let downloads = stream::iter(files.into_iter().map(|(path, url)| async move {
+    let mut downloads = stream::iter(files.into_iter().map(|(path, url)| async move {
         let bytes = fetch_bytes(client, url, true).await?;
         Ok::<_, ImportError>((path, String::from_utf8_lossy(&bytes).into_owned()))
     }))
-    .buffered(DOWNLOAD_CONCURRENCY)
-    .collect::<Vec<_>>()
-    .await;
-    for result in downloads {
+    .buffered(DOWNLOAD_CONCURRENCY);
+    while let Some(result) = downloads.next().await {
         let (path, content) = result?;
         imported.add_file(path, content)?;
     }
@@ -1351,11 +1375,54 @@ fn likely_binary(path: &str) -> bool {
     )
 }
 
+struct CancelArchiveOnDrop(Arc<AtomicBool>);
+
+impl Drop for CancelArchiveOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
 fn parse_archive(data: &[u8], filename: &str) -> Result<ImportedSkill, ImportError> {
+    parse_archive_with_cancel(data, filename, &AtomicBool::new(false))
+}
+
+fn parse_archive_with_cancel(
+    data: &[u8],
+    filename: &str,
+    cancelled: &AtomicBool,
+) -> Result<ImportedSkill, ImportError> {
     let mut archive = zip::ZipArchive::new(Cursor::new(data))
         .map_err(|_| ImportError::Bad("uploaded file is not a valid .skill/.zip archive".into()))?;
+    if archive.len() > MAX_ARCHIVE_ENTRY_COUNT {
+        return Err(ImportError::ArchiveLimit(format!(
+            "archive exceeds {MAX_ARCHIVE_ENTRY_COUNT} entry limit"
+        )));
+    }
+    let mut declared_size = 0_u64;
+    for index in 0..archive.len() {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(ImportError::Bad("archive parsing cancelled".into()));
+        }
+        let file = archive
+            .by_index(index)
+            .map_err(|error| ImportError::Bad(error.to_string()))?;
+        if !file.is_dir() {
+            declared_size = declared_size.checked_add(file.size()).ok_or_else(|| {
+                ImportError::ArchiveLimit("archive uncompressed size is too large".into())
+            })?;
+            if declared_size > MAX_ARCHIVE_UNCOMPRESSED_SIZE as u64 {
+                return Err(ImportError::ArchiveLimit(format!(
+                    "archive exceeds {MAX_ARCHIVE_UNCOMPRESSED_SIZE} byte uncompressed limit"
+                )));
+            }
+        }
+    }
     let mut primary = None;
     for index in 0..archive.len() {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(ImportError::Bad("archive parsing cancelled".into()));
+        }
         let file = archive
             .by_index(index)
             .map_err(|error| ImportError::Bad(error.to_string()))?;
@@ -1383,7 +1450,13 @@ fn parse_archive(data: &[u8], filename: &str) -> Result<ImportedSkill, ImportErr
     }
     let (primary_index, prefix) =
         primary.ok_or_else(|| ImportError::Bad("archive does not contain a SKILL.md".into()))?;
-    let content = read_zip(&mut archive, primary_index)?;
+    let mut decompressed_size = 0_usize;
+    let content = read_zip(
+        &mut archive,
+        primary_index,
+        &mut decompressed_size,
+        cancelled,
+    )?;
     let (front_name, description) = parse_frontmatter(&content);
     let fallback = if prefix.is_empty() {
         filename
@@ -1413,6 +1486,9 @@ fn parse_archive(data: &[u8], filename: &str) -> Result<ImportedSkill, ImportErr
     }
     let mut imported = ImportedSkill::new(name, description, content, None);
     for index in 0..archive.len() {
+        if cancelled.load(Ordering::Relaxed) {
+            return Err(ImportError::Bad("archive parsing cancelled".into()));
+        }
         if index == primary_index {
             continue;
         }
@@ -1438,9 +1514,10 @@ fn parse_archive(data: &[u8], filename: &str) -> Result<ImportedSkill, ImportErr
         {
             continue;
         }
-        match read_zip(&mut archive, index) {
+        match read_zip(&mut archive, index, &mut decompressed_size, cancelled) {
             Ok(content) => imported.add_file(relative, content)?,
             Err(ImportError::Cap(_)) => continue,
+            Err(error @ ImportError::ArchiveLimit(_)) => return Err(error),
             Err(error) => return Err(error),
         }
     }
@@ -1453,15 +1530,28 @@ fn parse_archive(data: &[u8], filename: &str) -> Result<ImportedSkill, ImportErr
 fn read_zip(
     archive: &mut zip::ZipArchive<Cursor<&[u8]>>,
     index: usize,
+    decompressed_size: &mut usize,
+    cancelled: &AtomicBool,
 ) -> Result<String, ImportError> {
+    if cancelled.load(Ordering::Relaxed) {
+        return Err(ImportError::Bad("archive parsing cancelled".into()));
+    }
     let mut file = archive
         .by_index(index)
         .map_err(|error| ImportError::Bad(error.to_string()))?;
     let mut bytes = Vec::new();
+    let remaining = MAX_ARCHIVE_UNCOMPRESSED_SIZE.saturating_sub(*decompressed_size);
+    let read_limit = (MAX_FILE_SIZE + 1).min(remaining.saturating_add(1));
     file.by_ref()
-        .take((MAX_FILE_SIZE + 1) as u64)
+        .take(read_limit as u64)
         .read_to_end(&mut bytes)
         .map_err(|error| ImportError::Bad(error.to_string()))?;
+    *decompressed_size = (*decompressed_size).saturating_add(bytes.len());
+    if *decompressed_size > MAX_ARCHIVE_UNCOMPRESSED_SIZE {
+        return Err(ImportError::ArchiveLimit(format!(
+            "archive exceeds {MAX_ARCHIVE_UNCOMPRESSED_SIZE} byte uncompressed limit"
+        )));
+    }
     if bytes.len() > MAX_FILE_SIZE {
         return Err(ImportError::Cap(format!(
             "file {:?} exceeds {MAX_FILE_SIZE} bytes",
@@ -1889,6 +1979,8 @@ mod tests {
             Source::GitHub
         );
         assert!(detect_source("http://github.com/acme/review").is_err());
+        assert!(detect_source("https://ghp_secret@github.com/acme/review").is_err());
+        assert!(detect_source("https://user:secret@github.com/acme/review").is_err());
         assert!(detect_source("https://127.0.0.1/skill").is_err());
     }
 
@@ -1955,6 +2047,47 @@ mod tests {
         assert_eq!(imported.name, "review");
         assert_eq!(imported.files.len(), 1);
         assert_eq!(imported.files[0].path, "docs/a.md");
+    }
+
+    #[test]
+    fn archive_rejects_excess_entries_before_decompression() {
+        let mut bytes = Vec::new();
+        {
+            let mut writer = zip::ZipWriter::new(Cursor::new(&mut bytes));
+            let options = zip::write::SimpleFileOptions::default();
+            for index in 0..=MAX_ARCHIVE_ENTRY_COUNT {
+                writer
+                    .start_file(format!("entry-{index}.txt"), options)
+                    .unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        assert!(matches!(
+            parse_archive(&bytes, "review.skill"),
+            Err(ImportError::ArchiveLimit(_))
+        ));
+    }
+
+    #[test]
+    fn archive_rejects_declared_uncompressed_size_before_reading() {
+        let mut bytes = Vec::new();
+        {
+            let mut writer = zip::ZipWriter::new(Cursor::new(&mut bytes));
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            writer.start_file("review/SKILL.md", options).unwrap();
+            writer.write_all(b"---\nname: review\n---\n").unwrap();
+            writer.start_file("review/bomb.txt", options).unwrap();
+            writer
+                .write_all(&vec![0; MAX_ARCHIVE_UNCOMPRESSED_SIZE + 1])
+                .unwrap();
+            writer.finish().unwrap();
+        }
+        assert!(bytes.len() < MAX_ARCHIVE_UPLOAD_SIZE);
+        assert!(matches!(
+            parse_archive(&bytes, "review.skill"),
+            Err(ImportError::ArchiveLimit(_))
+        ));
     }
 
     #[test]
