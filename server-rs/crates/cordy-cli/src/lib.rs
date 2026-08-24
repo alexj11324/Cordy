@@ -131,6 +131,27 @@ enum AgentCommand {
     Create(AgentCreateArgs),
     #[command(about = "Update an agent")]
     Update(AgentUpdateArgs),
+    #[command(about = "Archive an agent")]
+    Archive {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
+    #[command(about = "Restore an archived agent")]
+    Restore {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
+    #[command(about = "List tasks for an agent")]
+    Tasks {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -1813,6 +1834,15 @@ async fn run_with_input<R: Read>(
         Command::Agent(AgentArgs {
             command: AgentCommand::Update(args),
         }) => run_agent_update(cli, environment, args, input).await,
+        Command::Agent(AgentArgs {
+            command: AgentCommand::Archive { id, output },
+        }) => run_agent_lifecycle(cli, environment, id, "archive", "archived", *output).await,
+        Command::Agent(AgentArgs {
+            command: AgentCommand::Restore { id, output },
+        }) => run_agent_lifecycle(cli, environment, id, "restore", "restored", *output).await,
+        Command::Agent(AgentArgs {
+            command: AgentCommand::Tasks { id, output },
+        }) => run_agent_tasks(cli, environment, id, *output).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -2466,6 +2496,70 @@ async fn run_agent_update<R: Read>(
             value_string(&agent, "name"),
             value_string(&agent, "id")
         ),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+async fn run_agent_lifecycle(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    action: &str,
+    past_tense: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let agent: Value = client
+        .post_json(&format!("/api/agents/{id}/{action}"), &Value::Null)
+        .await
+        .with_context(|| format!("{action} agent"))?;
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&agent)?),
+        OutputFormat::Table => format!(
+            "Agent {past_tense}: {} ({})\n",
+            value_string(&agent, "name"),
+            value_string(&agent, "id")
+        ),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+async fn run_agent_tasks(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let tasks: Vec<Value> = client
+        .get_json(&format!("/api/agents/{id}/tasks"))
+        .await
+        .context("list agent tasks")?;
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&tasks)?),
+        OutputFormat::Table => {
+            let mut rows = vec![vec![
+                "ID".into(),
+                "ISSUE_ID".into(),
+                "STATUS".into(),
+                "CREATED_AT".into(),
+            ]];
+            rows.extend(tasks.iter().map(|task| {
+                vec![
+                    value_string(task, "id"),
+                    value_string(task, "issue_id"),
+                    value_string(task, "status"),
+                    value_string(task, "created_at"),
+                ]
+            }));
+            format_table(&rows)
+        }
     };
     Ok(RunOutput {
         stdout,
@@ -10607,6 +10701,84 @@ mod tests {
             .expect_err("no changes");
         assert!(error.to_string().contains("no fields to update"));
         assert!(error.to_string().contains("cordy agent env set <id>"));
+    }
+
+    #[tokio::test]
+    async fn agent_lifecycle_and_tasks_match_go_requests_and_outputs() {
+        let app = Router::new()
+            .route(
+                "/api/agents/agent-1/archive",
+                post(|Json(body): Json<Value>| async move {
+                    assert!(body.is_null());
+                    Json(serde_json::json!({"id":"agent-1","name":"Builder","archived_at":"now"}))
+                }),
+            )
+            .route(
+                "/api/agents/agent-1/restore",
+                post(|Json(body): Json<Value>| async move {
+                    assert!(body.is_null());
+                    Json(serde_json::json!({"id":"agent-1","name":"Builder","archived_at":null}))
+                }),
+            )
+            .route(
+                "/api/agents/agent-1/tasks",
+                get(|| async {
+                    Json(vec![serde_json::json!({
+                        "id":"task-1",
+                        "issue_id":"issue-1",
+                        "status":"completed",
+                        "created_at":"2026-08-24T00:00:00Z",
+                        "server_only":"preserved"
+                    })])
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "token-1");
+
+        for (command, expected) in [
+            ("archive", "Agent archived: Builder (agent-1)\n"),
+            ("restore", "Agent restored: Builder (agent-1)\n"),
+        ] {
+            let cli =
+                Cli::try_parse_from(["cordy", "agent", command, "agent-1", "--output", "table"])
+                    .expect("agent lifecycle CLI");
+            let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .await
+                .expect("agent lifecycle request");
+            assert_eq!(output.stdout, expected);
+        }
+
+        let tasks =
+            Cli::try_parse_from(["cordy", "agent", "tasks", "agent-1"]).expect("agent tasks CLI");
+        let table = run_with_input(&tasks, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list agent tasks");
+        assert!(table.stdout.starts_with("ID"));
+        assert!(table.stdout.contains("task-1"));
+        assert!(table.stdout.contains("issue-1"));
+        assert!(table.stdout.contains("completed"));
+
+        let tasks_json =
+            Cli::try_parse_from(["cordy", "agent", "tasks", "agent-1", "--output", "json"])
+                .expect("agent tasks JSON CLI");
+        let json = run_with_input(
+            &tasks_json,
+            &environment,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .await
+        .expect("list agent tasks JSON");
+        assert_eq!(
+            serde_json::from_str::<Value>(&json.stdout).expect("JSON")[0]["server_only"],
+            "preserved"
+        );
+        server.abort();
     }
 
     #[test]
