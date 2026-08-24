@@ -386,8 +386,8 @@ pub async fn update_workspace(
     name: Option<&str>,
     description: Option<&str>,
     context: Option<&str>,
-    settings: &serde_json::Value,
-    repos: &serde_json::Value,
+    settings: Option<&serde_json::Value>,
+    repos: Option<&serde_json::Value>,
     issue_prefix: Option<&str>,
     avatar_url: Option<&str>,
 ) -> anyhow::Result<Option<Workspace>> {
