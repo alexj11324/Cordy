@@ -696,6 +696,10 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UpdateMe(w http.ResponseWriter, r *http.Request) {
+	if isMachineCredentialActor(r) {
+		writeError(w, http.StatusForbidden, "this endpoint is only available to human actors")
+		return
+	}
 	userID, ok := requireUserID(w, r)
 	if !ok {
 		return
