@@ -757,7 +757,10 @@ mod tests {
             config.command.prefix,
             vec!["--profile".to_string(), "cordy".to_string()]
         );
-        assert_eq!(config.env.get("CORDY_TASK_ID"), Some(&"task-1".to_string()));
+        assert_eq!(
+            config.env.get("CORDY_TASK_ID").map(String::as_str),
+            Some("task-1")
+        );
     }
 
     #[test]
