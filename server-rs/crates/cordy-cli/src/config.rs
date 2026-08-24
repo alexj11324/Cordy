@@ -195,6 +195,38 @@ impl Environment {
         write_json_atomically(&path, &document)
     }
 
+    /// Atomically persist the credentials established by `login --token`.
+    /// Keeping the server URL and token update under one profile lock avoids
+    /// leaving a profile half-updated if the second field cannot be written.
+    pub fn save_profile_credentials(
+        &self,
+        profile: &str,
+        server_url: &str,
+        token: &str,
+    ) -> Result<()> {
+        let path = self.config_path(profile)?;
+        let directory = path.parent().context("resolve CLI config directory")?;
+        ensure_config_directory(directory, self.trimmed(TASK_CONFIG_ROOT_ENV))?;
+        let lock_path = directory.join(".config.lock");
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .context("open CLI config lock")?;
+        restrict_file_permissions(&lock_path)?;
+        lock.lock().context("lock CLI config")?;
+
+        let mut document = read_config_document(&path)?;
+        let object = document
+            .as_object_mut()
+            .context("parse CLI config: expected a JSON object")?;
+        object.insert("server_url".into(), Value::String(server_url.into()));
+        object.insert("token".into(), Value::String(token.into()));
+        write_json_atomically(&path, &document)
+    }
+
     pub fn set_profile_command_override(
         &self,
         profile: &str,

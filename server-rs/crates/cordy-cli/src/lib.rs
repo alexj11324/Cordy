@@ -81,6 +81,8 @@ enum Command {
     Issue(IssueArgs),
     #[command(about = "Authenticate cordy with Cordy")]
     Auth(AuthArgs),
+    #[command(about = "Log in to Cordy")]
+    Login(LoginArgs),
     #[command(about = "Manage configuration for cordy")]
     Config(ConfigArgs),
     #[command(about = "Work with your user account")]
@@ -114,6 +116,21 @@ enum Command {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
         output: VersionOutput,
     },
+}
+
+const LOGIN_TOKEN_PROMPT: &str = "__cordy_prompt_token__";
+
+#[derive(Debug, Args)]
+struct LoginArgs {
+    /// Personal access token. With no value, read it from stdin without
+    /// echoing it into the resulting output or error text.
+    #[arg(
+        long,
+        value_name = "TOKEN",
+        num_args = 0..=1,
+        default_missing_value = LOGIN_TOKEN_PROMPT
+    )]
+    token: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -3099,6 +3116,7 @@ async fn run_with_input<R: Read>(
         Command::Auth(AuthArgs {
             command: AuthCommand::Logout,
         }) => run_auth_logout(cli, environment),
+        Command::Login(args) => run_login_token(cli, environment, args, input).await,
         Command::Config(ConfigArgs { command: None }) => {
             run_config_show(cli, environment, OutputFormat::Table)
         }
@@ -7975,6 +7993,89 @@ async fn run_repo_checkout(
 struct AuthUser {
     name: String,
     email: String,
+}
+
+const DEFAULT_CLOUD_SERVER_URL: &str = "https://api.cordy.ai";
+
+fn validate_login_token_prefix(token: &str) -> Result<()> {
+    if token.starts_with("mul_") || token.starts_with("mcn_") {
+        return Ok(());
+    }
+    bail!("invalid token format: must start with mul_ or mcn_");
+}
+
+fn resolve_login_server_url(cli: &Cli, environment: &Environment) -> Result<String> {
+    let explicit = cli
+        .server_url
+        .as_deref()
+        .or_else(|| environment.trimmed("CORDY_SERVER_URL"));
+    if let Some(raw) = explicit.filter(|value| !value.is_empty()) {
+        return normalize_api_base_url(raw);
+    }
+
+    let config = environment.load_config(&cli.profile)?;
+    if !config.server_url.trim().is_empty() {
+        return normalize_api_base_url(config.server_url.trim());
+    }
+    Ok(DEFAULT_CLOUD_SERVER_URL.to_owned())
+}
+
+async fn run_login_token<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &LoginArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    require_human_local_command(environment, "login")?;
+    let Some(raw_token) = args.token.as_deref() else {
+        bail!(
+            "browser login is not yet available in the Rust CLI; use `cordy login --token <token>`"
+        );
+    };
+
+    let token = if raw_token == LOGIN_TOKEN_PROMPT || raw_token.trim().is_empty() {
+        let mut buffer = String::new();
+        input
+            .read_to_string(&mut buffer)
+            .context("read personal access token")?;
+        buffer.lines().next().unwrap_or_default().trim().to_owned()
+    } else {
+        raw_token.trim().to_owned()
+    };
+    if token.is_empty() {
+        bail!("token is required");
+    }
+    validate_login_token_prefix(&token)?;
+
+    let server_url = resolve_login_server_url(cli, environment)?;
+    let client = ApiClient::new(
+        server_url.clone(),
+        String::new(),
+        token.clone(),
+        String::new(),
+        String::new(),
+        http_timeout(environment.raw("CORDY_HTTP_TIMEOUT")),
+        CLIENT_VERSION,
+    )?;
+    let user = client
+        .get_json::<AuthUser>("/api/me")
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "could not sign in with that token; verify it is valid and not expired, then run `cordy login --token <token>` again"
+            )
+        })?;
+
+    environment
+        .save_profile_credentials(&cli.profile, &server_url, &token)
+        .context("failed to save config")?;
+    Ok(RunOutput {
+        stdout: String::new(),
+        stderr: format!(
+            "Authenticated as {} ({}).\nToken saved to config.\n",
+            user.name, user.email
+        ),
+    })
 }
 
 async fn run_auth_status(
@@ -24802,6 +24903,80 @@ mod tests {
             fs::read(&owner_path).expect("owner still unchanged"),
             owner_bytes
         );
+    }
+
+    #[tokio::test]
+    async fn login_token_validates_and_saves_credentials_atomically() {
+        let app = Router::new().route(
+            "/api/me",
+            get(|request: Request| async move {
+                assert_eq!(
+                    request.headers()["authorization"],
+                    "Bearer mcn_cloud_secret"
+                );
+                Json(serde_json::json!({"name":"Ada","email":"ada@example.com"}))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        let cli = Cli::try_parse_from(["cordy", "login", "--token", "mcn_cloud_secret"])
+            .expect("login CLI");
+
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("token login");
+        assert!(output.stdout.is_empty());
+        assert!(output
+            .stderr
+            .contains("Authenticated as Ada (ada@example.com)."));
+        assert!(output.stderr.contains("Token saved to config."));
+        assert!(!output.stderr.contains("mcn_cloud_secret"));
+
+        let saved: Value = serde_json::from_slice(
+            &fs::read(home.path().join(".cordy/config.json")).expect("saved config"),
+        )
+        .expect("saved JSON");
+        assert_eq!(saved["server_url"], format!("http://{address}"));
+        assert_eq!(saved["token"], "mcn_cloud_secret");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn login_token_rejects_invalid_prefix_before_network_or_write() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli =
+            Cli::try_parse_from(["cordy", "login", "--token", "not-a-pat"]).expect("login CLI");
+
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("invalid prefix");
+        assert!(error.to_string().contains("must start with mul_ or mcn_"));
+        assert!(!home.path().join(".cordy/config.json").exists());
+    }
+
+    #[tokio::test]
+    async fn login_token_is_unavailable_inside_daemon_task_context() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_AGENT_ID", "agent-1");
+        environment.set("CORDY_TASK_ID", "task-1");
+        let cli =
+            Cli::try_parse_from(["cordy", "login", "--token", "mul_secret"]).expect("login CLI");
+
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("task login guard");
+        assert!(error.to_string().contains("login is not available inside"));
     }
 
     #[tokio::test]
