@@ -90,11 +90,52 @@ enum Command {
     Project(ProjectArgs),
     #[command(about = "Manage workspace custom issue properties")]
     Property(PropertyArgs),
+    #[command(about = "Work with the current chat conversation")]
+    Chat(ChatArgs),
     #[command(about = "Print version information")]
     Version {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
         output: VersionOutput,
     },
+}
+
+#[derive(Debug, Args)]
+struct ChatArgs {
+    #[command(subcommand)]
+    command: ChatCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum ChatCommand {
+    #[command(about = "Overview of the channel this conversation is in (messages + thread list)")]
+    History(ChatReadArgs),
+    #[command(about = "Read one thread's messages (the current thread, or a specific id)")]
+    Thread(ChatThreadArgs),
+}
+
+#[derive(Debug, Args)]
+struct ChatReadArgs {
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Maximum number of messages to return (the server clamps the range)"
+    )]
+    limit: i64,
+    #[arg(
+        long,
+        help = "Opaque cursor (a next_cursor from a prior page) to read older messages"
+    )]
+    before: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct ChatThreadArgs {
+    #[arg(value_name = "ID")]
+    id: Option<String>,
+    #[command(flatten)]
+    read: ChatReadArgs,
 }
 
 #[derive(Debug, Args)]
@@ -1875,6 +1916,22 @@ async fn run_with_input<R: Read>(
         Command::Property(PropertyArgs {
             command: PropertyCommand::Unarchive(args),
         }) => run_property_archive(cli, environment, args, false).await,
+        Command::Chat(ChatArgs {
+            command: ChatCommand::History(args),
+        }) => run_chat_read(cli, environment, "/api/chat/history", None, args, true).await,
+        Command::Chat(ChatArgs {
+            command: ChatCommand::Thread(args),
+        }) => {
+            run_chat_read(
+                cli,
+                environment,
+                "/api/chat/thread",
+                args.id.as_deref(),
+                &args.read,
+                false,
+            )
+            .await
+        }
         Command::Version { output } => run_version(*output),
     }
 }
@@ -1898,6 +1955,91 @@ fn run_version(output: VersionOutput) -> Result<RunOutput> {
     };
     Ok(RunOutput {
         stdout,
+        stderr: String::new(),
+    })
+}
+
+fn chat_reply_count(message: &Value) -> String {
+    message
+        .get("reply_count")
+        .and_then(Value::as_f64)
+        .filter(|count| *count != 0.0)
+        .map(|count| (count as i64).to_string())
+        .unwrap_or_default()
+}
+
+fn format_chat_read(response: &Value, output: OutputFormat, overview: bool) -> Result<String> {
+    if output == OutputFormat::Json {
+        return Ok(format!("{}\n", serde_json::to_string_pretty(response)?));
+    }
+    if let Some(note) = response
+        .get("note")
+        .and_then(Value::as_str)
+        .filter(|note| !note.is_empty())
+    {
+        return Ok(format!("{note}\n"));
+    }
+    let messages = response
+        .get("messages")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut rows = vec![if overview {
+        vec![
+            "TS".into(),
+            "ROLE".into(),
+            "AUTHOR".into(),
+            "THREAD_ID".into(),
+            "REPLIES".into(),
+            "TEXT".into(),
+        ]
+    } else {
+        vec!["TS".into(), "ROLE".into(), "AUTHOR".into(), "TEXT".into()]
+    }];
+    rows.extend(messages.iter().map(|message| {
+        let mut row = vec![
+            value_string(message, "ts"),
+            value_string(message, "role"),
+            value_string(message, "author"),
+        ];
+        if overview {
+            row.push(value_string(message, "thread_id"));
+            row.push(chat_reply_count(message));
+        }
+        row.push(value_string(message, "text"));
+        row
+    }));
+    Ok(format_table(&rows))
+}
+
+async fn run_chat_read(
+    cli: &Cli,
+    environment: &Environment,
+    base_path: &str,
+    thread_id: Option<&str>,
+    args: &ChatReadArgs,
+    overview: bool,
+) -> Result<RunOutput> {
+    let mut serializer = form_urlencoded::Serializer::new(String::new());
+    if let Some(before) = args.before.as_deref().filter(|before| !before.is_empty()) {
+        serializer.append_pair("before", before);
+    }
+    if let Some(thread_id) = thread_id.filter(|thread_id| !thread_id.is_empty()) {
+        serializer.append_pair("id", thread_id);
+    }
+    if args.limit > 0 {
+        serializer.append_pair("limit", &args.limit.to_string());
+    }
+    let query = serializer.finish();
+    let path = if query.is_empty() {
+        base_path.into()
+    } else {
+        format!("{base_path}?{query}")
+    };
+    let client = new_api_client(cli, environment)?;
+    let response: Value = client.get_json(&path).await.context("read chat")?;
+    Ok(RunOutput {
+        stdout: format_chat_read(&response, args.output, overview)?,
         stderr: String::new(),
     })
 }
@@ -12978,6 +13120,68 @@ mod tests {
         assert!(output.stderr.contains("activity,comment"));
         assert!(output.stderr.contains("older entries are missing"));
         task.abort();
+    }
+
+    #[tokio::test]
+    async fn chat_history_and_thread_match_go_query_and_render_contracts() {
+        let app = Router::new()
+            .route(
+                "/api/chat/history",
+                get(|request: Request| async move {
+                    assert_eq!(request.uri().query(), Some("before=cursor%2Fone&limit=25"));
+                    Json(serde_json::json!({
+                        "messages":[{
+                            "ts":"2026-08-24T00:00:00Z","role":"user","author":"Ada",
+                            "thread_id":"thread/1","reply_count":2,"text":"status?"
+                        }],"next_cursor":"older"
+                    }))
+                }),
+            )
+            .route(
+                "/api/chat/thread",
+                get(|request: Request| async move {
+                    assert_eq!(request.uri().query(), Some("id=thread%2F1"));
+                    Json(serde_json::json!({"note":"thread is unavailable"}))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let history = Cli::try_parse_from([
+            "cordy",
+            "chat",
+            "history",
+            "--before",
+            "cursor/one",
+            "--limit",
+            "25",
+            "--output",
+            "table",
+        ])
+        .expect("chat history CLI");
+        let history = run_with_input(&history, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("chat history");
+        assert!(history.stdout.starts_with("TS"));
+        assert!(history.stdout.contains("thread/1"));
+        assert!(history.stdout.contains("2"));
+        assert!(history.stdout.contains("status?"));
+
+        let thread =
+            Cli::try_parse_from(["cordy", "chat", "thread", "thread/1", "--output", "table"])
+                .expect("chat thread CLI");
+        let thread = run_with_input(&thread, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("chat thread");
+        assert_eq!(thread.stdout, "thread is unavailable\n");
+        server.abort();
     }
 
     #[test]
