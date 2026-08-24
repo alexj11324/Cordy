@@ -2438,6 +2438,8 @@ enum SkillCommand {
     Delete(SkillDeleteArgs),
     #[command(about = "Re-download a skill from its imported source")]
     Refresh(SkillRefreshArgs),
+    #[command(about = "Search for installable skills")]
+    Search(SkillSearchArgs),
 }
 
 #[derive(Debug, Args)]
@@ -2506,6 +2508,14 @@ struct SkillDeleteArgs {
 struct SkillRefreshArgs {
     #[arg(value_name = "SKILL-ID")]
     skill_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct SkillSearchArgs {
+    #[arg(value_name = "QUERY")]
+    query: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
 }
@@ -2926,6 +2936,9 @@ async fn run_with_input<R: Read>(
         Command::Skill(SkillArgs {
             command: SkillCommand::Refresh(args),
         }) => run_skill_refresh(cli, environment, args).await,
+        Command::Skill(SkillArgs {
+            command: SkillCommand::Search(args),
+        }) => run_skill_search(cli, environment, args).await,
         Command::Autopilot(AutopilotArgs {
             command:
                 AutopilotCommand::List {
@@ -6653,6 +6666,52 @@ async fn run_skill_refresh(
             stderr: String::new(),
         },
     })
+}
+
+async fn run_skill_search(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SkillSearchArgs,
+) -> Result<RunOutput> {
+    let query = args.query.trim();
+    if query.is_empty() {
+        bail!("query is required");
+    }
+    let mut serializer = form_urlencoded::Serializer::new(String::new());
+    serializer.append_pair("q", query);
+    let client = new_api_client(cli, environment)?;
+    let results: Vec<Value> = client
+        .get_json(&format!("/api/skills/search?{}", serializer.finish()))
+        .await
+        .context("search skills")?;
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&results)?),
+        OutputFormat::Table => format_skill_search_table(&results),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn format_skill_search_table(results: &[Value]) -> String {
+    let mut rows = vec![vec![
+        "NAME".into(),
+        "URL".into(),
+        "SOURCE".into(),
+        "INSTALLS".into(),
+        "DESCRIPTION".into(),
+    ]];
+    rows.extend(results.iter().map(|result| {
+        vec![
+            value_string(result, "name"),
+            value_string(result, "url"),
+            value_string(result, "source"),
+            value_string(result, "install_count"),
+            value_string(result, "description"),
+        ]
+    }));
+    format_table(&rows)
 }
 
 fn format_skill_list_table(skills: &[Value]) -> String {
@@ -17514,6 +17573,85 @@ mod tests {
             .await
             .expect_err("empty skill ID");
         assert_eq!(error.to_string(), "skill ID must not be empty");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn skill_search_matches_go_query_headers_and_output_contracts() {
+        let app = Router::new().route(
+            "/api/skills/search",
+            get(|request: Request| async move {
+                assert_eq!(request.headers()["authorization"], "Bearer token-1");
+                assert_eq!(request.headers()["x-workspace-id"], "workspace-1");
+                assert_eq!(request.uri().query(), Some("q=Rust+Review"));
+                Json(vec![serde_json::json!({
+                    "name": "Reviewer",
+                    "url": "https://skills.example/reviewer",
+                    "source": "skills.sh",
+                    "install_count": 12,
+                    "description": "Reviews changes"
+                })])
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let table_cli = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "search",
+            "Rust Review",
+            "--output",
+            "table",
+        ])
+        .expect("skill search table CLI");
+        let Command::Skill(SkillArgs {
+            command: SkillCommand::Search(args),
+        }) = &table_cli.command
+        else {
+            panic!("expected skill search");
+        };
+        assert_eq!(args.query, "Rust Review");
+        assert_eq!(args.output, OutputFormat::Table);
+        let table = run_with_input(&table_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("search skills table");
+        assert!(table.stdout.starts_with("NAME"));
+        assert!(table.stdout.contains("URL"));
+        assert!(table.stdout.contains("SOURCE"));
+        assert!(table.stdout.contains("INSTALLS"));
+        assert!(table.stdout.contains("DESCRIPTION"));
+        assert!(table.stdout.contains("Reviewer"));
+        assert!(table.stdout.contains("12"));
+        assert!(table.stderr.is_empty());
+
+        let json_cli = Cli::try_parse_from(["cordy", "skill", "search", "Rust Review"])
+            .expect("skill search JSON CLI");
+        let json = run_with_input(&json_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("search skills JSON");
+        let results: Value = serde_json::from_str(&json.stdout).expect("search JSON");
+        assert_eq!(results[0]["install_count"], 12);
+        assert!(json.stderr.is_empty());
+
+        let empty = SkillSearchArgs {
+            query: "  ".into(),
+            output: OutputFormat::Json,
+        };
+        let error = run_skill_search(&json_cli, &environment, &empty)
+            .await
+            .expect_err("empty search query");
+        assert_eq!(error.to_string(), "query is required");
+        let empty_table = format_skill_search_table(&[]);
+        assert!(empty_table.starts_with("NAME"));
+        assert!(empty_table.contains("DESCRIPTION"));
         server.abort();
     }
 
