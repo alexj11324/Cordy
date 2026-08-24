@@ -455,6 +455,17 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy squad member add <squad-id>` to PR #129. It validates the
+      member ID and `agent|member` type, preserves Go defaults for type/role,
+      posts the workspace-scoped body, and renders JSON or the stderr table
+      notice. Exact head is
+      `425e687dd83adaf2cafa04e9fcfe893926b51141`, parent
+      `1ee93aadc97732671d01d0611f6e781983473660`, tree
+      `ab8678e121a63333326a2130387a4ebf5cfcb038`, candidate
+      `948a4f4a5553baa0fa64cae47afd647f0c4b3c69`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
