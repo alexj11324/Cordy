@@ -186,6 +186,16 @@ impl InstallService {
             Ok(None) => anyhow::bail!("upsert dingtalk installation: no row returned"),
             Err(err) => {
                 if is_unique_violation(&err) {
+                    // The owner lookup runs on the base pool. End this failed
+                    // transaction first so concurrent conflicts cannot hold
+                    // every pool connection while each request waits for a
+                    // second connection to classify the live owner.
+                    if let Err(rollback_error) = tx.rollback().await {
+                        tracing::warn!(
+                            error = %rollback_error,
+                            "rollback failed DingTalk install conflict transaction"
+                        );
+                    }
                     return Err(self
                         .live_owner_conflict_err(&self.pool, p.ws_id, &p.app_id_key)
                         .await);

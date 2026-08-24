@@ -202,8 +202,16 @@ impl InstallationService {
             Ok(row) => row,
             Err(e) if is_unique_violation(&e) => {
                 // A LIVE owner still holds the slot. Read the owner on the
-                // non-tx connection (this tx is now in aborted state) to name
-                // it.
+                // non-tx connection to name it. Release the aborted
+                // transaction (and its advisory lock) first so a burst of
+                // conflicting installs cannot occupy every pool connection
+                // while each waits to acquire another one for classification.
+                if let Err(rollback_error) = tx.rollback().await {
+                    tracing::warn!(
+                        error = %rollback_error,
+                        "rollback failed WeCom install conflict transaction"
+                    );
+                }
                 return Err(self.bot_owner_conflict_err(p.workspace_id, &p.bot_id).await);
             }
             Err(e) => return Err(anyhow::anyhow!("wecom: upsert installation: {e}")),
