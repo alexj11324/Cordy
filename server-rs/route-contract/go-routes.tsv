@@ -1,4 +1,3 @@
-# Optional third column declares a deployment condition for the route.
 DELETE	/api/agents/{}/labels/{}
 DELETE	/api/agents/{}/mcp-servers/{}
 DELETE	/api/agents/{}/skills/{}
@@ -214,7 +213,7 @@ GET	/health
 GET	/health/realtime
 GET	/healthz
 GET	/readyz
-GET	/uploads/*	storage=local
+GET	/uploads/*
 GET	/ws
 PATCH	/api/agent-builder/sessions/{}/runtime
 PATCH	/api/autopilots/{}
