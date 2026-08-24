@@ -422,6 +422,18 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy squad update <squad-id>` to PR #129. It sends only explicitly
+      selected fields (including explicit empty strings), resolves `--leader`
+      through the existing authenticated agent resolver, encodes the path
+      segment, rejects empty IDs/no-op updates, and preserves Go-compatible
+      JSON/table output. Exact head is
+      `f062de0cd2752b44a9e9bce7c7ae9cf4a7f94afa`, parent
+      `e476107565736e625a28a428f03013e4c27b85b2`, tree
+      `40ef8006af1eaa38dca628663eeb35796f9d4675`, candidate
+      `ec0295653777a6dab7054e32755be47e1818bd31`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
