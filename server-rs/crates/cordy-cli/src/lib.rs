@@ -1244,6 +1244,43 @@ enum WorkspaceCommand {
     Create(CreateWorkspaceArgs),
     #[command(about = "Update workspace metadata (admin/owner only)")]
     Update(UpdateWorkspaceArgs),
+    #[command(about = "Manage workspace members")]
+    Member(WorkspaceMemberArgs),
+}
+
+#[derive(Debug, Args)]
+struct WorkspaceMemberArgs {
+    #[command(subcommand)]
+    command: WorkspaceMemberCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum WorkspaceMemberCommand {
+    #[command(about = "List workspace members")]
+    List {
+        #[arg(value_name = "WORKSPACE-ID|SLUG|PREFIX")]
+        workspace: Option<String>,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
+    #[command(about = "Invite a member to a workspace by email")]
+    Invite(WorkspaceMemberInviteArgs),
+}
+
+#[derive(Debug, Args)]
+struct WorkspaceMemberInviteArgs {
+    #[arg(value_name = "EMAIL")]
+    email: String,
+    #[arg(value_name = "WORKSPACE-ID|SLUG|PREFIX")]
+    workspace: Option<String>,
+    #[arg(
+        long,
+        default_value = "member",
+        help = "Member role to grant: member or admin (owner is not allowed)"
+    )]
+    role: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -1615,6 +1652,18 @@ async fn run_with_input<R: Read>(
         Command::Workspace(WorkspaceArgs {
             command: WorkspaceCommand::Update(args),
         }) => run_workspace_update(cli, environment, args, input).await,
+        Command::Workspace(WorkspaceArgs {
+            command:
+                WorkspaceCommand::Member(WorkspaceMemberArgs {
+                    command: WorkspaceMemberCommand::List { workspace, output },
+                }),
+        }) => run_workspace_member_list(cli, environment, workspace.as_deref(), *output).await,
+        Command::Workspace(WorkspaceArgs {
+            command:
+                WorkspaceCommand::Member(WorkspaceMemberArgs {
+                    command: WorkspaceMemberCommand::Invite(args),
+                }),
+        }) => run_workspace_member_invite(cli, environment, args).await,
         Command::Label(LabelArgs {
             command: LabelCommand::List { output, full_id },
         }) => run_label_list(cli, environment, *output, *full_id).await,
@@ -7732,6 +7781,100 @@ async fn run_workspace_update<R: Read>(
         stdout: match args.output {
             OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&workspace)?),
             OutputFormat::Table => format_workspace_details_table(&workspace),
+        },
+        stderr: String::new(),
+    })
+}
+
+fn format_workspace_members(members: &[Value]) -> String {
+    let mut rows = vec![vec![
+        "USER ID".into(),
+        "NAME".into(),
+        "EMAIL".into(),
+        "ROLE".into(),
+    ]];
+    rows.extend(members.iter().map(|member| {
+        vec![
+            value_string(member, "user_id"),
+            value_string(member, "name"),
+            value_string(member, "email"),
+            value_string(member, "role"),
+        ]
+    }));
+    format_table(&rows)
+}
+
+async fn run_workspace_member_list(
+    cli: &Cli,
+    environment: &Environment,
+    workspace: Option<&str>,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let workspace_id = resolve_workspace_arg(cli, environment, workspace).await?;
+    if workspace_id.is_empty() {
+        bail!(
+            "workspace ID is required: pass an id/slug/prefix as argument or set CORDY_WORKSPACE_ID"
+        );
+    }
+    let client = new_api_client(cli, environment)?;
+    let members: Vec<Value> = client
+        .get_json(&format!("/api/workspaces/{workspace_id}/members"))
+        .await
+        .context("list members")?;
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&members)?),
+            OutputFormat::Table => format_workspace_members(&members),
+        },
+        stderr: String::new(),
+    })
+}
+
+fn normalize_workspace_invite_role(role: &str) -> Result<String> {
+    let role = match role.trim().to_ascii_lowercase() {
+        role if role.is_empty() => "member".into(),
+        role => role,
+    };
+    match role.as_str() {
+        "member" | "admin" => Ok(role),
+        "owner" => bail!("cannot invite as owner; use --role member or --role admin"),
+        _ => bail!("invalid --role {role:?}; expected member or admin"),
+    }
+}
+
+async fn run_workspace_member_invite(
+    cli: &Cli,
+    environment: &Environment,
+    args: &WorkspaceMemberInviteArgs,
+) -> Result<RunOutput> {
+    let email = args.email.trim().to_ascii_lowercase();
+    if email.is_empty() {
+        bail!("email is required");
+    }
+    let role = normalize_workspace_invite_role(&args.role)?;
+    let workspace_id = resolve_workspace_arg(cli, environment, args.workspace.as_deref()).await?;
+    if workspace_id.is_empty() {
+        bail!(
+            "workspace ID is required: pass an id/slug/prefix as argument or set CORDY_WORKSPACE_ID"
+        );
+    }
+    let client = new_api_client(cli, environment)?;
+    let invitation: Value = client
+        .post_json(
+            &format!("/api/workspaces/{workspace_id}/members"),
+            &serde_json::json!({"email":email,"role":role}),
+        )
+        .await
+        .context("invite member")?;
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&invitation)?),
+            OutputFormat::Table => format!(
+                "Invitation sent to {} (role: {}, status: {})\n",
+                value_string(&invitation, "invitee_email"),
+                value_string(&invitation, "role"),
+                value_string(&invitation, "status")
+            ),
         },
         stderr: String::new(),
     })
@@ -13993,6 +14136,113 @@ mod tests {
         .expect_err("empty issue prefix")
         .to_string()
         .contains("clearing the prefix is not supported"));
+    }
+
+    #[test]
+    fn workspace_member_parser_and_role_validation_match_go_contract() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "workspace",
+            "member",
+            "invite",
+            "ADA@EXAMPLE.COM",
+            "alpha",
+            "--role",
+            "ADMIN",
+            "--output",
+            "json",
+        ])
+        .expect("workspace member invite CLI");
+        let Command::Workspace(WorkspaceArgs {
+            command:
+                WorkspaceCommand::Member(WorkspaceMemberArgs {
+                    command: WorkspaceMemberCommand::Invite(args),
+                }),
+        }) = &cli.command
+        else {
+            panic!("expected workspace member invite");
+        };
+        assert_eq!(args.workspace.as_deref(), Some("alpha"));
+        assert_eq!(
+            normalize_workspace_invite_role(&args.role).expect("admin"),
+            "admin"
+        );
+        assert!(normalize_workspace_invite_role("owner")
+            .expect_err("owner rejected")
+            .to_string()
+            .contains("cannot invite as owner"));
+        assert!(normalize_workspace_invite_role("viewer")
+            .expect_err("unknown role")
+            .to_string()
+            .contains("expected member or admin"));
+    }
+
+    #[tokio::test]
+    async fn workspace_member_list_and_invite_use_go_http_and_output_contracts() {
+        let workspace_id = "55555555-5555-5555-5555-555555555555";
+        let app = Router::new().route(
+            "/api/workspaces/55555555-5555-5555-5555-555555555555/members",
+            get(|| async {
+                Json(vec![serde_json::json!({
+                    "user_id":"user-1","name":"Ada","email":"ada@example.com","role":"admin"
+                })])
+            })
+            .post(|Json(body): Json<Value>| async move {
+                assert_eq!(
+                    body,
+                    serde_json::json!({
+                        "email":"new@example.com","role":"member"
+                    })
+                );
+                Json(serde_json::json!({
+                    "invitee_email":"new@example.com","role":"member","status":"pending"
+                }))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", workspace_id);
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let list = Cli::try_parse_from([
+            "cordy",
+            "workspace",
+            "member",
+            "list",
+            workspace_id,
+            "--output",
+            "table",
+        ])
+        .expect("workspace member list CLI");
+        let listed = run_with_input(&list, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list workspace members");
+        assert!(listed.stdout.starts_with("USER ID"));
+        assert!(listed.stdout.contains("ada@example.com"));
+        assert!(listed.stdout.contains("admin"));
+
+        let invite = Cli::try_parse_from([
+            "cordy",
+            "workspace",
+            "member",
+            "invite",
+            " NEW@EXAMPLE.COM ",
+            workspace_id,
+        ])
+        .expect("workspace member invite CLI");
+        let invited = run_with_input(&invite, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("invite workspace member");
+        assert_eq!(
+            invited.stdout,
+            "Invitation sent to new@example.com (role: member, status: pending)\n"
+        );
+        server.abort();
     }
 
     #[test]
