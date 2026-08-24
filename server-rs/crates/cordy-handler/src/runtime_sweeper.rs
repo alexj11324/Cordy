@@ -21,6 +21,12 @@ pub const DEFAULT_RECONNECT_GRACE: Duration = Duration::from_secs(3 * 60 * 60);
 pub const MINIMUM_RECONNECT_GRACE: Duration = STALE_THRESHOLD;
 const CANDIDATE_BATCH_SIZE: i32 = 500;
 const OFFLINE_TASK_BATCH_SIZE: i32 = 500;
+const RECONNECT_RETRY_BATCH_SIZE: i32 = 500;
+const STALE_TASK_BATCH_SIZE: i32 = 500;
+const QUEUED_TASK_BATCH_SIZE: i32 = 500;
+const DISPATCH_TIMEOUT: Duration = Duration::from_secs(300);
+const RUNNING_TIMEOUT: Duration = Duration::from_secs(9_000);
+const QUEUED_TTL: Duration = Duration::from_secs(2 * 60 * 60);
 
 pub trait Clock: Send + Sync {
     fn now(&self) -> DateTime<Utc>;
@@ -87,22 +93,44 @@ impl RuntimeSweeper {
     /// server lifecycle root, so every database/cache stage is cancellable.
     pub async fn run_once(&self, cancel: &CancellationToken) -> anyhow::Result<SweepResult> {
         let now = self.clock.now();
-        let (candidates, offlined) = match self.sweep_stale_runtimes(cancel, now).await {
-            Ok(result) => result,
-            Err(error) if cancel.is_cancelled() => return Err(error),
-            Err(error) => {
-                // Match Go's stage isolation: a stale-runtime query failure
-                // must not starve cleanup for runtimes already offline.
-                tracing::warn!(%error, "runtime sweeper stale-runtime stage failed");
-                (0, 0)
-            }
-        };
-
-        let failed_tasks = self.sweep_offline_tasks(cancel, now).await?;
+        let (candidates, offlined) = isolate_stage(
+            cancel,
+            "stale runtimes",
+            self.sweep_stale_runtimes(cancel, now),
+        )
+        .await?
+        .unwrap_or_default();
+        let failed_tasks = isolate_stage(
+            cancel,
+            "offline runtime tasks",
+            self.sweep_offline_tasks(cancel, now),
+        )
+        .await?
+        .unwrap_or_default();
+        let expired_reconnect_retries = isolate_stage(
+            cancel,
+            "expired runtime reconnect retries",
+            self.sweep_expired_reconnect_retries(cancel, now),
+        )
+        .await?
+        .unwrap_or_default();
+        let stale_tasks = isolate_stage(cancel, "stale tasks", self.sweep_stale_tasks(cancel, now))
+            .await?
+            .unwrap_or_default();
+        let expired_queued_tasks = isolate_stage(
+            cancel,
+            "expired queued tasks",
+            self.sweep_expired_queued_tasks(cancel, now),
+        )
+        .await?
+        .unwrap_or_default();
         Ok(SweepResult {
             candidates,
             offlined,
             failed_tasks,
+            expired_reconnect_retries,
+            stale_tasks,
+            expired_queued_tasks,
         })
     }
 
@@ -226,6 +254,112 @@ impl RuntimeSweeper {
         Ok(failed_tasks.len())
     }
 
+    async fn sweep_expired_reconnect_retries(
+        &self,
+        cancel: &CancellationToken,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<usize> {
+        let retry_before = now
+            - chrono::Duration::from_std(self.reconnect_grace)
+                .expect("runtime reconnect grace fits chrono");
+        let runtime_fresh_after = now
+            - chrono::Duration::from_std(STALE_THRESHOLD)
+                .expect("runtime stale threshold fits chrono");
+        let failed = cancellable(
+            cancel,
+            cordy_db::queries::agent::fail_expired_runtime_reconnect_retries(
+                &self.state.pool,
+                retry_before,
+                runtime_fresh_after,
+                RECONNECT_RETRY_BATCH_SIZE,
+            ),
+        )
+        .await?;
+        if !failed.is_empty() {
+            tracing::info!(
+                count = failed.len(),
+                "runtime sweeper expired reconnect retries"
+            );
+        }
+        self.handle_failed(cancel, &failed).await?;
+        Ok(failed.len())
+    }
+
+    async fn sweep_stale_tasks(
+        &self,
+        cancel: &CancellationToken,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<usize> {
+        let failed = cancellable(
+            cancel,
+            cordy_db::queries::agent::fail_stale_tasks(
+                &self.state.pool,
+                now - chrono::Duration::from_std(DISPATCH_TIMEOUT)
+                    .expect("dispatch timeout fits chrono"),
+                now,
+                now - chrono::Duration::from_std(STALE_THRESHOLD)
+                    .expect("runtime stale threshold fits chrono"),
+                now - chrono::Duration::from_std(self.reconnect_grace)
+                    .expect("runtime reconnect grace fits chrono"),
+                now - chrono::Duration::from_std(RUNNING_TIMEOUT)
+                    .expect("running timeout fits chrono"),
+                STALE_TASK_BATCH_SIZE,
+            ),
+        )
+        .await?;
+        if !failed.is_empty() {
+            tracing::info!(count = failed.len(), "runtime sweeper failed stale tasks");
+            cancellable(cancel, async {
+                self.state.tasks.capture_lease_expired_tasks(&failed).await;
+                Ok(())
+            })
+            .await?;
+        }
+        self.handle_failed(cancel, &failed).await?;
+        Ok(failed.len())
+    }
+
+    async fn sweep_expired_queued_tasks(
+        &self,
+        cancel: &CancellationToken,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<usize> {
+        let failed = cancellable(
+            cancel,
+            cordy_db::queries::agent::expire_stale_queued_tasks(
+                &self.state.pool,
+                now - chrono::Duration::from_std(QUEUED_TTL).expect("queued TTL fits chrono"),
+                QUEUED_TASK_BATCH_SIZE,
+            ),
+        )
+        .await?;
+        if !failed.is_empty() {
+            tracing::info!(count = failed.len(), "runtime sweeper expired queued tasks");
+            cancellable(cancel, async {
+                self.state.tasks.capture_queued_expired_tasks(&failed).await;
+                Ok(())
+            })
+            .await?;
+        }
+        self.handle_failed(cancel, &failed).await?;
+        Ok(failed.len())
+    }
+
+    async fn handle_failed(
+        &self,
+        cancel: &CancellationToken,
+        failed: &[cordy_db::models::AgentTaskQueue],
+    ) -> anyhow::Result<()> {
+        if failed.is_empty() {
+            return Ok(());
+        }
+        cancellable(cancel, async {
+            self.state.tasks.handle_failed_tasks(failed).await;
+            Ok(())
+        })
+        .await
+    }
+
     async fn filter_alive(
         &self,
         cancel: &CancellationToken,
@@ -253,6 +387,24 @@ pub struct SweepResult {
     pub candidates: usize,
     pub offlined: usize,
     pub failed_tasks: usize,
+    pub expired_reconnect_retries: usize,
+    pub stale_tasks: usize,
+    pub expired_queued_tasks: usize,
+}
+
+async fn isolate_stage<T>(
+    cancel: &CancellationToken,
+    name: &'static str,
+    future: impl std::future::Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<Option<T>> {
+    match future.await {
+        Ok(value) => Ok(Some(value)),
+        Err(error) if cancel.is_cancelled() => Err(error),
+        Err(error) => {
+            tracing::warn!(%error, stage = name, "runtime sweeper stage failed");
+            Ok(None)
+        }
+    }
 }
 
 async fn cancellable<T>(
@@ -326,6 +478,12 @@ mod tests {
         assert_eq!(DEFAULT_RECONNECT_GRACE, Duration::from_secs(10_800));
         assert_eq!(CANDIDATE_BATCH_SIZE, 500);
         assert_eq!(OFFLINE_TASK_BATCH_SIZE, 500);
+        assert_eq!(RECONNECT_RETRY_BATCH_SIZE, 500);
+        assert_eq!(STALE_TASK_BATCH_SIZE, 500);
+        assert_eq!(QUEUED_TASK_BATCH_SIZE, 500);
+        assert_eq!(DISPATCH_TIMEOUT, Duration::from_secs(300));
+        assert_eq!(RUNNING_TIMEOUT, Duration::from_secs(9_000));
+        assert_eq!(QUEUED_TTL, Duration::from_secs(7_200));
     }
 
     #[test]

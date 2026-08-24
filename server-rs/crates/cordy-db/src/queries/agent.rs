@@ -2742,14 +2742,14 @@ WHERE id = $1 AND kind = 'system' AND system_key LIKE 'agent_builder:%'"#,
 
 pub async fn expire_stale_queued_tasks(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    ttl_secs: f64,
+    stale_before: chrono::DateTime<chrono::Utc>,
     max_per_tick: i32,
 ) -> anyhow::Result<Vec<AgentTaskQueue>> {
     let rows = sqlx::query(
         r#"WITH victims AS (
     SELECT id FROM agent_task_queue
     WHERE status = 'queued'
-      AND created_at < now() - make_interval(secs => $1::double precision)
+      AND created_at < $1
       AND NOT EXISTS (
           SELECT 1 FROM agent_task_queue retry_parent
           WHERE retry_parent.id = agent_task_queue.parent_task_id
@@ -2768,7 +2768,7 @@ SET status = 'failed',
 FROM victims v
 WHERE t.id = v.id
   AND t.status = 'queued'
-  AND t.created_at < now() - make_interval(secs => $1::double precision)
+  AND t.created_at < $1
   AND NOT EXISTS (
       SELECT 1 FROM agent_task_queue retry_parent
       WHERE retry_parent.id = t.parent_task_id
@@ -2776,7 +2776,7 @@ WHERE t.id = v.id
   )
 RETURNING t.id, t.agent_id, t.issue_id, t.status, t.priority, t.dispatched_at, t.started_at, t.completed_at, t.result, t.error, t.created_at, t.context, t.runtime_id, t.session_id, t.work_dir, t.trigger_comment_id, t.chat_session_id, t.autopilot_run_id, t.attempt, t.max_attempts, t.parent_task_id, t.failure_reason, t.trigger_summary, t.force_fresh_session, t.is_leader_task, t.wait_reason, t.initiator_user_id, t.handoff_note, t.prepare_lease_expires_at, t.squad_id, t.runtime_mcp_overlay, t.escalation_for_task_id, t.fire_at, t.originator_user_id, t.runtime_connected_apps, t.coalesced_comment_ids, t.delivered_comment_ids, t.chat_input_task_id, t.chat_finalize_deferred_at, t.originator_source, t.delegated_from_task_id, t.retry_of_task_id, t.rerun_of_task_id, t.rule_version_id, t.trigger_evidence_kind, t.trigger_evidence_ref_id, t.accountable_user_id, t.session_rollout_missing, t.retired_session_id, t.quick_actions_disabled, t.regenerate_quick_actions_for, t.branch_name, t.durable_work_dir"#
     )
-        .bind(ttl_secs)
+        .bind(stale_before)
         .bind(max_per_tick)
         .fetch_all(executor)
         .await?;
@@ -3018,8 +3018,8 @@ RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, c
 
 pub async fn fail_expired_runtime_reconnect_retries(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    reconnect_grace_secs: f64,
-    runtime_stale_secs: f64,
+    retry_before: chrono::DateTime<chrono::Utc>,
+    runtime_fresh_after: chrono::DateTime<chrono::Utc>,
     max_per_tick: i32,
 ) -> anyhow::Result<Vec<AgentTaskQueue>> {
     let rows = sqlx::query(
@@ -3028,14 +3028,13 @@ pub async fn fail_expired_runtime_reconnect_retries(
     FROM agent_task_queue retry
     JOIN agent_task_queue parent ON parent.id = retry.parent_task_id
     WHERE retry.status = 'deferred'
-      AND retry.fire_at < now() - make_interval(secs => $1::double precision)
+      AND retry.fire_at < $1
       AND parent.failure_reason = 'runtime_offline'
       AND NOT EXISTS (
           SELECT 1 FROM agent_runtime runtime
           WHERE runtime.id = retry.runtime_id
             AND runtime.status = 'online'
-            AND COALESCE(runtime.last_seen_at, runtime.updated_at) >=
-                now() - make_interval(secs => $2::double precision)
+            AND COALESCE(runtime.last_seen_at, runtime.updated_at) >= $2
       )
     ORDER BY retry.fire_at, retry.created_at
     LIMIT $3::int
@@ -3051,7 +3050,7 @@ SET status = 'failed',
 FROM victims
 WHERE retry.id = victims.id
   AND retry.status = 'deferred'
-  AND retry.fire_at < now() - make_interval(secs => $1::double precision)
+  AND retry.fire_at < $1
   AND EXISTS (
       SELECT 1 FROM agent_task_queue parent
       WHERE parent.id = retry.parent_task_id
@@ -3061,13 +3060,12 @@ WHERE retry.id = victims.id
       SELECT 1 FROM agent_runtime runtime
       WHERE runtime.id = retry.runtime_id
         AND runtime.status = 'online'
-        AND COALESCE(runtime.last_seen_at, runtime.updated_at) >=
-            now() - make_interval(secs => $2::double precision)
+        AND COALESCE(runtime.last_seen_at, runtime.updated_at) >= $2
   )
 RETURNING retry.id, retry.agent_id, retry.issue_id, retry.status, retry.priority, retry.dispatched_at, retry.started_at, retry.completed_at, retry.result, retry.error, retry.created_at, retry.context, retry.runtime_id, retry.session_id, retry.work_dir, retry.trigger_comment_id, retry.chat_session_id, retry.autopilot_run_id, retry.attempt, retry.max_attempts, retry.parent_task_id, retry.failure_reason, retry.trigger_summary, retry.force_fresh_session, retry.is_leader_task, retry.wait_reason, retry.initiator_user_id, retry.handoff_note, retry.prepare_lease_expires_at, retry.squad_id, retry.runtime_mcp_overlay, retry.escalation_for_task_id, retry.fire_at, retry.originator_user_id, retry.runtime_connected_apps, retry.coalesced_comment_ids, retry.delivered_comment_ids, retry.chat_input_task_id, retry.chat_finalize_deferred_at, retry.originator_source, retry.delegated_from_task_id, retry.retry_of_task_id, retry.rerun_of_task_id, retry.rule_version_id, retry.trigger_evidence_kind, retry.trigger_evidence_ref_id, retry.accountable_user_id, retry.session_rollout_missing, retry.retired_session_id, retry.quick_actions_disabled, retry.regenerate_quick_actions_for, retry.branch_name, retry.durable_work_dir"#
     )
-        .bind(reconnect_grace_secs)
-        .bind(runtime_stale_secs)
+        .bind(retry_before)
+        .bind(runtime_fresh_after)
         .bind(max_per_tick)
         .fetch_all(executor)
         .await?;
@@ -3134,60 +3132,61 @@ RETURNING retry.id, retry.agent_id, retry.issue_id, retry.status, retry.priority
 
 pub async fn fail_stale_tasks(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    dispatch_timeout_secs: f64,
-    runtime_stale_secs: f64,
-    runtime_reconnect_grace_secs: f64,
-    running_timeout_secs: f64,
+    dispatch_before: chrono::DateTime<chrono::Utc>,
+    lease_expired_before: chrono::DateTime<chrono::Utc>,
+    runtime_fresh_after: chrono::DateTime<chrono::Utc>,
+    runtime_abandoned_before: chrono::DateTime<chrono::Utc>,
+    running_before: chrono::DateTime<chrono::Utc>,
+    max_per_tick: i32,
 ) -> anyhow::Result<Vec<AgentTaskQueue>> {
     let rows = sqlx::query(
-        r#"UPDATE agent_task_queue
+        r#"WITH victims AS (
+SELECT task.id
+FROM agent_task_queue task
+WHERE (
+    task.status = 'dispatched'
+    AND task.dispatched_at < $1
+    AND (task.prepare_lease_expires_at IS NULL OR task.prepare_lease_expires_at < $2)
+    AND (
+      task.runtime_id IS NULL
+      OR NOT EXISTS (SELECT 1 FROM agent_runtime r WHERE r.id = task.runtime_id)
+      OR EXISTS (
+        SELECT 1 FROM agent_runtime r
+        WHERE r.id = task.runtime_id
+          AND ((r.status = 'online' AND COALESCE(r.last_seen_at, r.updated_at) >= $3)
+               OR COALESCE(r.last_seen_at, r.updated_at) < $4)
+      )
+    )
+  ) OR (
+    task.status = 'running'
+    AND task.started_at < $5
+    AND (
+      task.runtime_id IS NULL
+      OR NOT EXISTS (
+        SELECT 1 FROM agent_runtime r
+        WHERE r.id = task.runtime_id
+          AND COALESCE(r.last_seen_at, r.updated_at) >= $4
+      )
+    )
+  )
+ORDER BY COALESCE(task.dispatched_at, task.started_at), task.id
+LIMIT $6::int
+FOR UPDATE OF task SKIP LOCKED
+)
+UPDATE agent_task_queue task
 SET status = 'failed', completed_at = now(), error = 'task timed out',
     failure_reason = 'timeout',
     prepare_lease_expires_at = NULL
-WHERE (
-    status = 'dispatched'
-    AND dispatched_at < now() - make_interval(secs => $1::double precision)
-    AND (prepare_lease_expires_at IS NULL OR prepare_lease_expires_at < now())
-    AND (
-      runtime_id IS NULL
-      OR NOT EXISTS (
-        SELECT 1 FROM agent_runtime r
-        WHERE r.id = agent_task_queue.runtime_id
-      )
-      OR EXISTS (
-        SELECT 1 FROM agent_runtime r
-        WHERE r.id = agent_task_queue.runtime_id
-          AND (
-            (
-              r.status = 'online'
-              AND COALESCE(r.last_seen_at, r.updated_at) >=
-                  now() - make_interval(secs => $2::double precision)
-            )
-            OR COALESCE(r.last_seen_at, r.updated_at) <
-               now() - make_interval(secs => $3::double precision)
-          )
-      )
+FROM victims
+WHERE task.id = victims.id
+RETURNING task.id, task.agent_id, task.issue_id, task.status, task.priority, task.dispatched_at, task.started_at, task.completed_at, task.result, task.error, task.created_at, task.context, task.runtime_id, task.session_id, task.work_dir, task.trigger_comment_id, task.chat_session_id, task.autopilot_run_id, task.attempt, task.max_attempts, task.parent_task_id, task.failure_reason, task.trigger_summary, task.force_fresh_session, task.is_leader_task, task.wait_reason, task.initiator_user_id, task.handoff_note, task.prepare_lease_expires_at, task.squad_id, task.runtime_mcp_overlay, task.escalation_for_task_id, task.fire_at, task.originator_user_id, task.runtime_connected_apps, task.coalesced_comment_ids, task.delivered_comment_ids, task.chat_input_task_id, task.chat_finalize_deferred_at, task.originator_source, task.delegated_from_task_id, task.retry_of_task_id, task.rerun_of_task_id, task.rule_version_id, task.trigger_evidence_kind, task.trigger_evidence_ref_id, task.accountable_user_id, task.session_rollout_missing, task.retired_session_id, task.quick_actions_disabled, task.regenerate_quick_actions_for, task.branch_name, task.durable_work_dir"#
     )
-  )
-   OR (
-    status = 'running'
-    AND started_at < now() - make_interval(secs => $4::double precision)
-    AND (
-      runtime_id IS NULL
-      OR NOT EXISTS (
-        SELECT 1 FROM agent_runtime r
-        WHERE r.id = agent_task_queue.runtime_id
-          AND COALESCE(r.last_seen_at, r.updated_at) >=
-              now() - make_interval(secs => $3::double precision)
-      )
-    )
-  )
-RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, autopilot_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, squad_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir"#
-    )
-        .bind(dispatch_timeout_secs)
-        .bind(runtime_stale_secs)
-        .bind(runtime_reconnect_grace_secs)
-        .bind(running_timeout_secs)
+        .bind(dispatch_before)
+        .bind(lease_expired_before)
+        .bind(runtime_fresh_after)
+        .bind(runtime_abandoned_before)
+        .bind(running_before)
+        .bind(max_per_tick)
         .fetch_all(executor)
         .await?;
     let mut out = Vec::with_capacity(rows.len());
