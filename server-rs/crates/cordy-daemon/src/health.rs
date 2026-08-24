@@ -34,6 +34,7 @@ use serde::{Deserialize, Serialize};
 /// must stay distinguishable from a pre-#6694 daemon (#6694); SkippedAgents is
 /// what made GH #6077 actionable (MUL-5439).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
 pub struct HealthResponse {
     pub status: String,
     pub pid: i32,
