@@ -2341,6 +2341,8 @@ enum SquadMemberCommand {
     },
     #[command(about = "Add a member to a squad")]
     Add(SquadMemberAddArgs),
+    #[command(about = "Change a squad member's role")]
+    SetRole(SquadMemberSetRoleArgs),
 }
 
 #[derive(Debug, Args)]
@@ -2357,6 +2359,24 @@ struct SquadMemberAddArgs {
     member_type: String,
     #[arg(long, default_value = "member", help = "Role in the squad")]
     role: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct SquadMemberSetRoleArgs {
+    #[arg(value_name = "SQUAD-ID")]
+    squad_id: String,
+    #[arg(long, help = "Member or agent ID (required)")]
+    member_id: Option<String>,
+    #[arg(
+        long = "member-type",
+        default_value = "agent",
+        help = "Member type: agent or member"
+    )]
+    member_type: String,
+    #[arg(long, help = "New role in the squad (required)")]
+    role: Option<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
 }
@@ -3084,6 +3104,12 @@ async fn run_with_input<R: Read>(
                     command: SquadMemberCommand::Add(args),
                 }),
         }) => run_squad_member_add(cli, environment, args).await,
+        Command::Squad(SquadArgs {
+            command:
+                SquadCommand::Member(SquadMemberArgs {
+                    command: SquadMemberCommand::SetRole(args),
+                }),
+        }) => run_squad_member_set_role(cli, environment, args).await,
         Command::Label(LabelArgs {
             command: LabelCommand::List { output, full_id },
         }) => run_label_list(cli, environment, *output, *full_id).await,
@@ -14079,6 +14105,53 @@ async fn run_squad_member_add(
         OutputFormat::Table => RunOutput {
             stdout: String::new(),
             stderr: format!("Member {member_id} added to squad.\n"),
+        },
+    })
+}
+
+async fn run_squad_member_set_role(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SquadMemberSetRoleArgs,
+) -> Result<RunOutput> {
+    let squad_id = args.squad_id.trim();
+    if squad_id.is_empty() {
+        bail!("squad ID must not be empty");
+    }
+    let member_id = args.member_id.as_deref().unwrap_or_default().trim();
+    if member_id.is_empty() {
+        bail!("--member-id is required");
+    }
+    if !matches!(args.member_type.as_str(), "agent" | "member") {
+        bail!("--member-type must be 'agent' or 'member'");
+    }
+    let role = args.role.as_deref().unwrap_or_default().trim();
+    if role.is_empty() {
+        bail!("--role is required");
+    }
+    let client = new_api_client(cli, environment)?;
+    let result: Value = client
+        .patch_json(
+            &format!(
+                "/api/squads/{}/members/role",
+                encoded_path_segment(squad_id)
+            ),
+            &serde_json::json!({
+                "member_type": args.member_type.as_str(),
+                "member_id": member_id,
+                "role": role,
+            }),
+        )
+        .await
+        .context("set member role")?;
+    Ok(match args.output {
+        OutputFormat::Json => RunOutput {
+            stdout: format!("{}\n", serde_json::to_string_pretty(&result)?),
+            stderr: String::new(),
+        },
+        OutputFormat::Table => RunOutput {
+            stdout: String::new(),
+            stderr: format!("Member {member_id} role updated to {role}.\n"),
         },
     })
 }
@@ -25174,6 +25247,144 @@ mod tests {
             .await
             .expect_err("invalid member type");
         assert_eq!(error.to_string(), "--type must be 'agent' or 'member'");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn squad_member_set_role_validates_and_patches_go_compatible_body() {
+        let app = Router::new().route(
+            "/api/squads/squad-1/members/role",
+            patch(|headers: HeaderMap, Json(body): Json<Value>| async move {
+                assert_eq!(headers["authorization"], "Bearer token-1");
+                assert_eq!(headers["x-workspace-id"], "workspace-1");
+                match body["member_id"].as_str() {
+                    Some("user-1") => assert_eq!(
+                        body,
+                        serde_json::json!({
+                            "member_type": "member",
+                            "member_id": "user-1",
+                            "role": "lead"
+                        })
+                    ),
+                    Some("agent-1") => assert_eq!(
+                        body,
+                        serde_json::json!({
+                            "member_type": "agent",
+                            "member_id": "agent-1",
+                            "role": "owner"
+                        })
+                    ),
+                    other => panic!("unexpected member id: {other:?}"),
+                }
+                Json(body)
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let table_cli = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "member",
+            "set-role",
+            "squad-1",
+            "--member-id",
+            "user-1",
+            "--member-type",
+            "member",
+            "--role",
+            "lead",
+            "--output",
+            "table",
+        ])
+        .expect("squad member set-role table CLI");
+        let Command::Squad(SquadArgs {
+            command:
+                SquadCommand::Member(SquadMemberArgs {
+                    command: SquadMemberCommand::SetRole(args),
+                }),
+        }) = &table_cli.command
+        else {
+            panic!("expected squad member set-role");
+        };
+        assert_eq!(args.member_type, "member");
+        assert_eq!(args.role.as_deref(), Some("lead"));
+        assert_eq!(args.output, OutputFormat::Table);
+        let table = run_with_input(&table_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("set squad member role table");
+        assert!(table.stdout.is_empty());
+        assert_eq!(table.stderr, "Member user-1 role updated to lead.\n");
+
+        let defaults = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "member",
+            "set-role",
+            "squad-1",
+            "--member-id",
+            "agent-1",
+            "--role",
+            "owner",
+        ])
+        .expect("squad member set-role defaults CLI");
+        let Command::Squad(SquadArgs {
+            command:
+                SquadCommand::Member(SquadMemberArgs {
+                    command: SquadMemberCommand::SetRole(args),
+                }),
+        }) = &defaults.command
+        else {
+            panic!("expected squad member set-role defaults");
+        };
+        assert_eq!(args.member_type, "agent");
+        assert_eq!(args.output, OutputFormat::Json);
+        let json = run_with_input(&defaults, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("set squad member role JSON");
+        let result: Value = serde_json::from_str(&json.stdout).expect("set role JSON");
+        assert_eq!(result["member_id"], "agent-1");
+        assert!(json.stderr.is_empty());
+
+        let missing = SquadMemberSetRoleArgs {
+            squad_id: "squad-1".into(),
+            member_id: None,
+            member_type: "agent".into(),
+            role: None,
+            output: OutputFormat::Json,
+        };
+        let error = run_squad_member_set_role(&defaults, &environment, &missing)
+            .await
+            .expect_err("missing member id");
+        assert_eq!(error.to_string(), "--member-id is required");
+        let missing_role = SquadMemberSetRoleArgs {
+            member_id: Some("agent-1".into()),
+            ..missing
+        };
+        let error = run_squad_member_set_role(&defaults, &environment, &missing_role)
+            .await
+            .expect_err("missing role");
+        assert_eq!(error.to_string(), "--role is required");
+        let invalid_type = SquadMemberSetRoleArgs {
+            member_id: Some("agent-1".into()),
+            member_type: "owner".into(),
+            role: Some("lead".into()),
+            ..missing_role
+        };
+        let error = run_squad_member_set_role(&defaults, &environment, &invalid_type)
+            .await
+            .expect_err("invalid member type");
+        assert_eq!(
+            error.to_string(),
+            "--member-type must be 'agent' or 'member'"
+        );
         server.abort();
     }
 
