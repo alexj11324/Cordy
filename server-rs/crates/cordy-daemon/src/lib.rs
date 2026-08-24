@@ -75,5 +75,6 @@ pub mod claude_plugins;
 pub mod local_skills;
 pub mod prompt;
 pub mod runtime_config_sections;
+pub mod runtime_probe;
 pub mod skill_cache;
 pub mod slash_skill;

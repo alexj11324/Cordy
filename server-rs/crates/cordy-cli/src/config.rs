@@ -593,6 +593,31 @@ impl CliConfig {
                 .unwrap_or_default(),
         }
     }
+
+    /// Extracts only the non-secret profile settings consumed by the local
+    /// runtime probe. The probe must not receive the stored bearer token.
+    pub fn daemon_runtime_probe_options(
+        &self,
+        profile: &str,
+    ) -> cordy_daemon::runtime_probe::RuntimeProbeOptions {
+        let openclaw = self
+            .backends
+            .as_ref()
+            .and_then(|backends| backends.openclaw.as_ref());
+        cordy_daemon::runtime_probe::RuntimeProbeOptions {
+            profile: profile.to_owned(),
+            profile_command_overrides: self.profile_command_overrides.clone(),
+            openclaw_binary_path: openclaw
+                .map(|override_| override_.binary_path.clone())
+                .unwrap_or_default(),
+            openclaw_state_dir: openclaw
+                .map(|override_| override_.state_dir.clone())
+                .unwrap_or_default(),
+            openclaw_cli_timeout: openclaw
+                .map(|override_| override_.cli_timeout.clone())
+                .unwrap_or_default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]

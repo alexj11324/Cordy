@@ -149,6 +149,12 @@ enum DaemonCommand {
     Restart(DaemonRestartArgs),
     #[command(about = "Stop the production daemon")]
     Stop,
+    #[command(
+        name = "probe-runtimes",
+        about = "Probe locally configured runtimes",
+        hide = true
+    )]
+    ProbeRuntimes,
 }
 
 #[derive(Debug, Args)]
@@ -3120,6 +3126,9 @@ async fn run_with_input<R: Read>(
         Command::Daemon(DaemonArgs {
             command: DaemonCommand::Stop,
         }) => run_daemon_stop(cli, environment).await,
+        Command::Daemon(DaemonArgs {
+            command: DaemonCommand::ProbeRuntimes,
+        }) => run_daemon_probe_runtimes(cli, environment),
         Command::Setup(args) => run_setup(cli, environment, args, input).await,
         Command::Version { output } => run_version(*output),
     }
@@ -3478,6 +3487,20 @@ async fn run_daemon_stop(cli: &Cli, environment: &Environment) -> Result<RunOutp
             bail!("daemon is still stopping (pid {pid}); refusing to report success")
         }
     }
+}
+
+fn run_daemon_probe_runtimes(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
+    require_human_local_command(environment, "daemon probe-runtimes")?;
+    let profile = environment
+        .load_config(&cli.profile)
+        .context("load daemon probe profile")?;
+    let options = profile.daemon_runtime_probe_options(&cli.profile);
+    let report =
+        cordy_daemon::runtime_probe::probe_runtimes(options).context("probe local runtimes")?;
+    Ok(RunOutput {
+        stdout: serde_json::to_string(&report)? + "\n",
+        stderr: String::new(),
+    })
 }
 
 fn render_daemon_start_outcome(
@@ -22787,6 +22810,20 @@ mod tests {
             stop.command,
             Command::Daemon(DaemonArgs {
                 command: DaemonCommand::Stop
+            })
+        ));
+    }
+
+    #[test]
+    fn daemon_probe_runtimes_is_hidden_but_parses_as_a_local_command() {
+        let cli =
+            Cli::try_parse_from(["cordy", "--profile", "staging", "daemon", "probe-runtimes"])
+                .expect("probe-runtimes command");
+        assert_eq!(cli.profile, "staging");
+        assert!(matches!(
+            cli.command,
+            Command::Daemon(DaemonArgs {
+                command: DaemonCommand::ProbeRuntimes
             })
         ));
     }
