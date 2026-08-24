@@ -295,6 +295,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
                 poll_interval: self.config.poll_interval,
                 cancel_poll_interval: Duration::ZERO,
                 workspaces_root: self.config.workspaces_root.clone(),
+                daemon_id: self.config.daemon_id.clone(),
             },
             Arc::clone(&self.client),
             Arc::clone(&control),

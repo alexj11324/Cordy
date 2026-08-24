@@ -16,7 +16,8 @@ use tokio::task::JoinHandle;
 
 use crate::activity::DaemonActivity;
 use crate::client::{is_task_not_found_anyhow, is_transient_error, Client, TaskCancelAck};
-use crate::execenv::execenv::predict_root_dir;
+use crate::execenv::execenv::{predict_root_dir, write_gc_meta, GCMetaKind, GcMeta};
+use crate::local_directory::local_directory_assignment_for_task;
 use crate::manager::DaemonControl;
 use crate::reconcile::ReconcileBroadcaster;
 use crate::repocache::{CancelCause, Ctx};
@@ -78,6 +79,7 @@ pub(crate) struct TaskExecutionConfig {
     pub poll_interval: Duration,
     pub cancel_poll_interval: Duration,
     pub workspaces_root: String,
+    pub daemon_id: String,
 }
 
 impl TaskExecutionConfig {
@@ -247,6 +249,7 @@ impl<H: DaemonTaskExecutionHost> TaskExecutionOrchestrator<H> {
                 let slot_release = slots_tx.clone();
                 let task_nudge = nudge_tx.clone();
                 let cancel_poll_interval = self.config.cancel_poll_interval();
+                let daemon_id = self.config.daemon_id.clone();
                 tasks.push(tokio::spawn(async move {
                     let _activity_guard = activity_guard;
                     execute_claimed_task(
@@ -257,6 +260,7 @@ impl<H: DaemonTaskExecutionHost> TaskExecutionOrchestrator<H> {
                         host,
                         reconcile,
                         cancel_poll_interval,
+                        daemon_id,
                     )
                     .await;
                     let _ = slot_release.send(slot).await;
@@ -318,6 +322,7 @@ async fn execute_claimed_task<H: DaemonTaskExecutionHost>(
     host: Arc<H>,
     reconcile: Arc<ReconcileBroadcaster>,
     cancel_poll_interval: Duration,
+    daemon_id: String,
 ) {
     let Some(provider) = host.provider_for_runtime(&task.runtime_id) else {
         tracing::warn!(
@@ -415,6 +420,57 @@ async fn execute_claimed_task<H: DaemonTaskExecutionHost>(
     }
 
     report_task_result(&client, &task.id, &outcome.result).await;
+    persist_task_gc_meta(&task, &outcome.result, &daemon_id);
+}
+
+/// Classifies a finished task for the persistent GC decision tree. Priority
+/// matches Go: chat and autopilot parents outlive issue linkage, while a
+/// quick-create task has no issue ID yet and is keyed by task ID.
+fn gc_meta_for_task(task: &Task) -> Option<GcMeta> {
+    let mut meta = GcMeta {
+        workspace_id: task.workspace_id.clone(),
+        ..GcMeta::default()
+    };
+    if !task.chat_session_id.is_empty() {
+        meta.kind = Some(GCMetaKind::Chat);
+        meta.chat_session_id.clone_from(&task.chat_session_id);
+    } else if !task.autopilot_run_id.is_empty() {
+        meta.kind = Some(GCMetaKind::AutopilotRun);
+        meta.autopilot_run_id.clone_from(&task.autopilot_run_id);
+    } else if !task.issue_id.is_empty() {
+        meta.kind = Some(GCMetaKind::Issue);
+        meta.issue_id.clone_from(&task.issue_id);
+    } else if !task.quick_create_prompt.is_empty() {
+        meta.kind = Some(GCMetaKind::QuickCreate);
+        meta.task_id.clone_from(&task.id);
+    } else {
+        return None;
+    }
+    Some(meta)
+}
+
+/// Persists GC metadata only after terminal delivery has completed. The outer
+/// activity guard remains held by the caller across this write, eliminating
+/// the window where GC could see neither an active root nor metadata.
+fn persist_task_gc_meta(task: &Task, result: &TaskResult, daemon_id: &str) {
+    if result.env_root.is_empty() {
+        return;
+    }
+    let Some(mut meta) = gc_meta_for_task(task) else {
+        return;
+    };
+    match local_directory_assignment_for_task(task, daemon_id) {
+        Ok(Some(assignment)) if !assignment.uses_worktree() => meta.local_directory = true,
+        Ok(_) => {}
+        Err(error) => tracing::warn!(
+            task = %task.id,
+            %error,
+            "could not classify local-directory GC exemption"
+        ),
+    }
+    if let Err(error) = write_gc_meta(&result.env_root, meta) {
+        tracing::warn!(task = %task.id, %error, "write gc meta failed (non-fatal)");
+    }
 }
 
 async fn watch_task_cancellation(
@@ -598,6 +654,7 @@ mod tests {
             poll_interval: Duration::from_secs(1),
             cancel_poll_interval: Duration::ZERO,
             workspaces_root: "/tmp/workspaces".into(),
+            daemon_id: "daemon-1".into(),
         };
         assert_eq!(config.cancel_poll_interval(), Duration::from_secs(5));
     }
@@ -646,5 +703,66 @@ mod tests {
             failure_reason_for_result(&explicit),
             "skill_bundle_unavailable"
         );
+    }
+
+    #[test]
+    fn gc_meta_classification_preserves_parent_priority() {
+        let task = Task {
+            id: "task-1".into(),
+            workspace_id: "workspace-1".into(),
+            issue_id: "issue-1".into(),
+            chat_session_id: "chat-1".into(),
+            autopilot_run_id: "run-1".into(),
+            quick_create_prompt: "prompt".into(),
+            ..Task::default()
+        };
+        let meta = gc_meta_for_task(&task).unwrap();
+        assert_eq!(meta.kind, Some(GCMetaKind::Chat));
+        assert_eq!(meta.chat_session_id, "chat-1");
+        assert!(meta.issue_id.is_empty());
+
+        let quick = Task {
+            id: "task-2".into(),
+            workspace_id: "workspace-1".into(),
+            quick_create_prompt: "prompt".into(),
+            ..Task::default()
+        };
+        let meta = gc_meta_for_task(&quick).unwrap();
+        assert_eq!(meta.kind, Some(GCMetaKind::QuickCreate));
+        assert_eq!(meta.task_id, "task-2");
+    }
+
+    #[test]
+    fn writes_terminal_gc_meta_with_local_directory_exemption() {
+        let env_root = tempfile::tempdir().unwrap();
+        let local_root = tempfile::tempdir().unwrap();
+        let task = Task {
+            id: "task-1".into(),
+            workspace_id: "workspace-1".into(),
+            issue_id: "issue-1".into(),
+            project_resources: vec![crate::types::ProjectResourceData {
+                resource_type: "local_directory".into(),
+                resource_ref: serde_json::json!({
+                    "local_path": local_root.path(),
+                    "daemon_id": "daemon-1",
+                    "execution_mode": "in_place"
+                }),
+                ..crate::types::ProjectResourceData::default()
+            }],
+            ..Task::default()
+        };
+        let result = TaskResult {
+            env_root: env_root.path().to_string_lossy().into_owned(),
+            ..TaskResult::default()
+        };
+
+        persist_task_gc_meta(&task, &result, "daemon-1");
+
+        let meta = crate::execenv::execenv::read_gc_meta(&result.env_root).unwrap();
+        assert_eq!(meta.kind, Some(GCMetaKind::Issue));
+        assert_eq!(meta.issue_id, "issue-1");
+        assert_eq!(meta.workspace_id, "workspace-1");
+        assert!(meta.local_directory);
+        assert!(meta.completed_at.is_some());
     }
 }
