@@ -22,9 +22,9 @@ use cordy_daemon::provider_registration::{
 
 use crate::config::{resolve_daemon_launch_overrides, CliConfig, DaemonLaunchFlags, Environment};
 
-/// Authenticated inputs shared by background start/restart and the foreground
+/// Profile inputs shared by background start/restart and the foreground
 /// production daemon. This type intentionally has no `Debug` implementation:
-/// `profile_input` contains the stored bearer token.
+/// `profile_input` can contain the stored bearer token.
 #[derive(Clone)]
 pub struct DaemonStartAssembly {
     pub launch: DaemonLaunchOverrides,
@@ -33,13 +33,16 @@ pub struct DaemonStartAssembly {
 
 impl DaemonStartAssembly {
     /// Loads one profile snapshot and resolves every launch-precedence layer.
-    /// Authentication fails before a background process can be spawned.
+    /// Authentication is deliberately deferred: the background lifecycle first
+    /// performs its live-daemon/profile check, then validates credentials only
+    /// when it must actually spawn a replacement. Foreground production input
+    /// resolution remains fail-closed.
     pub fn load(
         profile: &str,
         flags: &DaemonLaunchFlags,
         environment: &Environment,
     ) -> Result<Self> {
-        if environment.in_daemon_managed_execution_context() {
+        if environment.in_daemon_task_identity_context() {
             bail!("daemon start and restart are not available inside a daemon-managed task");
         }
         let config = environment.load_config(profile)?;
@@ -49,14 +52,13 @@ impl DaemonStartAssembly {
     /// Loads the local profile for a stop operation without requiring a
     /// bearer token. Stopping is a local PID/health transaction; requiring a
     /// server credential here would make it impossible to stop a daemon after
-    /// an expired or revoked login. Restart and start continue to use
-    /// [`Self::load`] so their authenticated preflight remains fail-closed.
+    /// an expired or revoked login.
     pub fn load_for_control(
         profile: &str,
         flags: &DaemonLaunchFlags,
         environment: &Environment,
     ) -> Result<Self> {
-        if environment.in_daemon_managed_execution_context() {
+        if environment.in_daemon_task_identity_context() {
             bail!("daemon lifecycle commands are not available inside a daemon-managed task");
         }
         let config = environment.load_config(profile)?;
@@ -74,14 +76,6 @@ impl DaemonStartAssembly {
         config: &CliConfig,
     ) -> Result<Self> {
         let profile_input = config.daemon_profile_input();
-        if profile_input.token.is_empty() {
-            let login = if profile.is_empty() {
-                "cordy login".to_string()
-            } else {
-                format!("cordy login --profile {profile}")
-            };
-            bail!("not authenticated: run '{login}' first");
-        }
         let launch = resolve_daemon_launch_overrides(profile, flags, environment, config)?;
         Ok(Self {
             launch,
@@ -89,8 +83,9 @@ impl DaemonStartAssembly {
         })
     }
 
-    /// Background lifecycle input. The lifecycle owner performs authenticated
-    /// preflight before spawn and waits for foreground readiness.
+    /// Background lifecycle input. The lifecycle owner performs its live
+    /// daemon/profile check before authenticated preflight and spawn, then waits
+    /// for foreground readiness.
     pub fn lifecycle_options(
         &self,
         executable: PathBuf,
@@ -209,16 +204,15 @@ mod tests {
     }
 
     #[test]
-    fn start_fails_before_spawn_without_profile_credentials() {
+    fn start_load_defers_authentication_to_lifecycle() {
         let home = tempfile::tempdir().expect("temp home");
         let cwd = tempfile::tempdir().expect("temp cwd");
         let environment = Environment::for_test(home.path().into(), cwd.path().into());
 
-        let error =
+        let assembly =
             DaemonStartAssembly::load("missing", &DaemonLaunchFlags::default(), &environment)
-                .err()
-                .expect("missing token must fail");
-        assert!(error.to_string().contains("cordy login --profile missing"));
+                .expect("profile loading should not preempt the live-daemon check");
+        assert!(assembly.profile_input.token.is_empty());
     }
 
     #[test]
@@ -237,15 +231,31 @@ mod tests {
     }
 
     #[test]
-    fn daemon_managed_tasks_cannot_assemble_nested_daemons() {
+    fn daemon_port_alone_does_not_block_host_start() {
         let home = tempfile::tempdir().expect("temp home");
         let cwd = tempfile::tempdir().expect("temp cwd");
         let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
         environment.set("CORDY_DAEMON_PORT", "19876");
 
+        let assembly = DaemonStartAssembly::load(
+            "",
+            &DaemonLaunchFlags::default(),
+            &environment,
+        )
+        .expect("a daemon port without task identity is only a weak host hint");
+        assert!(assembly.profile_input.token.is_empty());
+    }
+
+    #[test]
+    fn daemon_task_identity_cannot_assemble_nested_daemons() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_TASK_ID", "task-1");
+
         let error = DaemonStartAssembly::load("", &DaemonLaunchFlags::default(), &environment)
             .err()
-            .expect("nested daemon must fail");
+            .expect("strong task identity must reject nested daemon startup");
         assert!(error.to_string().contains("daemon-managed task"));
     }
 
