@@ -295,10 +295,10 @@
       server/app URLs; health preflight must succeed before mutation; success
       atomically replaces the whole profile (clearing stale token/workspace and
       unknown fields) while preserving lock/permission/fsync semantics. Current
-      head is now `31ed70f6fbef53eff392c8bd861e16ff1ae25e35` (parent
-      `62aa0af57a3d97c242b51228fd0617c6b81049c8`, tree
-      `7bf7aa1794012deb3989201cb10e0091bcf61d5f`), candidate
-      `e24f805172f64d01078ca41b3a4860716d4ce30c`; the remote branch and PR
+      head is now `33d5df4560abe803fd193668e91ab8104b071bff` (parent
+      `31ed70f6fbef53eff392c8bd861e16ff1ae25e35`, tree
+      `96a6a16e9b4795f1630035f62e72a71be89b8be4`), candidate
+      `ad820ed10935d3df3692ab603c15493e294e8e09`; the remote branch and PR
       candidate were verified at these exact SHAs. PR #129 remains
       Ready/CLEAN/MERGEABLE on base `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`.
       The slice adds the bounded unauthenticated `/health` probe (HTTP(S), no
@@ -326,6 +326,18 @@
       `62aa0af57a3d97c242b51228fd0617c6b81049c8`; PR remains Ready and
       mergeable on base `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`. Scoped
       rustfmt/diff-check pass; Cargo/review/gate/merge remain with pro.
+- [x] Completed the `cordy daemon disk-usage` CLI migration on PR #129.
+      The command now supports Go's task/workspace views, `--top`, table/JSON,
+      `--workspaces-root`, and `--all-profiles`; it keeps full scan totals when
+      rows are truncated, scopes managed tasks to the injected absolute root,
+      and performs parent-status lookup only where rendered, with generic
+      stderr warnings and clean JSON stdout on lookup failure. Exact head is
+      `33d5df4560abe803fd193668e91ab8104b071bff`, tree
+      `96a6a16e9b4795f1630035f62e72a71be89b8be4`, candidate
+      `ad820ed10935d3df3692ab603c15493e294e8e09`, parent
+      `31ed70f6fbef53eff392c8bd861e16ff1ae25e35`; remote head/base and
+      Ready/CLEAN mergeability were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Added the hidden `cordy daemon probe-runtimes` command through a typed
       daemon facade in PR #129. The facade reuses the complete daemon
       `load_config`/agent discovery path with `AllowNoAgents=true`, preserves
