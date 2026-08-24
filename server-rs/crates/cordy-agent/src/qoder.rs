@@ -53,6 +53,14 @@ static TRAECLI_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
             ("--permission-mode", BlockedArgMode::WithValue),
         ])
     });
+static KIRO_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
+    BTreeMap::from([
+        ("acp", BlockedArgMode::Standalone),
+        ("-a", BlockedArgMode::Standalone),
+        ("--trust-all-tools", BlockedArgMode::Standalone),
+        ("--trust-tools", BlockedArgMode::WithValue),
+    ])
+});
 static TERMINAL_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:(?:⚠️|❌|\[ERROR\]).*(?:BadRequestError|AuthenticationError|RateLimitError|HTTP \d{3}|Non-retryable|API call failed)|API call failed after \d+ retr(?:y|ies))")
         .unwrap_or_else(|error| panic!("invalid Qoder provider-error regex: {error}"))
@@ -69,7 +77,9 @@ pub struct QoderConfig {
     pub default_command: String,
     pub provider: String,
     pub launch_args: Vec<String>,
+    pub discovery_args: Vec<String>,
     pub resume_method: String,
+    pub prompt_content_alias: bool,
 }
 
 impl Default for QoderConfig {
@@ -80,7 +90,9 @@ impl Default for QoderConfig {
             default_command: "qodercli".to_string(),
             provider: "qoder".to_string(),
             launch_args: vec!["--yolo".to_string(), "--acp".to_string()],
+            discovery_args: vec!["--yolo".to_string(), "--acp".to_string()],
             resume_method: "session/resume".to_string(),
+            prompt_content_alias: false,
         }
     }
 }
@@ -125,7 +137,9 @@ impl TraecliBackend {
                 default_command: "traecli".to_string(),
                 provider: "traecli".to_string(),
                 launch_args: ["acp", "serve", "--yolo"].map(str::to_string).to_vec(),
+                discovery_args: ["acp", "serve", "--yolo"].map(str::to_string).to_vec(),
                 resume_method: "session/load".to_string(),
+                prompt_content_alias: false,
             }),
         }
     }
@@ -149,6 +163,52 @@ impl Backend for TraecliBackend {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct KiroConfig {
+    pub command: RuntimeCommand,
+    pub env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct KiroBackend {
+    inner: QoderBackend,
+}
+
+impl KiroBackend {
+    pub fn new(config: KiroConfig) -> Self {
+        Self {
+            inner: QoderBackend::new(QoderConfig {
+                command: config.command,
+                env: config.env,
+                default_command: "kiro-cli".to_string(),
+                provider: "kiro".to_string(),
+                launch_args: ["acp", "--trust-all-tools"].map(str::to_string).to_vec(),
+                discovery_args: vec!["acp".to_string()],
+                resume_method: "session/load".to_string(),
+                prompt_content_alias: true,
+            }),
+        }
+    }
+
+    pub async fn discover_models(
+        &self,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        self.inner
+            .discover_models(cache, cancellation, timeout)
+            .await
+    }
+}
+
+#[async_trait]
+impl Backend for KiroBackend {
+    async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
+        self.inner.execute(prompt, options).await
+    }
+}
+
 pub fn build_qoder_args(options: &ExecOptions) -> Vec<String> {
     build_session_args(&QoderConfig::default(), options)
 }
@@ -166,6 +226,21 @@ pub fn build_traecli_args(options: &ExecOptions) -> Vec<String> {
     )
 }
 
+pub fn build_kiro_args(options: &ExecOptions) -> Vec<String> {
+    build_session_args(
+        &QoderConfig {
+            provider: "kiro".to_string(),
+            launch_args: ["acp", "--trust-all-tools"].map(str::to_string).to_vec(),
+            discovery_args: vec!["acp".to_string()],
+            resume_method: "session/load".to_string(),
+            default_command: "kiro-cli".to_string(),
+            prompt_content_alias: true,
+            ..QoderConfig::default()
+        },
+        options,
+    )
+}
+
 fn build_session_args(config: &QoderConfig, options: &ExecOptions) -> Vec<String> {
     let blocked = blocked_args(&config.provider);
     let mut args = config.launch_args.clone();
@@ -175,10 +250,10 @@ fn build_session_args(config: &QoderConfig, options: &ExecOptions) -> Vec<String
 }
 
 fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMode> {
-    if provider == "traecli" {
-        &TRAECLI_BLOCKED_ARGS
-    } else {
-        &BLOCKED_ARGS
+    match provider {
+        "traecli" => &TRAECLI_BLOCKED_ARGS,
+        "kiro" => &KIRO_BLOCKED_ARGS,
+        _ => &BLOCKED_ARGS,
     }
 }
 
@@ -202,7 +277,7 @@ async fn discover_models(
     let blocked = blocked_args(&config.provider);
     let prefix = filter_launch_prefix(&config.command.prefix, blocked);
     let mut argv = prefix.args;
-    argv.extend(config.launch_args.clone());
+    argv.extend(config.discovery_args.clone());
     let mut command = Command::new(command_path);
     command
         .args(argv)
@@ -328,6 +403,7 @@ impl Backend for QoderBackend {
         let prompt = prompt.to_string();
         let provider = self.config.provider.clone();
         let resume_method = self.config.resume_method.clone();
+        let prompt_content_alias = self.config.prompt_content_alias;
 
         tokio::spawn(async move {
             let stderr_reader = stderr_tail.clone();
@@ -350,6 +426,7 @@ impl Backend for QoderBackend {
                 message_tx,
                 provider.clone(),
                 resume_method,
+                prompt_content_alias,
             ));
             let end = if timeout.is_zero() {
                 tokio::select! {
@@ -453,6 +530,7 @@ async fn run_protocol(
     messages: mpsc::Sender<Message>,
     provider: String,
     resume_method: String,
+    prompt_content_alias: bool,
 ) -> ProtocolOutcome {
     let mut client = AcpClient::new(BufReader::new(stdout), stdin);
     let initialize = match client
@@ -542,13 +620,24 @@ async fn run_protocol(
     } else {
         format!("{}\n\n---\n\n{}", options.system_prompt, prompt)
     };
-    let mut state = NotificationState::default();
+    let mut state = NotificationState {
+        kiro_dialect: provider == "kiro",
+        ..NotificationState::default()
+    };
+    let prompt_blocks = serde_json::json!([{"type":"text","text":user_text}]);
+    let prompt_params = if prompt_content_alias {
+        serde_json::json!({
+            "sessionId": session_id,
+            "content": prompt_blocks.clone(),
+            "prompt": prompt_blocks,
+        })
+    } else {
+        serde_json::json!({"sessionId":session_id,"prompt":prompt_blocks})
+    };
     let prompt_result = client
-        .request(
-            "session/prompt",
-            serde_json::json!({"sessionId":session_id,"prompt":[{"type":"text","text":user_text}]}),
-            |notification| handle_notification(notification, &messages, &mut state),
-        )
+        .request("session/prompt", prompt_params, |notification| {
+            handle_notification(notification, &messages, &mut state)
+        })
         .await;
     let prompt_result = match prompt_result {
         Ok(result) => result,
@@ -557,6 +646,23 @@ async fn run_protocol(
             if rejected {
                 session_id.clear();
             }
+            if provider == "kiro"
+                && is_kiro_close_error(&error)
+                && state.last_finishing_status == "completed"
+            {
+                let (output, full_output) = state.deliverable.finish();
+                return ProtocolOutcome {
+                    status: "completed".to_string(),
+                    output,
+                    full_output,
+                    session_id,
+                    ..ProtocolOutcome::default()
+                };
+            }
+            let rejected = rejected
+                || (provider == "kiro"
+                    && !options.resume_session_id.is_empty()
+                    && is_kiro_oversized_history_image(&error));
             return protocol_failure(&provider, "session/prompt", error, session_id, rejected);
         }
     };
@@ -619,6 +725,8 @@ struct NotificationState {
     deliverable: Deliverable,
     tools: HashMap<String, PendingTool>,
     usage: TokenUsage,
+    last_finishing_status: String,
+    kiro_dialect: bool,
 }
 
 #[derive(Default)]
@@ -626,6 +734,7 @@ struct PendingTool {
     name: String,
     input: BTreeMap<String, Value>,
     emitted: bool,
+    finishing: bool,
 }
 
 #[derive(Default)]
@@ -736,8 +845,9 @@ fn handle_tool_start(
     if id.is_empty() {
         return;
     }
-    let name = tool_name(data);
+    let name = tool_name(data, state.kiro_dialect);
     let input = tool_input(data);
+    let finishing = state.kiro_dialect && is_finishing_tool(&name, &input);
     state.deliverable.tool_boundary();
     let emitted = !input.is_empty();
     if emitted {
@@ -749,6 +859,7 @@ fn handle_tool_start(
             name,
             input,
             emitted,
+            finishing,
         },
     );
 }
@@ -777,12 +888,15 @@ fn handle_tool_update(
         None => {
             state.deliverable.tool_boundary();
             PendingTool {
-                name: tool_name(data),
+                name: tool_name(data, state.kiro_dialect),
                 input: tool_input(data),
                 emitted: false,
+                finishing: false,
             }
         }
     };
+    let finishing = state.kiro_dialect
+        && (pending.finishing || is_finishing_tool(&pending.name, &pending.input));
     if !pending.emitted {
         send(messages, tool_use(id, &pending.name, pending.input));
     }
@@ -797,9 +911,12 @@ fn handle_tool_update(
     result.output = output;
     result.status = status.to_string();
     send(messages, result);
+    if finishing {
+        state.last_finishing_status = status.to_string();
+    }
 }
 
-fn tool_name(data: &Value) -> String {
+fn tool_name(data: &Value, kiro_dialect: bool) -> String {
     let name = data
         .get("name")
         .or_else(|| data.get("title"))
@@ -810,12 +927,106 @@ fn tool_name(data: &Value) -> String {
         .unwrap_or("tool")
         .trim()
         .to_string();
-    match name.to_ascii_lowercase().as_str() {
-        "shell" | "terminal" => "terminal".to_string(),
-        "read" => "read_file".to_string(),
-        "write" => "write_file".to_string(),
-        _ => name,
+    let lower = name.to_ascii_lowercase();
+    if !kiro_dialect {
+        return match lower.as_str() {
+            "shell" | "terminal" => "terminal".to_string(),
+            "read" => "read_file".to_string(),
+            "write" => "write_file".to_string(),
+            _ => name,
+        };
     }
+    match lower.as_str() {
+        "read" | "read file" => "read_file".to_string(),
+        "write" | "write file" => "write_file".to_string(),
+        "edit" | "patch" => "edit_file".to_string(),
+        "shell" | "bash" | "terminal" | "run command" | "run shell command" => {
+            "terminal".to_string()
+        }
+        "grep" | "search" | "find" => "search_files".to_string(),
+        "glob" => "glob".to_string(),
+        "code" => "code".to_string(),
+        "web search" => "web_search".to_string(),
+        "fetch" | "web fetch" => "web_fetch".to_string(),
+        "todo" | "todo write" | "todo list" | "todo_list" => "todo_write".to_string(),
+        _ => name.to_ascii_lowercase().replace(' ', "_"),
+    }
+}
+
+fn is_finishing_tool(name: &str, input: &BTreeMap<String, Value>) -> bool {
+    name == "goal_complete"
+        || input
+            .get("command")
+            .and_then(Value::as_str)
+            .is_some_and(is_kiro_issue_comment_add_command)
+}
+
+fn is_kiro_issue_comment_add_command(command: &str) -> bool {
+    let mut parts =
+        trim_leading_env_assignments(command.split_whitespace().map(str::to_string).collect());
+    if parts.len() >= 3 && is_posix_shell(&parts[0]) && parts[1] == "-c" {
+        let inner = parts[2..].join(" ");
+        let inner = inner.trim_matches(['\"', '\'']);
+        parts =
+            trim_leading_env_assignments(inner.split_whitespace().map(str::to_string).collect());
+    }
+    if parts.len() < 4 {
+        return false;
+    }
+    let executable = parts[0].strip_prefix("./").unwrap_or(&parts[0]);
+    (executable == "cordy" || executable.ends_with("/cordy"))
+        && parts[1..4] == ["issue", "comment", "add"]
+}
+
+fn trim_leading_env_assignments(mut parts: Vec<String>) -> Vec<String> {
+    let first_non_assignment = parts
+        .iter()
+        .position(|part| !is_env_assignment(part))
+        .unwrap_or(parts.len());
+    parts.drain(..first_non_assignment);
+    parts
+}
+
+fn is_env_assignment(part: &str) -> bool {
+    let Some((name, _)) = part.split_once('=') else {
+        return false;
+    };
+    !name.is_empty()
+        && name.chars().enumerate().all(|(index, character)| {
+            character == '_'
+                || character.is_ascii_alphabetic()
+                || (index > 0 && character.is_ascii_digit())
+        })
+}
+
+fn is_posix_shell(command: &str) -> bool {
+    matches!(
+        command.rsplit('/').next().unwrap_or(command),
+        "sh" | "bash" | "zsh" | "dash"
+    )
+}
+
+fn is_kiro_close_error(error: &AcpError) -> bool {
+    error
+        .rpc_details()
+        .is_some_and(|(method, code, message, data)| {
+            method == "session/prompt"
+                && code == -32603
+                && message.trim().eq_ignore_ascii_case("Internal error")
+                && data
+                    .to_ascii_lowercase()
+                    .contains("failed to generate a response")
+        })
+}
+
+fn is_kiro_oversized_history_image(error: &AcpError) -> bool {
+    error.rpc_details().is_some_and(|(method, code, _, data)| {
+        let data = data.to_ascii_lowercase();
+        method == "session/prompt"
+            && code == -32603
+            && data.contains("image.source.base64.data")
+            && data.contains("image dimensions exceed max allowed size")
+    })
 }
 
 fn tool_input(data: &Value) -> BTreeMap<String, Value> {
@@ -941,10 +1152,12 @@ fn log_blocked_args(
     options: &ExecOptions,
 ) {
     log_blocked(
+        provider,
         "extra arguments",
         &filter_custom_args(&options.extra_args, blocked).blocked_flags,
     );
     log_blocked(
+        provider,
         "custom arguments",
         &filter_custom_args(&options.custom_args, blocked).blocked_flags,
     );
@@ -1004,6 +1217,95 @@ mod tests {
     }
 
     #[test]
+    fn kiro_arguments_keep_protocol_and_trust_mode_owned() {
+        let args = build_kiro_args(&ExecOptions {
+            custom_args: [
+                "acp",
+                "-a",
+                "--trust-all-tools",
+                "--trust-tools",
+                "terminal",
+                "--agent",
+                "cordy",
+            ]
+            .map(str::to_string)
+            .to_vec(),
+            ..ExecOptions::default()
+        });
+        assert_eq!(&args[..2], ["acp", "--trust-all-tools"]);
+        assert_eq!(args.iter().filter(|arg| arg.as_str() == "acp").count(), 1);
+        assert_eq!(
+            args.iter()
+                .filter(|arg| arg.as_str() == "--trust-all-tools")
+                .count(),
+            1
+        );
+        assert!(!args.iter().any(|arg| arg == "terminal"));
+        assert!(args.windows(2).any(|pair| pair == ["--agent", "cordy"]));
+    }
+
+    #[test]
+    fn kiro_finishing_command_is_payload_driven_and_strict() {
+        assert!(is_kiro_issue_comment_add_command(
+            "CORDY_TOKEN=x sh -c 'cordy issue comment add TASK-1 --body done'"
+        ));
+        assert!(is_kiro_issue_comment_add_command(
+            "/usr/local/bin/cordy issue comment add TASK-1"
+        ));
+        assert!(!is_kiro_issue_comment_add_command(
+            "cordy issue comment list TASK-1"
+        ));
+        assert!(!is_kiro_issue_comment_add_command(
+            "printf cordy issue comment add"
+        ));
+    }
+
+    #[test]
+    fn kiro_error_classifiers_require_exact_rpc_shape() {
+        let close = AcpError::Rpc {
+            method: "session/prompt".to_string(),
+            code: -32603,
+            message: "Internal error".to_string(),
+            data: ", data=Kiro failed to generate a response".to_string(),
+        };
+        assert!(is_kiro_close_error(&close));
+        let oversized = AcpError::Rpc {
+            method: "session/prompt".to_string(),
+            code: -32603,
+            message: "Internal error".to_string(),
+            data: ", data=messages.2.content.0.image.source.base64.data: image dimensions exceed max allowed size".to_string(),
+        };
+        assert!(is_kiro_oversized_history_image(&oversized));
+        assert!(!is_kiro_close_error(&oversized));
+    }
+
+    #[test]
+    fn kiro_most_recent_finishing_result_controls_close_guard() {
+        let (messages, _receiver) = mpsc::channel(8);
+        let mut state = NotificationState {
+            kiro_dialect: true,
+            ..NotificationState::default()
+        };
+        for (id, status) in [("first", "completed"), ("final", "failed")] {
+            handle_tool_start(
+                &serde_json::json!({
+                    "toolCallId": id,
+                    "name": "anything",
+                    "rawInput": {"command":"cordy issue comment add CORD-1"}
+                }),
+                &messages,
+                &mut state,
+            );
+            handle_tool_update(
+                &serde_json::json!({"toolCallId":id,"status":status}),
+                &messages,
+                &mut state,
+            );
+        }
+        assert_eq!(state.last_finishing_status, "failed");
+    }
+
+    #[test]
     fn deliverable_uses_text_after_latest_tool_boundary() {
         let mut deliverable = Deliverable::default();
         deliverable.text("I will inspect.");
@@ -1027,6 +1329,135 @@ mod tests {
             ..QoderConfig::default()
         });
         (directory, backend)
+    }
+
+    #[cfg(unix)]
+    fn fake_kiro_backend(script: &str) -> (tempfile::TempDir, std::path::PathBuf, KiroBackend) {
+        let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
+        let executable = directory.path().join("kiro-cli");
+        let requests = directory.path().join("requests.jsonl");
+        std::fs::write(&executable, script)
+            .unwrap_or_else(|error| panic!("write fake Kiro: {error}"));
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|error| panic!("chmod fake Kiro: {error}"));
+        let backend = KiroBackend::new(KiroConfig {
+            command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
+            env: BTreeMap::from([(
+                "KIRO_REQUESTS".to_string(),
+                requests.to_string_lossy().into_owned(),
+            )]),
+        });
+        (directory, requests, backend)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kiro_preserves_only_proven_finishing_completion_and_sends_both_payloads() {
+        let (_directory, requests, backend) = fake_kiro_backend(
+            r#"#!/bin/sh
+test "$1" = acp && test "$2" = --trust-all-tools || exit 20
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$KIRO_REQUESTS"
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"kiro-1"}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"tool_call","toolCallId":"finish-1","title":"Running delivery","rawInput":{"command":"cordy issue comment add CORD-1 --body done"}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"sessionUpdate":"tool_call_update","toolCallId":"finish-1","status":"completed","rawOutput":"ok"}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"Internal error","data":"Kiro failed to generate a response"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute("ship it", ExecOptions::default())
+            .await
+            .unwrap_or_else(|error| panic!("execute Kiro: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Kiro result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert!(result.error.is_empty());
+        assert_eq!(result.session_id, "kiro-1");
+        let requests = std::fs::read_to_string(requests)
+            .unwrap_or_else(|error| panic!("read Kiro requests: {error}"));
+        let prompt: Value = serde_json::from_str(
+            requests
+                .lines()
+                .find(|line| line.contains("\"method\":\"session/prompt\""))
+                .unwrap_or_else(|| panic!("Kiro prompt request missing")),
+        )
+        .unwrap_or_else(|error| panic!("parse Kiro prompt: {error}"));
+        assert_eq!(prompt["params"]["content"], prompt["params"]["prompt"]);
+        assert_eq!(prompt["params"]["prompt"][0]["text"], "ship it");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kiro_model_discovery_uses_non_executing_acp_mode() {
+        let (_directory, requests, backend) = fake_kiro_backend(
+            r#"#!/bin/sh
+printf '%s\n' "$@" > "$KIRO_REQUESTS.args"
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"discovery","models":{"currentModelId":"claude-sonnet-4.5","availableModels":[{"modelId":"claude-sonnet-4.5","name":"Claude Sonnet 4.5"}]}}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let catalog = backend
+            .discover_models(
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(catalog.models.len(), 1);
+        assert_eq!(catalog.models[0].id, "claude-sonnet-4.5");
+        let args = std::fs::read_to_string(format!("{}.args", requests.display()))
+            .unwrap_or_else(|error| panic!("read Kiro discovery args: {error}"));
+        assert_eq!(args, "acp\n");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kiro_oversized_resumed_history_keeps_session_for_audit() {
+        let (_directory, _requests, backend) = fake_kiro_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/load"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/prompt"'*) printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"Internal error","data":"messages.14.content.0.image.source.base64.data: image dimensions exceed max allowed size"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute(
+                "continue",
+                ExecOptions {
+                    resume_session_id: "poisoned-session".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Kiro: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Kiro result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert!(result.resume_rejected);
+        assert_eq!(result.session_id, "poisoned-session");
+        assert!(result
+            .error
+            .contains("image dimensions exceed max allowed size"));
     }
 
     #[cfg(unix)]

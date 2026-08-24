@@ -33,6 +33,19 @@ pub enum AcpError {
 }
 
 impl AcpError {
+    pub fn rpc_details(&self) -> Option<(&str, i64, &str, &str)> {
+        let Self::Rpc {
+            method,
+            code,
+            message,
+            data,
+        } = self
+        else {
+            return None;
+        };
+        Some((method, *code, message, data))
+    }
+
     pub fn is_session_not_found(&self) -> bool {
         let Self::Rpc {
             code,

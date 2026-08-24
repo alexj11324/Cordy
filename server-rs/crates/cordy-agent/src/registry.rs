@@ -7,7 +7,9 @@ use crate::antigravity::{AntigravityBackend, AntigravityConfig};
 use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
-use crate::qoder::{QoderBackend, QoderConfig, TraecliBackend, TraecliConfig};
+use crate::qoder::{
+    KiroBackend, KiroConfig, QoderBackend, QoderConfig, TraecliBackend, TraecliConfig,
+};
 use crate::qwen::{QwenBackend, QwenConfig};
 
 /// Provider-neutral launch inputs resolved by daemon profile/runtime loading.
@@ -37,6 +39,10 @@ pub fn build_backend(
             env: config.env,
         }))),
         "qwen" => Ok(Arc::new(QwenBackend::new(QwenConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "kiro" => Ok(Arc::new(KiroBackend::new(KiroConfig {
             command: config.command,
             env: config.env,
         }))),
@@ -457,6 +463,7 @@ mod tests {
         assert!(build_backend("qoder", BackendConfig::default()).is_ok());
         assert!(build_backend("qoderclicn", BackendConfig::default()).is_ok());
         assert!(build_backend("traecli", BackendConfig::default()).is_ok());
+        assert!(build_backend("kiro", BackendConfig::default()).is_ok());
 
         let metadata_only = build_backend("claude", BackendConfig::default());
         assert!(matches!(

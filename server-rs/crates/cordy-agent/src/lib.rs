@@ -38,6 +38,8 @@ pub use model::{
     ModelServiceTier, ModelThinking, ThinkingLevel,
 };
 pub use process::{OwnedProcessTree, ProcessTreeSignal};
-pub use qoder::{QoderBackend, QoderConfig, TraecliBackend, TraecliConfig};
+pub use qoder::{
+    KiroBackend, KiroConfig, QoderBackend, QoderConfig, TraecliBackend, TraecliConfig,
+};
 pub use qwen::{QwenBackend, QwenConfig};
 pub use registry::{build_backend, BackendConfig};
