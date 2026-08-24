@@ -360,7 +360,7 @@ async fn build_production_router(
     })
 }
 
-async fn shutdown_signal(root_cancel: CancellationToken) {
+async fn shutdown_signal() {
     #[cfg(unix)]
     {
         let mut terminate =
@@ -379,7 +379,6 @@ async fn shutdown_signal(root_cancel: CancellationToken) {
     if let Err(error) = tokio::signal::ctrl_c().await {
         tracing::error!(%error, "failed to listen for shutdown signal");
     }
-    root_cancel.cancel();
 }
 
 async fn shutdown_channel_media(
@@ -529,8 +528,11 @@ async fn main() -> anyhow::Result<()> {
         listener,
         router.into_make_service_with_connect_info::<SocketAddr>(),
     )
-    .with_graceful_shutdown(shutdown_signal(root_cancel.clone()))
+    .with_graceful_shutdown(shutdown_signal())
     .await;
+    // Match Go's shutdown ordering: drain every in-flight HTTP handler before
+    // stopping maintenance workers. In particular, a heartbeat must not queue
+    // an ID after the batched scheduler has performed its final flush.
     root_cancel.cancel();
     let (
         failure_shutdown,
