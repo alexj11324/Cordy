@@ -488,6 +488,17 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy squad activity <issue-id> <outcome>` to PR #129. It validates
+      the three Go outcomes, resolves the issue reference before posting the
+      workspace-scoped evaluation body, and preserves stderr/table versus JSON
+      output. Exact head is
+      `6b4620b43b2eea88e36a244ee1e5a7dcea662441`, parent
+      `767c3a306321544af96e88b0fa15e1f665ce04df`, tree
+      `604eb6b2c78a34dce4592893d8b12ca8236967a2`, candidate
+      `52e6cf2463603b1a3a7170f6e646824cea51909c`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
