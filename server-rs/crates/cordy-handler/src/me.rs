@@ -52,9 +52,9 @@ struct PatchOnboardingRequest {
 
 #[derive(Debug, Default, Deserialize)]
 struct JoinCloudWaitlistRequest {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_string")]
     email: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_null_string")]
     reason: String,
 }
 
@@ -124,9 +124,6 @@ impl From<&User> for UserResponse {
             id: user.id.to_string(),
             name: user.name.clone(),
             email: user.email.clone(),
-            // Current Rust handler state has no storage signer. This is the
-            // same raw-URL branch the Go handler uses when Storage/CFSigner
-            // are nil; private URL signing lands with the storage slice.
             avatar_url: user.avatar_url.clone(),
             language: user.language.clone(),
             timezone: user.timezone.clone(),
@@ -140,13 +137,22 @@ impl From<&User> for UserResponse {
     }
 }
 
+fn user_response(state: &HandlerState, user: &User) -> UserResponse {
+    let mut response = UserResponse::from(user);
+    response.avatar_url = user
+        .avatar_url
+        .as_deref()
+        .map(|url| crate::avatar::resolve_url(state, url));
+    response
+}
+
 async fn get_me(State(state): State<HandlerState>, headers: HeaderMap) -> Response {
     let user_id = match authenticated_user_id(&headers) {
         Some(user_id) => user_id,
         None => return error_response(StatusCode::UNAUTHORIZED, "user not authenticated"),
     };
     match user::get_user(&state.pool, user_id).await {
-        Ok(Some(user)) => Json(UserResponse::from(&user)).into_response(),
+        Ok(Some(user)) => Json(user_response(&state, &user)).into_response(),
         Ok(None) | Err(_) => error_response(StatusCode::NOT_FOUND, "user not found"),
     }
 }
@@ -181,7 +187,19 @@ async fn update_me(State(state): State<HandlerState>, headers: HeaderMap, body: 
         }
         None => current_user.name.clone(),
     };
-    let avatar_url = request.avatar_url.map(|value| value.trim().to_string());
+    let avatar_url = match request.avatar_url {
+        Some(value) => match crate::avatar::accept_url(
+            &state,
+            &value,
+            current_user.avatar_url.as_deref(),
+        )
+        .await
+        {
+            Ok(value) => Some(value),
+            Err(message) => return error_response(StatusCode::FORBIDDEN, message),
+        },
+        None => None,
+    };
     let language = match request.language {
         Some(language) => {
             let language = language.trim().to_string();
@@ -227,7 +245,7 @@ async fn update_me(State(state): State<HandlerState>, headers: HeaderMap, body: 
     )
     .await
     {
-        Ok(Some(user)) => Json(UserResponse::from(&user)).into_response(),
+        Ok(Some(user)) => Json(user_response(&state, &user)).into_response(),
         Ok(None) | Err(_) => {
             error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update user")
         }
@@ -338,7 +356,7 @@ async fn patch_onboarding(
         );
     }
 
-    Json(UserResponse::from(&updated)).into_response()
+    Json(user_response(&state, &updated)).into_response()
 }
 
 async fn complete_onboarding(
@@ -411,7 +429,7 @@ async fn complete_onboarding(
         );
     }
 
-    Json(UserResponse::from(&updated)).into_response()
+    Json(user_response(&state, &updated)).into_response()
 }
 
 async fn join_cloud_waitlist(
@@ -457,7 +475,7 @@ async fn join_cloud_waitlist(
         &state,
         &cordy_analytics::cloud_waitlist_joined(&user_id.to_string(), reason.is_some()),
     );
-    Json(UserResponse::from(&updated)).into_response()
+    Json(user_response(&state, &updated)).into_response()
 }
 
 fn valid_email_address(value: &str) -> bool {
@@ -513,6 +531,13 @@ fn record_metric_event(state: &HandlerState, event: &cordy_analytics::Event) {
     if let Some(metrics) = state.business_metrics.as_deref() {
         metrics.inc_for_event(event);
     }
+}
+
+fn deserialize_null_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(Option::unwrap_or_default)
 }
 
 fn deserialize_string_or_slice<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
@@ -774,6 +799,11 @@ mod tests {
         let omitted: JoinCloudWaitlistRequest = decode_json_body(b"{}").unwrap();
         assert!(omitted.email.is_empty());
         assert!(omitted.reason.is_empty());
+
+        let nullable: JoinCloudWaitlistRequest =
+            decode_json_body(br#"{"email":"alex@example.com","reason":null}"#).unwrap();
+        assert_eq!(nullable.email, "alex@example.com");
+        assert!(nullable.reason.is_empty());
     }
 
     #[tokio::test]
