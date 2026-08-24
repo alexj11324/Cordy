@@ -101,10 +101,38 @@ enum Command {
     Repo(RepoArgs),
     #[command(about = "Work with agent runtimes")]
     Runtime(RuntimeArgs),
+    #[command(about = "Manage autopilots (scheduled/triggered agent automations)")]
+    Autopilot(AutopilotArgs),
     #[command(about = "Print version information")]
     Version {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
         output: VersionOutput,
+    },
+}
+
+#[derive(Debug, Args)]
+struct AutopilotArgs {
+    #[command(subcommand)]
+    command: AutopilotCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum AutopilotCommand {
+    #[command(about = "List autopilots in the workspace")]
+    List {
+        #[arg(long, default_value = "", help = "Filter by status (active, paused)")]
+        status: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+        #[arg(long, help = "Show full UUIDs in table output")]
+        full_id: bool,
+    },
+    #[command(about = "Get autopilot details (includes triggers)")]
+    Get {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
     },
 }
 
@@ -2227,6 +2255,17 @@ async fn run_with_input<R: Read>(
         Command::Agent(AgentArgs {
             command: AgentCommand::Copy(args),
         }) => run_agent_copy(cli, environment, args, input).await,
+        Command::Autopilot(AutopilotArgs {
+            command:
+                AutopilotCommand::List {
+                    status,
+                    output,
+                    full_id,
+                },
+        }) => run_autopilot_list(cli, environment, status, *output, *full_id).await,
+        Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::Get { id, output },
+        }) => run_autopilot_get(cli, environment, id, *output).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -3338,6 +3377,225 @@ fn format_runtime_rows(
             .collect()
     }));
     Ok(format_table(&rows))
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct AutopilotListEnvelope {
+    autopilots: Vec<Value>,
+    total: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct AutopilotResolverEnvelope {
+    autopilots: Vec<Value>,
+    #[serde(default)]
+    total: i64,
+    #[serde(default)]
+    has_more: bool,
+}
+
+async fn run_autopilot_list(
+    cli: &Cli,
+    environment: &Environment,
+    status: &str,
+    output: OutputFormat,
+    full_id: bool,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = required_workspace_id(cli, environment)?;
+    let path = if status.is_empty() {
+        "/api/autopilots".into()
+    } else {
+        format!(
+            "/api/autopilots?status={}",
+            form_urlencoded::byte_serialize(status.as_bytes()).collect::<String>()
+        )
+    };
+    let response: AutopilotListEnvelope =
+        client.get_json(&path).await.context("list autopilots")?;
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&response)?),
+        OutputFormat::Table => {
+            let agents =
+                load_autopilot_agent_names(&client, &workspace_id, &response.autopilots).await;
+            format_autopilot_table(&response.autopilots, full_id, &agents)
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+async fn run_autopilot_get(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let autopilot_id = resolve_autopilot_id(&client, &workspace_id, id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+    let response: Value = client
+        .get_json(&format!("/api/autopilots/{autopilot_id}"))
+        .await
+        .context("get autopilot")?;
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&response)?),
+        OutputFormat::Table => {
+            let autopilot = response.get("autopilot").unwrap_or(&Value::Null);
+            let agents =
+                load_autopilot_agent_names(&client, &workspace_id, std::slice::from_ref(autopilot))
+                    .await;
+            format_autopilot_table(std::slice::from_ref(autopilot), true, &agents)
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+async fn resolve_autopilot_id(
+    client: &ApiClient,
+    workspace_id: &str,
+    input: &str,
+) -> Result<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        bail!("autopilot id is required");
+    }
+    if is_canonical_uuid(trimmed) {
+        return Ok(trimmed.into());
+    }
+    let Some(prefix) = normalize_uuid_prefix(trimmed) else {
+        let compact = trimmed.replace('-', "");
+        if compact.len() < 4 {
+            bail!(
+                "resolve autopilot: expected a full UUID or at least 4 hex characters, got {input:?}"
+            );
+        }
+        bail!(
+            "resolve autopilot: expected a UUID prefix containing only hex characters, got {input:?}"
+        );
+    };
+    if workspace_id.is_empty() {
+        bail!("resolve autopilot: workspace_id is required to resolve autopilot id prefixes");
+    }
+
+    const LIMIT: usize = 50;
+    let mut offset = 0;
+    let mut seen = HashSet::new();
+    let mut candidates = Vec::new();
+    loop {
+        let mut query = form_urlencoded::Serializer::new(String::new());
+        query.append_pair("limit", &LIMIT.to_string());
+        if offset > 0 {
+            query.append_pair("offset", &offset.to_string());
+        }
+        query.append_pair("workspace_id", workspace_id);
+        let page: AutopilotResolverEnvelope = client
+            .get_json(&format!("/api/autopilots?{}", query.finish()))
+            .await
+            .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+        let page_len = page.autopilots.len();
+        let mut added = 0;
+        for autopilot in page.autopilots {
+            let id = value_string(&autopilot, "id");
+            if !id.is_empty() && seen.insert(id.clone()) {
+                added += 1;
+                candidates.push(id);
+            }
+        }
+        offset += page_len;
+        if page_len == 0 || added == 0 || page_len < LIMIT {
+            break;
+        }
+        if page.has_more {
+            continue;
+        }
+        if page.total > 0 {
+            if offset as i64 >= page.total {
+                break;
+            }
+            continue;
+        }
+        break;
+    }
+
+    let mut matches = candidates
+        .into_iter()
+        .filter(|id| compact_uuid(id).starts_with(&prefix))
+        .collect::<Vec<_>>();
+    matches.sort();
+    match matches.as_slice() {
+        [id] => Ok(id.clone()),
+        [] => bail!(
+            "no autopilot found matching id prefix {input:?}; run the list command with --full-id to copy the full UUID"
+        ),
+        _ => bail!(
+            "ambiguous autopilot id prefix {input:?}; matches:\n  {}\nUse more characters or run the list command with --full-id",
+            matches.join("\n  ")
+        ),
+    }
+}
+
+async fn load_autopilot_agent_names(
+    client: &ApiClient,
+    workspace_id: &str,
+    autopilots: &[Value],
+) -> HashMap<String, String> {
+    if workspace_id.is_empty()
+        || !autopilots
+            .iter()
+            .any(|autopilot| !value_string(autopilot, "assignee_id").is_empty())
+    {
+        return HashMap::new();
+    }
+    let path = format!(
+        "/api/agents?workspace_id={}",
+        form_urlencoded::byte_serialize(workspace_id.as_bytes()).collect::<String>()
+    );
+    let Ok(agents) = client.get_json::<Vec<Value>>(&path).await else {
+        return HashMap::new();
+    };
+    agents
+        .into_iter()
+        .filter_map(|agent| {
+            let id = value_string(&agent, "id");
+            let name = value_string(&agent, "name");
+            (!id.is_empty() && !name.is_empty()).then_some((id, name))
+        })
+        .collect()
+}
+
+fn format_autopilot_table(
+    autopilots: &[Value],
+    full_id: bool,
+    agents: &HashMap<String, String>,
+) -> String {
+    let mut rows = vec![vec![
+        "ID".into(),
+        "TITLE".into(),
+        "STATUS".into(),
+        "MODE".into(),
+        "ASSIGNEE".into(),
+        "LAST_RUN".into(),
+    ]];
+    rows.extend(autopilots.iter().map(|autopilot| {
+        let assignee_id = value_string(autopilot, "assignee_id");
+        vec![
+            display_id(&value_string(autopilot, "id"), full_id),
+            value_string(autopilot, "title"),
+            value_string(autopilot, "status"),
+            value_string(autopilot, "execution_mode"),
+            agents.get(&assignee_id).cloned().unwrap_or(assignee_id),
+            value_string(autopilot, "last_run_at"),
+        ]
+    }));
+    format_table(&rows)
 }
 
 fn chat_reply_count(message: &Value) -> String {
@@ -11861,6 +12119,243 @@ mod tests {
     use std::io::Cursor;
     use std::sync::{Arc, Mutex};
     use tokio::net::TcpListener;
+
+    #[test]
+    fn autopilot_read_parser_matches_go_registry() {
+        let list = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "list",
+            "--status",
+            "paused",
+            "--output",
+            "json",
+            "--full-id",
+        ])
+        .expect("autopilot list CLI");
+        let Command::Autopilot(AutopilotArgs {
+            command:
+                AutopilotCommand::List {
+                    status,
+                    output,
+                    full_id,
+                },
+        }) = list.command
+        else {
+            panic!("expected autopilot list");
+        };
+        assert_eq!(status, "paused");
+        assert_eq!(output, OutputFormat::Json);
+        assert!(full_id);
+
+        let get =
+            Cli::try_parse_from(["cordy", "autopilot", "get", "abcd"]).expect("autopilot get CLI");
+        let Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::Get { id, output },
+        }) = get.command
+        else {
+            panic!("expected autopilot get");
+        };
+        assert_eq!(id, "abcd");
+        assert_eq!(output, OutputFormat::Json);
+        assert!(Cli::try_parse_from(["cordy", "autopilot", "get"]).is_err());
+        assert!(Cli::try_parse_from(["cordy", "autopilot", "list", "extra"]).is_err());
+    }
+
+    #[tokio::test]
+    async fn autopilot_list_matches_go_filter_actor_and_output_semantics() {
+        let app = Router::new()
+            .route(
+                "/api/autopilots",
+                get(|request: Request| async move {
+                    assert_eq!(request.uri().query(), Some("status=paused"));
+                    Json(serde_json::json!({
+                        "autopilots":[{
+                            "id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                            "title":"Nightly review",
+                            "status":"paused",
+                            "execution_mode":"run_only",
+                            "assignee_id":"agent-1",
+                            "last_run_at":"2026-08-24T01:02:03Z",
+                            "server_only":"preserved"
+                        }],
+                        "total":1
+                    }))
+                }),
+            )
+            .route(
+                "/api/agents",
+                get(|request: Request| async move {
+                    assert_eq!(request.uri().query(), Some("workspace_id=workspace-1"));
+                    Json(vec![serde_json::json!({"id":"agent-1","name":"Reviewer"})])
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from(["cordy", "autopilot", "list", "--status", "paused"])
+            .expect("autopilot list CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list autopilots");
+        assert!(output.stdout.starts_with("ID"));
+        assert!(output.stdout.contains("aaaaaaaa"));
+        assert!(!output.stdout.contains("aaaaaaaa-aaaa"));
+        assert!(output.stdout.contains("Nightly review"));
+        assert!(output.stdout.contains("Reviewer"));
+        assert!(output.stdout.contains("2026-08-24T01:02:03Z"));
+
+        let json = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "list",
+            "--status",
+            "paused",
+            "--output",
+            "json",
+        ])
+        .expect("autopilot list JSON CLI");
+        let output = run_with_input(&json, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list autopilots as JSON");
+        let value: Value = serde_json::from_str(&output.stdout).expect("JSON output");
+        assert_eq!(value["total"], 1);
+        assert_eq!(value["autopilots"][0]["server_only"], "preserved");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn autopilot_get_resolves_prefix_and_preserves_detail_envelope() {
+        const ID: &str = "abcd0000-1111-2222-3333-444444444444";
+        let app = Router::new()
+            .route(
+                "/api/autopilots",
+                get(|request: Request| async move {
+                    match request.uri().query() {
+                        Some("limit=50&workspace_id=workspace-1") => Json(serde_json::json!({
+                            "autopilots":(0..50).map(|index| serde_json::json!({
+                                "id":format!("{index:08x}-1111-2222-3333-444444444444")
+                            })).collect::<Vec<_>>(),
+                            "total":51,
+                            "has_more":true
+                        })),
+                        Some("limit=50&offset=50&workspace_id=workspace-1") => {
+                            Json(serde_json::json!({
+                                "autopilots":[{"id":ID,"title":"Morning triage","status":"active"}],
+                                "total":51,
+                                "has_more":false
+                            }))
+                        }
+                        query => panic!("unexpected resolver query: {query:?}"),
+                    }
+                }),
+            )
+            .route(
+                "/api/autopilots/abcd0000-1111-2222-3333-444444444444",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "autopilot":{
+                            "id":ID,
+                            "title":"Morning triage",
+                            "status":"active",
+                            "execution_mode":"create_issue",
+                            "assignee_id":"agent-1",
+                            "last_run_at":null
+                        },
+                        "triggers":[{"id":"trigger-1","kind":"schedule"}],
+                        "collaborators":[],
+                        "server_only":"preserved"
+                    }))
+                }),
+            )
+            .route(
+                "/api/agents",
+                get(|| async { Json(vec![serde_json::json!({"id":"agent-1","name":"Planner"})]) }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let table = Cli::try_parse_from(["cordy", "autopilot", "get", "abcd", "--output", "table"])
+            .expect("autopilot get table CLI");
+        let output = run_with_input(&table, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("get autopilot table");
+        assert!(output.stdout.contains(ID));
+        assert!(output.stdout.contains("Planner"));
+
+        let json =
+            Cli::try_parse_from(["cordy", "autopilot", "get", ID]).expect("autopilot get JSON CLI");
+        let output = run_with_input(&json, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("get autopilot JSON");
+        let value: Value = serde_json::from_str(&output.stdout).expect("JSON output");
+        assert_eq!(value["triggers"][0]["kind"], "schedule");
+        assert_eq!(value["server_only"], "preserved");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn autopilot_prefix_errors_match_go_resolver_contract() {
+        let app = Router::new().route(
+            "/api/autopilots",
+            get(|| async {
+                Json(serde_json::json!({
+                    "autopilots":[
+                        {"id":"abcd0000-1111-2222-3333-444444444444"},
+                        {"id":"abcd9999-1111-2222-3333-444444444444"}
+                    ],
+                    "total":2
+                }))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+
+        let short =
+            Cli::try_parse_from(["cordy", "autopilot", "get", "abc"]).expect("short prefix CLI");
+        let error = run_with_input(&short, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("short prefix rejected");
+        assert_eq!(
+            error.to_string(),
+            "resolve autopilot: resolve autopilot: expected a full UUID or at least 4 hex characters, got \"abc\""
+        );
+
+        let ambiguous = Cli::try_parse_from(["cordy", "autopilot", "get", "abcd"])
+            .expect("ambiguous prefix CLI");
+        let error = run_with_input(&ambiguous, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("ambiguous prefix rejected");
+        assert!(error
+            .to_string()
+            .starts_with("ambiguous autopilot id prefix \"abcd\"; matches:"));
+        assert!(error
+            .to_string()
+            .contains("abcd0000-1111-2222-3333-444444444444"));
+        assert!(error
+            .to_string()
+            .contains("abcd9999-1111-2222-3333-444444444444"));
+        server.abort();
+    }
 
     #[test]
     fn agent_read_parser_matches_go_registry() {
