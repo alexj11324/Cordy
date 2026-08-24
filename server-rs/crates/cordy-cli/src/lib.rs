@@ -161,6 +161,36 @@ enum AutopilotCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
+    #[command(about = "Add a schedule or webhook trigger to an autopilot")]
+    TriggerAdd(AutopilotTriggerAddArgs),
+}
+
+#[derive(Debug, Args)]
+struct AutopilotTriggerAddArgs {
+    #[arg(value_name = "AUTOPILOT-ID")]
+    autopilot_id: String,
+    #[arg(
+        long,
+        default_value = "schedule",
+        help = "Trigger kind: schedule or webhook"
+    )]
+    kind: String,
+    #[arg(
+        long,
+        default_value = "",
+        help = "Cron expression (required for --kind schedule)"
+    )]
+    cron: String,
+    #[arg(
+        long,
+        default_value = "",
+        help = "IANA timezone (default UTC; schedule only)"
+    )]
+    timezone: String,
+    #[arg(long, default_value = "", help = "Optional human-readable label")]
+    label: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -2382,6 +2412,9 @@ async fn run_with_input<R: Read>(
                     output,
                 },
         }) => run_autopilot_runs(cli, environment, id, *limit, *offset, *output).await,
+        Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::TriggerAdd(args),
+        }) => run_autopilot_trigger_add(cli, environment, args).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -3849,6 +3882,79 @@ fn format_autopilot_runs_table(runs: &[Value]) -> String {
         ]
     }));
     format_table(&rows)
+}
+
+async fn run_autopilot_trigger_add(
+    cli: &Cli,
+    environment: &Environment,
+    args: &AutopilotTriggerAddArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let kind = if args.kind.is_empty() {
+        "schedule"
+    } else {
+        args.kind.as_str()
+    };
+    if !matches!(kind, "schedule" | "webhook") {
+        bail!("--kind must be schedule or webhook");
+    }
+    if kind == "schedule" && args.cron.is_empty() {
+        bail!("--cron is required for --kind schedule");
+    }
+    if kind == "webhook" && !args.timezone.is_empty() {
+        bail!("--timezone is only valid with --kind schedule");
+    }
+    if kind == "webhook" && !args.cron.is_empty() {
+        bail!("--cron is only valid with --kind schedule");
+    }
+
+    let mut body = serde_json::Map::from_iter([("kind".into(), Value::String(kind.into()))]);
+    if kind == "schedule" {
+        body.insert("cron_expression".into(), Value::String(args.cron.clone()));
+        if !args.timezone.is_empty() {
+            body.insert("timezone".into(), Value::String(args.timezone.clone()));
+        }
+    }
+    if !args.label.is_empty() {
+        body.insert("label".into(), Value::String(args.label.clone()));
+    }
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, &args.autopilot_id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+    let result: Value = client
+        .post_json(&format!("/api/autopilots/{autopilot_id}/triggers"), &body)
+        .await
+        .context("create trigger")?;
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+        OutputFormat::Table => {
+            let mut text = format!(
+                "Trigger created: {} (kind={})\n",
+                value_string(&result, "id"),
+                value_string(&result, "kind")
+            );
+            if kind == "webhook" {
+                if let Some(url) = autopilot_webhook_url(&result, client.base_url()) {
+                    let _ = writeln!(text, "Webhook URL: {url}");
+                }
+            }
+            text
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn autopilot_webhook_url(trigger: &Value, base_url: &str) -> Option<String> {
+    let url = value_string(trigger, "webhook_url");
+    if !url.is_empty() {
+        return Some(url);
+    }
+    let path = value_string(trigger, "webhook_path");
+    (!path.is_empty()).then(|| format!("{}{path}", base_url.trim_end_matches('/')))
 }
 
 async fn resolve_autopilot_agent(
@@ -12715,6 +12821,28 @@ mod tests {
         assert_eq!(limit, 5);
         assert_eq!(offset, 2);
         assert_eq!(output, OutputFormat::Json);
+
+        let add = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "trigger-add",
+            "abcd",
+            "--kind",
+            "webhook",
+            "--label",
+            "GitHub",
+        ])
+        .expect("autopilot trigger-add CLI");
+        let Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::TriggerAdd(args),
+        }) = add.command
+        else {
+            panic!("expected autopilot trigger-add");
+        };
+        assert_eq!(args.autopilot_id, "abcd");
+        assert_eq!(args.kind, "webhook");
+        assert_eq!(args.label, "GitHub");
+        assert_eq!(args.output, OutputFormat::Json);
         assert_eq!(output, OutputFormat::Json);
         assert!(Cli::try_parse_from(["cordy", "autopilot", "get"]).is_err());
         assert!(Cli::try_parse_from(["cordy", "autopilot", "list", "extra"]).is_err());
@@ -13246,6 +13374,121 @@ mod tests {
         assert_eq!(value["total"], 1);
         assert_eq!(value["runs"][0]["server_only"], "preserved");
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn autopilot_trigger_add_preserves_schedule_and_webhook_semantics() {
+        const ID: &str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let captured_handler = Arc::clone(&captured);
+        let app = Router::new().route(
+            "/api/autopilots/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/triggers",
+            post(move |Json(body): Json<Value>| {
+                let captured = Arc::clone(&captured_handler);
+                async move {
+                    captured.lock().expect("captured bodies").push(body.clone());
+                    if body["kind"] == "webhook" {
+                        Json(serde_json::json!({
+                            "id":"trigger-webhook",
+                            "kind":"webhook",
+                            "webhook_url":"https://hooks.example/direct",
+                            "webhook_path":"/ignored"
+                        }))
+                    } else {
+                        Json(serde_json::json!({"id":"trigger-schedule","kind":"schedule"}))
+                    }
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}/"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+
+        let schedule = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "trigger-add",
+            ID,
+            "--cron",
+            "0 9 * * *",
+            "--timezone",
+            "America/New_York",
+            "--label",
+            "Morning",
+        ])
+        .expect("schedule trigger CLI");
+        run_with_input(&schedule, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("create schedule trigger");
+
+        let webhook = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "trigger-add",
+            ID,
+            "--kind",
+            "webhook",
+            "--label",
+            "GitHub",
+            "--output",
+            "table",
+        ])
+        .expect("webhook trigger CLI");
+        let output = run_with_input(&webhook, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("create webhook trigger");
+        assert_eq!(
+            output.stdout,
+            "Trigger created: trigger-webhook (kind=webhook)\nWebhook URL: https://hooks.example/direct\n"
+        );
+        let bodies = captured.lock().expect("captured bodies");
+        assert_eq!(bodies[0]["kind"], "schedule");
+        assert_eq!(bodies[0]["cron_expression"], "0 9 * * *");
+        assert_eq!(bodies[0]["timezone"], "America/New_York");
+        assert_eq!(bodies[0]["label"], "Morning");
+        assert_eq!(
+            bodies[1],
+            serde_json::json!({"kind":"webhook","label":"GitHub"})
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn autopilot_trigger_add_rejects_invalid_kind_specific_flags() {
+        const ID: &str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "http://127.0.0.1:9");
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        for (extra, expected) in [
+            (
+                vec!["--kind", "invalid"],
+                "--kind must be schedule or webhook",
+            ),
+            (vec![], "--cron is required for --kind schedule"),
+            (
+                vec!["--kind", "webhook", "--timezone", "UTC"],
+                "--timezone is only valid with --kind schedule",
+            ),
+            (
+                vec!["--kind", "webhook", "--cron", "* * * * *"],
+                "--cron is only valid with --kind schedule",
+            ),
+        ] {
+            let mut argv = vec!["cordy", "autopilot", "trigger-add", ID];
+            argv.extend(extra);
+            let cli = Cli::try_parse_from(argv).expect("trigger-add CLI");
+            let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .await
+                .expect_err("invalid trigger rejected");
+            assert_eq!(error.to_string(), expected);
+        }
     }
 
     #[tokio::test]

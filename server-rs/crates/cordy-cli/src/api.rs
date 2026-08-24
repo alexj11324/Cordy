@@ -118,6 +118,10 @@ impl ApiClient {
         self
     }
 
+    pub(crate) fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
     pub async fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         self.send_json(Method::GET, path, self.request(Method::GET, path))
             .await
