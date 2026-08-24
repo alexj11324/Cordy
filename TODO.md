@@ -1041,6 +1041,15 @@
       commands remain isolated for a later slice. The serial subagent reviewed
       exact head `252dce71` and found no issue. Scoped rustfmt/diff-check pass;
       Cargo was not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI project resource command structural refactor is committed at
+      `b61682f0c8625235f9919e3d21d2382337430da4` (parent
+      `252dce717766cfc532dc60a84a8fdfaf50299eb0`, tree
+      `c144f49d56e54869dd8503905d8ac6b404979211`): resource list/add/update/
+      remove, resource-ref parsing/merge, UUID resolution, and output helpers
+      now live in `cordy-cli/src/project_resource_commands.rs`; parent dispatch
+      and tests retain their contracts. The serial subagent reviewed exact head
+      `b61682f0` and found no issue. Scoped rustfmt/diff-check pass; Cargo was
+      not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
