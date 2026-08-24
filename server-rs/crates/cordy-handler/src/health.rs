@@ -178,8 +178,8 @@ mod tests {
         assert!(!is_direct_loopback(&headers, Some(peer)));
     }
 
-    #[test]
-    fn loaded_realtime_metrics_token_overrides_constructor_environment_fallback() {
+    #[tokio::test]
+    async fn loaded_realtime_metrics_token_overrides_constructor_environment_fallback() {
         let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
         let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None)
             .with_realtime_metrics_token(Some("  from-config  "));
