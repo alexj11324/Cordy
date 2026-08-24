@@ -3130,6 +3130,24 @@ const CLOUD_APP_URL: &str = "https://cordy.ai";
 const SETUP_HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 
 async fn run_setup(cli: &Cli, environment: &Environment, args: &SetupArgs) -> Result<RunOutput> {
+    let input = prepare_setup_profile(cli, environment, args).await?;
+    let mut output = run_daemon_after_setup(cli, environment).await?;
+    output.stderr = format!(
+        "Configured {} for profile {:?}; token authentication preserved.\n{}",
+        input.server_url, cli.profile, output.stderr
+    );
+    Ok(output)
+}
+
+/// Performs the health-before-write and profile/token persistence half of
+/// setup. Keeping this boundary separate lets the daemon handoff remain a
+/// real production operation while the persistence contract can be tested
+/// without spawning a child process.
+async fn prepare_setup_profile(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SetupArgs,
+) -> Result<config::SetupProfileInput> {
     require_human_local_command(environment, "setup")?;
     let input = resolve_setup_profile_input(cli, environment, args)?;
 
@@ -3144,21 +3162,107 @@ async fn run_setup(cli: &Cli, environment: &Environment, args: &SetupArgs) -> Re
     // login/token boundary available to this slice. The browser login flow is
     // intentionally not recreated here; the explicit typed error below keeps
     // setup from claiming completion when that flow is not present yet.
-    if let Some(token) = environment.trimmed("CORDY_TOKEN") {
-        environment.set_profile_value(
-            &cli.profile,
-            "token",
-            Some(Value::String(token.to_owned())),
-        )?;
-        return Ok(RunOutput {
-            stdout: String::new(),
-            stderr: format!(
-                "Configured {} for profile {:?}; token authentication preserved.\n",
-                input.server_url, cli.profile
-            ),
-        });
+    let Some(token) = environment.trimmed("CORDY_TOKEN") else {
+        return Err(SetupError::LoginFlowUnavailable.into());
+    };
+    environment.set_profile_value(&cli.profile, "token", Some(Value::String(token.to_owned())))?;
+    Ok(input)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SetupDaemonAction {
+    Start,
+    Restart,
+    LeaveRunning { active_task_count: i64 },
+}
+
+fn setup_daemon_action(daemon_running: bool, active_task_count: i64) -> SetupDaemonAction {
+    if daemon_running {
+        if active_task_count > 0 {
+            return SetupDaemonAction::LeaveRunning { active_task_count };
+        }
+        return SetupDaemonAction::Restart;
     }
-    Err(SetupError::LoginFlowUnavailable.into())
+    SetupDaemonAction::Start
+}
+
+async fn dispatch_daemon_after_setup<S, R, SFut, RFut>(
+    action: SetupDaemonAction,
+    start: S,
+    restart: R,
+) -> Result<RunOutput>
+where
+    S: FnOnce() -> SFut,
+    R: FnOnce() -> RFut,
+    SFut: std::future::Future<Output = Result<RunOutput>>,
+    RFut: std::future::Future<Output = Result<RunOutput>>,
+{
+    match action {
+        SetupDaemonAction::Start => start().await,
+        SetupDaemonAction::Restart => restart().await,
+        SetupDaemonAction::LeaveRunning { active_task_count } => {
+            let task_label = if active_task_count == 1 {
+                "task"
+            } else {
+                "tasks"
+            };
+            let restart_command = "cordy daemon restart";
+            bail!(
+                "daemon has {active_task_count} active {task_label}; setup saved the new configuration but left the running daemon unchanged to avoid cancelling work. Wait for the active work to finish, then run '{restart_command}' to apply the new configuration"
+            )
+        }
+    }
+}
+
+/// Applies a successfully persisted setup profile to the local daemon. The
+/// local control client deliberately treats an unreachable health port as no
+/// daemon, matching the existing lifecycle command contract; all subsequent
+/// start/restart and readiness errors are propagated so setup never reports a
+/// false completion.
+async fn run_daemon_after_setup(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
+    let flags = config::DaemonLaunchFlags {
+        server_url: cli.server_url.clone(),
+        ..config::DaemonLaunchFlags::default()
+    };
+    let start = daemon::DaemonStartAssembly::load(&cli.profile, &flags, environment)
+        .context("load setup daemon profile")?;
+    let executable = std::env::current_exe().context("resolve cordy executable")?;
+    let lifecycle = cordy_daemon::lifecycle::DaemonLifecycle::assemble(
+        start.lifecycle_options(executable, CLIENT_VERSION),
+        &start.profile_input,
+    )
+    .context("assemble setup daemon lifecycle")?;
+    let control = cordy_daemon::control_client::DaemonControlClient::try_new()
+        .context("build setup daemon health client")?;
+    let health = control.health(lifecycle.port()).await;
+    let (daemon_running, active_task_count) = match health {
+        cordy_daemon::control_client::LocalDaemonHealth::Stopped => (false, 0),
+        cordy_daemon::control_client::LocalDaemonHealth::Live(snapshot) => {
+            snapshot
+                .confirm_profile(&cli.profile, lifecycle.port())
+                .context("setup daemon health profile mismatch")?;
+            (true, snapshot.response.active_task_count)
+        }
+    };
+    let action = setup_daemon_action(daemon_running, active_task_count);
+    dispatch_daemon_after_setup(
+        action,
+        || async {
+            let outcome = lifecycle
+                .start()
+                .await
+                .context("start daemon after setup")?;
+            render_daemon_start_outcome(outcome)
+        },
+        || async {
+            let outcome = lifecycle
+                .restart()
+                .await
+                .context("restart daemon after setup")?;
+            render_daemon_restart_outcome(outcome)
+        },
+    )
+    .await
 }
 
 fn resolve_setup_profile_input(
@@ -22713,10 +22817,12 @@ mod tests {
             "https://app.example/",
         ])
         .expect("setup CLI");
-        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+        let Command::Setup(args) = &cli.command else {
+            panic!("expected setup command");
+        };
+        let input = prepare_setup_profile(&cli, &environment, args)
             .await
-            .expect("setup should complete with env token");
-        assert!(output.stderr.contains("token authentication preserved"));
+            .expect("setup profile should persist with env token");
         assert_eq!(
             *observed_during_probe.lock().expect("probe capture"),
             Some(old_config.to_vec())
@@ -22727,6 +22833,7 @@ mod tests {
         assert_eq!(saved["app_url"], "https://app.example");
         assert_eq!(saved["token"], "mul_env");
         assert!(saved.get("workspace_id").is_none());
+        assert_eq!(input.server_url, format!("http://{address}"));
         server.abort();
     }
 
@@ -22754,11 +22861,76 @@ mod tests {
             "https://app.example",
         ])
         .expect("setup CLI");
-        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+        let Command::Setup(args) = &cli.command else {
+            panic!("expected setup command");
+        };
+        let error = prepare_setup_profile(&cli, &environment, args)
             .await
             .expect_err("unreachable setup target");
         assert!(error.to_string().contains("health preflight failed"));
         assert_eq!(fs::read(config_path).expect("config remains"), old_config);
+    }
+
+    #[test]
+    fn setup_daemon_action_respects_active_work_and_presence() {
+        assert_eq!(setup_daemon_action(false, 0), SetupDaemonAction::Start);
+        assert_eq!(setup_daemon_action(true, 0), SetupDaemonAction::Restart);
+        assert_eq!(
+            setup_daemon_action(true, 2),
+            SetupDaemonAction::LeaveRunning {
+                active_task_count: 2
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn setup_daemon_dispatch_propagates_start_restart_failures() {
+        let started = dispatch_daemon_after_setup(
+            SetupDaemonAction::Start,
+            || async {
+                Ok(RunOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                })
+            },
+            || async {
+                Ok(RunOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                })
+            },
+        )
+        .await
+        .expect("start dispatch");
+        assert!(started.stdout.is_empty());
+
+        let restart_error = dispatch_daemon_after_setup(
+            SetupDaemonAction::Restart,
+            || async {
+                Ok(RunOutput {
+                    stdout: String::new(),
+                    stderr: String::new(),
+                })
+            },
+            || async { Err(anyhow::anyhow!("restart failed")) },
+        )
+        .await
+        .expect_err("restart failure must be visible");
+        assert_eq!(restart_error.to_string(), "restart failed");
+    }
+
+    #[tokio::test]
+    async fn setup_daemon_dispatch_leaves_active_daemon_untouched() {
+        let error = dispatch_daemon_after_setup(
+            SetupDaemonAction::LeaveRunning {
+                active_task_count: 1,
+            },
+            || async { panic!("setup must not start over active work") },
+            || async { panic!("setup must not restart over active work") },
+        )
+        .await
+        .expect_err("active work must defer restart");
+        assert!(error.to_string().contains("1 active task"));
     }
 
     #[test]
