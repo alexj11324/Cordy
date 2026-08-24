@@ -273,7 +273,7 @@ impl UpdateExecutor {
 
     async fn fetch_asset(&self, asset: &ReleaseAsset, limit: usize) -> Result<Vec<u8>> {
         validate_download_url(&asset.download_url)?;
-        let response = self
+        let mut response = self
             .download_client
             .get(&asset.download_url)
             .send()
@@ -300,17 +300,37 @@ impl UpdateExecutor {
                 format!("download of {} exceeds the size limit", asset.name),
             ));
         }
-        let bytes = response.bytes().await.map_err(|err| {
-            network_error(UpdateFailureKind::Download, "read release asset", &err)
-        })?;
-        if bytes.len() > limit {
-            return Err(UpdateExecutorError::new(
-                UpdateFailureKind::Download,
-                format!("download of {} exceeds the size limit", asset.name),
-            ));
+        let capacity = response
+            .content_length()
+            .and_then(|length| usize::try_from(length).ok())
+            .unwrap_or(0)
+            .min(limit);
+        let mut bytes = Vec::with_capacity(capacity);
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|err| network_error(UpdateFailureKind::Download, "read release asset", &err))?
+        {
+            append_download_chunk(&mut bytes, &chunk, limit, &asset.name)?;
         }
-        Ok(bytes.to_vec())
+        Ok(bytes)
     }
+}
+
+fn append_download_chunk(
+    destination: &mut Vec<u8>,
+    chunk: &[u8],
+    limit: usize,
+    asset_name: &str,
+) -> Result<()> {
+    if chunk.len() > limit.saturating_sub(destination.len()) {
+        return Err(UpdateExecutorError::new(
+            UpdateFailureKind::Download,
+            format!("download of {asset_name} exceeds the size limit"),
+        ));
+    }
+    destination.extend_from_slice(chunk);
+    Ok(())
 }
 
 fn http_client(timeout: Duration) -> Result<reqwest::Client> {
@@ -858,6 +878,18 @@ mod tests {
             assert_eq!(error.kind, UpdateFailureKind::Download);
             assert!(!error.to_string().contains("secret"));
         }
+    }
+
+    #[test]
+    fn streaming_download_limit_is_enforced_across_chunk_boundaries() {
+        let mut bytes = Vec::new();
+        append_download_chunk(&mut bytes, b"123456", 10, "asset.tar.gz").unwrap();
+        let error = append_download_chunk(&mut bytes, b"78901", 10, "asset.tar.gz")
+            .expect_err("the second chunk must fail before allocation");
+
+        assert_eq!(error.kind, UpdateFailureKind::Download);
+        assert!(error.to_string().contains("exceeds the size limit"));
+        assert_eq!(bytes, b"123456");
     }
 
     #[test]
