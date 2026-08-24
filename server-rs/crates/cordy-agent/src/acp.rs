@@ -99,7 +99,7 @@ where
         &mut self,
         method: &str,
         params: Value,
-        mut on_notification: impl FnMut(AcpNotification),
+        on_notification: impl FnMut(AcpNotification),
     ) -> Result<Value, AcpError> {
         self.request_with_permission(method, params, on_notification, default_permission_decision)
             .await
@@ -109,7 +109,7 @@ where
         &mut self,
         method: &str,
         params: Value,
-        on_notification: impl FnMut(AcpNotification),
+        mut on_notification: impl FnMut(AcpNotification),
         mut on_permission: impl FnMut(Option<&Value>) -> AcpPermissionDecision,
     ) -> Result<Value, AcpError> {
         let id = self.next_id;
