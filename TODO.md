@@ -703,6 +703,12 @@
       `3bc22991b0a233d8fa523d29854513d971f22eba` (tree
       `adb20fc2bbf6386b8440281e87e8065b5185df97`); pro owns creation of its
       Ready PR, review, Cargo gate, and merge.
+- [x] Phase 4 repository/VCS audit completed against the Go handlers and Rust
+      `vcs.rs`/repo checkout paths. Workspace/member and daemon-token binding,
+      secret/webhook handling, signature/body limits, out-of-order protection,
+      checkout containment/locking/cancellation, and bounded git operations
+      are covered. Remaining JSON-shape/trim differences are non-P1; no code
+      or Cargo change was justified.
 
 ## Phase 4 — S8 route and API parity
 
