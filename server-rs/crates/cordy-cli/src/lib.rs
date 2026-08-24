@@ -202,6 +202,80 @@ enum ProjectCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
+    #[command(about = "Manage resources attached to a project")]
+    Resource(ProjectResourceArgs),
+}
+
+#[derive(Debug, Args)]
+struct ProjectResourceArgs {
+    #[command(subcommand)]
+    command: ProjectResourceCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum ProjectResourceCommand {
+    #[command(about = "List resources attached to a project")]
+    List {
+        #[arg(value_name = "PROJECT-ID")]
+        project_id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+        #[arg(long, help = "Show full UUIDs in table output")]
+        full_id: bool,
+    },
+    #[command(about = "Attach a resource to a project (e.g. --type github_repo --url <url>)")]
+    Add(ProjectResourceAddArgs),
+}
+
+#[derive(Debug, Args)]
+struct ProjectResourceAddArgs {
+    #[arg(value_name = "PROJECT-ID")]
+    project_id: String,
+    #[arg(
+        long = "type",
+        default_value = "github_repo",
+        help = "Resource type (e.g. github_repo, local_directory — see docs)"
+    )]
+    resource_type: String,
+    #[arg(
+        long,
+        help = "Shortcut: the repo URL (only used when --type github_repo)"
+    )]
+    url: Option<String>,
+    #[arg(
+        long,
+        help = "Shortcut: optional default branch hint (only used when --type github_repo)"
+    )]
+    default_branch_hint: Option<String>,
+    #[arg(
+        long,
+        help = "Shortcut: absolute path to the working directory (only used when --type local_directory)"
+    )]
+    local_path: Option<String>,
+    #[arg(
+        long,
+        help = "Shortcut: id of the daemon that owns the local path (only used when --type local_directory)"
+    )]
+    daemon_id: Option<String>,
+    #[arg(
+        long,
+        help = "Shortcut: optional label embedded in resource_ref (only used when --type local_directory)"
+    )]
+    ref_label: Option<String>,
+    #[arg(
+        long,
+        help = "Shortcut: how tasks share the directory — in_place (default, one task at a time) or worktree (each task gets its own git worktree; requires a git repo) (only used when --type local_directory)"
+    )]
+    execution_mode: Option<String>,
+    #[arg(
+        long = "ref",
+        help = "Generic JSON resource_ref payload, or a github_repo checkout ref when used with --url"
+    )]
+    resource_ref: Option<String>,
+    #[arg(long, help = "Optional human-readable label")]
+    label: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -1445,6 +1519,23 @@ async fn run_with_input<R: Read>(
         Command::Project(ProjectArgs {
             command: ProjectCommand::Status { id, status, output },
         }) => run_project_status(cli, environment, id, status, *output).await,
+        Command::Project(ProjectArgs {
+            command:
+                ProjectCommand::Resource(ProjectResourceArgs {
+                    command:
+                        ProjectResourceCommand::List {
+                            project_id,
+                            output,
+                            full_id,
+                        },
+                }),
+        }) => run_project_resource_list(cli, environment, project_id, *output, *full_id).await,
+        Command::Project(ProjectArgs {
+            command:
+                ProjectCommand::Resource(ProjectResourceArgs {
+                    command: ProjectResourceCommand::Add(args),
+                }),
+        }) => run_project_resource_add(cli, environment, args).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -5098,6 +5189,204 @@ async fn run_project_status(
             "Project {} status changed to {status}.\n",
             value_string(&project, "title")
         ),
+    })
+}
+
+fn summarize_project_resource_ref(resource_ref: &Value) -> String {
+    let Some(object) = resource_ref.as_object() else {
+        return String::new();
+    };
+    let url = value_string(resource_ref, "url");
+    if !url.is_empty() {
+        let checkout_ref = value_string(resource_ref, "ref");
+        return if checkout_ref.trim().is_empty() {
+            url
+        } else {
+            format!("{url} @ {}", checkout_ref.trim())
+        };
+    }
+    let local_path = value_string(resource_ref, "local_path");
+    if !local_path.is_empty() {
+        return local_path;
+    }
+    serde_json::to_string(object).unwrap_or_default()
+}
+
+fn project_resources(result: &Value) -> &[Value] {
+    result
+        .get("resources")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+}
+
+fn format_project_resources(resources: &[Value], full_id: bool) -> String {
+    let mut rows = vec![vec![
+        "ID".into(),
+        "TYPE".into(),
+        "REF".into(),
+        "LABEL".into(),
+    ]];
+    rows.extend(resources.iter().map(|resource| {
+        vec![
+            display_id(&value_string(resource, "id"), full_id),
+            value_string(resource, "resource_type"),
+            summarize_project_resource_ref(resource.get("resource_ref").unwrap_or(&Value::Null)),
+            value_string(resource, "label"),
+        ]
+    }));
+    format_table(&rows)
+}
+
+async fn run_project_resource_list(
+    cli: &Cli,
+    environment: &Environment,
+    project: &str,
+    output: OutputFormat,
+    full_id: bool,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let project_id = resolve_issue_project_id(&client, &workspace_id, project)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve project: {error}"))?;
+    let result: Value = client
+        .get_json(&format!("/api/projects/{project_id}/resources"))
+        .await
+        .context("list project resources")?;
+    let resources = project_resources(&result);
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(resources)?),
+            OutputFormat::Table => format_project_resources(resources, full_id),
+        },
+        stderr: String::new(),
+    })
+}
+
+fn parse_generic_resource_ref(raw: &str) -> Result<Value> {
+    serde_json::from_str(raw).map_err(|error| anyhow::anyhow!("--ref is not valid JSON: {error}"))
+}
+
+fn build_project_resource_add_ref(args: &ProjectResourceAddArgs) -> Result<Value> {
+    let resource_type = args.resource_type.trim();
+    if resource_type.is_empty() {
+        bail!("--type is required");
+    }
+    if let Some(raw) = &args.resource_ref {
+        let raw = raw.trim();
+        if !raw.is_empty()
+            && (resource_type != "github_repo" || raw.starts_with('{') || raw.starts_with('['))
+        {
+            return parse_generic_resource_ref(raw);
+        }
+        if resource_type != "github_repo" {
+            bail!("--ref must be a JSON resource_ref payload for resource type {resource_type:?}");
+        }
+    }
+    match resource_type {
+        "github_repo" => {
+            let url = args
+                .url
+                .as_deref()
+                .map(str::trim)
+                .filter(|url| !url.is_empty())
+                .context("github_repo requires --url (or pass a JSON payload via --ref)")?;
+            let mut resource_ref = serde_json::Map::from_iter([(
+                "url".into(),
+                Value::String(url.into()),
+            )]);
+            if let Some(hint) = args
+                .default_branch_hint
+                .as_deref()
+                .map(str::trim)
+                .filter(|hint| !hint.is_empty())
+            {
+                resource_ref.insert("default_branch_hint".into(), Value::String(hint.into()));
+            }
+            if let Some(checkout_ref) = args
+                .resource_ref
+                .as_deref()
+                .map(str::trim)
+                .filter(|checkout_ref| !checkout_ref.is_empty())
+            {
+                resource_ref.insert("ref".into(), Value::String(checkout_ref.into()));
+            }
+            Ok(Value::Object(resource_ref))
+        }
+        "local_directory" => {
+            let local_path = args
+                .local_path
+                .as_deref()
+                .map(str::trim)
+                .filter(|path| !path.is_empty());
+            let daemon_id = args
+                .daemon_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|id| !id.is_empty());
+            let (Some(local_path), Some(daemon_id)) = (local_path, daemon_id) else {
+                bail!("local_directory requires --local-path and --daemon-id (or pass a JSON payload via --ref)");
+            };
+            let mut resource_ref = serde_json::Map::from_iter([
+                ("local_path".into(), Value::String(local_path.into())),
+                ("daemon_id".into(), Value::String(daemon_id.into())),
+            ]);
+            for (key, value) in [
+                ("label", args.ref_label.as_deref()),
+                ("execution_mode", args.execution_mode.as_deref()),
+            ] {
+                if let Some(value) = value.map(str::trim).filter(|value| !value.is_empty()) {
+                    resource_ref.insert(key.into(), Value::String(value.into()));
+                }
+            }
+            Ok(Value::Object(resource_ref))
+        }
+        _ => bail!(
+            "type {resource_type:?} has no built-in CLI shortcut; pass the payload via --ref '<json>'"
+        ),
+    }
+}
+
+async fn run_project_resource_add(
+    cli: &Cli,
+    environment: &Environment,
+    args: &ProjectResourceAddArgs,
+) -> Result<RunOutput> {
+    let resource_type = args.resource_type.trim();
+    let resource_ref = build_project_resource_add_ref(args)?;
+    let mut body = serde_json::Map::from_iter([
+        ("resource_type".into(), Value::String(resource_type.into())),
+        ("resource_ref".into(), resource_ref),
+    ]);
+    if let Some(label) = args.label.as_deref().filter(|label| !label.is_empty()) {
+        body.insert("label".into(), Value::String(label.into()));
+    }
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let project_id = resolve_issue_project_id(&client, &workspace_id, &args.project_id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve project: {error}"))?;
+    let resource: Value = client
+        .post_json(&format!("/api/projects/{project_id}/resources"), &body)
+        .await
+        .context("add project resource")?;
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&resource)?),
+        OutputFormat::Table => format_table(&[
+            vec!["ID".into(), "TYPE".into(), "REF".into()],
+            vec![
+                value_string(&resource, "id"),
+                value_string(&resource, "resource_type"),
+                summarize_project_resource_ref(
+                    resource.get("resource_ref").unwrap_or(&Value::Null),
+                ),
+            ],
+        ]),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
     })
 }
 
@@ -10850,6 +11139,146 @@ mod tests {
             updated.stderr,
             "Project Migration status changed to completed.\n"
         );
+        task.abort();
+    }
+
+    #[test]
+    fn project_resource_add_parser_and_ref_shortcuts_match_go_contract() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "project",
+            "resource",
+            "add",
+            "11111111-1111-1111-1111-111111111111",
+            "--url",
+            "https://github.com/acme/cordy",
+            "--ref",
+            "2024",
+            "--default-branch-hint",
+            "main",
+            "--label",
+            "Cordy",
+        ])
+        .expect("project resource add CLI");
+        let Command::Project(ProjectArgs {
+            command:
+                ProjectCommand::Resource(ProjectResourceArgs {
+                    command: ProjectResourceCommand::Add(args),
+                }),
+        }) = &cli.command
+        else {
+            panic!("expected project resource add");
+        };
+        assert_eq!(args.resource_type, "github_repo");
+        assert_eq!(
+            build_project_resource_add_ref(args).expect("github ref"),
+            serde_json::json!({
+                "url":"https://github.com/acme/cordy",
+                "ref":"2024",
+                "default_branch_hint":"main"
+            })
+        );
+
+        let generic = Cli::try_parse_from([
+            "cordy",
+            "project",
+            "resource",
+            "add",
+            "11111111-1111-1111-1111-111111111111",
+            "--type",
+            "documentation",
+            "--ref",
+            r#"{"url":"https://docs.example.com"}"#,
+        ])
+        .expect("generic project resource CLI");
+        let Command::Project(ProjectArgs {
+            command:
+                ProjectCommand::Resource(ProjectResourceArgs {
+                    command: ProjectResourceCommand::Add(args),
+                }),
+        }) = &generic.command
+        else {
+            panic!("expected generic project resource add");
+        };
+        assert_eq!(
+            build_project_resource_add_ref(args).expect("generic ref"),
+            serde_json::json!({"url":"https://docs.example.com"})
+        );
+    }
+
+    #[tokio::test]
+    async fn project_resource_list_and_add_use_go_http_and_output_contracts() {
+        let project_id = "11111111-1111-1111-1111-111111111111";
+        let resource_id = "22222222-2222-2222-2222-222222222222";
+        let app = Router::new().route(
+            "/api/projects/11111111-1111-1111-1111-111111111111/resources",
+            get(move || async move {
+                Json(serde_json::json!({"resources":[{
+                    "id":resource_id,"resource_type":"github_repo",
+                    "resource_ref":{"url":"https://github.com/acme/cordy","ref":"main"},
+                    "label":"Cordy"
+                }]}))
+            })
+            .post(|Json(body): Json<Value>| async move {
+                assert_eq!(body["resource_type"], "local_directory");
+                assert_eq!(body["resource_ref"]["local_path"], "/srv/cordy");
+                assert_eq!(body["resource_ref"]["daemon_id"], "daemon-1");
+                assert_eq!(body["resource_ref"]["execution_mode"], "worktree");
+                Json(serde_json::json!({
+                    "id":"33333333-3333-3333-3333-333333333333",
+                    "resource_type":"local_directory",
+                    "resource_ref":{"local_path":"/srv/cordy","daemon_id":"daemon-1","execution_mode":"worktree"}
+                }))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let list = Cli::try_parse_from([
+            "cordy", "project", "resource", "list", project_id, "--output", "table",
+        ])
+        .expect("project resource list CLI");
+        let listed = run_with_input(&list, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list project resources");
+        assert!(listed.stdout.contains("22222222"));
+        assert!(listed
+            .stdout
+            .contains("https://github.com/acme/cordy @ main"));
+        assert!(listed.stdout.contains("Cordy"));
+
+        let add = Cli::try_parse_from([
+            "cordy",
+            "project",
+            "resource",
+            "add",
+            project_id,
+            "--type",
+            "local_directory",
+            "--local-path",
+            "/srv/cordy",
+            "--daemon-id",
+            "daemon-1",
+            "--execution-mode",
+            "worktree",
+            "--output",
+            "table",
+        ])
+        .expect("project resource add CLI");
+        let added = run_with_input(&add, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("add project resource");
+        assert!(added
+            .stdout
+            .contains("33333333-3333-3333-3333-333333333333"));
+        assert!(added.stdout.contains("/srv/cordy"));
         task.abort();
     }
 
