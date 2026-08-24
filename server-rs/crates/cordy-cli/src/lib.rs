@@ -5445,8 +5445,8 @@ fn timeline_actor_inputs(entries: &[Value]) -> Vec<Value> {
         if let Some(details) = entry.get("details") {
             for prefix in ["from", "to"] {
                 actors.push(serde_json::json!({
-                    "assignee_type":details.get(&format!("{prefix}_type")).cloned().unwrap_or(Value::Null),
-                    "assignee_id":details.get(&format!("{prefix}_id")).cloned().unwrap_or(Value::Null),
+                    "assignee_type":details.get(format!("{prefix}_type")).cloned().unwrap_or(Value::Null),
+                    "assignee_id":details.get(format!("{prefix}_id")).cloned().unwrap_or(Value::Null),
                 }));
             }
         }
