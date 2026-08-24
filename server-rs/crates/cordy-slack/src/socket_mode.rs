@@ -11,6 +11,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::client::SlackClient;
 
+const SOCKET_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// The subset of Socket Mode envelope types this adapter reacts to. Disconnect
 /// requests end the stream so its owner can reconnect; hello and incoming
 /// error frames remain lifecycle noise.
@@ -115,6 +117,19 @@ impl SocketModeStream {
         Ok(Self { ws })
     }
 
+    async fn send_frame(
+        &mut self,
+        frame: WsMessage,
+        operation: &'static str,
+    ) -> anyhow::Result<()> {
+        tokio::time::timeout(SOCKET_WRITE_TIMEOUT, self.ws.send(frame))
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!("slack: {operation} write timed out after {SOCKET_WRITE_TIMEOUT:?}")
+            })?
+            .map_err(|error| anyhow::anyhow!("slack: {operation} write failed: {error}"))
+    }
+
     /// Runs the receive loop: decode each envelope, ACK it FIRST (Slack
     /// expires un-ACKed envelopes in ~3s, far below any handler's work; the
     /// ack is independent of the handler outcome), then invoke the handler.
@@ -141,7 +156,7 @@ impl SocketModeStream {
             let text = match msg {
                 WsMessage::Text(t) => t,
                 WsMessage::Ping(p) => {
-                    self.ws.send(WsMessage::Pong(p)).await.ok();
+                    self.send_frame(WsMessage::Pong(p), "pong").await?;
                     continue;
                 }
                 WsMessage::Pong(_) | WsMessage::Binary(_) | WsMessage::Frame(_) => continue,
@@ -154,10 +169,7 @@ impl SocketModeStream {
             };
             // ACK first, independent of handler outcome.
             if let Some(ack) = envelope.ack_frame() {
-                self.ws
-                    .send(WsMessage::Text(ack.into()))
-                    .await
-                    .map_err(|e| anyhow::anyhow!("slack: ack failed: {e}"))?;
+                self.send_frame(WsMessage::Text(ack.into()), "ack").await?;
             }
             if let Some(error) = envelope.disconnect_error() {
                 return Err(error);
