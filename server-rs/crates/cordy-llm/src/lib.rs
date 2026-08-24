@@ -111,7 +111,48 @@ impl Client {
         }
         match tokio::time::timeout(
             DEFAULT_REQUEST_TIMEOUT,
-            self.generate_text_inner(model, system_prompt, user_prompt),
+            self.generate_text_inner(
+                model,
+                system_prompt,
+                user_prompt,
+                CompletionOptions::default(),
+            ),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(Error::Timeout),
+        }
+    }
+
+    /// Sends a constrained JSON completion for short, structured assist
+    /// features such as chat quick actions.
+    pub async fn generate_json(
+        &self,
+        model: &str,
+        system_prompt: &str,
+        user_prompt: &str,
+        temperature: f64,
+        max_completion_tokens: i64,
+    ) -> Result<String, Error> {
+        if !self.enabled {
+            return Err(Error::NotConfigured);
+        }
+        match tokio::time::timeout(
+            DEFAULT_REQUEST_TIMEOUT,
+            self.generate_text_inner(
+                model,
+                system_prompt,
+                user_prompt,
+                CompletionOptions {
+                    temperature: Some(temperature),
+                    max_completion_tokens: Some(max_completion_tokens),
+                    response_format: Some(ResponseFormat {
+                        kind: "json_object",
+                    }),
+                    reasoning_effort: Some("none"),
+                },
+            ),
         )
         .await
         {
@@ -125,6 +166,7 @@ impl Client {
         model: &str,
         system_prompt: &str,
         user_prompt: &str,
+        options: CompletionOptions,
     ) -> Result<String, Error> {
         let transport = self.transport.as_ref().ok_or(Error::ClientUnavailable)?;
 
@@ -146,6 +188,10 @@ impl Client {
                 model.trim()
             },
             messages,
+            temperature: options.temperature,
+            max_completion_tokens: options.max_completion_tokens,
+            response_format: options.response_format,
+            reasoning_effort: options.reasoning_effort,
         };
 
         for attempt in 0..=self.max_retries {
@@ -284,6 +330,28 @@ fn retry_delay(attempt: u32) -> Duration {
 struct CompletionRequest<'a> {
     model: &'a str,
     messages: Vec<Message<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<ResponseFormat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<&'static str>,
+}
+
+#[derive(Default)]
+struct CompletionOptions {
+    temperature: Option<f64>,
+    max_completion_tokens: Option<i64>,
+    response_format: Option<ResponseFormat>,
+    reasoning_effort: Option<&'static str>,
+}
+
+#[derive(Serialize)]
+struct ResponseFormat {
+    #[serde(rename = "type")]
+    kind: &'static str,
 }
 
 #[derive(Serialize)]
@@ -403,6 +471,31 @@ mod tests {
             body.as_ref().map(|body| &body["messages"][1]["content"]),
             Some(&Value::String("private opening".into()))
         );
+        assert!(body
+            .as_ref()
+            .is_some_and(|body| body.get("response_format").is_none()));
+    }
+
+    #[tokio::test]
+    async fn sends_structured_json_generation_contract() {
+        let transport = Arc::new(RecordingTransport::default());
+        let mut client = Client::new(Config {
+            base_url: "https://gateway.example/v1".into(),
+            max_retries: Some(0),
+            ..Config::default()
+        });
+        client.transport = Some(transport.clone());
+
+        let result = client
+            .generate_json("", "system", "private opening", 0.2, 384)
+            .await;
+        assert!(result.is_ok());
+        let body = transport.body.lock().ok().and_then(|body| body.clone());
+        let body = body.expect("request captured");
+        assert_eq!(body["temperature"], 0.2);
+        assert_eq!(body["max_completion_tokens"], 384);
+        assert_eq!(body["response_format"]["type"], "json_object");
+        assert_eq!(body["reasoning_effort"], "none");
     }
 
     #[test]
