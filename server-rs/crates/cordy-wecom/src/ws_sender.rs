@@ -319,6 +319,22 @@ struct ReplyResult {
     body: Value,
 }
 
+/// Owns one entry in [`WsSender::replies`]. Async callers can be dropped by
+/// an outer deadline or task abort at any await point, so cleanup cannot live
+/// only after the request future returns. Dropping this guard retires the
+/// entry on both ordinary completion and cancellation.
+struct ReplyRegistration<'a> {
+    sender: &'a WsSender,
+    req_id: String,
+    rx: mpsc::Receiver<ReplyResult>,
+}
+
+impl Drop for ReplyRegistration<'_> {
+    fn drop(&mut self) {
+        self.sender.cancel_reply(&self.req_id);
+    }
+}
+
 /// Serializes writes to one WebSocket connection. Instantiated per Connect()
 /// call and dropped when the connection ends.
 pub struct WsSender {
@@ -365,14 +381,18 @@ impl WsSender {
     /// Registers interest in the response for the frame about to be written.
     /// `false` means the req_id is already spoken for — with minted ids that
     /// is a collision we would rather fail on than silently cross wires.
-    fn await_reply(&self, req_id: &str) -> Option<mpsc::Receiver<ReplyResult>> {
+    fn await_reply(&self, req_id: &str) -> Option<ReplyRegistration<'_>> {
         let mut replies = self.replies.lock().unwrap_or_else(|e| e.into_inner());
         if replies.contains_key(req_id) {
             return None;
         }
         let (tx, rx) = mpsc::channel(1);
         replies.insert(req_id.to_string(), ReplyWaiter { tx });
-        Some(rx)
+        Some(ReplyRegistration {
+            sender: self,
+            req_id: req_id.to_string(),
+            rx,
+        })
     }
 
     /// Retires a waiter. Called on every exit path including the happy one —
@@ -422,7 +442,7 @@ impl WsSender {
                 .context(format!("wecom: context cancelled before {cmd} was sent")));
         }
         let req_id = new_req_id();
-        let Some(rx) = self.await_reply(&req_id) else {
+        let Some(mut reply) = self.await_reply(&req_id) else {
             anyhow::bail!("wecom: {cmd} req_id {req_id} is already awaiting a response");
         };
         let frame = serde_json::json!({
@@ -433,8 +453,9 @@ impl WsSender {
         let result = async {
             self.write(frame).await?;
             let wait = async {
-                let mut rx = rx;
-                rx.recv()
+                reply
+                    .rx
+                    .recv()
                     .await
                     .ok_or_else(|| anyhow::anyhow!("wecom: reply channel closed"))
             };
@@ -462,8 +483,12 @@ impl WsSender {
             }
         }
         .await;
-        self.cancel_reply(&req_id);
         result
+    }
+
+    #[cfg(test)]
+    fn waiter_count(&self) -> usize {
+        self.replies.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     /// Marshals frame to JSON and pushes it under the writer mutex. The
@@ -700,7 +725,7 @@ mod tests {
     async fn route_response_delivers_to_the_waiting_request() {
         let s = Arc::new(WsSender::new(FakeConn::new()));
         // Park a waiter manually, then deliver an ack for its req_id.
-        let mut rx = s.await_reply("r1").expect("fresh req_id");
+        let mut reply = s.await_reply("r1").expect("fresh req_id");
         assert!(s.await_reply("r1").is_none(), "duplicate req_id refused");
 
         let env = FrameEnvelope {
@@ -714,9 +739,54 @@ mod tests {
         assert!(s.route_response(&env));
         assert!(!s.route_response(&env), "second delivery finds nobody");
 
-        let res = rx.recv().await.unwrap();
+        let res = reply.rx.recv().await.unwrap();
         assert_eq!(res.code, 45009);
         assert_eq!(res.msg, "rate limited");
+    }
+
+    #[tokio::test]
+    async fn dropping_request_future_retires_its_waiter() {
+        let conn = FakeConn::new();
+        let sender = Arc::new(WsSender::new(conn.clone()));
+        let task_sender = sender.clone();
+        let request = tokio::spawn(async move {
+            task_sender
+                .request(
+                    &CancellationToken::new(),
+                    "aibot_send_msg",
+                    serde_json::json!({}),
+                )
+                .await
+        });
+
+        let req_id = tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                let frame = conn
+                    .writes
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .first()
+                    .cloned();
+                if let Some(frame) = frame {
+                    let frame: Value = serde_json::from_str(&frame).unwrap();
+                    break frame["headers"]["req_id"].as_str().unwrap().to_string();
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("request writes before the test deadline");
+        assert_eq!(sender.waiter_count(), 1);
+
+        request.abort();
+        assert!(request.await.unwrap_err().is_cancelled());
+        assert_eq!(sender.waiter_count(), 0);
+
+        let late_ack = FrameEnvelope {
+            headers: FrameHeaders { req_id },
+            ..Default::default()
+        };
+        assert!(!sender.route_response(&late_ack));
     }
 
     #[tokio::test]
