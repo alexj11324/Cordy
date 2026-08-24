@@ -434,6 +434,16 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy squad delete <squad-id>` to PR #129. It uses the authenticated
+      workspace-scoped DELETE endpoint with an encoded ID, rejects empty IDs,
+      and matches Go's stderr table notice or JSON `{id, deleted}` response.
+      Exact head is `634d2f6daebd847cf1007010ee92cf51104116a6`, parent
+      `f062de0cd2752b44a9e9bce7c7ae9cf4a7f94afa`, tree
+      `b522993d8bff7c02d509a134c6105887ea0eb0dc`, candidate
+      `50bec69900617594d727fd8b07d97a377164f7db`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
