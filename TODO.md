@@ -410,6 +410,18 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready/CLEAN/MERGEABLE were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy squad create` to PR #129. It validates required name and
+      leader, resolves a leader by UUID or case-insensitive name through the
+      existing authenticated agent resolver, sends only the Go-compatible
+      fields, and renders JSON or the created-squad table line. The slice also
+      corrected `squad get`'s default output to Go's table mode. Exact head is
+      `e476107565736e625a28a428f03013e4c27b85b2`, parent
+      `a3cebb97cc0fbad6e8c1f8c3b8aa6098f82f511d`, tree
+      `d90cd6ec90935f25dc13a384b8322fe4f6f416e7`, candidate
+      `afe99baf914e7345228dfc0179d21514e1e8244a`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
