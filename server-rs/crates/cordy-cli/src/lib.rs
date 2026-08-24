@@ -5317,7 +5317,7 @@ async fn run_runtime_delete(
     let client = new_api_client(cli, environment)?;
     let mut result = match client.delete(&format!("/api/runtimes/{runtime_id}")).await {
         Ok(()) => serde_json::Map::new(),
-        Err(error) => {
+        Err(_error) => {
             let Some(conflict) = runtime_delete_conflict(&error) else {
                 return Err(error).context("delete runtime");
             };
@@ -9024,6 +9024,9 @@ async fn run_browser_login(
 
 fn build_login_url(app_url: &str, callback_url: &str, state: &str) -> Result<String> {
     let mut login_url = Url::parse(app_url).context("parse app URL")?;
+    if !matches!(login_url.scheme(), "http" | "https") || login_url.host_str().is_none() {
+        bail!("app URL must use http or https")
+    }
     login_url
         .path_segments_mut()
         .map_err(|_| anyhow::anyhow!("app URL cannot be used for login"))?
