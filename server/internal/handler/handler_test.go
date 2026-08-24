@@ -12,9 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-chi/chi/v5"
-	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/cordy-ai/cordy/server/internal/analytics"
 	"github.com/cordy-ai/cordy/server/internal/events"
 	"github.com/cordy-ai/cordy/server/internal/realtime"
@@ -22,6 +19,9 @@ import (
 	"github.com/cordy-ai/cordy/server/internal/testutil"
 	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
 	"github.com/cordy-ai/cordy/server/pkg/protocol"
+	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var testHandler *Handler
@@ -2250,6 +2250,98 @@ func TestVerifyCode(t *testing.T) {
 	}
 	if resp.User.Email != email {
 		t.Fatalf("VerifyCode: expected email '%s', got '%s'", email, resp.User.Email)
+	}
+}
+
+func TestVerificationCodeConsumeCAS(t *testing.T) {
+	const consumers = 8
+	email := fmt.Sprintf("verify-cas-%d@cordy.ai", time.Now().UnixNano())
+	ctx := context.Background()
+
+	t.Cleanup(func() {
+		testPool.Exec(ctx, `DELETE FROM verification_code WHERE email = $1`, email)
+	})
+	createVerificationCodeForTest(t, email, "123456")
+	dbCode, err := testHandler.Queries.GetLatestVerificationCode(ctx, email)
+	if err != nil {
+		t.Fatalf("GetLatestVerificationCode: %v", err)
+	}
+
+	start := make(chan struct{})
+	results := make(chan int64, consumers)
+	for i := 0; i < consumers; i++ {
+		go func() {
+			<-start
+			rows, err := testHandler.Queries.MarkVerificationCodeUsed(ctx, dbCode.ID)
+			if err != nil {
+				results <- -1
+				return
+			}
+			results <- rows
+		}()
+	}
+	close(start)
+
+	var consumed int64
+	for i := 0; i < consumers; i++ {
+		rows := <-results
+		if rows < 0 {
+			t.Fatal("MarkVerificationCodeUsed returned an error")
+		}
+		consumed += rows
+	}
+	if consumed != 1 {
+		t.Fatalf("expected exactly one successful consume, got %d", consumed)
+	}
+}
+
+func TestVerificationCodeConcurrentAttemptBudget(t *testing.T) {
+	const attempts = 8
+	email := fmt.Sprintf("verify-attempt-cas-%d@cordy.ai", time.Now().UnixNano())
+	ctx := context.Background()
+
+	t.Cleanup(func() {
+		testPool.Exec(ctx, `DELETE FROM verification_code WHERE email = $1`, email)
+	})
+	createVerificationCodeForTest(t, email, "123456")
+	dbCode, err := testHandler.Queries.GetLatestVerificationCode(ctx, email)
+	if err != nil {
+		t.Fatalf("GetLatestVerificationCode: %v", err)
+	}
+
+	start := make(chan struct{})
+	results := make(chan int64, attempts)
+	for i := 0; i < attempts; i++ {
+		go func() {
+			<-start
+			rows, err := testHandler.Queries.IncrementVerificationCodeAttempts(ctx, dbCode.ID)
+			if err != nil {
+				results <- -1
+				return
+			}
+			results <- rows
+		}()
+	}
+	close(start)
+
+	var recorded int64
+	for i := 0; i < attempts; i++ {
+		rows := <-results
+		if rows < 0 {
+			t.Fatal("IncrementVerificationCodeAttempts returned an error")
+		}
+		recorded += rows
+	}
+	if recorded != 5 {
+		t.Fatalf("expected exactly five recorded attempts, got %d", recorded)
+	}
+
+	rows, err := testHandler.Queries.MarkVerificationCodeUsed(ctx, dbCode.ID)
+	if err != nil {
+		t.Fatalf("MarkVerificationCodeUsed after exhaustion: %v", err)
+	}
+	if rows != 0 {
+		t.Fatalf("expected exhausted code consume to lose CAS, got %d rows", rows)
 	}
 }
 
