@@ -121,6 +121,7 @@ impl Environment {
         let lock_path = directory.join(".config.lock");
         let lock = OpenOptions::new()
             .create(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(&lock_path)
@@ -161,6 +162,7 @@ impl Environment {
         let lock_path = directory.join(".config.lock");
         let lock = OpenOptions::new()
             .create(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(&lock_path)
@@ -470,6 +472,7 @@ mod tests {
             r#"{"server_url":"https://dev.example","token":"mul_dev","future":{"enabled":true}}"#,
         )
         .expect("profile config");
+        fs::write(profile_dir.join(".config.lock"), b"lock-sentinel").expect("lock sentinel");
         let default_path = home.path().join(".cordy/config.json");
         fs::create_dir_all(default_path.parent().expect("default dir")).expect("default dir");
         let default_bytes = br#"{"token":"mul_default","workspace_id":"default-workspace"}"#;
@@ -497,11 +500,38 @@ mod tests {
         assert_eq!(saved["server_url"], "https://dev.example");
         assert_eq!(saved["future"]["enabled"], true);
         assert_eq!(
+            fs::read(profile_dir.join(".config.lock")).expect("lock file"),
+            b"lock-sentinel"
+        );
+        assert_eq!(
             fs::read(&default_path).expect("default unchanged"),
             default_bytes
         );
         assert!(!environment
             .clear_profile_token("missing")
             .expect("missing profile is idempotent"));
+    }
+
+    #[test]
+    fn set_profile_value_does_not_truncate_existing_lock_file() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let profile_dir = home.path().join(".cordy/profiles/dev");
+        fs::create_dir_all(&profile_dir).expect("profile dir");
+        fs::write(profile_dir.join(".config.lock"), b"lock-sentinel").expect("lock sentinel");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+
+        environment
+            .set_profile_value(
+                "dev",
+                "workspace_id",
+                Some(Value::String("workspace-1".into())),
+            )
+            .expect("set profile value");
+
+        assert_eq!(
+            fs::read(profile_dir.join(".config.lock")).expect("lock file"),
+            b"lock-sentinel"
+        );
     }
 }
