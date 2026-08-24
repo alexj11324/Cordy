@@ -313,7 +313,7 @@ pub async fn update_issue_property(
     name: Option<&str>,
     description: Option<&str>,
     icon: Option<&str>,
-    config: &serde_json::Value,
+    config: Option<&serde_json::Value>,
     archived_set: bool,
     archived_at: Option<DateTime<Utc>>,
 ) -> anyhow::Result<Option<IssueProperty>> {

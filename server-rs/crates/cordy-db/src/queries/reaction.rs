@@ -73,48 +73,6 @@ LIMIT 1"#
     }))
 }
 
-/// Re-reads an idempotently existing reaction in a fresh statement. PostgreSQL
-/// can wait on a concurrent `ON CONFLICT` insert while retaining a statement
-/// snapshot from before that row committed, so the fallback inside
-/// `add_reaction` is allowed to return no row.
-pub async fn get_reaction_for_actor(
-    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    comment_id: Uuid,
-    workspace_id: Uuid,
-    actor_type: &str,
-    actor_id: Uuid,
-    emoji: &str,
-) -> anyhow::Result<Option<AddReactionRow>> {
-    let row = sqlx::query(
-        r#"SELECT id, comment_id, workspace_id, actor_type, actor_id, emoji, created_at,
-                  0::bigint AS comment_revision
-FROM comment_reaction
-WHERE comment_id = $1
-  AND workspace_id = $2
-  AND actor_type = $3
-  AND actor_id = $4
-  AND emoji = $5"#,
-    )
-    .bind(comment_id)
-    .bind(workspace_id)
-    .bind(actor_type)
-    .bind(actor_id)
-    .bind(emoji)
-    .fetch_optional(executor)
-    .await?;
-    let Some(row) = row else { return Ok(None) };
-    Ok(Some(AddReactionRow {
-        id: row.try_get(0)?,
-        comment_id: row.try_get(1)?,
-        workspace_id: row.try_get(2)?,
-        actor_type: row.try_get(3)?,
-        actor_id: row.try_get(4)?,
-        emoji: row.try_get(5)?,
-        created_at: row.try_get(6)?,
-        comment_revision: row.try_get(7)?,
-    }))
-}
-
 pub async fn list_reactions_by_comment_i_ds(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     dollar_1: Vec<Uuid>,

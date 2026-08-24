@@ -52,6 +52,7 @@ pub fn default_trigger_location() -> (Tz, &'static str) {
 
 /// Domain service. Go's Queries/TxStarter pair collapses into one sqlx pool —
 /// executor-generic queries plus `pool.begin()` cover both shapes.
+#[derive(Clone)]
 pub struct AutopilotService {
     pub pool: PgPool,
     pub bus: Arc<cordy_events::Bus>,
@@ -152,8 +153,9 @@ pub struct EntitlementGateDecision {
 /// Seam standing in for Go's `entitlement.Provider`. Cloud remains the sole
 /// authority over interval construction; implementations must not consult
 /// local quota tables.
+#[async_trait::async_trait]
 pub trait EntitlementProvider: Send + Sync {
-    fn gate_autopilot_runs(&self, workspace_id: Uuid) -> EntitlementGateDecision;
+    async fn gate_autopilot_runs(&self, workspace_id: Uuid) -> EntitlementGateDecision;
 }
 
 // --- Pure predicates --------------------------------------------------------
@@ -579,6 +581,14 @@ pub trait AutopilotQuotaMetrics: Send + Sync {
     fn record_autopilot_quota_decision(&self, action: &str, source: &str, result: &str);
 }
 
+impl AutopilotQuotaMetrics for cordy_metrics::BusinessMetrics {
+    fn record_autopilot_quota_decision(&self, action: &str, source: &str, result: &str) {
+        cordy_metrics::BusinessMetrics::record_autopilot_quota_decision(
+            self, action, source, result,
+        );
+    }
+}
+
 /// Returned only for an enforce decision whose Cloud-provided interval is
 /// full. HTTP callers serialize the facts without embedding commercial copy
 /// or plan names in OSS.
@@ -863,7 +873,7 @@ impl AutopilotService {
         );
         cordy_metrics::business_events::record_event(
             Some(client),
-            self.task_svc.metrics.get().map(Arc::as_ref),
+            self.task_svc.metrics.as_deref(),
             &ev,
         );
     }
@@ -890,7 +900,7 @@ impl AutopilotService {
         );
         cordy_metrics::business_events::record_event(
             Some(client),
-            self.task_svc.metrics.get().map(Arc::as_ref),
+            self.task_svc.metrics.as_deref(),
             &ev,
         );
     }
@@ -912,7 +922,7 @@ impl AutopilotService {
         );
         cordy_metrics::business_events::record_event(
             Some(client),
-            self.task_svc.metrics.get().map(Arc::as_ref),
+            self.task_svc.metrics.as_deref(),
             &ev,
         );
     }
@@ -944,7 +954,7 @@ impl AutopilotService {
         );
         cordy_metrics::business_events::record_event(
             Some(client),
-            self.task_svc.metrics.get().map(Arc::as_ref),
+            self.task_svc.metrics.as_deref(),
             &ev,
         );
     }
@@ -1266,9 +1276,9 @@ impl AutopilotService {
     /// Resolves the effective quota policy for a workspace. A malformed
     /// policy is fail-open and, critically, performs no quota-table access;
     /// Cloud remains the sole authority over interval construction.
-    fn quota_policy(&self, workspace_id: Uuid) -> Option<AutopilotQuotaPolicy> {
+    async fn quota_policy(&self, workspace_id: Uuid) -> Option<AutopilotQuotaPolicy> {
         let entitlements = self.entitlements.as_ref()?;
-        let decision = entitlements.gate_autopilot_runs(workspace_id);
+        let decision = entitlements.gate_autopilot_runs(workspace_id).await;
         if decision.gate_action == EntitlementAction::Off {
             return None;
         }
@@ -1308,7 +1318,7 @@ impl AutopilotService {
         if !valid_autopilot_execution_source(source) {
             return Err(QuotaAdmissionError::InvalidSource(source.to_string()));
         }
-        let Some(policy) = self.quota_policy(workspace_id) else {
+        let Some(policy) = self.quota_policy(workspace_id).await else {
             let run = insert_run(&self.pool, params, Uuid::nil())
                 .await
                 .map_err(|e| quota_admission_internal("create autopilot run", e))?
@@ -1440,7 +1450,7 @@ impl AutopilotService {
     /// decision returns enabled=false with every fact left unset; a period row
     /// that does not exist yet reads as zeroed counters.
     pub async fn quota_usage(&self, workspace_id: Uuid) -> anyhow::Result<AutopilotQuotaUsage> {
-        let Some(policy) = self.quota_policy(workspace_id) else {
+        let Some(policy) = self.quota_policy(workspace_id).await else {
             return Ok(AutopilotQuotaUsage::default());
         };
         let (used_count, reserved_count, blocked_value) = match get_autopilot_quota_period(
