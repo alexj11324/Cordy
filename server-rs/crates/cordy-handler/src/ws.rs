@@ -283,6 +283,7 @@ async fn post_upgrade(
     // Reader exited: stop the writer, then unregister (drops the hub's
     // ClientHandle → sender dropped → any late writer sees None).
     writer.abort();
+    let _ = writer.await;
     hub.unregister(client_id);
 }
 
