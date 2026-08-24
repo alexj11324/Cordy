@@ -34,6 +34,7 @@ pub mod helpers;
 pub mod identity;
 pub mod manager;
 pub mod poisoned;
+pub mod process_control;
 pub mod production_stack;
 pub mod production_services;
 pub mod registration;

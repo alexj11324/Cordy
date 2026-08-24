@@ -728,7 +728,7 @@ fn map_subscriber_install_error(
         .context("install daemon tracing subscriber")
 }
 
-fn open_bounded_crash_log(path: &Path) -> io::Result<File> {
+pub(crate) fn open_bounded_crash_log(path: &Path) -> io::Result<File> {
     if fs::metadata(path).is_ok_and(|metadata| metadata.len() >= CRASH_LOG_MAX_BYTES) {
         let backup = PathBuf::from(format!("{}.1", path.display()));
         let _ = fs::remove_file(&backup);
