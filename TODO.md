@@ -185,11 +185,13 @@
       `637712cf` (`feat(cli): assemble foreground daemon inputs`),
       `3dcd0a7e` (`refactor(daemon): pass shared runtime owners to adapter`),
       and `58708109` (`refactor(daemon): derive backend config from launch
-      state`) are pushed; latest head `58708109bc618567408eed192fb7b693d45b8ec9`,
-      parent `3dcd0a7e635872b46776756536c98d0e9aecc828`, tree
-      `fe606b99341571fab510a8c4d6556eb09f6fe911`. PR #129 is Ready/CLEAN/
+      state`), followed by `7cd69522` (`test(daemon): stabilize backend config
+      assertion`) are pushed; latest head
+      `7cd695223c638cc3a8185bff8a81e889a8d157ab`, parent
+      `58708109bc618567408eed192fb7b693d45b8ec9`, tree
+      `08372c1ffe25e9401f0e29171dc58d70be3bc6a9`. PR #129 is Ready/CLEAN/
       MERGEABLE on base `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`, current
-      candidate `6b47a2c39f078895521d58197ac44b9c82f6b37f`. The CLI now carries
+      candidate `c06f2c51b45bcbc35ecc06e82d9e60d5c2c5b0b5`. The CLI now carries
       one authenticated profile snapshot through lifecycle/bootstrap/foreground
       production input assembly. `ProviderRuntimeContext` injects the same
       client, accepted `RuntimeLaunchRegistry`, activity, repo state, and
