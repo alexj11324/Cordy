@@ -56,6 +56,10 @@ pub struct HandlerState {
     pub invitation_admission: crate::invitation::InvitationAdmission,
     /// Anonymous frontend capability/configuration response.
     pub public_config: crate::config::PublicConfigSettings,
+    /// Immutable integration endpoint configuration loaded once at boot.
+    /// Channel install flows use this same snapshot as the runtime connectors
+    /// instead of re-reading process environment mid-session.
+    pub integrations: cordy_config::IntegrationsConfig,
     /// GitHub GraphQL snapshot refresh pipeline. Disabled in lightweight tests.
     pub github_snapshots: Arc<cordy_ghsnapshot::Manager>,
     /// Feature flag source. `None` fails closed for rollout-gated writes.
@@ -159,6 +163,7 @@ impl HandlerState {
             auth_verify_rate_limit,
             invitation_admission: crate::invitation::InvitationAdmission::default(),
             public_config: crate::config::PublicConfigSettings::default(),
+            integrations: cordy_config::IntegrationsConfig::default(),
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
             feature_flags: None,
             tasks,
@@ -255,6 +260,11 @@ impl HandlerState {
 
     pub fn with_public_config(mut self, settings: crate::config::PublicConfigSettings) -> Self {
         self.public_config = settings;
+        self
+    }
+
+    pub fn with_integrations(mut self, integrations: cordy_config::IntegrationsConfig) -> Self {
+        self.integrations = integrations;
         self
     }
 

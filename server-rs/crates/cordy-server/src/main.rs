@@ -218,6 +218,7 @@ async fn build_production_router(
     .with_slack_history_from_env()
     .with_llm_from_env()?
     .with_feature_flags(feature_flags)
+    .with_integrations(cfg.integrations.clone())
     .with_public_config(cordy_handler::config::PublicConfigSettings {
         cdn_domain: cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
         cdn_signed: cfg.storage.cloudfront_key_pair_id.is_some()

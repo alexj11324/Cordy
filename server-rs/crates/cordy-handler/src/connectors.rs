@@ -317,7 +317,19 @@ async fn begin_lark_install(
         format!("{} - Cordy", target.name.trim())
     };
     let client = Arc::new(cordy_lark::registration::RegistrationClient::new(
-        cordy_lark::registration::RegistrationConfig::default(),
+        cordy_lark::registration::RegistrationConfig {
+            domain: state
+                .integrations
+                .lark_registration_domain
+                .clone()
+                .unwrap_or_default(),
+            lark_domain: state
+                .integrations
+                .lark_registration_lark_domain
+                .clone()
+                .unwrap_or_default(),
+            ..Default::default()
+        },
     ));
     let begun = match client.begin(&preset, region).await {
         Ok(value) => value,
@@ -424,7 +436,11 @@ async fn run_lark_registration(
         }
         let api = cordy_lark::http_client::HttpApiClient::new(
             cordy_lark::http_client::HttpClientConfig {
-                base_url: std::env::var("CORDY_LARK_HTTP_BASE_URL").unwrap_or_default(),
+                base_url: state
+                    .integrations
+                    .lark_http_base_url
+                    .clone()
+                    .unwrap_or_default(),
                 ..Default::default()
             },
         );
