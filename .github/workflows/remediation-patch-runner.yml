@@ -1,0 +1,119 @@
+name: Exact-head review remediation patch runner
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: exact-review-remediation-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  patch-and-validate:
+    if: >-
+      github.event.pull_request.number == 135 &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'remediation/review-debt-20260824'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: cordy
+          POSTGRES_USER: cordy
+          POSTGRES_PASSWORD: cordy
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cordy -d cordy"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Verify exact branch head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin remediation/review-debt-20260824
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git rev-parse origin/remediation/review-debt-20260824)" = "${{ github.event.pull_request.head.sha }}"
+          if git log -1 --pretty=%B | grep -q '^\[patch-runner\]'; then
+            echo skip=true >> "$GITHUB_ENV"
+          fi
+
+      - name: Apply the fixed remediation patch
+        if: env.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f .github/remediation/patch.diff
+          git apply --check .github/remediation/patch.diff
+          git apply .github/remediation/patch.diff
+          rm .github/remediation/patch.diff
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Format
+        if: env.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd server-rs
+          cargo fmt --all
+          cd ..
+          git diff --check
+
+      - name: Migrate test database
+        if: env.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd server-rs
+          cargo run --locked -p cordy-migrate -- up
+
+      - name: Check workspace
+        if: env.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd server-rs
+          cargo check --workspace --all-targets --locked
+
+      - name: Test workspace
+        if: env.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd server-rs
+          cargo test --workspace --all-targets --locked
+
+      - name: Strict clippy
+        if: env.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd server-rs
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Push validated remediation
+        if: env.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          git commit -m '[patch-runner] fix remaining validated review findings'
+          git push origin HEAD:remediation/review-debt-20260824
