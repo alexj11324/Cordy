@@ -69,12 +69,22 @@ struct InvokeHookRequest {
     input: Option<Value>,
 }
 
+fn has_callback_token(headers: &HeaderMap) -> bool {
+    cordy_middleware::plugin_auth::bearer_token(headers).starts_with(CALLBACK_TOKEN_PREFIX)
+}
+
 async fn invoke_plugin_hook(
     State(state): State<HandlerState>,
     headers: HeaderMap,
     Path(key): Path<String>,
     body: Bytes,
 ) -> Response {
+    if has_callback_token(&headers) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "callback tokens cannot invoke plugin hooks",
+        );
+    }
     let (caller, actor) = match caller(&state, &headers, "").await {
         Ok(value) => value,
         Err(response) => return response,
@@ -154,14 +164,14 @@ impl PluginActor {
     }
 }
 
-pub(crate) fn plugins_enabled(state: &HandlerState) -> bool {
+fn plugins_enabled(state: &HandlerState) -> bool {
     state
         .feature_flags
         .as_deref()
         .is_some_and(cordy_service::feature_flags::plugins_v1_enabled)
 }
 
-pub(crate) fn plugin_error(error: &PluginError, fallback: &str) -> Response {
+fn plugin_error(error: &PluginError, fallback: &str) -> Response {
     let status = match error.kind {
         PluginErrorKind::Invalid => StatusCode::BAD_REQUEST,
         PluginErrorKind::NotFound => StatusCode::NOT_FOUND,
@@ -439,7 +449,18 @@ WHERE id=$1 AND workspace_id=$4"#,
         );
     }
     match issue_q::get_issue_in_workspace(&state.pool, issue.id, caller.workspace_id).await {
-        Ok(Some(issue)) => Json(issue_json(&state, &issue).await).into_response(),
+        Ok(Some(updated)) => {
+            crate::issue::publish_issue_updated(
+                &state,
+                &issue,
+                &updated,
+                "plugin",
+                caller.installation.id,
+                None,
+            )
+            .await;
+            Json(issue_json(&state, &updated).await).into_response()
+        }
         _ => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to update the issue",
@@ -474,6 +495,32 @@ impl From<&Comment> for CommentResponse {
                 .to_rfc3339_opts(SecondsFormat::Secs, true),
         }
     }
+}
+
+fn inserted_comment(row: comment::CreateCommentRow) -> Option<(Comment, i64)> {
+    let issue_revision = row.issue_revision;
+    Some((
+        Comment {
+            id: row.id?,
+            issue_id: row.issue_id?,
+            author_type: row.author_type,
+            author_id: row.author_id?,
+            content: row.content,
+            type_: row.type_,
+            created_at: row.created_at?,
+            updated_at: row.updated_at?,
+            parent_id: row.parent_id,
+            workspace_id: row.workspace_id?,
+            resolved_at: row.resolved_at,
+            resolved_by_type: row.resolved_by_type,
+            resolved_by_id: row.resolved_by_id,
+            source_task_id: row.source_task_id,
+            quick_action_id: row.quick_action_id,
+            via_plugin_id: row.via_plugin_id,
+            revision: row.revision,
+        },
+        issue_revision,
+    ))
 }
 
 async fn list_comments(
@@ -576,8 +623,17 @@ async fn create_comment(
         cordy_db::dbid::new_v7(),
     )
     .await;
-    let created = match created {
-        Ok(Some(created)) => created,
+    let (created, issue_revision) = match created {
+        Ok(Some(created)) => match inserted_comment(created) {
+            Some(created) => created,
+            None => {
+                tracing::error!("plugin comment insert returned an incomplete row");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to create the comment",
+                );
+            }
+        },
         _ => {
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -585,27 +641,23 @@ async fn create_comment(
             )
         }
     };
-    let payload = json!({
-        "id": created.id.map(|id| id.to_string()).unwrap_or_default(),
-        "author_type": created.author_type,
-        "author_id": created.author_id.map(|id| id.to_string()).unwrap_or_default(),
-        "content": created.content,
-        "type": created.type_,
-        "parent_id": created.parent_id.map(|id| id.to_string()),
-        "created_at": created.created_at.map(|time| time.to_rfc3339_opts(SecondsFormat::Secs, true)).unwrap_or_default(),
-    });
+    let mut event_comment =
+        crate::comment::comment_json_with_related(&created, json!([]), json!([]));
+    if let Some(object) = event_comment.as_object_mut() {
+        object.insert("issue_revision".into(), json!(issue_revision));
+    }
     state.bus.publish(&cordy_events::Event {
         event_type: cordy_protocol::EVENT_COMMENT_CREATED.to_string(),
         workspace_id: caller.workspace_id.to_string(),
         actor_type: author_type.to_string(),
         actor_id: author_id.to_string(),
         payload: json!({
-            "comment": payload.clone(),
+            "comment": event_comment,
             "issue_title": issue.title,
             "issue_assignee_type": issue.assignee_type,
             "issue_assignee_id": issue.assignee_id.map(|id| id.to_string()),
             "issue_status": issue.status,
-            "issue_revision": created.issue_revision,
+            "issue_revision": issue_revision,
         }),
         ..Default::default()
     });
@@ -618,7 +670,7 @@ async fn create_comment(
             &author_id.to_string(),
         )
         .await;
-    (StatusCode::CREATED, Json(payload)).into_response()
+    (StatusCode::CREATED, Json(CommentResponse::from(&created))).into_response()
 }
 
 fn storage_scope(
@@ -773,5 +825,21 @@ mod tests {
         let actor = PluginActor { member: None };
         assert_eq!(actor.actor_type(), "plugin");
         assert_eq!(actor.user_id(), None);
+    }
+
+    #[test]
+    fn callback_tokens_cannot_reenter_hook_invocation() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            "Bearer mpc_callback-token".parse().unwrap(),
+        );
+        assert!(has_callback_token(&headers));
+
+        headers.insert(
+            axum::http::header::AUTHORIZATION,
+            "Bearer mpi_install-token".parse().unwrap(),
+        );
+        assert!(!has_callback_token(&headers));
     }
 }

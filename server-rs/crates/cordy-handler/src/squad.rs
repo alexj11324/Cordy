@@ -288,10 +288,18 @@ struct CreateSquadRequest {
     avatar_url: Option<String>,
 }
 
-fn accepted_avatar_url(value: Option<String>) -> Option<String> {
-    // HandlerState has no object-storage signer yet. This is exactly Go's
-    // Storage == nil branch: trim and persist without owned-object checks.
-    value.map(|value| value.trim().to_string())
+async fn accepted_avatar_url(
+    state: &HandlerState,
+    value: Option<String>,
+    current: Option<&str>,
+) -> Result<Option<String>, Response> {
+    match value {
+        None => Ok(None),
+        Some(value) => crate::avatar::accept_url(state, &value, current)
+            .await
+            .map(Some)
+            .map_err(|message| error_response(StatusCode::BAD_REQUEST, message)),
+    }
 }
 
 async fn create(
@@ -333,7 +341,10 @@ async fn create(
             "you can only use an agent you have access to as leader",
         );
     }
-    let avatar_url = accepted_avatar_url(request.avatar_url);
+    let avatar_url = match accepted_avatar_url(&state, request.avatar_url, None).await {
+        Ok(avatar_url) => avatar_url,
+        Err(response) => return response,
+    };
     let created = match squad::create_squad(
         &state.pool,
         context.member.workspace_id,
@@ -576,7 +587,12 @@ async fn update(
         Ok(request) => request,
         Err(()) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
     };
-    let avatar_url = accepted_avatar_url(request.avatar_url);
+    let avatar_url =
+        match accepted_avatar_url(&state, request.avatar_url, existing.avatar_url.as_deref()).await
+        {
+            Ok(avatar_url) => avatar_url,
+            Err(response) => return response,
+        };
     let mut transaction = match state.pool.begin().await {
         Ok(transaction) => transaction,
         Err(error) => {
@@ -730,22 +746,38 @@ async fn remove(
     if existing.archived_at.is_some() {
         return error_response(StatusCode::BAD_REQUEST, "squad is already archived");
     }
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, squad_id = %existing.id, "failed to start squad archive transaction");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
+        }
+    };
     if let Err(error) =
-        squad::transfer_squad_assignees(&state.pool, existing.id, existing.leader_id).await
+        squad::transfer_squad_assignees(&mut *transaction, existing.id, existing.leader_id).await
     {
         tracing::warn!(%error, squad_id = %existing.id, "transfer squad assignees failed");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
     }
-    if let Err(error) =
-        squad::transfer_squad_autopilots_to_leader(&state.pool, existing.id, existing.leader_id)
-            .await
+    if let Err(error) = squad::transfer_squad_autopilots_to_leader(
+        &mut *transaction,
+        existing.id,
+        existing.leader_id,
+    )
+    .await
     {
         tracing::warn!(%error, squad_id = %existing.id, "transfer squad autopilots failed");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
     }
-    match squad::archive_squad(&state.pool, existing.id, context.member.user_id).await {
+    match squad::archive_squad(&mut *transaction, existing.id, context.member.user_id).await {
         Ok(Some(_)) => {}
         Ok(None) | Err(_) => {
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad")
         }
+    }
+    if let Err(error) = transaction.commit().await {
+        tracing::warn!(%error, squad_id = %existing.id, "failed to commit squad archive");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
     }
     publish_squad_event(
         &state,
@@ -1146,10 +1178,7 @@ mod tests {
         assert!(create.name.is_empty());
         assert!(create.description.is_empty());
         assert!(create.leader_id.is_empty());
-        assert_eq!(
-            accepted_avatar_url(create.avatar_url).as_deref(),
-            Some("emoji:robot")
-        );
+        assert_eq!(create.avatar_url.as_deref(), Some("  emoji:robot  "));
 
         let update = decode_first::<UpdateSquadRequest>(
             br#"{"name":null,"leader_id":null,"avatar_url":null} true"#,
