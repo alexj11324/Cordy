@@ -86,11 +86,17 @@ fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
         .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid workspace id"))
 }
 
-fn reject_agent(headers: &HeaderMap) -> Result<(), Response> {
-    if headers
-        .get("x-actor-source")
-        .and_then(|value| value.to_str().ok())
-        == Some("task_token")
+async fn reject_agent(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    headers: &HeaderMap,
+) -> Result<(), Response> {
+    let (actor_type, _, _) = crate::issue::mutation_actor(state, context, headers).await;
+    if actor_type == "agent"
+        || headers
+            .get("x-actor-source")
+            .and_then(|value| value.to_str().ok())
+            == Some("task_token")
     {
         Err(error_response(
             StatusCode::FORBIDDEN,
@@ -182,7 +188,7 @@ async fn create_server(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Err(response) = reject_agent(&headers) {
+    if let Err(response) = reject_agent(&state, &context, &headers).await {
         return response;
     }
     let workspace_id = match workspace_id(&context) {
@@ -263,7 +269,7 @@ async fn update_server(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Err(response) = reject_agent(&headers) {
+    if let Err(response) = reject_agent(&state, &context, &headers).await {
         return response;
     }
     let workspace_id = match workspace_id(&context) {
@@ -315,7 +321,7 @@ async fn delete_server(
     Path((_workspace, raw_server_id)): Path<(String, String)>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(response) = reject_agent(&headers) {
+    if let Err(response) = reject_agent(&state, &context, &headers).await {
         return response;
     }
     let workspace_id = match workspace_id(&context) {
