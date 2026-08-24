@@ -19,24 +19,25 @@
 pub mod execenv;
 
 // Lane A (client/config/infra) — stubs pre-declared, launch when a slot frees.
+pub mod assembly;
+pub mod bootstrap;
 pub mod canonical_path;
 pub mod client;
 pub mod config;
 pub mod control_lifecycle;
 pub mod daemon_core;
-pub mod bootstrap;
-pub mod production_stack;
-pub mod update_executor;
 pub mod diskusage;
 pub mod health;
 pub mod helpers;
 pub mod identity;
 pub mod manager;
 pub mod poisoned;
+pub mod production_stack;
 pub mod reconcile;
 pub mod task_execution;
 pub mod thread_name;
 pub mod types;
+pub mod update_executor;
 pub mod wakeup;
 pub mod wsrpc;
 
@@ -54,9 +55,9 @@ pub mod remote_mcp_broker;
 pub mod runtime_mcp;
 
 // Lane B (daemon.go core + surrounding surfaces) — S9-B.
+pub mod activity;
 pub mod agents_probe;
 pub mod agents_refresh;
-pub mod activity;
 pub mod artifact_matcher;
 pub mod claude_plugins;
 pub mod local_skills;
