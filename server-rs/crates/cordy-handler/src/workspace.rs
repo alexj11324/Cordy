@@ -187,6 +187,17 @@ async fn join_by_share_link(
     headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> Response {
+    if matches!(
+        headers
+            .get("x-actor-source")
+            .and_then(|value| value.to_str().ok()),
+        Some("task_token" | "cloud_pat")
+    ) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "this endpoint is only available to human actors",
+        );
+    }
     let Some(user_id) = header_uuid(&headers, "x-user-id") else {
         return error_response(StatusCode::UNAUTHORIZED, "user not authenticated");
     };
@@ -377,6 +388,23 @@ mod tests {
             None,
         );
         authenticated_router().with_state(state)
+    }
+
+    #[tokio::test]
+    async fn share_link_join_rejects_machine_credentials_before_database_access() {
+        for source in ["task_token", "cloud_pat"] {
+            let response = test_router()
+                .oneshot(
+                    Request::post("/api/share-links/join")
+                        .header("x-user-id", Uuid::nil().to_string())
+                        .header("x-actor-source", source)
+                        .body(Body::from(r#"{"code":"share-code"}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{source}");
+        }
     }
 
     #[tokio::test]
