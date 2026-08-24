@@ -186,27 +186,32 @@
       `3dcd0a7e` (`refactor(daemon): pass shared runtime owners to adapter`),
       and `58708109` (`refactor(daemon): derive backend config from launch
       state`), followed by `7cd69522` (`test(daemon): stabilize backend config
-      assertion`) are pushed; latest head
-      `7cd695223c638cc3a8185bff8a81e889a8d157ab`, parent
-      `58708109bc618567408eed192fb7b693d45b8ec9`, tree
-      `08372c1ffe25e9401f0e29171dc58d70be3bc6a9`. PR #129 is Ready/CLEAN/
+      assertion`) and `f1f12ab5` (`feat(daemon): build typed task execution
+      plans`) are pushed; latest head
+      `f1f12ab5c7cf3da6cccbc861b58dd101e6dd0c65`, parent
+      `7cd695223c638cc3a8185bff8a81e889a8d157ab`, tree
+      `0d482e3c85fe3682adfbe86ee4794ebfad918a7a`. PR #129 is Ready/CLEAN/
       MERGEABLE on base `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`, current
-      candidate `c06f2c51b45bcbc35ecc06e82d9e60d5c2c5b0b5`. The CLI now carries
+      candidate `520c9eef89ca4d275291200cb7a3ce1f34c98c8e`. The CLI now carries
       one authenticated profile snapshot through lifecycle/bootstrap/foreground
       production input assembly. `ProviderRuntimeContext` injects the same
       client, accepted `RuntimeLaunchRegistry`, activity, repo state, and
       checkout registry into the adapter boundary; `backend_config` derives
       `cordy-agent::BackendConfig` only from accepted workspace launch state and
       caller-supplied task environment, failing closed when no launch is
-      registered. Scoped rustfmt/diff-check pass; PR review/gate/merge are
+      registered. The new execution-plan builder maps claim data into typed
+      `PrepareParams`/`TaskContextForEnv`, then binds prepared environments to
+      `ExecOptions` and a child-only environment; task credentials require
+      `mat_` and never fall back to the daemon token. Sensitive Debug output is
+      redacted. Scoped rustfmt/diff-check pass; Cargo/review/gate/merge remain
       delegated to the pro model.
 - [ ] Next substantive daemon slice: implement the real provider execution
-      adapter. The dependency boundary is now explicit, but `cordy-daemon`
-      still has no concrete `ProviderRuntimeAdapter` and does not depend on
-      `cordy-agent`; task-scoped env, prepare/reuse, worktree finalize,
-      transcript/usage/session pinning, and cancellation must be implemented
-      together. Do not call `cordy-agent::build_backend` as a half-stub or
-      silently drop those contracts.
+      adapter on top of `ProviderExecutionPlan`. `cordy-daemon` now depends on
+      `cordy-agent`, but still has no concrete `ProviderRuntimeAdapter`;
+      prepare/reuse, worktree finalize, transcript/usage/session pinning,
+      cancellation, and failure mapping must be implemented together. Do not
+      call `cordy-agent::build_backend` as a half-stub or silently drop those
+      contracts.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
