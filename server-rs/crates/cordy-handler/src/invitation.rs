@@ -1,10 +1,11 @@
 //! Current-user workspace invitation reads and decisions.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Request, State};
 use axum::http::{HeaderMap, StatusCode};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
-use axum::{Json, Router};
+use axum::{middleware, Json, Router};
 use cordy_db::models::WorkspaceInvitation;
 use cordy_db::queries::invitation::{self, ListPendingInvitationsForUserRow};
 use cordy_db::queries::{member, user, workspace};
@@ -24,6 +25,23 @@ pub fn router() -> Router<HandlerState> {
             "/api/invitations/{id}/decline",
             axum::routing::post(decline),
         )
+        .route_layer(middleware::from_fn(require_human_actor))
+}
+
+async fn require_human_actor(request: Request, next: Next) -> Response {
+    if matches!(
+        request
+            .headers()
+            .get("x-actor-source")
+            .and_then(|value| value.to_str().ok()),
+        Some("task_token" | "cloud_pat")
+    ) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "this endpoint is only available to human actors",
+        );
+    }
+    next.run(request).await
 }
 
 #[derive(Debug, Serialize)]
@@ -397,7 +415,33 @@ async fn decline(
 
 #[cfg(test)]
 mod tests {
+    use axum::body::Body;
+    use tower::ServiceExt;
+
     use super::*;
+
+    fn test_router() -> Router {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None);
+        router().with_state(state)
+    }
+
+    #[tokio::test]
+    async fn invitation_routes_reject_machine_actors_before_database_access() {
+        for source in ["task_token", "cloud_pat"] {
+            let response = test_router()
+                .oneshot(
+                    Request::get("/api/invitations")
+                        .header("x-user-id", Uuid::nil().to_string())
+                        .header("x-actor-source", source)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{source}");
+        }
+    }
 
     #[test]
     fn ownership_accepts_case_folded_email_or_bound_user() {
