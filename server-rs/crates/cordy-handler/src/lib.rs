@@ -68,6 +68,7 @@ pub mod project;
 pub mod property;
 pub mod quick_action;
 pub mod runtime;
+pub mod runtime_liveness;
 pub mod runtime_profile;
 pub mod runtime_requests;
 pub mod runtime_usage;

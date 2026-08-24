@@ -49,6 +49,7 @@ pub struct HandlerState {
     /// HTTP request metrics. None when METRICS_ADDR is disabled.
     pub http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
     pub heartbeat_scheduler: Arc<dyn crate::heartbeat_scheduler::HeartbeatScheduler>,
+    pub liveness_store: Arc<dyn crate::runtime_liveness::LivenessStore>,
     /// Public authentication dependencies and boot-time policy.
     pub auth_settings: crate::auth::AuthSettings,
     pub email_service: Arc<EmailService>,
@@ -169,6 +170,7 @@ impl HandlerState {
             business_metrics: None,
             http_metrics: None,
             heartbeat_scheduler,
+            liveness_store: Arc::new(crate::runtime_liveness::NoopLivenessStore),
             auth_settings: crate::auth::AuthSettings::from_env(),
             email_service: Arc::new(EmailService::new()),
             analytics: Arc::new(cordy_analytics::NoopClient),
@@ -326,6 +328,11 @@ impl HandlerState {
         scheduler: Arc<dyn crate::heartbeat_scheduler::HeartbeatScheduler>,
     ) -> Self {
         self.heartbeat_scheduler = scheduler;
+        self
+    }
+
+    pub fn with_liveness_redis(mut self, client: redis::Client) -> Self {
+        self.liveness_store = crate::runtime_liveness::RedisLivenessStore::new(client);
         self
     }
 

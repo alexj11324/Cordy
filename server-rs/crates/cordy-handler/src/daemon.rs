@@ -546,7 +546,10 @@ async fn heartbeat(
         }
     }
 
-    record_heartbeat(&state, &rt).await;
+    if let Err(error) = record_heartbeat(&state, &rt).await {
+        tracing::warn!(%error, runtime_id = %rt.id, "heartbeat update failed");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "heartbeat failed");
+    }
 
     // Probe-then-claim each pending queue (Go processHeartbeat): a slow shared
     // store cannot stall the heartbeat on empty ticks; the claim runs unbounded
@@ -693,10 +696,32 @@ async fn heartbeat(
     Json(resp).into_response()
 }
 
-async fn record_heartbeat(state: &HandlerState, rt: &AgentRuntime) {
-    if let Err(e) = state.heartbeat_scheduler.schedule(rt).await {
-        tracing::warn!(error = %e, runtime_id = %rt.id, "heartbeat db update failed");
+const RUNTIME_LIVENESS_TTL: Duration = Duration::from_secs(90);
+const RUNTIME_HEARTBEAT_DB_FLUSH_INTERVAL: Duration = Duration::from_secs(60);
+
+async fn record_heartbeat(state: &HandlerState, rt: &AgentRuntime) -> anyhow::Result<()> {
+    let stale_in_db = rt.last_seen_at.is_none_or(|last_seen| {
+        chrono::Utc::now().signed_duration_since(last_seen)
+            >= chrono::Duration::from_std(RUNTIME_HEARTBEAT_DB_FLUSH_INTERVAL)
+                .unwrap_or_else(|_| chrono::Duration::seconds(60))
+    });
+    let mut needs_db_write =
+        !state.liveness_store.available() || rt.status != "online" || stale_in_db;
+
+    if state.liveness_store.available() {
+        if let Err(error) = state
+            .liveness_store
+            .touch(&rt.id.to_string(), RUNTIME_LIVENESS_TTL)
+            .await
+        {
+            tracing::warn!(%error, runtime_id = %rt.id, "liveness touch failed; falling back to DB heartbeat");
+            needs_db_write = true;
+        }
     }
+    if needs_db_write {
+        state.heartbeat_scheduler.schedule(rt).await?;
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

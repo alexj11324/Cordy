@@ -243,7 +243,8 @@ async fn build_production_router(
             Ok(client) => {
                 state = state
                     .with_rate_limit_redis(client.clone())
-                    .with_auth_redis(client);
+                    .with_auth_redis(client.clone())
+                    .with_liveness_redis(client);
             }
             Err(error) => {
                 tracing::warn!(%error, "invalid REDIS_URL; public-route rate limiting disabled");
