@@ -6,9 +6,9 @@
 //! metadata alone never manufactures a backend that cannot execute.
 
 pub mod acp;
-pub mod claude;
 pub mod acp_mcp;
 pub mod antigravity;
+pub mod claude;
 pub mod codebuddy;
 pub mod codebuddy_discovery;
 pub mod command;
@@ -30,13 +30,13 @@ pub mod stderr;
 pub mod stream;
 pub mod version;
 
-pub use claude::{build_claude_args, ClaudeBackend, ClaudeConfig};
 pub use acp::{AcpClient, AcpError, AcpNotification};
 pub use acp_mcp::{
     build_acp_mcp_servers, filter_acp_mcp_servers, parse_acp_mcp_capabilities, AcpMcpCapabilities,
     AcpMcpCapabilityDeclaration, AcpMcpServer,
 };
 pub use antigravity::{AntigravityBackend, AntigravityConfig};
+pub use claude::{build_claude_args, ClaudeBackend, ClaudeConfig};
 pub use codebuddy::{CodebuddyBackend, CodebuddyConfig};
 pub use command::{BlockedArgMode, FilteredArgs, RuntimeCommand};
 pub use contract::{
@@ -45,7 +45,10 @@ pub use contract::{
 pub use cursor::{build_cursor_args, CursorBackend, CursorConfig};
 pub use deveco::{build_deveco_args, DevecoBackend, DevecoConfig};
 pub use dsh::{build_dsh_args, DshBackend, DshConfig};
-pub use model::{Catalog, CatalogCache, Model, ModelServiceTier, ModelThinking, ThinkingLevel};
+pub use model::{
+    parse_acp_session_models, Catalog, CatalogCache, Model, ModelServiceTier, ModelThinking,
+    ThinkingLevel,
+};
 pub use openclaw::{build_openclaw_args, OpenclawBackend, OpenclawConfig};
 pub use opencode::{build_opencode_args, OpencodeBackend, OpencodeConfig};
 pub use pi::{build_pi_args, PiBackend, PiConfig};

@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Model {
@@ -49,6 +50,132 @@ pub struct Catalog {
     /// True when models are a static stand-in after discovery failed. Such a
     /// catalog must not be cached or used to qualify a persisted selector.
     pub fallback: bool,
+}
+
+/// Parses the standard ACP `session/new.models` catalog without inventing a
+/// fallback. Callers supply the runtime family only when an entry carries no
+/// provider-qualified id; authoritative model ids and advertised order remain
+/// unchanged.
+pub fn parse_acp_session_models(result: &Value, fallback_provider: &str) -> Vec<Model> {
+    let from_models = result
+        .get("models")
+        .and_then(Value::as_object)
+        .map(|models| {
+            let current = first_non_empty_string(
+                models.get("currentModelId"),
+                models.get("current_model_id"),
+            );
+            let available = first_non_empty_array(
+                models.get("availableModels"),
+                models.get("available_models"),
+            );
+            parse_model_entries(available, &current, fallback_provider, |entry| {
+                first_non_empty_string(entry.get("modelId"), entry.get("model_id"))
+            })
+        })
+        .unwrap_or_default();
+    if !from_models.is_empty() {
+        return from_models;
+    }
+
+    for options in [result.get("configOptions"), result.get("config_options")]
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_array)
+    {
+        for option in options {
+            let is_model = ["id", "category"].iter().any(|key| {
+                option
+                    .get(*key)
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| value.trim().eq_ignore_ascii_case("model"))
+            });
+            if !is_model {
+                continue;
+            }
+            let current =
+                first_non_empty_string(option.get("currentValue"), option.get("current_value"));
+            let available = option
+                .get("options")
+                .and_then(Value::as_array)
+                .filter(|choices| !choices.is_empty());
+            let parsed = parse_model_entries(available, &current, fallback_provider, |entry| {
+                entry
+                    .get("value")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string()
+            });
+            if !parsed.is_empty() {
+                return parsed;
+            }
+        }
+    }
+    Vec::new()
+}
+
+fn first_non_empty_string(camel: Option<&Value>, snake: Option<&Value>) -> String {
+    [camel, snake]
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .find(|value| !value.is_empty())
+        .unwrap_or_default()
+        .to_string()
+}
+
+fn first_non_empty_array<'a>(
+    camel: Option<&'a Value>,
+    snake: Option<&'a Value>,
+) -> Option<&'a Vec<Value>> {
+    [camel, snake]
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_array)
+        .find(|values| !values.is_empty())
+}
+
+fn parse_model_entries(
+    available: Option<&Vec<Value>>,
+    current: &str,
+    fallback_provider: &str,
+    model_id: impl Fn(&Value) -> String,
+) -> Vec<Model> {
+    let Some(available) = available else {
+        return Vec::new();
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    available
+        .iter()
+        .filter_map(|entry| {
+            let id = model_id(entry);
+            let id = id.trim();
+            if id.is_empty() || !seen.insert(id.to_string()) {
+                return None;
+            }
+            let label = entry
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|label| !label.is_empty())
+                .unwrap_or(id);
+            let provider = id
+                .split_once(':')
+                .or_else(|| id.split_once('/'))
+                .map(|(provider, _)| provider)
+                .filter(|provider| !provider.is_empty())
+                .unwrap_or(fallback_provider);
+            Some(Model {
+                id: id.to_string(),
+                label: label.to_string(),
+                provider: provider.to_string(),
+                default: id == current,
+                ..Model::default()
+            })
+        })
+        .collect()
 }
 
 /// Qualifies a bare selector only when one authoritative catalog entry owns it.
@@ -143,6 +270,51 @@ mod tests {
             provider: provider.to_string(),
             ..Model::default()
         }
+    }
+
+    #[test]
+    fn acp_models_fall_back_to_config_options_catalog() {
+        let result = serde_json::json!({
+            "configOptions": [{"id": "thinking", "options": [{"value": "high"}]}],
+            "config_options": [{
+                "category": "MODEL",
+                "current_value": "qoder:auto",
+                "options": [
+                    {"value": "qoder:auto", "name": "Auto"},
+                    {"value": "custom:fast", "name": "Fast"},
+                    {"value": "custom:fast", "name": "duplicate"}
+                ]
+            }]
+        });
+        let models = parse_acp_session_models(&result, "traecli");
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "qoder:auto");
+        assert_eq!(models[0].provider, "qoder");
+        assert!(models[0].default);
+        assert_eq!(models[1].provider, "custom");
+    }
+
+    #[test]
+    fn acp_models_validate_camel_case_before_snake_case_fallback() {
+        let result = serde_json::json!({
+            "models": {
+                "currentModelId": " ",
+                "current_model_id": "custom:snake",
+                "availableModels": {"unexpected": true},
+                "available_models": [
+                    {"modelId": null, "model_id": "custom:snake", "name": "Snake"},
+                    {"modelId": "", "model_id": "plain", "name": ""}
+                ]
+            }
+        });
+        let models = parse_acp_session_models(&result, "traecli");
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "custom:snake");
+        assert_eq!(models[0].provider, "custom");
+        assert!(models[0].default);
+        assert_eq!(models[1].id, "plain");
+        assert_eq!(models[1].label, "plain");
+        assert_eq!(models[1].provider, "traecli");
     }
 
     #[test]
