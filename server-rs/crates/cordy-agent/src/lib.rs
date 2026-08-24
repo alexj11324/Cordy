@@ -26,3 +26,4 @@ pub use model::{
 };
 pub use process::{OwnedProcessTree, ProcessTreeSignal};
 pub use qwen::{QwenBackend, QwenConfig};
+pub use registry::{build_backend, BackendConfig};

@@ -11,6 +11,8 @@ use tokio_util::sync::CancellationToken;
 /// Errors raised before a provider session can be handed to the daemon.
 #[derive(Debug, thiserror::Error)]
 pub enum AgentError {
+    #[error("unsupported agent runtime: {0}")]
+    UnsupportedRuntime(String),
     #[error("agent executable not found: {0}")]
     ExecutableNotFound(String),
     #[error("invalid agent configuration: {0}")]

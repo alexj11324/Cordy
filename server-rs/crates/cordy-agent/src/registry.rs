@@ -1,7 +1,36 @@
-//! Canonical runtime-family metadata.
-//!
-//! This is metadata, not a backend factory. The crate does not claim a family
-//! is executable until a concrete adapter is registered by a later slice.
+//! Canonical runtime-family metadata and fail-closed backend construction.
+
+use std::collections::BTreeMap;
+use std::sync::Arc;
+
+use crate::command::RuntimeCommand;
+use crate::contract::{AgentError, Backend};
+use crate::qwen::{QwenBackend, QwenConfig};
+
+/// Provider-neutral launch inputs resolved by daemon profile/runtime loading.
+#[derive(Debug, Clone, Default)]
+pub struct BackendConfig {
+    pub command: RuntimeCommand,
+    pub env: BTreeMap<String, String>,
+}
+
+/// Constructs only protocol families with a real implementation in this
+/// crate. Metadata registration is deliberately insufficient: callers get a
+/// hard error instead of a backend that fails later or pretends to execute.
+pub fn build_backend(
+    runtime_id: &str,
+    config: BackendConfig,
+) -> Result<Arc<dyn Backend>, AgentError> {
+    let family = protocol_family(runtime_id)
+        .ok_or_else(|| AgentError::UnsupportedRuntime(runtime_id.to_string()))?;
+    match family {
+        "qwen" => Ok(Arc::new(QwenBackend::new(QwenConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        _ => Err(AgentError::UnsupportedRuntime(runtime_id.to_string())),
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProviderDescriptor {
@@ -386,5 +415,22 @@ mod tests {
         assert!(!model_selection_supported("mcode"));
         assert!(model_selection_supported("omp"));
         assert!(model_selection_supported("unknown"));
+    }
+
+    #[test]
+    fn backend_registry_constructs_only_landed_protocols() {
+        let qwen = build_backend("qwen", BackendConfig::default());
+        assert!(qwen.is_ok());
+
+        let metadata_only = build_backend("claude", BackendConfig::default());
+        assert!(matches!(
+            metadata_only,
+            Err(AgentError::UnsupportedRuntime(runtime)) if runtime == "claude"
+        ));
+        let unknown = build_backend("unknown", BackendConfig::default());
+        assert!(matches!(
+            unknown,
+            Err(AgentError::UnsupportedRuntime(runtime)) if runtime == "unknown"
+        ));
     }
 }
