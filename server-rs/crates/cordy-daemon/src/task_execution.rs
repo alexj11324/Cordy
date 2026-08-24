@@ -251,6 +251,7 @@ impl<H: DaemonTaskExecutionHost> TaskExecutionOrchestrator<H> {
                 let cancel_poll_interval = self.config.cancel_poll_interval();
                 let daemon_id = self.config.daemon_id.clone();
                 tasks.push(tokio::spawn(async move {
+                    let _slot_release = TaskSlotRelease::new(slot, slot_release, task_nudge);
                     let _activity_guard = activity_guard;
                     execute_claimed_task(
                         task_ctx,
@@ -263,8 +264,6 @@ impl<H: DaemonTaskExecutionHost> TaskExecutionOrchestrator<H> {
                         daemon_id,
                     )
                     .await;
-                    let _ = slot_release.send(slot).await;
-                    let _ = task_nudge.try_send(());
                 }));
             }
             release_slots(&slots_tx, slots.into_iter().skip(dispatched));
@@ -311,6 +310,28 @@ fn release_slots(slots_tx: &mpsc::Sender<usize>, slots: impl IntoIterator<Item =
         slots_tx
             .try_send(slot)
             .expect("released slot must fit task slot channel");
+    }
+}
+
+/// Returns claim capacity even when provider execution or terminal delivery
+/// unwinds. The bounded slot channel has exactly one missing entry for every
+/// live guard; a full/closed channel means the poller is already shutting down.
+struct TaskSlotRelease {
+    slot: usize,
+    slots: mpsc::Sender<usize>,
+    nudge: mpsc::Sender<()>,
+}
+
+impl TaskSlotRelease {
+    fn new(slot: usize, slots: mpsc::Sender<usize>, nudge: mpsc::Sender<()>) -> Self {
+        Self { slot, slots, nudge }
+    }
+}
+
+impl Drop for TaskSlotRelease {
+    fn drop(&mut self) {
+        let _ = self.slots.try_send(self.slot);
+        let _ = self.nudge.try_send(());
     }
 }
 
@@ -674,6 +695,17 @@ mod tests {
                 PathBuf::from("/old/task"),
             ]
         );
+    }
+
+    #[test]
+    fn task_slot_guard_returns_capacity_on_drop() {
+        let (slots_tx, mut slots_rx) = mpsc::channel(1);
+        let (nudge_tx, mut nudge_rx) = mpsc::channel(1);
+
+        drop(TaskSlotRelease::new(7, slots_tx, nudge_tx));
+
+        assert_eq!(slots_rx.try_recv().unwrap(), 7);
+        assert_eq!(nudge_rx.try_recv().unwrap(), ());
     }
 
     #[test]
