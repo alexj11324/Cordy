@@ -10366,27 +10366,6 @@ fn compact_uuid(value: &str) -> String {
     value.trim().replace('-', "").to_ascii_lowercase()
 }
 
-fn format_workspace_details_table(workspace: &Value) -> String {
-    let description = truncate_text(&value_string(workspace, "description"), 60);
-    let context = truncate_text(&value_string(workspace, "context"), 60);
-    format_table(&[
-        vec![
-            "ID".into(),
-            "NAME".into(),
-            "SLUG".into(),
-            "DESCRIPTION".into(),
-            "CONTEXT".into(),
-        ],
-        vec![
-            value_string(workspace, "id"),
-            value_string(workspace, "name"),
-            value_string(workspace, "slug"),
-            description,
-            context,
-        ],
-    ])
-}
-
 fn truncate_text(value: &str, limit: usize) -> String {
     if value.chars().count() > limit {
         value.chars().take(limit - 3).collect::<String>() + "..."
@@ -10417,45 +10396,6 @@ fn format_table(rows: &[Vec<String>]) -> String {
             }
         }
         output.push('\n');
-    }
-    output
-}
-
-fn format_workspace_table(
-    workspaces: &[WorkspaceSummary],
-    current_id: &str,
-    full_id: bool,
-) -> String {
-    let mut rows = Vec::with_capacity(workspaces.len() + 1);
-    rows.push([String::new(), "ID".into(), "NAME".into(), "SLUG".into()]);
-    rows.extend(workspaces.iter().map(|workspace| {
-        [
-            (if workspace.id == current_id { "*" } else { " " }).into(),
-            display_id(&workspace.id, full_id),
-            workspace.name.clone(),
-            workspace.slug.clone(),
-        ]
-    }));
-    let widths: [usize; 3] = std::array::from_fn(|column| {
-        rows.iter()
-            .map(|row| row[column].chars().count())
-            .max()
-            .unwrap_or_default()
-            + 2
-    });
-    let mut output = String::new();
-    for row in rows {
-        let _ = writeln!(
-            output,
-            "{:<marker_width$}{:<id_width$}{:<name_width$}{}",
-            row[0],
-            row[1],
-            row[2],
-            row[3],
-            marker_width = widths[0],
-            id_width = widths[1],
-            name_width = widths[2]
-        );
     }
     output
 }
