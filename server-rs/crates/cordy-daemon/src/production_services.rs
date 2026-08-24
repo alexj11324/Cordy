@@ -20,14 +20,16 @@ use crate::config::{
     DEFAULT_WORKSPACE_SYNC_INTERVAL, DEFAULT_WORKSPACE_SYNC_MAX_BACKOFF,
 };
 use crate::daemon_core::DaemonCoreServices;
-use crate::health::{ActiveRepoCheckoutTask, HealthResponse, RepoCheckoutRequest};
+use crate::health::{
+    ActiveRepoCheckoutTask, HealthResponse, RepoCheckoutRequest, REPO_CHECKOUT_LOCK_WAIT_TIMEOUT,
+};
 use crate::production_stack::{ProductionRuntimeServices, RepoCheckoutFailure};
 use crate::reconcile::{ReconcileBroadcaster, WorkspaceChangeSignal};
 use crate::registration::{
     BuiltinRefreshReason, RuntimeRegistrationService, RuntimeRegistrationSource,
 };
 use crate::repo_state::DaemonRepoState;
-use crate::repocache::{Cache, Ctx};
+use crate::repocache::{is_repo_busy, Cache, Ctx, RepoInfo, WorktreeParams};
 use crate::runtime_registry::RuntimeRegistry;
 use crate::task_execution::TaskRunOutcome;
 use crate::types::Task;
@@ -53,15 +55,7 @@ pub trait ProviderRuntimeAdapter: RuntimeRegistrationSource {
         repo_state: Arc<DaemonRepoState>,
     ) -> TaskRunOutcome;
 
-    fn repo_bare_path_is_live(&self, bare_path: &Path) -> bool;
     fn health_snapshot(&self) -> HealthResponse;
-
-    async fn repo_checkout(
-        &self,
-        ctx: Ctx,
-        active_task: ActiveRepoCheckoutTask,
-        request: RepoCheckoutRequest,
-    ) -> Result<Value, RepoCheckoutFailure>;
 }
 
 pub struct DaemonProductionServices<P: ProviderRuntimeAdapter> {
@@ -69,6 +63,7 @@ pub struct DaemonProductionServices<P: ProviderRuntimeAdapter> {
     client: Arc<Client>,
     provider: Arc<P>,
     registration: RuntimeRegistrationService<P>,
+    repo_cache: Arc<Cache>,
     repo_state: Arc<DaemonRepoState>,
 }
 
@@ -84,13 +79,14 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
             registration: RuntimeRegistrationService::new(
                 Arc::clone(&config),
                 Arc::clone(&client),
-                repo_cache,
+                Arc::clone(&repo_cache),
                 Arc::clone(&repo_state),
                 Arc::clone(&provider),
             ),
             config,
             client,
             provider,
+            repo_cache,
             repo_state,
         }
     }
@@ -168,6 +164,128 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
             }
         }
     }
+
+    async fn ensure_repo_ready(
+        &self,
+        ctx: &Ctx,
+        workspace_id: &str,
+        repo_url: &str,
+    ) -> Result<(), RepoCheckoutFailure> {
+        let refresh_lock = self.repo_state.refresh_lock(workspace_id).ok_or_else(|| {
+            checkout_failure(
+                400,
+                format!("workspace is not watched by this daemon: {workspace_id}"),
+            )
+        })?;
+        let cache_hit_on_entry = self.repo_state.is_allowed(workspace_id, repo_url)
+            && self.repo_cache.lookup(workspace_id, repo_url).is_some();
+        let _guard = tokio::select! {
+            () = ctx.cancelled() => return Err(checkout_failure(500, "repo checkout cancelled")),
+            guard = refresh_lock.lock() => guard,
+        };
+        if !cache_hit_on_entry
+            && self.repo_state.is_allowed(workspace_id, repo_url)
+            && self.repo_cache.lookup(workspace_id, repo_url).is_some()
+        {
+            return Ok(());
+        }
+
+        let response = self
+            .client
+            .get_workspace_repos(ctx, workspace_id)
+            .await
+            .map_err(|error| checkout_failure(500, format!("refresh workspace repos: {error}")))?;
+        self.repo_state
+            .replace_workspace(workspace_id, &response.repos, response.settings);
+        if !self.repo_state.is_allowed(workspace_id, repo_url) {
+            return Err(checkout_failure(
+                400,
+                "repository is not configured for this workspace",
+            ));
+        }
+        if self.repo_cache.lookup(workspace_id, repo_url).is_some() {
+            return Ok(());
+        }
+
+        let repos: Vec<RepoInfo> = response
+            .repos
+            .into_iter()
+            .filter(|repo| !repo.url.is_empty())
+            .map(|repo| RepoInfo { url: repo.url })
+            .collect();
+        match self.repo_cache.sync_ctx(ctx, workspace_id, &repos).await {
+            Ok(()) => self.repo_state.set_sync_error(workspace_id, String::new()),
+            Err(error) => self
+                .repo_state
+                .set_sync_error(workspace_id, error.to_string()),
+        }
+        if self.repo_cache.lookup(workspace_id, repo_url).is_some() {
+            return Ok(());
+        }
+        let sync_error = self.repo_state.last_sync_error(workspace_id);
+        if sync_error.is_empty() {
+            Err(checkout_failure(
+                500,
+                "repository is configured but not synced",
+            ))
+        } else {
+            Err(checkout_failure(
+                500,
+                format!("repository is configured but not synced: {sync_error}"),
+            ))
+        }
+    }
+
+    async fn checkout_repo(
+        &self,
+        ctx: Ctx,
+        active_task: ActiveRepoCheckoutTask,
+        request: RepoCheckoutRequest,
+    ) -> Result<Value, RepoCheckoutFailure> {
+        self.ensure_repo_ready(&ctx, &request.workspace_id, &request.url)
+            .await?;
+        let reference = if request.r#ref.trim().is_empty() {
+            self.repo_state
+                .task_default_ref(&request.workspace_id, &request.task_id, &request.url)
+        } else {
+            request.r#ref.trim().to_string()
+        };
+        let params = WorktreeParams {
+            workspace_id: request.workspace_id.clone(),
+            repo_url: request.url.clone(),
+            work_dir: request.workdir.into(),
+            reference,
+            agent_name: active_task.agent_name,
+            task_id: request.task_id,
+            co_authored_by_enabled: self
+                .repo_state
+                .co_authored_by_enabled(&request.workspace_id),
+            lock_wait_timeout: if request.retry_busy {
+                REPO_CHECKOUT_LOCK_WAIT_TIMEOUT
+            } else {
+                Duration::ZERO
+            },
+            isolated_git_metadata: request.checkout_mode == "isolated",
+        };
+        match self.repo_cache.create_worktree_ctx(&ctx, params).await {
+            Ok(result) => serde_json::to_value(result)
+                .map_err(|error| checkout_failure(500, error.to_string())),
+            Err(error) if request.retry_busy && is_repo_busy(&error) => Err(RepoCheckoutFailure {
+                status_code: 503,
+                message: "repository is busy with another operation; retry later".to_string(),
+                retryable_busy: true,
+            }),
+            Err(error) => Err(checkout_failure(500, error.to_string())),
+        }
+    }
+}
+
+fn checkout_failure(status_code: u16, message: impl Into<String>) -> RepoCheckoutFailure {
+    RepoCheckoutFailure {
+        status_code,
+        message: message.into(),
+        retryable_busy: false,
+    }
 }
 
 #[async_trait::async_trait]
@@ -235,7 +353,10 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
     }
 
     fn repo_bare_path_is_live(&self, bare_path: &Path) -> bool {
-        self.provider.repo_bare_path_is_live(bare_path)
+        self.repo_state
+            .all_urls()
+            .into_iter()
+            .any(|(workspace_id, url)| self.repo_cache.bare_path(&workspace_id, &url) == bare_path)
     }
 }
 
@@ -276,7 +397,7 @@ impl<P: ProviderRuntimeAdapter> ProductionRuntimeServices for DaemonProductionSe
         active_task: ActiveRepoCheckoutTask,
         request: RepoCheckoutRequest,
     ) -> Result<Value, RepoCheckoutFailure> {
-        self.provider.repo_checkout(ctx, active_task, request).await
+        self.checkout_repo(ctx, active_task, request).await
     }
 }
 
