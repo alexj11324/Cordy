@@ -1,7 +1,7 @@
 //! Current-user workspace invitation reads and decisions.
 
 use axum::extract::{Path, Request, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -29,13 +29,21 @@ pub fn router() -> Router<HandlerState> {
 }
 
 async fn require_human_actor(request: Request, next: Next) -> Response {
-    if matches!(
+    let actor_source_is_machine = matches!(
         request
             .headers()
             .get("x-actor-source")
             .and_then(|value| value.to_str().ok()),
         Some("task_token" | "cloud_pat")
-    ) {
+    );
+    let bearer_is_machine = request
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .is_some_and(|token| token.starts_with("mat_") || token.starts_with("mcn_"));
+
+    if actor_source_is_machine || bearer_is_machine {
         return error_response(
             StatusCode::FORBIDDEN,
             "this endpoint is only available to human actors",
@@ -440,6 +448,20 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(response.status(), StatusCode::FORBIDDEN, "{source}");
+        }
+
+        for token in ["mat_task-token", "mcn_cloud-pat"] {
+            let response = test_router()
+                .oneshot(
+                    Request::get("/api/invitations")
+                        .header("x-user-id", Uuid::nil().to_string())
+                        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{token}");
         }
     }
 
