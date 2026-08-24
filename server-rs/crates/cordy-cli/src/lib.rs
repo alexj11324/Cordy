@@ -168,6 +168,45 @@ enum AgentCommand {
     },
     #[command(about = "Manage agent skill assignments")]
     Skills(AgentSkillsArgs),
+    #[command(about = "Read and update an agent's custom environment variables (audited)")]
+    Env(AgentEnvArgs),
+}
+
+#[derive(Debug, Args)]
+struct AgentEnvArgs {
+    #[command(subcommand)]
+    command: AgentEnvCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum AgentEnvCommand {
+    #[command(about = "Print an agent's custom_env as a JSON map")]
+    Get {
+        #[arg(value_name = "AGENT-ID")]
+        agent_id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
+    #[command(about = "Replace an agent's custom_env")]
+    Set(AgentEnvSetArgs),
+}
+
+#[derive(Debug, Args)]
+struct AgentEnvSetArgs {
+    #[arg(value_name = "AGENT-ID")]
+    agent_id: String,
+    #[arg(long, help = "Replacement custom_env as a JSON object")]
+    custom_env: Option<String>,
+    #[arg(long, help = "Read the replacement custom_env JSON object from stdin")]
+    custom_env_stdin: bool,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Read the replacement custom_env JSON object from a file"
+    )]
+    custom_env_file: Option<PathBuf>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -1911,6 +1950,18 @@ async fn run_with_input<R: Read>(
                     command: AgentSkillsCommand::Add(args),
                 }),
         }) => run_agent_skills_mutation(cli, environment, args, true).await,
+        Command::Agent(AgentArgs {
+            command:
+                AgentCommand::Env(AgentEnvArgs {
+                    command: AgentEnvCommand::Get { agent_id, output },
+                }),
+        }) => run_agent_env_get(cli, environment, agent_id, *output).await,
+        Command::Agent(AgentArgs {
+            command:
+                AgentCommand::Env(AgentEnvArgs {
+                    command: AgentEnvCommand::Set(args),
+                }),
+        }) => run_agent_env_set(cli, environment, args, input).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -2794,6 +2845,82 @@ fn format_agent_skills(
         ]
     }));
     Ok(format_table(&rows))
+}
+
+async fn run_agent_env_get(
+    cli: &Cli,
+    environment: &Environment,
+    agent_id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let response: Value = client
+        .get_json(&format!("/api/agents/{agent_id}/env"))
+        .await
+        .context("get agent env")?;
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&response)?),
+        OutputFormat::Table => {
+            let mut rows = vec![vec!["KEY".into(), "VALUE".into()]];
+            if let Some(environment) = response.get("custom_env").and_then(Value::as_object) {
+                rows.extend(environment.iter().map(|(key, value)| {
+                    vec![
+                        key.clone(),
+                        value.as_str().map_or_else(|| value.to_string(), Into::into),
+                    ]
+                }));
+            }
+            format_table(&rows)
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+async fn run_agent_env_set<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &AgentEnvSetArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let custom_env = resolve_agent_secret_json(
+        args.custom_env.as_deref(),
+        args.custom_env_stdin,
+        args.custom_env_file.as_deref(),
+        "custom-env",
+        false,
+        environment,
+        input,
+    )?
+    .context(
+        "specify the new env via --custom-env, --custom-env-stdin, or --custom-env-file (pass '{}' to clear)",
+    )?;
+    validate_agent_custom_env(&custom_env)?;
+    let result: Value = client
+        .put_json(
+            &format!("/api/agents/{}/env", args.agent_id),
+            &serde_json::json!({"custom_env":custom_env}),
+        )
+        .await
+        .context("update agent env")?;
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+        OutputFormat::Table => format!(
+            "Env updated for agent {} ({} keys)\n",
+            args.agent_id,
+            result
+                .get("custom_env")
+                .and_then(Value::as_object)
+                .map_or(0, serde_json::Map::len)
+        ),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
 }
 
 fn apply_agent_permission_args(
@@ -11215,6 +11342,84 @@ mod tests {
                 .expect_err("skill IDs required");
             assert!(error.to_string().contains(expected), "{error:#}");
         }
+    }
+
+    #[tokio::test]
+    async fn agent_env_get_and_set_use_audited_endpoint_and_preserve_values() {
+        let app = Router::new().route(
+            "/api/agents/agent-1/env",
+            get(|| async {
+                Json(serde_json::json!({
+                    "custom_env":{"API_KEY":"plaintext","COUNT":"2"}
+                }))
+            })
+            .put(|Json(body): Json<Value>| async move {
+                assert_eq!(
+                    body,
+                    serde_json::json!({"custom_env":{"API_KEY":"****","NEW":"value"}})
+                );
+                Json(serde_json::json!({
+                    "custom_env":{"API_KEY":"plaintext","NEW":"value"}
+                }))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let get = Cli::try_parse_from([
+            "cordy", "agent", "env", "get", "agent-1", "--output", "table",
+        ])
+        .expect("agent env get CLI");
+        let env = run_with_input(&get, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("get agent env");
+        assert!(env.stdout.starts_with("KEY"));
+        assert!(env.stdout.contains("API_KEY"));
+        assert!(env.stdout.contains("plaintext"));
+
+        let set = Cli::try_parse_from([
+            "cordy",
+            "agent",
+            "env",
+            "set",
+            "agent-1",
+            "--custom-env-stdin",
+            "--output",
+            "table",
+        ])
+        .expect("agent env set CLI");
+        let updated = run_with_input(
+            &set,
+            &environment,
+            &mut Cursor::new(br#"{"API_KEY":"****","NEW":"value"}"#.to_vec()),
+        )
+        .await
+        .expect("set agent env");
+        assert_eq!(updated.stdout, "Env updated for agent agent-1 (2 keys)\n");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn agent_env_set_requires_one_secret_safe_input_channel() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "http://127.0.0.1:9");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from(["cordy", "agent", "env", "set", "agent-1"])
+            .expect("agent env set CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("env input required");
+        assert!(error
+            .to_string()
+            .contains("specify the new env via --custom-env"));
     }
 
     #[test]
