@@ -39,6 +39,7 @@ impl ChannelRuntime {
         lease_metrics: Option<Arc<cordy_metrics::ChannelLeaseMetrics>>,
         media_metrics: Option<Arc<cordy_metrics::ChannelMediaReconcilerMetrics>>,
         wecom_metrics: Option<Arc<cordy_metrics::WecomMetrics>>,
+        lark_backfill_metrics: Option<Arc<cordy_metrics::LarkBackfillMetrics>>,
     ) -> anyhow::Result<Option<Self>> {
         let services = Arc::new(ChannelServices {
             pool: state.pool.clone(),
@@ -106,6 +107,7 @@ impl ChannelRuntime {
             &registry,
             &cancel,
             &outbound_tasks,
+            lark_backfill_metrics,
         )? {
             maintenance.push(handle);
         }
@@ -679,6 +681,7 @@ fn configure_lark(
     registry: &Arc<cordy_channel::Registry>,
     cancel: &CancellationToken,
     outbound_tasks: &Arc<cordy_channel::RuntimeTasks>,
+    backfill_metrics: Option<Arc<cordy_metrics::LarkBackfillMetrics>>,
 ) -> anyhow::Result<Option<tokio::task::JoinHandle<()>>> {
     let secret_box = match channel_secret_box("CORDY_LARK_SECRET_KEY") {
         Ok(Some(secret_box)) => secret_box,
@@ -737,19 +740,38 @@ fn configure_lark(
     let backfill_cancel = cancel.clone();
     let backfill_handle = tokio::spawn(async move {
         match backfill.run_once(backfill_cancel).await {
-            Ok(report) => tracing::info!(
-                region_relabelled = report.region_relabelled,
-                region_errors = report.region_errors,
-                pages = report.pages,
-                attempted = report.attempted,
-                filled = report.filled,
-                missed = report.missed,
-                errored = report.errored,
-                raced = report.raced,
-                cancelled = report.cancelled,
-                "lark installation backfill pass complete"
-            ),
-            Err(error) => tracing::warn!(%error, "lark installation backfill pass failed"),
+            Ok(report) => {
+                if let Some(metrics) = &backfill_metrics {
+                    metrics.record_report(cordy_metrics::LarkBackfillReportMetrics {
+                        region_relabelled: report.region_relabelled,
+                        region_errors: report.region_errors,
+                        attempted: report.attempted,
+                        filled: report.filled,
+                        missed: report.missed,
+                        errored: report.errored,
+                        raced: report.raced,
+                        cancelled: report.cancelled,
+                    });
+                }
+                tracing::info!(
+                    region_relabelled = report.region_relabelled,
+                    region_errors = report.region_errors,
+                    pages = report.pages,
+                    attempted = report.attempted,
+                    filled = report.filled,
+                    missed = report.missed,
+                    errored = report.errored,
+                    raced = report.raced,
+                    cancelled = report.cancelled,
+                    "lark installation backfill pass complete"
+                );
+            }
+            Err(error) => {
+                if let Some(metrics) = &backfill_metrics {
+                    metrics.record_run_error();
+                }
+                tracing::warn!(%error, "lark installation backfill pass failed");
+            }
         }
     });
 

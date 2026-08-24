@@ -187,6 +187,7 @@ async fn build_production_router(
     channel_lease_metrics: Option<Arc<cordy_metrics::ChannelLeaseMetrics>>,
     channel_media_metrics: Option<Arc<cordy_metrics::ChannelMediaReconcilerMetrics>>,
     wecom_metrics: Option<Arc<cordy_metrics::WecomMetrics>>,
+    lark_backfill_metrics: Option<Arc<cordy_metrics::LarkBackfillMetrics>>,
     github_client: Option<cordy_ghsnapshot::Client>,
     cfg: &cordy_config::Config,
     attachment_storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
@@ -254,6 +255,7 @@ async fn build_production_router(
         channel_lease_metrics,
         channel_media_metrics,
         wecom_metrics,
+        lark_backfill_metrics,
     )
     .await?;
     Ok((
@@ -295,6 +297,7 @@ async fn main() -> anyhow::Result<()> {
         channel_lease_metrics,
         channel_media_metrics,
         wecom_metrics,
+        lark_backfill_metrics,
     ) = if metrics_config.enabled() {
         let registry = cordy_metrics::Registry::new(cordy_metrics::registry::RegistryOptions {
             pool: Some(Arc::new(db.clone())),
@@ -310,6 +313,7 @@ async fn main() -> anyhow::Result<()> {
         let channel_lease = registry.channel_lease.clone();
         let channel_media = registry.channel_media.clone();
         let wecom = registry.wecom.clone();
+        let lark_backfill = registry.lark_backfill.clone();
         let gatherer = Arc::new(registry.gatherer.clone());
         let metrics_addr = metrics_config.addr.clone();
         let effective_metrics_addr = cordy_metrics::server::normalized_bind_addr(&metrics_addr);
@@ -327,9 +331,10 @@ async fn main() -> anyhow::Result<()> {
             Some(channel_lease),
             Some(channel_media),
             Some(wecom),
+            Some(lark_backfill),
         )
     } else {
-        (None, None, None, None, None)
+        (None, None, None, None, None, None)
     };
     let github_client = cordy_ghsnapshot::Client::new_from_env()?;
     let attachment_storage = cordy_handler::attachment_storage::from_env(
@@ -359,6 +364,7 @@ async fn main() -> anyhow::Result<()> {
         channel_lease_metrics,
         channel_media_metrics,
         wecom_metrics,
+        lark_backfill_metrics,
         github_client,
         &cfg,
         attachment_storage,
@@ -459,6 +465,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             &cfg,
             test_attachment_storage(),
             Vec::new(),
@@ -500,6 +507,7 @@ mod tests {
         let (router, _runtime) = build_production_router(
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
             None,
             None,
             None,
@@ -584,6 +592,7 @@ mod tests {
         let (_router, _runtime) = build_production_router(
             pool,
             Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
             None,
             None,
             None,
