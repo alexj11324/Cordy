@@ -789,15 +789,16 @@
       coalescing/cancel, late-response/archive handling, message/attachment
       persistence, post-commit notifications, and shutdown reconciliation match
       Go. No new P0/P1 or changed-code blocker; no implementation change.
-- [ ] CLI login structural refactor is pushed as
-      `a0cbc453a3b2fe94841b70a34c28de53bdb0124c` (parent
-      `c3e9db3cae29d79f1e41ae9d0dd441642d4a5a88`, tree
-      `242fa90a487957d0b223d4a882d92c377b614f4f`): browser callback,
-      state validation, workspace discovery, and URL builders now live in
+- [ ] CLI login structural refactor is pushed at
+      `154df0b015a9a23ecd9c07720a5a9ffc6215ce93` (parent
+      `a0cbc453a3b2fe94841b70a34c28de53bdb0124c`, tree
+      `a85cc0df438a194ae70c586d0087f65260d0659a`): browser callback, state
+      validation, workspace discovery, and URL builders now live in
       `cordy-cli/src/login.rs`; command/profile orchestration remains in
-      `lib.rs`. Scoped rustfmt and diff-check pass; no Cargo was run. The
-      serial subagent owns review and any minimal fixes; pro owns Ready PR,
-      Cargo gate, and merge.
+      `lib.rs`. The serial subagent reviewed the exact refactor and fixed
+      test-only module visibility/import omissions; diff-check passed, no
+      Cargo was run, and the subagent could not rerun rustfmt because the
+      command was unavailable. Pro owns Ready PR, Cargo gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
