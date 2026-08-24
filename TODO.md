@@ -295,10 +295,10 @@
       server/app URLs; health preflight must succeed before mutation; success
       atomically replaces the whole profile (clearing stale token/workspace and
       unknown fields) while preserving lock/permission/fsync semantics. Current
-      head is now `e817370fe8ad3f2482a7235bc6cf2d17db664543` (parent
-      `c0e3d8dd227111c11618c3793410cb2ae3a207ea`, tree
-      `0036a576c978ac4e9810dcb78014e01982d1d810`), candidate
-      `5b33beb510aadf02de0422502e4da89da996b80e`; the remote branch and PR
+      head is now `22762d880efac094d28c1e309cbdb7f7f1376f0e` (parent
+      `e817370fe8ad3f2482a7235bc6cf2d17db664543`, tree
+      `2a004f84c71b0c8968f2968eb7f8325a0f0d23cb`), candidate
+      `5cc28510b5414d5410d1fa9193fb660d0b91b4ae`; the remote branch and PR
       candidate were verified at these exact SHAs. PR #129 remains
       Ready/CLEAN/MERGEABLE on base `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`.
       The slice adds the bounded unauthenticated `/health` probe (HTTP(S), no
@@ -348,6 +348,16 @@
       `08c91422dc6db1edd7f53cab1dd92d75e98533ed`, candidate
       `25b074290da886e9c2a4022102dbef95d30da74e`, parent
       `33d5df4560abe803fd193668e91ab8104b071bff`; PR remains Ready/CLEAN.
+      Scoped rustfmt/diff-check pass; Cargo/review/gate/merge remain with pro.
+- [x] Added the root `cordy update` CLI command on PR #129. It owns only
+      human-local/task guard, timeout parsing, current/latest/warning/output
+      decisions, and calls the daemon's typed update facade; download,
+      checksum, extraction, and replacement remain daemon-owned. Output is
+      stderr-only and strips URLs, paths, tokens, and authorization details.
+      Exact head is `22762d880efac094d28c1e309cbdb7f7f1376f0e`, tree
+      `2a004f84c71b0c8968f2968eb7f8325a0f0d23cb`, candidate
+      `5cc28510b5414d5410d1fa9193fb660d0b91b4ae`, parent
+      `e817370fe8ad3f2482a7235bc6cf2d17db664543`; PR remains Ready/CLEAN.
       Scoped rustfmt/diff-check pass; Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
