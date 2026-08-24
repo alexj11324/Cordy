@@ -108,7 +108,7 @@ pub trait WsConn: Send + Sync {
     /// Closes the socket; idempotent. MUST cause any blocked
     /// [`read_message`](Self::read_message) to return immediately (the §4.4
     /// invariant).
-    fn close(&self);
+    async fn close(&self);
 }
 
 /// WSDialer is the dialer surface this connector consumes.
@@ -584,7 +584,7 @@ impl EventConnector for WsLongConnConnector {
             .await;
 
         run_ctx.cancel();
-        conn.close();
+        conn.close().await;
         let _ = ping_handle.await;
 
         result
@@ -664,6 +664,7 @@ struct ActorWsConn {
     outbound_tx: mpsc::Sender<Outbound>,
     inbound_rx: tokio::sync::Mutex<mpsc::Receiver<anyhow::Result<InboundItem>>>,
     closed: CancellationToken,
+    actor: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
 }
 
 #[async_trait]
@@ -699,12 +700,22 @@ impl WsConn for ActorWsConn {
             .map_err(|_| anyhow::anyhow!("connection closed before write completed"))?
     }
 
-    fn close(&self) {
+    async fn close(&self) {
         // Idempotent by contract. Cancelling wakes the actor, which closes
         // the sink and drops the socket; the inbound sender drops with it, so
         // any blocked read_message resolves immediately.
         self.closed.cancel();
         let _ = self.outbound_tx.try_send(Outbound::Close);
+        let Some(mut actor) = self.actor.lock().await.take() else {
+            return;
+        };
+        if tokio::time::timeout(Duration::from_secs(2), &mut actor)
+            .await
+            .is_err()
+        {
+            actor.abort();
+            let _ = actor.await;
+        }
     }
 }
 
@@ -768,7 +779,7 @@ impl WsDialer for TungsteniteDialer {
         let closed = CancellationToken::new();
 
         let closed_for_actor = closed.clone();
-        tokio::spawn(async move {
+        let actor = tokio::spawn(async move {
             loop {
                 tokio::select! {
                     biased;
@@ -797,7 +808,10 @@ impl WsDialer for TungsteniteDialer {
                                 }
                             }
                             Some(Outbound::Close) | None => {
-                                let _ = sink.close().await;
+                                let _ = tokio::time::timeout(
+                                    Duration::from_secs(1),
+                                    sink.close(),
+                                ).await;
                                 break;
                             }
                         }
@@ -853,6 +867,7 @@ impl WsDialer for TungsteniteDialer {
             outbound_tx,
             inbound_rx: tokio::sync::Mutex::new(inbound_rx),
             closed,
+            actor: tokio::sync::Mutex::new(Some(actor)),
         }))
     }
 }
@@ -977,6 +992,7 @@ mod tests {
             outbound_tx,
             inbound_rx: tokio::sync::Mutex::new(inbound_rx),
             closed: CancellationToken::new(),
+            actor: tokio::sync::Mutex::new(None),
         });
 
         let writer = {
@@ -989,5 +1005,30 @@ mod tests {
         assert!(!writer.is_finished());
         result.send(Ok(())).expect("writer still waiting");
         writer.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn actor_close_cancels_and_joins_the_owner_task() {
+        let (outbound_tx, _outbound_rx) = mpsc::channel(1);
+        let (_inbound_tx, inbound_rx) = mpsc::channel(1);
+        let closed = CancellationToken::new();
+        let observed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let task_closed = closed.clone();
+        let task_observed = observed.clone();
+        let actor = tokio::spawn(async move {
+            task_closed.cancelled().await;
+            task_observed.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+        let conn = ActorWsConn {
+            outbound_tx,
+            inbound_rx: tokio::sync::Mutex::new(inbound_rx),
+            closed,
+            actor: tokio::sync::Mutex::new(Some(actor)),
+        };
+
+        conn.close().await;
+
+        assert!(observed.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(conn.actor.lock().await.is_none());
     }
 }
