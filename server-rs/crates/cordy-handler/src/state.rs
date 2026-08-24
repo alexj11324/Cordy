@@ -111,7 +111,11 @@ impl AttachmentDownloadSettings {
             AttachmentDownloadMode::Proxy => return AttachmentDownloadMode::Proxy,
             AttachmentDownloadMode::Auto => {}
         }
-        if self.cloudfront_signer.is_some() {
+        if self
+            .cloudfront_signer
+            .as_deref()
+            .is_some_and(|signer| signer.can_sign_url(raw_url))
+        {
             return AttachmentDownloadMode::CloudFront;
         }
         if should_proxy_attachment_url(raw_url) {

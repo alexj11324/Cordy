@@ -108,6 +108,10 @@ impl CloudFrontSigner {
         ))
     }
 
+    pub fn can_sign_url(&self, raw_url: &str) -> bool {
+        canonical_resource(raw_url, &self.domain, None).is_ok()
+    }
+
     pub fn signed_cookie_headers(
         &self,
         expiry: chrono::DateTime<chrono::Utc>,
@@ -554,6 +558,8 @@ mod tests {
         assert!(signer()
             .signed_url("https://attacker.example/object", chrono::Utc::now(), None)
             .is_err());
+        assert!(!signer().can_sign_url("https://attacker.example/object"));
+        assert!(signer().can_sign_url("https://static.example.test/object"));
     }
 
     #[test]
