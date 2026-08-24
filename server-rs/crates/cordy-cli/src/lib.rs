@@ -4067,7 +4067,7 @@ async fn run_issue_run_messages(
     let issue_id = resolve_task_run_scope(&client, args.issue.as_deref()).await?;
     let task_id = resolve_task_run_id(&client, issue_id.as_deref(), &args.task_id)
         .await
-        .context("resolve task run")?;
+        .map_err(|error| anyhow::anyhow!("resolve task run: {error}"))?;
     let mut path = format!("/api/tasks/{task_id}/messages");
     if args.since > 0 {
         let _ = write!(path, "?since={}", args.since);
@@ -4119,7 +4119,7 @@ async fn run_issue_cancel_task(
     let issue_id = resolve_task_run_scope(&client, args.issue.as_deref()).await?;
     let task_id = resolve_task_run_id(&client, issue_id.as_deref(), &args.task_id)
         .await
-        .context("resolve task run")?;
+        .map_err(|error| anyhow::anyhow!("resolve task run: {error}"))?;
     let result: Value = client
         .post_json(
             &format!("/api/tasks/{task_id}/cancel"),
