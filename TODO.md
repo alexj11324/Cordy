@@ -735,6 +735,12 @@
       retries, paused/disabled/quota terminal states, replay idempotency, and
       bounded shutdown match Go. No additional P0/P1 or changed-code blocker;
       no implementation change was justified.
+- [x] Notification/event/realtime side-effect audit completed: ordered
+      post-commit publication, FIFO/panic containment, workspace/personal
+      recipient scope, sensitive-field filtering, Redis relay dedupe/retry,
+      lease recovery, client backpressure, canonical-state reconnect, and
+      bounded producer-to-consumer shutdown match Go. No new P0/P1 or
+      changed-code blocker; no implementation change was justified.
 
 ## Phase 4 — S8 route and API parity
 
