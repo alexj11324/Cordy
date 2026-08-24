@@ -5923,13 +5923,16 @@ async fn trusted_agent_task(
     context: &WorkspaceContext,
     headers: &HeaderMap,
 ) -> Option<(Uuid, Uuid)> {
-    let agent_id = header_uuid(headers, "x-agent-id")?;
-    let task_id = header_uuid(headers, "x-task-id")?;
-    let task = agent::get_agent_task(&state.pool, task_id)
-        .await
-        .ok()
-        .flatten()?;
-    if task.agent_id != agent_id {
+    let (task_id, agent_id) = authoritative_task_actor_headers(headers)?;
+    // Resolve through the workspace-scoped join before trusting the task.
+    // Callers that bind a mutation to one issue retain their stricter
+    // task.issue_id checks after this shared actor-resolution boundary.
+    let task =
+        agent::get_agent_task_in_workspace(&state.pool, task_id, context.member.workspace_id)
+            .await
+            .ok()
+            .flatten()?;
+    if !task_belongs_to_claimed_agent(task.agent_id, agent_id) {
         return None;
     }
     agent::get_agent_in_workspace(&state.pool, agent_id, context.member.workspace_id)
@@ -5938,6 +5941,24 @@ async fn trusted_agent_task(
         .flatten()
         .filter(|agent| agent.archived_at.is_none())?;
     Some((task_id, agent_id))
+}
+
+fn authoritative_task_actor_headers(headers: &HeaderMap) -> Option<(Uuid, Uuid)> {
+    if headers
+        .get("x-actor-source")
+        .and_then(|value| value.to_str().ok())
+        != Some("task_token")
+    {
+        return None;
+    }
+    Some((
+        header_uuid(headers, "x-task-id")?,
+        header_uuid(headers, "x-agent-id")?,
+    ))
+}
+
+fn task_belongs_to_claimed_agent(task_agent_id: Uuid, claimed_agent_id: Uuid) -> bool {
+    task_agent_id == claimed_agent_id
 }
 
 fn header_uuid(headers: &HeaderMap, name: &str) -> Option<Uuid> {
@@ -6927,10 +6948,15 @@ mod tests {
         };
         let mut headers = HeaderMap::new();
         headers.insert("x-agent-id", agent_id.to_string().parse().unwrap());
+        headers.insert("x-task-id", Uuid::new_v4().to_string().parse().unwrap());
+        assert!(authoritative_task_actor_headers(&headers).is_none());
         assert_eq!(request_actor(&headers, &context), ("member", user_id));
 
         headers.insert("x-actor-source", "task_token".parse().unwrap());
+        assert!(authoritative_task_actor_headers(&headers).is_some());
         assert_eq!(request_actor(&headers, &context), ("agent", agent_id));
+        assert!(task_belongs_to_claimed_agent(agent_id, agent_id));
+        assert!(!task_belongs_to_claimed_agent(Uuid::new_v4(), agent_id));
     }
 
     #[test]

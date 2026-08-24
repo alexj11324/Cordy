@@ -28,6 +28,9 @@ pub fn health_port_for_profile(profile: &str) -> u16 {
 }
 
 #[derive(Debug, Clone)]
+// Keep the snapshot inline: this public result is consumed by the control
+// lifecycle and boxing it would change the CLI-facing API.
+#[allow(clippy::large_enum_variant)]
 pub enum LocalDaemonHealth {
     Stopped,
     Live(DaemonHealthSnapshot),

@@ -205,6 +205,7 @@ impl ChannelRuntime {
                 replayed = metrics.replayed,
                 owner_misses = metrics.owner_misses,
                 rollovers = metrics.rollovers,
+                claim_handoffs = metrics.claim_handoffs,
                 timeouts = metrics.timeouts,
                 ambiguous = metrics.ambiguous,
                 transport_errors = metrics.transport_errors,

@@ -361,6 +361,35 @@ fn unlock_pid_file(file: &File) {
     let _ = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
 }
 
+/// Returns the PID advertised by the current profile lock owner, or `None`
+/// only after proving that no process holds the kernel lock. The control CLI
+/// uses this after `/health` closes so restart cannot race the old daemon's
+/// bounded drain and PID ownership release.
+pub(crate) fn locked_profile_pid(profile: &str) -> anyhow::Result<Option<u32>> {
+    let paths = ProfileStatePaths::resolve(profile)?;
+    let lock = match OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&paths.pid_lock)
+    {
+        Ok(lock) => lock,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error).context("open daemon PID lock for ownership probe"),
+    };
+    if try_lock_pid_file(&lock).is_ok() {
+        unlock_pid_file(&lock);
+        return Ok(None);
+    }
+    let raw = fs::read_to_string(&paths.pid).context("read locked daemon PID")?;
+    let pid = raw
+        .trim()
+        .parse::<u32>()
+        .ok()
+        .filter(|pid| *pid > 0)
+        .context("locked daemon PID file is missing or invalid")?;
+    Ok(Some(pid))
+}
+
 #[cfg(windows)]
 fn try_lock_pid_file(file: &File) -> io::Result<()> {
     use std::os::windows::io::AsRawHandle;
