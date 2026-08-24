@@ -12,6 +12,7 @@ use std::time::Duration;
 use serde_json::json;
 use tokio::sync::{mpsc, Mutex as AsyncMutex};
 
+use crate::activity::DaemonActivity;
 use crate::client::{Client, WorkspaceInfo};
 use crate::config::Config;
 use crate::repo_state::DaemonRepoState;
@@ -256,6 +257,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         ctx: Ctx,
         registry: &RuntimeRegistry,
         reason: BuiltinRefreshReason,
+        activity: &Arc<DaemonActivity>,
     ) -> anyhow::Result<()> {
         let Some(round) = self
             .source
@@ -269,7 +271,13 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 continue;
             };
             if let Err(error) = self
-                .register_builtin_workspace(ctx.child(), registry, &workspace, Arc::clone(&round))
+                .register_builtin_workspace(
+                    ctx.child(),
+                    registry,
+                    &workspace,
+                    Arc::clone(&round),
+                    activity,
+                )
                 .await
             {
                 tracing::warn!(%workspace_id, %error, "built-in runtime refresh failed");
@@ -369,6 +377,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         registry: &RuntimeRegistry,
         workspace: &crate::runtime_registry::WorkspaceRuntimeState,
         round: Arc<dyn RuntimeRegistrationRound>,
+        activity: &Arc<DaemonActivity>,
     ) -> anyhow::Result<()> {
         let serial = self.workspace_lock(&workspace.id);
         let _guard = serial.lock().await;
@@ -380,6 +389,30 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             "built-in refresh returned profile failures for workspace {}",
             workspace.id
         );
+        let incoming_providers: BTreeSet<String> = payload
+            .runtimes
+            .iter()
+            .filter_map(|runtime| runtime.get("type"))
+            .map(|provider| provider.trim())
+            .filter(|provider| !provider.is_empty())
+            .map(str::to_string)
+            .collect();
+        let _demotion_barrier =
+            if registry.builtin_demotion_required(&workspace.id, &incoming_providers) {
+                Some(
+                    activity
+                        .pause_claims_until_idle(&ctx)
+                        .await
+                        .ok_or_else(|| {
+                            anyhow::anyhow!(
+                                "built-in runtime demotion cancelled for workspace {}",
+                                workspace.id
+                            )
+                        })?,
+                )
+            } else {
+                None
+            };
         if payload.runtimes.is_empty() {
             // `Some(round)` means the provider completed an authoritative
             // changed probe. Applying an empty built-in set removes the last

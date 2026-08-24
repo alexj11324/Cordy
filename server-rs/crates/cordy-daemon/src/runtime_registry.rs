@@ -228,6 +228,26 @@ impl RuntimeRegistry {
             .cloned()
     }
 
+    /// Reports whether an authoritative built-in refresh omits any provider
+    /// family currently registered for this workspace. Custom-profile rows
+    /// are deliberately excluded: built-in refresh preserves them.
+    pub(crate) fn builtin_demotion_required(
+        &self,
+        workspace_id: &str,
+        incoming_providers: &BTreeSet<String>,
+    ) -> bool {
+        let state = self.state.read().unwrap();
+        let Some(workspace) = state.workspaces.get(workspace_id) else {
+            return false;
+        };
+        workspace
+            .runtime_ids
+            .iter()
+            .filter_map(|runtime_id| state.runtimes.get(runtime_id))
+            .filter(|runtime| runtime.profile_id.is_empty())
+            .any(|runtime| !incoming_providers.contains(&runtime.provider))
+    }
+
     pub fn workspace_needs_runtime_recovery(&self, workspace_id: &str) -> bool {
         self.state
             .read()
@@ -392,5 +412,23 @@ mod tests {
 
         assert_eq!(delta.dropped, vec!["builtin-runtime".to_string()]);
         assert_eq!(published.snapshot(), vec!["profile-runtime".to_string()]);
+    }
+
+    #[test]
+    fn builtin_demotion_detection_ignores_custom_profiles() {
+        let published = Arc::new(RuntimeSet::new());
+        let registry = RuntimeRegistry::new(published);
+        let mut profile = runtime("profile-runtime", "custom-family");
+        profile.profile_id = "profile-1".to_string();
+        registry
+            .apply_registration(
+                "ws-1",
+                "One",
+                vec![runtime("builtin-runtime", "codex"), profile],
+            )
+            .unwrap();
+
+        assert!(!registry.builtin_demotion_required("ws-1", &BTreeSet::from(["codex".to_string()])));
+        assert!(registry.builtin_demotion_required("ws-1", &BTreeSet::new()));
     }
 }

@@ -157,7 +157,12 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
         }
     }
 
-    async fn provider_refresh_loop(&self, ctx: Ctx, registry: Arc<RuntimeRegistry>) {
+    async fn provider_refresh_loop(
+        &self,
+        ctx: Ctx,
+        registry: Arc<RuntimeRegistry>,
+        activity: Arc<DaemonActivity>,
+    ) {
         let now = tokio::time::Instant::now();
         let mut discovery =
             tokio::time::interval_at(now + AGENT_DISCOVERY_INTERVAL, AGENT_DISCOVERY_INTERVAL);
@@ -175,7 +180,7 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
             };
             if let Err(error) = self
                 .registration
-                .refresh_builtins_once(ctx.child(), &registry, reason)
+                .refresh_builtins_once(ctx.child(), &registry, reason, &activity)
                 .await
             {
                 tracing::debug!(?reason, %error, "built-in runtime refresh round failed");
@@ -476,6 +481,7 @@ impl<P: ProviderRuntimeAdapter> ProductionRuntimeServices for DaemonProductionSe
         reconcile: Arc<ReconcileBroadcaster>,
         workspace_changes: Arc<WorkspaceChangeSignal>,
         registry: Arc<RuntimeRegistry>,
+        activity: Arc<DaemonActivity>,
     ) -> anyhow::Result<()> {
         let repo_warmup_rx = self
             .repo_warmup_rx
@@ -490,7 +496,7 @@ impl<P: ProviderRuntimeAdapter> ProductionRuntimeServices for DaemonProductionSe
                 workspace_changes,
                 Arc::clone(&registry),
             ),
-            self.provider_refresh_loop(ctx.child(), registry),
+            self.provider_refresh_loop(ctx.child(), registry, activity),
             self.repo_warmup_loop(ctx, repo_warmup_rx),
         );
         Ok(())
