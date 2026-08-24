@@ -1356,7 +1356,7 @@ fn runtime_to_json(rt: &AgentRuntime) -> Value {
 
 /// Port of pkg/agent.LaunchHeader's static map + omp descriptor lookup.
 #[allow(dead_code)]
-fn launch_header(agent_type: &str) -> &'static str {
+pub(crate) fn launch_header(agent_type: &str) -> &'static str {
     match agent_type {
         "antigravity" => "agy -p (non-interactive)",
         "claude" => "claude (stream-json)",
@@ -3395,19 +3395,17 @@ async fn report_model_list_result(
     let Some(Json(body)) = body else {
         return error_response(StatusCode::BAD_REQUEST, "invalid request body");
     };
-    let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("");
+    let body = match decode_model_list_report(body) {
+        Ok(body) => body,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    let status = body.status.as_str();
     match status {
         "completed" => {
             // Older daemons may omit `supported`; default true keeps the UI usable.
-            let supported = body
-                .get("supported")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-            let models: Vec<crate::pending_store::ModelEntry> = body
-                .get("models")
-                .cloned()
-                .and_then(|m| serde_json::from_value(m).ok())
-                .unwrap_or_default();
+            let supported = body.supported.unwrap_or(true);
+            let fallback = body.fallback.unwrap_or(false);
+            let models = body.models;
             if let Err(e) = store.complete(request_id.trim(), &models, supported).await {
                 tracing::error!(error = %e, request_id = %request_id, "ModelListStore Complete failed");
                 return error_response(
@@ -3415,14 +3413,22 @@ async fn report_model_list_result(
                     "failed to persist completion",
                 );
             }
+            if let Some(cache) = state.model_catalog_cache.as_ref() {
+                use crate::pending_store::{model_catalog_cache_action, ModelCatalogCacheAction};
+                let result = match model_catalog_cache_action(&models, supported, fallback) {
+                    ModelCatalogCacheAction::Store => {
+                        cache.put(runtime_id.trim(), &models, supported).await
+                    }
+                    ModelCatalogCacheAction::Drop => cache.invalidate(runtime_id.trim()).await,
+                    ModelCatalogCacheAction::Keep => Ok(()),
+                };
+                if let Err(error) = result {
+                    tracing::warn!(%error, runtime_id = %runtime_id, "model catalog cache update failed");
+                }
+            }
         }
         _ => {
-            let error = body
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            if let Err(e) = store.fail(request_id.trim(), &error).await {
+            if let Err(e) = store.fail(request_id.trim(), &body.error).await {
                 tracing::error!(error = %e, request_id = %request_id, "ModelListStore Fail failed");
                 return error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -3433,6 +3439,36 @@ async fn report_model_list_result(
     }
     tracing::debug!(runtime_id = %runtime_id, request_id = %request_id, status = %status, "model list report");
     Json(json!({ "status": "ok" })).into_response()
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ModelListReportBody {
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    status: String,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    models: Vec<crate::pending_store::ModelEntry>,
+    #[serde(default)]
+    supported: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    error: String,
+    #[serde(default)]
+    fallback: Option<bool>,
+}
+
+fn decode_model_list_report(body: Value) -> Result<ModelListReportBody, serde_json::Error> {
+    if body.is_null() {
+        Ok(ModelListReportBody::default())
+    } else {
+        serde_json::from_value(body)
+    }
+}
+
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Option::<T>::deserialize(deserializer).map(Option::unwrap_or_default)
 }
 
 async fn report_local_skill_list_result(
@@ -3569,7 +3605,7 @@ async fn report_local_skill_import_result(
     let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("");
 
     async fn fail_import(
-        store: &crate::pending_store::LocalSkillImportStore,
+        store: &dyn crate::pending_store::LocalSkillImportStoreBackend,
         request_id: &str,
         fail_msg: &str,
     ) -> Response {
@@ -3790,7 +3826,7 @@ async fn report_local_skill_import_result(
             Some(&sanitized_name),
             Some(&sanitized_description),
             Some(&sanitized_content),
-            &config,
+            Some(&config),
         )
         .await
         {
@@ -3995,6 +4031,62 @@ fn plugin_error_response(err: &cordy_service::plugin::PluginError, fallback: &st
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_list_report_rejects_malformed_typed_fields_before_mutation() {
+        for body in [
+            json!({"status":"completed","models":[{"id":123}],"supported":true}),
+            json!({"status":"completed","models":[],"supported":"yes"}),
+            json!({"status":"completed","models":[],"fallback":"yes"}),
+            json!({
+                "status":"completed",
+                "models":[{"id":"m","thinking":{"supported_levels":[{"value":7}]}}]
+            }),
+            json!({
+                "status":"completed",
+                "models":[{"id":"m","service_tiers":[{"id":7}]}]
+            }),
+        ] {
+            assert!(decode_model_list_report(body).is_err());
+        }
+    }
+
+    #[test]
+    fn model_list_report_preserves_go_null_and_omitted_defaults() {
+        let null_report = decode_model_list_report(Value::Null).unwrap();
+        assert!(null_report.status.is_empty());
+        assert!(null_report.models.is_empty());
+        assert!(null_report.error.is_empty());
+        assert!(null_report.supported.is_none());
+        assert!(null_report.fallback.is_none());
+
+        let report = decode_model_list_report(json!({
+            "status": "completed",
+            "models": [{
+                "id": null,
+                "label": null,
+                "default": null,
+                "thinking": {"supported_levels": null, "default_level": null},
+                "service_tiers": null
+            }],
+            "supported": null,
+            "fallback": null
+        }))
+        .unwrap();
+        assert_eq!(report.models.len(), 1);
+        assert!(report.models[0].id.is_empty());
+        assert!(report.models[0].label.is_empty());
+        assert!(!report.models[0].default);
+        assert!(report.models[0]
+            .thinking
+            .as_ref()
+            .unwrap()
+            .supported_levels
+            .is_empty());
+        assert!(report.models[0].service_tiers.is_empty());
+        assert!(report.supported.unwrap_or(true));
+        assert!(!report.fallback.unwrap_or(false));
+    }
 
     #[test]
     fn normalize_provider_trims_and_lowercases() {
