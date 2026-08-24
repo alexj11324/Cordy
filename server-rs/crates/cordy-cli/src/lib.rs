@@ -94,11 +94,57 @@ enum Command {
     Chat(ChatArgs),
     #[command(about = "Work with attachments")]
     Attachment(AttachmentArgs),
+    #[command(about = "Work with repositories")]
+    Repo(RepoArgs),
     #[command(about = "Print version information")]
     Version {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
         output: VersionOutput,
     },
+}
+
+#[derive(Debug, Args)]
+struct RepoArgs {
+    #[command(subcommand)]
+    command: RepoCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum RepoCommand {
+    #[command(about = "List workspace repositories")]
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
+    #[command(about = "Add repositories to the workspace registry")]
+    Add(RepoMutationArgs),
+    #[command(
+        alias = "rm",
+        about = "Remove repositories from the workspace registry"
+    )]
+    Remove(RepoRemoveArgs),
+}
+
+#[derive(Debug, Args)]
+struct RepoMutationArgs {
+    #[arg(value_name = "URL")]
+    urls: Vec<String>,
+    #[arg(long = "url", action = clap::ArgAction::Append, help = "Repository URL (may be repeated)")]
+    flag_urls: Vec<String>,
+    #[arg(long, help = "Optional description; only valid when adding one URL")]
+    description: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct RepoRemoveArgs {
+    #[arg(value_name = "URL")]
+    urls: Vec<String>,
+    #[arg(long = "url", action = clap::ArgAction::Append, help = "Repository URL to remove (may be repeated)")]
+    flag_urls: Vec<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -1973,6 +2019,15 @@ async fn run_with_input<R: Read>(
         Command::Attachment(AttachmentArgs {
             command: AttachmentCommand::Upload { path, task },
         }) => run_attachment_upload(cli, environment, path, task.as_deref()).await,
+        Command::Repo(RepoArgs {
+            command: RepoCommand::List { output },
+        }) => run_repo_list(cli, environment, *output).await,
+        Command::Repo(RepoArgs {
+            command: RepoCommand::Add(args),
+        }) => run_repo_add(cli, environment, args).await,
+        Command::Repo(RepoArgs {
+            command: RepoCommand::Remove(args),
+        }) => run_repo_remove(cli, environment, args).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -2203,6 +2258,251 @@ async fn run_attachment_download(
             }))?
         ),
         stderr: format!("Downloaded: {path}\n"),
+    })
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct WorkspaceRepo {
+    url: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    description: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RepoWorkspace {
+    id: String,
+    #[serde(default)]
+    repos: Vec<WorkspaceRepo>,
+}
+
+#[derive(Debug, Serialize)]
+struct RepoMutationResult {
+    workspace_id: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    added: Vec<WorkspaceRepo>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    updated: Vec<WorkspaceRepo>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    removed: Vec<WorkspaceRepo>,
+    repos: Vec<WorkspaceRepo>,
+}
+
+fn repo_urls(flag_urls: &[String], positional: &[String]) -> Result<Vec<String>> {
+    let mut raw = Vec::with_capacity(flag_urls.len() + positional.len());
+    raw.extend(flag_urls.iter());
+    raw.extend(positional.iter());
+    if raw.is_empty() {
+        bail!("at least one repository URL is required");
+    }
+    let mut seen = HashSet::new();
+    let mut urls = Vec::new();
+    for url in raw {
+        let url = url.trim();
+        if url.is_empty() {
+            bail!("repository URL cannot be empty");
+        }
+        if seen.insert(url.to_string()) {
+            urls.push(url.to_string());
+        }
+    }
+    Ok(urls)
+}
+
+fn repo_workspace_id(cli: &Cli, environment: &Environment) -> Result<String> {
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    if workspace_id.is_empty() {
+        if environment.in_daemon_managed_execution_context() {
+            bail!(
+                "workspace_id is required: CORDY_WORKSPACE_ID must be set by the daemon in agent execution context (no fallback to user config)"
+            );
+        }
+        bail!(
+            "workspace_id is required: use --workspace-id flag, set CORDY_WORKSPACE_ID env, or run 'cordy config set workspace_id <id>'"
+        );
+    }
+    Ok(workspace_id)
+}
+
+async fn fetch_repo_workspace(client: &ApiClient, workspace_id: &str) -> Result<RepoWorkspace> {
+    client
+        .get_json(&format!("/api/workspaces/{workspace_id}"))
+        .await
+        .context("get workspace")
+}
+
+async fn patch_workspace_repos(
+    client: &ApiClient,
+    workspace_id: &str,
+    repos: &[WorkspaceRepo],
+) -> Result<RepoWorkspace> {
+    client
+        .patch_json(
+            &format!("/api/workspaces/{workspace_id}"),
+            &serde_json::json!({"repos":repos}),
+        )
+        .await
+        .context("update workspace repos")
+}
+
+fn format_repo_list(repos: &[WorkspaceRepo]) -> String {
+    let mut rows = vec![vec!["URL".into(), "DESCRIPTION".into()]];
+    rows.extend(
+        repos
+            .iter()
+            .map(|repo| vec![repo.url.clone(), repo.description.clone()]),
+    );
+    format_table(&rows)
+}
+
+async fn run_repo_list(
+    cli: &Cli,
+    environment: &Environment,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let workspace_id = repo_workspace_id(cli, environment)?;
+    let client = new_api_client(cli, environment)?;
+    let workspace = fetch_repo_workspace(&client, &workspace_id).await?;
+    Ok(match output {
+        OutputFormat::Json => RunOutput {
+            stdout: format!("{}\n", serde_json::to_string_pretty(&workspace.repos)?),
+            stderr: String::new(),
+        },
+        OutputFormat::Table if workspace.repos.is_empty() => RunOutput {
+            stdout: String::new(),
+            stderr: "No repositories found.\n".into(),
+        },
+        OutputFormat::Table => RunOutput {
+            stdout: format_repo_list(&workspace.repos),
+            stderr: String::new(),
+        },
+    })
+}
+
+async fn run_repo_add(
+    cli: &Cli,
+    environment: &Environment,
+    args: &RepoMutationArgs,
+) -> Result<RunOutput> {
+    let urls = repo_urls(&args.flag_urls, &args.urls)?;
+    if args.description.is_some() && urls.len() > 1 {
+        bail!("--description can only be used when adding one repository URL");
+    }
+    let workspace_id = repo_workspace_id(cli, environment)?;
+    let client = new_api_client(cli, environment)?;
+    let mut workspace = fetch_repo_workspace(&client, &workspace_id).await?;
+    let mut index_by_url = workspace
+        .repos
+        .iter()
+        .enumerate()
+        .map(|(index, repo)| (repo.url.clone(), index))
+        .collect::<HashMap<_, _>>();
+    let mut added = Vec::new();
+    let mut updated = Vec::new();
+    for url in urls {
+        if let Some(index) = index_by_url.get(&url).copied() {
+            if let Some(description) = &args.description {
+                if workspace.repos[index].description != *description {
+                    workspace.repos[index].description = description.clone();
+                    updated.push(workspace.repos[index].clone());
+                }
+            }
+            continue;
+        }
+        let repo = WorkspaceRepo {
+            url: url.clone(),
+            description: args.description.clone().unwrap_or_default(),
+        };
+        index_by_url.insert(url, workspace.repos.len());
+        workspace.repos.push(repo.clone());
+        added.push(repo);
+    }
+    if !added.is_empty() || !updated.is_empty() {
+        workspace = patch_workspace_repos(&client, &workspace_id, &workspace.repos).await?;
+    }
+    let result = RepoMutationResult {
+        workspace_id: workspace.id,
+        added,
+        updated,
+        removed: Vec::new(),
+        repos: workspace.repos,
+    };
+    let stdout =
+        match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+            OutputFormat::Table if result.added.is_empty() && result.updated.is_empty() => {
+                "No repository changes.\n".into()
+            }
+            OutputFormat::Table => {
+                let mut rows = vec![vec!["ACTION".into(), "URL".into(), "DESCRIPTION".into()]];
+                rows.extend(
+                    result.added.iter().map(|repo| {
+                        vec!["added".into(), repo.url.clone(), repo.description.clone()]
+                    }),
+                );
+                rows.extend(result.updated.iter().map(|repo| {
+                    vec!["updated".into(), repo.url.clone(), repo.description.clone()]
+                }));
+                format_table(&rows)
+            }
+        };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+async fn run_repo_remove(
+    cli: &Cli,
+    environment: &Environment,
+    args: &RepoRemoveArgs,
+) -> Result<RunOutput> {
+    let urls = repo_urls(&args.flag_urls, &args.urls)?;
+    let workspace_id = repo_workspace_id(cli, environment)?;
+    let client = new_api_client(cli, environment)?;
+    let workspace = fetch_repo_workspace(&client, &workspace_id).await?;
+    let remove_set = urls.iter().cloned().collect::<HashSet<_>>();
+    let (removed, repos): (Vec<_>, Vec<_>) = workspace
+        .repos
+        .into_iter()
+        .partition(|repo| remove_set.contains(&repo.url));
+    let removed_set = removed
+        .iter()
+        .map(|repo| repo.url.as_str())
+        .collect::<HashSet<_>>();
+    let missing = urls
+        .iter()
+        .filter(|url| !removed_set.contains(url.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    if !missing.is_empty() {
+        bail!(
+            "repository not found in workspace registry: {}",
+            missing.join(", ")
+        );
+    }
+    let workspace = patch_workspace_repos(&client, &workspace_id, &repos).await?;
+    let result = RepoMutationResult {
+        workspace_id: workspace.id,
+        added: Vec::new(),
+        updated: Vec::new(),
+        removed,
+        repos: workspace.repos,
+    };
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+            OutputFormat::Table => {
+                let mut rows = vec![vec!["REMOVED URL".into(), "DESCRIPTION".into()]];
+                rows.extend(
+                    result
+                        .removed
+                        .iter()
+                        .map(|repo| vec![repo.url.clone(), repo.description.clone()]),
+                );
+                format_table(&rows)
+            }
+        },
+        stderr: String::new(),
     })
 }
 
@@ -13439,6 +13739,114 @@ mod tests {
         assert_eq!(downloaded_json["size"], "15");
         assert!(!downloaded.stdout.contains("../"));
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn repo_registry_add_remove_and_list_match_go_patch_contracts() {
+        let repos = Arc::new(Mutex::new(vec![WorkspaceRepo {
+            url: "https://git.example.com/web.git".into(),
+            description: "web".into(),
+        }]));
+        let repos_get = Arc::clone(&repos);
+        let repos_patch = Arc::clone(&repos);
+        let app = Router::new().route(
+            "/api/workspaces/ws-1",
+            get(move || {
+                let repos = Arc::clone(&repos_get);
+                async move {
+                    Json(serde_json::json!({
+                        "id":"ws-1","repos":repos.lock().expect("repos").clone()
+                    }))
+                }
+            })
+            .patch(move |Json(body): Json<Value>| {
+                let repos = Arc::clone(&repos_patch);
+                async move {
+                    let updated: Vec<WorkspaceRepo> =
+                        serde_json::from_value(body["repos"].clone()).expect("repo patch body");
+                    *repos.lock().expect("repos") = updated.clone();
+                    Json(serde_json::json!({"id":"ws-1","repos":updated}))
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "ws-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let add = Cli::try_parse_from([
+            "cordy",
+            "repo",
+            "add",
+            "https://git.example.com/api.git",
+            "https://git.example.com/api.git",
+            "--url",
+            "https://git.example.com/web.git",
+            "--output",
+            "json",
+        ])
+        .expect("repo add CLI");
+        let added = run_with_input(&add, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("add repos");
+        let added: Value = serde_json::from_str(&added.stdout).expect("add JSON");
+        assert_eq!(added["added"].as_array().expect("added").len(), 1);
+        assert_eq!(added["repos"].as_array().expect("repos").len(), 2);
+
+        let remove = Cli::try_parse_from([
+            "cordy",
+            "repo",
+            "rm",
+            "https://git.example.com/web.git",
+            "--output",
+            "table",
+        ])
+        .expect("repo remove alias");
+        let removed = run_with_input(&remove, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("remove repo");
+        assert!(removed.stdout.starts_with("REMOVED URL"));
+        assert!(removed.stdout.contains("web.git"));
+
+        let list = Cli::try_parse_from(["cordy", "repo", "list", "--output", "table"])
+            .expect("repo list CLI");
+        let listed = run_with_input(&list, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list repos");
+        assert!(listed.stdout.starts_with("URL"));
+        assert!(listed.stdout.contains("api.git"));
+        assert!(!listed.stdout.contains("web.git"));
+        server.abort();
+    }
+
+    #[test]
+    fn repo_registry_rejects_empty_duplicate_and_invalid_description_inputs() {
+        assert_eq!(
+            repo_urls(&[" a ".into()], &["a".into(), "b".into()]).expect("dedupe"),
+            vec!["a", "b"]
+        );
+        assert!(repo_urls(&[], &[])
+            .expect_err("missing URL")
+            .to_string()
+            .contains("at least one"));
+        assert!(repo_urls(&[" ".into()], &[])
+            .expect_err("empty URL")
+            .to_string()
+            .contains("cannot be empty"));
+        assert!(Cli::try_parse_from([
+            "cordy",
+            "repo",
+            "remove",
+            "https://git.example.com/a.git",
+            "--description",
+            "x"
+        ])
+        .is_err());
     }
 
     #[test]
