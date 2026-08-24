@@ -106,6 +106,11 @@ pub trait RuntimeRegistrationRound: Send + Sync + 'static {
     /// server response has been accepted into the authoritative registry.
     /// Failed register calls never invoke this hook.
     fn registration_applied(&self, workspace_id: &str);
+
+    /// Records a workspace whose refresh did not reach the authoritative
+    /// apply step. Implementations that deduplicate probe payloads can use
+    /// this to retry the unchanged payload on the next refresh.
+    fn registration_failed(&self, _workspace_id: &str) {}
 }
 
 #[async_trait::async_trait]
@@ -359,6 +364,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 )
                 .await
             {
+                round.registration_failed(&workspace_id);
                 tracing::warn!(%workspace_id, %error, "built-in runtime refresh failed");
             }
         }
@@ -415,74 +421,77 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             );
             return Ok(());
         }
-        let response = self
-            .client
-            .register(
-                &ctx,
-                json!({
-                    "workspace_id": &workspace.id,
-                    "daemon_id": &self.config.daemon_id,
-                    "legacy_daemon_ids": &self.config.legacy_daemon_ids,
-                    "device_name": &self.config.device_name,
-                    "cli_version": &self.config.cli_version,
-                    "launched_by": &self.config.launched_by,
-                    "runtimes": &payload.runtimes,
-                    "failed_profiles": &payload.failed_profiles,
-                }),
-            )
-            .await?;
-        anyhow::ensure!(
-            !response.runtimes.is_empty() || !payload.failed_profiles.is_empty(),
-            "register runtimes returned an empty response for workspace {}",
-            workspace.id
-        );
-        let runtime_ids: Vec<String> = response
-            .runtimes
-            .iter()
-            .map(|runtime| runtime.id.clone())
-            .collect();
-        let incoming_runtime_ids: BTreeSet<String> = runtime_ids.iter().cloned().collect();
-        let repos = response.repos;
-        let settings = response.settings;
-        let delta = {
+        let (runtime_ids, repos, settings, delta) = {
             // A failed deregistration may be retried while this workspace is
-            // being re-added. Fence the server register and authoritative
-            // apply together so an old retry cannot take a newly accepted,
-            // server-reused runtime ID offline after it becomes active again.
+            // being re-added. Fence the server register and authoritative apply
+            // together so an old retry cannot take a newly accepted, server-reused
+            // runtime ID offline after it becomes active again.
             let _fence = self.deregistration_flush.lock().await;
-            let _demotion_barrier = match acquire_registration_demotion_barrier(
-                &ctx,
-                registry,
-                &workspace.id,
-                &incoming_runtime_ids,
-                activity,
-            )
-            .await
-            {
-                Ok(barrier) => barrier,
-                Err(error) => {
-                    // The server accepted these rows before the local
-                    // demotion drain. Retain them for cleanup if cancellation
-                    // prevents the authoritative apply from completing.
-                    self.pending_deregistrations.queue(&runtime_ids);
-                    return Err(error);
-                }
-            };
-            let delta = registry
-                .apply_registration(
-                    workspace.id.clone(),
-                    workspace.name.clone(),
-                    response.runtimes,
+            let response = self
+                .client
+                .register(
+                    &ctx,
+                    json!({
+                        "workspace_id": &workspace.id,
+                        "daemon_id": &self.config.daemon_id,
+                        "legacy_daemon_ids": &self.config.legacy_daemon_ids,
+                        "device_name": &self.config.device_name,
+                        "cli_version": &self.config.cli_version,
+                        "launched_by": &self.config.launched_by,
+                        "runtimes": &payload.runtimes,
+                        "failed_profiles": &payload.failed_profiles,
+                    }),
                 )
-                .map_err(|error| {
-                    // The server already accepted these rows. Retain them for
-                    // cleanup because the local registry rejected the reply.
-                    self.pending_deregistrations.queue(&runtime_ids);
-                    error
-                })?;
-            self.pending_deregistrations.acknowledge(&runtime_ids);
-            round.registration_applied(&workspace.id);
-            delta
+                .await?;
+            anyhow::ensure!(
+                !response.runtimes.is_empty() || !payload.failed_profiles.is_empty(),
+                "register runtimes returned an empty response for workspace {}",
+                workspace.id
+            );
+            let runtime_ids: Vec<String> = response
+                .runtimes
+                .iter()
+                .map(|runtime| runtime.id.clone())
+                .collect();
+            let incoming_runtime_ids: BTreeSet<String> = runtime_ids.iter().cloned().collect();
+            let repos = response.repos;
+            let settings = response.settings;
+            let delta = {
+                let _demotion_barrier = match acquire_registration_demotion_barrier(
+                    &ctx,
+                    registry,
+                    &workspace.id,
+                    &incoming_runtime_ids,
+                    activity,
+                )
+                .await
+                {
+                    Ok(barrier) => barrier,
+                    Err(error) => {
+                        // The server accepted these rows before the local
+                        // demotion drain. Retain them for cleanup if cancellation
+                        // prevents the authoritative apply from completing.
+                        self.pending_deregistrations.queue(&runtime_ids);
+                        return Err(error);
+                    }
+                };
+                let delta = registry
+                    .apply_registration(
+                        workspace.id.clone(),
+                        workspace.name.clone(),
+                        response.runtimes,
+                    )
+                    .map_err(|error| {
+                        // The server already accepted these rows. Retain them for
+                        // cleanup because the local registry rejected the reply.
+                        self.pending_deregistrations.queue(&runtime_ids);
+                        error
+                    })?;
+                self.pending_deregistrations.acknowledge(&runtime_ids);
+                round.registration_applied(&workspace.id);
+                delta
+            };
+            (runtime_ids, repos, settings, delta)
         };
         self.repo_state
             .replace_workspace(&workspace.id, &repos, settings);
