@@ -26,10 +26,15 @@ const STALE_TASK_BATCH_SIZE: i32 = 500;
 const QUEUED_TASK_BATCH_SIZE: i32 = 500;
 const DELEGATED_RECOVERY_BATCH_SIZE: i32 = 100;
 const CHAT_FINALIZE_BATCH_SIZE: i32 = 100;
+const RUNTIME_GC_BATCH_SIZE: i32 = 100;
+const RUNTIME_GC_BLOCKED_SCAN_LIMIT: i32 = 1_000;
 const DISPATCH_TIMEOUT: Duration = Duration::from_secs(300);
 const RUNNING_TIMEOUT: Duration = Duration::from_secs(9_000);
 const QUEUED_TTL: Duration = Duration::from_secs(2 * 60 * 60);
 const CHAT_FINALIZE_GRACE: Duration = Duration::from_secs(60);
+const OFFLINE_RUNTIME_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+const RUNTIME_GC_TICK_TIMEOUT: Duration = Duration::from_secs(15);
+const RUNTIME_GC_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub trait Clock: Send + Sync {
     fn now(&self) -> DateTime<Utc>;
@@ -141,6 +146,9 @@ impl RuntimeSweeper {
         )
         .await?
         .unwrap_or_default();
+        let runtime_gc = isolate_stage(cancel, "runtime GC", self.sweep_runtime_gc(cancel, now))
+            .await?
+            .unwrap_or_default();
         Ok(SweepResult {
             candidates,
             offlined,
@@ -151,6 +159,9 @@ impl RuntimeSweeper {
             delegated_recoveries_replayed: delegated_recovery.0,
             delegated_recoveries_exhausted: delegated_recovery.1,
             deferred_chat_finalizations,
+            runtime_gc_blocked: runtime_gc.blocked,
+            runtime_gc_deleted: runtime_gc.deleted,
+            runtime_gc_failed: runtime_gc.failed,
         })
     }
 
@@ -443,6 +454,189 @@ impl RuntimeSweeper {
         Ok(tasks.len())
     }
 
+    async fn sweep_runtime_gc(
+        &self,
+        cancel: &CancellationToken,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<RuntimeGcResult> {
+        let stale_before = now
+            - chrono::Duration::from_std(OFFLINE_RUNTIME_TTL)
+                .expect("offline runtime TTL fits chrono");
+        let deadline = tokio::time::Instant::now() + RUNTIME_GC_TICK_TIMEOUT;
+        let mut result = RuntimeGcResult::default();
+
+        match cancellable_with_timeout(
+            cancel,
+            remaining_operation_budget(deadline)?,
+            cordy_db::queries::runtime::count_stale_offline_runtimes_blocked_by_tasks(
+                &self.state.pool,
+                stale_before,
+                RUNTIME_GC_BLOCKED_SCAN_LIMIT,
+            ),
+        )
+        .await
+        {
+            Ok(blocked) => {
+                result.blocked = blocked.unwrap_or_default();
+                if let Some(metrics) = self.state.business_metrics.as_deref() {
+                    metrics.set_runtime_gc_blocked(result.blocked);
+                }
+                if result.blocked > 0 {
+                    tracing::debug!(
+                        count = result.blocked,
+                        count_capped = result.blocked == i64::from(RUNTIME_GC_BLOCKED_SCAN_LIMIT),
+                        "runtime GC found stale runtimes blocked by tasks"
+                    );
+                }
+            }
+            Err(error) if cancel.is_cancelled() => return Err(error),
+            Err(error) => {
+                tracing::warn!(%error, "runtime GC blocked observation failed");
+                if let Some(metrics) = self.state.business_metrics.as_deref() {
+                    metrics.record_runtime_gc_blocked_observation_failed();
+                }
+            }
+        }
+
+        let candidates = match cancellable_with_timeout(
+            cancel,
+            remaining_operation_budget(deadline)?,
+            cordy_db::queries::runtime::list_stale_offline_runtime_gc_candidates(
+                &self.state.pool,
+                stale_before,
+                RUNTIME_GC_BATCH_SIZE,
+            ),
+        )
+        .await
+        {
+            Ok(candidates) => candidates.into_iter().flatten().collect::<Vec<_>>(),
+            Err(error) if cancel.is_cancelled() => return Err(error),
+            Err(error) => {
+                if let Some(metrics) = self.state.business_metrics.as_deref() {
+                    metrics.record_runtime_gc_failed();
+                }
+                return Err(error);
+            }
+        };
+
+        let mut workspaces = HashSet::new();
+        for (index, runtime_id) in candidates.iter().copied().enumerate() {
+            let Ok(budget) = remaining_operation_budget(deadline) else {
+                tracing::info!(
+                    deleted = result.deleted,
+                    remaining_candidates = candidates.len() - index,
+                    "runtime GC tick budget exhausted"
+                );
+                break;
+            };
+            match self
+                .gc_runtime(cancel, runtime_id, stale_before, budget)
+                .await
+            {
+                Ok(RuntimeGcAttempt::Deleted(workspace_id)) => {
+                    result.deleted += 1;
+                    workspaces.insert(workspace_id);
+                    if let Some(metrics) = self.state.business_metrics.as_deref() {
+                        metrics.record_runtime_gc_deleted();
+                    }
+                }
+                Ok(RuntimeGcAttempt::TaskBlocked) => {
+                    tracing::warn!(
+                        %runtime_id,
+                        "runtime GC candidate gained a non-terminal task"
+                    );
+                }
+                Ok(RuntimeGcAttempt::Ineligible) => {}
+                Err(error) if cancel.is_cancelled() => return Err(error),
+                Err(error) => {
+                    if tokio::time::Instant::now() >= deadline {
+                        tracing::info!(
+                            deleted = result.deleted,
+                            remaining_candidates = candidates.len() - index,
+                            "runtime GC tick budget exhausted"
+                        );
+                        break;
+                    }
+                    result.failed += 1;
+                    tracing::warn!(%error, %runtime_id, "runtime GC failed to delete candidate");
+                    if let Some(metrics) = self.state.business_metrics.as_deref() {
+                        metrics.record_runtime_gc_failed();
+                    }
+                }
+            }
+        }
+
+        if result.deleted > 0 {
+            tracing::info!(
+                count = result.deleted,
+                workspaces = workspaces.len(),
+                "runtime GC deleted stale offline runtimes"
+            );
+            for workspace_id in workspaces {
+                self.state.bus.publish(&cordy_events::Event {
+                    event_type: cordy_protocol::EVENT_DAEMON_REGISTER.into(),
+                    workspace_id: workspace_id.to_string(),
+                    actor_type: "system".into(),
+                    payload: serde_json::json!({ "action": "runtime_gc" }),
+                    ..Default::default()
+                });
+            }
+        }
+        Ok(result)
+    }
+
+    async fn gc_runtime(
+        &self,
+        cancel: &CancellationToken,
+        runtime_id: Uuid,
+        stale_before: DateTime<Utc>,
+        timeout: Duration,
+    ) -> anyhow::Result<RuntimeGcAttempt> {
+        cancellable_with_timeout(cancel, timeout, async {
+            let mut tx = self.state.pool.begin().await?;
+            let Some(runtime) =
+                cordy_db::queries::runtime::lock_agent_runtime(&mut *tx, runtime_id).await?
+            else {
+                return Ok(RuntimeGcAttempt::Ineligible);
+            };
+            let eligible = cordy_db::queries::runtime::is_agent_runtime_eligible_for_gc(
+                &mut *tx,
+                runtime_id,
+                stale_before,
+            )
+            .await?
+            .unwrap_or(false);
+            if !eligible {
+                return Ok(RuntimeGcAttempt::Ineligible);
+            }
+            let undrained = cordy_db::queries::runtime::count_undrained_tasks_by_runtime_or_agent(
+                &mut *tx,
+                vec![runtime_id],
+                Vec::new(),
+            )
+            .await?
+            .unwrap_or_default();
+            if undrained > 0 {
+                return Ok(RuntimeGcAttempt::TaskBlocked);
+            }
+            cordy_db::queries::runtime::unbind_tasks_from_runtime(&mut *tx, runtime_id).await?;
+            let remaining =
+                cordy_db::queries::runtime::count_tasks_by_runtime(&mut *tx, runtime_id)
+                    .await?
+                    .unwrap_or_default();
+            anyhow::ensure!(
+                remaining == 0,
+                "task history still references runtime after detach"
+            );
+            let deleted =
+                cordy_db::queries::runtime::delete_agent_runtime(&mut *tx, runtime_id).await?;
+            anyhow::ensure!(deleted == 1, "runtime disappeared while locked");
+            tx.commit().await?;
+            Ok(RuntimeGcAttempt::Deleted(runtime.workspace_id))
+        })
+        .await
+    }
+
     async fn filter_alive(
         &self,
         cancel: &CancellationToken,
@@ -476,6 +670,28 @@ pub struct SweepResult {
     pub delegated_recoveries_replayed: i32,
     pub delegated_recoveries_exhausted: i32,
     pub deferred_chat_finalizations: usize,
+    pub runtime_gc_blocked: i64,
+    pub runtime_gc_deleted: usize,
+    pub runtime_gc_failed: usize,
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct RuntimeGcResult {
+    blocked: i64,
+    deleted: usize,
+    failed: usize,
+}
+
+enum RuntimeGcAttempt {
+    Deleted(Uuid),
+    TaskBlocked,
+    Ineligible,
+}
+
+fn remaining_operation_budget(deadline: tokio::time::Instant) -> anyhow::Result<Duration> {
+    let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+    anyhow::ensure!(!remaining.is_zero(), "runtime GC tick budget exhausted");
+    Ok(remaining.min(RUNTIME_GC_OPERATION_TIMEOUT))
 }
 
 async fn isolate_stage<T>(
@@ -500,6 +716,19 @@ async fn cancellable<T>(
     tokio::select! {
         _ = cancel.cancelled() => Err(anyhow::anyhow!("runtime sweeper cancelled")),
         result = future => result,
+    }
+}
+
+async fn cancellable_with_timeout<T>(
+    cancel: &CancellationToken,
+    timeout: Duration,
+    future: impl std::future::Future<Output = anyhow::Result<T>>,
+) -> anyhow::Result<T> {
+    tokio::select! {
+        _ = cancel.cancelled() => Err(anyhow::anyhow!("runtime sweeper cancelled")),
+        result = tokio::time::timeout(timeout, future) => {
+            result.map_err(|_| anyhow::anyhow!("runtime sweeper operation timed out"))?
+        }
     }
 }
 
@@ -569,10 +798,15 @@ mod tests {
         assert_eq!(QUEUED_TASK_BATCH_SIZE, 500);
         assert_eq!(DELEGATED_RECOVERY_BATCH_SIZE, 100);
         assert_eq!(CHAT_FINALIZE_BATCH_SIZE, 100);
+        assert_eq!(RUNTIME_GC_BATCH_SIZE, 100);
+        assert_eq!(RUNTIME_GC_BLOCKED_SCAN_LIMIT, 1_000);
         assert_eq!(DISPATCH_TIMEOUT, Duration::from_secs(300));
         assert_eq!(RUNNING_TIMEOUT, Duration::from_secs(9_000));
         assert_eq!(QUEUED_TTL, Duration::from_secs(7_200));
         assert_eq!(CHAT_FINALIZE_GRACE, Duration::from_secs(60));
+        assert_eq!(OFFLINE_RUNTIME_TTL, Duration::from_secs(604_800));
+        assert_eq!(RUNTIME_GC_TICK_TIMEOUT, Duration::from_secs(15));
+        assert_eq!(RUNTIME_GC_OPERATION_TIMEOUT, Duration::from_secs(5));
     }
 
     #[test]

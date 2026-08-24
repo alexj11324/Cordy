@@ -101,14 +101,14 @@ pub async fn count_active_agents_by_runtime(
 
 pub async fn count_stale_offline_runtimes_blocked_by_tasks(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    stale_seconds: f64,
+    stale_before: DateTime<Utc>,
     max_rows: i32,
 ) -> anyhow::Result<Option<i64>> {
     let row = sqlx::query(
         r#"SELECT count(*) FROM (
   SELECT 1 FROM agent_runtime
   WHERE status = 'offline'
-    AND last_seen_at < now() - make_interval(secs => $1::double precision)
+    AND last_seen_at < $1
     AND NOT EXISTS (
       SELECT 1
       FROM agent
@@ -123,7 +123,7 @@ pub async fn count_stale_offline_runtimes_blocked_by_tasks(
   LIMIT $2::int
 ) AS blocked_runtimes"#,
     )
-    .bind(stale_seconds)
+    .bind(stale_before)
     .bind(max_rows)
     .fetch_optional(executor)
     .await?;
@@ -458,14 +458,14 @@ WHERE id = ANY($1::uuid[])"#
 pub async fn is_agent_runtime_eligible_for_gc(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
-    stale_seconds: f64,
+    stale_before: DateTime<Utc>,
 ) -> anyhow::Result<Option<bool>> {
     let row = sqlx::query(
         r#"SELECT EXISTS (
   SELECT 1 FROM agent_runtime
   WHERE agent_runtime.id = $1
     AND status = 'offline'
-    AND last_seen_at < now() - make_interval(secs => $2::double precision)
+    AND last_seen_at < $2
     AND NOT EXISTS (
       SELECT 1
       FROM agent
@@ -474,7 +474,7 @@ pub async fn is_agent_runtime_eligible_for_gc(
 ) AS eligible"#,
     )
     .bind(id)
-    .bind(stale_seconds)
+    .bind(stale_before)
     .fetch_optional(executor)
     .await?;
     let Some(row) = row else { return Ok(None) };
@@ -583,13 +583,13 @@ WHERE workspace_id = $1
 
 pub async fn list_stale_offline_runtime_gc_candidates(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    stale_seconds: f64,
+    stale_before: DateTime<Utc>,
     max_per_tick: i32,
 ) -> anyhow::Result<Vec<Option<Uuid>>> {
     let rows = sqlx::query(
         r#"SELECT id FROM agent_runtime
 WHERE status = 'offline'
-  AND last_seen_at < now() - make_interval(secs => $1::double precision)
+  AND last_seen_at < $1
   AND NOT EXISTS (
     SELECT 1
     FROM agent
@@ -604,7 +604,7 @@ WHERE status = 'offline'
 ORDER BY last_seen_at ASC, id ASC
 LIMIT $2::int"#,
     )
-    .bind(stale_seconds)
+    .bind(stale_before)
     .bind(max_per_tick)
     .fetch_all(executor)
     .await?;
