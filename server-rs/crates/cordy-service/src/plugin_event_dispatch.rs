@@ -60,6 +60,7 @@ pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 /// circuit breaker and rate limiter only ever look minutes back.
 pub const INVOCATION_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const INVOCATION_SWEEP_EVERY: Duration = Duration::from_secs(60 * 60);
+const INVOCATION_SWEEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 struct DispatchJob {
     workspace_id: Uuid,
@@ -169,7 +170,14 @@ impl PluginEventDispatcher {
         loop {
             tokio::select! {
                 _ = self.stop.cancelled() => return,
-                _ = ticker.tick() => self.sweep_once().await,
+                _ = ticker.tick() => {
+                    if let Err(recovered) = AssertUnwindSafe(self.sweep_once()).catch_unwind().await {
+                        tracing::error!(
+                            recovered = %panic_detail(recovered.as_ref()),
+                            "plugins: panic while sweeping hook invocations"
+                        );
+                    }
+                },
             }
         }
     }
@@ -180,17 +188,21 @@ impl PluginEventDispatcher {
             - chrono::Duration::from_std(INVOCATION_RETENTION).unwrap_or_default())
         .to_string();
         if let Ok(cutoff) = cutoff.parse::<chrono::DateTime<chrono::Utc>>() {
-            match cordy_db::queries::plugin::delete_expired_plugin_invocations(
-                &self.service.pool,
-                Some(cutoff),
+            match tokio::time::timeout(
+                INVOCATION_SWEEP_TIMEOUT,
+                cordy_db::queries::plugin::delete_expired_plugin_invocations(
+                    &self.service.pool,
+                    Some(cutoff),
+                ),
             )
             .await
             {
-                Ok(removed) if removed > 0 => {
+                Ok(Ok(removed)) if removed > 0 => {
                     tracing::info!(removed, "plugins: swept expired hook invocations");
                 }
-                Ok(_) => {}
-                Err(e) => tracing::warn!(error = %e, "plugins: invocation sweep failed"),
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => tracing::warn!(error = %e, "plugins: invocation sweep failed"),
+                Err(_) => tracing::warn!("plugins: invocation sweep timed out"),
             }
         }
     }
