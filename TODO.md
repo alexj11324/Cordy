@@ -855,6 +855,16 @@
       Cargo was run. The serial subagent reviewed exact head `9f8451e2` and
       found no issue (environment lacked a rustfmt binary for a second pass);
       pro owns Ready PR, gate, and merge.
+- [ ] CLI config command policy structural refactor is committed at
+      `4d7e4f049d5c6e7f84b48d4d4ea6386a5cd5a45e` (parent
+      `9f8451e2083cb6ce847326855c4540aa534a73e6`, tree
+      `838254872a3df6cbafcd9763fa0a1aa5d51b9154`): config show/set handlers,
+      output rendering, supported-key validation, URL/path validation, and
+      Go duration/bool parsing now live in `cordy-cli/src/config_commands.rs`;
+      dispatch and existing test references remain stable. Scoped rustfmt and
+      diff-check pass; no Cargo was run. The serial subagent reviewed exact
+      head `4d7e4f04` and found no issue; pro owns push/Ready PR, gate, and
+      merge.
 
 ## Phase 4 — S8 route and API parity
 
