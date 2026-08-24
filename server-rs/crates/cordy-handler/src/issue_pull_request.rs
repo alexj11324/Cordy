@@ -8,7 +8,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use chrono::{DateTime, Utc};
-use cordy_db::models::GithubPullRequest;
+use cordy_db::models::{GithubPullRequest, VcsPullRequest};
 use cordy_db::queries::{github, vcs};
 use cordy_middleware::workspace::WorkspaceContext;
 use regex::Regex;
@@ -347,6 +347,44 @@ fn vcs_response(row: vcs::ListVCSPullRequestsByIssueRow) -> PullRequestResponse 
         deletions: row.deletions,
         changed_files: row.changed_files,
     }
+}
+
+pub(crate) fn vcs_model_response(row: VcsPullRequest) -> serde_json::Value {
+    serde_json::json!(PullRequestResponse {
+        id: row.id.to_string(),
+        provider: row.provider,
+        workspace_id: row.workspace_id.to_string(),
+        repo_owner: row.repo_owner,
+        repo_name: row.repo_name,
+        number: row.pr_number,
+        title: row.title,
+        state: row.state,
+        html_url: row.html_url,
+        branch: row.branch,
+        author_login: row.author_login,
+        author_avatar_url: row.author_avatar_url,
+        merged_at: optional_timestamp(row.merged_at),
+        closed_at: optional_timestamp(row.closed_at),
+        pr_created_at: crate::timefmt::rfc3339(row.pr_created_at),
+        pr_updated_at: crate::timefmt::rfc3339(row.pr_updated_at),
+        mergeable_state: None,
+        mergeable: None,
+        merge_state_status: None,
+        snapshot_available: None,
+        checks_rollup: None,
+        checks_conclusion: None,
+        checks_total: 0,
+        checks_passed: 0,
+        checks_failed: 0,
+        checks_running: 0,
+        checks_pending: 0,
+        failed_check_names: Vec::new(),
+        snapshot_stale: false,
+        snapshot_fetched_at: None,
+        additions: row.additions,
+        deletions: row.deletions,
+        changed_files: row.changed_files,
+    })
 }
 
 pub(crate) async fn attach(
