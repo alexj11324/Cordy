@@ -182,15 +182,22 @@
       here.
 - [x] Daemon foreground/adapter dependency boundary slice completed on
       `codex/cord-50-daemon-command-assembly` (PR #129). Commits
-      `637712cf` (`feat(cli): assemble foreground daemon inputs`) and
-      `3dcd0a7e` (`refactor(daemon): pass shared runtime owners to adapter`) are
-      pushed; latest head `3dcd0a7e`, parent `637712cf`, and scoped
-      rustfmt/diff-check pass. The CLI now carries one authenticated profile
-      snapshot through lifecycle/bootstrap/foreground production input
-      assembly. `ProviderRuntimeContext` now injects the same client,
-      accepted `RuntimeLaunchRegistry`, activity, repo state, and checkout
-      registry into the adapter boundary, preventing cross-instance state
-      assembly. PR review/gate/merge are delegated to the pro model.
+      `637712cf` (`feat(cli): assemble foreground daemon inputs`),
+      `3dcd0a7e` (`refactor(daemon): pass shared runtime owners to adapter`),
+      and `58708109` (`refactor(daemon): derive backend config from launch
+      state`) are pushed; latest head `58708109bc618567408eed192fb7b693d45b8ec9`,
+      parent `3dcd0a7e635872b46776756536c98d0e9aecc828`, tree
+      `fe606b99341571fab510a8c4d6556eb09f6fe911`. PR #129 is Ready/CLEAN/
+      MERGEABLE on base `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`, current
+      candidate `6b47a2c39f078895521d58197ac44b9c82f6b37f`. The CLI now carries
+      one authenticated profile snapshot through lifecycle/bootstrap/foreground
+      production input assembly. `ProviderRuntimeContext` injects the same
+      client, accepted `RuntimeLaunchRegistry`, activity, repo state, and
+      checkout registry into the adapter boundary; `backend_config` derives
+      `cordy-agent::BackendConfig` only from accepted workspace launch state and
+      caller-supplied task environment, failing closed when no launch is
+      registered. Scoped rustfmt/diff-check pass; PR review/gate/merge are
+      delegated to the pro model.
 - [ ] Next substantive daemon slice: implement the real provider execution
       adapter. The dependency boundary is now explicit, but `cordy-daemon`
       still has no concrete `ProviderRuntimeAdapter` and does not depend on
