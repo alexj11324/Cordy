@@ -738,14 +738,15 @@ impl HandlerState {
     }
 
     /// Builds all handler/service Redis dependencies from the production
-    /// client: auth/member caches, empty-claim cache, runtime liveness, rate
-    /// limits, and pending request stores. Callers without Redis keep the
-    /// explicit disabled implementations and preserve the Go nil-store
-    /// behavior.
+    /// client: auth/member caches, empty-claim cache, runtime liveness,
+    /// invitation/webhook gates, and pending request stores. Callers without
+    /// Redis keep the explicit disabled implementations and preserve the Go
+    /// nil-store behavior.
     pub fn with_redis(mut self, client: redis::Client) -> Self {
         self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
         self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client.clone());
         let conn = cordy_redis::RecoveringConnection::new(client);
+        self.invitation_admission = self.invitation_admission.with_redis(conn.clone());
         self.pat_cache = PatCache::from_connection(conn.clone());
         self.daemon_token_cache = DaemonTokenCache::from_connection(conn.clone());
         self.membership_cache = MembershipCache::from_connection(conn.clone());
@@ -782,10 +783,12 @@ impl HandlerState {
     /// so a handler-domain migration cannot implicitly activate pending-store
     /// behavior owned by other S8 domains.
     pub fn with_rate_limit_redis(mut self, client: redis::Client) -> Self {
-        // Keep Redis lazy like Go's redis.Client. The middleware establishes
-        // and caches a bounded connection on demand, so an unavailable Redis
-        // never delays or aborts HTTP server startup and can recover later.
+        // Keep Redis lazy like Go's redis.Client. Shared recovering
+        // connections prevent cold-start stampedes while the existing
+        // operation timeouts keep requests bounded.
+        let invitation_redis = cordy_redis::RecoveringConnection::new(client.clone());
         self.rate_limit_client = Some(client);
+        self.invitation_admission = self.invitation_admission.with_redis(invitation_redis);
         self
     }
 

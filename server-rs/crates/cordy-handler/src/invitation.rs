@@ -11,6 +11,7 @@ use cordy_db::queries::invitation::{
 };
 use cordy_db::queries::{member, user, workspace};
 use cordy_middleware::workspace::WorkspaceContext;
+use cordy_redis::RecoveringConnection;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, VecDeque};
@@ -26,6 +27,7 @@ use crate::workspace::MemberWithUserResponse;
 #[derive(Clone, Default)]
 pub struct InvitationAdmission {
     entries: Arc<Mutex<HashMap<String, VecDeque<Instant>>>>,
+    redis: Option<RecoveringConnection>,
 }
 
 const REDIS_CHECK_SCRIPT: &str = r#"
@@ -65,6 +67,11 @@ struct AdmissionGate {
 }
 
 impl InvitationAdmission {
+    pub fn with_redis(mut self, redis: RecoveringConnection) -> Self {
+        self.redis = Some(redis);
+        self
+    }
+
     fn gates(actor_id: Uuid, workspace_id: Uuid, email: &str) -> [AdmissionGate; 3] {
         let recipient = hex::encode(Sha256::digest(email.trim().to_ascii_lowercase().as_bytes()));
         [
@@ -91,14 +98,13 @@ impl InvitationAdmission {
 
     async fn admit(
         &self,
-        redis: Option<&redis::Client>,
         actor_id: Uuid,
         workspace_id: Uuid,
         email: &str,
     ) -> Result<(), AdmissionError> {
         let gates = Self::gates(actor_id, workspace_id, email);
-        if let Some(client) = redis {
-            return Self::admit_redis(client, &gates).await;
+        if let Some(redis) = self.redis.as_ref() {
+            return Self::admit_redis(redis, &gates).await;
         }
         self.admit_memory(&gates).await
     }
@@ -137,27 +143,12 @@ impl InvitationAdmission {
     }
 
     async fn admit_redis(
-        client: &redis::Client,
+        redis: &RecoveringConnection,
         gates: &[AdmissionGate],
     ) -> Result<(), AdmissionError> {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        let mut conn = match tokio::time::timeout(
-            INVITATION_REDIS_TIMEOUT,
-            client.get_multiplexed_async_connection(),
-        )
-        .await
-        {
-            Ok(Ok(conn)) => conn,
-            Ok(Err(error)) => {
-                tracing::error!(%error, "invitation rate limiter unavailable");
-                return Err(AdmissionError::Unavailable);
-            }
-            Err(_) => {
-                tracing::error!("invitation rate limiter connection timed out");
-                return Err(AdmissionError::Unavailable);
-            }
-        };
+        let mut conn = redis.clone();
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default();
@@ -388,12 +379,7 @@ async fn create(
     }
     match state
         .invitation_admission
-        .admit(
-            state.rate_limit_client.as_ref(),
-            context.member.user_id,
-            context.member.workspace_id,
-            &email,
-        )
+        .admit(context.member.user_id, context.member.workspace_id, &email)
         .await
     {
         Ok(()) => {}
@@ -1036,16 +1022,16 @@ mod tests {
         let workspace_id = Uuid::new_v4();
         for _ in 0..6 {
             assert!(admission
-                .admit(None, actor_id, workspace_id, " recipient@example.com ")
+                .admit(actor_id, workspace_id, " recipient@example.com ")
                 .await
                 .is_ok());
         }
         assert!(admission
-            .admit(None, actor_id, workspace_id, "RECIPIENT@example.com")
+            .admit(actor_id, workspace_id, "RECIPIENT@example.com")
             .await
             .is_err());
         assert!(admission
-            .admit(None, actor_id, workspace_id, "another@example.com")
+            .admit(actor_id, workspace_id, "another@example.com")
             .await
             .is_ok());
     }
