@@ -6,6 +6,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
 
 /// Errors raised before a provider session can be handed to the daemon.
 #[derive(Debug, thiserror::Error)]
@@ -57,6 +58,10 @@ pub struct ExecOptions {
     pub service_tier: String,
     pub openclaw_mode: String,
     pub claude_settings_path: String,
+    /// Cancels the provider process and its entire owned process tree. A fresh
+    /// token is inert, so callers that do not need cancellation retain the Go
+    /// contract's background-context behaviour.
+    pub cancellation: CancellationToken,
 }
 
 /// A running provider session.
