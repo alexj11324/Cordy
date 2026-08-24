@@ -1788,14 +1788,11 @@ async fn run_protocol(
         .unwrap_or_default();
     let mut usage = BTreeMap::new();
     let prompt_meta = prompt_result.get("_meta");
-    let prompt_usage = merge_usage(
-        parse_usage(prompt_result.get("usage")),
-        merge_usage(
-            parse_usage(prompt_meta),
-            parse_usage(prompt_meta.and_then(|meta| meta.get("usage"))),
-        ),
-    );
-    let mut turn_usage = merge_usage(state.usage, prompt_usage);
+    let meta_usage = parse_usage_snapshot(prompt_meta.and_then(|meta| meta.get("usage")))
+        .with_fallback(parse_usage_snapshot(prompt_meta));
+    let prompt_usage = parse_usage_snapshot(prompt_result.get("usage")).with_fallback(meta_usage);
+    state.usage.merge(prompt_usage);
+    let mut turn_usage = state.usage.usage;
     if provider == "reasonix" && turn_usage == TokenUsage::default() {
         turn_usage = state.reasonix_usage;
     }
@@ -1894,7 +1891,7 @@ fn protocol_failure(
 struct NotificationState {
     deliverable: Deliverable,
     tools: HashMap<String, PendingTool>,
-    usage: TokenUsage,
+    usage: UsageAccumulator,
     last_finishing_status: String,
     kiro_dialect: bool,
     extended_tool_names: bool,
@@ -1973,8 +1970,9 @@ fn handle_notification(
         "toolcall" => handle_tool_start(data, messages, state),
         "toolcallupdate" => handle_tool_update(data, messages, state),
         "usageupdate" | "turnend" => {
-            let update = parse_usage(data.get("usage").or(Some(data)));
-            state.usage = merge_usage(state.usage, update);
+            state
+                .usage
+                .merge(parse_usage_snapshot(data.get("usage").or(Some(data))));
         }
         _ => {}
     }
@@ -2293,35 +2291,232 @@ fn render_value(value: &Value) -> String {
         .map_or_else(|| value.to_string(), str::to_string)
 }
 
-fn parse_usage(value: Option<&Value>) -> TokenUsage {
-    let value = value.unwrap_or(&Value::Null);
-    TokenUsage {
-        input_tokens: integer(value, &["inputTokens", "input_tokens"]),
-        output_tokens: integer(value, &["outputTokens", "output_tokens"]),
-        cache_read_tokens: integer(
-            value,
-            &["cachedReadTokens", "cacheReadTokens", "cache_read_tokens"],
-        ),
-        cache_write_tokens: integer(
-            value,
-            &[
-                "cachedWriteTokens",
-                "cacheWriteTokens",
-                "cache_write_tokens",
-            ],
-        ),
-        cost_usd_ticks: integer(value, &["costUsdTicks", "cost_usd_ticks"]),
+#[derive(Debug, Clone, Copy, Default)]
+struct UsageFields {
+    input: bool,
+    output: bool,
+    cache_read: bool,
+    cache_write: bool,
+    cost: bool,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+struct UsageSnapshot {
+    usage: TokenUsage,
+    raw_input: i64,
+    fields: UsageFields,
+    total: Option<i64>,
+    input_normalized: bool,
+}
+
+impl UsageSnapshot {
+    fn normalize_input(&mut self) {
+        self.usage.input_tokens = self.raw_input;
+        self.input_normalized = false;
+        let Some(total) = self.total else {
+            return;
+        };
+        if self.fields.input
+            && self.fields.output
+            && self.fields.cache_read
+            && total > 0
+            && self.usage.cache_read_tokens > 0
+            && self.usage.cache_read_tokens <= self.raw_input
+            && total == self.raw_input.saturating_add(self.usage.output_tokens)
+        {
+            self.usage.input_tokens = self.raw_input - self.usage.cache_read_tokens;
+            self.input_normalized = true;
+        }
+    }
+
+    fn with_fallback(mut self, fallback: Self) -> Self {
+        let input_from_fallback =
+            fallback.fields.input && (!self.fields.input || self.raw_input == 0);
+        if input_from_fallback {
+            self.usage.input_tokens = fallback.usage.input_tokens;
+            self.raw_input = fallback.raw_input;
+            self.input_normalized = fallback.input_normalized;
+        }
+        if fallback.fields.output && (!self.fields.output || self.usage.output_tokens == 0) {
+            self.usage.output_tokens = fallback.usage.output_tokens;
+        }
+        if fallback.fields.cache_read
+            && (!self.fields.cache_read || self.usage.cache_read_tokens == 0)
+        {
+            self.usage.cache_read_tokens = fallback.usage.cache_read_tokens;
+        }
+        if fallback.fields.cache_write
+            && (!self.fields.cache_write || self.usage.cache_write_tokens == 0)
+        {
+            self.usage.cache_write_tokens = fallback.usage.cache_write_tokens;
+        }
+        if fallback.fields.cost
+            && (!self.fields.cost || fallback.usage.cost_usd_ticks > self.usage.cost_usd_ticks)
+        {
+            self.usage.cost_usd_ticks = fallback.usage.cost_usd_ticks;
+        }
+        self.fields.input |= fallback.fields.input;
+        self.fields.output |= fallback.fields.output;
+        self.fields.cache_read |= fallback.fields.cache_read;
+        self.fields.cache_write |= fallback.fields.cache_write;
+        self.fields.cost |= fallback.fields.cost;
+        if input_from_fallback && fallback.input_normalized {
+            self.total = fallback.total;
+        } else if self.total.is_none() {
+            self.total = fallback.total;
+        }
+        self.normalize_input();
+        self
     }
 }
 
-fn merge_usage(current: TokenUsage, next: TokenUsage) -> TokenUsage {
-    TokenUsage {
-        input_tokens: current.input_tokens.max(next.input_tokens),
-        output_tokens: current.output_tokens.max(next.output_tokens),
-        cache_read_tokens: current.cache_read_tokens.max(next.cache_read_tokens),
-        cache_write_tokens: current.cache_write_tokens.max(next.cache_write_tokens),
-        cost_usd_ticks: current.cost_usd_ticks.max(next.cost_usd_ticks),
+#[derive(Default)]
+struct UsageAccumulator {
+    usage: TokenUsage,
+    fields: UsageFields,
+    ambiguous_input: Option<i64>,
+    normalized_input: Option<(i64, i64)>,
+}
+
+impl UsageAccumulator {
+    fn merge(&mut self, next: UsageSnapshot) {
+        if next.fields.input {
+            if next.input_normalized {
+                let candidate = (next.total.unwrap_or_default(), next.usage.input_tokens);
+                if self
+                    .normalized_input
+                    .is_none_or(|current| candidate > current)
+                {
+                    self.normalized_input = Some(candidate);
+                }
+            } else if self
+                .ambiguous_input
+                .is_none_or(|current| next.usage.input_tokens > current)
+            {
+                self.ambiguous_input = Some(next.usage.input_tokens);
+            }
+        }
+        if next.fields.output
+            && (!self.fields.output || next.usage.output_tokens > self.usage.output_tokens)
+        {
+            self.usage.output_tokens = next.usage.output_tokens;
+        }
+        if next.fields.cache_read
+            && (!self.fields.cache_read
+                || next.usage.cache_read_tokens > self.usage.cache_read_tokens)
+        {
+            self.usage.cache_read_tokens = next.usage.cache_read_tokens;
+        }
+        if next.fields.cache_write
+            && (!self.fields.cache_write
+                || next.usage.cache_write_tokens > self.usage.cache_write_tokens)
+        {
+            self.usage.cache_write_tokens = next.usage.cache_write_tokens;
+        }
+        if next.fields.cost
+            && (!self.fields.cost || next.usage.cost_usd_ticks > self.usage.cost_usd_ticks)
+        {
+            self.usage.cost_usd_ticks = next.usage.cost_usd_ticks;
+        }
+        self.fields.input |= next.fields.input;
+        self.fields.output |= next.fields.output;
+        self.fields.cache_read |= next.fields.cache_read;
+        self.fields.cache_write |= next.fields.cache_write;
+        self.fields.cost |= next.fields.cost;
+        self.resolve_input();
     }
+
+    fn resolve_input(&mut self) {
+        self.usage.input_tokens = match (self.ambiguous_input, self.normalized_input) {
+            (None, Some((_, normalized))) => normalized,
+            (Some(ambiguous), None) => ambiguous,
+            (Some(ambiguous), Some((total, normalized))) => {
+                if total >= ambiguous.saturating_add(self.usage.output_tokens) {
+                    normalized
+                } else {
+                    ambiguous
+                }
+            }
+            (None, None) => 0,
+        };
+    }
+}
+
+fn parse_usage_snapshot(value: Option<&Value>) -> UsageSnapshot {
+    let value = value.unwrap_or(&Value::Null);
+    let (input, has_input) = usage_integer(value, &["inputTokens", "input_tokens"]);
+    let (output, has_output) = usage_integer(value, &["outputTokens", "output_tokens"]);
+    let (cache_read, has_cache_read) = usage_integer(
+        value,
+        &[
+            "cachedReadTokens",
+            "cacheReadTokens",
+            "cached_input_tokens",
+            "cache_read_tokens",
+            "cache_read_input_tokens",
+        ],
+    );
+    let (cache_write, has_cache_write) = usage_integer(
+        value,
+        &[
+            "cachedWriteTokens",
+            "cacheWriteTokens",
+            "cache_write_tokens",
+            "cache_creation_input_tokens",
+        ],
+    );
+    let (cost, has_cost) = usage_integer(value, &["costUsdTicks", "cost_usd_ticks"]);
+    let (total, has_total) = usage_integer(value, &["totalTokens", "total_tokens"]);
+    let mut snapshot = UsageSnapshot {
+        usage: TokenUsage {
+            input_tokens: input,
+            output_tokens: output,
+            cache_read_tokens: cache_read,
+            cache_write_tokens: cache_write,
+            cost_usd_ticks: cost,
+        },
+        raw_input: input,
+        fields: UsageFields {
+            input: has_input,
+            output: has_output,
+            cache_read: has_cache_read,
+            cache_write: has_cache_write,
+            cost: has_cost,
+        },
+        total: has_total.then_some(total),
+        input_normalized: false,
+    };
+    snapshot.normalize_input();
+    snapshot
+}
+
+fn usage_integer(value: &Value, keys: &[&str]) -> (i64, bool) {
+    for key in keys {
+        let Some(value) = value.get(*key) else {
+            continue;
+        };
+        let parsed = value
+            .as_i64()
+            .filter(|value| *value >= 0)
+            .or_else(|| value.as_u64().and_then(|value| i64::try_from(value).ok()))
+            .or_else(|| {
+                value.as_f64().and_then(|value| {
+                    (value.is_finite() && value >= 0.0 && value <= i64::MAX as f64)
+                        .then_some(value as i64)
+                })
+            })
+            .or_else(|| {
+                value
+                    .as_str()
+                    .map(str::trim)
+                    .and_then(|value| value.parse::<i64>().ok())
+                    .filter(|value| *value >= 0)
+            });
+        if let Some(value) = parsed {
+            return (value, true);
+        }
+    }
+    (0, false)
 }
 
 fn has_token_usage(usage: &BTreeMap<String, TokenUsage>) -> bool {
@@ -3211,6 +3406,61 @@ mod tests {
             (1, 1)
         );
         assert_eq!(reasonix_capability_versions(&Value::Null), (0, 0));
+    }
+
+    #[test]
+    fn acp_usage_normalizes_proven_inclusive_cached_input() {
+        let snapshot = parse_usage_snapshot(Some(&serde_json::json!({
+            "inputTokens":120,
+            "outputTokens":30,
+            "totalTokens":150,
+            "cacheReadTokens":20,
+            "cacheWriteTokens":5,
+            "costUsdTicks":"900"
+        })));
+        assert_eq!(snapshot.usage.input_tokens, 100);
+        assert_eq!(snapshot.usage.output_tokens, 30);
+        assert_eq!(snapshot.usage.cache_read_tokens, 20);
+        assert_eq!(snapshot.usage.cache_write_tokens, 5);
+        assert_eq!(snapshot.usage.cost_usd_ticks, 900);
+        assert!(snapshot.input_normalized);
+
+        let ambiguous = parse_usage_snapshot(Some(&serde_json::json!({
+            "inputTokens":120,
+            "outputTokens":30,
+            "cacheReadTokens":20
+        })));
+        assert_eq!(ambiguous.usage.input_tokens, 120);
+        assert!(!ambiguous.input_normalized);
+    }
+
+    #[test]
+    fn acp_usage_accumulator_is_order_independent_for_normalized_and_stream_data() {
+        let normalized = parse_usage_snapshot(Some(&serde_json::json!({
+            "inputTokens":120,
+            "outputTokens":30,
+            "totalTokens":150,
+            "cacheReadTokens":20,
+            "cacheWriteTokens":7,
+            "costUsdTicks":400
+        })));
+        let cumulative = parse_usage_snapshot(Some(&serde_json::json!({
+            "inputTokens":300,
+            "outputTokens":120,
+            "cacheReadTokens":80,
+            "costUsdTicks":900
+        })));
+        for snapshots in [[normalized, cumulative], [cumulative, normalized]] {
+            let mut accumulator = UsageAccumulator::default();
+            for snapshot in snapshots {
+                accumulator.merge(snapshot);
+            }
+            assert_eq!(accumulator.usage.input_tokens, 300);
+            assert_eq!(accumulator.usage.output_tokens, 120);
+            assert_eq!(accumulator.usage.cache_read_tokens, 80);
+            assert_eq!(accumulator.usage.cache_write_tokens, 7);
+            assert_eq!(accumulator.usage.cost_usd_ticks, 900);
+        }
     }
 
     #[test]
