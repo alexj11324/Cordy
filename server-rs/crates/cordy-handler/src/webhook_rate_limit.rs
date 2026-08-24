@@ -51,7 +51,7 @@ pub enum GateDecision {
 #[derive(Clone)]
 enum Backend {
     Memory(Arc<Mutex<MemoryState>>),
-    Redis(ConnectionManager),
+    Redis(Arc<ConnectionManager>),
 }
 
 #[derive(Default)]
@@ -85,7 +85,7 @@ impl SlidingWindowGate {
         window: Duration,
     ) -> Self {
         Self {
-            backend: Backend::Redis(connection),
+            backend: Backend::Redis(Arc::new(connection)),
             prefix,
             limit,
             window,
@@ -143,7 +143,7 @@ impl SlidingWindowGate {
                 GateDecision::Allowed
             }
             Backend::Redis(connection) => {
-                let mut connection = connection.clone();
+                let mut connection = connection.as_ref().clone();
                 let script = redis::Script::new(if consume { ALLOW_SCRIPT } else { CHECK_SCRIPT });
                 let mut invocation = script.prepare_invoke();
                 invocation
