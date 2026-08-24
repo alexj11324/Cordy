@@ -58,6 +58,23 @@ class RouteParityTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsupported MethodRouter"):
             route_parity.extract_mounted_routes(source)
 
+    def test_rejects_nonliteral_mounted_route_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "lib.rs").write_text(
+                """
+                const ISSUE_PATH: &str = "/issues";
+
+                pub fn build_router() -> Router {
+                    Router::new().route(ISSUE_PATH, get(handler))
+                }
+                """,
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "nonliteral route path"):
+                route_parity.extract_rust_routes(root)
+
     def test_rejects_compound_test_cfg_predicates(self):
         for predicate in (
             "all(test, unix)",
@@ -270,6 +287,40 @@ class RouteParityTest(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(ValueError, "early return"):
+                route_parity.extract_rust_routes(root)
+
+    def test_rejects_top_level_router_reassignment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "lib.rs").write_text(
+                """
+                pub fn build_router() -> Router {
+                    let mut app = Router::new();
+                    app = app.route("/extra", get(handler));
+                    app
+                }
+                """,
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "router assignment"):
+                route_parity.extract_rust_routes(root)
+
+    def test_rejects_unknown_outer_router_chain_methods(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "lib.rs").write_text(
+                """
+                pub fn build_router() -> Router {
+                    Router::new()
+                        .route("/mounted", get(handler))
+                        .fallback(fallback_handler)
+                }
+                """,
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "unsupported Router chain methods"):
                 route_parity.extract_rust_routes(root)
 
     def test_rejects_duplicate_contract_entries_after_normalization(self):

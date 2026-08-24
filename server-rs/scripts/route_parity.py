@@ -13,6 +13,12 @@ from pathlib import Path
 METHOD_PATTERN = re.compile(
     r"(?<![A-Za-z_])(get|post|put|patch|delete)\s*\(", re.IGNORECASE
 )
+OUTER_METHOD_PATTERN = re.compile(
+    r"\.([A-Za-z_][A-Za-z0-9_]*)\s*(?:::<[^{}()]*>)?\s*\("
+)
+ASSIGNMENT_PATTERN = re.compile(
+    r"(?<![A-Za-z0-9_])([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=|>)"
+)
 FUNCTION_PATTERN = re.compile(r"\bfn\s+([A-Za-z_][A-Za-z0-9_]*)\s*(?:<[^{};]*>)?\s*\(")
 QUALIFIED_CALL_PATTERN = re.compile(
     r"(?<![A-Za-z0-9_.])"
@@ -145,7 +151,8 @@ def extract_routes(source: str) -> set[tuple[str, str]]:
     for call in route_calls(source):
         match = re.match(r'\s*"([^"\\]+)"\s*,(.*)', call, re.DOTALL)
         if not match:
-            continue
+            snippet = " ".join(call.split())[:120]
+            raise ValueError(f"unsupported nonliteral route path: {snippet!r}")
         route, methods = match.groups()
         route_methods = list(top_level_routing_methods(methods))
         if not route_methods:
@@ -332,6 +339,30 @@ def top_level_routing_methods(expression: str):
             yield match.group(1)
 
 
+def top_level_chain_methods(expression: str):
+    """Yield method names on an outer Router expression chain."""
+    masked = rust_code_mask(expression)
+    depth_at = [0] * (len(masked) + 1)
+    round_depth = square_depth = brace_depth = 0
+    for index, char in enumerate(masked):
+        depth_at[index] = round_depth + square_depth + brace_depth
+        if char == "(":
+            round_depth += 1
+        elif char == ")":
+            round_depth -= 1
+        elif char == "[":
+            square_depth += 1
+        elif char == "]":
+            square_depth -= 1
+        elif char == "{":
+            brace_depth += 1
+        elif char == "}":
+            brace_depth -= 1
+    for match in OUTER_METHOD_PATTERN.finditer(masked):
+        if depth_at[match.start()] == 0:
+            yield match.group(1)
+
+
 def top_level_method_calls(source: str, method: str):
     """Yield arguments for calls on the mounted Router expression's outer chain."""
     masked = rust_code_mask(source)
@@ -370,7 +401,8 @@ def extract_mounted_routes(expression: str) -> set[tuple[str, str]]:
     for call in top_level_method_calls(expression, "route"):
         match = re.match(r'\s*"([^"\\]+)"\s*,(.*)', call, re.DOTALL)
         if not match:
-            continue
+            snippet = " ".join(call.split())[:120]
+            raise ValueError(f"unsupported nonliteral route path: {snippet!r}")
         route, methods = match.groups()
         route_methods = list(top_level_routing_methods(methods))
         if not route_methods:
@@ -467,6 +499,7 @@ def router_function_body(body: str) -> tuple[dict[str, str], str]:
     square_depth = 0
     brace_depth = 0
     top_level_semicolons: list[int] = []
+    top_level_block_ends: list[int] = []
 
     for index, char in enumerate(masked):
         depth_at[index] = round_depth + square_depth + brace_depth
@@ -482,12 +515,29 @@ def router_function_body(body: str) -> tuple[dict[str, str], str]:
             brace_depth += 1
         elif char == "}":
             brace_depth -= 1
+            if not (round_depth or square_depth or brace_depth):
+                top_level_block_ends.append(index)
         elif char == ";" and not (round_depth or square_depth or brace_depth):
             top_level_semicolons.append(index)
     depth_at[len(masked)] = round_depth + square_depth + brace_depth
 
     if round_depth or square_depth or brace_depth:
         raise ValueError("unbalanced router function body")
+
+    statement_boundaries = sorted([*top_level_semicolons, *top_level_block_ends])
+    for assignment in ASSIGNMENT_PATTERN.finditer(masked):
+        if depth_at[assignment.start()] != 0:
+            continue
+        boundary = max(
+            (position for position in statement_boundaries if position < assignment.start()),
+            default=-1,
+        )
+        statement_prefix = masked[boundary + 1 : assignment.start()].strip()
+        if re.match(r"let\b", statement_prefix):
+            continue
+        raise ValueError(
+            f"top-level router assignment is unsupported: {assignment.group(1)}"
+        )
 
     for match in re.finditer(
         r"(?<![A-Za-z0-9_])let\s+(?:mut\s+)?([A-Za-z_][A-Za-z0-9_]*)"
@@ -645,12 +695,14 @@ def extract_rust_routes(source_root: Path) -> set[tuple[str, str]]:
 
         def walk_expression(expression: str, require_router: bool = False) -> bool:
             masked_expression = rust_code_mask(expression)
-            if any(
-                next(top_level_method_calls(expression, unsupported), None) is not None
-                for unsupported in ("nest", "nest_service", "route_service")
-            ):
+            allowed_methods = {"layer", "merge", "route", "route_layer", "with_state"}
+            unknown_methods = sorted(
+                set(top_level_chain_methods(expression)) - allowed_methods
+            )
+            if unknown_methods:
                 raise ValueError(
-                    f"{source_path}: unsupported mounted router composition in {function_name}"
+                    f"{source_path}: unsupported Router chain methods in {function_name}: "
+                    f"{', '.join(unknown_methods)}"
                 )
 
             routes.update(extract_mounted_routes(expression))
