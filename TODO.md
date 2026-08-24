@@ -267,10 +267,20 @@
       `574d9101f5bc5715a469feb1c7b6bf918df881fb`; PR remains Ready and
       CLEAN/MERGEABLE. Scoped rustfmt/diff-check pass; Cargo/review/gate/merge
       remain with pro.
-- [ ] Next substantive daemon slice: audit production background shutdown and
-      successor handoff under real CLI invocation (including auto-update/reload
-      argv and restart flag precedence) and then move to the next Go→Rust
-      domain. Do not create a second lifecycle or provider assembly path.
+- [x] Production shutdown/successor audit completed on the frozen head
+      `e72c28b5`: PID-lock ownership, health disappearance/identity checks,
+      root cancellation and task drain, auto-update/reload successor argv,
+      profile health-port derivation, and restart preflight all remain
+      closed-loop. No new P0/P1, changed-code compile blocker, or data/lifecycle
+      safety issue was found. Deferred parity differences are recorded rather
+      than patched: restart does not yet accept the full start flag set; start
+      timeout returns an error instead of Go's warning; and stop still loads
+      profile config/server URL instead of being purely local-control-only for
+      corrupt profiles. None is an urgent safety or correctness blocker.
+- [ ] Next substantive daemon slice: if parity work continues, add the shared
+      restart flag contract as one bounded feature; otherwise move to the next
+      Go→Rust business domain. Do not create a second lifecycle or provider
+      assembly path.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
