@@ -24,6 +24,7 @@ const ROUTER_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct ChannelRuntime {
     cancel: CancellationToken,
+    outbound_tasks: Arc<cordy_channel::RuntimeTasks>,
     supervisor: Option<tokio::task::JoinHandle<()>>,
     media_reconciler: Option<tokio::task::JoinHandle<()>>,
     maintenance: Vec<tokio::task::JoinHandle<()>>,
@@ -57,10 +58,34 @@ impl ChannelRuntime {
             .map(|inner| Arc::new(ChannelStorage { inner }));
         let registry = Arc::new(cordy_channel::Registry::new());
         let cancel = CancellationToken::new();
+        let outbound_tasks = Arc::new(cordy_channel::RuntimeTasks::new());
 
-        configure_slack(state, cfg, &services, &router, storage.as_ref(), &registry);
-        configure_dingtalk(state, cfg, &router, storage.as_ref(), &registry);
-        configure_telegram(state, cfg, &router, storage.as_ref(), &registry, &cancel);
+        configure_slack(
+            state,
+            cfg,
+            &services,
+            &router,
+            storage.as_ref(),
+            &registry,
+            &outbound_tasks,
+        );
+        configure_dingtalk(
+            state,
+            cfg,
+            &router,
+            storage.as_ref(),
+            &registry,
+            &outbound_tasks,
+        );
+        configure_telegram(
+            state,
+            cfg,
+            &router,
+            storage.as_ref(),
+            &registry,
+            &cancel,
+            &outbound_tasks,
+        );
         let mut maintenance = Vec::new();
         let wecom = configure_wecom(
             state,
@@ -69,12 +94,19 @@ impl ChannelRuntime {
             storage.as_ref(),
             &registry,
             &cancel,
+            &outbound_tasks,
             wecom_metrics,
         )?;
         maintenance.extend(wecom.tasks);
-        if let Some(handle) =
-            configure_lark(state, cfg, &router, storage.as_ref(), &registry, &cancel)?
-        {
+        if let Some(handle) = configure_lark(
+            state,
+            cfg,
+            &router,
+            storage.as_ref(),
+            &registry,
+            &cancel,
+            &outbound_tasks,
+        )? {
             maintenance.push(handle);
         }
 
@@ -137,6 +169,7 @@ impl ChannelRuntime {
         );
         Ok(Some(Self {
             cancel,
+            outbound_tasks,
             supervisor,
             media_reconciler,
             maintenance,
@@ -147,6 +180,12 @@ impl ChannelRuntime {
 
     pub async fn shutdown(mut self) {
         self.cancel.cancel();
+        if !self.outbound_tasks.shutdown(RUNTIME_SHUTDOWN_TIMEOUT).await {
+            tracing::warn!(
+                timeout = ?RUNTIME_SHUTDOWN_TIMEOUT,
+                "channel outbound tasks exceeded shutdown deadline; aborted"
+            );
+        }
         let mut tasks = Vec::with_capacity(self.maintenance.len() + 2);
         if let Some(handle) = self.supervisor.take() {
             tasks.push(handle);
@@ -254,6 +293,7 @@ fn configure_slack(
     router: &Arc<ChannelRouter>,
     storage: Option<&Arc<ChannelStorage>>,
     registry: &Arc<cordy_channel::Registry>,
+    outbound_tasks: &Arc<cordy_channel::RuntimeTasks>,
 ) {
     let secret_box = match channel_secret_box("CORDY_SLACK_SECRET_KEY") {
         Ok(Some(secret_box)) => secret_box,
@@ -274,7 +314,7 @@ fn configure_slack(
     ));
     // Registration order is observable: clear the processing reaction
     // before the terminal outbound subscriber posts the reply.
-    typing.register(&state.bus, Some(decrypt.clone()));
+    typing.register(&state.bus, Some(decrypt.clone()), outbound_tasks.clone());
 
     let replier = Arc::new(cordy_slack::replier::OutboundReplier::new(
         cordy_slack::replier::OutboundReplierConfig {
@@ -308,7 +348,7 @@ fn configure_slack(
         state.pool.clone(),
         Some(decrypt.clone()),
     ))
-    .register(&state.bus);
+    .register(&state.bus, outbound_tasks.clone());
 
     let binding = cordy_slack::binding::BindingTokenService::new(state.pool.clone());
     let slash = Arc::new(cordy_slack::slash_command::SlashCommandProcessor::new(
@@ -336,6 +376,7 @@ fn configure_dingtalk(
     router: &Arc<ChannelRouter>,
     storage: Option<&Arc<ChannelStorage>>,
     registry: &Arc<cordy_channel::Registry>,
+    outbound_tasks: &Arc<cordy_channel::RuntimeTasks>,
 ) {
     let secret_box = match channel_secret_box("CORDY_DINGTALK_SECRET_KEY") {
         Ok(Some(secret_box)) => secret_box,
@@ -392,7 +433,7 @@ fn configure_dingtalk(
         Some(decrypt.clone()),
         client.clone(),
     ))
-    .register(&state.bus);
+    .register(&state.bus, outbound_tasks.clone());
     cordy_dingtalk::dingtalk_channel::register_dingtalk(
         registry,
         cordy_dingtalk::dingtalk_channel::ChannelDeps {
@@ -409,6 +450,7 @@ fn configure_telegram(
     storage: Option<&Arc<ChannelStorage>>,
     registry: &Arc<cordy_channel::Registry>,
     cancel: &CancellationToken,
+    outbound_tasks: &Arc<cordy_channel::RuntimeTasks>,
 ) {
     let secret_box = match channel_secret_box("CORDY_TELEGRAM_SECRET_KEY") {
         Ok(Some(secret_box)) => secret_box,
@@ -473,7 +515,7 @@ fn configure_telegram(
         String::new(),
         cancel.clone(),
     ))
-    .register(&state.bus);
+    .register(&state.bus, outbound_tasks.clone());
     cordy_telegram::channel::register_telegram(
         registry,
         cordy_telegram::channel::ChannelDeps {
@@ -495,6 +537,7 @@ fn configure_wecom(
     storage: Option<&Arc<ChannelStorage>>,
     registry: &Arc<cordy_channel::Registry>,
     cancel: &CancellationToken,
+    outbound_tasks: &Arc<cordy_channel::RuntimeTasks>,
     metrics: Option<Arc<cordy_metrics::WecomMetrics>>,
 ) -> anyhow::Result<WecomRuntimeSetup> {
     let secret_box = match channel_secret_box("CORDY_WECOM_SECRET_KEY") {
@@ -576,6 +619,7 @@ fn configure_wecom(
 
     let mut outbound = cordy_wecom::outbound_media::Outbound::new(state.pool.clone())
         .with_senders(senders.clone())
+        .with_runtime_tasks(outbound_tasks.clone())
         .with_app_url(
             std::env::var("WECOM_APP_URL")
                 .ok()
@@ -632,6 +676,7 @@ fn configure_lark(
     storage: Option<&Arc<ChannelStorage>>,
     registry: &Arc<cordy_channel::Registry>,
     cancel: &CancellationToken,
+    outbound_tasks: &Arc<cordy_channel::RuntimeTasks>,
 ) -> anyhow::Result<Option<tokio::task::JoinHandle<()>>> {
     let secret_box = match channel_secret_box("CORDY_LARK_SECRET_KEY") {
         Ok(Some(secret_box)) => secret_box,
@@ -731,7 +776,7 @@ fn configure_lark(
         cordy_lark::outbound::PatcherConfig { renderer: None },
     ));
     patcher.set_typing_indicator_manager(Some(typing.clone()));
-    patcher.register(&state.bus);
+    patcher.register(&state.bus, outbound_tasks.clone());
 
     let media = storage.map(|storage| {
         Arc::new(cordy_lark::media_ingest::FeishuMediaResolver::new(

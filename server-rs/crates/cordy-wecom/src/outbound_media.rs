@@ -30,6 +30,7 @@ use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use cordy_channel::RuntimeTasks;
 use cordy_db::models::Attachment;
 use cordy_db::queries::agent::get_agent_task;
 use cordy_db::queries::attachment::list_attachments_by_chat_message;
@@ -186,6 +187,7 @@ pub struct Outbound {
     senders: Option<Arc<SendersRegistry>>,
     relay: Option<Arc<OutboundRelay>>,
     counters: Arc<DeliveryCounters>,
+    runtime_tasks: Arc<RuntimeTasks>,
 }
 
 impl Outbound {
@@ -197,6 +199,7 @@ impl Outbound {
             senders: None,
             relay: None,
             counters: Arc::new(DeliveryCounters::default()),
+            runtime_tasks: Arc::new(RuntimeTasks::new()),
         }
     }
 
@@ -217,6 +220,11 @@ impl Outbound {
         self
     }
 
+    pub fn with_runtime_tasks(mut self, runtime_tasks: Arc<RuntimeTasks>) -> Self {
+        self.runtime_tasks = runtime_tasks;
+        self
+    }
+
     pub fn with_app_url(mut self, app_url: impl Into<String>) -> Self {
         self.app_url = app_url.into().trim_end_matches('/').to_string();
         self
@@ -227,10 +235,11 @@ impl Outbound {
     /// answer-first contract.
     pub fn register(self: &Arc<Self>, bus: &cordy_events::Bus) {
         let me = Arc::clone(self);
+        let tasks = self.runtime_tasks.clone();
         bus.subscribe(cordy_protocol::EVENT_CHAT_DONE, move |event| {
             let me = Arc::clone(&me);
             let event = event.clone();
-            tokio::spawn(async move {
+            tasks.spawn(async move {
                 match tokio::time::timeout(REPLY_BUDGET, me.process_event(&event, true)).await {
                     Err(_) => tracing::warn!(
                         chat_session_id = %event.chat_session_id,
@@ -246,10 +255,11 @@ impl Outbound {
             });
         });
         let me = Arc::clone(self);
+        let tasks = self.runtime_tasks.clone();
         bus.subscribe(cordy_protocol::EVENT_INBOX_NEW, move |event| {
             let me = Arc::clone(&me);
             let event = event.clone();
-            tokio::spawn(async move {
+            tasks.spawn(async move {
                 if let Err(error) = tokio::time::timeout(
                     std::time::Duration::from_secs(5),
                     me.process_inbox_event(&event, true),
@@ -468,16 +478,24 @@ impl Outbound {
             senders: self.senders.clone(),
             relay: self.relay.clone(),
             counters: Arc::clone(&self.counters),
+            runtime_tasks: self.runtime_tasks.clone(),
         });
-        tokio::spawn(async move {
+        let tasks = self.runtime_tasks.clone();
+        let rejected = me.clone();
+        if !tasks.spawn(async move {
             let ctx = CancellationToken::new();
-            let cancel = ctx.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(ATTACHMENT_BUDGET).await;
-                cancel.cancel();
-            });
-            send_attachments(me, ctx, message_id, workspace_id, to).await;
-        });
+            if tokio::time::timeout(
+                ATTACHMENT_BUDGET,
+                send_attachments(me, ctx, message_id, workspace_id, to),
+            )
+            .await
+            .is_err()
+            {
+                tracing::warn!("wecom outbound: attachment delivery timed out");
+            }
+        }) {
+            rejected.release_attachment_admission();
+        }
     }
 }
 
@@ -581,8 +599,19 @@ fn send_attachments(
     // forces the compiler to verify the concrete, owned shape instead of a
     // higher-ranked generalization that rustc cannot prove here.
     Box::pin(async move {
+        struct AdmissionGuard(Arc<DeliveryCounters>);
+        impl Drop for AdmissionGuard {
+            fn drop(&mut self) {
+                let mut admitted = self
+                    .0
+                    .admitted
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                *admitted -= 1;
+            }
+        }
+        let _admission_guard = AdmissionGuard(Arc::clone(&me.counters));
         send_attachments_owned(Arc::clone(&me), ctx, message_id, workspace_id, to).await;
-        me.release_attachment_admission();
     })
 }
 
@@ -932,7 +961,7 @@ impl Outbound {
             .counters
             .admitted
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(|error| error.into_inner());
         *admitted -= 1;
     }
 }

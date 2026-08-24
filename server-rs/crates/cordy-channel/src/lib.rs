@@ -39,6 +39,7 @@ pub mod history;
 pub mod member_text;
 pub mod message;
 pub mod registry;
+pub mod runtime_tasks;
 
 pub use capability::Capability;
 pub use channel::{BuiltChannel, Channel, Config, Factory, FactoryFuture, Type};
@@ -50,3 +51,4 @@ pub use message::{
     ChatType, InboundMessage, MediaRef, MsgType, OutboundMessage, ReplyCtx, SendResult, Source,
 };
 pub use registry::{Registry, UnknownTypeError};
+pub use runtime_tasks::RuntimeTasks;

@@ -695,12 +695,17 @@ impl Outbound {
         }
     }
 
-    pub fn register(self: &Arc<Self>, bus: &cordy_events::Bus) {
+    pub fn register(
+        self: &Arc<Self>,
+        bus: &cordy_events::Bus,
+        tasks: Arc<cordy_channel::RuntimeTasks>,
+    ) {
         let this = self.clone();
+        let partial_tasks = tasks.clone();
         bus.subscribe(cordy_protocol::EVENT_TASK_MESSAGE, move |event| {
             let this = this.clone();
             let event = event.clone();
-            tokio::spawn(async move {
+            partial_tasks.spawn(async move {
                 if let Err(error) = this.process_partial(&event).await {
                     tracing::warn!(%error, task_id = %event.task_id, "telegram partial delivery failed");
                 }
@@ -713,6 +718,7 @@ impl Outbound {
             cordy_protocol::EVENT_TASK_CANCELLED,
         ] {
             let this = self.clone();
+            let tasks = tasks.clone();
             bus.subscribe(event_type, move |event| {
                 let Ok(permit) = this.delivery_slots.clone().try_acquire_owned() else {
                     tracing::warn!(task_id = %event.task_id, "telegram terminal delivery queue is full");
@@ -720,7 +726,7 @@ impl Outbound {
                 };
                 let this = this.clone();
                 let event = event.clone();
-                tokio::spawn(async move {
+                tasks.spawn(async move {
                     let _permit = permit;
                     if let Err(error) = this.process_terminal(&event).await {
                         tracing::warn!(%error, task_id = %event.task_id, "telegram terminal delivery failed");

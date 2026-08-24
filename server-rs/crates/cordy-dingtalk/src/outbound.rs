@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use uuid::Uuid;
 
+use cordy_channel::RuntimeTasks;
 use cordy_channel_engine::task_input_is_channel_ingested;
 use cordy_db::queries::agent::get_agent_task;
 use cordy_db::queries::channel::{
@@ -47,18 +48,19 @@ impl Outbound {
     /// Subscribes to chat-done and task-failed. Task-failed keeps the DingTalk
     /// conversation consistent with the web transcript — without it a failed
     /// run leaves the user staring at the "👀 On it" ack forever.
-    pub fn register(self: &Arc<Self>, bus: &cordy_events::Bus) {
+    pub fn register(self: &Arc<Self>, bus: &cordy_events::Bus, tasks: Arc<RuntimeTasks>) {
         let this = self.clone();
+        let chat_done_tasks = tasks.clone();
         bus.subscribe(cordy_protocol::events::EVENT_CHAT_DONE, move |e| {
             let this = this.clone();
             let e = e.clone();
-            tokio::spawn(async move { this.process_detached(&e).await });
+            chat_done_tasks.spawn(async move { this.process_detached(&e).await });
         });
         let this = self.clone();
         bus.subscribe(cordy_protocol::events::EVENT_TASK_FAILED, move |e| {
             let this = this.clone();
             let e = e.clone();
-            tokio::spawn(async move { this.process_detached(&e).await });
+            tasks.spawn(async move { this.process_detached(&e).await });
         });
     }
 
