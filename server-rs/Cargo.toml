@@ -19,6 +19,7 @@ members = [
     "crates/cordy-protocol",
     "crates/cordy-realtime",
     "crates/cordy-redis",
+    "crates/cordy-scheduler",
     "crates/cordy-service",
     "crates/cordy-slack",
     "crates/cordy-task-failure",

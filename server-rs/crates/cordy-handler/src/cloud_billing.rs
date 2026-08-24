@@ -795,15 +795,19 @@ mod tests {
     }
 
     fn test_state(flags: bool) -> HandlerState {
-        let state = HandlerState::new(
-            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
-            cordy_auth::pat_cache::PatCache::disabled(),
-            None,
-        );
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let pat_cache = cordy_auth::pat_cache::PatCache::disabled();
         if flags {
-            state.with_feature_flags(Arc::new(EnabledFlags))
+            HandlerState::new_with_production_dependencies(
+                pool,
+                pat_cache,
+                None,
+                Arc::new(cordy_analytics::NoopClient),
+                Arc::new(EnabledFlags),
+                None,
+            )
         } else {
-            state
+            HandlerState::new(pool, pat_cache, None)
         }
     }
 

@@ -10,6 +10,7 @@
 //!   `{status, updated_at|completed_at}`.
 
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 use axum::extract::{Path, Query as AxumQuery, State};
 use axum::http::{header, HeaderMap, StatusCode};
@@ -567,7 +568,7 @@ async fn heartbeat(
     }
 
     if let Err(error) = record_heartbeat(&state, &rt).await {
-        tracing::warn!(%error, runtime_id = %rt.id, "heartbeat DB update failed");
+        tracing::warn!(%error, runtime_id = %rt.id, "heartbeat update failed");
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "heartbeat failed");
     }
 
@@ -716,44 +717,31 @@ async fn heartbeat(
     Json(resp).into_response()
 }
 
-/// Redis absorbs the heartbeat hot path while the DB remains authoritative:
-/// offline transitions and a bounded 60-second last-seen refresh always hit
-/// Postgres. A missing or failed Redis store degrades to the original DB write
-/// on every beat.
+const RUNTIME_LIVENESS_TTL: Duration = Duration::from_secs(90);
+const RUNTIME_HEARTBEAT_DB_FLUSH_INTERVAL: Duration = Duration::from_secs(60);
+
 async fn record_heartbeat(state: &HandlerState, rt: &AgentRuntime) -> anyhow::Result<()> {
-    let mut need_db_write = crate::runtime_liveness::heartbeat_needs_db_write(
-        state.runtime_liveness.is_some(),
-        &rt.status,
-        rt.last_seen_at.as_ref().cloned(),
-        chrono::Utc::now(),
-    );
-    if let Some(liveness) = state.runtime_liveness.as_ref() {
-        if let Err(error) = liveness
-            .touch(
-                &rt.id.to_string(),
-                crate::runtime_liveness::RUNTIME_LIVENESS_TTL,
-            )
+    let stale_in_db = rt.last_seen_at.is_none_or(|last_seen| {
+        chrono::Utc::now().signed_duration_since(last_seen)
+            >= chrono::Duration::from_std(RUNTIME_HEARTBEAT_DB_FLUSH_INTERVAL)
+                .unwrap_or_else(|_| chrono::Duration::seconds(60))
+    });
+    let mut needs_db_write =
+        !state.liveness_store.available() || rt.status != "online" || stale_in_db;
+
+    if state.liveness_store.available() {
+        if let Err(error) = state
+            .liveness_store
+            .touch(&rt.id.to_string(), RUNTIME_LIVENESS_TTL)
             .await
         {
             tracing::warn!(%error, runtime_id = %rt.id, "liveness touch failed; falling back to DB heartbeat");
-            need_db_write = true;
+            needs_db_write = true;
         }
     }
-    if !need_db_write {
-        return Ok(());
+    if needs_db_write {
+        state.heartbeat_scheduler.schedule(rt).await?;
     }
-    if rt.status == "online" && rt.last_seen_at.is_some() {
-        let updated = runtime::touch_agent_runtime_last_seen(&state.pool, rt.id).await?;
-        if updated > 0 {
-            return Ok(());
-        }
-    }
-    anyhow::ensure!(
-        runtime::mark_agent_runtime_online(&state.pool, rt.id)
-            .await?
-            .is_some(),
-        "runtime disappeared during heartbeat update"
-    );
     Ok(())
 }
 

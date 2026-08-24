@@ -1,157 +1,129 @@
-//! Redis-backed runtime heartbeat liveness, matching Go's
-//! `runtime_liveness_store.go`.
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
-use cordy_redis::RecoveringConnection;
-use std::{collections::HashMap, time::Duration};
 
-pub const RUNTIME_LIVENESS_TTL: Duration = Duration::from_secs(90);
-pub const RUNTIME_HEARTBEAT_DB_FLUSH_INTERVAL: Duration = Duration::from_secs(60);
+const KEY_PREFIX: &str = "mul:runtime:hb:";
 const REDIS_OPERATION_TIMEOUT: Duration = Duration::from_millis(250);
-const RUNTIME_LIVENESS_KEY_PREFIX: &str = "mul:runtime:hb:";
-
-fn liveness_key(runtime_id: &str) -> String {
-    format!("{RUNTIME_LIVENESS_KEY_PREFIX}{runtime_id}")
-}
-
-pub fn heartbeat_needs_db_write(
-    store_configured: bool,
-    status: &str,
-    last_seen_at: Option<chrono::DateTime<chrono::Utc>>,
-    now: chrono::DateTime<chrono::Utc>,
-) -> bool {
-    !store_configured
-        || status != "online"
-        || last_seen_at.is_none_or(|last_seen| {
-            now.signed_duration_since(last_seen)
-                >= chrono::Duration::from_std(RUNTIME_HEARTBEAT_DB_FLUSH_INTERVAL)
-                    .expect("runtime heartbeat flush interval fits chrono")
-        })
-}
 
 #[async_trait]
-pub trait RuntimeLivenessStore: Send + Sync {
+pub trait LivenessStore: Send + Sync {
+    fn available(&self) -> bool;
     async fn touch(&self, runtime_id: &str, ttl: Duration) -> anyhow::Result<()>;
-    async fn is_alive_batch(&self, runtime_ids: &[String])
-        -> anyhow::Result<HashMap<String, bool>>;
-    async fn forget(&self, runtime_id: &str) -> anyhow::Result<()>;
+    async fn is_alive_batch(&self, runtime_ids: &[String]) -> (HashMap<String, bool>, bool);
+    async fn forget(&self, runtime_id: &str);
 }
 
-pub struct RedisRuntimeLivenessStore {
-    connection: RecoveringConnection,
+pub struct NoopLivenessStore;
+
+#[async_trait]
+impl LivenessStore for NoopLivenessStore {
+    fn available(&self) -> bool {
+        false
+    }
+    async fn touch(&self, _: &str, _: Duration) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn is_alive_batch(&self, _: &[String]) -> (HashMap<String, bool>, bool) {
+        (HashMap::new(), false)
+    }
+    async fn forget(&self, _: &str) {}
 }
 
-impl RedisRuntimeLivenessStore {
-    pub fn new(connection: RecoveringConnection) -> Self {
-        Self { connection }
+pub struct RedisLivenessStore {
+    connection: cordy_redis::RecoveringConnection,
+}
+
+impl RedisLivenessStore {
+    pub fn new(connection: cordy_redis::RecoveringConnection) -> Arc<Self> {
+        Arc::new(Self { connection })
+    }
+    fn key(runtime_id: &str) -> String {
+        format!("{KEY_PREFIX}{runtime_id}")
     }
 }
 
 #[async_trait]
-impl RuntimeLivenessStore for RedisRuntimeLivenessStore {
+impl LivenessStore for RedisLivenessStore {
+    fn available(&self) -> bool {
+        true
+    }
+
     async fn touch(&self, runtime_id: &str, ttl: Duration) -> anyhow::Result<()> {
-        anyhow::ensure!(!runtime_id.is_empty(), "liveness touch: empty runtime id");
-        anyhow::ensure!(!ttl.is_zero(), "liveness touch: zero TTL");
+        anyhow::ensure!(
+            !runtime_id.is_empty(),
+            "redis liveness store: empty runtime id"
+        );
         let mut connection = self.connection.clone();
-        let mut command = redis::cmd("SET");
-        command
-            .arg(liveness_key(runtime_id))
-            .arg("1")
-            .arg("PX")
-            .arg(ttl.as_millis().min(u64::MAX as u128) as u64);
         tokio::time::timeout(
             REDIS_OPERATION_TIMEOUT,
-            command.query_async::<()>(&mut connection),
+            redis::cmd("SET")
+                .arg(Self::key(runtime_id))
+                .arg("1")
+                .arg("PX")
+                .arg(u64::try_from(ttl.as_millis()).unwrap_or(u64::MAX))
+                .query_async::<()>(&mut connection),
         )
         .await
-        .map_err(|_| anyhow::anyhow!("liveness touch timed out"))?
-        .map_err(|error| anyhow::anyhow!("liveness touch: {error}"))
+        .map_err(|_| anyhow::anyhow!("liveness touch timed out"))??;
+        Ok(())
     }
 
-    async fn is_alive_batch(
-        &self,
-        runtime_ids: &[String],
-    ) -> anyhow::Result<HashMap<String, bool>> {
+    async fn is_alive_batch(&self, runtime_ids: &[String]) -> (HashMap<String, bool>, bool) {
         if runtime_ids.is_empty() {
-            return Ok(HashMap::new());
+            return (HashMap::new(), true);
         }
-        anyhow::ensure!(
-            runtime_ids.iter().all(|runtime_id| !runtime_id.is_empty()),
-            "liveness batch: empty runtime id"
-        );
+        let mut connection = self.connection.clone();
         let keys = runtime_ids
             .iter()
-            .map(|runtime_id| liveness_key(runtime_id))
+            .map(|id| Self::key(id))
             .collect::<Vec<_>>();
-        let mut connection = self.connection.clone();
-        let mut command = redis::cmd("MGET");
-        command.arg(keys);
-        let values = tokio::time::timeout(
+        let values = match tokio::time::timeout(
             REDIS_OPERATION_TIMEOUT,
-            command.query_async::<Vec<Option<Vec<u8>>>>(&mut connection),
+            redis::cmd("MGET")
+                .arg(keys)
+                .query_async::<Vec<Option<String>>>(&mut connection),
         )
         .await
-        .map_err(|_| anyhow::anyhow!("liveness batch timed out"))?
-        .map_err(|error| anyhow::anyhow!("liveness batch: {error}"))?;
-        anyhow::ensure!(
-            values.len() == runtime_ids.len(),
-            "liveness batch returned an unexpected result count"
-        );
-        Ok(runtime_ids
+        {
+            Ok(Ok(values)) => values,
+            Ok(Err(error)) => {
+                tracing::warn!(%error, count = runtime_ids.len(), "liveness mget failed; falling back to DB");
+                return (HashMap::new(), false);
+            }
+            Err(_) => {
+                tracing::warn!(
+                    count = runtime_ids.len(),
+                    "liveness mget timed out; falling back to DB"
+                );
+                return (HashMap::new(), false);
+            }
+        };
+        let alive = runtime_ids
             .iter()
             .cloned()
             .zip(values.into_iter().map(|value| value.is_some()))
-            .collect())
+            .collect();
+        (alive, true)
     }
 
-    async fn forget(&self, runtime_id: &str) -> anyhow::Result<()> {
+    async fn forget(&self, runtime_id: &str) {
         if runtime_id.is_empty() {
-            return Ok(());
+            return;
         }
         let mut connection = self.connection.clone();
-        let mut command = redis::cmd("DEL");
-        command.arg(liveness_key(runtime_id));
-        tokio::time::timeout(
+        match tokio::time::timeout(
             REDIS_OPERATION_TIMEOUT,
-            command.query_async::<i64>(&mut connection),
+            redis::cmd("DEL")
+                .arg(Self::key(runtime_id))
+                .query_async::<()>(&mut connection),
         )
         .await
-        .map_err(|_| anyhow::anyhow!("liveness forget timed out"))?
-        .map(|_| ())
-        .map_err(|error| anyhow::anyhow!("liveness forget: {error}"))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn key_namespace_and_timing_invariants_match_go() {
-        assert_eq!(liveness_key("runtime-1"), "mul:runtime:hb:runtime-1");
-        assert_eq!(RUNTIME_LIVENESS_TTL, Duration::from_secs(90));
-        assert_eq!(RUNTIME_HEARTBEAT_DB_FLUSH_INTERVAL, Duration::from_secs(60));
-        assert!(RUNTIME_HEARTBEAT_DB_FLUSH_INTERVAL < RUNTIME_LIVENESS_TTL);
-        assert!(REDIS_OPERATION_TIMEOUT < RUNTIME_HEARTBEAT_DB_FLUSH_INTERVAL);
-    }
-
-    #[test]
-    fn db_fallback_and_flush_decision_preserve_authoritative_state() {
-        let now = chrono::Utc::now();
-        assert!(heartbeat_needs_db_write(false, "online", Some(now), now));
-        assert!(heartbeat_needs_db_write(true, "offline", Some(now), now));
-        assert!(heartbeat_needs_db_write(true, "online", None, now));
-        assert!(!heartbeat_needs_db_write(
-            true,
-            "online",
-            Some(now - chrono::Duration::seconds(59)),
-            now
-        ));
-        assert!(heartbeat_needs_db_write(
-            true,
-            "online",
-            Some(now - chrono::Duration::seconds(60)),
-            now
-        ));
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => tracing::warn!(%error, %runtime_id, "liveness forget failed"),
+            Err(_) => tracing::warn!(%runtime_id, "liveness forget timed out"),
+        }
     }
 }

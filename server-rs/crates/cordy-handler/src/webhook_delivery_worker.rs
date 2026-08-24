@@ -11,12 +11,14 @@ use cordy_service::autopilot::{AutopilotQuotaExceededError, AutopilotService};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::sync::Notify;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_ATTEMPTS: i32 = 5;
 const CONCURRENCY: usize = 4;
+pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The queue and lease live in PostgreSQL. `Notify` is only a latency hint;
 /// polling recovers rows after process restarts or missed local notifications.
@@ -45,42 +47,44 @@ impl WebhookDeliveryWorker {
         })
     }
 
-    pub fn start(self: Arc<Self>, shutdown: CancellationToken) -> tokio::task::JoinHandle<()> {
-        tokio::spawn(async move {
-            let mut workers = tokio::task::JoinSet::new();
-            for _ in 0..CONCURRENCY {
-                let worker = self.clone();
-                let worker_shutdown = shutdown.clone();
-                workers.spawn(async move { worker.run_loop(worker_shutdown).await });
-            }
-            loop {
-                tokio::select! {
-                    () = shutdown.cancelled() => break,
-                    result = workers.join_next() => match result {
-                        Some(Err(error)) => {
-                            tracing::error!(%error, "webhook delivery worker stopped unexpectedly");
-                        }
-                        Some(Ok(())) => {}
-                        None => break,
-                    }
-                }
-            }
-            while workers.join_next().await.is_some() {}
-        })
+    /// Starts an owned supervisor. Its JoinSet owns all four workers, so
+    /// aborting the supervisor cannot leave detached delivery loops behind.
+    pub fn start(self: Arc<Self>, cancel: CancellationToken) -> WebhookDeliveryRuntime {
+        let task_cancel = cancel.clone();
+        let task = tokio::spawn(async move { self.run_workers(task_cancel).await });
+        WebhookDeliveryRuntime {
+            cancel,
+            task: Some(task),
+        }
     }
 
-    async fn run_loop(&self, shutdown: CancellationToken) {
-        loop {
-            if shutdown.is_cancelled() {
-                return;
+    async fn run_workers(self: Arc<Self>, cancel: CancellationToken) {
+        let mut workers = tokio::task::JoinSet::new();
+        for _ in 0..CONCURRENCY {
+            let worker = self.clone();
+            let worker_cancel = cancel.child_token();
+            workers.spawn(async move { worker.run_loop(worker_cancel).await });
+        }
+        while let Some(result) = workers.join_next().await {
+            if let Err(error) = result {
+                tracing::error!(%error, "webhook delivery worker stopped unexpectedly");
             }
-            match self.process_next().await {
+        }
+    }
+
+    async fn run_loop(&self, cancel: CancellationToken) {
+        loop {
+            let processed = tokio::select! {
+                _ = cancel.cancelled() => return,
+                result = self.process_next() => result,
+            };
+            match processed {
                 Ok(true) => continue,
                 Ok(false) => {}
                 Err(error) => tracing::error!(%error, "webhook worker failed to process delivery"),
             }
             tokio::select! {
-                () = shutdown.cancelled() => return,
+                _ = cancel.cancelled() => return,
                 () = self.notify.notified() => {},
                 () = tokio::time::sleep(POLL_INTERVAL) => {},
             }
@@ -347,6 +351,48 @@ impl WebhookDeliveryWorker {
         )
         .await?;
         Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WebhookShutdownOutcome {
+    Stopped,
+    Panicked,
+    TimedOut,
+}
+
+/// Production-owned root for the webhook delivery supervisor and its worker
+/// JoinSet. Drop is a fail-safe abort; normal shutdown is cooperative/bounded.
+pub struct WebhookDeliveryRuntime {
+    cancel: CancellationToken,
+    task: Option<JoinHandle<()>>,
+}
+
+impl WebhookDeliveryRuntime {
+    pub async fn shutdown(mut self, timeout: Duration) -> WebhookShutdownOutcome {
+        self.cancel.cancel();
+        let mut task = self
+            .task
+            .take()
+            .expect("webhook delivery runtime always owns a supervisor");
+        match tokio::time::timeout(timeout, &mut task).await {
+            Ok(Ok(())) => WebhookShutdownOutcome::Stopped,
+            Ok(Err(_)) => WebhookShutdownOutcome::Panicked,
+            Err(_) => {
+                task.abort();
+                let _ = task.await;
+                WebhookShutdownOutcome::TimedOut
+            }
+        }
+    }
+}
+
+impl Drop for WebhookDeliveryRuntime {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
     }
 }
 

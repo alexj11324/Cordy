@@ -24,6 +24,7 @@ cordy-lark = { path = "../cordy-lark" }
 cordy-ghsnapshot = { path = "../cordy-ghsnapshot" }
 cordy-metrics = { path = "../cordy-metrics" }
 cordy-realtime = { path = "../cordy-realtime" }
+cordy-scheduler = { path = "../cordy-scheduler" }
 cordy-service = { path = "../cordy-service" }
 cordy-slack = { path = "../cordy-slack" }
 cordy-telegram = { path = "../cordy-telegram" }

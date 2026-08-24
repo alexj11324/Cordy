@@ -18,6 +18,7 @@ pub mod attachment;
 pub mod attachment_storage;
 pub mod auth;
 pub mod autopilot;
+pub mod autopilot_listeners;
 pub mod autopilot_webhook;
 pub mod avatar;
 pub mod binding_redeem;
@@ -43,6 +44,7 @@ pub mod error;
 pub mod feedback;
 pub mod github;
 pub mod health;
+pub mod heartbeat_scheduler;
 pub mod inbox;
 pub mod invitation;
 pub mod issue;
@@ -55,7 +57,9 @@ pub mod label;
 pub mod mcp_merge;
 pub mod me;
 pub mod notification;
+mod notification_listeners;
 pub mod onboarding_shim;
+pub mod ordered_event_side_effects;
 pub mod pat;
 pub mod pending_store;
 pub mod pin;
@@ -78,6 +82,7 @@ mod skill_import;
 pub mod squad;
 pub mod squad_briefing;
 pub mod state;
+mod subscriber_activity_listeners;
 pub mod task;
 pub mod task_json;
 pub mod timefmt;
@@ -210,16 +215,22 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         hub.set_authorizer(Arc::new(ws::DbScopeAuthorizer::new(state.tasks.clone())));
     }
 
+    let auth_side_effects: Arc<dyn cordy_middleware::auth::AuthSideEffectSpawner> = {
+        let tasks = state.tasks.clone();
+        Arc::new(move |task| tasks.spawn_side_effect(task))
+    };
     let auth_state = AuthState {
         pool: state.pool.clone(),
         pat_cache: state.pat_cache.clone(),
         cloud_pat_verifier: state.cloud_pat_verifier.clone(),
+        side_effects: auth_side_effects.clone(),
     };
     let daemon_auth_state = DaemonAuthState {
         pool: state.pool.clone(),
         pat_cache: state.pat_cache.clone(),
         daemon_cache: state.daemon_token_cache.clone(),
         cloud_pat_verifier: state.cloud_pat_verifier.clone(),
+        side_effects: auth_side_effects,
     };
     let cloudfront_signer = state.attachment_download.cloudfront_signer.clone();
     let public_auth = auth::public_router(
@@ -541,13 +552,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             cloudfront_signer,
             cloudfront::refresh_signed_cookies,
         ))
-        .route_layer(middleware::from_fn_with_state(auth_state, auth_middleware));
+        .route_layer(middleware::from_fn_with_state(
+            auth_state.clone(),
+            auth_middleware,
+        ));
     let plugin_action = plugin_action::router().route_layer(middleware::from_fn_with_state(
-        AuthState {
-            pool: state.pool.clone(),
-            pat_cache: state.pat_cache.clone(),
-            cloud_pat_verifier: state.cloud_pat_verifier.clone(),
-        },
+        auth_state,
         cordy_middleware::plugin_auth::plugin_auth,
     ));
     let daemon = daemon::router().route_layer(middleware::from_fn_with_state(
