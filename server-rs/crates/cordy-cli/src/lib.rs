@@ -123,6 +123,16 @@ enum RepoCommand {
         about = "Remove repositories from the workspace registry"
     )]
     Remove(RepoRemoveArgs),
+    #[command(about = "Check out a repository into the working directory")]
+    Checkout {
+        #[arg(value_name = "URL")]
+        url: String,
+        #[arg(
+            long = "ref",
+            help = "branch, tag, or commit to check out instead of the remote default branch"
+        )]
+        checkout_ref: Option<String>,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -2028,6 +2038,9 @@ async fn run_with_input<R: Read>(
         Command::Repo(RepoArgs {
             command: RepoCommand::Remove(args),
         }) => run_repo_remove(cli, environment, args).await,
+        Command::Repo(RepoArgs {
+            command: RepoCommand::Checkout { url, checkout_ref },
+        }) => run_repo_checkout(environment, url, checkout_ref.as_deref()).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -2504,6 +2517,99 @@ async fn run_repo_remove(
         },
         stderr: String::new(),
     })
+}
+
+fn repo_checkout_retry_delay(
+    value: &str,
+    now: chrono::DateTime<chrono::Utc>,
+) -> std::time::Duration {
+    const DEFAULT_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
+    const MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
+    let value = value.trim();
+    if let Ok(seconds) = value.parse::<i64>() {
+        if seconds >= 0 {
+            return std::time::Duration::from_secs(seconds as u64).min(MAX_DELAY);
+        }
+    }
+    if let Ok(retry_at) = chrono::DateTime::parse_from_rfc2822(value) {
+        let delay = retry_at.with_timezone(&chrono::Utc) - now;
+        return delay.to_std().unwrap_or_default().min(MAX_DELAY);
+    }
+    DEFAULT_DELAY
+}
+
+async fn run_repo_checkout(
+    environment: &Environment,
+    repo_url: &str,
+    checkout_ref: Option<&str>,
+) -> Result<RunOutput> {
+    let daemon_port = environment.raw("CORDY_DAEMON_PORT").unwrap_or_default();
+    if daemon_port.is_empty() {
+        bail!(
+            "CORDY_DAEMON_PORT not set (this command is intended to be run by an agent inside a daemon task)"
+        );
+    }
+    let token = environment.raw("CORDY_TOKEN").unwrap_or_default();
+    if token.is_empty() {
+        bail!("CORDY_TOKEN not set (repo checkout requires the active task credential)");
+    }
+    let body = serde_json::json!({
+        "url":repo_url,
+        "workspace_id":environment.raw("CORDY_WORKSPACE_ID").unwrap_or_default(),
+        "workdir":environment.current_dir(),
+        "ref":checkout_ref.unwrap_or_default(),
+        "agent_name":environment.raw("CORDY_AGENT_NAME").unwrap_or_default(),
+        "task_id":environment.raw("CORDY_TASK_ID").unwrap_or_default(),
+        "checkout_mode":environment.raw("CORDY_REPO_CHECKOUT_MODE").unwrap_or_default().trim(),
+        "retry_busy":true
+    });
+    let checkout_url = format!("http://127.0.0.1:{daemon_port}/repo/checkout");
+    let client = reqwest::Client::new();
+    let checkout = async {
+        loop {
+            let response = client
+                .post(&checkout_url)
+                .bearer_auth(token)
+                .json(&body)
+                .send()
+                .await
+                .context("connect to daemon")?;
+            let status = response.status();
+            let retryable = response
+                .headers()
+                .get("X-Cordy-Retryable")
+                .and_then(|value| value.to_str().ok())
+                == Some("repo-busy");
+            let retry_after = response
+                .headers()
+                .get("Retry-After")
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or_default()
+                .to_string();
+            let response_body = response
+                .text()
+                .await
+                .context("read daemon checkout response")?;
+            if status == reqwest::StatusCode::SERVICE_UNAVAILABLE && retryable {
+                tokio::time::sleep(repo_checkout_retry_delay(&retry_after, chrono::Utc::now()))
+                    .await;
+                continue;
+            }
+            if status != reqwest::StatusCode::OK {
+                bail!("checkout failed: {response_body}");
+            }
+            let result: Value = serde_json::from_str(&response_body).context("parse response")?;
+            let path = value_string(&result, "path");
+            let branch = value_string(&result, "branch_name");
+            return Ok(RunOutput {
+                stdout: format!("{path}\n"),
+                stderr: format!("Checked out {repo_url} → {path} (branch: {branch})\n"),
+            });
+        }
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(5 * 60), checkout)
+        .await
+        .map_err(|_| anyhow::anyhow!("connect to daemon: deadline exceeded"))?
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -13847,6 +13953,109 @@ mod tests {
             "x"
         ])
         .is_err());
+    }
+
+    #[tokio::test]
+    async fn repo_checkout_forwards_task_context_and_retries_only_marked_busy() {
+        let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let attempts_handler = Arc::clone(&attempts);
+        let app = Router::new().route(
+            "/repo/checkout",
+            post(move |request: Request| {
+                let attempts = Arc::clone(&attempts_handler);
+                async move {
+                    let attempt = attempts.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                    assert_eq!(
+                        request
+                            .headers()
+                            .get("authorization")
+                            .and_then(|value| value.to_str().ok()),
+                        Some("Bearer mat_checkout")
+                    );
+                    let body = axum::body::to_bytes(request.into_body(), usize::MAX)
+                        .await
+                        .expect("checkout body");
+                    let body: Value = serde_json::from_slice(&body).expect("checkout JSON");
+                    assert_eq!(body["url"], "https://github.com/acme/cordy.git");
+                    assert_eq!(body["workspace_id"], "ws-1");
+                    assert_eq!(body["agent_name"], "Rust Agent");
+                    assert_eq!(body["task_id"], "task-1");
+                    assert_eq!(body["checkout_mode"], "isolated");
+                    assert_eq!(body["ref"], "release/v2");
+                    assert_eq!(body["retry_busy"], true);
+                    if attempt == 0 {
+                        let mut response = axum::response::Response::builder()
+                            .status(axum::http::StatusCode::SERVICE_UNAVAILABLE)
+                            .header("X-Cordy-Retryable", "repo-busy")
+                            .header("Retry-After", "0")
+                            .body(axum::body::Body::from("busy"))
+                            .expect("busy response");
+                        response
+                            .headers_mut()
+                            .insert("content-type", "text/plain".parse().expect("content type"));
+                        return response;
+                    }
+                    axum::response::Response::builder()
+                        .status(axum::http::StatusCode::OK)
+                        .header("content-type", "application/json")
+                        .body(axum::body::Body::from(
+                            r#"{"path":"/work/cordy","branch_name":"agent/rust/task-1"}"#,
+                        ))
+                        .expect("success response")
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let port = listener.local_addr().expect("address").port();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_DAEMON_PORT", port.to_string());
+        environment.set("CORDY_WORKSPACE_ID", "ws-1");
+        environment.set("CORDY_AGENT_NAME", "Rust Agent");
+        environment.set("CORDY_TASK_ID", "task-1");
+        environment.set("CORDY_TOKEN", "mat_checkout");
+        environment.set("CORDY_REPO_CHECKOUT_MODE", " isolated ");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "repo",
+            "checkout",
+            "https://github.com/acme/cordy.git",
+            "--ref",
+            "release/v2",
+        ])
+        .expect("repo checkout CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("repo checkout");
+        assert_eq!(output.stdout, "/work/cordy\n");
+        assert!(output.stderr.contains("branch: agent/rust/task-1"));
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 2);
+        server.abort();
+    }
+
+    #[test]
+    fn repo_checkout_retry_delay_matches_go_seconds_date_and_caps() {
+        let now = chrono::DateTime::parse_from_rfc3339("2026-08-24T00:00:00Z")
+            .expect("now")
+            .with_timezone(&chrono::Utc);
+        assert_eq!(
+            repo_checkout_retry_delay("7", now),
+            std::time::Duration::from_secs(7)
+        );
+        assert_eq!(
+            repo_checkout_retry_delay("60", now),
+            std::time::Duration::from_secs(30)
+        );
+        assert_eq!(
+            repo_checkout_retry_delay("Mon, 24 Aug 2026 00:00:05 GMT", now),
+            std::time::Duration::from_secs(5)
+        );
+        assert_eq!(
+            repo_checkout_retry_delay("invalid", now),
+            std::time::Duration::from_secs(1)
+        );
     }
 
     #[test]

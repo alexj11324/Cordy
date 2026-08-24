@@ -15,6 +15,7 @@ const TASK_CONTEXT_MARKER_MANAGED_BY: &str = "cordy-daemon-task";
 
 const CAPTURED_ENV_KEYS: &[&str] = &[
     "CORDY_AGENT_ID",
+    "CORDY_AGENT_NAME",
     "CORDY_TASK_ID",
     "CORDY_TOKEN",
     "CORDY_DAEMON_PORT",
@@ -22,6 +23,7 @@ const CAPTURED_ENV_KEYS: &[&str] = &[
     "CORDY_SERVER_URL",
     "CORDY_HTTP_TIMEOUT",
     "CORDY_DEBUG",
+    "CORDY_REPO_CHECKOUT_MODE",
     TASK_CONFIG_ROOT_ENV,
 ];
 
