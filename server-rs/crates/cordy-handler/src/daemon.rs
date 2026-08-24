@@ -488,11 +488,7 @@ async fn deregister(
             tracing::warn!(error = %e, runtime_id = %rid, "deregister: failed to set offline");
             continue;
         }
-        if let Some(liveness) = state.runtime_liveness.as_ref() {
-            if let Err(error) = liveness.forget(&rt.id.to_string()).await {
-                tracing::warn!(%error, runtime_id = %rt.id, "deregister: liveness forget failed");
-            }
-        }
+        state.liveness_store.forget(&rt.id.to_string()).await;
         if !affected.contains(&ws_id) {
             affected.push(ws_id);
         }
