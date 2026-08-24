@@ -1412,7 +1412,7 @@ async fn create_mika(
         );
     }
     let mut created_now = false;
-    let target = match agent::get_agent_by_system_key(&state.pool, ws, Some("mika")).await {
+    let mut target = match agent::get_agent_by_system_key(&state.pool, ws, Some("mika")).await {
         Ok(Some(existing)) => existing,
         Ok(None) => {
             let mut tx = match state.pool.begin().await {
@@ -1505,6 +1505,12 @@ async fn create_mika(
             )
         }
     };
+    if created_now && rt.status == "online" {
+        state.tasks.reconcile_agent_status(target.id).await;
+        if let Ok(Some(reconciled)) = agent::get_agent(&state.pool, target.id).await {
+            target = reconciled;
+        }
+    }
     let session = match get_or_create_mika_session(
         &state,
         ws,
