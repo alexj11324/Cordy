@@ -373,6 +373,19 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready/CLEAN/MERGEABLE were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy daemon logs` to the same PR. It keeps the Go human-local
+      guard and profile path semantics, supports bounded `--lines/-n` and
+      `--follow/-f`, tails the newest bytes without unbounded allocation,
+      follows file growth through rotation until Ctrl-C, and keeps the path
+      notice on stderr while log content remains stdout. Tests cover flags,
+      newline/no-newline tails, and managed-task rejection. Exact head is
+      `c584029b6bae4fee5654e4cc2e4827cd3aa28fa1`, parent
+      `0882488ed29b3bb84d96e8f06dfda9c54dfa75b5`, tree
+      `a158fc9bf67a28c0668a2440b936e4c3198d0f6d`, candidate
+      `70454008e4fafaf1700a311a67d4e52c33d1e586`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
