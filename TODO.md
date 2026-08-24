@@ -205,13 +205,27 @@
       `mat_` and never fall back to the daemon token. Sensitive Debug output is
       redacted. Scoped rustfmt/diff-check pass; Cargo/review/gate/merge remain
       delegated to the pro model.
-- [ ] Next substantive daemon slice: implement the real provider execution
-      adapter on top of `ProviderExecutionPlan`. `cordy-daemon` now depends on
-      `cordy-agent`, but still has no concrete `ProviderRuntimeAdapter`;
-      prepare/reuse, worktree finalize, transcript/usage/session pinning,
-      cancellation, and failure mapping must be implemented together. Do not
-      call `cordy-agent::build_backend` as a half-stub or silently drop those
-      contracts.
+- [x] Real provider execution adapter implemented on top of
+      `ProviderExecutionPlan` and pushed to PR #129 as `f7e72057dcacce6bd1a8580d4a5850830269d136`
+      (parent `f1f12ab5c7cf3da6cccbc861b58dd101e6dd0c65`, tree
+      `12855df7ecd79a1e29e076b0a6428a3ec85364f6`). The adapter owns ordered
+      prepare/reuse, local-path locking, worktree finalization, accepted launch
+      resolution, real `cordy-agent` backend execution, bounded/redacted
+      transcript delivery, session pinning, usage/result mapping, cancellation,
+      prepare-lease extension, checkout ownership, and fail-visible unsupported
+      heartbeat actions. The latest PR state is Ready (`draft=false`),
+      CLEAN/MERGEABLE on base `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`, with
+      candidate `da64a3d1a73095032569430e47c48f260d38dcb8` (same tree as the
+      head). Scoped rustfmt for changed files and staged diff-check pass; the
+      repository's existing `auto_update.rs` formatting difference still makes
+      a module-wide rustfmt check noisy. Cargo/review/gate/merge remain with the
+      pro model.
+- [ ] Next substantive daemon slice: wire `ProductionProviderAdapter` into
+      the CLI/server production assembly and add the typed registration-source
+      construction that the current generic `run_production_daemon` boundary
+      still requires. Keep unsupported provider families fail-closed; do not
+      claim the foreground daemon is complete until a real adapter, registration
+      source, and checkout registry are assembled from one profile snapshot.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
