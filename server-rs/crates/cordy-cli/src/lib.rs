@@ -1251,6 +1251,25 @@ enum WorkspaceCommand {
     },
     #[command(about = "Manage workspace members")]
     Member(WorkspaceMemberArgs),
+    #[command(about = "Manage the workspace's MCP server library")]
+    Mcp(WorkspaceMcpArgs),
+}
+
+#[derive(Debug, Args)]
+struct WorkspaceMcpArgs {
+    #[command(subcommand)]
+    command: WorkspaceMcpCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum WorkspaceMcpCommand {
+    #[command(about = "List the workspace's MCP servers")]
+    List {
+        #[arg(value_name = "WORKSPACE-ID|SLUG|PREFIX")]
+        workspace: Option<String>,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -1672,6 +1691,12 @@ async fn run_with_input<R: Read>(
                     command: WorkspaceMemberCommand::Invite(args),
                 }),
         }) => run_workspace_member_invite(cli, environment, args).await,
+        Command::Workspace(WorkspaceArgs {
+            command:
+                WorkspaceCommand::Mcp(WorkspaceMcpArgs {
+                    command: WorkspaceMcpCommand::List { workspace, output },
+                }),
+        }) => run_workspace_mcp_list(cli, environment, workspace.as_deref(), *output).await,
         Command::Label(LabelArgs {
             command: LabelCommand::List { output, full_id },
         }) => run_label_list(cli, environment, *output, *full_id).await,
@@ -7910,6 +7935,67 @@ async fn run_workspace_member_invite(
                 value_string(&invitation, "status")
             ),
         },
+        stderr: String::new(),
+    })
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct WorkspaceMcpServer {
+    id: String,
+    name: String,
+    transport: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    enabled: Option<bool>,
+}
+
+fn format_workspace_mcp_servers(
+    servers: &[WorkspaceMcpServer],
+    output: OutputFormat,
+) -> Result<String> {
+    match output {
+        OutputFormat::Json => Ok(format!("{}\n", serde_json::to_string_pretty(servers)?)),
+        OutputFormat::Table if servers.is_empty() => Ok("no MCP servers\n".into()),
+        OutputFormat::Table => {
+            let mut rows = vec![vec![
+                "ID".into(),
+                "NAME".into(),
+                "TRANSPORT".into(),
+                "STATUS".into(),
+            ]];
+            rows.extend(servers.iter().map(|server| {
+                vec![
+                    server.id.clone(),
+                    server.name.clone(),
+                    server.transport.clone(),
+                    server.enabled.map_or_else(String::new, |enabled| {
+                        if enabled { "enabled" } else { "disabled" }.into()
+                    }),
+                ]
+            }));
+            Ok(format_table(&rows))
+        }
+    }
+}
+
+async fn run_workspace_mcp_list(
+    cli: &Cli,
+    environment: &Environment,
+    workspace: Option<&str>,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let workspace_id = resolve_workspace_arg(cli, environment, workspace).await?;
+    if workspace_id.is_empty() {
+        bail!(
+            "workspace ID is required: pass an id/slug/prefix as argument or set CORDY_WORKSPACE_ID"
+        );
+    }
+    let client = new_api_client(cli, environment)?;
+    let servers: Vec<WorkspaceMcpServer> = client
+        .get_json(&format!("/api/workspaces/{workspace_id}/mcp-servers"))
+        .await
+        .context("list workspace mcp servers")?;
+    Ok(RunOutput {
+        stdout: format_workspace_mcp_servers(&servers, output)?,
         stderr: String::new(),
     })
 }
@@ -14322,6 +14408,52 @@ mod tests {
         assert_eq!(document["workspace_id"], workspace_id);
         assert_eq!(document["unknown"]["keep"], true);
         assert!(!home.path().join(".cordy/config.json").exists());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn workspace_mcp_list_drops_secret_config_in_every_output_format() {
+        let workspace_id = "55555555-5555-5555-5555-555555555555";
+        let app = Router::new().route(
+            "/api/workspaces/55555555-5555-5555-5555-555555555555/mcp-servers",
+            get(|| async {
+                Json(vec![serde_json::json!({
+                    "id":"server-1","name":"linear","transport":"http",
+                    "url":"https://secret.example/token","headers":{"Authorization":"Bearer secret"},
+                    "config":{"env":{"API_KEY":"secret"}}
+                })])
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", workspace_id);
+        environment.set("CORDY_TOKEN", "token-1");
+
+        for output in ["json", "table"] {
+            let cli = Cli::try_parse_from([
+                "cordy",
+                "workspace",
+                "mcp",
+                "list",
+                workspace_id,
+                "--output",
+                output,
+            ])
+            .expect("workspace mcp list CLI");
+            let listed = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .await
+                .expect("list workspace MCP servers");
+            assert!(listed.stdout.contains("linear"));
+            assert!(listed.stdout.contains("http"));
+            assert!(!listed.stdout.contains("secret"));
+            assert!(!listed.stdout.contains("Authorization"));
+            assert!(!listed.stdout.contains("API_KEY"));
+        }
         server.abort();
     }
 
