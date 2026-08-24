@@ -1104,14 +1104,12 @@ async fn add_files_via_crawl(
         }
     }
     files.sort_by(|left, right| left.0.cmp(&right.0));
-    let downloads = stream::iter(files.into_iter().map(|(path, url)| async move {
+    let mut downloads = stream::iter(files.into_iter().map(|(path, url)| async move {
         let bytes = fetch_bytes(client, url, true).await?;
         Ok::<_, ImportError>((path, String::from_utf8_lossy(&bytes).into_owned()))
     }))
-    .buffered(DOWNLOAD_CONCURRENCY)
-    .collect::<Vec<_>>()
-    .await;
-    for result in downloads {
+    .buffered(DOWNLOAD_CONCURRENCY);
+    while let Some(result) = downloads.next().await {
         let (path, content) = result?;
         imported.add_file(path, content)?;
     }
