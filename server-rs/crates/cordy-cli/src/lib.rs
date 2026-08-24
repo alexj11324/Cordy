@@ -88,10 +88,36 @@ enum Command {
     Label(LabelArgs),
     #[command(about = "Work with projects")]
     Project(ProjectArgs),
+    #[command(about = "Manage workspace custom issue properties")]
+    Property(PropertyArgs),
     #[command(about = "Print version information")]
     Version {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
         output: VersionOutput,
+    },
+}
+
+#[derive(Debug, Args)]
+struct PropertyArgs {
+    #[command(subcommand)]
+    command: PropertyCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum PropertyCommand {
+    #[command(about = "List property definitions")]
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+        #[arg(long, help = "Include archived properties")]
+        include_archived: bool,
+    },
+    #[command(about = "Show one property definition")]
+    Get {
+        #[arg(value_name = "ID-OR-NAME")]
+        property: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
     },
 }
 
@@ -1603,6 +1629,16 @@ async fn run_with_input<R: Read>(
                         },
                 }),
         }) => run_project_resource_remove(cli, environment, project_id, resource_id, *output).await,
+        Command::Property(PropertyArgs {
+            command:
+                PropertyCommand::List {
+                    output,
+                    include_archived,
+                },
+        }) => run_property_list(cli, environment, *output, *include_archived).await,
+        Command::Property(PropertyArgs {
+            command: PropertyCommand::Get { property, output },
+        }) => run_property_get(cli, environment, property, *output).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -6264,28 +6300,42 @@ fn format_issue_timeline_table(
     format_table(&rows)
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct PropertyOption {
     id: String,
     name: String,
+    #[serde(default)]
+    color: String,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 struct PropertyConfig {
     #[serde(default)]
     options: Vec<PropertyOption>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 struct PropertyDefinition {
     id: String,
     name: String,
     #[serde(rename = "type")]
     property_type: String,
     #[serde(default)]
+    description: String,
+    #[serde(default)]
+    icon: String,
+    #[serde(default)]
     config: PropertyConfig,
     #[serde(default)]
+    position: f64,
+    #[serde(default)]
     archived: bool,
+    #[serde(default)]
+    usage_count: i64,
+    #[serde(default)]
+    created_at: String,
+    #[serde(default)]
+    updated_at: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -6305,10 +6355,19 @@ fn is_false(value: &bool) -> bool {
 }
 
 async fn fetch_property_definitions(client: &ApiClient) -> Result<Vec<PropertyDefinition>> {
-    let result: Value = client
-        .get_json("/api/properties?include_archived=true")
-        .await
-        .context("list properties")?;
+    list_property_definitions(client, true).await
+}
+
+async fn list_property_definitions(
+    client: &ApiClient,
+    include_archived: bool,
+) -> Result<Vec<PropertyDefinition>> {
+    let path = if include_archived {
+        "/api/properties?include_archived=true"
+    } else {
+        "/api/properties"
+    };
+    let result: Value = client.get_json(path).await.context("list properties")?;
     serde_json::from_value(
         result
             .get("properties")
@@ -6316,6 +6375,82 @@ async fn fetch_property_definitions(client: &ApiClient) -> Result<Vec<PropertyDe
             .unwrap_or_else(|| Value::Array(Vec::new())),
     )
     .context("decode properties")
+}
+
+fn format_property_definitions(
+    properties: &[PropertyDefinition],
+    output: OutputFormat,
+) -> Result<String> {
+    match output {
+        OutputFormat::Json => Ok(format!("{}\n", serde_json::to_string_pretty(properties)?)),
+        OutputFormat::Table => {
+            let mut rows = vec![vec![
+                "ID".into(),
+                "ICON".into(),
+                "NAME".into(),
+                "TYPE".into(),
+                "OPTIONS".into(),
+                "USED".into(),
+                "ARCHIVED".into(),
+            ]];
+            rows.extend(properties.iter().map(|property| {
+                vec![
+                    property.id.clone(),
+                    property.icon.clone(),
+                    property.name.clone(),
+                    property.property_type.clone(),
+                    property
+                        .config
+                        .options
+                        .iter()
+                        .map(|option| option.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    property.usage_count.to_string(),
+                    if property.archived {
+                        "yes".into()
+                    } else {
+                        String::new()
+                    },
+                ]
+            }));
+            Ok(format_table(&rows))
+        }
+    }
+}
+
+async fn run_property_list(
+    cli: &Cli,
+    environment: &Environment,
+    output: OutputFormat,
+    include_archived: bool,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let properties = list_property_definitions(&client, include_archived).await?;
+    Ok(RunOutput {
+        stdout: format_property_definitions(&properties, output)?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_property_get(
+    cli: &Cli,
+    environment: &Environment,
+    property: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let properties = fetch_property_definitions(&client).await?;
+    let property = resolve_property(&properties, property)?;
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(property)?),
+            OutputFormat::Table => {
+                format_property_definitions(std::slice::from_ref(property), output)?
+            }
+        },
+        stderr: String::new(),
+    })
 }
 
 fn resolve_property<'a>(
@@ -12081,6 +12216,106 @@ mod tests {
         assert_eq!(entries[0]["action"], "status_changed");
         assert!(output.stderr.contains("activity,comment"));
         assert!(output.stderr.contains("older entries are missing"));
+        task.abort();
+    }
+
+    #[test]
+    fn property_read_parser_and_table_match_go_registry_contract() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "property",
+            "list",
+            "--include-archived",
+            "--output",
+            "json",
+        ])
+        .expect("property list CLI");
+        let Command::Property(PropertyArgs {
+            command:
+                PropertyCommand::List {
+                    output,
+                    include_archived,
+                },
+        }) = &cli.command
+        else {
+            panic!("expected property list");
+        };
+        assert_eq!(*output, OutputFormat::Json);
+        assert!(*include_archived);
+
+        let properties: Vec<PropertyDefinition> = serde_json::from_value(serde_json::json!([{
+            "id":"11111111-1111-1111-1111-111111111111",
+            "name":"Severity","type":"select","icon":"shield",
+            "config":{"options":[{"id":"option-1","name":"Critical","color":"#ef4444"}]},
+            "usage_count":7,"archived":true
+        }]))
+        .expect("property definitions");
+        let table =
+            format_property_definitions(&properties, OutputFormat::Table).expect("property table");
+        assert!(table.starts_with("ID"));
+        assert!(table.contains("11111111-1111-1111-1111-111111111111"));
+        assert!(table.contains("shield"));
+        assert!(table.contains("Critical"));
+        assert!(table.contains("7"));
+        assert!(table.contains("yes"));
+    }
+
+    #[tokio::test]
+    async fn property_list_and_get_preserve_archive_query_and_full_json_fields() {
+        let app = Router::new().route(
+            "/api/properties",
+            get(|request: Request| async move {
+                let include_archived = request
+                    .uri()
+                    .query()
+                    .is_some_and(|query| query == "include_archived=true");
+                let properties = if include_archived {
+                    vec![serde_json::json!({
+                        "id":"11111111-1111-1111-1111-111111111111",
+                        "name":"Severity","type":"select","description":"Impact",
+                        "icon":"shield","config":{"options":[{
+                            "id":"option-1","name":"Critical","color":"#ef4444"
+                        }]},"position":1.5,"archived":true,"usage_count":7,
+                        "created_at":"2026-08-24T00:00:00Z","updated_at":"2026-08-24T01:00:00Z"
+                    })]
+                } else {
+                    Vec::new()
+                };
+                Json(serde_json::json!({"properties":properties}))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let list = Cli::try_parse_from(["cordy", "property", "list", "--output", "json"])
+            .expect("property list CLI");
+        let listed = run_with_input(&list, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list active properties");
+        assert_eq!(
+            serde_json::from_str::<Value>(&listed.stdout).expect("properties JSON"),
+            serde_json::json!([])
+        );
+
+        let get = Cli::try_parse_from(["cordy", "property", "get", "severity", "--output", "json"])
+            .expect("property get CLI");
+        let got = run_with_input(&get, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("get archived property by name");
+        let property: Value = serde_json::from_str(&got.stdout).expect("property JSON");
+        assert_eq!(property["name"], "Severity");
+        assert_eq!(property["description"], "Impact");
+        assert_eq!(property["config"]["options"][0]["color"], "#ef4444");
+        assert_eq!(property["position"], 1.5);
+        assert_eq!(property["usage_count"], 7);
+        assert_eq!(property["archived"], true);
         task.abort();
     }
 
