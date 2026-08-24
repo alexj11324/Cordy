@@ -19,6 +19,9 @@ use cordy_channel_engine::supervisor::{LeaseMetrics, Supervisor, SupervisorConfi
 
 type ChannelSupervisor = Supervisor<PostgresChannelStore, RuntimeLeaseStore>;
 
+const RUNTIME_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
+const ROUTER_DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
+
 pub struct ChannelRuntime {
     cancel: CancellationToken,
     supervisor: Option<tokio::task::JoinHandle<()>>,
@@ -144,14 +147,34 @@ impl ChannelRuntime {
 
     pub async fn shutdown(mut self) {
         self.cancel.cancel();
+        let mut tasks = Vec::with_capacity(self.maintenance.len() + 2);
         if let Some(handle) = self.supervisor.take() {
-            let _ = handle.await;
+            tasks.push(handle);
         }
         if let Some(handle) = self.media_reconciler.take() {
-            let _ = handle.await;
+            tasks.push(handle);
         }
-        for handle in self.maintenance.drain(..) {
-            let _ = handle.await;
+        tasks.append(&mut self.maintenance);
+        let joined = async {
+            for task in &mut tasks {
+                let _ = task.await;
+            }
+        };
+        if tokio::time::timeout(RUNTIME_SHUTDOWN_TIMEOUT, joined)
+            .await
+            .is_err()
+        {
+            tracing::warn!(
+                timeout = ?RUNTIME_SHUTDOWN_TIMEOUT,
+                remaining = tasks.iter().filter(|task| !task.is_finished()).count(),
+                "channel runtime tasks exceeded shutdown deadline; aborting"
+            );
+            for task in &tasks {
+                task.abort();
+            }
+            for task in tasks {
+                let _ = task.await;
+            }
         }
         if let Some(relay) = self.wecom_relay.take() {
             let metrics = relay.metrics();
@@ -170,13 +193,12 @@ impl ChannelRuntime {
             );
         }
         let drain = CancellationToken::new();
-        let deadline = drain.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(10)).await;
-            deadline.cancel();
-        });
-        if !self.router.drain(&drain).await {
-            tracing::warn!("channel router drain deadline reached");
+        match tokio::time::timeout(ROUTER_DRAIN_TIMEOUT, self.router.drain(&drain)).await {
+            Ok(true) => {}
+            Ok(false) | Err(_) => tracing::warn!(
+                timeout = ?ROUTER_DRAIN_TIMEOUT,
+                "channel router drain deadline reached"
+            ),
         }
     }
 }
