@@ -184,6 +184,24 @@ impl RuntimeRegistry {
             .cloned()
             .collect()
     }
+
+    pub fn workspace(&self, workspace_id: &str) -> Option<WorkspaceRuntimeState> {
+        self.state
+            .read()
+            .unwrap()
+            .workspaces
+            .get(workspace_id)
+            .cloned()
+    }
+
+    pub fn workspace_needs_runtime_recovery(&self, workspace_id: &str) -> bool {
+        self.state
+            .read()
+            .unwrap()
+            .workspaces
+            .get(workspace_id)
+            .is_some_and(|workspace| workspace.runtime_ids.is_empty())
+    }
 }
 
 fn publish_runtime_set(state: &RegistryState, runtime_set: &RuntimeSet) {
