@@ -38,7 +38,7 @@ pub mod pat_cache;
 mod tests {
     use super::*;
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn redis_cache_operations_are_bounded() {
         let pending = std::future::pending::<redis::RedisResult<()>>();
         let result = bounded_redis(pending).await;
