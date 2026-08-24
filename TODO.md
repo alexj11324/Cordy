@@ -73,7 +73,7 @@
       with regression coverage for an outside absolute path. New candidate is
       `46b5390d171bad90aad5b8ec34461d164b2c6077`; exact-head review requested once at
       comment `5395709568`; gate remains pending review. Previous review/gate is stale.
-- [ ] #113 local exact-head self-review of `ad36bc3a` completed: task attachment path
+- [x] #113 local exact-head self-review of `ad36bc3a` completed: task attachment path
       is checked before `fs::read`, outside absolute and traversal paths are rejected,
       and no new P0/P1 was found. GitHub review remains advisory/delayed; the serial
       gate may proceed under the current-thread-only execution rule.
@@ -87,11 +87,25 @@
       Kimi reader reborrow. Minimal fix `0a071cba399515977fd0b70e4f9fe844c6a458fb`
       (parent `ec0d3620`) passes scoped rustfmt/diff-check and is pushed. Current
       candidate is `c419ab0bb316938877e2e89af0ac9b210c7b7cda`; gate must rerun again.
-- [ ] Third #113 check attempt found the remaining ACP callback mutability error in
+- [x] Third #113 check attempt found the remaining ACP callback mutability error in
       `request_with_permission`; corrected in `0415dd6a2fd62ae6521b7a5fe2a132e7a8ddefbf`
       (parent `0a071cba`), with scoped rustfmt/diff-check pass and FF push. Current
       candidate is `89e60eb3ed057952c0c024353f3b5d535ea7e478`; gate must rerun.
-- [ ] #113 gate remains pending review; original worktree
+- [x] #113 serial gate completed on exact head `0415dd6a2fd62ae6521b7a5fe2a132e7a8ddefbf`
+      (tree and parent verified before execution). Workspace check for
+      `cordy-agent`, `cordy-cli`, `cordy-daemon`, `cordy-handler`, and `cordy-server`
+      all-targets passed; `cordy-server` binary check passed. Agent tests were
+      `83 passed / 26 failed / 0 ignored`, and CLI tests were `97 passed / 83 failed /
+      0 ignored`; every failure reached the existing sandbox process/socket
+      `PermissionDenied (EPERM)` setup path before business assertions, including the
+      attachment regression test, with no changed-code compile or deterministic
+      assertion failure. Strict Clippy reproduced only the five pre-existing
+      `heartbeat_scheduler`/`runtime_sweeper` style lints; no changed-code lint.
+      The shared lock was released after confirming no cargo/rustc process and the
+      restack worktree is clean. External GitHub review is still delayed; local review
+      is clean, so one serial subagent read-only review is the next required decision
+      point before merge.
+- [ ] #113 original worktree
       `.worktrees/cord-22-daemon-production-assembly` has unrelated uncommitted CLI
       edits and must not be reset or used for the gate. Restacked tree has passed
       `git diff --check` and changed-Rust `rustfmt --check`.
