@@ -136,6 +136,20 @@ enum SkillCommand {
     Create(SkillCreateArgs),
     #[command(about = "Update a skill")]
     Update(SkillUpdateArgs),
+    #[command(about = "Delete a skill")]
+    Delete {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, help = "Skip confirmation prompt")]
+        yes: bool,
+    },
+    #[command(about = "Re-download a skill from its imported source")]
+    Refresh {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -2547,6 +2561,12 @@ async fn run_with_input<R: Read>(
         Command::Skill(SkillArgs {
             command: SkillCommand::Update(args),
         }) => run_skill_update(cli, environment, args, input).await,
+        Command::Skill(SkillArgs {
+            command: SkillCommand::Delete { id, yes },
+        }) => run_skill_delete(cli, environment, id, *yes, input).await,
+        Command::Skill(SkillArgs {
+            command: SkillCommand::Refresh { id, output },
+        }) => run_skill_refresh(cli, environment, id, *output).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -4383,6 +4403,75 @@ async fn run_skill_update<R: Read>(
         .await
         .context("update skill")?;
     format_skill_mutation_result(&result, args.output, "updated")
+}
+
+async fn run_skill_delete<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    yes: bool,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let prompt =
+        format!("Are you sure you want to delete skill {id}? This cannot be undone. [y/N] ");
+    if !yes {
+        let mut answer = String::new();
+        input
+            .read_to_string(&mut answer)
+            .context("read skill deletion confirmation")?;
+        let answer = answer
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+        if !matches!(answer.as_str(), "y" | "yes") {
+            return Ok(RunOutput {
+                stdout: format!("{prompt}Aborted.\n"),
+                stderr: String::new(),
+            });
+        }
+    }
+    let client = new_api_client(cli, environment)?;
+    client
+        .delete(&format!("/api/skills/{id}"))
+        .await
+        .context("delete skill")?;
+    Ok(RunOutput {
+        stdout: if yes {
+            format!("Skill deleted: {id}\n")
+        } else {
+            format!("{prompt}Skill deleted: {id}\n")
+        },
+        stderr: String::new(),
+    })
+}
+
+async fn run_skill_refresh(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let timeout = http_timeout(environment.raw("CORDY_HTTP_TIMEOUT"))
+        .saturating_add(Duration::from_secs(5))
+        .max(Duration::from_secs(60));
+    let client = new_api_client(cli, environment)?.with_request_timeout(timeout);
+    let result: Value = client
+        .post_json(&format!("/api/skills/{id}/refresh"), &serde_json::json!({}))
+        .await
+        .context("refresh skill")?;
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+            OutputFormat::Table => format!(
+                "Skill updated from source: {} ({})\n",
+                value_string(&result, "name"),
+                value_string(&result, "id")
+            ),
+        },
+        stderr: String::new(),
+    })
 }
 
 fn resolve_skill_content<R: Read>(
@@ -13315,6 +13404,27 @@ mod tests {
         assert_eq!(args.id, "skill-1");
         assert!(args.content_stdin);
         assert_eq!(args.description.as_deref(), Some(""));
+
+        let delete = Cli::try_parse_from(["cordy", "skill", "delete", "skill-1", "--yes"])
+            .expect("skill delete CLI");
+        assert!(matches!(
+            delete.command,
+            Command::Skill(SkillArgs {
+                command: SkillCommand::Delete { yes: true, .. }
+            })
+        ));
+        let refresh =
+            Cli::try_parse_from(["cordy", "skill", "refresh", "skill-1", "--output", "table"])
+                .expect("skill refresh CLI");
+        assert!(matches!(
+            refresh.command,
+            Command::Skill(SkillArgs {
+                command: SkillCommand::Refresh {
+                    output: OutputFormat::Table,
+                    ..
+                }
+            })
+        ));
     }
 
     #[tokio::test]
@@ -13551,6 +13661,64 @@ mod tests {
             error.to_string(),
             "no fields to update; use --name, --description, --content, or --config"
         );
+    }
+
+    #[tokio::test]
+    async fn skill_delete_confirmation_and_refresh_match_go_lifecycle() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let abort =
+            Cli::try_parse_from(["cordy", "skill", "delete", "skill-1"]).expect("skill delete CLI");
+        let output = run_with_input(&abort, &environment, &mut Cursor::new(b"no\n".to_vec()))
+            .await
+            .expect("abort skill delete");
+        assert_eq!(
+            output.stdout,
+            "Are you sure you want to delete skill skill-1? This cannot be undone. [y/N] Aborted.\n"
+        );
+
+        let app = Router::new()
+            .route(
+                "/api/skills/skill-1",
+                delete_route(|| async { axum::http::StatusCode::NO_CONTENT }),
+            )
+            .route(
+                "/api/skills/skill-1/refresh",
+                post(|Json(body): Json<Value>| async move {
+                    assert_eq!(body, serde_json::json!({}));
+                    Json(serde_json::json!({
+                        "id":"skill-1",
+                        "name":"review",
+                        "server_only":"preserved"
+                    }))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+
+        let delete = Cli::try_parse_from(["cordy", "skill", "delete", "skill-1", "--yes"])
+            .expect("confirmed skill delete CLI");
+        let output = run_with_input(&delete, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("delete skill");
+        assert_eq!(output.stdout, "Skill deleted: skill-1\n");
+
+        let refresh =
+            Cli::try_parse_from(["cordy", "skill", "refresh", "skill-1", "--output", "table"])
+                .expect("skill refresh CLI");
+        let output = run_with_input(&refresh, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("refresh skill");
+        assert_eq!(
+            output.stdout,
+            "Skill updated from source: review (skill-1)\n"
+        );
+        server.abort();
     }
 
     #[test]
