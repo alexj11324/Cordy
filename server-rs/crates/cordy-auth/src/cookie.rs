@@ -108,8 +108,17 @@ pub fn auth_token_ttl_secs(raw: Option<&str>) -> i64 {
     DEFAULT_AUTH_TOKEN_TTL_SECS
 }
 
-/// Process-wide effective auth token lifetime. The environment is read once,
-/// matching Go's `sync.Once` configuration contract.
+/// Installs the effective server configuration before any token is minted.
+/// This keeps TOML-backed configuration on the same singleton path as the
+/// environment fallback instead of silently using the 30-day default.
+pub fn configure_auth_token_ttl(raw: Option<&str>) -> anyhow::Result<()> {
+    AUTH_TOKEN_TTL_SECS
+        .set(auth_token_ttl_secs(raw))
+        .map_err(|_| anyhow::anyhow!("auth token TTL was already initialized"))
+}
+
+/// Process-wide effective auth token lifetime. The environment is read once
+/// when startup did not install the merged TOML/environment configuration.
 pub fn auth_token_ttl() -> i64 {
     *AUTH_TOKEN_TTL_SECS.get_or_init(|| {
         let raw = std::env::var("AUTH_TOKEN_TTL").ok();
