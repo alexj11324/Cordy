@@ -768,6 +768,13 @@
       drain timeout remain bounded, the first non-empty session ID is retained,
       non-Codex providers pin unchanged, persisted rollout pins once, and pin
       failures remain best-effort without duplicate side effects.
+- [x] Fixed a squad/agent authorization P1 in
+      `c3e9db3cae29d79f1e41ae9d0dd441642d4a5a88` (parent `c3822514`, tree
+      `242fa90a487957d0b223d4a882d92c377b614f4f`). Autopilot squad-leader
+      validation now uses a dedicated member invoke gate rather than the
+      broader inspect/access gate, so workspace admins cannot run another
+      member's private agent. Added owner/private regression coverage; scoped
+      rustfmt and diff-check pass; pushed for pro's Ready PR/gate/merge.
 
 ## Phase 4 — S8 route and API parity
 
