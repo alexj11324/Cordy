@@ -12,6 +12,10 @@
 //! `mul:{runtime_pending}:update:req:{id}` etc. Envelope JSON (`{"r":..}` +
 //! private side fields) matches as well.
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
@@ -23,6 +27,7 @@ pub const UPDATE_PENDING_PREFIX: &str = "mul:{runtime_pending}:update:pending:";
 pub const UPDATE_ACTIVE_PREFIX: &str = "mul:{runtime_pending}:update:active:";
 pub const MODEL_LIST_KEY_PREFIX: &str = "mul:{runtime_pending}:model_list:req:";
 pub const MODEL_LIST_PENDING_PREFIX: &str = "mul:{runtime_pending}:model_list:pending:";
+pub const MODEL_CATALOG_KEY_PREFIX: &str = "mul:runtime_model_catalog:";
 pub const LOCAL_SKILL_LIST_KEY_PREFIX: &str = "mul:{runtime_pending}:local_skill:list:";
 pub const LOCAL_SKILL_LIST_PENDING_PREFIX: &str = "mul:{runtime_pending}:local_skill:list:pending:";
 pub const LOCAL_SKILL_IMPORT_KEY_PREFIX: &str = "mul:{runtime_pending}:local_skill:import:";
@@ -44,6 +49,9 @@ fn model_list_key(id: &str) -> String {
 fn model_list_pending_key(runtime_id: &str) -> String {
     format!("{MODEL_LIST_PENDING_PREFIX}{runtime_id}")
 }
+fn model_catalog_key(runtime_id: &str) -> String {
+    format!("{MODEL_CATALOG_KEY_PREFIX}{runtime_id}")
+}
 fn local_skill_list_key(id: &str) -> String {
     format!("{LOCAL_SKILL_LIST_KEY_PREFIX}{id}")
 }
@@ -64,6 +72,8 @@ const UPDATE_STORE_RETENTION_SECS: i64 = 5 * 60;
 const MODEL_LIST_PENDING_TIMEOUT_SECS: i64 = 30;
 const MODEL_LIST_RUNNING_TIMEOUT_SECS: i64 = 60;
 const MODEL_LIST_STORE_RETENTION_SECS: i64 = 2 * 60;
+pub const MODEL_CATALOG_REVALIDATE_AFTER_SECS: i64 = 60;
+const MODEL_CATALOG_SERVE_WINDOW_SECS: i64 = 24 * 60 * 60;
 const LOCAL_SKILL_PENDING_TIMEOUT_SECS: i64 = 3 * 60;
 const LOCAL_SKILL_RUNNING_TIMEOUT_SECS: i64 = 60;
 const LOCAL_SKILL_STORE_RETENTION_SECS: i64 = 5 * 60;
@@ -248,6 +258,146 @@ fn apply_update_timeout(req: &mut UpdateRequest, now: DateTime<Utc>) -> bool {
         _ => {}
     }
     false
+}
+
+#[async_trait]
+pub trait UpdateStoreBackend: Send + Sync {
+    async fn create(
+        &self,
+        runtime_id: &str,
+        target_version: &str,
+        initiator_user_id: &str,
+    ) -> anyhow::Result<UpdateRequest>;
+    async fn get(&self, id: &str) -> anyhow::Result<Option<UpdateRequest>>;
+    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool>;
+    async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<UpdateRequest>>;
+    async fn complete(&self, id: &str, output: &str) -> anyhow::Result<()>;
+    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()>;
+}
+
+/// Single-node update lifecycle used when Redis is intentionally unset.
+#[derive(Default)]
+pub struct InMemoryUpdateStore {
+    requests: Mutex<HashMap<String, UpdateRequest>>,
+}
+
+impl InMemoryUpdateStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn requests(
+        &self,
+    ) -> anyhow::Result<std::sync::MutexGuard<'_, HashMap<String, UpdateRequest>>> {
+        self.requests
+            .lock()
+            .map_err(|_| anyhow::anyhow!("update store lock poisoned"))
+    }
+}
+
+#[async_trait]
+impl UpdateStoreBackend for InMemoryUpdateStore {
+    async fn create(
+        &self,
+        runtime_id: &str,
+        target_version: &str,
+        initiator_user_id: &str,
+    ) -> anyhow::Result<UpdateRequest> {
+        let now = Utc::now();
+        let mut requests = self.requests()?;
+        requests.retain(|_, request| {
+            now.signed_duration_since(request.created_at).num_seconds()
+                <= UPDATE_STORE_RETENTION_SECS
+        });
+        if requests.values().any(|request| {
+            request.runtime_id == runtime_id
+                && matches!(
+                    request.status,
+                    UpdateStatus::Pending | UpdateStatus::Running
+                )
+        }) {
+            anyhow::bail!("update already in progress");
+        }
+        let request = UpdateRequest {
+            id: random_id(),
+            runtime_id: runtime_id.to_string(),
+            initiator_user_id: initiator_user_id.to_string(),
+            status: UpdateStatus::Pending,
+            target_version: target_version.to_string(),
+            created_at: now,
+            updated_at: now,
+            ..Default::default()
+        };
+        requests.insert(request.id.clone(), request.clone());
+        Ok(request)
+    }
+
+    async fn get(&self, id: &str) -> anyhow::Result<Option<UpdateRequest>> {
+        let mut requests = self.requests()?;
+        let Some(request) = requests.get_mut(id) else {
+            return Ok(None);
+        };
+        apply_update_timeout(request, Utc::now());
+        Ok(Some(request.clone()))
+    }
+
+    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
+        let now = Utc::now();
+        let mut requests = self.requests()?;
+        for request in requests.values_mut() {
+            apply_update_timeout(request, now);
+        }
+        Ok(requests.values().any(|request| {
+            request.runtime_id == runtime_id && request.status == UpdateStatus::Pending
+        }))
+    }
+
+    async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<UpdateRequest>> {
+        let now = Utc::now();
+        let mut requests = self.requests()?;
+        for request in requests.values_mut() {
+            apply_update_timeout(request, now);
+        }
+        let oldest_id = requests
+            .values()
+            .filter(|request| {
+                request.runtime_id == runtime_id && request.status == UpdateStatus::Pending
+            })
+            .min_by(|left, right| left.created_at.cmp(&right.created_at))
+            .map(|request| request.id.clone());
+        let Some(oldest_id) = oldest_id else {
+            return Ok(None);
+        };
+        let request = requests
+            .get_mut(&oldest_id)
+            .expect("selected request exists");
+        request.status = UpdateStatus::Running;
+        request.run_started_at = Some(now);
+        request.updated_at = now;
+        Ok(Some(request.clone()))
+    }
+
+    async fn complete(&self, id: &str, output: &str) -> anyhow::Result<()> {
+        if let Some(request) = self.requests()?.get_mut(id) {
+            if !request.status.is_terminal() {
+                request.status = UpdateStatus::Completed;
+                request.output = output.to_string();
+                request.updated_at = Utc::now();
+            }
+        }
+        Ok(())
+    }
+
+    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
+        if let Some(request) = self.requests()?.get_mut(id) {
+            if !request.status.is_terminal() {
+                request.status = UpdateStatus::Failed;
+                request.error = err_msg.to_string();
+                request.updated_at = Utc::now();
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Redis-backed CLI-update store (Go `RedisUpdateStore`). `None` connection is
@@ -469,6 +619,38 @@ impl UpdateStore {
     }
 }
 
+#[async_trait]
+impl UpdateStoreBackend for UpdateStore {
+    async fn create(
+        &self,
+        runtime_id: &str,
+        target_version: &str,
+        initiator_user_id: &str,
+    ) -> anyhow::Result<UpdateRequest> {
+        UpdateStore::create(self, runtime_id, target_version, initiator_user_id).await
+    }
+
+    async fn get(&self, id: &str) -> anyhow::Result<Option<UpdateRequest>> {
+        UpdateStore::get(self, id).await
+    }
+
+    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
+        UpdateStore::has_pending(self, runtime_id).await
+    }
+
+    async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<UpdateRequest>> {
+        UpdateStore::pop_pending(self, runtime_id).await
+    }
+
+    async fn complete(&self, id: &str, output: &str) -> anyhow::Result<()> {
+        UpdateStore::complete(self, id, output).await
+    }
+
+    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
+        UpdateStore::fail(self, id, err_msg).await
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Model list store
 // ---------------------------------------------------------------------------
@@ -498,20 +680,84 @@ impl ModelListStatus {
 /// One model entry in a completed catalog (Go `ModelEntry`).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ModelEntry {
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub id: String,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
     pub label: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub provider: String,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub default: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thinking: Option<Value>,
     #[serde(
         default,
+        deserialize_with = "deserialize_null_default",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub provider: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_null_default",
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub default: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thinking: Option<ModelThinking>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_null_default",
         rename = "service_tiers",
         skip_serializing_if = "Vec::is_empty"
     )]
-    pub service_tiers: Vec<Value>,
+    pub service_tiers: Vec<ModelServiceTier>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ModelServiceTier {
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub id: String,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub name: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_null_default",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ModelThinking {
+    #[serde(
+        default,
+        deserialize_with = "deserialize_null_default",
+        rename = "supported_levels"
+    )]
+    pub supported_levels: Vec<ThinkingLevel>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_null_default",
+        rename = "default_level",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub default_level: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ThinkingLevel {
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub value: String,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    pub label: String,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_null_default",
+        skip_serializing_if = "String::is_empty"
+    )]
+    pub description: String,
+}
+
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Option::<T>::deserialize(deserializer).map(Option::unwrap_or_default)
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -532,6 +778,123 @@ pub struct ModelListRequest {
     pub updated_at: DateTime<Utc>,
     #[serde(skip)]
     pub run_started_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub cached: bool,
+    #[serde(default, rename = "cached_at", skip_serializing_if = "Option::is_none")]
+    pub cached_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelCatalogSnapshot {
+    #[serde(rename = "runtime_id")]
+    pub runtime_id: String,
+    pub models: Vec<ModelEntry>,
+    pub supported: bool,
+    #[serde(rename = "stored_at")]
+    pub stored_at: DateTime<Utc>,
+}
+
+pub(crate) fn cacheable_model_catalog(models: &[ModelEntry], supported: bool) -> bool {
+    supported && !models.is_empty()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ModelCatalogCacheAction {
+    Store,
+    Drop,
+    Keep,
+}
+
+pub(crate) fn model_catalog_cache_action(
+    models: &[ModelEntry],
+    supported: bool,
+    fallback: bool,
+) -> ModelCatalogCacheAction {
+    if fallback {
+        ModelCatalogCacheAction::Keep
+    } else if cacheable_model_catalog(models, supported) {
+        ModelCatalogCacheAction::Store
+    } else {
+        ModelCatalogCacheAction::Drop
+    }
+}
+
+pub struct ModelCatalogCache {
+    conn: ConnectionManager,
+}
+
+impl ModelCatalogCache {
+    pub fn new(conn: ConnectionManager) -> Self {
+        Self { conn }
+    }
+
+    pub async fn get(&self, runtime_id: &str) -> anyhow::Result<Option<ModelCatalogSnapshot>> {
+        if runtime_id.is_empty() {
+            return Ok(None);
+        }
+        let key = model_catalog_key(runtime_id);
+        let Some(raw) = get_bytes(&mut self.conn.clone(), &key).await? else {
+            return Ok(None);
+        };
+        let snapshot: ModelCatalogSnapshot = match serde_json::from_slice(&raw) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                let _: Result<i64, _> = redis::cmd("DEL")
+                    .arg(&key)
+                    .query_async(&mut self.conn.clone())
+                    .await;
+                return Err(anyhow::anyhow!("decode model catalog: {error}"));
+            }
+        };
+        if Utc::now()
+            .signed_duration_since(snapshot.stored_at)
+            .num_seconds()
+            > MODEL_CATALOG_SERVE_WINDOW_SECS
+        {
+            return Ok(None);
+        }
+        Ok(Some(snapshot))
+    }
+
+    pub async fn put(
+        &self,
+        runtime_id: &str,
+        models: &[ModelEntry],
+        supported: bool,
+    ) -> anyhow::Result<()> {
+        if runtime_id.is_empty() || !cacheable_model_catalog(models, supported) {
+            return Ok(());
+        }
+        let snapshot = ModelCatalogSnapshot {
+            runtime_id: runtime_id.to_string(),
+            models: models.to_vec(),
+            supported,
+            stored_at: Utc::now(),
+        };
+        let data = serde_json::to_string(&snapshot)
+            .map_err(|error| anyhow::anyhow!("marshal model catalog: {error}"))?;
+        let (): () = redis::cmd("SET")
+            .arg(model_catalog_key(runtime_id))
+            .arg(data)
+            .arg("EX")
+            .arg(MODEL_CATALOG_SERVE_WINDOW_SECS)
+            .query_async(&mut self.conn.clone())
+            .await
+            .map_err(|error| anyhow::anyhow!("persist model catalog: {error}"))?;
+        Ok(())
+    }
+
+    pub async fn invalidate(&self, runtime_id: &str) -> anyhow::Result<()> {
+        if runtime_id.is_empty() {
+            return Ok(());
+        }
+        let _: i64 = redis::cmd("DEL")
+            .arg(model_catalog_key(runtime_id))
+            .query_async(&mut self.conn.clone())
+            .await
+            .map_err(|error| anyhow::anyhow!("invalidate model catalog: {error}"))?;
+        Ok(())
+    }
 }
 
 #[derive(Serialize, Deserialize)]
@@ -584,6 +947,132 @@ fn apply_model_list_timeout(req: &mut ModelListRequest, now: DateTime<Utc>) -> b
             false
         }
         _ => false,
+    }
+}
+
+#[async_trait]
+pub trait ModelListStoreBackend: Send + Sync {
+    async fn create(&self, runtime_id: &str) -> anyhow::Result<ModelListRequest>;
+    async fn get(&self, id: &str) -> anyhow::Result<Option<ModelListRequest>>;
+    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool>;
+    async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<ModelListRequest>>;
+    async fn complete(
+        &self,
+        id: &str,
+        models: &[ModelEntry],
+        supported: bool,
+    ) -> anyhow::Result<()>;
+    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()>;
+}
+
+#[derive(Default)]
+pub struct InMemoryModelListStore {
+    requests: Mutex<HashMap<String, ModelListRequest>>,
+}
+
+impl InMemoryModelListStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn requests(
+        &self,
+    ) -> anyhow::Result<std::sync::MutexGuard<'_, HashMap<String, ModelListRequest>>> {
+        self.requests
+            .lock()
+            .map_err(|_| anyhow::anyhow!("model list store lock poisoned"))
+    }
+}
+
+#[async_trait]
+impl ModelListStoreBackend for InMemoryModelListStore {
+    async fn create(&self, runtime_id: &str) -> anyhow::Result<ModelListRequest> {
+        let now = Utc::now();
+        let mut requests = self.requests()?;
+        requests.retain(|_, request| {
+            now.signed_duration_since(request.created_at).num_seconds()
+                <= MODEL_LIST_STORE_RETENTION_SECS
+        });
+        let request = ModelListRequest {
+            id: random_id(),
+            runtime_id: runtime_id.to_string(),
+            status: ModelListStatus::Pending,
+            supported: true,
+            created_at: now,
+            updated_at: now,
+            ..Default::default()
+        };
+        requests.insert(request.id.clone(), request.clone());
+        Ok(request)
+    }
+
+    async fn get(&self, id: &str) -> anyhow::Result<Option<ModelListRequest>> {
+        let mut requests = self.requests()?;
+        let Some(request) = requests.get_mut(id) else {
+            return Ok(None);
+        };
+        apply_model_list_timeout(request, Utc::now());
+        Ok(Some(request.clone()))
+    }
+
+    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
+        let now = Utc::now();
+        let mut requests = self.requests()?;
+        for request in requests.values_mut() {
+            apply_model_list_timeout(request, now);
+        }
+        Ok(requests.values().any(|request| {
+            request.runtime_id == runtime_id && request.status == ModelListStatus::Pending
+        }))
+    }
+
+    async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<ModelListRequest>> {
+        let now = Utc::now();
+        let mut requests = self.requests()?;
+        for request in requests.values_mut() {
+            apply_model_list_timeout(request, now);
+        }
+        let oldest_id = requests
+            .values()
+            .filter(|request| {
+                request.runtime_id == runtime_id && request.status == ModelListStatus::Pending
+            })
+            .min_by(|left, right| left.created_at.cmp(&right.created_at))
+            .map(|request| request.id.clone());
+        let Some(oldest_id) = oldest_id else {
+            return Ok(None);
+        };
+        let request = requests
+            .get_mut(&oldest_id)
+            .expect("selected request exists");
+        request.status = ModelListStatus::Running;
+        request.run_started_at = Some(now);
+        request.updated_at = now;
+        Ok(Some(request.clone()))
+    }
+
+    async fn complete(
+        &self,
+        id: &str,
+        models: &[ModelEntry],
+        supported: bool,
+    ) -> anyhow::Result<()> {
+        if let Some(request) = self.requests()?.get_mut(id) {
+            request.status = ModelListStatus::Completed;
+            request.models = models.to_vec();
+            request.supported = supported;
+            request.updated_at = Utc::now();
+        }
+        Ok(())
+    }
+
+    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
+        if let Some(request) = self.requests()?.get_mut(id) {
+            request.status = ModelListStatus::Failed;
+            request.error = err_msg.to_string();
+            request.updated_at = Utc::now();
+        }
+        Ok(())
     }
 }
 
@@ -745,6 +1234,38 @@ impl ModelListStore {
         req.error = err_msg.to_string();
         req.updated_at = Utc::now();
         self.persist_request(&req).await
+    }
+}
+
+#[async_trait]
+impl ModelListStoreBackend for ModelListStore {
+    async fn create(&self, runtime_id: &str) -> anyhow::Result<ModelListRequest> {
+        ModelListStore::create(self, runtime_id).await
+    }
+
+    async fn get(&self, id: &str) -> anyhow::Result<Option<ModelListRequest>> {
+        ModelListStore::get(self, id).await
+    }
+
+    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
+        ModelListStore::has_pending(self, runtime_id).await
+    }
+
+    async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<ModelListRequest>> {
+        ModelListStore::pop_pending(self, runtime_id).await
+    }
+
+    async fn complete(
+        &self,
+        id: &str,
+        models: &[ModelEntry],
+        supported: bool,
+    ) -> anyhow::Result<()> {
+        ModelListStore::complete(self, id, models, supported).await
+    }
+
+    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
+        ModelListStore::fail(self, id, err_msg).await
     }
 }
 
@@ -951,6 +1472,359 @@ fn skill_timed_out(
     }
 }
 
+#[async_trait]
+pub trait LocalSkillListStoreBackend: Send + Sync {
+    async fn create(&self, runtime_id: &str) -> anyhow::Result<RuntimeLocalSkillListRequest>;
+    async fn get(&self, id: &str) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>>;
+    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool>;
+    async fn pop_pending(
+        &self,
+        runtime_id: &str,
+    ) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>>;
+    async fn complete(
+        &self,
+        id: &str,
+        skills: &[RuntimeLocalSkillSummary],
+        supported: bool,
+        mcp_servers: &[RuntimeLocalMcpServerSummary],
+        mcp_supported: bool,
+    ) -> anyhow::Result<()>;
+    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()>;
+}
+
+#[async_trait]
+pub trait LocalSkillImportStoreBackend: Send + Sync {
+    #[allow(clippy::too_many_arguments)]
+    async fn create_import(
+        &self,
+        runtime_id: &str,
+        creator_id: &str,
+        skill_key: &str,
+        name: Option<String>,
+        description: Option<String>,
+        action: &str,
+        target_skill_id: &str,
+        supports_conflict: bool,
+    ) -> anyhow::Result<RuntimeLocalSkillImportRequest>;
+    async fn get(&self, id: &str) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>>;
+    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool>;
+    async fn pop_pending(
+        &self,
+        runtime_id: &str,
+    ) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>>;
+    async fn pop_pending_batch(
+        &self,
+        runtime_id: &str,
+        limit: usize,
+    ) -> anyhow::Result<Vec<RuntimeLocalSkillImportRequest>>;
+    async fn complete(&self, id: &str, skill: Value) -> anyhow::Result<()>;
+    async fn conflict(&self, id: &str, info: LocalSkillImportConflict) -> anyhow::Result<()>;
+    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()>;
+}
+
+fn apply_skill_list_timeout(request: &mut RuntimeLocalSkillListRequest, now: DateTime<Utc>) {
+    let was_running = request.status == LocalSkillRequestStatus::Running;
+    if skill_timed_out(
+        &request.status,
+        request.created_at,
+        request.run_started_at,
+        now,
+    ) {
+        request.status = LocalSkillRequestStatus::Timeout;
+        request.error = if was_running {
+            "daemon did not finish within 60 seconds".into()
+        } else {
+            "daemon did not respond within 3 minutes".into()
+        };
+        request.updated_at = now;
+    }
+}
+
+fn apply_skill_import_timeout(request: &mut RuntimeLocalSkillImportRequest, now: DateTime<Utc>) {
+    let was_running = request.status == LocalSkillRequestStatus::Running;
+    if skill_timed_out(
+        &request.status,
+        request.created_at,
+        request.run_started_at,
+        now,
+    ) {
+        request.status = LocalSkillRequestStatus::Timeout;
+        request.error = if was_running {
+            "daemon did not finish within 60 seconds".into()
+        } else {
+            "daemon did not respond within 3 minutes".into()
+        };
+        request.updated_at = now;
+    }
+}
+
+#[derive(Default)]
+pub struct InMemoryLocalSkillListStore {
+    requests: Mutex<HashMap<String, RuntimeLocalSkillListRequest>>,
+}
+
+impl InMemoryLocalSkillListStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn requests(
+        &self,
+    ) -> anyhow::Result<std::sync::MutexGuard<'_, HashMap<String, RuntimeLocalSkillListRequest>>>
+    {
+        self.requests
+            .lock()
+            .map_err(|_| anyhow::anyhow!("local skill list store lock poisoned"))
+    }
+}
+
+#[async_trait]
+impl LocalSkillListStoreBackend for InMemoryLocalSkillListStore {
+    async fn create(&self, runtime_id: &str) -> anyhow::Result<RuntimeLocalSkillListRequest> {
+        let now = Utc::now();
+        let mut requests = self.requests()?;
+        requests.retain(|_, request| {
+            now.signed_duration_since(request.created_at).num_seconds()
+                <= LOCAL_SKILL_STORE_RETENTION_SECS
+        });
+        let request = RuntimeLocalSkillListRequest {
+            id: random_id(),
+            runtime_id: runtime_id.to_string(),
+            status: LocalSkillRequestStatus::Pending,
+            supported: true,
+            created_at: now,
+            updated_at: now,
+            ..Default::default()
+        };
+        requests.insert(request.id.clone(), request.clone());
+        Ok(request)
+    }
+
+    async fn get(&self, id: &str) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>> {
+        let mut requests = self.requests()?;
+        let Some(request) = requests.get_mut(id) else {
+            return Ok(None);
+        };
+        apply_skill_list_timeout(request, Utc::now());
+        Ok(Some(request.clone()))
+    }
+
+    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
+        let now = Utc::now();
+        let mut requests = self.requests()?;
+        for request in requests.values_mut() {
+            apply_skill_list_timeout(request, now);
+        }
+        Ok(requests.values().any(|request| {
+            request.runtime_id == runtime_id && request.status == LocalSkillRequestStatus::Pending
+        }))
+    }
+
+    async fn pop_pending(
+        &self,
+        runtime_id: &str,
+    ) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>> {
+        let now = Utc::now();
+        let mut requests = self.requests()?;
+        for request in requests.values_mut() {
+            apply_skill_list_timeout(request, now);
+        }
+        let oldest_id = requests
+            .values()
+            .filter(|request| {
+                request.runtime_id == runtime_id
+                    && request.status == LocalSkillRequestStatus::Pending
+            })
+            .min_by(|left, right| left.created_at.cmp(&right.created_at))
+            .map(|request| request.id.clone());
+        let Some(oldest_id) = oldest_id else {
+            return Ok(None);
+        };
+        let request = requests
+            .get_mut(&oldest_id)
+            .expect("selected request exists");
+        request.status = LocalSkillRequestStatus::Running;
+        request.run_started_at = Some(now);
+        request.updated_at = now;
+        Ok(Some(request.clone()))
+    }
+
+    async fn complete(
+        &self,
+        id: &str,
+        skills: &[RuntimeLocalSkillSummary],
+        supported: bool,
+        mcp_servers: &[RuntimeLocalMcpServerSummary],
+        mcp_supported: bool,
+    ) -> anyhow::Result<()> {
+        if let Some(request) = self.requests()?.get_mut(id) {
+            request.status = LocalSkillRequestStatus::Completed;
+            request.skills = skills.to_vec();
+            request.supported = supported;
+            request.mcp_servers = mcp_servers.to_vec();
+            request.mcp_supported = mcp_supported;
+            request.updated_at = Utc::now();
+        }
+        Ok(())
+    }
+
+    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
+        if let Some(request) = self.requests()?.get_mut(id) {
+            request.status = LocalSkillRequestStatus::Failed;
+            request.error = err_msg.to_string();
+            request.updated_at = Utc::now();
+        }
+        Ok(())
+    }
+}
+
+#[derive(Default)]
+pub struct InMemoryLocalSkillImportStore {
+    requests: Mutex<HashMap<String, RuntimeLocalSkillImportRequest>>,
+}
+
+impl InMemoryLocalSkillImportStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn requests(
+        &self,
+    ) -> anyhow::Result<std::sync::MutexGuard<'_, HashMap<String, RuntimeLocalSkillImportRequest>>>
+    {
+        self.requests
+            .lock()
+            .map_err(|_| anyhow::anyhow!("local skill import store lock poisoned"))
+    }
+}
+
+#[async_trait]
+impl LocalSkillImportStoreBackend for InMemoryLocalSkillImportStore {
+    async fn create_import(
+        &self,
+        runtime_id: &str,
+        creator_id: &str,
+        skill_key: &str,
+        name: Option<String>,
+        description: Option<String>,
+        action: &str,
+        target_skill_id: &str,
+        supports_conflict: bool,
+    ) -> anyhow::Result<RuntimeLocalSkillImportRequest> {
+        let now = Utc::now();
+        let mut requests = self.requests()?;
+        requests.retain(|_, request| {
+            now.signed_duration_since(request.created_at).num_seconds()
+                <= LOCAL_SKILL_STORE_RETENTION_SECS
+        });
+        let request = RuntimeLocalSkillImportRequest {
+            id: random_id(),
+            runtime_id: runtime_id.to_string(),
+            skill_key: skill_key.to_string(),
+            name,
+            description,
+            action: action.to_string(),
+            target_skill_id: target_skill_id.to_string(),
+            supports_conflict,
+            status: LocalSkillRequestStatus::Pending,
+            created_at: now,
+            updated_at: now,
+            creator_id: creator_id.to_string(),
+            ..Default::default()
+        };
+        requests.insert(request.id.clone(), request.clone());
+        Ok(request)
+    }
+
+    async fn get(&self, id: &str) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>> {
+        let mut requests = self.requests()?;
+        let Some(request) = requests.get_mut(id) else {
+            return Ok(None);
+        };
+        apply_skill_import_timeout(request, Utc::now());
+        Ok(Some(request.clone()))
+    }
+
+    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
+        let now = Utc::now();
+        let mut requests = self.requests()?;
+        for request in requests.values_mut() {
+            apply_skill_import_timeout(request, now);
+        }
+        Ok(requests.values().any(|request| {
+            request.runtime_id == runtime_id && request.status == LocalSkillRequestStatus::Pending
+        }))
+    }
+
+    async fn pop_pending(
+        &self,
+        runtime_id: &str,
+    ) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>> {
+        Ok(self
+            .pop_pending_batch(runtime_id, 1)
+            .await?
+            .into_iter()
+            .next())
+    }
+
+    async fn pop_pending_batch(
+        &self,
+        runtime_id: &str,
+        limit: usize,
+    ) -> anyhow::Result<Vec<RuntimeLocalSkillImportRequest>> {
+        let now = Utc::now();
+        let mut requests = self.requests()?;
+        for request in requests.values_mut() {
+            apply_skill_import_timeout(request, now);
+        }
+        let mut ids = requests
+            .values()
+            .filter(|request| {
+                request.runtime_id == runtime_id
+                    && request.status == LocalSkillRequestStatus::Pending
+            })
+            .map(|request| (request.created_at, request.id.clone()))
+            .collect::<Vec<_>>();
+        ids.sort_by(|left, right| left.0.cmp(&right.0));
+        let mut claimed = Vec::new();
+        for (_, id) in ids.into_iter().take(limit) {
+            let request = requests.get_mut(&id).expect("selected request exists");
+            request.status = LocalSkillRequestStatus::Running;
+            request.run_started_at = Some(now);
+            request.updated_at = now;
+            claimed.push(request.clone());
+        }
+        Ok(claimed)
+    }
+
+    async fn complete(&self, id: &str, skill: Value) -> anyhow::Result<()> {
+        if let Some(request) = self.requests()?.get_mut(id) {
+            request.status = LocalSkillRequestStatus::Completed;
+            request.skill = Some(skill);
+            request.updated_at = Utc::now();
+        }
+        Ok(())
+    }
+
+    async fn conflict(&self, id: &str, info: LocalSkillImportConflict) -> anyhow::Result<()> {
+        if let Some(request) = self.requests()?.get_mut(id) {
+            request.status = LocalSkillRequestStatus::Conflict;
+            request.conflict = Some(info);
+            request.updated_at = Utc::now();
+        }
+        Ok(())
+    }
+
+    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
+        if let Some(request) = self.requests()?.get_mut(id) {
+            request.status = LocalSkillRequestStatus::Failed;
+            request.error = err_msg.to_string();
+            request.updated_at = Utc::now();
+        }
+        Ok(())
+    }
+}
+
 pub struct LocalSkillListStore {
     conn: ConnectionManager,
 }
@@ -1129,6 +2003,43 @@ impl LocalSkillListStore {
         req.error = err_msg.to_string();
         req.updated_at = Utc::now();
         self.persist_request(&req).await
+    }
+}
+
+#[async_trait]
+impl LocalSkillListStoreBackend for LocalSkillListStore {
+    async fn create(&self, runtime_id: &str) -> anyhow::Result<RuntimeLocalSkillListRequest> {
+        LocalSkillListStore::create(self, runtime_id).await
+    }
+
+    async fn get(&self, id: &str) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>> {
+        LocalSkillListStore::get(self, id).await
+    }
+
+    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
+        LocalSkillListStore::has_pending(self, runtime_id).await
+    }
+
+    async fn pop_pending(
+        &self,
+        runtime_id: &str,
+    ) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>> {
+        LocalSkillListStore::pop_pending(self, runtime_id).await
+    }
+
+    async fn complete(
+        &self,
+        id: &str,
+        skills: &[RuntimeLocalSkillSummary],
+        supported: bool,
+        mcp_servers: &[RuntimeLocalMcpServerSummary],
+        mcp_supported: bool,
+    ) -> anyhow::Result<()> {
+        LocalSkillListStore::complete(self, id, skills, supported, mcp_servers, mcp_supported).await
+    }
+
+    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
+        LocalSkillListStore::fail(self, id, err_msg).await
     }
 }
 
@@ -1400,6 +2311,69 @@ impl LocalSkillImportStore {
     }
 }
 
+#[async_trait]
+impl LocalSkillImportStoreBackend for LocalSkillImportStore {
+    async fn create_import(
+        &self,
+        runtime_id: &str,
+        creator_id: &str,
+        skill_key: &str,
+        name: Option<String>,
+        description: Option<String>,
+        action: &str,
+        target_skill_id: &str,
+        supports_conflict: bool,
+    ) -> anyhow::Result<RuntimeLocalSkillImportRequest> {
+        LocalSkillImportStore::create_import(
+            self,
+            runtime_id,
+            creator_id,
+            skill_key,
+            name,
+            description,
+            action,
+            target_skill_id,
+            supports_conflict,
+        )
+        .await
+    }
+
+    async fn get(&self, id: &str) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>> {
+        LocalSkillImportStore::get(self, id).await
+    }
+
+    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
+        LocalSkillImportStore::has_pending(self, runtime_id).await
+    }
+
+    async fn pop_pending(
+        &self,
+        runtime_id: &str,
+    ) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>> {
+        LocalSkillImportStore::pop_pending(self, runtime_id).await
+    }
+
+    async fn pop_pending_batch(
+        &self,
+        runtime_id: &str,
+        limit: usize,
+    ) -> anyhow::Result<Vec<RuntimeLocalSkillImportRequest>> {
+        LocalSkillImportStore::pop_pending_batch(self, runtime_id, limit).await
+    }
+
+    async fn complete(&self, id: &str, skill: Value) -> anyhow::Result<()> {
+        LocalSkillImportStore::complete(self, id, skill).await
+    }
+
+    async fn conflict(&self, id: &str, info: LocalSkillImportConflict) -> anyhow::Result<()> {
+        LocalSkillImportStore::conflict(self, id, info).await
+    }
+
+    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
+        LocalSkillImportStore::fail(self, id, err_msg).await
+    }
+}
+
 async fn load_local_skill_import(
     conn: &mut ConnectionManager,
     id: &str,
@@ -1413,6 +2387,106 @@ async fn load_local_skill_import(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn in_memory_stores_preserve_pending_request_lifecycles() {
+        let updates = InMemoryUpdateStore::new();
+        let update = updates.create("runtime-1", "v2", "user-1").await.unwrap();
+        assert!(updates.has_pending("runtime-1").await.unwrap());
+        assert_eq!(
+            updates
+                .pop_pending("runtime-1")
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            UpdateStatus::Running
+        );
+        updates.complete(&update.id, "updated").await.unwrap();
+        let update = updates.get(&update.id).await.unwrap().unwrap();
+        assert_eq!(update.status, UpdateStatus::Completed);
+        assert_eq!(update.output, "updated");
+
+        let models = InMemoryModelListStore::new();
+        let model_request = models.create("runtime-1").await.unwrap();
+        assert_eq!(
+            models
+                .pop_pending("runtime-1")
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            ModelListStatus::Running
+        );
+        let entries = vec![ModelEntry {
+            id: "model-1".into(),
+            label: "Model 1".into(),
+            ..Default::default()
+        }];
+        models
+            .complete(&model_request.id, &entries, true)
+            .await
+            .unwrap();
+        let model_request = models.get(&model_request.id).await.unwrap().unwrap();
+        assert_eq!(model_request.status, ModelListStatus::Completed);
+        assert_eq!(model_request.models.len(), 1);
+
+        let skill_lists = InMemoryLocalSkillListStore::new();
+        let list_request = skill_lists.create("runtime-1").await.unwrap();
+        assert_eq!(
+            skill_lists
+                .pop_pending("runtime-1")
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            LocalSkillRequestStatus::Running
+        );
+        skill_lists
+            .complete(&list_request.id, &[], true, &[], true)
+            .await
+            .unwrap();
+        assert_eq!(
+            skill_lists
+                .get(&list_request.id)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            LocalSkillRequestStatus::Completed
+        );
+
+        let imports = InMemoryLocalSkillImportStore::new();
+        let import_request = imports
+            .create_import(
+                "runtime-1",
+                "user-1",
+                "review",
+                Some("Review".into()),
+                None,
+                "create",
+                "",
+                true,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            imports
+                .pop_pending("runtime-1")
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            LocalSkillRequestStatus::Running
+        );
+        imports
+            .complete(&import_request.id, serde_json::json!({ "id": "skill-1" }))
+            .await
+            .unwrap();
+        let import_request = imports.get(&import_request.id).await.unwrap().unwrap();
+        assert_eq!(import_request.status, LocalSkillRequestStatus::Completed);
+        assert_eq!(import_request.skill.unwrap()["id"], "skill-1");
+    }
 
     #[test]
     fn local_skill_list_uses_the_direct_go_wire_shape() {
@@ -1446,5 +2520,61 @@ mod tests {
         assert_eq!(summary.plugin, "quality");
         assert!(summary.can_disable);
         assert_eq!(summary.file_count, 3);
+    }
+
+    #[test]
+    fn model_catalog_cache_action_preserves_last_known_good_semantics() {
+        let models = vec![ModelEntry {
+            id: "model-1".into(),
+            label: "Model 1".into(),
+            ..Default::default()
+        }];
+        assert_eq!(
+            model_catalog_cache_action(&models, true, false),
+            ModelCatalogCacheAction::Store
+        );
+        assert_eq!(
+            model_catalog_cache_action(&[], true, false),
+            ModelCatalogCacheAction::Drop
+        );
+        assert_eq!(
+            model_catalog_cache_action(&models, false, false),
+            ModelCatalogCacheAction::Drop
+        );
+        assert_eq!(
+            model_catalog_cache_action(&models, true, true),
+            ModelCatalogCacheAction::Keep
+        );
+    }
+
+    #[test]
+    fn cached_model_list_wire_marks_only_cache_hits() {
+        let stored_at = Utc::now();
+        let cached = ModelListRequest {
+            id: "synthetic".into(),
+            runtime_id: "runtime-1".into(),
+            status: ModelListStatus::Completed,
+            supported: true,
+            created_at: stored_at,
+            updated_at: stored_at,
+            cached: true,
+            cached_at: Some(stored_at),
+            ..Default::default()
+        };
+        let cached_json = serde_json::to_value(&cached).unwrap();
+        assert_eq!(cached_json["cached"], true);
+        assert_eq!(cached_json["cached_at"], serde_json::json!(stored_at));
+
+        let live = ModelListRequest {
+            id: "live".into(),
+            runtime_id: "runtime-1".into(),
+            status: ModelListStatus::Pending,
+            created_at: stored_at,
+            updated_at: stored_at,
+            ..Default::default()
+        };
+        let live_json = serde_json::to_value(&live).unwrap();
+        assert!(live_json.get("cached").is_none());
+        assert!(live_json.get("cached_at").is_none());
     }
 }

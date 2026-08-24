@@ -1,0 +1,19 @@
+[package]
+name = "cordy-llm"
+description = "Server-internal OpenAI-compatible assist client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+reqwest = { workspace = true }
+httpdate = { workspace = true }
+rand = { workspace = true }
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true
