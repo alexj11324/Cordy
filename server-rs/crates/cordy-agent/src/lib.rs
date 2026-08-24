@@ -15,6 +15,7 @@ pub mod contract;
 pub mod mcp;
 pub mod model;
 pub mod process;
+pub mod qoder;
 pub mod qwen;
 pub mod registry;
 pub mod stderr;
@@ -37,5 +38,6 @@ pub use model::{
     ThinkingLevel,
 };
 pub use process::{OwnedProcessTree, ProcessTreeSignal};
+pub use qoder::{QoderBackend, QoderConfig};
 pub use qwen::{QwenBackend, QwenConfig};
 pub use registry::{build_backend, BackendConfig};

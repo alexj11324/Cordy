@@ -7,6 +7,7 @@ use crate::antigravity::{AntigravityBackend, AntigravityConfig};
 use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
+use crate::qoder::{QoderBackend, QoderConfig};
 use crate::qwen::{QwenBackend, QwenConfig};
 
 /// Provider-neutral launch inputs resolved by daemon profile/runtime loading.
@@ -38,6 +39,15 @@ pub fn build_backend(
         "qwen" => Ok(Arc::new(QwenBackend::new(QwenConfig {
             command: config.command,
             env: config.env,
+        }))),
+        "qoder" => Ok(Arc::new(QoderBackend::new(QoderConfig {
+            command: config.command,
+            env: config.env,
+            default_command: if runtime_id == "qoderclicn" {
+                "qoderclicn".to_string()
+            } else {
+                "qodercli".to_string()
+            },
         }))),
         _ => Err(AgentError::UnsupportedRuntime(runtime_id.to_string())),
     }
@@ -438,6 +448,9 @@ mod tests {
 
         let antigravity = build_backend("antigravity", BackendConfig::default());
         assert!(antigravity.is_ok());
+
+        assert!(build_backend("qoder", BackendConfig::default()).is_ok());
+        assert!(build_backend("qoderclicn", BackendConfig::default()).is_ok());
 
         let metadata_only = build_backend("claude", BackendConfig::default());
         assert!(matches!(
