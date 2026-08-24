@@ -517,13 +517,14 @@ fn prepare_buffered_put(
     })
 }
 
-fn s3_http_client(custom_endpoint: bool) -> anyhow::Result<reqwest::Client> {
-    let mut builder = reqwest::Client::builder()
+fn s3_http_client() -> anyhow::Result<reqwest::Client> {
+    let builder = reqwest::Client::builder()
         .connect_timeout(S3_CONNECT_TIMEOUT)
-        .read_timeout(S3_READ_TIMEOUT);
-    if !custom_endpoint {
-        builder = builder.redirect(reqwest::redirect::Policy::none());
-    }
+        .read_timeout(S3_READ_TIMEOUT)
+        // A redirect changes the canonical URI/host after SigV4 signing and
+        // may replay an upload body to a different origin. Region correction
+        // is handled explicitly above, so every endpoint fails closed here.
+        .redirect(reqwest::redirect::Policy::none());
     Ok(builder.build()?)
 }
 
@@ -564,7 +565,7 @@ impl S3Storage {
                 .await,
         );
         Ok(Some(Self {
-            client: s3_http_client(custom.is_some())?,
+            client: s3_http_client()?,
             bucket,
             region,
             endpoint,
@@ -1908,7 +1909,7 @@ mod tests {
     #[test]
     fn s3_unicode_key_round_trips_through_stored_url() {
         let store = S3Storage {
-            client: s3_http_client(false).unwrap(),
+            client: s3_http_client().unwrap(),
             bucket: "bucket".into(),
             region: "us-west-2".into(),
             endpoint: Url::parse("https://s3.us-west-2.amazonaws.com").unwrap(),
@@ -1932,7 +1933,7 @@ mod tests {
 
     fn test_s3(endpoint: &str, custom_endpoint: bool, path_style: bool) -> S3Storage {
         S3Storage {
-            client: s3_http_client(custom_endpoint).unwrap(),
+            client: s3_http_client().unwrap(),
             bucket: "bucket".into(),
             region: "us-west-2".into(),
             endpoint: Url::parse(endpoint).unwrap(),
@@ -2116,6 +2117,51 @@ mod tests {
         assert!(retry_delay(1, None, u64::MAX) <= Duration::from_millis(50));
         assert!(retry_delay(2, None, u64::MAX) <= Duration::from_millis(100));
         assert_eq!(parse_retry_after("5"), Some(Duration::from_secs(5)));
+    }
+
+    #[tokio::test]
+    async fn s3_client_never_replays_requests_across_redirects() {
+        let target_hits = Arc::new(AtomicUsize::new(0));
+        let target_app = axum::Router::new().fallback(axum::routing::any({
+            let target_hits = target_hits.clone();
+            move || {
+                let target_hits = target_hits.clone();
+                async move {
+                    target_hits.fetch_add(1, Ordering::SeqCst);
+                    reqwest::StatusCode::OK
+                }
+            }
+        }));
+        let target_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target_url = format!("http://{}", target_listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(target_listener, target_app).await.unwrap();
+        });
+
+        let redirect_app = axum::Router::new().fallback(axum::routing::any(move || {
+            let target_url = target_url.clone();
+            async move {
+                (
+                    reqwest::StatusCode::TEMPORARY_REDIRECT,
+                    [(reqwest::header::LOCATION, target_url)],
+                )
+            }
+        }));
+        let redirect_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let redirect_url = format!("http://{}", redirect_listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            axum::serve(redirect_listener, redirect_app).await.unwrap();
+        });
+
+        let response = s3_http_client()
+            .unwrap()
+            .put(&redirect_url)
+            .body("secret attachment")
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(response.status(), reqwest::StatusCode::TEMPORARY_REDIRECT);
+        assert_eq!(target_hits.load(Ordering::SeqCst), 0);
     }
 
     #[test]
