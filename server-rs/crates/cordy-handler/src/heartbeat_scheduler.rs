@@ -64,9 +64,11 @@ impl BatchedHeartbeatScheduler {
     }
 
     pub fn start(self: Arc<Self>, cancel: CancellationToken) -> HeartbeatSchedulerRuntime {
+        let scheduler = self.clone();
         let task_cancel = cancel.clone();
         let task = tokio::spawn(async move { self.run(task_cancel).await });
         HeartbeatSchedulerRuntime {
+            scheduler,
             cancel,
             task: Some(task),
         }
@@ -136,6 +138,7 @@ impl HeartbeatScheduler for BatchedHeartbeatScheduler {
 }
 
 pub struct HeartbeatSchedulerRuntime {
+    scheduler: Arc<BatchedHeartbeatScheduler>,
     cancel: CancellationToken,
     task: Option<JoinHandle<()>>,
 }
@@ -147,7 +150,15 @@ impl HeartbeatSchedulerRuntime {
             return HeartbeatShutdownOutcome::Panicked;
         };
         match tokio::time::timeout(FINAL_FLUSH_TIMEOUT, &mut task).await {
-            Ok(Ok(())) => HeartbeatShutdownOutcome::Stopped,
+            Ok(Ok(())) => {
+                // Go's Stop performs a second bounded drain after Run exits.
+                // This catches an ID scheduled after parent cancellation won
+                // Run's select but before all request producers stopped.
+                match tokio::time::timeout(FINAL_FLUSH_TIMEOUT, self.scheduler.flush_once()).await {
+                    Ok(()) => HeartbeatShutdownOutcome::Stopped,
+                    Err(_) => HeartbeatShutdownOutcome::TimedOut,
+                }
+            }
             Ok(Err(_)) => HeartbeatShutdownOutcome::Panicked,
             Err(_) => {
                 task.abort();
