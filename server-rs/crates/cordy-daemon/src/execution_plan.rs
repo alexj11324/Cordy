@@ -18,7 +18,7 @@ use crate::config::{Config, TASK_WORKSPACES_ROOT_ENV};
 use crate::execenv::context::RuntimeSkillRefForEnv;
 use crate::execenv::execenv::{
     ConnectedApp, Environment, OpenclawGatewayPin, PrepareParams, ProjectResourceForEnv,
-    RepoContextForEnv, SkillContextForEnv, SkillFileContextForEnv, TaskContextForEnv,
+    RepoContextForEnv, ReuseParams, SkillContextForEnv, SkillFileContextForEnv, TaskContextForEnv,
 };
 use crate::execenv::local_worktree::LocalWorktreeParams;
 use crate::openclaw_runtime_config::decode_openclaw_runtime_config;
@@ -338,6 +338,48 @@ impl ProviderExecutionPlan {
 
     pub fn resume_session_id(&self) -> &str {
         &self.options.resume_session_id
+    }
+
+    /// Projects the same security-sensitive inputs onto the reuse path.
+    /// Keeping this conversion beside [`prepare_params`](Self::prepare_params)
+    /// prevents the runtime adapter from rebuilding a subtly different MCP,
+    /// provider overlay, or task-context view for follow-up turns.
+    pub fn reuse_params(&self, work_dir: impl Into<String>) -> ReuseParams {
+        ReuseParams {
+            workspaces_root: self.prepare.workspaces_root.clone(),
+            work_dir: work_dir.into(),
+            provider: self.prepare.provider.clone(),
+            codex_version: self.prepare.codex_version.clone(),
+            resume_session_id: self.options.resume_session_id.clone(),
+            openclaw_bin: self.prepare.openclaw_bin.clone(),
+            mcp_config: self.prepare.mcp_config.clone(),
+            cursor_mcp_auth_source: self.prepare.cursor_mcp_auth_source.clone(),
+            openclaw_gateway: self.prepare.openclaw_gateway.clone(),
+            profile: self.prepare.profile.clone(),
+            local_directory: false,
+            hermes_source_home: self.prepare.hermes_source_home.clone(),
+            hermes_source_must_exist: self.prepare.hermes_source_must_exist,
+            hermes_env: self.prepare.hermes_env.clone(),
+            hermes_memory_store: self.prepare.hermes_memory_store.clone(),
+            hermes_session_store: self.prepare.hermes_session_store.clone(),
+            reasonix_env: self.prepare.reasonix_env.clone(),
+            codex_custom_args: self.prepare.codex_custom_args.clone(),
+            task: self.prepare.task.clone(),
+        }
+    }
+
+    /// Drops a server-provided resume pointer after the adapter proves its
+    /// daemon-owned workdir cannot be reused. The continuity-loss signal is
+    /// updated in the same operation so both the refreshed runtime files and
+    /// the provider options describe a fresh session truthfully.
+    pub fn drop_resume(&mut self) {
+        if self.options.resume_session_id.is_empty() {
+            return;
+        }
+        self.options.resume_session_id.clear();
+        self.options.resume_continuity_notice.clear();
+        self.prepare.task.prior_session_resumed = false;
+        self.prepare.task.prior_session_resume_unavailable = true;
     }
 
     pub fn bind_environment(
