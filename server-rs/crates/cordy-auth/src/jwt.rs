@@ -4,6 +4,7 @@
 use std::sync::OnceLock;
 
 use rand::RngCore;
+use serde::Serialize;
 use sha2::{Digest, Sha256};
 
 const DEFAULT_JWT_SECRET: &str = "cordy-dev-secret-change-in-production";
@@ -76,6 +77,50 @@ pub fn hash_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
 
+#[derive(Serialize)]
+struct UserClaims<'a> {
+    sub: &'a str,
+    email: &'a str,
+    name: &'a str,
+    exp: i64,
+    iat: i64,
+}
+
+/// Issues the authenticated user JWT used by browser sessions and the CLI
+/// handoff endpoint. Claim names and HS256 signing match the Go handler.
+pub fn issue_user_jwt(user_id: &str, email: &str, name: &str) -> anyhow::Result<String> {
+    let now = chrono::Utc::now().timestamp();
+    issue_user_jwt_at(
+        user_id,
+        email,
+        name,
+        now,
+        crate::cookie::auth_token_ttl(),
+        jwt_secret(),
+    )
+}
+
+fn issue_user_jwt_at(
+    user_id: &str,
+    email: &str,
+    name: &str,
+    now: i64,
+    ttl: i64,
+    secret: &str,
+) -> anyhow::Result<String> {
+    Ok(jsonwebtoken::encode(
+        &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256),
+        &UserClaims {
+            sub: user_id,
+            email,
+            name,
+            exp: now + ttl,
+            iat: now,
+        },
+        &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+    )?)
+}
+
 fn random_hex20() -> anyhow::Result<String> {
     let mut b = [0u8; 20];
     rand::thread_rng().fill_bytes(&mut b);
@@ -118,5 +163,25 @@ mod tests {
             hash_token("abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
+    }
+
+    #[test]
+    fn user_jwt_claims_and_expiry_match_go_contract() {
+        let token =
+            issue_user_jwt_at("user-1", "a@example.com", "Alex", 100, 300, "secret").unwrap();
+        let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
+        validation.validate_exp = false;
+        let claims = jsonwebtoken::decode::<serde_json::Value>(
+            &token,
+            &jsonwebtoken::DecodingKey::from_secret(b"secret"),
+            &validation,
+        )
+        .unwrap()
+        .claims;
+        assert_eq!(claims["sub"], "user-1");
+        assert_eq!(claims["email"], "a@example.com");
+        assert_eq!(claims["name"], "Alex");
+        assert_eq!(claims["iat"], 100);
+        assert_eq!(claims["exp"], 400);
     }
 }

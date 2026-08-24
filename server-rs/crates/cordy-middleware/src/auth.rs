@@ -114,16 +114,20 @@ pub async fn auth_middleware(
     // handlers that its request came from a non-task-token path.
     req.headers_mut().remove("x-actor-source");
 
-    // When the Next.js / Clerk frontend has already authenticated the request
-    // and forwarded it with X-User-ID set, trust it directly — no JWT/PAT
-    // verification needed.
-    if req
+    // The normal frontend proxy path may forward an already authenticated
+    // user ID. The CLI handoff is different: it mints a durable bearer token,
+    // so it must authenticate the cookie/PAT/JWT itself instead of upgrading a
+    // caller-supplied forwarding header.
+    let forwarded_user = req
         .headers()
         .get("x-user-id")
         .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| !v.is_empty())
-    {
+        .is_some_and(|v| !v.is_empty());
+    if forwarded_user && req.uri().path() != "/api/cli-token" {
         return Ok(next.run(req).await);
+    }
+    if forwarded_user {
+        req.headers_mut().remove("x-user-id");
     }
 
     let Some((token, from_cookie)) = extract_token(&req) else {
