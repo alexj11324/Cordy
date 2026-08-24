@@ -103,10 +103,34 @@ enum Command {
     Runtime(RuntimeArgs),
     #[command(about = "Manage autopilots (scheduled/triggered agent automations)")]
     Autopilot(AutopilotArgs),
+    #[command(about = "Work with skills")]
+    Skill(SkillArgs),
     #[command(about = "Print version information")]
     Version {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
         output: VersionOutput,
+    },
+}
+
+#[derive(Debug, Args)]
+struct SkillArgs {
+    #[command(subcommand)]
+    command: SkillCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum SkillCommand {
+    #[command(about = "List skills in the workspace")]
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
+    #[command(about = "Get skill details (includes files)")]
+    Get {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
     },
 }
 
@@ -2469,6 +2493,12 @@ async fn run_with_input<R: Read>(
         Command::Autopilot(AutopilotArgs {
             command: AutopilotCommand::TriggerRotateUrl(args),
         }) => run_autopilot_trigger_rotate_url(cli, environment, args, input).await,
+        Command::Skill(SkillArgs {
+            command: SkillCommand::List { output },
+        }) => run_skill_list(cli, environment, *output).await,
+        Command::Skill(SkillArgs {
+            command: SkillCommand::Get { id, output },
+        }) => run_skill_get(cli, environment, id, *output).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -4191,6 +4221,63 @@ async fn resolve_autopilot_trigger_id(
             matches.join("\n  ")
         ),
     }
+}
+
+async fn run_skill_list(
+    cli: &Cli,
+    environment: &Environment,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let skills: Vec<Value> = client
+        .get_json("/api/skills")
+        .await
+        .context("list skills")?;
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&skills)?),
+            OutputFormat::Table => format_skill_table(&skills),
+        },
+        stderr: String::new(),
+    })
+}
+
+async fn run_skill_get(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let skill: Value = client
+        .get_json(&format!("/api/skills/{id}"))
+        .await
+        .context("get skill")?;
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&skill)?),
+            OutputFormat::Table => format_skill_table(std::slice::from_ref(&skill)),
+        },
+        stderr: String::new(),
+    })
+}
+
+fn format_skill_table(skills: &[Value]) -> String {
+    let mut rows = vec![vec![
+        "ID".into(),
+        "NAME".into(),
+        "DESCRIPTION".into(),
+        "CREATED_AT".into(),
+    ]];
+    rows.extend(skills.iter().map(|skill| {
+        vec![
+            value_string(skill, "id"),
+            value_string(skill, "name"),
+            value_string(skill, "description"),
+            value_string(skill, "created_at"),
+        ]
+    }));
+    format_table(&rows)
 }
 
 async fn resolve_autopilot_agent(
@@ -12977,6 +13064,88 @@ mod tests {
     use std::io::Cursor;
     use std::sync::{Arc, Mutex};
     use tokio::net::TcpListener;
+
+    #[test]
+    fn skill_read_parser_matches_go_registry() {
+        let list = Cli::try_parse_from(["cordy", "skill", "list", "--output", "json"])
+            .expect("skill list CLI");
+        assert!(matches!(
+            list.command,
+            Command::Skill(SkillArgs {
+                command: SkillCommand::List {
+                    output: OutputFormat::Json
+                }
+            })
+        ));
+        let get = Cli::try_parse_from(["cordy", "skill", "get", "skill-1"]).expect("skill get CLI");
+        let Command::Skill(SkillArgs {
+            command: SkillCommand::Get { id, output },
+        }) = get.command
+        else {
+            panic!("expected skill get");
+        };
+        assert_eq!(id, "skill-1");
+        assert_eq!(output, OutputFormat::Json);
+        assert!(Cli::try_parse_from(["cordy", "skill", "get"]).is_err());
+        assert!(Cli::try_parse_from(["cordy", "skill", "list", "extra"]).is_err());
+    }
+
+    #[tokio::test]
+    async fn skill_list_and_get_preserve_go_requests_and_outputs() {
+        let app = Router::new()
+            .route(
+                "/api/skills",
+                get(|| async {
+                    Json(vec![serde_json::json!({
+                        "id":"skill-1",
+                        "name":"Review",
+                        "description":"Reviews code",
+                        "created_at":"2026-08-24T00:00:00Z",
+                        "server_only":"preserved"
+                    })])
+                }),
+            )
+            .route(
+                "/api/skills/skill-1",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "id":"skill-1",
+                        "name":"Review",
+                        "description":"Reviews code",
+                        "created_at":"2026-08-24T00:00:00Z",
+                        "files":[{"id":"file-1","path":"SKILL.md"}],
+                        "server_only":"preserved"
+                    }))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+
+        let list = Cli::try_parse_from(["cordy", "skill", "list"]).expect("skill list table CLI");
+        let output = run_with_input(&list, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list skills");
+        assert!(output.stdout.starts_with("ID"));
+        assert!(output.stdout.contains("skill-1"));
+        assert!(output.stdout.contains("Review"));
+        assert!(output.stdout.contains("Reviews code"));
+
+        let get =
+            Cli::try_parse_from(["cordy", "skill", "get", "skill-1"]).expect("skill get JSON CLI");
+        let output = run_with_input(&get, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("get skill");
+        let value: Value = serde_json::from_str(&output.stdout).expect("JSON output");
+        assert_eq!(value["files"][0]["path"], "SKILL.md");
+        assert_eq!(value["server_only"], "preserved");
+        server.abort();
+    }
 
     #[test]
     fn autopilot_read_parser_matches_go_registry() {
