@@ -100,6 +100,33 @@ impl AttachmentDownloadSettings {
         })
     }
 
+    pub fn validate_for_storage(
+        &self,
+        storage: &dyn crate::attachment_storage::AttachmentStorage,
+    ) -> anyhow::Result<()> {
+        self.validate_presign_support(storage.supports_presigned_downloads())
+    }
+
+    fn validate_presign_support(&self, supports_presigned_downloads: bool) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.mode != AttachmentDownloadMode::Presign || supports_presigned_downloads,
+            "ATTACHMENT_DOWNLOAD_MODE=presign requires S3 attachment storage"
+        );
+        if supports_presigned_downloads
+            && matches!(
+                self.mode,
+                AttachmentDownloadMode::Auto | AttachmentDownloadMode::Presign
+            )
+        {
+            crate::attachment_storage::validate_s3_presign_ttl(self.ttl).map_err(|_| {
+                anyhow::anyhow!(
+                    "ATTACHMENT_DOWNLOAD_URL_TTL must be between 1 second and 7 days when S3 presigned downloads are enabled"
+                )
+            })?;
+        }
+        Ok(())
+    }
+
     pub fn resolve_mode(
         &self,
         storage: Option<&dyn crate::attachment_storage::AttachmentStorage>,
@@ -130,7 +157,9 @@ impl AttachmentDownloadSettings {
 
 #[cfg(test)]
 mod attachment_download_tests {
-    use super::should_proxy_attachment_url;
+    use std::time::Duration;
+
+    use super::{should_proxy_attachment_url, AttachmentDownloadMode, AttachmentDownloadSettings};
 
     #[test]
     fn auto_mode_keeps_internal_object_urls_on_the_proxy() {
@@ -146,6 +175,51 @@ mod attachment_download_tests {
         assert!(!should_proxy_attachment_url(
             "https://bucket.s3.us-west-2.amazonaws.com/object"
         ));
+    }
+
+    #[test]
+    fn explicit_presign_requires_a_presigning_storage_backend() {
+        let settings = AttachmentDownloadSettings {
+            mode: AttachmentDownloadMode::Presign,
+            ..AttachmentDownloadSettings::default()
+        };
+
+        let error = settings.validate_presign_support(false).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "ATTACHMENT_DOWNLOAD_MODE=presign requires S3 attachment storage"
+        );
+    }
+
+    #[test]
+    fn presign_ttl_is_validated_at_startup_for_auto_and_explicit_modes() {
+        for mode in [
+            AttachmentDownloadMode::Auto,
+            AttachmentDownloadMode::Presign,
+        ] {
+            for ttl in [
+                Duration::from_millis(500),
+                Duration::from_secs(7 * 24 * 60 * 60 + 1),
+            ] {
+                let settings = AttachmentDownloadSettings {
+                    mode,
+                    ttl,
+                    ..AttachmentDownloadSettings::default()
+                };
+                assert!(settings.validate_presign_support(true).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn proxy_mode_does_not_apply_the_s3_presign_ttl_limit() {
+        let settings = AttachmentDownloadSettings {
+            mode: AttachmentDownloadMode::Proxy,
+            ttl: Duration::from_millis(500),
+            ..AttachmentDownloadSettings::default()
+        };
+
+        settings.validate_presign_support(false).unwrap();
     }
 }
 

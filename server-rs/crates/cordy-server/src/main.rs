@@ -211,6 +211,7 @@ async fn build_production_router(
     let entitlements = autopilot_entitlements(cfg, business_metrics.clone());
     let attachment_download =
         cordy_handler::state::AttachmentDownloadSettings::from_config(cfg).await?;
+    attachment_download.validate_for_storage(attachment_storage.as_ref())?;
     let cdn_signed = attachment_download.cloudfront_signer.is_some();
     let mut state = cordy_handler::HandlerState::new(
         db,

@@ -33,6 +33,16 @@ const S3_READ_TIMEOUT: Duration = Duration::from_secs(60);
 const S3_MAX_RETRY_DELAY: Duration = Duration::from_secs(20);
 const S3_CORRECTION_TTL: Duration = Duration::from_secs(15 * 60);
 const S3_MAX_CLOCK_SKEW_SECONDS: i64 = 24 * 60 * 60;
+const S3_MIN_PRESIGN_TTL: Duration = Duration::from_secs(1);
+const S3_MAX_PRESIGN_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+
+pub(crate) fn validate_s3_presign_ttl(ttl: Duration) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        (S3_MIN_PRESIGN_TTL..=S3_MAX_PRESIGN_TTL).contains(&ttl),
+        "S3 presigned download TTL must be between 1 second and 7 days"
+    );
+    Ok(())
+}
 
 #[async_trait]
 pub trait AttachmentStorage: Send + Sync {
@@ -921,15 +931,8 @@ impl S3Storage {
         ttl: std::time::Duration,
         content_disposition: &str,
     ) -> anyhow::Result<String> {
-        let expires = if ttl.is_zero() {
-            30 * 60
-        } else {
-            ttl.as_secs()
-        };
-        anyhow::ensure!(
-            (1..=7 * 24 * 60 * 60).contains(&expires),
-            "S3 presigned download TTL must be between 1 second and 7 days"
-        );
+        validate_s3_presign_ttl(ttl)?;
+        let expires = ttl.as_secs();
         let correction = self.correction();
         let signing_region = correction.region.as_deref().unwrap_or(&self.region);
         let mut url = self.request_url_for_region(key, signing_region)?;
@@ -2416,6 +2419,21 @@ mod tests {
             Some("session/token")
         );
         assert!(!query.get("X-Amz-Signature").unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn s3_presign_rejects_subsecond_and_overlong_ttls() {
+        let store = test_s3("https://s3.us-west-2.amazonaws.com", false, true);
+        for ttl in [
+            Duration::from_millis(500),
+            Duration::from_secs(7 * 24 * 60 * 60 + 1),
+        ] {
+            let error = store.presign_get("object", ttl).await.unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "S3 presigned download TTL must be between 1 second and 7 days"
+            );
+        }
     }
 
     #[tokio::test]
