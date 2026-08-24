@@ -16,7 +16,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::broadcaster::{Broadcaster, DaemonRuntimeDeliverer, RelayPublisher, SCOPE_USER};
 use crate::envelope::{
-    deliver_envelope, heartbeat_key, nodes_key, stream_key, Envelope, HubFanout,
+    deliver_envelope, heartbeat_key, inject_event_id, nodes_key, stream_key, xadd_envelope_command,
+    Envelope, HubFanout,
 };
 use crate::metrics::M;
 use crate::stream_retention::{stream_min_id, StreamRetentionConfig, StreamTtlRefresher};
@@ -129,6 +130,7 @@ impl RedisRelay {
     /// Cancel the startup token before awaiting [`RedisRelay::wait`].
     pub fn stop(&self) {
         self.stopping.store(true, Ordering::Relaxed);
+        self.shutdown.cancel();
         let mut guard = self.consumers.lock().unwrap_or_else(|e| e.into_inner());
         for handle in guard.values() {
             handle.token.cancel();
@@ -146,9 +148,10 @@ impl RedisRelay {
             .clone_from(&self.node_id);
 
         let state = self.clone();
-        tokio::spawn(async move {
+        let probe_state = state.clone();
+        state.spawn(async move {
             // Initial connectivity probe (non-fatal; gauges stay honest).
-            let mut conn = state.write_conn_handle();
+            let mut conn = probe_state.write_conn_handle();
             let ping = redis::cmd("PING").query_async::<()>(&mut conn).await;
             match &ping {
                 Err(e) => {
@@ -159,26 +162,26 @@ impl RedisRelay {
                 Ok(()) => M.redis_connected.store(true, Ordering::Relaxed),
             }
             drop(conn);
-
-            let on_first: ScopeEventCallback = {
-                let s = state.clone();
-                Arc::new(move |t, id| s.start_consumer(t, id))
-            };
-            let on_last: ScopeEventCallback = {
-                let s = state.clone();
-                Arc::new(move |t, id| s.stop_consumer(t, id))
-            };
-            state.registry.set_subscription_callbacks(on_first, on_last);
-
-            for key in state.registry.local_scopes() {
-                state.start_consumer(&key.scope_type, &key.scope_id);
-            }
-
-            let hb_state = state.clone();
-            state.spawn(async move { hb_state.heartbeat_loop().await });
-            let sw_state = state.clone();
-            state.spawn(async move { sw_state.consumer_sweeper().await });
         });
+
+        let on_first: ScopeEventCallback = {
+            let s = state.clone();
+            Arc::new(move |t, id| s.start_consumer(t, id))
+        };
+        let on_last: ScopeEventCallback = {
+            let s = state.clone();
+            Arc::new(move |t, id| s.stop_consumer(t, id))
+        };
+        state.registry.set_subscription_callbacks(on_first, on_last);
+
+        for key in state.registry.local_scopes() {
+            state.start_consumer(&key.scope_type, &key.scope_id);
+        }
+
+        let hb_state = state.clone();
+        state.spawn(async move { hb_state.heartbeat_loop().await });
+        let sw_state = state.clone();
+        state.spawn(async move { sw_state.consumer_sweeper().await });
     }
 
     /// Spawns a tracked background task owned by this relay.
@@ -375,7 +378,7 @@ impl RedisRelay {
                     {
                         for (id, fields) in messages {
                             M.redis_xread_total.fetch_add(1, Ordering::Relaxed);
-                            self.deliver_fields(key, &fields);
+                            self.deliver_fields(key, &fields).await;
                             // Ack after delivery so a crash re-delivers.
                             let mut w = self.write_conn_handle();
                             let acked: Result<i64, _> = redis::cmd("XACK")
@@ -431,7 +434,7 @@ impl RedisRelay {
         }
     }
 
-    fn deliver_fields(&self, key: &ScopeKey, fields: &[(String, String)]) {
+    async fn deliver_fields(&self, key: &ScopeKey, fields: &[(String, String)]) {
         if let Some(mut ev) = Envelope::from_field_pairs(fields) {
             if ev.scope.is_empty() {
                 ev.scope = key.scope_type.clone();
@@ -444,8 +447,7 @@ impl RedisRelay {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone();
-            let hub = self.hub.clone();
-            tokio::spawn(deliver_envelope(hub, daemon_runtime, ev));
+            deliver_envelope(self.hub.clone(), daemon_runtime, ev).await;
         }
     }
 
@@ -684,15 +686,7 @@ impl RelayPublisher for RedisRelay {
         );
         let stream = stream_key(scope_type, scope_id);
 
-        let mut cmd = redis::cmd("XADD");
-        cmd.arg(&stream)
-            .arg("MAXLEN")
-            .arg("~")
-            .arg(self.retention.stream_max_len);
-        for (k, v) in ev.redis_field_pairs() {
-            cmd.arg(k).arg(v);
-        }
-        cmd.arg("*");
+        let cmd = xadd_envelope_command(&stream, self.retention.stream_max_len, &ev);
 
         let start = std::time::Instant::now();
         let mut conn = self.write_conn_handle();
@@ -754,4 +748,105 @@ impl Broadcaster for RedisRelay {
     }
 
     // broadcast_to_workspace inherits the default SCOPE_WORKSPACE delegation.
+}
+
+#[async_trait]
+impl crate::relay_lifecycle::ManagedRelay for RedisRelay {
+    fn node_id(&self) -> String {
+        self.node_id()
+    }
+
+    fn start(self: Arc<Self>, shutdown: CancellationToken) {
+        RedisRelay::start(&self);
+        let relay = self.clone();
+        self.spawn(async move {
+            tokio::select! {
+                () = shutdown.cancelled() => relay.stop(),
+                () = relay.shutdown.cancelled() => {}
+            }
+        });
+    }
+
+    fn stop(&self) {
+        RedisRelay::stop(self);
+    }
+
+    async fn wait(&self) {
+        RedisRelay::wait(self).await;
+    }
+
+    fn set_daemon_runtime_deliverer(&self, deliverer: Arc<dyn DaemonRuntimeDeliverer>) {
+        RedisRelay::set_daemon_runtime_deliverer(self, deliverer);
+    }
+}
+
+/// Delivers every event to local clients before publishing the same frame to
+/// Redis. A shared event id is injected into the client frame so the relay's
+/// local loopback is discarded by the hub dedup cache.
+pub struct DualWriteBroadcaster {
+    hub: Arc<dyn HubFanout>,
+    relay: Arc<dyn RelayPublisher>,
+}
+
+impl DualWriteBroadcaster {
+    pub fn new(hub: Arc<dyn HubFanout>, relay: Arc<dyn RelayPublisher>) -> Self {
+        Self { hub, relay }
+    }
+
+    async fn deliver_and_publish(
+        &self,
+        scope_type: &str,
+        scope_id: &str,
+        exclude: &str,
+        message: &[u8],
+    ) {
+        let event_id = ulid::Ulid::new().to_string();
+        let frame = inject_event_id(message, &event_id);
+        if scope_type == "global" {
+            self.hub.fanout_all_dedup(&frame, exclude, &event_id).await;
+        } else if scope_type == SCOPE_USER {
+            self.hub
+                .fanout_user(scope_id, &frame, exclude, &event_id)
+                .await;
+        } else {
+            self.hub
+                .broadcast_to_scope_dedup(scope_type, scope_id, &frame, &event_id)
+                .await;
+        }
+        if let Err(error) = self
+            .relay
+            .publish_with_id(scope_type, scope_id, exclude, &frame, &event_id)
+            .await
+        {
+            tracing::warn!(
+                %error,
+                scope = scope_type,
+                scope_id,
+                event_id,
+                "realtime relay publish failed after local delivery"
+            );
+        }
+    }
+}
+
+#[async_trait]
+impl Broadcaster for DualWriteBroadcaster {
+    async fn broadcast_to_scope(&self, scope_type: &str, scope_id: &str, message: &[u8]) {
+        self.deliver_and_publish(scope_type, scope_id, "", message)
+            .await;
+    }
+
+    async fn send_to_user(&self, user_id: &str, message: &[u8], exclude_workspace: Option<&str>) {
+        self.deliver_and_publish(
+            SCOPE_USER,
+            user_id,
+            exclude_workspace.unwrap_or_default(),
+            message,
+        )
+        .await;
+    }
+
+    async fn broadcast(&self, message: &[u8]) {
+        self.deliver_and_publish("global", "all", "", message).await;
+    }
 }

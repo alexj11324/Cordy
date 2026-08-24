@@ -212,8 +212,9 @@ pub trait ComposioOverlayBuilder: Send + Sync {
 }
 
 /// Wakeup seam used by dispatch to nudge runtimes.
+#[async_trait::async_trait]
 pub trait TaskWakeupNotifier: Send + Sync {
-    fn notify_task_available(&self, runtime_id: &str, task_id: &str);
+    async fn notify_task_available(&self, runtime_id: &str, task_id: &str);
 }
 
 /// Quick-create task context stored in `agent_task_queue.context`.
@@ -1120,18 +1121,20 @@ impl TaskService {
     /// claim cannot read a still-current "empty" verdict.
     pub async fn notify_task_enqueued(&self, task: &AgentTaskQueue) {
         self.capture_task_queued(task).await;
-        self.notify_runtime_may_have_work(task.runtime_id, Some(&task.id.to_string()));
+        self.notify_runtime_may_have_work(task.runtime_id, Some(&task.id.to_string()))
+            .await;
     }
 
     /// Best-effort daemon wakeup after a terminal state. The task ID is
     /// deliberately omitted: the completed task is not available; the hint
     /// only means a queued successor may have become claimable.
-    pub fn notify_task_finished(&self, task: &AgentTaskQueue) {
-        self.notify_runtime_may_have_work(task.runtime_id, None);
+    pub async fn notify_task_finished(&self, task: &AgentTaskQueue) {
+        self.notify_runtime_may_have_work(task.runtime_id, None)
+            .await;
     }
 
     /// Batch form used by bulk terminal transitions; coalesces by runtime.
-    pub fn notify_tasks_finished(&self, tasks: &[AgentTaskQueue]) {
+    pub async fn notify_tasks_finished(&self, tasks: &[AgentTaskQueue]) {
         let mut seen = std::collections::HashSet::new();
         for task in tasks {
             let Some(runtime_id) = task.runtime_id else {
@@ -1140,16 +1143,19 @@ impl TaskService {
             if !seen.insert(runtime_id) {
                 continue;
             }
-            self.notify_runtime_may_have_work(Some(runtime_id), None);
+            self.notify_runtime_may_have_work(Some(runtime_id), None)
+                .await;
         }
     }
 
-    fn notify_runtime_may_have_work(&self, runtime_id: Option<Uuid>, task_id: Option<&str>) {
+    async fn notify_runtime_may_have_work(&self, runtime_id: Option<Uuid>, task_id: Option<&str>) {
         // EmptyClaim cache bump goes here once the Redis-backed cache lands;
         // the wakeup alone still unblocks the daemon's next poll.
         if let Some(wakeup) = self.wakeup.as_ref().and_then(|w| w.upgrade()) {
             if let Some(runtime_id) = runtime_id {
-                wakeup.notify_task_available(&runtime_id.to_string(), task_id.unwrap_or(""));
+                wakeup
+                    .notify_task_available(&runtime_id.to_string(), task_id.unwrap_or(""))
+                    .await;
             }
         }
     }
@@ -2184,7 +2190,7 @@ impl TaskService {
             self.broadcast_task_event(cordy_protocol::EVENT_TASK_CANCELLED, t, Default::default())
                 .await;
         }
-        self.notify_tasks_finished(&cancelled);
+        self.notify_tasks_finished(&cancelled).await;
         Ok(())
     }
 
@@ -2901,7 +2907,7 @@ impl TaskService {
         }
         // One reconcile: all rows belong to the same agent.
         self.reconcile_agent_status(agent_id).await;
-        self.notify_tasks_finished(&cancelled);
+        self.notify_tasks_finished(&cancelled).await;
         Ok(cancelled)
     }
 
@@ -2923,7 +2929,7 @@ impl TaskService {
         for agent_id in distinct_agent_ids(&cancelled) {
             self.reconcile_agent_status(agent_id).await;
         }
-        self.notify_tasks_finished(&cancelled);
+        self.notify_tasks_finished(&cancelled).await;
         Ok(cancelled)
     }
 
@@ -2948,7 +2954,7 @@ impl TaskService {
             )
             .await;
         }
-        self.notify_tasks_finished(cancelled);
+        self.notify_tasks_finished(cancelled).await;
     }
 
     /// Post-commit queue invalidation for clients.
@@ -3124,7 +3130,7 @@ impl TaskService {
             Default::default(),
         )
         .await;
-        self.notify_task_finished(&task);
+        self.notify_task_finished(&task).await;
 
         Ok(CancelTaskResult {
             task,
@@ -3175,7 +3181,7 @@ impl TaskService {
             )
             .await;
         }
-        self.notify_tasks_finished(&tasks);
+        self.notify_tasks_finished(&tasks).await;
         Ok(())
     }
 
@@ -3795,7 +3801,8 @@ impl TaskService {
             Default::default(),
         )
         .await;
-        self.notify_runtime_may_have_work(requeued.runtime_id, Some(&requeued.id.to_string()));
+        self.notify_runtime_may_have_work(requeued.runtime_id, Some(&requeued.id.to_string()))
+            .await;
         tracing::info!(
             task_id = %requeued.id,
             runtime_id = ?requeued.runtime_id,
