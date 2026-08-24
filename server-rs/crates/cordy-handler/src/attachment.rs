@@ -34,16 +34,18 @@ pub fn public_router() -> Router<HandlerState> {
         )
 }
 pub fn authenticated_router() -> Router<HandlerState> {
-    Router::new().route(
-        "/api/upload-file",
-        post(upload).layer(DefaultBodyLimit::max(MAX_UPLOAD)),
-    )
+    Router::new()
+        .route(
+            "/api/upload-file",
+            post(upload).layer(DefaultBodyLimit::max(MAX_UPLOAD)),
+        )
+        .route("/api/attachments/{id}/download", get(download))
 }
 pub fn workspace_router() -> Router<HandlerState> {
     Router::new()
         .route(
             "/api/attachments/{id}",
-            axum::routing::delete(delete_attachment),
+            get(metadata).delete(delete_attachment),
         )
         .route("/api/attachments/{id}/content", get(content))
 }
@@ -82,20 +84,15 @@ async fn load(
         .ok_or_else(|| error_response(StatusCode::NOT_FOUND, "attachment not found"))
 }
 
-fn response_json(
-    state: &HandlerState,
-    headers: &HeaderMap,
-    att: &Attachment,
-    capability: bool,
-) -> Value {
-    let urls = crate::attachment_access::response_urls(state, headers, att);
-    let mut download_url = urls.download_url;
+fn response_json(att: &Attachment, capability: bool) -> Value {
+    let stable = format!("/api/attachments/{}/download", att.id);
+    let mut download_url = stable.clone();
     let mut attachment_download_url = None;
     if capability {
         download_url = capability_path(att.id, false);
         attachment_download_url = Some(capability_path(att.id, true));
     }
-    let mut value = json!({"id":att.id,"workspace_id":att.workspace_id,"issue_id":att.issue_id,"comment_id":att.comment_id,"chat_session_id":att.chat_session_id,"chat_message_id":att.chat_message_id,"uploader_type":att.uploader_type,"uploader_id":att.uploader_id,"filename":att.filename,"url":att.url,"download_url":download_url,"markdown_url":urls.markdown_url,"content_type":att.content_type,"size_bytes":att.size_bytes,"created_at":crate::timefmt::rfc3339(att.created_at)});
+    let mut value = json!({"id":att.id,"workspace_id":att.workspace_id,"issue_id":att.issue_id,"comment_id":att.comment_id,"chat_session_id":att.chat_session_id,"chat_message_id":att.chat_message_id,"uploader_type":att.uploader_type,"uploader_id":att.uploader_id,"filename":att.filename,"url":att.url,"download_url":download_url,"markdown_url":stable,"content_type":att.content_type,"size_bytes":att.size_bytes,"created_at":crate::timefmt::rfc3339(att.created_at)});
     if let Some(url) = attachment_download_url {
         value
             .as_object_mut()
@@ -109,10 +106,9 @@ async fn metadata(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
-    headers: HeaderMap,
 ) -> Response {
     match load(&state, &context, &id).await {
-        Ok(att) => Json(response_json(&state, &headers, &att, true)).into_response(),
+        Ok(att) => Json(response_json(&att, true)).into_response(),
         Err(r) => r,
     }
 }
@@ -345,7 +341,7 @@ async fn upload(
         )
         .await;
         let _ = mem;
-        return Json(response_json(&state, &headers, &att, false)).into_response();
+        return Json(response_json(&att, false)).into_response();
     }
     let url = match storage
         .upload(&key, form.bytes, &content_type, &form.filename)
@@ -888,7 +884,6 @@ fn preview_headers(h: &mut HeaderMap, origins: &[String]) {
     }
 }
 fn sniff(body: &[u8], filename: &str) -> String {
-    let detected = infer::get(body).map(|kind| kind.mime_type());
     let ext = std::path::Path::new(filename)
         .extension()
         .and_then(|v| v.to_str())
@@ -905,7 +900,9 @@ fn sniff(body: &[u8], filename: &str) -> String {
         "gif" => "image/gif",
         "pdf" => "application/pdf",
         "txt" | "md" => "text/plain; charset=utf-8",
-        _ => detected.unwrap_or("application/octet-stream"),
+        _ if body.starts_with(b"\x89PNG\r\n\x1a\n") => "image/png",
+        _ if body.starts_with(b"%PDF-") => "application/pdf",
+        _ => "application/octet-stream",
     }
     .into()
 }

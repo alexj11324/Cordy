@@ -9,41 +9,6 @@ use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
 
-/// Serializes all resolve/unresolve mutations for one logical comment thread.
-/// Callers must hold the returned root-row lock until their transaction commits.
-pub async fn lock_comment_thread(
-    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    target_id: Uuid,
-    issue_id: Uuid,
-    workspace_id: Uuid,
-) -> anyhow::Result<Option<Uuid>> {
-    let row = sqlx::query(
-        r#"WITH RECURSIVE root_of AS (
-    SELECT c.id, c.parent_id
-    FROM comment c
-    WHERE c.id = $1 AND c.issue_id = $2 AND c.workspace_id = $3
-    UNION ALL
-    SELECT parent.id, parent.parent_id
-    FROM comment parent
-    JOIN root_of child ON parent.id = child.parent_id
-    WHERE parent.issue_id = $2 AND parent.workspace_id = $3
-)
-SELECT root.id
-FROM comment root
-JOIN root_of candidate ON candidate.id = root.id
-WHERE candidate.parent_id IS NULL
-FOR UPDATE OF root"#,
-    )
-    .bind(target_id)
-    .bind(issue_id)
-    .bind(workspace_id)
-    .fetch_optional(executor)
-    .await?;
-    row.map(|row| row.try_get(0))
-        .transpose()
-        .map_err(Into::into)
-}
-
 pub async fn bump_comment_revision(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
