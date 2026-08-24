@@ -4027,6 +4027,7 @@ async fn run_daemon_restart(
 }
 
 async fn run_daemon_stop(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
+    require_human_local_command(environment, "daemon stop")?;
     let flags = config::DaemonLaunchFlags {
         server_url: cli.server_url.clone(),
         ..config::DaemonLaunchFlags::default()
@@ -27476,6 +27477,21 @@ mod tests {
         assert!(error
             .to_string()
             .contains("daemon logs is not available inside a daemon-managed task"));
+    }
+
+    #[tokio::test]
+    async fn daemon_stop_is_rejected_inside_a_daemon_task_before_control_access() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_TASK_ID", "task-1");
+        let cli = Cli::try_parse_from(["cordy", "daemon", "stop"]).expect("daemon stop CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("task context must be rejected");
+        assert!(error
+            .to_string()
+            .contains("daemon stop is not available inside a daemon-managed task"));
     }
 
     #[test]
