@@ -5120,13 +5120,20 @@ async fn validate_parent(
 }
 
 async fn issue_response(state: &HandlerState, issue: Issue) -> Response {
+    Json(issue_response_projection(state, &issue).await).into_response()
+}
+
+pub(crate) async fn issue_response_projection(
+    state: &HandlerState,
+    issue: &Issue,
+) -> IssueResponse {
     let mut response =
-        IssueResponse::from_issue(&issue, &issue_prefix(state, issue.workspace_id).await);
+        IssueResponse::from_issue(issue, &issue_prefix(state, issue.workspace_id).await);
     response.status_category = Some(
         cordy_service::issue_status::effective(&state.pool, issue.workspace_id, &issue.status)
             .await,
     );
-    Json(response).into_response()
+    response
 }
 
 pub(crate) async fn mutation_actor(

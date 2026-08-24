@@ -865,8 +865,45 @@ fn publish_created(
 
 #[derive(Deserialize)]
 struct DingTalkBody {
-    app_key: String,
-    app_secret: String,
+    #[serde(alias = "app_key")]
+    client_id: String,
+    #[serde(alias = "app_secret")]
+    client_secret: String,
+}
+
+fn dingtalk_install_error(error: &anyhow::Error) -> (StatusCode, String) {
+    use cordy_dingtalk::byo_install::ByoError;
+    use cordy_dingtalk::install::InstallError;
+
+    match error.downcast_ref::<ByoError>() {
+        Some(ByoError::InvalidAppKey | ByoError::InvalidAppSecret) => {
+            (StatusCode::BAD_REQUEST, error.to_string())
+        }
+        Some(ByoError::CredentialValidation(_)) => (
+            StatusCode::BAD_REQUEST,
+            "could not verify the DingTalk credentials — check the AppKey (client id) and AppSecret (client secret), and that the robot is a Stream-mode robot in your organization".into(),
+        ),
+        Some(ByoError::Install(InstallError::RobotOwnedBySameWorkspace)) => (
+            StatusCode::CONFLICT,
+            "this DingTalk robot is already connected to another agent in this workspace — disconnect it there first, then connect it here".into(),
+        ),
+        Some(ByoError::Install(InstallError::RobotOwnedByArchivedAgent)) => (
+            StatusCode::CONFLICT,
+            "this DingTalk robot is connected to an archived agent in this workspace — restore that agent, or disconnect its robot, before connecting it here".into(),
+        ),
+        Some(ByoError::Install(InstallError::RobotOwnedByAnotherWorkspace)) => (
+            StatusCode::CONFLICT,
+            "this DingTalk robot is already connected to a different Cordy workspace — disconnect it there before connecting it here".into(),
+        ),
+        Some(ByoError::Install(InstallError::InstallationNotFound)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "could not connect the DingTalk robot".into(),
+        ),
+        None => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "could not connect the DingTalk robot".into(),
+        ),
+    }
 }
 
 async fn install_dingtalk(
@@ -902,8 +939,8 @@ async fn install_dingtalk(
             workspace_id,
             agent_id,
             initiator_id: actor,
-            app_key: input.app_key,
-            app_secret: input.app_secret,
+            app_key: input.client_id,
+            app_secret: input.client_secret,
         })
         .await
     {
@@ -913,10 +950,8 @@ async fn install_dingtalk(
         }
         Err(error) => {
             tracing::warn!(error = %error, "DingTalk installation rejected");
-            error_response(
-                StatusCode::BAD_REQUEST,
-                "could not verify the DingTalk credentials",
-            )
+            let (status, message) = dingtalk_install_error(&error);
+            error_response(status, &message)
         }
     }
 }
@@ -1373,6 +1408,44 @@ mod tests {
     #[test]
     fn body_limit_is_enforced_before_deserialization() {
         assert!(decode_body::<TelegramBody>(&vec![b'x'; BODY_LIMIT + 1]).is_err());
+    }
+
+    #[test]
+    fn dingtalk_body_accepts_established_client_field_names() {
+        let parsed = decode_body::<DingTalkBody>(
+            br#"{"client_id":"ding-key","client_secret":"ding-secret"}"#,
+        )
+        .unwrap();
+        assert_eq!(parsed.client_id, "ding-key");
+        assert_eq!(parsed.client_secret, "ding-secret");
+
+        let legacy =
+            decode_body::<DingTalkBody>(br#"{"app_key":"old-key","app_secret":"old-secret"}"#)
+                .unwrap();
+        assert_eq!(legacy.client_id, "old-key");
+        assert_eq!(legacy.client_secret, "old-secret");
+    }
+
+    #[test]
+    fn dingtalk_install_errors_preserve_client_and_server_classifications() {
+        use cordy_dingtalk::byo_install::ByoError;
+        use cordy_dingtalk::install::InstallError;
+
+        let conflict =
+            anyhow::Error::new(ByoError::Install(InstallError::RobotOwnedBySameWorkspace));
+        assert_eq!(dingtalk_install_error(&conflict).0, StatusCode::CONFLICT);
+
+        let credentials = anyhow::Error::new(ByoError::CredentialValidation("denied".into()));
+        assert_eq!(
+            dingtalk_install_error(&credentials).0,
+            StatusCode::BAD_REQUEST
+        );
+
+        let internal = anyhow::anyhow!("encrypt failed");
+        assert_eq!(
+            dingtalk_install_error(&internal).0,
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
     }
 
     #[tokio::test]

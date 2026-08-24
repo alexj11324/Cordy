@@ -112,6 +112,7 @@ pub struct HandlerState {
     pub analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
     pub auth_rate_limit: cordy_middleware::ratelimit::RateLimitState,
     pub auth_verify_rate_limit: cordy_middleware::ratelimit::RateLimitState,
+    pub(crate) webhook_rate_limits: crate::autopilot_webhook::WebhookRateLimits,
     pub invitation_admission: crate::invitation::InvitationAdmission,
     /// Anonymous frontend capability/configuration response.
     pub public_config: crate::config::PublicConfigSettings,
@@ -216,7 +217,8 @@ impl HandlerState {
             positive_env_i64("RATE_LIMIT_AUTH_VERIFY", 20),
             60,
         );
-        auth_verify_rate_limit.trusted_proxies = trusted_proxies;
+        auth_verify_rate_limit.trusted_proxies = trusted_proxies.clone();
+        let webhook_rate_limits = crate::autopilot_webhook::WebhookRateLimits::new(trusted_proxies);
         Self {
             pool,
             pat_cache,
@@ -232,6 +234,7 @@ impl HandlerState {
             analytics: Arc::new(cordy_analytics::NoopClient),
             auth_rate_limit,
             auth_verify_rate_limit,
+            webhook_rate_limits,
             invitation_admission: crate::invitation::InvitationAdmission::default(),
             public_config: crate::config::PublicConfigSettings::default(),
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
@@ -529,7 +532,8 @@ impl HandlerState {
     pub fn with_rate_limit_trusted_proxies(mut self, raw: Option<&str>) -> Self {
         let trusted = cordy_middleware::ratelimit::parse_trusted_proxies(raw.unwrap_or_default());
         self.auth_rate_limit.trusted_proxies = trusted.clone();
-        self.auth_verify_rate_limit.trusted_proxies = trusted;
+        self.auth_verify_rate_limit.trusted_proxies = trusted.clone();
+        self.webhook_rate_limits.trusted_proxies = trusted;
         self
     }
 
