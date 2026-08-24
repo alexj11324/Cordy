@@ -29,6 +29,8 @@ const GC_TICK_TIMEOUT: Duration = Duration::from_secs(15);
 const GC_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
 pub const DEFAULT_SWEEP_INTERVAL: Duration = Duration::from_secs(30);
 pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
+pub const DEFAULT_RECONNECT_GRACE: Duration = Duration::from_secs(3 * 60 * 60);
+pub const MINIMUM_RECONNECT_GRACE: Duration = Duration::from_secs(STALE_SECONDS as u64);
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RuntimeTaskSweepReport {
@@ -65,7 +67,7 @@ impl RuntimeTaskSweeper {
             tasks,
             bus,
             metrics,
-            reconnect_grace: reconnect_grace.max(Duration::from_secs(150)),
+            reconnect_grace: reconnect_grace.max(MINIMUM_RECONNECT_GRACE),
         }
     }
 

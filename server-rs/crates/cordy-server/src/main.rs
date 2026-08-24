@@ -273,13 +273,27 @@ async fn build_production_router(
     let state = state.with_heartbeat_scheduler(heartbeat_scheduler.clone());
     let (state, webhook_worker) = state.prepare_webhook_delivery_worker();
     let heartbeat_scheduler = heartbeat_scheduler.start(root_cancel.child_token());
+    let configured_reconnect_grace = duration_env(
+        "CORDY_RUNTIME_RECONNECT_GRACE",
+        cordy_handler::runtime_sweeper::DEFAULT_RECONNECT_GRACE,
+        false,
+    );
+    let runtime_reconnect_grace =
+        configured_reconnect_grace.max(cordy_handler::runtime_sweeper::MINIMUM_RECONNECT_GRACE);
+    if runtime_reconnect_grace != configured_reconnect_grace {
+        tracing::warn!(
+            configured = ?configured_reconnect_grace,
+            minimum = ?cordy_handler::runtime_sweeper::MINIMUM_RECONNECT_GRACE,
+            "runtime reconnect grace is shorter than heartbeat freshness; clamping"
+        );
+    }
     let runtime_sweeper = Arc::new(cordy_handler::runtime_sweeper::RuntimeTaskSweeper::new(
         state.pool.clone(),
         state.liveness_store.clone(),
         state.tasks.clone(),
         state.bus.clone(),
         state.business_metrics.clone(),
-        Duration::from_secs(3 * 60 * 60),
+        runtime_reconnect_grace,
     ))
     .start(root_cancel.child_token());
     let failure_metrics = state.business_metrics.clone().map(|metrics| {
