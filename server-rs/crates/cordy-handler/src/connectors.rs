@@ -1147,30 +1147,29 @@ async fn install_telegram(
     let me = match api.get_me().await {
         Ok(value) if value.is_bot && !value.username.is_empty() => value,
         Ok(_) => {
-            return error_response(StatusCode::BAD_REQUEST, "Telegram rejected this bot token")
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "Telegram rejected this bot token — generate a current token in @BotFather and try again",
+            )
         }
         Err(error) => {
+            let failure = classify_telegram_verification_error(&error);
             tracing::warn!(%error, "Telegram credential verification failed");
-            return error_response(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "could not reach Telegram to verify this bot",
-            );
+            return error_response(failure.status, failure.message);
         }
     };
     match api.get_webhook_info().await {
         Ok(value) if !value.url.is_empty() => {
             return error_response(
                 StatusCode::BAD_REQUEST,
-                "this Telegram bot has a webhook configured",
+                "this Telegram bot has a webhook configured — remove the webhook before connecting it with long polling",
             )
         }
         Ok(_) => {}
         Err(error) => {
+            let failure = classify_telegram_verification_error(&error);
             tracing::warn!(%error, "Telegram webhook verification failed");
-            return error_response(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "could not reach Telegram to verify this bot",
-            );
+            return error_response(failure.status, failure.message);
         }
     }
     let sealed = match box_.seal(token.as_bytes()) {
@@ -1199,6 +1198,30 @@ async fn install_telegram(
             Json(installation_response(Provider::Telegram, row)).into_response()
         }
         Err(response) => response,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TelegramVerificationFailure {
+    status: StatusCode,
+    message: &'static str,
+}
+
+fn classify_telegram_verification_error(error: &anyhow::Error) -> TelegramVerificationFailure {
+    let rejected = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<cordy_telegram::api::ApiError>())
+        .is_some_and(|api| api.code == StatusCode::UNAUTHORIZED.as_u16());
+    if rejected {
+        TelegramVerificationFailure {
+            status: StatusCode::BAD_REQUEST,
+            message: "Telegram rejected this bot token — generate a current token in @BotFather and try again",
+        }
+    } else {
+        TelegramVerificationFailure {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            message: "could not reach Telegram to verify this bot — check the server network or proxy and try again; the token was not saved",
+        }
     }
 }
 
@@ -1522,6 +1545,34 @@ mod tests {
 
         let transport = anyhow::anyhow!("registration: http do: connection reset");
         assert!(!lark_poll_protocol_error(&transport));
+    }
+
+    #[test]
+    fn telegram_verification_distinguishes_rejection_from_no_verdict() {
+        let rejected = anyhow::Error::new(cordy_telegram::api::ApiError {
+            code: StatusCode::UNAUTHORIZED.as_u16(),
+            description: "Unauthorized".into(),
+            retry_after: 0,
+        });
+        let rejected = classify_telegram_verification_error(&rejected);
+        assert_eq!(rejected.status, StatusCode::BAD_REQUEST);
+        assert!(rejected.message.contains("@BotFather"));
+
+        let unavailable = classify_telegram_verification_error(&anyhow::anyhow!(
+            "telegram: getMe request failed"
+        ));
+        assert_eq!(unavailable.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(unavailable.message.contains("token was not saved"));
+
+        let rate_limited = anyhow::Error::new(cordy_telegram::api::ApiError {
+            code: StatusCode::TOO_MANY_REQUESTS.as_u16(),
+            description: "Too Many Requests".into(),
+            retry_after: 1,
+        });
+        assert_eq!(
+            classify_telegram_verification_error(&rate_limited).status,
+            StatusCode::SERVICE_UNAVAILABLE
+        );
     }
 
     #[tokio::test]
