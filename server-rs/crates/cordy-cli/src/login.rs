@@ -44,7 +44,7 @@ pub(crate) async fn wait_for_workspace_creation(
     .await
 }
 
-async fn wait_for_workspace_creation_with_opener<F>(
+pub(crate) async fn wait_for_workspace_creation_with_opener<F>(
     client: &ApiClient,
     app_url: &str,
     poll_interval: Duration,

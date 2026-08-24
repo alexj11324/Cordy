@@ -29,8 +29,9 @@ use url::{form_urlencoded, Url};
 
 use login::{
     build_login_url, build_workspace_creation_url, constant_time_equal, run_browser_login,
-    validate_login_token, wait_for_login_callback, wait_for_workspace_creation, LoginWorkspace,
-    WORKSPACE_DISCOVERY_INTERVAL, WORKSPACE_DISCOVERY_TIMEOUT,
+    validate_login_token, wait_for_login_callback, wait_for_workspace_creation,
+    wait_for_workspace_creation_with_opener, LoginWorkspace, WORKSPACE_DISCOVERY_INTERVAL,
+    WORKSPACE_DISCOVERY_TIMEOUT,
 };
 
 pub const CLIENT_VERSION: &str = env!("CORDY_BUILD_VERSION");
@@ -16434,6 +16435,7 @@ mod tests {
     use std::fs;
     use std::io::Cursor;
     use std::sync::{Arc, Mutex};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
     #[tokio::test]
