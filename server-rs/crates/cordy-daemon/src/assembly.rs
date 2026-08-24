@@ -19,6 +19,11 @@ use crate::execenv::context::ensure_workspaces_root_marker;
 use crate::health::RepoCheckoutRegistry;
 use crate::production_services::{DaemonProductionServices, ProviderRuntimeAdapter};
 use crate::production_stack::DaemonProductionStack;
+use crate::provider_adapter::ProductionProviderAdapter;
+use crate::provider_registration::{
+    ProviderCatalog, ProviderRegistrationSource, RuntimeLaunchRegistry,
+};
+use crate::registration::RuntimeRegistrationSource;
 use crate::repocache::Cache;
 use crate::types::AgentEntry;
 
@@ -87,6 +92,9 @@ impl DaemonLaunchOverrides {
                 &self.max_concurrent_tasks.to_string(),
             );
         }
+        if self.health_port > 0 {
+            push_string_arg(&mut args, "--health-port", &self.health_port.to_string());
+        }
         if self.disable_auto_update {
             args.push(OsString::from("--no-auto-update"));
         }
@@ -140,16 +148,22 @@ pub struct DaemonProfileInput {
 /// configuration, authentication, the root marker, and cache location have
 /// all passed their production checks.
 pub struct DaemonProductionInputs {
-    pub config: Config,
+    pub config: Arc<Config>,
     pub client: Arc<Client>,
     pub repo_cache: Arc<Cache>,
+    /// Shared by the registration source and provider adapter. A provider
+    /// must resolve launches from the same accepted registration state that
+    /// the daemon publishes; creating a second registry would allow an
+    /// execution path to observe stale or unrelated commands.
+    pub launch_registry: Arc<RuntimeLaunchRegistry>,
 }
 
 /// Complete set of real services returned by the CLI-side profile/provider
 /// loader after bootstrap has established process ownership and logging.
-pub struct DaemonProductionAssembly<P: ProviderRuntimeAdapter> {
+pub struct DaemonProductionAssembly<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> {
     pub inputs: DaemonProductionInputs,
     pub provider: Arc<P>,
+    pub registration_source: Arc<R>,
     pub checkout_registry: Arc<RepoCheckoutRegistry>,
 }
 
@@ -159,19 +173,24 @@ pub struct DaemonProductionAssembly<P: ProviderRuntimeAdapter> {
 /// must load the active CLI profile and construct a real provider adapter; the
 /// returned stack then owns all background services until bounded shutdown and
 /// optional successor handoff complete.
-pub async fn run_production_daemon<P, Build>(
+pub async fn run_production_daemon<P, R, Build>(
     options: BootstrapOptions,
     build: Build,
 ) -> anyhow::Result<BootstrapOutcome>
 where
     P: ProviderRuntimeAdapter,
-    Build: FnOnce(&BootstrapContext) -> anyhow::Result<DaemonProductionAssembly<P>>,
+    R: RuntimeRegistrationSource,
+    Build: FnOnce(&BootstrapContext) -> anyhow::Result<DaemonProductionAssembly<P, R>>,
 {
     bootstrap::run_once(options, move |context| async move {
         let assembly = build(&context)?;
         let stack = assembly
             .inputs
-            .into_stack(assembly.provider, assembly.checkout_registry)
+            .into_stack(
+                assembly.provider,
+                assembly.registration_source,
+                assembly.checkout_registry,
+            )
             .await?;
         stack.run(context.shutdown).await
     })
@@ -247,34 +266,65 @@ impl DaemonProductionInputs {
         // process can inherit a working directory below it.
         ensure_workspaces_root_marker(&config.workspaces_root)?;
 
+        let config = Arc::new(config);
         let client = Arc::new(Client::new(&config.server_base_url));
         client.set_token(&profile.token);
         client.set_version(&config.cli_version);
         let repo_cache = Arc::new(Cache::new(
             std::path::Path::new(&config.workspaces_root).join(".repos"),
         ));
+        let launch_registry = Arc::new(RuntimeLaunchRegistry::default());
         Ok(Self {
             config,
             client,
             repo_cache,
+            launch_registry,
         })
     }
 
+    /// Builds the concrete production provider and registration owners from
+    /// one resolved profile snapshot. The caller supplies the real provider
+    /// catalog; there is intentionally no metadata-only or no-op fallback.
+    /// The adapter, registration source, and stack all share this input's
+    /// config, authenticated client, launch registry, and checkout registry.
+    pub fn into_production_assembly<C: ProviderCatalog>(
+        self,
+        catalog: Arc<C>,
+        checkout_registry: Arc<RepoCheckoutRegistry>,
+    ) -> DaemonProductionAssembly<ProductionProviderAdapter, ProviderRegistrationSource<C>> {
+        let provider = Arc::new(ProductionProviderAdapter::new(Arc::clone(&self.config)));
+        let registration_source = Arc::new(ProviderRegistrationSource::new(
+            Arc::clone(&self.config),
+            Arc::clone(&self.client),
+            catalog,
+            Arc::clone(&self.launch_registry),
+        ));
+        DaemonProductionAssembly {
+            inputs: self,
+            provider,
+            registration_source,
+            checkout_registry,
+        }
+    }
+
     /// Consumes validated inputs into the only production stack assembly
-    /// path. The provider adapter and checkout registry are mandatory shared
-    /// dependencies; there is no default or no-op service construction.
-    pub async fn into_stack<P: ProviderRuntimeAdapter>(
+    /// path. Registration, provider execution, and checkout are mandatory
+    /// shared dependencies; there is no default or no-op construction.
+    pub async fn into_stack<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource>(
         self,
         provider: Arc<P>,
+        registration_source: Arc<R>,
         checkout_registry: Arc<RepoCheckoutRegistry>,
-    ) -> anyhow::Result<DaemonProductionStack<DaemonProductionServices<P>>> {
-        let config = Arc::new(self.config);
+    ) -> anyhow::Result<DaemonProductionStack<DaemonProductionServices<P, R>>> {
+        let config = self.config;
         let services = Arc::new(DaemonProductionServices::new(
             Arc::clone(&config),
             Arc::clone(&self.client),
             Arc::clone(&self.repo_cache),
             Arc::clone(&checkout_registry),
+            Arc::clone(&self.launch_registry),
             provider,
+            registration_source,
         ));
         DaemonProductionStack::new_shared(
             config,
@@ -309,6 +359,7 @@ mod tests {
             poll_interval: Duration::from_secs(3),
             agent_timeout: Some(Duration::ZERO),
             max_concurrent_tasks: 4,
+            health_port: 20123,
             profile: "staging".to_string(),
             disable_auto_update: true,
             disable_auto_reload: true,
@@ -329,6 +380,9 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|pair| pair[0] == "--max-concurrent-tasks" && pair[1] == "4"));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--health-port" && pair[1] == "20123"));
         assert!(args
             .windows(2)
             .any(|pair| pair[0] == "--profile" && pair[1] == "staging"));

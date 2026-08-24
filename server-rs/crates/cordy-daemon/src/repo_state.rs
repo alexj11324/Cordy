@@ -65,6 +65,9 @@ impl DaemonRepoState {
         task_id: &str,
         repos: &[RepoData],
     ) -> Vec<String> {
+        if task_id.is_empty() {
+            return Vec::new();
+        }
         let mut workspaces = self.workspaces.write().unwrap();
         let Some(workspace) = workspaces.get_mut(workspace_id) else {
             return Vec::new();
@@ -76,14 +79,12 @@ impl DaemonRepoState {
                 continue;
             }
             workspace.task_urls.insert(url.to_string());
-            if !task_id.is_empty() {
-                workspace
-                    .task_refs
-                    .entry(task_id.to_string())
-                    .or_default()
-                    .entry(url.to_string())
-                    .or_insert_with(|| repo.ref_.trim().to_string());
-            }
+            workspace
+                .task_refs
+                .entry(task_id.to_string())
+                .or_default()
+                .entry(url.to_string())
+                .or_insert_with(|| repo.ref_.trim().to_string());
             candidates.insert(url.to_string());
         }
         candidates.into_iter().collect()
@@ -92,6 +93,11 @@ impl DaemonRepoState {
     pub fn clear_task_refs(&self, workspace_id: &str, task_id: &str) {
         if let Some(workspace) = self.workspaces.write().unwrap().get_mut(workspace_id) {
             workspace.task_refs.remove(task_id);
+            workspace.task_urls = workspace
+                .task_refs
+                .values()
+                .flat_map(|refs| refs.keys().cloned())
+                .collect();
         }
     }
 
@@ -223,5 +229,44 @@ mod tests {
             })),
         );
         assert!(!state.co_authored_by_enabled("ws-1"));
+    }
+
+    #[test]
+    fn task_repo_authorization_lives_until_the_last_task_guard_releases() {
+        let state = DaemonRepoState::new();
+        state.replace_workspace("ws-1", &[], None);
+        let repo = RepoData {
+            url: "https://example.test/project.git".into(),
+            ref_: "main".into(),
+            ..RepoData::default()
+        };
+
+        state.register_task_repos("ws-1", "task-1", std::slice::from_ref(&repo));
+        state.register_task_repos("ws-1", "task-2", std::slice::from_ref(&repo));
+        assert!(state.is_allowed("ws-1", &repo.url));
+
+        state.clear_task_refs("ws-1", "task-1");
+        assert!(state.is_allowed("ws-1", &repo.url));
+        assert_eq!(
+            state.all_urls(),
+            vec![("ws-1".to_string(), repo.url.clone())]
+        );
+
+        state.clear_task_refs("ws-1", "task-2");
+        assert!(!state.is_allowed("ws-1", &repo.url));
+        assert!(state.all_urls().is_empty());
+    }
+
+    #[test]
+    fn task_repo_registration_requires_owned_task_identity() {
+        let state = DaemonRepoState::new();
+        state.replace_workspace("ws-1", &[], None);
+        let repos = [RepoData {
+            url: "https://example.test/project.git".into(),
+            ..RepoData::default()
+        }];
+
+        assert!(state.register_task_repos("ws-1", "", &repos).is_empty());
+        assert!(!state.is_allowed("ws-1", &repos[0].url));
     }
 }

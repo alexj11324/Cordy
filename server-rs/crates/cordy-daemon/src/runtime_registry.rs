@@ -10,7 +10,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::health::HealthWorkspace;
 use crate::runtime_set::RuntimeSet;
-use crate::types::Runtime;
+use crate::types::{Runtime, RuntimeExecutionTarget};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WorkspaceRuntimeState {
@@ -174,13 +174,19 @@ impl RuntimeRegistry {
         workspace.runtime_ids
     }
 
-    pub fn provider_for_runtime(&self, runtime_id: &str) -> Option<String> {
+    /// Resolves the complete launch identity from the same authoritative row
+    /// that accepted the task's runtime ID. Keeping `profile_id` attached is
+    /// required for custom runtime command overrides and fixed arguments.
+    pub fn execution_target_for_runtime(&self, runtime_id: &str) -> Option<RuntimeExecutionTarget> {
         self.state
             .read()
             .unwrap()
             .runtimes
             .get(runtime_id)
-            .map(|runtime| runtime.provider.clone())
+            .map(|runtime| RuntimeExecutionTarget {
+                provider: runtime.provider.clone(),
+                profile_id: runtime.profile_id.clone(),
+            })
     }
 
     pub fn workspace_for_runtime(&self, runtime_id: &str) -> Option<String> {
@@ -228,44 +234,6 @@ impl RuntimeRegistry {
             .cloned()
     }
 
-    /// Reports whether an authoritative built-in refresh omits any provider
-    /// family currently registered for this workspace. Custom-profile rows
-    /// are deliberately excluded: built-in refresh preserves them.
-    pub(crate) fn builtin_demotion_required(
-        &self,
-        workspace_id: &str,
-        incoming_providers: &BTreeSet<String>,
-    ) -> bool {
-        let state = self.state.read().unwrap();
-        let Some(workspace) = state.workspaces.get(workspace_id) else {
-            return false;
-        };
-        workspace
-            .runtime_ids
-            .iter()
-            .filter_map(|runtime_id| state.runtimes.get(runtime_id))
-            .filter(|runtime| runtime.profile_id.is_empty())
-            .any(|runtime| !incoming_providers.contains(&runtime.provider))
-    }
-
-    /// Reports whether replacing a workspace with an authoritative full
-    /// registration response would remove any currently published runtime.
-    /// Callers use this before applying the response so task claims can be
-    /// paused until executions tied to the retiring identities have drained.
-    pub(crate) fn registration_demotion_required(
-        &self,
-        workspace_id: &str,
-        incoming_runtime_ids: &BTreeSet<String>,
-    ) -> bool {
-        let state = self.state.read().unwrap();
-        state.workspaces.get(workspace_id).is_some_and(|workspace| {
-            workspace
-                .runtime_ids
-                .iter()
-                .any(|runtime_id| !incoming_runtime_ids.contains(runtime_id))
-        })
-    }
-
     pub fn workspace_needs_runtime_recovery(&self, workspace_id: &str) -> bool {
         self.state
             .read()
@@ -310,8 +278,11 @@ mod tests {
             vec!["r-1".to_string(), "r-2".to_string()]
         );
         assert_eq!(
-            registry.provider_for_runtime("r-2").as_deref(),
-            Some("claude")
+            registry.execution_target_for_runtime("r-2"),
+            Some(RuntimeExecutionTarget {
+                provider: "claude".to_string(),
+                profile_id: String::new(),
+            })
         );
 
         let second = registry
@@ -356,8 +327,11 @@ mod tests {
         assert!(error.to_string().contains("already owned"));
         assert_eq!(registry.workspace_ids(), vec!["ws-1".to_string()]);
         assert_eq!(
-            registry.provider_for_runtime("r-1").as_deref(),
-            Some("codex")
+            registry.execution_target_for_runtime("r-1"),
+            Some(RuntimeExecutionTarget {
+                provider: "codex".to_string(),
+                profile_id: String::new(),
+            })
         );
     }
 
@@ -385,8 +359,18 @@ mod tests {
             vec!["new-builtin".to_string(), "profile-runtime".to_string()]
         );
         assert_eq!(
-            registry.provider_for_runtime("profile-runtime").as_deref(),
-            Some("codex")
+            registry.execution_target_for_runtime("profile-runtime"),
+            Some(RuntimeExecutionTarget {
+                provider: "codex".to_string(),
+                profile_id: "profile-1".to_string(),
+            })
+        );
+        assert_eq!(
+            registry.execution_target_for_runtime("new-builtin"),
+            Some(RuntimeExecutionTarget {
+                provider: "claude".to_string(),
+                profile_id: String::new(),
+            })
         );
     }
 
@@ -430,50 +414,5 @@ mod tests {
 
         assert_eq!(delta.dropped, vec!["builtin-runtime".to_string()]);
         assert_eq!(published.snapshot(), vec!["profile-runtime".to_string()]);
-    }
-
-    #[test]
-    fn builtin_demotion_detection_ignores_custom_profiles() {
-        let published = Arc::new(RuntimeSet::new());
-        let registry = RuntimeRegistry::new(published);
-        let mut profile = runtime("profile-runtime", "custom-family");
-        profile.profile_id = "profile-1".to_string();
-        registry
-            .apply_registration(
-                "ws-1",
-                "One",
-                vec![runtime("builtin-runtime", "codex"), profile],
-            )
-            .unwrap();
-
-        assert!(!registry.builtin_demotion_required("ws-1", &BTreeSet::from(["codex".to_string()])));
-        assert!(registry.builtin_demotion_required("ws-1", &BTreeSet::new()));
-    }
-
-    #[test]
-    fn full_registration_demotion_detection_tracks_runtime_ids() {
-        let published = Arc::new(RuntimeSet::new());
-        let registry = RuntimeRegistry::new(published);
-        registry
-            .apply_registration(
-                "ws-1",
-                "One",
-                vec![
-                    runtime("runtime-1", "codex"),
-                    runtime("runtime-2", "claude"),
-                ],
-            )
-            .unwrap();
-
-        assert!(!registry.registration_demotion_required(
-            "ws-1",
-            &BTreeSet::from(["runtime-1".to_string(), "runtime-2".to_string()]),
-        ));
-        assert!(registry.registration_demotion_required(
-            "ws-1",
-            &BTreeSet::from(["runtime-2".to_string(), "runtime-3".to_string()]),
-        ));
-        assert!(registry.registration_demotion_required("ws-1", &BTreeSet::new()));
-        assert!(!registry.registration_demotion_required("unknown", &BTreeSet::new()));
     }
 }

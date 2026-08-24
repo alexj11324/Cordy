@@ -29,7 +29,7 @@ use crate::gc::{
 use crate::repocache::{Cache, CancelCause, Ctx};
 use crate::runtime_registry::RuntimeRegistry;
 use crate::task_execution::{DaemonTaskExecutionHost, TaskRunOutcome};
-use crate::types::Task;
+use crate::types::{RuntimeExecutionTarget, Task};
 use crate::update_executor::UpdateExecutor;
 
 const UPDATE_REPORT_BACKOFFS: &[Duration] = &[
@@ -54,7 +54,6 @@ pub trait DaemonCoreServices: Send + Sync + 'static {
         &self,
         ctx: Ctx,
         registry: Arc<RuntimeRegistry>,
-        activity: Arc<DaemonActivity>,
         payload: RuntimeProfilesChangedPayload,
     );
     async fn handle_non_update_heartbeat_actions(
@@ -69,7 +68,7 @@ pub trait DaemonCoreServices: Send + Sync + 'static {
         &self,
         ctx: Ctx,
         task: Task,
-        provider: String,
+        target: RuntimeExecutionTarget,
         slot: usize,
         activity: Arc<DaemonActivity>,
     ) -> TaskRunOutcome;
@@ -322,12 +321,7 @@ impl<S: DaemonCoreServices> DaemonControlLifecycle for DaemonCoreHost<S> {
         payload: RuntimeProfilesChangedPayload,
     ) {
         self.services
-            .refresh_workspace_runtime_profiles(
-                ctx,
-                Arc::clone(&self.registry),
-                Arc::clone(&self.activity),
-                payload,
-            )
+            .refresh_workspace_runtime_profiles(ctx, Arc::clone(&self.registry), payload)
             .await;
     }
 
@@ -355,8 +349,8 @@ impl<S: DaemonCoreServices> DaemonControlLifecycle for DaemonCoreHost<S> {
 
 #[async_trait::async_trait]
 impl<S: DaemonCoreServices> DaemonTaskExecutionHost for DaemonCoreHost<S> {
-    fn provider_for_runtime(&self, runtime_id: &str) -> Option<String> {
-        self.registry.provider_for_runtime(runtime_id)
+    fn execution_target_for_runtime(&self, runtime_id: &str) -> Option<RuntimeExecutionTarget> {
+        self.registry.execution_target_for_runtime(runtime_id)
     }
 
     async fn cancel_repository_maintenance(&self) {
@@ -367,11 +361,11 @@ impl<S: DaemonCoreServices> DaemonTaskExecutionHost for DaemonCoreHost<S> {
         &self,
         ctx: Ctx,
         task: Task,
-        provider: String,
+        target: RuntimeExecutionTarget,
         slot: usize,
     ) -> TaskRunOutcome {
         self.services
-            .run_task(ctx, task, provider, slot, Arc::clone(&self.activity))
+            .run_task(ctx, task, target, slot, Arc::clone(&self.activity))
             .await
     }
 }

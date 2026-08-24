@@ -1345,12 +1345,15 @@ impl Client {
         let mut results = HashMap::with_capacity(issue_ids.len());
         for issue_id in issue_ids {
             match self.get_issue_gc_check(ctx, issue_id).await {
-                Err(_not_found) => {
+                Err(err) => {
+                    let not_found =
+                        request_error(&err).is_some_and(|request| request.status_code == 404);
                     results.insert(
                         issue_id.clone(),
                         IssueGcCheckResult {
                             id: issue_id.clone(),
                             found: false,
+                            err: (!not_found).then(|| err.to_string()),
                             ..Default::default()
                         },
                     );
