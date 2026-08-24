@@ -58,6 +58,10 @@ impl CodebuddyBackend {
     pub fn new(config: CodebuddyConfig) -> Self {
         Self { config }
     }
+
+    pub(crate) fn config(&self) -> &CodebuddyConfig {
+        &self.config
+    }
 }
 
 pub fn build_codebuddy_args(options: &ExecOptions) -> Vec<String> {
