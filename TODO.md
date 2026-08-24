@@ -912,6 +912,15 @@
       runtime API dispatch remains unchanged. Scoped rustfmt and diff-check
       pass; no Cargo was run. The serial subagent reviewed exact head
       `7bc594ee` and found no issue; pro owns push/Ready PR, gate, and merge.
+- [ ] CLI runtime-profile command structural refactor is committed at
+      `03c9c43bf2dc6868010b8b52c3c7e3bb62366a1f` (parent
+      `7bc594ee612abee02dc81b627eefd2d182221cc2`, tree
+      `d9bb6548041db709136e140b0a1408b126813cf5`): protocol-family and path
+      validation, profile CRUD, 409 mapping, and local path overrides now
+      live in `cordy-cli/src/runtime_profile.rs`; command dispatch stays
+      unchanged. Scoped rustfmt and diff-check pass; no Cargo was run. The
+      serial subagent reviewed exact head `03c9c43b` and found no issue; pro
+      owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
