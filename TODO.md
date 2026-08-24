@@ -842,8 +842,9 @@
       `ffbbbf9da9714093e05dc8bf8fb576684c22a012`): confirmation, profile
       resolution, health-before-write, daemon action policy, and login/daemon
       handoff now live in `cordy-cli/src/setup_commands.rs`. Scoped
-      rustfmt/diff-check pass; no Cargo was run. The serial subagent owns
-      review/minimal fixes; pro owns Ready PR, gate, and merge.
+      rustfmt/diff-check pass; no Cargo was run. The serial subagent reviewed
+      exact head `9f1a68e4` and found no issue (environment lacked a rustfmt
+      binary for a second pass); pro owns Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
