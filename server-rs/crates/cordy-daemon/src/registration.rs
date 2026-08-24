@@ -533,6 +533,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             .filter(|provider| !provider.is_empty())
             .map(str::to_string)
             .collect();
+        let _fence = self.deregistration_flush.lock().await;
         let _demotion_barrier =
             if registry.builtin_demotion_required(&workspace.id, &incoming_providers) {
                 Some(
@@ -556,11 +557,12 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             let delta =
                 registry.apply_builtin_registration(&workspace.id, &workspace.name, Vec::new())?;
             round.registration_applied(&workspace.id);
+            drop(_demotion_barrier);
+            drop(_fence);
             self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
             return Ok(());
         }
         let delta = {
-            let _fence = self.deregistration_flush.lock().await;
             let response = self
                 .client
                 .register(
@@ -602,6 +604,8 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             round.registration_applied(&workspace.id);
             delta
         };
+        drop(_demotion_barrier);
+        drop(_fence);
         self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
         Ok(())
     }
