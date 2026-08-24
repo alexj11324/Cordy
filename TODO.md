@@ -73,6 +73,10 @@
       with regression coverage for an outside absolute path. New candidate is
       `46b5390d171bad90aad5b8ec34461d164b2c6077`; exact-head review requested once at
       comment `5395709568`; gate remains pending review. Previous review/gate is stale.
+- [ ] #113 local exact-head self-review of `ad36bc3a` completed: task attachment path
+      is checked before `fs::read`, outside absolute and traversal paths are rejected,
+      and no new P0/P1 was found. GitHub review remains advisory/delayed; the serial
+      gate may proceed under the current-thread-only execution rule.
 - [ ] #113 gate remains pending review; original worktree
       `.worktrees/cord-22-daemon-production-assembly` has unrelated uncommitted CLI
       edits and must not be reset or used for the gate. Restacked tree has passed
