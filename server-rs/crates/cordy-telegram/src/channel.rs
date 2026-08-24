@@ -35,6 +35,44 @@ impl Channel for TelegramChannel {
             .handler
             .clone()
             .ok_or_else(|| anyhow::anyhow!("telegram: inbound handler not configured"))?;
+        let tasks = cordy_channel::RuntimeTasks::new();
+        let result = self.poll(ctx.clone(), handler, &tasks).await;
+        if !tasks.shutdown(ISSUE_ERROR_REPLY_TIMEOUT).await {
+            tracing::warn!(
+                bot_id = self.bot_id,
+                "telegram dispatch-error tasks exceeded connection shutdown deadline; aborted"
+            );
+        }
+        result
+    }
+
+    async fn disconnect(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn send(
+        &self,
+        out: cordy_channel::OutboundMessage,
+    ) -> anyhow::Result<cordy_channel::SendResult> {
+        crate::sender::send(&self.api, &out).await
+    }
+
+    fn capabilities(&self) -> Capability {
+        Capability::TEXT
+            | Capability::THREAD_REPLY
+            | Capability::QUOTE_REPLY
+            | Capability::TYPING_INDICATOR
+            | Capability::MESSAGE_EDIT
+    }
+}
+
+impl TelegramChannel {
+    async fn poll(
+        &self,
+        ctx: CancellationToken,
+        handler: InboundHandler,
+        tasks: &cordy_channel::RuntimeTasks,
+    ) -> anyhow::Result<()> {
         let mut offset = 0_i64;
         loop {
             let updates = tokio::select! {
@@ -79,36 +117,16 @@ impl Channel for TelegramChannel {
                 if update.update_id >= offset {
                     offset = update.update_id + 1;
                 }
-                self.dispatch(&ctx, &handler, update).await?;
+                self.dispatch(&ctx, &handler, tasks, update).await?;
             }
         }
     }
 
-    async fn disconnect(&self) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    async fn send(
-        &self,
-        out: cordy_channel::OutboundMessage,
-    ) -> anyhow::Result<cordy_channel::SendResult> {
-        crate::sender::send(&self.api, &out).await
-    }
-
-    fn capabilities(&self) -> Capability {
-        Capability::TEXT
-            | Capability::THREAD_REPLY
-            | Capability::QUOTE_REPLY
-            | Capability::TYPING_INDICATOR
-            | Capability::MESSAGE_EDIT
-    }
-}
-
-impl TelegramChannel {
     async fn dispatch(
         &self,
         ctx: &CancellationToken,
         handler: &InboundHandler,
+        tasks: &cordy_channel::RuntimeTasks,
         update: Update,
     ) -> anyhow::Result<()> {
         let Some(message) = inbound_from_update(&update, self.bot_id, &self.bot_username) else {
@@ -126,7 +144,7 @@ impl TelegramChannel {
             return Ok(());
         }
         if let Err(error) = handler.call(ctx.clone(), message.clone()).await {
-            self.notify_issue_dispatch_error(message);
+            self.notify_issue_dispatch_error(ctx, tasks, message);
             return Err(error);
         }
         Ok(())
@@ -155,12 +173,18 @@ impl TelegramChannel {
         }
     }
 
-    fn notify_issue_dispatch_error(&self, message: cordy_channel::InboundMessage) {
+    fn notify_issue_dispatch_error(
+        &self,
+        ctx: &CancellationToken,
+        tasks: &cordy_channel::RuntimeTasks,
+        message: cordy_channel::InboundMessage,
+    ) {
         if !is_addressed_issue_command(&message) {
             return;
         }
         let api = self.api.clone();
-        tokio::spawn(async move {
+        let ctx = ctx.child_token();
+        tasks.spawn(async move {
             let Ok(chat_id) = message.source.chat_id.parse::<i64>() else {
                 tracing::warn!(chat_id = %message.source.chat_id, "telegram issue dispatch-error reply has invalid chat id");
                 return;
@@ -177,12 +201,19 @@ impl TelegramChannel {
                 }),
                 ..Default::default()
             };
-            match tokio::time::timeout(ISSUE_ERROR_REPLY_TIMEOUT, api.send_message(&params)).await {
-                Ok(Ok(_)) => {}
-                Ok(Err(error)) => {
-                    tracing::warn!(%error, "telegram issue dispatch-error reply failed")
+            tokio::select! {
+                biased;
+                _ = ctx.cancelled() => {}
+                result = tokio::time::timeout(
+                    ISSUE_ERROR_REPLY_TIMEOUT,
+                    api.send_message(&params),
+                ) => match result {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => {
+                        tracing::warn!(%error, "telegram issue dispatch-error reply failed")
+                    }
+                    Err(_) => tracing::warn!("telegram issue dispatch-error reply timed out"),
                 }
-                Err(_) => tracing::warn!("telegram issue dispatch-error reply timed out"),
             }
         });
     }
