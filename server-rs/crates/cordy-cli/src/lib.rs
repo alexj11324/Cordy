@@ -124,6 +124,8 @@ struct DaemonArgs {
 
 #[derive(Debug, Subcommand)]
 enum DaemonCommand {
+    #[command(about = "Stop the running daemon")]
+    Stop,
     #[command(about = "Show daemon status")]
     Status {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
@@ -2921,6 +2923,9 @@ async fn run_with_input<R: Read>(
         Command::Daemon(DaemonArgs {
             command: DaemonCommand::Logs { follow, lines },
         }) => run_daemon_logs(cli, environment, *lines, *follow),
+        Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Stop,
+        }) => run_daemon_stop(cli, environment).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -5365,6 +5370,173 @@ async fn run_squad_activity(
 
 const DEFAULT_DAEMON_HEALTH_PORT: u32 = 19_514;
 
+trait DaemonStopOps {
+    fn probe(
+        &mut self,
+        port: u32,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Value> + '_>>;
+
+    fn shutdown(
+        &mut self,
+        port: u32,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + '_>>;
+
+    fn force_kill(&mut self, pid: i64) -> Result<()>;
+
+    fn sleep(
+        &mut self,
+        duration: Duration,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + '_>>;
+}
+
+struct SystemDaemonStopOps;
+
+impl DaemonStopOps for SystemDaemonStopOps {
+    fn probe(
+        &mut self,
+        port: u32,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Value> + '_>> {
+        Box::pin(probe_daemon_health(port))
+    }
+
+    fn shutdown(
+        &mut self,
+        port: u32,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + '_>> {
+        Box::pin(request_daemon_shutdown(port))
+    }
+
+    fn force_kill(&mut self, pid: i64) -> Result<()> {
+        force_kill_daemon(pid)
+    }
+
+    fn sleep(
+        &mut self,
+        duration: Duration,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + '_>> {
+        Box::pin(tokio::time::sleep(duration))
+    }
+}
+
+async fn run_daemon_stop(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
+    run_daemon_stop_with(cli, environment, &mut SystemDaemonStopOps).await
+}
+
+async fn run_daemon_stop_with<O: DaemonStopOps>(
+    cli: &Cli,
+    environment: &Environment,
+    operations: &mut O,
+) -> Result<RunOutput> {
+    require_human_local_command(environment, "daemon stop")?;
+    let profile = cli.profile.as_str();
+    require_known_daemon_profile(environment, profile)?;
+    let port = health_port_for_profile(profile);
+    let health = operations.probe(port).await;
+    let label = if profile.is_empty() {
+        "Daemon".into()
+    } else {
+        format!("Daemon [{profile}]")
+    };
+    if !daemon_health_is_alive(&health) {
+        return Ok(RunOutput {
+            stdout: String::new(),
+            stderr: format!("{label} is not running.\n"),
+        });
+    }
+    if let Some(conflict) = daemon_profile_conflict(&health, profile, port) {
+        bail!(daemon_profile_conflict_error(&conflict, profile))
+    }
+    let pid = health
+        .get("pid")
+        .and_then(Value::as_f64)
+        .filter(|pid| *pid != 0.0)
+        .map(|pid| pid as i64)
+        .ok_or_else(|| anyhow::anyhow!("could not determine daemon PID from health endpoint"))?;
+
+    let mut stderr = String::new();
+    if let Err(error) = operations.shutdown(port).await {
+        let _ = writeln!(
+            stderr,
+            "Graceful shutdown request failed: {error} — falling back to forced kill."
+        );
+        operations
+            .force_kill(pid)
+            .with_context(|| format!("kill daemon (pid {pid})"))?;
+    }
+    let _ = writeln!(stderr, "Stopping daemon (pid {pid})...");
+    for _ in 0..10 {
+        operations.sleep(Duration::from_millis(500)).await;
+        let health = operations.probe(port).await;
+        if !daemon_health_is_alive(&health) {
+            if let Ok(directory) = daemon_profile_dir(environment, profile) {
+                let _ = fs::remove_file(directory.join("daemon.pid"));
+            }
+            stderr.push_str("Daemon stopped.\n");
+            return Ok(RunOutput {
+                stdout: String::new(),
+                stderr,
+            });
+        }
+    }
+    stderr.push_str("Daemon is still stopping. It may be finishing a running task.\n");
+    Ok(RunOutput {
+        stdout: String::new(),
+        stderr,
+    })
+}
+
+fn health_port_for_profile(profile: &str) -> u32 {
+    if profile.is_empty() {
+        DEFAULT_DAEMON_HEALTH_PORT
+    } else {
+        DEFAULT_DAEMON_HEALTH_PORT + 1 + profile.bytes().map(u32::from).sum::<u32>() % 1_000
+    }
+}
+
+async fn request_daemon_shutdown(port: u32) -> Result<()> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+        .context("build daemon shutdown client")?;
+    let response = client
+        .post(format!("http://127.0.0.1:{port}/shutdown"))
+        .send()
+        .await
+        .context("send shutdown request")?;
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        bail!("unexpected status {}", response.status().as_u16())
+    }
+}
+
+#[cfg(unix)]
+fn force_kill_daemon(pid: i64) -> Result<()> {
+    let status = std::process::Command::new("kill")
+        .arg("-KILL")
+        .arg(pid.to_string())
+        .status()
+        .context("run kill")?;
+    if status.success() {
+        Ok(())
+    } else {
+        bail!("kill exited with {status}")
+    }
+}
+
+#[cfg(windows)]
+fn force_kill_daemon(pid: i64) -> Result<()> {
+    let status = std::process::Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/F"])
+        .status()
+        .context("run taskkill")?;
+    if status.success() {
+        Ok(())
+    } else {
+        bail!("taskkill exited with {status}")
+    }
+}
+
 fn run_daemon_logs(
     cli: &Cli,
     environment: &Environment,
@@ -5533,11 +5705,7 @@ async fn run_daemon_status(
 
 fn daemon_status_health_port(profile: &str, environment: &Environment) -> Result<u32> {
     if !environment.in_daemon_task_identity_context() {
-        if profile.is_empty() {
-            return Ok(DEFAULT_DAEMON_HEALTH_PORT);
-        }
-        let hash = profile.bytes().map(u32::from).sum::<u32>() % 1_000;
-        return Ok(DEFAULT_DAEMON_HEALTH_PORT + 1 + hash);
+        return Ok(health_port_for_profile(profile));
     }
     if !profile.is_empty() {
         bail!("daemon status --profile is not available inside a daemon-managed task")
@@ -5574,6 +5742,14 @@ fn known_daemon_profiles(environment: &Environment) -> Result<Vec<String>> {
     collect_daemon_profiles(root, root, &mut names)?;
     names.sort();
     Ok(names)
+}
+
+fn require_known_daemon_profile(environment: &Environment, profile: &str) -> Result<()> {
+    if profile.is_empty() || daemon_profile_dir(environment, profile)?.is_dir() {
+        return Ok(());
+    }
+    let known = known_daemon_profiles(environment)?;
+    bail!(unknown_daemon_profile_message(profile, &known))
 }
 
 fn collect_daemon_profiles(root: &Path, directory: &Path, names: &mut Vec<String>) -> Result<()> {
@@ -5686,6 +5862,21 @@ fn daemon_profile_conflict_note(conflict: &DaemonProfileConflict) -> String {
         ),
         DaemonProfileConflict::Unreadable { port } => format!(
             "Note: port {port} is serving a daemon whose profile identity could not be read."
+        ),
+    }
+}
+
+fn daemon_profile_conflict_error(conflict: &DaemonProfileConflict, expected: &str) -> String {
+    match conflict {
+        DaemonProfileConflict::Unreadable { port } => format!(
+            "port {port} is serving a daemon that reported an unreadable profile identity\nRefusing to act on it as {}: an identity that cannot be read cannot be confirmed to be yours.",
+            describe_daemon_profile(expected)
+        ),
+        DaemonProfileConflict::Profile { got, port } => format!(
+            "port {port} is serving profile {}, not {}\nBoth profile names hash to the same health port, so this command would have acted on the wrong daemon.\nRun it against {} directly, or rename one of the profiles.",
+            describe_daemon_profile(got),
+            describe_daemon_profile(expected),
+            describe_daemon_profile(got)
         ),
     }
 }
@@ -14807,6 +14998,64 @@ mod tests {
     use std::sync::{Arc, Mutex};
     use tokio::net::TcpListener;
 
+    struct FakeDaemonStopOps {
+        probes: std::collections::VecDeque<Value>,
+        shutdown_error: Option<String>,
+        shutdown_calls: usize,
+        killed: Vec<i64>,
+        sleeps: Vec<Duration>,
+    }
+
+    impl FakeDaemonStopOps {
+        fn new(probes: impl IntoIterator<Item = Value>) -> Self {
+            Self {
+                probes: probes.into_iter().collect(),
+                shutdown_error: None,
+                shutdown_calls: 0,
+                killed: Vec::new(),
+                sleeps: Vec::new(),
+            }
+        }
+    }
+
+    impl DaemonStopOps for FakeDaemonStopOps {
+        fn probe(
+            &mut self,
+            _port: u32,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Value> + '_>> {
+            let health = self
+                .probes
+                .pop_front()
+                .unwrap_or_else(|| serde_json::json!({"status":"stopped"}));
+            Box::pin(std::future::ready(health))
+        }
+
+        fn shutdown(
+            &mut self,
+            _port: u32,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<()>> + '_>> {
+            self.shutdown_calls += 1;
+            let result = self
+                .shutdown_error
+                .take()
+                .map_or_else(|| Ok(()), |message| Err(anyhow::anyhow!(message)));
+            Box::pin(std::future::ready(result))
+        }
+
+        fn force_kill(&mut self, pid: i64) -> Result<()> {
+            self.killed.push(pid);
+            Ok(())
+        }
+
+        fn sleep(
+            &mut self,
+            duration: Duration,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + '_>> {
+            self.sleeps.push(duration);
+            Box::pin(std::future::ready(()))
+        }
+    }
+
     #[test]
     fn daemon_status_parser_and_profile_ports_match_go_registry() {
         let cli = Cli::try_parse_from([
@@ -14857,6 +15106,13 @@ mod tests {
                     follow: true,
                     lines: 12
                 }
+            })
+        ));
+        let stop = Cli::try_parse_from(["cordy", "daemon", "stop"]).expect("daemon stop CLI");
+        assert!(matches!(
+            stop.command,
+            Command::Daemon(DaemonArgs {
+                command: DaemonCommand::Stop
             })
         ));
     }
@@ -15069,6 +15325,90 @@ mod tests {
             error.to_string(),
             "daemon logs is not available inside a daemon-managed task"
         );
+    }
+
+    #[tokio::test]
+    async fn daemon_stop_uses_bounded_graceful_lifecycle_and_removes_pid_file() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let profile_dir = home.path().join(".cordy/profiles/dev");
+        fs::create_dir_all(&profile_dir).expect("profile directory");
+        fs::write(profile_dir.join("daemon.pid"), "123\n").expect("daemon pid");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from(["cordy", "--profile", "dev", "daemon", "stop"])
+            .expect("daemon stop CLI");
+        let mut operations = FakeDaemonStopOps::new([
+            serde_json::json!({"status":"running","profile":"dev","pid":123}),
+            serde_json::json!({"status":"starting","profile":"dev","pid":123}),
+            serde_json::json!({"status":"stopped"}),
+        ]);
+
+        let output = run_daemon_stop_with(&cli, &environment, &mut operations)
+            .await
+            .expect("stop daemon");
+        assert_eq!(
+            output.stderr,
+            "Stopping daemon (pid 123)...\nDaemon stopped.\n"
+        );
+        assert_eq!(operations.shutdown_calls, 1);
+        assert!(operations.killed.is_empty());
+        assert_eq!(operations.sleeps, vec![Duration::from_millis(500); 2]);
+        assert!(!profile_dir.join("daemon.pid").exists());
+    }
+
+    #[tokio::test]
+    async fn daemon_stop_falls_back_to_kill_and_reports_still_stopping_bound() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from(["cordy", "daemon", "stop"]).expect("daemon stop CLI");
+        let running = serde_json::json!({"status":"running","profile":"","pid":55});
+        let mut probes = vec![running.clone()];
+        probes.extend(std::iter::repeat(running).take(10));
+        let mut operations = FakeDaemonStopOps::new(probes);
+        operations.shutdown_error = Some("connection refused".into());
+
+        let output = run_daemon_stop_with(&cli, &environment, &mut operations)
+            .await
+            .expect("bounded forced stop");
+        assert_eq!(operations.killed, vec![55]);
+        assert_eq!(operations.sleeps.len(), 10);
+        assert_eq!(
+            output.stderr,
+            "Graceful shutdown request failed: connection refused — falling back to forced kill.\nStopping daemon (pid 55)...\nDaemon is still stopping. It may be finishing a running task.\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn daemon_stop_is_idempotent_and_refuses_profile_collisions() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from(["cordy", "daemon", "stop"]).expect("daemon stop CLI");
+        let mut stopped = FakeDaemonStopOps::new([serde_json::json!({"status":"stopped"})]);
+        let output = run_daemon_stop_with(&cli, &environment, &mut stopped)
+            .await
+            .expect("already stopped");
+        assert_eq!(output.stderr, "Daemon is not running.\n");
+        assert_eq!(stopped.shutdown_calls, 0);
+
+        let profile_dir = home.path().join(".cordy/profiles/ab");
+        fs::create_dir_all(profile_dir).expect("profile directory");
+        let cli = Cli::try_parse_from(["cordy", "--profile", "ab", "daemon", "stop"])
+            .expect("profile daemon stop CLI");
+        let mut collision = FakeDaemonStopOps::new([serde_json::json!({
+            "status":"running",
+            "profile":"ba",
+            "pid":99
+        })]);
+        let error = run_daemon_stop_with(&cli, &environment, &mut collision)
+            .await
+            .expect_err("profile collision rejected");
+        assert_eq!(
+            error.to_string(),
+            "port 19710 is serving profile \"ba\", not \"ab\"\nBoth profile names hash to the same health port, so this command would have acted on the wrong daemon.\nRun it against \"ba\" directly, or rename one of the profiles."
+        );
+        assert_eq!(collision.shutdown_calls, 0);
     }
 
     #[test]
