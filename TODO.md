@@ -930,6 +930,15 @@
       unchanged. Scoped rustfmt and diff-check pass; no Cargo was run. The
       serial subagent reviewed exact head `32ec4bb2` and found no issue; pro
       owns push/Ready PR, gate, and merge.
+- [ ] CLI autopilot resolver structural refactor is committed at
+      `5f5ab9337e0ce5da1c53d4b3b1d7c91d1de00dec` (parent
+      `32ec4bb24563601cafcabc3d06b9d86984fa32b5`, tree
+      `caeaa7504377b5c7de80a91cc3d10dff45026ffa`): UUID/prefix pagination,
+      agent/member/subscriber resolution, deduplication, and assignee-name
+      loading now live in `cordy-cli/src/autopilot_resolver.rs`; API command
+      policy remains unchanged. Scoped rustfmt and diff-check pass; no Cargo
+      was run. The serial subagent reviewed exact head `5f5ab933` and found no
+      issue; pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
