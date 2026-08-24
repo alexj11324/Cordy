@@ -16,7 +16,8 @@ use tokio_util::sync::CancellationToken;
 
 use crate::broadcaster::{Broadcaster, DaemonRuntimeDeliverer, RelayPublisher, SCOPE_USER};
 use crate::envelope::{
-    deliver_envelope, heartbeat_key, inject_event_id, nodes_key, stream_key, Envelope, HubFanout,
+    deliver_envelope, heartbeat_key, inject_event_id, nodes_key, stream_key, xadd_envelope_command,
+    Envelope, HubFanout,
 };
 use crate::metrics::M;
 use crate::stream_retention::{stream_min_id, StreamRetentionConfig, StreamTtlRefresher};
@@ -685,15 +686,7 @@ impl RelayPublisher for RedisRelay {
         );
         let stream = stream_key(scope_type, scope_id);
 
-        let mut cmd = redis::cmd("XADD");
-        cmd.arg(&stream)
-            .arg("MAXLEN")
-            .arg("~")
-            .arg(self.retention.stream_max_len);
-        for (k, v) in ev.redis_field_pairs() {
-            cmd.arg(k).arg(v);
-        }
-        cmd.arg("*");
+        let cmd = xadd_envelope_command(&stream, self.retention.stream_max_len, &ev);
 
         let start = std::time::Instant::now();
         let mut conn = self.write_conn_handle();

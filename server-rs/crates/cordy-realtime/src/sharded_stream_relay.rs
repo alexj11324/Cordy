@@ -14,7 +14,9 @@ use redis::aio::ConnectionManager;
 use tokio_util::sync::CancellationToken;
 
 use crate::broadcaster::{Broadcaster, DaemonRuntimeDeliverer, RelayPublisher, SCOPE_USER};
-use crate::envelope::{deliver_envelope, heartbeat_key, Envelope, HubFanout};
+use crate::envelope::{
+    deliver_envelope, heartbeat_key, xadd_envelope_command, Envelope, HubFanout,
+};
 use crate::metrics::M;
 use crate::stream_retention::{
     redis_info_int64, redis_ttl_millis, retention_subinterval, stream_min_id,
@@ -341,15 +343,7 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
         let shard = self.shard_for(scope_type, scope_id);
         let stream = sharded_stream_key(shard);
 
-        let mut cmd = redis::cmd("XADD");
-        cmd.arg(&stream)
-            .arg("MAXLEN")
-            .arg("~")
-            .arg(self.config.stream_max_len);
-        for (k, v) in ev.redis_field_pairs() {
-            cmd.arg(k).arg(v);
-        }
-        cmd.arg("*");
+        let cmd = xadd_envelope_command(&stream, self.config.stream_max_len, &ev);
 
         let start = std::time::Instant::now();
         let result: anyhow::Result<String> = {
