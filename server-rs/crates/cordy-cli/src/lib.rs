@@ -9236,7 +9236,7 @@ mod tests {
         let task_id = "11111111-1111-1111-1111-111111111111";
         let app = Router::new().route(
             "/api/tasks/11111111-1111-1111-1111-111111111111/cancel",
-            post(|Json(body): Json<Value>| async move {
+            post(move |Json(body): Json<Value>| async move {
                 assert_eq!(body, serde_json::json!({}));
                 Json(serde_json::json!({"id":task_id,"status":"cancelled"}))
             }),
