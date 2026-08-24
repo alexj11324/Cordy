@@ -37,6 +37,7 @@ use crate::health::{
 use crate::manager::{ControlEvent, DaemonControl};
 use crate::reconcile::{ReconcileBroadcaster, WorkspaceChangeSignal};
 use crate::repocache::{Cache, CancelCause, Ctx};
+use crate::runtime_set::RuntimeSet;
 use crate::task_execution::{TaskExecutionConfig, TaskExecutionOrchestrator};
 use crate::update_executor::UpdateExecutor;
 
@@ -63,6 +64,7 @@ pub trait ProductionRuntimeServices: DaemonCoreServices {
         ctx: Ctx,
         reconcile: Arc<ReconcileBroadcaster>,
         workspace_changes: Arc<WorkspaceChangeSignal>,
+        runtime_set: Arc<RuntimeSet>,
     ) -> anyhow::Result<()>;
 
     /// Provider-owned health fields: workspaces, agents, skipped-agent
@@ -169,12 +171,14 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         let workspace_changes = Arc::new(WorkspaceChangeSignal::new());
         let (events_tx, events_rx) = tokio::sync::mpsc::unbounded_channel::<ControlEvent>();
         let (task_wakeups_tx, task_wakeups_rx) = tokio::sync::mpsc::channel(TASK_WAKEUP_CAPACITY);
-        let control = DaemonControl::new(
+        let runtime_set = Arc::new(RuntimeSet::new());
+        let control = DaemonControl::with_runtime_set(
             Arc::clone(&self.client),
             self.config.server_base_url.clone(),
             self.config.daemon_id.clone(),
             self.config.heartbeat_interval,
             events_tx,
+            Arc::clone(&runtime_set),
         );
         let host = Arc::new(DaemonCoreHost::new(
             Arc::clone(&self.config),
@@ -229,7 +233,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
                 return Err(error).context("daemon preflight failed");
             }
         };
-        control.set_runtime_ids(runtime_ids);
+        runtime_set.replace(runtime_ids);
         let registered_control = Arc::clone(&control);
 
         let consumer = Arc::new(ControlEventConsumer::new(
@@ -292,9 +296,15 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         let reconcile_services = Arc::clone(&self.services);
         let reconcile_signal = Arc::clone(&reconcile);
         let workspace_signal = Arc::clone(&workspace_changes);
+        let reconcile_runtimes = Arc::clone(&runtime_set);
         owners.spawn(async move {
             let result = reconcile_services
-                .run_reconcile(reconcile_ctx.clone(), reconcile_signal, workspace_signal)
+                .run_reconcile(
+                    reconcile_ctx.clone(),
+                    reconcile_signal,
+                    workspace_signal,
+                    reconcile_runtimes,
+                )
                 .await;
             if reconcile_ctx.err().is_none() {
                 match result {

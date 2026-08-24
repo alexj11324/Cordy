@@ -26,6 +26,7 @@ use cordy_protocol::{
 
 use crate::client::{Client, RequestError, BATCH_CLAIM_REQUEST_TIMEOUT};
 use crate::repocache::{CancelCause, Ctx};
+use crate::runtime_set::RuntimeSet;
 use crate::types::Task;
 use crate::wakeup::{
     ack_advertises_rpc_v1, jitter_duration, run_ws_heartbeat_sender, task_wakeup_url,
@@ -70,7 +71,7 @@ pub(crate) struct DaemonControl {
     server_base_url: String,
     daemon_id: String,
     heartbeat_interval: Duration,
-    runtimes_tx: watch::Sender<Vec<String>>,
+    runtimes: Arc<RuntimeSet>,
     events: mpsc::UnboundedSender<ControlEvent>,
     ws_rpc: Arc<WsRpcClient>,
     claim: Mutex<ClaimState>,
@@ -86,13 +87,30 @@ impl DaemonControl {
         heartbeat_interval: Duration,
         events: mpsc::UnboundedSender<ControlEvent>,
     ) -> Arc<Self> {
-        let (runtimes_tx, _) = watch::channel(Vec::new());
+        Self::with_runtime_set(
+            client,
+            server_base_url,
+            daemon_id,
+            heartbeat_interval,
+            events,
+            Arc::new(RuntimeSet::new()),
+        )
+    }
+
+    pub(crate) fn with_runtime_set(
+        client: Arc<Client>,
+        server_base_url: impl Into<String>,
+        daemon_id: impl Into<String>,
+        heartbeat_interval: Duration,
+        events: mpsc::UnboundedSender<ControlEvent>,
+        runtimes: Arc<RuntimeSet>,
+    ) -> Arc<Self> {
         Arc::new(Self {
             client,
             server_base_url: server_base_url.into(),
             daemon_id: daemon_id.into(),
             heartbeat_interval,
-            runtimes_tx,
+            runtimes,
             events,
             ws_rpc: Arc::new(WsRpcClient::new(WS_RPC_RESPONSE_GRACE)),
             claim: Mutex::new(ClaimState::default()),
@@ -104,26 +122,18 @@ impl DaemonControl {
     /// Replaces the authenticated runtime set. Sorting and deduplication make
     /// identity stable and prevent reconnects for equivalent updates.
     pub(crate) fn set_runtime_ids(&self, runtime_ids: impl IntoIterator<Item = String>) {
-        let mut ids: Vec<String> = runtime_ids
-            .into_iter()
-            .filter(|id| !id.is_empty())
-            .collect();
-        ids.sort();
-        ids.dedup();
-        if *self.runtimes_tx.borrow() != ids {
-            self.runtimes_tx.send_replace(ids);
-        }
+        self.runtimes.replace(runtime_ids);
     }
 
     /// Snapshot/subscribe access for the machine-level claim poller. The same
     /// canonical runtime set drives both WebSocket authentication and task
     /// routing, preventing a reconnect/claim split-brain.
     pub(crate) fn runtime_ids(&self) -> Vec<String> {
-        self.runtimes_tx.borrow().clone()
+        self.runtimes.snapshot()
     }
 
     pub(crate) fn subscribe_runtime_ids(&self) -> watch::Receiver<Vec<String>> {
-        self.runtimes_tx.subscribe()
+        self.runtimes.subscribe()
     }
 
     pub(crate) async fn run(self: Arc<Self>, ctx: Ctx) {
@@ -215,7 +225,7 @@ impl DaemonControl {
     }
 
     async fn task_wakeup_loop(self: Arc<Self>, ctx: Ctx) {
-        let mut runtime_rx = self.runtimes_tx.subscribe();
+        let mut runtime_rx = self.runtimes.subscribe();
         let mut backoff = Duration::from_secs(1);
         loop {
             let runtime_ids = runtime_rx.borrow().clone();
@@ -449,7 +459,7 @@ impl DaemonControl {
     }
 
     fn try_begin_pending_work(&self, runtime_id: &str) -> bool {
-        if !self.runtimes_tx.borrow().iter().any(|id| id == runtime_id) {
+        if !self.runtimes.contains(runtime_id) {
             return false;
         }
         let now = Instant::now();
@@ -511,7 +521,7 @@ impl DaemonControl {
     }
 
     async fn heartbeat_supervisor(self: Arc<Self>, ctx: Ctx) {
-        let mut runtime_rx = self.runtimes_tx.subscribe();
+        let mut runtime_rx = self.runtimes.subscribe();
         let mut tasks: HashMap<String, (Ctx, JoinHandle<()>)> = HashMap::new();
         loop {
             let wanted: HashSet<String> = runtime_rx.borrow().iter().cloned().collect();
@@ -810,8 +820,8 @@ mod tests {
         );
         control.set_runtime_ids(["b".into(), "a".into(), "b".into(), String::new()]);
         assert_eq!(
-            &*control.runtimes_tx.borrow(),
-            &["a".to_string(), "b".to_string()]
+            control.runtimes.snapshot(),
+            vec!["a".to_string(), "b".to_string()]
         );
     }
 
