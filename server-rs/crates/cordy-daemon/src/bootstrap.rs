@@ -19,7 +19,6 @@ use flate2::write::GzEncoder;
 use flate2::Compression;
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::fmt::writer::BoxMakeWriter;
-use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 use crate::identity::profile_dir;
