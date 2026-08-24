@@ -92,23 +92,89 @@ fn parse_attachment_ttl(raw: &str) -> anyhow::Result<std::time::Duration> {
         !raw.is_empty(),
         "ATTACHMENT_DOWNLOAD_URL_TTL cannot be empty"
     );
-    let split = raw
-        .find(|character: char| !character.is_ascii_digit())
-        .unwrap_or(raw.len());
-    let amount = raw[..split].parse::<u64>()?;
-    anyhow::ensure!(amount > 0, "ATTACHMENT_DOWNLOAD_URL_TTL must be positive");
-    let multiplier = match &raw[split..] {
-        "" | "s" => 1,
-        "m" => 60,
-        "h" => 60 * 60,
-        "d" => 24 * 60 * 60,
-        _ => anyhow::bail!("ATTACHMENT_DOWNLOAD_URL_TTL must use s, m, h, or d"),
-    };
-    Ok(std::time::Duration::from_secs(
-        amount
-            .checked_mul(multiplier)
-            .ok_or_else(|| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too large"))?,
-    ))
+    let raw = raw.strip_prefix('+').unwrap_or(raw);
+    anyhow::ensure!(
+        !raw.starts_with('-'),
+        "ATTACHMENT_DOWNLOAD_URL_TTL must be positive"
+    );
+    anyhow::ensure!(raw != "0", "ATTACHMENT_DOWNLOAD_URL_TTL must be positive");
+
+    let mut rest = raw;
+    let mut total_nanos = 0_u128;
+    while !rest.is_empty() {
+        let integer_len = rest.bytes().take_while(u8::is_ascii_digit).count();
+        let mut number_len = integer_len;
+        let mut fraction = None;
+        if rest[integer_len..].starts_with('.') {
+            let fraction_start = integer_len + 1;
+            let fraction_len = rest[fraction_start..]
+                .bytes()
+                .take_while(u8::is_ascii_digit)
+                .count();
+            anyhow::ensure!(
+                integer_len > 0 || fraction_len > 0,
+                "invalid ATTACHMENT_DOWNLOAD_URL_TTL {raw:?}"
+            );
+            number_len = fraction_start + fraction_len;
+            fraction = Some(&rest[fraction_start..number_len]);
+        } else {
+            anyhow::ensure!(
+                integer_len > 0,
+                "invalid ATTACHMENT_DOWNLOAD_URL_TTL {raw:?}"
+            );
+        }
+
+        let unit_text = &rest[number_len..];
+        let (unit, unit_nanos) = [
+            ("ns", 1_u128),
+            ("us", 1_000),
+            ("µs", 1_000),
+            ("μs", 1_000),
+            ("ms", 1_000_000),
+            ("s", 1_000_000_000),
+            ("m", 60 * 1_000_000_000),
+            ("h", 60 * 60 * 1_000_000_000),
+        ]
+        .into_iter()
+        .find(|(unit, _)| unit_text.starts_with(unit))
+        .ok_or_else(|| anyhow::anyhow!("invalid ATTACHMENT_DOWNLOAD_URL_TTL {raw:?}"))?;
+
+        let whole = if integer_len == 0 {
+            0
+        } else {
+            rest[..integer_len].parse::<u128>()?
+        };
+        let mut segment = whole
+            .checked_mul(unit_nanos)
+            .ok_or_else(|| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too large"))?;
+        if let Some(fraction) = fraction.filter(|fraction| !fraction.is_empty()) {
+            let scale = 10_u128
+                .checked_pow(u32::try_from(fraction.len())?)
+                .ok_or_else(|| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too precise"))?;
+            let fractional_nanos = fraction
+                .parse::<u128>()?
+                .checked_mul(unit_nanos)
+                .ok_or_else(|| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too large"))?
+                / scale;
+            segment = segment
+                .checked_add(fractional_nanos)
+                .ok_or_else(|| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too large"))?;
+        }
+        total_nanos = total_nanos
+            .checked_add(segment)
+            .ok_or_else(|| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too large"))?;
+        rest = &unit_text[unit.len()..];
+    }
+
+    anyhow::ensure!(
+        total_nanos > 0,
+        "ATTACHMENT_DOWNLOAD_URL_TTL must be positive"
+    );
+    anyhow::ensure!(
+        total_nanos <= i64::MAX as u128,
+        "ATTACHMENT_DOWNLOAD_URL_TTL is too large"
+    );
+    Ok(std::time::Duration::from_nanos(u64::try_from(total_nanos)?))
 }
 
 struct DaemonTaskWakeup {
@@ -225,5 +291,30 @@ impl HandlerState {
             crate::pending_store::LocalSkillImportStore::new(conn),
         ));
         Ok(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_attachment_ttl;
+    use std::time::Duration;
+
+    #[test]
+    fn attachment_ttl_preserves_go_duration_grammar() {
+        assert_eq!(
+            parse_attachment_ttl("1h30m").unwrap(),
+            Duration::from_secs(90 * 60)
+        );
+        assert_eq!(
+            parse_attachment_ttl("1.5h250ms").unwrap(),
+            Duration::from_secs(90 * 60) + Duration::from_millis(250)
+        );
+        assert_eq!(
+            parse_attachment_ttl("500us").unwrap(),
+            Duration::from_micros(500)
+        );
+        for invalid in ["", "0", "-1s", "30", "1d", "1hour"] {
+            assert!(parse_attachment_ttl(invalid).is_err(), "{invalid}");
+        }
     }
 }
