@@ -2,6 +2,7 @@
 //! signature-checked before dispatch and persisted before acknowledgement so
 //! provider retries are idempotent and recoverable.
 
+use std::collections::HashSet;
 use std::net::SocketAddr;
 
 use axum::body::Body;
@@ -15,6 +16,7 @@ use cordy_db::queries::{autopilot, webhook_delivery};
 use cordy_service::autopilot::AutopilotQuotaExceededError;
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::Sha256;
 use tokio_util::sync::CancellationToken;
@@ -177,9 +179,23 @@ fn dedupe(provider: &str, headers: &HeaderMap) -> (Option<String>, Option<&'stat
     (None, None)
 }
 
-fn event_allowed(filters: Option<&Value>, envelope: &Value) -> bool {
-    let Some(filters) = filters.and_then(Value::as_array) else {
+#[derive(Debug, Deserialize)]
+struct EventFilter {
+    event: String,
+    #[serde(default)]
+    actions: Vec<String>,
+}
+
+/// Shared ingress/recovery matcher for the persisted normalized envelope.
+/// Malformed stored policy fails closed, matching Go: widening a corrupt
+/// allowlist would be less safe than dropping deliveries until it is fixed.
+pub(crate) fn event_allowed(filters: Option<&Value>, envelope: &Value) -> bool {
+    let Some(raw) = filters else {
         return true;
+    };
+    let Ok(filters) = serde_json::from_value::<Vec<EventFilter>>(raw.clone()) else {
+        tracing::warn!("webhook trigger has malformed event filters");
+        return false;
     };
     if filters.is_empty() {
         return true;
@@ -188,35 +204,51 @@ fn event_allowed(filters: Option<&Value>, envelope: &Value) -> bool {
         .get("event")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let parts = normalized.split('.').collect::<Vec<_>>();
-    let known = matches!(
-        parts.first().copied(),
-        Some("github" | "gitlab" | "generic")
-    );
-    let event = if known {
-        parts.get(1).copied().unwrap_or_default()
-    } else {
-        parts.first().copied().unwrap_or_default()
-    };
-    let action = if known { parts.get(2).copied() } else { None }.or_else(|| {
-        envelope
-            .pointer("/eventPayload/action")
-            .and_then(Value::as_str)
-    });
-    filters.iter().any(|filter| {
-        if filter.get("event").and_then(Value::as_str) != Some(event) {
-            return false;
+    let (event, suffix) = split_event(normalized);
+    let mut candidates = HashSet::new();
+    if !suffix.trim().is_empty() {
+        candidates.insert(suffix.trim());
+    }
+    if let Some(payload) = envelope.get("eventPayload").and_then(Value::as_object) {
+        for field in ["action", "state", "conclusion", "status"] {
+            if let Some(value) = payload
+                .get(field)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                candidates.insert(value);
+            }
         }
-        match filter.get("actions").and_then(Value::as_array) {
-            None => true,
-            Some(actions) if actions.is_empty() => true,
-            Some(actions) => action.is_some_and(|value| {
-                actions
+    }
+    filters.into_iter().any(|filter| {
+        filter.event == event
+            && (filter.actions.is_empty()
+                || filter
+                    .actions
                     .iter()
-                    .any(|allowed| allowed.as_str() == Some(value))
-            }),
-        }
+                    .any(|action| candidates.contains(action.as_str())))
     })
+}
+
+fn split_event(event: &str) -> (&str, &str) {
+    let mut parts = event.split('.');
+    let first = parts.next().unwrap_or_default();
+    let second = parts.next();
+    if matches!(first, "github" | "gitlab" | "bitbucket" | "gitea") {
+        let name = second.unwrap_or_default();
+        let offset = first.len() + usize::from(second.is_some()) + name.len();
+        return (
+            name,
+            event
+                .get(offset + usize::from(offset < event.len())..)
+                .unwrap_or_default(),
+        );
+    }
+    let suffix = second
+        .and_then(|_| event.get(first.len() + 1..))
+        .unwrap_or_default();
+    (first, suffix)
 }
 
 async fn terminal(
@@ -600,5 +632,50 @@ mod tests {
         let value = normalize(br#"{"action":"opened","number":1}"#, &headers).unwrap();
         assert_eq!(value["event"], "github.pull_request.opened");
         assert!(normalize(b"true", &HeaderMap::new()).is_err());
+    }
+
+    #[test]
+    fn event_filter_uses_complete_go_action_candidate_set() {
+        let envelope = json!({
+            "event": "github.workflow_run.completed.success",
+            "eventPayload": {
+                "action": "requested",
+                "state": "queued",
+                "conclusion": "success",
+                "status": "completed"
+            }
+        });
+
+        for action in [
+            "completed.success",
+            "requested",
+            "queued",
+            "success",
+            "completed",
+        ] {
+            let filters = json!([{"event": "workflow_run", "actions": [action]}]);
+            assert!(event_allowed(Some(&filters), &envelope), "action={action}");
+        }
+        let denied = json!([{"event": "workflow_run", "actions": ["failed"]}]);
+        assert!(!event_allowed(Some(&denied), &envelope));
+    }
+
+    #[test]
+    fn event_filter_scans_same_event_rows_and_fails_closed_when_malformed() {
+        let envelope = json!({
+            "event": "deploy.finished",
+            "eventPayload": {"status": "ready"}
+        });
+        let filters = json!([
+            {"event": "deploy", "actions": ["failed"]},
+            {"event": "deploy", "actions": ["ready"]}
+        ]);
+        assert!(event_allowed(Some(&filters), &envelope));
+        assert!(event_allowed(None, &envelope));
+        assert!(event_allowed(Some(&json!([])), &envelope));
+        assert!(!event_allowed(
+            Some(&json!([{"event": "deploy", "actions": "ready"}])),
+            &envelope
+        ));
     }
 }
