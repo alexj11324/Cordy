@@ -146,10 +146,17 @@ enum IssueCommand {
     Comment(IssueCommentArgs),
     #[command(about = "List execution history for an issue")]
     Runs(IssueRunsArgs),
+    #[command(name = "run-messages", about = "List messages for an execution")]
+    RunMessages(IssueRunMessagesArgs),
     #[command(about = "Show aggregated token usage for an issue")]
     Usage(IssueUsageArgs),
     #[command(about = "Re-enqueue an issue assignment as a fresh task")]
     Rerun(IssueRerunArgs),
+    #[command(
+        name = "cancel-task",
+        about = "Cancel a running or queued task (interrupts in-flight agent)"
+    )]
+    CancelTask(IssueCancelTaskArgs),
     #[command(about = "Search issues by title, description, or comments")]
     Search(IssueSearchArgs),
     #[command(about = "Work with issue subscribers")]
@@ -435,6 +442,18 @@ struct IssueRunsArgs {
 }
 
 #[derive(Debug, Args)]
+struct IssueRunMessagesArgs {
+    #[arg(value_name = "TASK-ID")]
+    task_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+    #[arg(long, help = "Only return messages after this sequence number")]
+    since: i64,
+    #[arg(long, help = "Issue ID/key to scope short task ID prefix resolution")]
+    issue: Option<String>,
+}
+
+#[derive(Debug, Args)]
 struct IssueUsageArgs {
     #[arg(value_name = "ISSUE-ID")]
     issue_id: String,
@@ -448,6 +467,16 @@ struct IssueRerunArgs {
     issue_id: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssueCancelTaskArgs {
+    #[arg(value_name = "TASK-ID")]
+    task_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+    #[arg(long, help = "Issue ID/key to scope short task ID prefix resolution")]
+    issue: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -904,11 +933,17 @@ async fn run_with_input<R: Read>(
             command: IssueCommand::Runs(args),
         }) => run_issue_runs(cli, environment, args).await,
         Command::Issue(IssueArgs {
+            command: IssueCommand::RunMessages(args),
+        }) => run_issue_run_messages(cli, environment, args).await,
+        Command::Issue(IssueArgs {
             command: IssueCommand::Usage(args),
         }) => run_issue_usage(cli, environment, args).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::Rerun(args),
         }) => run_issue_rerun(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command: IssueCommand::CancelTask(args),
+        }) => run_issue_cancel_task(cli, environment, args).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::Search(args),
         }) => run_issue_search(cli, environment, args).await,
@@ -2152,6 +2187,56 @@ async fn resolve_issue_ref(client: &ApiClient, input: &str) -> Result<String> {
     bail!(
         "issue ref {input:?} is not a recognized issue reference; use the issue key (e.g. MUL-123) shown by `cordy issue list`, or pass the full UUID"
     )
+}
+
+async fn resolve_task_run_id(
+    client: &ApiClient,
+    issue_id: Option<&str>,
+    input: &str,
+) -> Result<String> {
+    let trimmed = input.trim();
+    if is_canonical_uuid(trimmed) {
+        return Ok(trimmed.into());
+    }
+    let Some(issue_id) = issue_id.filter(|value| !value.trim().is_empty()) else {
+        bail!(
+            "short task run prefixes require --issue <issue-id>; pass a full task UUID or run `cordy issue runs <issue-id> --full-id`"
+        );
+    };
+    let Some(prefix) = normalize_uuid_prefix(trimmed) else {
+        if trimmed.is_empty() {
+            bail!("resolve task run: id is required");
+        }
+        let compact = trimmed.replace('-', "");
+        if compact.len() < 4 {
+            bail!(
+                "resolve task run: expected a full UUID or at least 4 hex characters, got {input:?}"
+            );
+        }
+        bail!(
+            "resolve task run: expected a UUID prefix containing only hex characters, got {input:?}"
+        );
+    };
+    let runs: Vec<Value> = client
+        .get_json(&format!("/api/issues/{issue_id}/task-runs"))
+        .await
+        .context("resolve task run")?;
+    let mut matches = runs
+        .iter()
+        .map(|run| value_string(run, "id"))
+        .filter(|id| !id.is_empty() && compact_uuid(id).starts_with(&prefix))
+        .collect::<Vec<_>>();
+    matches.sort();
+    match matches.as_slice() {
+        [id] => Ok(id.clone()),
+        [] => bail!(
+            "no task run found matching id prefix {input:?}; run the list command with --full-id to copy the full UUID"
+        ),
+        _ => bail!(
+            "ambiguous task run id prefix {input:?}; matches:\n  {}\nUse more characters or run the list command with --full-id",
+            matches.join("\n  ")
+        ),
+    }
 }
 
 fn looks_like_issue_identifier(input: &str) -> bool {
@@ -3566,6 +3651,99 @@ fn format_issue_runs_table(runs: &[Value], full_id: bool, actors: &IssueActorNam
         ]);
     }
     format_table(&rows)
+}
+
+async fn resolve_task_run_scope(client: &ApiClient, issue: Option<&str>) -> Result<Option<String>> {
+    match issue {
+        Some(issue) if !issue.is_empty() => Ok(Some(
+            resolve_issue_ref(client, issue)
+                .await
+                .context("resolve issue")?,
+        )),
+        _ => Ok(None),
+    }
+}
+
+async fn run_issue_run_messages(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueRunMessagesArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_task_run_scope(&client, args.issue.as_deref()).await?;
+    let task_id = resolve_task_run_id(&client, issue_id.as_deref(), &args.task_id)
+        .await
+        .context("resolve task run")?;
+    let mut path = format!("/api/tasks/{task_id}/messages");
+    if args.since > 0 {
+        let _ = write!(path, "?since={}", args.since);
+    }
+    let messages: Vec<Value> = client.get_json(&path).await.context("list run messages")?;
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&messages)?),
+            OutputFormat::Table => format_issue_run_messages_table(&messages),
+        },
+        stderr: String::new(),
+    })
+}
+
+fn format_issue_run_messages_table(messages: &[Value]) -> String {
+    let mut rows = vec![vec![
+        "SEQ".into(),
+        "TYPE".into(),
+        "TOOL".into(),
+        "CONTENT".into(),
+    ]];
+    for message in messages {
+        let mut content = value_string(message, "content");
+        if content.is_empty() {
+            content = value_string(message, "output");
+        }
+        if content.chars().count() > 80 {
+            content = format!("{}...", content.chars().take(77).collect::<String>());
+        }
+        rows.push(vec![
+            message
+                .get("seq")
+                .map(|value| format_metadata_value(Some(value)))
+                .unwrap_or_default(),
+            value_string(message, "type"),
+            value_string(message, "tool"),
+            content,
+        ]);
+    }
+    format_table(&rows)
+}
+
+async fn run_issue_cancel_task(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueCancelTaskArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_task_run_scope(&client, args.issue.as_deref()).await?;
+    let task_id = resolve_task_run_id(&client, issue_id.as_deref(), &args.task_id)
+        .await
+        .context("resolve task run")?;
+    let result: Value = client
+        .post_json(
+            &format!("/api/tasks/{task_id}/cancel"),
+            &serde_json::Map::<String, Value>::new(),
+        )
+        .await
+        .context("cancel task")?;
+    let status = match value_string(&result, "status") {
+        status if status.is_empty() => "cancelled".into(),
+        status => status,
+    };
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+            OutputFormat::Table => format!("Task {task_id} -> status={status}\n"),
+        },
+        stderr: String::new(),
+    })
 }
 
 async fn run_issue_usage(
@@ -5386,6 +5564,24 @@ mod tests {
                 command: IssueCommand::Runs(args),
             }) => args,
             _ => panic!("expected issue runs"),
+        }
+    }
+
+    fn issue_run_messages_args(cli: &Cli) -> &IssueRunMessagesArgs {
+        match &cli.command {
+            Command::Issue(IssueArgs {
+                command: IssueCommand::RunMessages(args),
+            }) => args,
+            _ => panic!("expected issue run-messages"),
+        }
+    }
+
+    fn issue_cancel_task_args(cli: &Cli) -> &IssueCancelTaskArgs {
+        match &cli.command {
+            Command::Issue(IssueArgs {
+                command: IssueCommand::CancelTask(args),
+            }) => args,
+            _ => panic!("expected issue cancel-task"),
         }
     }
 
@@ -7663,6 +7859,157 @@ mod tests {
         assert!(output.stdout.starts_with("ID"));
         assert!(output.stdout.contains("CodeBot"));
         assert!(output.stdout.contains("completed"));
+        task.abort();
+    }
+
+    #[test]
+    fn issue_run_controls_parser_and_message_table_match_go_contract() {
+        let messages = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "run-messages",
+            "abcd",
+            "--issue",
+            "CORD-18",
+            "--since",
+            "4",
+            "--output",
+            "table",
+        ])
+        .expect("run-messages CLI");
+        let args = issue_run_messages_args(&messages);
+        assert_eq!(args.task_id, "abcd");
+        assert_eq!(args.issue.as_deref(), Some("CORD-18"));
+        assert_eq!(args.since, 4);
+        assert_eq!(args.output, OutputFormat::Table);
+
+        let cancel = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "cancel-task",
+            "11111111-1111-1111-1111-111111111111",
+            "--output",
+            "json",
+        ])
+        .expect("cancel-task CLI");
+        assert_eq!(
+            issue_cancel_task_args(&cancel).task_id,
+            "11111111-1111-1111-1111-111111111111"
+        );
+
+        let table = format_issue_run_messages_table(&[
+            serde_json::json!({
+                "seq":1,"type":"text","tool":"","content":"done"
+            }),
+            serde_json::json!({
+                "seq":2,"type":"tool_result","tool":"shell","content":"",
+                "output":"x".repeat(81)
+            }),
+        ]);
+        assert!(table.starts_with("SEQ"));
+        assert!(table.contains("done"));
+        assert!(table.contains("tool_result"));
+        assert!(table.contains("xxx..."));
+    }
+
+    #[tokio::test]
+    async fn issue_run_messages_resolves_scoped_prefix_and_sends_since() {
+        let issue_id = "1881a167-4bb6-4602-944b-f40ce4192fe6";
+        let task_id = "abcd1234-0000-0000-0000-000000000000";
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(move || async move {
+                    Json(serde_json::json!({"id":issue_id,"identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/issues/1881a167-4bb6-4602-944b-f40ce4192fe6/task-runs",
+                get(move || async move { Json(vec![serde_json::json!({"id":task_id})]) }),
+            )
+            .route(
+                "/api/tasks/abcd1234-0000-0000-0000-000000000000/messages",
+                get(|request: Request| async move {
+                    assert_eq!(request.uri().query(), Some("since=4"));
+                    Json(vec![serde_json::json!({
+                        "seq":5,"type":"text","content":"done"
+                    })])
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "run-messages",
+            "abcd",
+            "--issue",
+            "CORD-18",
+            "--since",
+            "4",
+        ])
+        .expect("run-messages CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("run messages");
+        let messages: Value = serde_json::from_str(&output.stdout).expect("messages JSON");
+        assert_eq!(messages[0]["seq"], 5);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn issue_cancel_task_posts_empty_body_and_requires_scope_for_prefix() {
+        let task_id = "11111111-1111-1111-1111-111111111111";
+        let app = Router::new().route(
+            "/api/tasks/11111111-1111-1111-1111-111111111111/cancel",
+            post(|Json(body): Json<Value>| async move {
+                assert_eq!(body, serde_json::json!({}));
+                Json(serde_json::json!({"id":task_id,"status":"cancelled"}))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "cancel-task",
+            task_id,
+            "--output",
+            "table",
+        ])
+        .expect("cancel-task CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("cancel task");
+        assert_eq!(
+            output.stdout,
+            "Task 11111111-1111-1111-1111-111111111111 -> status=cancelled\n"
+        );
+
+        let missing_scope = Cli::try_parse_from(["cordy", "issue", "cancel-task", "abcd"])
+            .expect("short cancel CLI");
+        let error = run_with_input(
+            &missing_scope,
+            &environment,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .await
+        .expect_err("short task prefix requires issue");
+        assert!(error.to_string().contains("require --issue"));
         task.abort();
     }
 
