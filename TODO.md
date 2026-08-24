@@ -171,13 +171,15 @@
       existing Rust CLI branch `codex/cord-18-rust-cli`; a serial subagent owns
       the bounded code change while this thread owns the contract scope and
       TODO. PR review/gate/merge is delegated to the pro model.
-- [x] CLI `login --token` slice committed/pushed as `23b987f9` on PR #91. It
+- [x] CLI `login --token` slice committed/pushed as `23b987f9`, followed by
+      `37a8af3a` on PR #91. It
       validates `mul_`/`mcn_`, enforces the human-local guard, resolves the
       server URL from flag/env/profile/default cloud, verifies `/api/me`, and
-      atomically saves server URL plus token under one profile lock. Success,
-      invalid-prefix, and daemon-task guard tests were added; scoped rustfmt
-      check and diff-check pass. Cargo/review/gate/merge remain with the pro
-      model and are not duplicated here.
+      atomically saves server URL plus clears stale workspace ID and stores the
+      token under one profile lock. Success, invalid-prefix, and daemon-task
+      guard tests were added; scoped rustfmt check and diff-check pass.
+      Cargo/review/gate/merge remain with the pro model and are not duplicated
+      here.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
