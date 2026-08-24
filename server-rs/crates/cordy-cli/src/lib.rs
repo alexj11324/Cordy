@@ -16,9 +16,10 @@ use config::Environment;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ffi::OsString;
 use std::fmt::Write;
 use std::fs;
-use std::io::Read;
+use std::io::{Read, Write as IoWrite};
 use std::path::{Component, Path, PathBuf};
 use std::time::{Duration, Instant};
 use url::{form_urlencoded, Url};
@@ -29,6 +30,24 @@ pub const BUILD_DATE: &str = env!("CORDY_BUILD_DATE");
 pub const BUILD_GO_VERSION: &str = env!("CORDY_BUILD_GO_VERSION");
 pub const BUILD_OS: &str = env!("CORDY_BUILD_OS");
 pub const BUILD_ARCH: &str = env!("CORDY_BUILD_ARCH");
+
+/// Handles the daemon's private execution-environment helper mode before
+/// normal CLI parsing or profile loading. The protocol never places task
+/// configuration or gateway credentials in argv; all payload data stays on
+/// the inherited stdin/stdout pipes.
+pub async fn run_private_helper<I, O>(args: &[OsString], input: I, output: &mut O) -> Result<bool>
+where
+    I: Read,
+    O: IoWrite,
+{
+    if args.len() != 2
+        || args[1] != OsString::from(cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG)
+    {
+        return Ok(false);
+    }
+    cordy_daemon::execenv::isolation::run_preparation_helper(input, output).await?;
+    Ok(true)
+}
 pub const ROOT_LONG_VERSION: &str = concat!(
     env!("CORDY_BUILD_VERSION"),
     " (commit: ",
@@ -12899,6 +12918,58 @@ mod tests {
     use std::io::Cursor;
     use std::sync::{Arc, Mutex};
     use tokio::net::TcpListener;
+
+    #[tokio::test]
+    async fn private_execenv_helper_dispatches_before_cli_parsing() {
+        let missing = tempfile::tempdir()
+            .expect("tempdir")
+            .path()
+            .join("missing-workdir");
+        let input = serde_json::to_vec(&serde_json::json!({
+            "action": "reuse",
+            "reuse": {
+                "WorkDir": missing,
+                "Provider": "codex"
+            }
+        }))
+        .expect("helper request");
+        let mut output = Vec::new();
+
+        let handled = run_private_helper(
+            &[
+                OsString::from("cordy"),
+                OsString::from(cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG),
+            ],
+            Cursor::new(input),
+            &mut output,
+        )
+        .await
+        .expect("private helper");
+
+        assert!(handled);
+        let response: Value = serde_json::from_slice(&output).expect("helper response");
+        assert!(response.get("environment").is_none());
+        assert!(response.get("error").is_none());
+    }
+
+    #[tokio::test]
+    async fn private_execenv_helper_requires_the_exact_private_argv() {
+        let mut output = Vec::new();
+        let handled = run_private_helper(
+            &[
+                OsString::from("cordy"),
+                OsString::from(cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG),
+                OsString::from("unexpected"),
+            ],
+            Cursor::new(Vec::<u8>::new()),
+            &mut output,
+        )
+        .await
+        .expect("ordinary CLI path");
+
+        assert!(!handled);
+        assert!(output.is_empty());
+    }
 
     #[test]
     fn autopilot_read_parser_matches_go_registry() {

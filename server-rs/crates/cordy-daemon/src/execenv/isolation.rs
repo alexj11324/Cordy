@@ -41,7 +41,7 @@ use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
 use tokio::io::AsyncWriteExt;
 
-use super::execenv::{Environment, PrepareParams};
+use super::execenv::{Environment, PrepareParams, ReuseParams};
 
 /// Selection flag for the private execution-environment helper mode in the
 /// cordy binary. The daemon runs Prepare/Reuse in that subprocess so a blocked
@@ -77,24 +77,11 @@ pub(crate) struct PreparationWireParams {
     pub params: PrepareParams,
 }
 
-// S9-integration: ReuseParams is defined by the Reuse port (execenv.go's
-// second half); the helper protocol needs the wire shape now. Mirrors Go's
-// `type preparationReuseParams struct { *ReuseParams; OpenclawGateway ... }`.
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub(crate) struct ReuseParamsPlaceholder {
-    #[serde(rename = "WorkspacesRoot", default)]
-    pub workspaces_root: String,
-    #[serde(rename = "WorkspaceId", default)]
-    pub workspace_id: String,
-    #[serde(rename = "TaskId", default)]
-    pub task_id: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ReuseWireParams {
     #[serde(flatten)]
-    pub params: ReuseParamsPlaceholder,
+    pub params: ReuseParams,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -160,15 +147,16 @@ pub(crate) async fn prepare_isolated(
             reuse: None,
         },
     )
-    .await
+    .await?
+    .ok_or_else(|| anyhow!("execenv: preparation helper returned no environment"))
 }
 
 /// reuse_isolated executes Reuse under the same killable-helper contract.
 pub(crate) async fn reuse_isolated(
     ctx: &crate::repocache::Ctx,
     command: &[String],
-    params: ReuseParamsPlaceholder,
-) -> anyhow::Result<Environment> {
+    params: ReuseParams,
+) -> anyhow::Result<Option<Environment>> {
     run_preparation_process(
         ctx,
         command,
@@ -185,7 +173,7 @@ async fn run_preparation_process(
     ctx: &crate::repocache::Ctx,
     command: &[String],
     request: PreparationRequest,
-) -> anyhow::Result<Environment> {
+) -> anyhow::Result<Option<Environment>> {
     if command.is_empty() || command[0].trim().is_empty() {
         bail!("execenv: preparation helper command is empty");
     }
@@ -321,9 +309,7 @@ async fn run_preparation_process(
             &response.error_kind,
         ));
     }
-    response
-        .environment
-        .ok_or_else(|| anyhow!("execenv: preparation helper returned no environment"))
+    Ok(response.environment)
 }
 
 /// stop_process_group kills the helper and any CLI it spawned. After SIGKILL
@@ -463,9 +449,9 @@ pub(crate) fn decode_preparation_request<R: std::io::Read>(
 /// parent can preserve them; malformed protocol input/output is returned as a
 /// process error because the parent cannot safely interpret the result.
 ///
-/// The prepare/reuse bodies are wired to the real implementations; the reuse
-/// arm lands with the Reuse port (same file family) and fails closed until
-/// then, exactly like the Go helper would on an unknown action.
+/// Both actions call the real execenv implementations. A reuse cache miss is
+/// encoded as a successful response without an environment so the parent can
+/// fall back to a fresh prepare, matching the Go contract.
 pub async fn run_preparation_helper<I, O>(input: I, output: &mut O) -> anyhow::Result<()>
 where
     I: std::io::Read,
@@ -497,13 +483,7 @@ where
             if request.prepare.is_some() {
                 bail!("invalid reuse request");
             }
-            // Reuse is ported alongside the daemon's session-reuse wiring;
-            // until that slice lands the helper fails closed loudly instead of
-            // returning a fabricated environment.
-            let err: anyhow::Error = anyhow!("execenv: reuse not yet ported in this build")
-                .context(format!("{:#}", wire.params.task_id));
-            response.error = format!("{err:#}");
-            response.error_kind = preparation_error_kind(&err).to_string();
+            response.environment = super::execenv::reuse(wire.params);
         }
         other => bail!("unknown preparation action {other:?}"),
     }
@@ -516,7 +496,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::super::execenv::OpenclawGatewayPin;
+    use super::super::execenv::{OpenclawGatewayPin, ReuseParams};
     use super::*;
 
     fn sample_prepare_params() -> PrepareParams {
@@ -525,6 +505,21 @@ mod tests {
             workspace_id: "ws1".into(),
             task_id: "01a01ec0-e69d-7000-8000-0123456789ab".into(),
             ..Default::default()
+        }
+    }
+
+    fn sample_reuse_params(work_dir: impl Into<String>) -> ReuseParams {
+        ReuseParams {
+            workspaces_root: "/tmp/ws".into(),
+            work_dir: work_dir.into(),
+            provider: "codex".into(),
+            openclaw_gateway: OpenclawGatewayPin {
+                host: "gw".into(),
+                port: 7420,
+                token: "reuse-secret".into(),
+                tls: true,
+            },
+            ..ReuseParams::default()
         }
     }
 
@@ -567,6 +562,78 @@ mod tests {
             gw.token, "sekrit",
             "the trusted boundary carries the real token"
         );
+    }
+
+    #[test]
+    fn reuse_request_round_trip_preserves_real_params() {
+        let req = PreparationRequest {
+            action: PREPARATION_ACTION_REUSE.into(),
+            prepare: None,
+            reuse: Some(ReuseWireParams {
+                params: sample_reuse_params("/tmp/ws/task/worktree"),
+            }),
+        };
+
+        let bytes = serde_json::to_vec(&req).unwrap();
+        let back: PreparationRequest = serde_json::from_slice(&bytes).unwrap();
+        let params = back.reuse.unwrap().params;
+        assert_eq!(params.work_dir, "/tmp/ws/task/worktree");
+        assert_eq!(params.provider, "codex");
+        assert_eq!(params.openclaw_gateway.token, "reuse-secret");
+    }
+
+    #[tokio::test]
+    async fn reuse_helper_preserves_cache_miss_as_successful_none() {
+        let missing = tempfile::tempdir()
+            .unwrap()
+            .path()
+            .join("missing-workdir")
+            .to_string_lossy()
+            .into_owned();
+        let request = PreparationRequest {
+            action: PREPARATION_ACTION_REUSE.into(),
+            prepare: None,
+            reuse: Some(ReuseWireParams {
+                params: sample_reuse_params(missing),
+            }),
+        };
+        let input = serde_json::to_vec(&request).unwrap();
+        let mut output = Vec::new();
+
+        run_preparation_helper(input.as_slice(), &mut output)
+            .await
+            .unwrap();
+
+        let response: PreparationResponse = serde_json::from_slice(&output).unwrap();
+        assert!(response.environment.is_none());
+        assert!(response.error.is_empty());
+        assert!(response.error_kind.is_empty());
+    }
+
+    #[tokio::test]
+    async fn reuse_helper_returns_the_real_reused_environment() {
+        let root = tempfile::tempdir().unwrap();
+        let work_dir = root.path().join("task-root").join("worktree");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        let mut params = sample_reuse_params(work_dir.to_string_lossy());
+        params.workspaces_root = root.path().to_string_lossy().into_owned();
+        params.provider = "pi".into();
+        let request = PreparationRequest {
+            action: PREPARATION_ACTION_REUSE.into(),
+            prepare: None,
+            reuse: Some(ReuseWireParams { params }),
+        };
+        let input = serde_json::to_vec(&request).unwrap();
+        let mut output = Vec::new();
+
+        run_preparation_helper(input.as_slice(), &mut output)
+            .await
+            .unwrap();
+
+        let response: PreparationResponse = serde_json::from_slice(&output).unwrap();
+        let environment = response.environment.unwrap();
+        assert_eq!(environment.work_dir, work_dir.to_string_lossy().as_ref());
+        assert!(response.error.is_empty());
     }
 
     // Port of TestPreparationErrorKindRoundTrip.
