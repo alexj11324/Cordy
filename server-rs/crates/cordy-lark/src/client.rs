@@ -383,6 +383,20 @@ pub trait ApiClient: Send + Sync {
         p: DownloadResourceParams,
     ) -> anyhow::Result<DownloadedResource>;
 
+    async fn download_message_resource_stream(
+        &self,
+        creds: InstallationCredentials,
+        p: DownloadResourceParams,
+    ) -> anyhow::Result<DownloadedResourceStream> {
+        let resource = self.download_message_resource(creds, p).await?;
+        Ok(DownloadedResourceStream {
+            body: Box::new(std::io::Cursor::new(resource.data)),
+            content_type: resource.content_type,
+            filename: resource.filename,
+            size_bytes: resource.size_bytes,
+        })
+    }
+
     /// Resolves a set of user open_ids to their display names via
     /// GET /open-apis/contact/v3/users/batch. The enricher uses it to label
     /// recent-context / quoted / forwarded speakers (and the sender who

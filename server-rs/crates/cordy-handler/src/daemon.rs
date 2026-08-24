@@ -257,8 +257,23 @@ async fn check_daemon_workspace_access(
     if user_id.is_empty() {
         return Err(error_response(StatusCode::NOT_FOUND, "not found"));
     }
+    if access
+        .state
+        .membership_cache
+        .get(&user_id, workspace_id)
+        .await
+    {
+        return Ok(workspace_id.to_string());
+    }
     match access.get_member(&user_id, workspace_id).await {
-        Some(_) => Ok(workspace_id.to_string()),
+        Some(_) => {
+            access
+                .state
+                .membership_cache
+                .set(&user_id, workspace_id)
+                .await;
+            Ok(workspace_id.to_string())
+        }
         None => Err(error_response(StatusCode::NOT_FOUND, "not found")),
     }
 }
@@ -473,6 +488,7 @@ async fn deregister(
             tracing::warn!(error = %e, runtime_id = %rid, "deregister: failed to set offline");
             continue;
         }
+        state.liveness_store.forget(&rt.id.to_string()).await;
         if !affected.contains(&ws_id) {
             affected.push(ws_id);
         }
@@ -815,7 +831,13 @@ async fn register(
     } else {
         let user_id = request_user_id(&headers);
         match access_get_member(&state, &headers, &user_id, &req.workspace_id).await {
-            Some(m) => owner_id = Some(m.user_id),
+            Some(m) => {
+                state
+                    .membership_cache
+                    .set(&user_id, &req.workspace_id)
+                    .await;
+                owner_id = Some(m.user_id);
+            }
             None => return error_response(StatusCode::NOT_FOUND, "workspace not found"),
         }
     }

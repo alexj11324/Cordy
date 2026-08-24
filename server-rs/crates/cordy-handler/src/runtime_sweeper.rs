@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
 use cordy_db::queries::{agent, runtime};
 use cordy_events::{Bus, Event};
 use cordy_service::task_service::TaskService;
@@ -12,17 +13,19 @@ use tokio_util::sync::CancellationToken;
 
 use crate::runtime_liveness::LivenessStore;
 
-const STALE_SECONDS: f64 = 150.0;
+const STALE_THRESHOLD: Duration = Duration::from_secs(150);
+const STALE_RUNTIME_BATCH: i32 = 500;
 const OFFLINE_BATCH: i32 = 500;
 const RECONNECT_BATCH: i32 = 500;
-const QUEUED_TTL_SECONDS: f64 = 2.0 * 3600.0;
+const STALE_TASK_BATCH: i32 = 500;
+const QUEUED_TTL: Duration = Duration::from_secs(2 * 60 * 60);
 const QUEUED_BATCH: i32 = 500;
-const DISPATCH_TIMEOUT_SECONDS: f64 = 300.0;
-const RUNNING_TIMEOUT_SECONDS: f64 = 9000.0;
+const DISPATCH_TIMEOUT: Duration = Duration::from_secs(300);
+const RUNNING_TIMEOUT: Duration = Duration::from_secs(9_000);
 const RECOVERY_BATCH: i32 = 100;
-const CHAT_FINALIZE_GRACE_SECONDS: f64 = 60.0;
+const CHAT_FINALIZE_GRACE: Duration = Duration::from_secs(60);
 const CHAT_FINALIZE_BATCH: i32 = 100;
-const OFFLINE_RUNTIME_TTL_SECONDS: f64 = 7.0 * 24.0 * 3600.0;
+const OFFLINE_RUNTIME_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const GC_BATCH: i32 = 100;
 const GC_BLOCKED_LIMIT: i32 = 1000;
 const GC_TICK_TIMEOUT: Duration = Duration::from_secs(15);
@@ -30,7 +33,20 @@ const GC_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
 pub const DEFAULT_SWEEP_INTERVAL: Duration = Duration::from_secs(30);
 pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 pub const DEFAULT_RECONNECT_GRACE: Duration = Duration::from_secs(3 * 60 * 60);
-pub const MINIMUM_RECONNECT_GRACE: Duration = Duration::from_secs(STALE_SECONDS as u64);
+pub const MINIMUM_RECONNECT_GRACE: Duration = STALE_THRESHOLD;
+
+pub trait Clock: Send + Sync {
+    fn now(&self) -> DateTime<Utc>;
+}
+
+#[derive(Default)]
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> DateTime<Utc> {
+        Utc::now()
+    }
+}
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RuntimeTaskSweepReport {
@@ -50,6 +66,7 @@ pub struct RuntimeTaskSweeper {
     bus: Arc<Bus>,
     metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     reconnect_grace: Duration,
+    clock: Arc<dyn Clock>,
 }
 
 impl RuntimeTaskSweeper {
@@ -68,11 +85,22 @@ impl RuntimeTaskSweeper {
             bus,
             metrics,
             reconnect_grace: reconnect_grace.max(MINIMUM_RECONNECT_GRACE),
+            clock: Arc::new(SystemClock),
         }
     }
 
+    pub fn with_clock(mut self, clock: Arc<dyn Clock>) -> Self {
+        self.clock = clock;
+        self
+    }
+
     pub async fn gc_once(&self) -> usize {
-        match tokio::time::timeout(GC_TICK_TIMEOUT, self.gc_with_budget()).await {
+        self.gc_once_at(self.clock.now()).await
+    }
+
+    async fn gc_once_at(&self, now: DateTime<Utc>) -> usize {
+        let stale_before = cutoff(now, OFFLINE_RUNTIME_TTL);
+        match tokio::time::timeout(GC_TICK_TIMEOUT, self.gc_with_budget(stale_before)).await {
             Ok(deleted) => deleted,
             Err(_) => {
                 tracing::info!("runtime GC: tick budget exhausted");
@@ -81,12 +109,12 @@ impl RuntimeTaskSweeper {
         }
     }
 
-    async fn gc_with_budget(&self) -> usize {
+    async fn gc_with_budget(&self, stale_before: DateTime<Utc>) -> usize {
         match tokio::time::timeout(
             GC_OPERATION_TIMEOUT,
             runtime::count_stale_offline_runtimes_blocked_by_tasks(
                 &self.pool,
-                OFFLINE_RUNTIME_TTL_SECONDS,
+                stale_before,
                 GC_BLOCKED_LIMIT,
             ),
         )
@@ -113,11 +141,7 @@ impl RuntimeTaskSweeper {
         }
         let candidates = match tokio::time::timeout(
             GC_OPERATION_TIMEOUT,
-            runtime::list_stale_offline_runtime_gc_candidates(
-                &self.pool,
-                OFFLINE_RUNTIME_TTL_SECONDS,
-                GC_BATCH,
-            ),
+            runtime::list_stale_offline_runtime_gc_candidates(&self.pool, stale_before, GC_BATCH),
         )
         .await
         {
@@ -140,7 +164,12 @@ impl RuntimeTaskSweeper {
         let mut deleted = 0;
         let mut workspaces = HashSet::new();
         for runtime_id in candidates {
-            match tokio::time::timeout(GC_OPERATION_TIMEOUT, self.gc_runtime(runtime_id)).await {
+            match tokio::time::timeout(
+                GC_OPERATION_TIMEOUT,
+                self.gc_runtime(runtime_id, stale_before),
+            )
+            .await
+            {
                 Ok(Ok(Some(workspace_id))) => {
                     deleted += 1;
                     workspaces.insert(workspace_id);
@@ -175,17 +204,17 @@ impl RuntimeTaskSweeper {
         deleted
     }
 
-    async fn gc_runtime(&self, runtime_id: uuid::Uuid) -> anyhow::Result<Option<uuid::Uuid>> {
+    async fn gc_runtime(
+        &self,
+        runtime_id: uuid::Uuid,
+        stale_before: DateTime<Utc>,
+    ) -> anyhow::Result<Option<uuid::Uuid>> {
         let mut tx = self.pool.begin().await?;
         let Some(agent_runtime) = runtime::lock_agent_runtime(&mut *tx, runtime_id).await? else {
             return Ok(None);
         };
-        let eligible = runtime::is_agent_runtime_eligible_for_gc(
-            &mut *tx,
-            runtime_id,
-            OFFLINE_RUNTIME_TTL_SECONDS,
-        )
-        .await?;
+        let eligible =
+            runtime::is_agent_runtime_eligible_for_gc(&mut *tx, runtime_id, stale_before).await?;
         if !matches!(eligible, Some(true)) {
             return Ok(None);
         }
@@ -221,11 +250,18 @@ impl RuntimeTaskSweeper {
     /// failure-isolated so a transient query error does not starve later repair
     /// stages on the same tick.
     pub async fn run_once(&self) -> RuntimeTaskSweepReport {
-        let mut report = RuntimeTaskSweepReport::default();
-        report.runtimes_offline = self.sweep_stale_runtimes().await;
+        self.run_once_at(self.clock.now()).await
+    }
 
-        let grace = self.reconnect_grace.as_secs_f64();
-        match runtime::fail_tasks_for_offline_runtimes(&self.pool, grace, OFFLINE_BATCH).await {
+    async fn run_once_at(&self, now: DateTime<Utc>) -> RuntimeTaskSweepReport {
+        let mut report = RuntimeTaskSweepReport::default();
+        let stale_before = cutoff(now, STALE_THRESHOLD);
+        report.runtimes_offline = self.sweep_stale_runtimes(stale_before).await;
+
+        let reconnect_before = cutoff(now, self.reconnect_grace);
+        match runtime::fail_tasks_for_offline_runtimes(&self.pool, reconnect_before, OFFLINE_BATCH)
+            .await
+        {
             Ok(failed) => {
                 report.tasks_failed += failed.len();
                 self.tasks.handle_failed_tasks(&failed).await;
@@ -234,8 +270,8 @@ impl RuntimeTaskSweeper {
         }
         match agent::fail_expired_runtime_reconnect_retries(
             &self.pool,
-            grace,
-            STALE_SECONDS,
+            reconnect_before,
+            stale_before,
             RECONNECT_BATCH,
         )
         .await
@@ -250,20 +286,25 @@ impl RuntimeTaskSweeper {
         }
         match agent::fail_stale_tasks(
             &self.pool,
-            DISPATCH_TIMEOUT_SECONDS,
-            STALE_SECONDS,
-            grace,
-            RUNNING_TIMEOUT_SECONDS,
+            cutoff(now, DISPATCH_TIMEOUT),
+            now,
+            stale_before,
+            reconnect_before,
+            cutoff(now, RUNNING_TIMEOUT),
+            STALE_TASK_BATCH,
         )
         .await
         {
             Ok(failed) => {
                 report.tasks_failed += failed.len();
+                self.tasks.capture_lease_expired_tasks(&failed).await;
                 self.tasks.handle_failed_tasks(&failed).await;
             }
             Err(error) => tracing::warn!(%error, "runtime sweeper: fail stale tasks failed"),
         }
-        match agent::expire_stale_queued_tasks(&self.pool, QUEUED_TTL_SECONDS, QUEUED_BATCH).await {
+        match agent::expire_stale_queued_tasks(&self.pool, cutoff(now, QUEUED_TTL), QUEUED_BATCH)
+            .await
+        {
             Ok(failed) => {
                 report.queued_expired = failed.len();
                 self.tasks.capture_queued_expired_tasks(&failed).await;
@@ -290,7 +331,7 @@ impl RuntimeTaskSweeper {
         }
         match agent::list_chat_finalize_deferred_expired(
             &self.pool,
-            CHAT_FINALIZE_GRACE_SECONDS,
+            cutoff(now, CHAT_FINALIZE_GRACE),
             CHAT_FINALIZE_BATCH,
         )
         .await
@@ -309,8 +350,9 @@ impl RuntimeTaskSweeper {
     }
 
     pub async fn run_full_once(&self) -> RuntimeTaskSweepReport {
-        let mut report = self.run_once().await;
-        report.runtimes_gc_deleted = self.gc_once().await;
+        let now = self.clock.now();
+        let mut report = self.run_once_at(now).await;
+        report.runtimes_gc_deleted = self.gc_once_at(now).await;
         report
     }
 
@@ -335,15 +377,20 @@ impl RuntimeTaskSweeper {
         }
     }
 
-    async fn sweep_stale_runtimes(&self) -> usize {
-        let candidates =
-            match runtime::select_stale_online_runtimes(&self.pool, STALE_SECONDS).await {
-                Ok(rows) => rows,
-                Err(error) => {
-                    tracing::warn!(%error, "runtime sweeper: list stale runtimes failed");
-                    return 0;
-                }
-            };
+    async fn sweep_stale_runtimes(&self, stale_before: DateTime<Utc>) -> usize {
+        let candidates = match runtime::select_stale_online_runtimes(
+            &self.pool,
+            stale_before,
+            STALE_RUNTIME_BATCH,
+        )
+        .await
+        {
+            Ok(rows) => rows,
+            Err(error) => {
+                tracing::warn!(%error, "runtime sweeper: list stale runtimes failed");
+                return 0;
+            }
+        };
         let ids = candidates
             .iter()
             .filter_map(|row| row.id)
@@ -360,16 +407,19 @@ impl RuntimeTaskSweeper {
         if to_offline.is_empty() {
             return 0;
         }
-        let rows =
-            match runtime::mark_runtimes_offline_by_i_ds(&self.pool, to_offline, STALE_SECONDS)
-                .await
-            {
-                Ok(rows) => rows,
-                Err(error) => {
-                    tracing::warn!(%error, "runtime sweeper: mark offline failed");
-                    return 0;
-                }
-            };
+        let rows = match runtime::mark_runtimes_offline_by_i_ds(
+            &self.pool,
+            to_offline,
+            stale_before,
+        )
+        .await
+        {
+            Ok(rows) => rows,
+            Err(error) => {
+                tracing::warn!(%error, "runtime sweeper: mark offline failed");
+                return 0;
+            }
+        };
         let mut workspaces = HashSet::new();
         for row in &rows {
             if let Some(id) = row.id {
@@ -390,6 +440,10 @@ impl RuntimeTaskSweeper {
         }
         rows.len()
     }
+}
+
+fn cutoff(now: DateTime<Utc>, age: Duration) -> DateTime<Utc> {
+    now - chrono::Duration::from_std(age).expect("runtime sweep duration fits chrono")
 }
 
 pub struct RuntimeSweeperRuntime {
@@ -429,4 +483,53 @@ pub enum RuntimeSweeperShutdownOutcome {
     Stopped,
     Panicked,
     TimedOut,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FixedClock(DateTime<Utc>);
+
+    impl Clock for FixedClock {
+        fn now(&self) -> DateTime<Utc> {
+            self.0
+        }
+    }
+
+    #[test]
+    fn production_bounds_match_the_go_sweeper_contract() {
+        assert_eq!(STALE_THRESHOLD, Duration::from_secs(150));
+        assert_eq!(STALE_RUNTIME_BATCH, 500);
+        assert_eq!(OFFLINE_BATCH, 500);
+        assert_eq!(RECONNECT_BATCH, 500);
+        assert_eq!(STALE_TASK_BATCH, 500);
+        assert_eq!(QUEUED_BATCH, 500);
+        assert_eq!(RECOVERY_BATCH, 100);
+        assert_eq!(CHAT_FINALIZE_BATCH, 100);
+        assert_eq!(GC_BATCH, 100);
+        assert_eq!(GC_BLOCKED_LIMIT, 1_000);
+    }
+
+    #[test]
+    fn one_injected_clock_snapshot_derives_all_cutoffs() {
+        let now = DateTime::parse_from_rfc3339("2026-08-24T04:30:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let clock: Arc<dyn Clock> = Arc::new(FixedClock(now));
+
+        assert_eq!(clock.now(), now);
+        assert_eq!(
+            cutoff(now, STALE_THRESHOLD),
+            DateTime::parse_from_rfc3339("2026-08-24T04:27:30Z")
+                .unwrap()
+                .with_timezone(&Utc)
+        );
+        assert_eq!(
+            cutoff(now, DEFAULT_RECONNECT_GRACE),
+            DateTime::parse_from_rfc3339("2026-08-24T01:30:00Z")
+                .unwrap()
+                .with_timezone(&Utc)
+        );
+    }
 }

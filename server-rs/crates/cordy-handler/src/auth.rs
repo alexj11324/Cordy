@@ -514,6 +514,19 @@ async fn complete_login(
             response.headers_mut().append(header::SET_COOKIE, value);
         }
     }
+    if let Some(signer) = state.attachment_download.cloudfront_signer.as_ref() {
+        match signer.signed_cookie_headers(crate::cloudfront::cloudfront_cookie_expiry(Utc::now()))
+        {
+            Ok(cookies) => {
+                for cookie in cookies {
+                    if let Ok(value) = HeaderValue::from_str(&cookie) {
+                        response.headers_mut().append(header::SET_COOKIE, value);
+                    }
+                }
+            }
+            Err(error) => tracing::warn!(%error, "auth: failed to sign CloudFront cookies"),
+        }
+    }
     response
 }
 
