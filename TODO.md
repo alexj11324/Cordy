@@ -61,18 +61,19 @@
       compile, test, security, or lifecycle failure. Lock released.
 - [x] #89 merged with GraphQL expected head `2b7d31e5`; merge `ef7e3ba9`, parents
       `8b44b1ef + 2b7d31e5`, tree `83c10acd`; integration ref verified.
-- [ ] #113 restacked non-rewriting in clean `/home/ubuntu/Cordy/.worktrees/cord-113-restack`:
+- [x] #113 restacked non-rewriting in clean `/home/ubuntu/Cordy/.worktrees/cord-113-restack`:
       head `709838df71c1f6ba05651722b12c1367543c7671`, tree
       `076a681b57b79d0a7e37da9bf9f85299a9ec6677`, parents `fb806b0f + ef7e3ba9`,
       PR base now `2b7d31e5`, candidate `3dcffd6c169ad2772935955b868339fe1cf36de6`,
       Ready/CLEAN, exact-head review requested at `5395491572`.
-- [ ] #113 review found one P1 in task-context attachment upload; fixed and pushed as
+- [x] #113 review found one P1 in task-context attachment upload; fixed and pushed as
       `170d7c21ec0a543fa3bb36793f2e661d2f92b58c` (parent `709838df`), then corrected
       the required Rustfmt-only test layout in `ad36bc3a2ef53840ce2043ffc40cfde0145cc077`:
       `run_attachment_upload` now enforces workdir containment before reading the file,
       with regression coverage for an outside absolute path. New candidate is
       `46b5390d171bad90aad5b8ec34461d164b2c6077`; exact-head review requested once at
-      comment `5395709568`; gate remains pending review. Previous review/gate is stale.
+      comment `5395709568`; subsequent compile-fix heads superseded this candidate.
+      Previous review/gate is stale.
 - [x] #113 local exact-head self-review of `ad36bc3a` completed: task attachment path
       is checked before `fs::read`, outside absolute and traversal paths are rejected,
       and no new P0/P1 was found. GitHub review remains advisory/delayed; the serial
@@ -110,6 +111,11 @@
       outside-path regression, ACP callback mutability, Kimi reader reborrow, and
       Qoder type inference as behavior-preserving; no files, Cargo, or remote refs
       were changed by the subagent. External GitHub review remains advisory/delayed.
+- [x] #113 merged with GraphQL expected head `0415dd6a2fd62ae6521b7a5fe2a132e7a8ddefbf`.
+      Merge `4576ca30cfe9cedeb0ad4ca2ad4edaf90424da59`, parents
+      `2b7d31e5f20d08c90f22c99c19ff6a0b04637a39 + 0415dd6a2fd62ae6521b7a5fe2a132e7a8ddefbf`,
+      tree `5a5b238af7828bddb3b2828aae7fc221978d4067`; remote
+      `codex/cord-20-daemon-control` ref verified at the merge.
 - [ ] #113 original worktree
       `.worktrees/cord-22-daemon-production-assembly` has unrelated uncommitted CLI
       edits and must not be reset or used for the gate. Restacked tree has passed
