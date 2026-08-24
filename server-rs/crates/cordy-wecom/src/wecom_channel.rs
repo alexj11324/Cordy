@@ -245,10 +245,11 @@ impl Channel for WecomChannel {
                     )
                     .await
                     {
-                        // Wake the read loop if it is parked in a read; a
-                        // cancelled token alone will not move it. A read loop
-                        // parked on the queue send is woken by the dropped
-                        // receiver instead.
+                        // Wake a transport read immediately; the read loop's
+                        // cancellation branch handles lease loss/shutdown,
+                        // while close also surfaces this worker failure. A
+                        // read loop parked on the queue send is woken by the
+                        // dropped receiver instead.
                         *w_err.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
                         let _ = tokio::time::timeout(WRITE_DEADLINE, w_conn.close()).await;
                         break;
@@ -266,10 +267,12 @@ impl Channel for WecomChannel {
             }
             // Armed immediately before the read, and nowhere else: the idle
             // window should measure idleness.
-            match conn
-                .read_message(Some(Instant::now() + READ_DEADLINE))
-                .await
-            {
+            let read = tokio::select! {
+                biased;
+                _ = ctx.cancelled() => break Ok(()),
+                result = conn.read_message(Some(Instant::now() + READ_DEADLINE)) => result,
+            };
+            match read {
                 Err(e) => {
                     // The shutdown path closes the socket under us; that is an
                     // ordinary stop, not a failure to report.
@@ -441,7 +444,12 @@ async fn subscribe(
         if ctx.is_cancelled() {
             anyhow::bail!("wecom: context cancelled during subscribe");
         }
-        let payload = match conn.read_message(Some(deadline)).await {
+        let read = tokio::select! {
+            biased;
+            _ = ctx.cancelled() => anyhow::bail!("wecom: context cancelled during subscribe"),
+            result = conn.read_message(Some(deadline)) => result,
+        };
+        let payload = match read {
             Ok(p) => p,
             // The socket died, the ack never arrived inside the timeout, or
             // our own token was cancelled mid-read. Infrastructure or a
@@ -810,6 +818,76 @@ mod tests {
         }
     }
 
+    struct ParkedConn {
+        req_id: StdMutex<String>,
+        reads: std::sync::atomic::AtomicUsize,
+        parked: tokio::sync::Notify,
+        closed: std::sync::atomic::AtomicBool,
+    }
+
+    #[async_trait]
+    impl WsConn for ParkedConn {
+        async fn read_message(&self, _d: Option<Instant>) -> anyhow::Result<Vec<u8>> {
+            if self.reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                return Ok(serde_json::to_vec(&json!({
+                    "headers": {
+                        "req_id": self.req_id.lock().unwrap_or_else(|e| e.into_inner()).clone()
+                    },
+                    "errcode": 0,
+                }))?);
+            }
+            self.parked.notify_one();
+            std::future::pending().await
+        }
+
+        async fn write_message(&self, data: String, _d: Option<Instant>) -> anyhow::Result<()> {
+            let frame: Value = serde_json::from_str(&data)?;
+            *self.req_id.lock().unwrap_or_else(|e| e.into_inner()) = frame["headers"]["req_id"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+            Ok(())
+        }
+
+        async fn close(&self) {
+            self.closed.store(true, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    struct ParkedDialer(Arc<ParkedConn>);
+
+    #[async_trait]
+    impl Dialer for ParkedDialer {
+        async fn dial(
+            &self,
+            _ctx: &CancellationToken,
+            _url: &str,
+        ) -> anyhow::Result<Box<dyn WsConn>> {
+            Ok(Box::new(ParkedHandle(self.0.clone())))
+        }
+    }
+
+    struct ParkedHandle(Arc<ParkedConn>);
+
+    #[async_trait]
+    impl WsConn for ParkedHandle {
+        async fn read_message(&self, deadline: Option<Instant>) -> anyhow::Result<Vec<u8>> {
+            self.0.read_message(deadline).await
+        }
+
+        async fn write_message(
+            &self,
+            data: String,
+            deadline: Option<Instant>,
+        ) -> anyhow::Result<()> {
+            self.0.write_message(data, deadline).await
+        }
+
+        async fn close(&self) {
+            self.0.close().await;
+        }
+    }
+
     fn test_channel(dialer: Arc<dyn Dialer>, handler: InboundHandler) -> WecomChannel {
         WecomChannel {
             installation_id: Uuid::now_v7(),
@@ -863,6 +941,36 @@ mod tests {
         let writes = conn.writes();
         assert_eq!(writes[0]["cmd"], json!("aibot_subscribe"));
         assert_eq!(writes[0]["body"]["bot_id"], json!("bot-1"));
+    }
+
+    #[tokio::test]
+    async fn cancellation_drops_a_parked_transport_read() {
+        let conn = Arc::new(ParkedConn {
+            req_id: StdMutex::new(String::new()),
+            reads: std::sync::atomic::AtomicUsize::new(0),
+            parked: tokio::sync::Notify::new(),
+            closed: std::sync::atomic::AtomicBool::new(false),
+        });
+        let handler = InboundHandler::new(|_ctx, _msg| Box::pin(async { Ok(()) }));
+        let channel = test_channel(Arc::new(ParkedDialer(conn.clone())), handler);
+        let ctx = CancellationToken::new();
+        let run_ctx = ctx.clone();
+        let run = tokio::spawn(async move { channel.connect(run_ctx).await });
+
+        tokio::time::timeout(Duration::from_secs(1), conn.parked.notified())
+            .await
+            .expect("connection must reach its post-subscribe read");
+        ctx.cancel();
+        let result = tokio::time::timeout(Duration::from_secs(1), run)
+            .await
+            .expect("cancelled connection must not wait for the 90-second read deadline")
+            .expect("connection task must not panic");
+
+        assert!(
+            result.is_ok(),
+            "cancellation must be a clean stop: {result:?}"
+        );
+        assert!(conn.closed.load(std::sync::atomic::Ordering::SeqCst));
     }
 
     #[tokio::test]
