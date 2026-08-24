@@ -32,3 +32,4 @@ pub use channel_media::ChannelMediaReconcilerMetrics;
 pub use config::{is_loopback_addr, Config};
 pub use http::HttpMetrics;
 pub use registry::{Registry, RegistryOptions};
+pub use wecom::WecomMetrics;

@@ -86,6 +86,8 @@ impl Default for WecomMetrics {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
 
     #[test]
@@ -100,5 +102,50 @@ mod tests {
         assert_eq!(m.auth_failures.get(), 1.0);
         assert_eq!(m.callbacks_queued.get(), 1.0);
         assert_eq!(m.callback_queue_blocked.get(), 1.0);
+    }
+
+    #[test]
+    fn collectors_have_fixed_zero_label_cardinality() {
+        let metrics = WecomMetrics::new();
+        let families = metrics
+            .collectors()
+            .into_iter()
+            .flat_map(|collector| collector.collect())
+            .collect::<Vec<_>>();
+
+        assert_eq!(families.len(), 4);
+        assert!(families.iter().all(|family| family
+            .get_metric()
+            .iter()
+            .all(|metric| metric.get_label().is_empty())));
+    }
+
+    #[test]
+    fn production_registry_registers_every_wecom_counter_once() {
+        let registry = crate::Registry::new(crate::RegistryOptions {
+            pool: None,
+            realtime: None,
+            version: "test".to_string(),
+            commit: "test".to_string(),
+            sampler: None,
+        });
+        registry.wecom.record_connect_failure();
+
+        let names = registry
+            .gatherer
+            .gather()
+            .into_iter()
+            .map(|family| family.name().to_string())
+            .filter(|name| name.starts_with("cordy_wecom_"))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            names,
+            BTreeSet::from([
+                "cordy_wecom_auth_failures_total".to_string(),
+                "cordy_wecom_connect_failures_total".to_string(),
+                "cordy_wecom_inbound_callbacks_total".to_string(),
+                "cordy_wecom_inbound_queue_blocked_total".to_string(),
+            ])
+        );
     }
 }
