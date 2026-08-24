@@ -152,6 +152,8 @@ enum IssueCommand {
     Rerun(IssueRerunArgs),
     #[command(about = "Search issues by title, description, or comments")]
     Search(IssueSearchArgs),
+    #[command(about = "Work with issue subscribers")]
+    Subscriber(IssueSubscriberArgs),
 }
 
 #[derive(Debug, Args)]
@@ -457,6 +459,42 @@ struct IssueSearchArgs {
     #[arg(long, help = "Include done and cancelled issues")]
     include_closed: bool,
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssueSubscriberArgs {
+    #[command(subcommand)]
+    command: IssueSubscriberCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum IssueSubscriberCommand {
+    #[command(about = "List subscribers of an issue")]
+    List {
+        #[arg(value_name = "ISSUE-ID")]
+        issue_id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
+    #[command(about = "Subscribe a user or agent to an issue (defaults to the caller)")]
+    Add(IssueSubscriberMutationArgs),
+    #[command(about = "Unsubscribe a user or agent from an issue (defaults to the caller)")]
+    Remove(IssueSubscriberMutationArgs),
+}
+
+#[derive(Debug, Args)]
+struct IssueSubscriberMutationArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(
+        long,
+        help = "Member or agent name (fuzzy match; defaults to the caller)"
+    )]
+    user: Option<String>,
+    #[arg(long, help = "Member or agent UUID (mutually exclusive with --user)")]
+    user_id: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
 }
 
@@ -874,6 +912,24 @@ async fn run_with_input<R: Read>(
         Command::Issue(IssueArgs {
             command: IssueCommand::Search(args),
         }) => run_issue_search(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Subscriber(IssueSubscriberArgs {
+                    command: IssueSubscriberCommand::List { issue_id, output },
+                }),
+        }) => run_issue_subscriber_list(cli, environment, issue_id, *output).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Subscriber(IssueSubscriberArgs {
+                    command: IssueSubscriberCommand::Add(args),
+                }),
+        }) => run_issue_subscriber_mutation(cli, environment, args, true).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Subscriber(IssueSubscriberArgs {
+                    command: IssueSubscriberCommand::Remove(args),
+                }),
+        }) => run_issue_subscriber_mutation(cli, environment, args, false).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -1637,6 +1693,7 @@ struct ResolvedIssueAssignee {
 async fn fetch_issue_actors(
     client: &ApiClient,
     workspace_id: &str,
+    include_squads: bool,
 ) -> [Result<Vec<IssueActor>>; 3] {
     let members =
         retry_actor_get::<Vec<Value>>(client, &format!("/api/workspaces/{workspace_id}/members"))
@@ -1673,20 +1730,24 @@ async fn fetch_issue_actors(
             })
             .collect()
     });
-    let squads = retry_actor_get::<Vec<Value>>(client, "/api/squads")
-        .await
-        .map(|items| {
-            items
-                .iter()
-                .map(|item| IssueActor {
-                    actor_type: "squad",
-                    id: value_string(item, "id"),
-                    name: value_string(item, "name"),
-                    email: String::new(),
-                    archived: !value_string(item, "archived_at").is_empty(),
-                })
-                .collect()
-        });
+    let squads = if include_squads {
+        retry_actor_get::<Vec<Value>>(client, "/api/squads")
+            .await
+            .map(|items| {
+                items
+                    .iter()
+                    .map(|item| IssueActor {
+                        actor_type: "squad",
+                        id: value_string(item, "id"),
+                        name: value_string(item, "name"),
+                        email: String::new(),
+                        archived: !value_string(item, "archived_at").is_empty(),
+                    })
+                    .collect()
+            })
+    } else {
+        Ok(Vec::new())
+    };
     [members, agents, squads]
 }
 
@@ -1711,12 +1772,42 @@ async fn resolve_issue_assignee_id(
     workspace_id: &str,
     raw: &str,
 ) -> Result<ResolvedIssueAssignee> {
+    resolve_actor_id(client, workspace_id, raw, true).await
+}
+
+async fn resolve_subscriber_id(
+    client: &ApiClient,
+    workspace_id: &str,
+    raw: &str,
+) -> Result<ResolvedIssueAssignee> {
+    resolve_actor_id(client, workspace_id, raw, false).await
+}
+
+async fn resolve_actor_id(
+    client: &ApiClient,
+    workspace_id: &str,
+    raw: &str,
+    allow_squads: bool,
+) -> Result<ResolvedIssueAssignee> {
     let input = raw.trim();
     if !is_canonical_uuid(input) {
         bail!("expected a canonical UUID, got {raw:?}");
     }
-    let actors = fetch_issue_actors(client, workspace_id).await;
-    if actors.iter().all(Result::is_err) {
+    let actors = fetch_issue_actors(client, workspace_id, allow_squads).await;
+    let actor_kind_count = if allow_squads { 3 } else { 2 };
+    if actors[..actor_kind_count].iter().all(Result::is_err) {
+        let errors = actors[..actor_kind_count]
+            .iter()
+            .enumerate()
+            .map(|(index, result)| {
+                let kind = ["members", "agents", "squads"][index];
+                format!("fetch {kind}: {}", result.as_ref().unwrap_err())
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        if !allow_squads {
+            bail!("failed to resolve user: {errors}");
+        }
         bail!(
             "failed to resolve assignee: {}; {}; {}",
             actors[0].as_ref().unwrap_err(),
@@ -1728,7 +1819,9 @@ async fn resolve_issue_assignee_id(
         .iter()
         .filter_map(|result| result.as_ref().ok())
         .flatten()
-        .find(|actor| actor.id.eq_ignore_ascii_case(input))
+        .find(|actor| {
+            (allow_squads || actor.actor_type != "squad") && actor.id.eq_ignore_ascii_case(input)
+        })
     {
         return Ok(ResolvedIssueAssignee {
             actor_type: actor.actor_type.into(),
@@ -1736,7 +1829,10 @@ async fn resolve_issue_assignee_id(
             name: actor.name.clone(),
         });
     }
-    bail!("no member, agent, or squad found with ID {input:?}")
+    if allow_squads {
+        bail!("no member, agent, or squad found with ID {input:?}")
+    }
+    bail!("no member or agent found with ID {input:?}")
 }
 
 async fn resolve_issue_assignee_name(
@@ -1744,13 +1840,34 @@ async fn resolve_issue_assignee_name(
     workspace_id: &str,
     raw: &str,
 ) -> Result<ResolvedIssueAssignee> {
+    resolve_actor_name(client, workspace_id, raw, true).await
+}
+
+async fn resolve_subscriber_name(
+    client: &ApiClient,
+    workspace_id: &str,
+    raw: &str,
+) -> Result<ResolvedIssueAssignee> {
+    resolve_actor_name(client, workspace_id, raw, false).await
+}
+
+async fn resolve_actor_name(
+    client: &ApiClient,
+    workspace_id: &str,
+    raw: &str,
+    allow_squads: bool,
+) -> Result<ResolvedIssueAssignee> {
     let input = normalize_assignee_input(raw);
     if input.is_empty() {
-        bail!("no member, agent, or squad found matching {raw:?}");
+        if allow_squads {
+            bail!("no member, agent, or squad found matching {raw:?}");
+        }
+        bail!("no member or agent found matching {raw:?}");
     }
-    let actors = fetch_issue_actors(client, workspace_id).await;
-    if actors.iter().all(Result::is_err) {
-        let errors = actors
+    let actors = fetch_issue_actors(client, workspace_id, allow_squads).await;
+    let actor_kind_count = if allow_squads { 3 } else { 2 };
+    if actors[..actor_kind_count].iter().all(Result::is_err) {
+        let errors = actors[..actor_kind_count]
             .iter()
             .enumerate()
             .map(|(index, result)| {
@@ -1759,13 +1876,16 @@ async fn resolve_issue_assignee_name(
             })
             .collect::<Vec<_>>()
             .join("; ");
+        if !allow_squads {
+            bail!("failed to resolve user: {errors}");
+        }
         bail!("failed to resolve assignee: {errors}");
     }
     let actors = actors
         .iter()
         .filter_map(|result| result.as_ref().ok())
         .flatten()
-        .filter(|actor| !actor.archived)
+        .filter(|actor| !actor.archived && (allow_squads || actor.actor_type != "squad"))
         .collect::<Vec<_>>();
     let mut buckets = [Vec::new(), Vec::new(), Vec::new()];
     for actor in actors {
@@ -1812,7 +1932,10 @@ async fn resolve_issue_assignee_name(
             }
         }
     }
-    bail!("no member, agent, or squad found matching {input:?}")
+    if allow_squads {
+        bail!("no member, agent, or squad found matching {input:?}")
+    }
+    bail!("no member or agent found matching {input:?}")
 }
 
 fn normalize_assignee_input(raw: &str) -> String {
@@ -3610,6 +3733,133 @@ fn format_issue_search_table(issues: &[Value]) -> String {
         ]);
     }
     format_table(&rows)
+}
+
+async fn run_issue_subscriber_list(
+    cli: &Cli,
+    environment: &Environment,
+    issue_ref: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, issue_ref)
+        .await
+        .context("resolve issue")?;
+    let subscribers: Vec<Value> = client
+        .get_json(&format!("/api/issues/{issue_id}/subscribers"))
+        .await
+        .context("list subscribers")?;
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&subscribers)?),
+        OutputFormat::Table => {
+            let workspace_id = resolve_current_workspace_id(cli, environment);
+            let synthetic = subscribers
+                .iter()
+                .map(|subscriber| {
+                    serde_json::json!({
+                        "assignee_type": subscriber.get("user_type").cloned().unwrap_or(Value::Null),
+                        "assignee_id": subscriber.get("user_id").cloned().unwrap_or(Value::Null),
+                    })
+                })
+                .collect::<Vec<_>>();
+            let actors = load_issue_actor_names(&client, &workspace_id, &synthetic).await;
+            format_issue_subscribers_table(&subscribers, &actors)
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn format_issue_subscribers_table(subscribers: &[Value], actors: &IssueActorNames) -> String {
+    let mut rows = vec![vec!["USER".into(), "REASON".into(), "CREATED".into()]];
+    for subscriber in subscribers {
+        let actor_type = value_string(subscriber, "user_type");
+        let actor_id = value_string(subscriber, "user_id");
+        let actor_key = format!("{actor_type}:{actor_id}");
+        let actor = actors
+            .0
+            .get(&actor_key)
+            .map_or(actor_key, |name| format!("{actor_type}:{name}"));
+        rows.push(vec![
+            actor,
+            value_string(subscriber, "reason"),
+            value_string(subscriber, "created_at")
+                .chars()
+                .take(16)
+                .collect(),
+        ]);
+    }
+    format_table(&rows)
+}
+
+async fn run_issue_subscriber_mutation(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueSubscriberMutationArgs,
+    subscribe: bool,
+) -> Result<RunOutput> {
+    if args.user.is_some() && args.user_id.is_some() {
+        bail!("--user and --user-id are mutually exclusive");
+    }
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let resolved = if let Some(user_id) = &args.user_id {
+        Some(
+            resolve_subscriber_id(&client, &workspace_id, user_id)
+                .await
+                .context("resolve user")?,
+        )
+    } else if let Some(user) = &args.user {
+        Some(
+            resolve_subscriber_name(&client, &workspace_id, user)
+                .await
+                .context("resolve user")?,
+        )
+    } else {
+        None
+    };
+    let mut body = serde_json::Map::new();
+    if let Some(actor) = &resolved {
+        body.insert("user_type".into(), Value::String(actor.actor_type.clone()));
+        body.insert("user_id".into(), Value::String(actor.id.clone()));
+    }
+    let action = if subscribe {
+        "subscribe"
+    } else {
+        "unsubscribe"
+    };
+    let result: Value = client
+        .post_json(&format!("/api/issues/{issue_id}/{action}"), &body)
+        .await
+        .with_context(|| format!("{action} issue"))?;
+    let target = if let Some(user) = args.user.as_deref() {
+        user.into()
+    } else if let Some(actor) = resolved {
+        if actor.name.is_empty() {
+            format!("{}:{}", actor.actor_type, actor.id)
+        } else {
+            format!("{}:{}", actor.actor_type, actor.name)
+        }
+    } else {
+        "caller".into()
+    };
+    let verb = if subscribe {
+        "Subscribed"
+    } else {
+        "Unsubscribed"
+    };
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+            OutputFormat::Table => String::new(),
+        },
+        stderr: format!("{verb} {target} to issue {}.\n", args.issue_id),
+    })
 }
 
 fn validate_issue_status(status: &str) -> Result<()> {
@@ -7581,6 +7831,191 @@ mod tests {
         let result: Value = serde_json::from_str(&output.stdout).expect("search JSON");
         assert_eq!(result["total"], 1);
         assert_eq!(result["issues"][0]["identifier"], "CORD-18");
+        task.abort();
+    }
+
+    #[test]
+    fn issue_subscriber_parser_and_table_match_go_contract() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "subscriber",
+            "add",
+            "CORD-18",
+            "--user-id",
+            "11111111-1111-1111-1111-111111111111",
+            "--output",
+            "table",
+        ])
+        .expect("subscriber add CLI");
+        let Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Subscriber(IssueSubscriberArgs {
+                    command: IssueSubscriberCommand::Add(args),
+                }),
+        }) = &cli.command
+        else {
+            panic!("expected subscriber add");
+        };
+        assert_eq!(args.issue_id, "CORD-18");
+        assert_eq!(
+            args.user_id.as_deref(),
+            Some("11111111-1111-1111-1111-111111111111")
+        );
+        assert_eq!(args.output, OutputFormat::Table);
+
+        let subscribers = [serde_json::json!({
+            "user_type":"member","user_id":"member-1","reason":"manual",
+            "created_at":"2026-08-24T12:34:56Z"
+        })];
+        let actors = IssueActorNames(HashMap::from([("member:member-1".into(), "Ada".into())]));
+        let table = format_issue_subscribers_table(&subscribers, &actors);
+        assert!(table.starts_with("USER"));
+        assert!(table.contains("member:Ada"));
+        assert!(table.contains("manual"));
+        assert!(table.contains("2026-08-24T12:34"));
+    }
+
+    #[tokio::test]
+    async fn issue_subscriber_list_resolves_issue_and_preserves_json() {
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid/subscribers",
+                get(|| async {
+                    Json(vec![serde_json::json!({
+                        "user_type":"agent","user_id":"agent-1","reason":"mentioned",
+                        "created_at":"2026-08-24T12:34:56Z"
+                    })])
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "subscriber",
+            "list",
+            "CORD-18",
+            "--output",
+            "json",
+        ])
+        .expect("subscriber list CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list subscribers");
+        let subscribers: Value = serde_json::from_str(&output.stdout).expect("subscribers JSON");
+        assert_eq!(subscribers[0]["user_id"], "agent-1");
+        assert!(output.stderr.is_empty());
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn issue_subscriber_mutation_defaults_to_caller_and_resolves_members_only() {
+        let bodies = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let subscribe_bodies = Arc::clone(&bodies);
+        let unsubscribe_bodies = Arc::clone(&bodies);
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid/subscribe",
+                post(move |Json(body): Json<Value>| {
+                    let bodies = Arc::clone(&subscribe_bodies);
+                    async move {
+                        bodies.lock().expect("bodies").push(body);
+                        Json(serde_json::json!({"subscribed":true}))
+                    }
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid/unsubscribe",
+                post(move |Json(body): Json<Value>| {
+                    let bodies = Arc::clone(&unsubscribe_bodies);
+                    async move {
+                        bodies.lock().expect("bodies").push(body);
+                        Json(serde_json::json!({"subscribed":false}))
+                    }
+                }),
+            )
+            .route(
+                "/api/workspaces/workspace-1/members",
+                get(|| async {
+                    Json(vec![serde_json::json!({
+                        "user_id":"11111111-1111-1111-1111-111111111111","name":"Ada",
+                        "email":"ada@example.com"
+                    })])
+                }),
+            )
+            .route("/api/agents", get(|| async { Json(Vec::<Value>::new()) }));
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let caller = Cli::try_parse_from(["cordy", "issue", "subscriber", "add", "CORD-18"])
+            .expect("subscriber caller CLI");
+        let caller_output =
+            run_with_input(&caller, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .await
+                .expect("subscribe caller");
+        assert_eq!(
+            caller_output.stderr,
+            "Subscribed caller to issue CORD-18.\n"
+        );
+
+        let member = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "subscriber",
+            "remove",
+            "CORD-18",
+            "--user-id",
+            "11111111-1111-1111-1111-111111111111",
+            "--output",
+            "table",
+        ])
+        .expect("subscriber member CLI");
+        let member_output =
+            run_with_input(&member, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .await
+                .expect("unsubscribe member");
+        assert!(member_output.stdout.is_empty());
+        assert_eq!(
+            member_output.stderr,
+            "Unsubscribed member:Ada to issue CORD-18.\n"
+        );
+        assert_eq!(
+            *bodies.lock().expect("bodies"),
+            vec![
+                serde_json::json!({}),
+                serde_json::json!({
+                    "user_type":"member",
+                    "user_id":"11111111-1111-1111-1111-111111111111"
+                })
+            ]
+        );
         task.abort();
     }
 
