@@ -129,6 +129,18 @@ enum DaemonCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
+    #[command(about = "Show daemon logs")]
+    Logs {
+        #[arg(short = 'f', long, help = "Follow log output")]
+        follow: bool,
+        #[arg(
+            short = 'n',
+            long,
+            default_value_t = 50,
+            help = "Number of lines to show"
+        )]
+        lines: i64,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -2906,6 +2918,9 @@ async fn run_with_input<R: Read>(
         Command::Daemon(DaemonArgs {
             command: DaemonCommand::Status { output },
         }) => run_daemon_status(cli, environment, *output).await,
+        Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Logs { follow, lines },
+        }) => run_daemon_logs(cli, environment, *lines, *follow),
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -5349,6 +5364,90 @@ async fn run_squad_activity(
 }
 
 const DEFAULT_DAEMON_HEALTH_PORT: u32 = 19_514;
+
+fn run_daemon_logs(
+    cli: &Cli,
+    environment: &Environment,
+    lines: i64,
+    follow: bool,
+) -> Result<RunOutput> {
+    run_daemon_logs_with(
+        cli,
+        environment,
+        lines,
+        follow,
+        |message| eprint!("{message}"),
+        tail_daemon_log,
+    )
+}
+
+fn run_daemon_logs_with<E, T>(
+    cli: &Cli,
+    environment: &Environment,
+    lines: i64,
+    follow: bool,
+    mut emit_stderr: E,
+    mut tail: T,
+) -> Result<RunOutput>
+where
+    E: FnMut(&str),
+    T: FnMut(&Path, i64, bool) -> Result<()>,
+{
+    require_human_local_command(environment, "daemon logs")?;
+    let profile = cli.profile.as_str();
+    if !profile.is_empty() && !daemon_profile_dir(environment, profile)?.is_dir() {
+        let known = known_daemon_profiles(environment)?;
+        bail!(unknown_daemon_profile_message(profile, &known))
+    }
+    let log_path = daemon_profile_dir(environment, profile)?.join("daemon.log");
+    if !log_path.is_absolute() {
+        bail!(
+            "cannot resolve the state directory for profile {:?}",
+            daemon_profile_label(profile)
+        )
+    }
+    if matches!(fs::metadata(&log_path), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+    {
+        bail!(
+            "no log file found at {}\nThe daemon may not have been started in background mode",
+            log_path.display()
+        )
+    }
+    emit_stderr(&format!(
+        "Reading {} (profile: {})\n",
+        log_path.display(),
+        daemon_profile_label(profile)
+    ));
+    tail(&log_path, lines, follow)?;
+    Ok(RunOutput {
+        stdout: String::new(),
+        stderr: String::new(),
+    })
+}
+
+fn daemon_profile_label(profile: &str) -> &str {
+    if profile.is_empty() {
+        "default"
+    } else {
+        profile
+    }
+}
+
+fn tail_daemon_log(path: &Path, lines: i64, follow: bool) -> Result<()> {
+    let mut command = std::process::Command::new("tail");
+    command.arg("-n").arg(lines.to_string());
+    if follow {
+        command.arg("-F");
+    }
+    let status = command.arg(path).status().context("run tail")?;
+    if status.success() {
+        return Ok(());
+    }
+    if let Some(code) = status.code() {
+        bail!("exit status {code}")
+    }
+    bail!("tail terminated by signal")
+}
 
 async fn run_daemon_status(
     cli: &Cli,
@@ -14739,6 +14838,27 @@ mod tests {
             daemon_status_health_port("ab", &environment).expect("profile port"),
             19_514 + 1 + u32::from(b'a') + u32::from(b'b')
         );
+
+        let logs = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            "dev",
+            "daemon",
+            "logs",
+            "-f",
+            "-n",
+            "12",
+        ])
+        .expect("daemon logs CLI");
+        assert!(matches!(
+            logs.command,
+            Command::Daemon(DaemonArgs {
+                command: DaemonCommand::Logs {
+                    follow: true,
+                    lines: 12
+                }
+            })
+        ));
     }
 
     #[tokio::test]
@@ -14878,6 +14998,77 @@ mod tests {
             daemon_profile_conflict(&unreadable, "", 19_514),
             Some(DaemonProfileConflict::Unreadable { .. })
         ));
+    }
+
+    #[test]
+    fn daemon_logs_resolves_profile_and_injects_rotation_safe_tail() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let profile_dir = home.path().join(".cordy/profiles/dev");
+        fs::create_dir_all(&profile_dir).expect("profile directory");
+        fs::write(profile_dir.join("daemon.log"), "line one\nline two\n").expect("daemon log");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            "dev",
+            "daemon",
+            "logs",
+            "--follow",
+            "--lines",
+            "12",
+        ])
+        .expect("daemon logs CLI");
+        let mut emitted = String::new();
+        let mut invocation = None;
+
+        let output = run_daemon_logs_with(
+            &cli,
+            &environment,
+            12,
+            true,
+            |message| emitted.push_str(message),
+            |path, lines, follow| {
+                invocation = Some((path.to_path_buf(), lines, follow));
+                Ok(())
+            },
+        )
+        .expect("run daemon logs");
+        assert!(output.stdout.is_empty());
+        assert!(output.stderr.is_empty());
+        assert_eq!(
+            emitted,
+            format!(
+                "Reading {} (profile: dev)\n",
+                profile_dir.join("daemon.log").display()
+            )
+        );
+        assert_eq!(invocation, Some((profile_dir.join("daemon.log"), 12, true)));
+    }
+
+    #[test]
+    fn daemon_logs_guards_task_context_and_missing_files() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from(["cordy", "daemon", "logs"]).expect("daemon logs CLI");
+        let error = run_daemon_logs_with(&cli, &environment, 50, false, |_| {}, |_, _, _| Ok(()))
+            .expect_err("missing log rejected");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "no log file found at {}\nThe daemon may not have been started in background mode",
+                home.path().join(".cordy/daemon.log").display()
+            )
+        );
+
+        environment.set("CORDY_TASK_ID", "task-1");
+        let error = run_daemon_logs_with(&cli, &environment, 50, false, |_| {}, |_, _, _| Ok(()))
+            .expect_err("task log access rejected");
+        assert_eq!(
+            error.to_string(),
+            "daemon logs is not available inside a daemon-managed task"
+        );
     }
 
     #[test]
