@@ -104,17 +104,6 @@ impl CloudFrontSigner {
             self.key_pair_id
         ))
     }
-
-    #[cfg(test)]
-    pub(crate) fn for_test() -> Self {
-        Self {
-            key_pair_id: Arc::from("KTEST"),
-            private_key: Arc::new(
-                RsaPrivateKey::new(&mut rand::thread_rng(), 1024)
-                    .expect("test RSA key generation must succeed"),
-            ),
-        }
-    }
 }
 
 fn cloudfront_base64(value: &[u8]) -> String {

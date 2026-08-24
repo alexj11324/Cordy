@@ -4053,7 +4053,7 @@ impl From<&Attachment> for AttachmentResponse {
 
 impl AttachmentResponse {
     fn from_request(state: &HandlerState, headers: &HeaderMap, attachment: &Attachment) -> Self {
-        let urls = state.attachment_urls.urls(headers, attachment);
+        let urls = crate::attachment_access::response_urls(state, headers, attachment);
         let mut response = Self::from(attachment);
         response.download_url = urls.download_url;
         response.markdown_url = urls.markdown_url;

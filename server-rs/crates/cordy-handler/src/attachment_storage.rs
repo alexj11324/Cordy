@@ -226,7 +226,7 @@ pub struct S3Storage {
 }
 
 impl S3Storage {
-    pub async fn from_env() -> anyhow::Result<Option<Self>> {
+    pub async fn from_env(cloudfront_domain: Option<&str>) -> anyhow::Result<Option<Self>> {
         let Some(bucket) = env("S3_BUCKET") else {
             return Ok(None);
         };
@@ -253,7 +253,12 @@ impl S3Storage {
             endpoint,
             path_style,
             credentials,
-            cdn_domain: env("CLOUDFRONT_DOMAIN"),
+            // Keep object URLs and the CloudFront signer on the same loaded
+            // configuration source; config-file deployments must not split.
+            cdn_domain: cloudfront_domain
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string),
         }))
     }
     fn request_url(&self, key: &str) -> anyhow::Result<Url> {
@@ -530,8 +535,9 @@ impl AttachmentStorage for S3Storage {
 pub async fn from_env(
     local_dir: Option<&str>,
     local_base: Option<&str>,
+    cloudfront_domain: Option<&str>,
 ) -> anyhow::Result<Arc<dyn AttachmentStorage>> {
-    if let Some(s3) = S3Storage::from_env().await? {
+    if let Some(s3) = S3Storage::from_env(cloudfront_domain).await? {
         return Ok(Arc::new(s3));
     }
     Ok(Arc::new(LocalStorage::new(

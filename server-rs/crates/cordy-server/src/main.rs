@@ -38,14 +38,19 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(port = cfg.server.port, "starting cordy-server");
 
     let db = cordy_db::connect(&cfg.database).await?;
-    let attachment_urls =
-        cordy_handler::attachment_url::AttachmentUrlPolicy::from_config(&cfg).await?;
+    let storage = cordy_handler::attachment_storage::from_env(
+        cfg.storage.local_upload_dir.as_deref(),
+        cfg.storage.local_upload_base_url.as_deref(),
+        cfg.storage.cloudfront_domain.as_deref(),
+    )
+    .await?;
+    let download = cordy_handler::state::AttachmentDownloadSettings::from_config(&cfg).await?;
     let state = cordy_handler::HandlerState::new(
         db,
         cordy_auth::pat_cache::PatCache::disabled(),
         Some(Arc::new(cordy_realtime::hub::Hub::new())),
     )
-    .with_attachment_urls(attachment_urls);
+    .with_attachment_storage(storage, download);
     let app = cordy_handler::build_router_from_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));

@@ -10,6 +10,107 @@ use cordy_service::plugin::PluginService;
 use cordy_service::plugin_token::CallbackTokens;
 use cordy_service::task_service::TaskService;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AttachmentDownloadMode {
+    Auto,
+    CloudFront,
+    Presign,
+    Proxy,
+}
+
+#[derive(Clone)]
+pub struct AttachmentDownloadSettings {
+    pub mode: AttachmentDownloadMode,
+    pub public_url: String,
+    pub ttl: std::time::Duration,
+    pub cloudfront_signer: Option<Arc<crate::cloudfront::CloudFrontSigner>>,
+}
+
+impl Default for AttachmentDownloadSettings {
+    fn default() -> Self {
+        Self {
+            mode: AttachmentDownloadMode::Auto,
+            public_url: String::new(),
+            ttl: std::time::Duration::from_secs(30 * 60),
+            cloudfront_signer: None,
+        }
+    }
+}
+
+impl AttachmentDownloadSettings {
+    pub async fn from_config(config: &cordy_config::Config) -> anyhow::Result<Self> {
+        let mode = match config
+            .storage
+            .attachment_download_mode
+            .as_deref()
+            .unwrap_or("auto")
+            .trim()
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "" | "auto" => AttachmentDownloadMode::Auto,
+            "cloudfront" => AttachmentDownloadMode::CloudFront,
+            "presign" => AttachmentDownloadMode::Presign,
+            "proxy" => AttachmentDownloadMode::Proxy,
+            _ => anyhow::bail!(
+                "ATTACHMENT_DOWNLOAD_MODE must be auto, cloudfront, presign, or proxy"
+            ),
+        };
+        let ttl = config
+            .storage
+            .attachment_download_url_ttl
+            .as_deref()
+            .map(parse_attachment_ttl)
+            .transpose()?
+            .unwrap_or_else(|| std::time::Duration::from_secs(30 * 60));
+        let cloudfront_signer = crate::cloudfront::CloudFrontSigner::from_config(config)
+            .await?
+            .map(Arc::new);
+        anyhow::ensure!(
+            mode != AttachmentDownloadMode::CloudFront || cloudfront_signer.is_some(),
+            "ATTACHMENT_DOWNLOAD_MODE=cloudfront requires a CloudFront signing key"
+        );
+        Ok(Self {
+            mode,
+            public_url: config
+                .urls
+                .public_url
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .trim_end_matches('/')
+                .to_string(),
+            ttl,
+            cloudfront_signer,
+        })
+    }
+}
+
+fn parse_attachment_ttl(raw: &str) -> anyhow::Result<std::time::Duration> {
+    let raw = raw.trim();
+    anyhow::ensure!(
+        !raw.is_empty(),
+        "ATTACHMENT_DOWNLOAD_URL_TTL cannot be empty"
+    );
+    let split = raw
+        .find(|character: char| !character.is_ascii_digit())
+        .unwrap_or(raw.len());
+    let amount = raw[..split].parse::<u64>()?;
+    anyhow::ensure!(amount > 0, "ATTACHMENT_DOWNLOAD_URL_TTL must be positive");
+    let multiplier = match &raw[split..] {
+        "" | "s" => 1,
+        "m" => 60,
+        "h" => 60 * 60,
+        "d" => 24 * 60 * 60,
+        _ => anyhow::bail!("ATTACHMENT_DOWNLOAD_URL_TTL must use s, m, h, or d"),
+    };
+    Ok(std::time::Duration::from_secs(
+        amount
+            .checked_mul(multiplier)
+            .ok_or_else(|| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too large"))?,
+    ))
+}
+
 struct DaemonTaskWakeup {
     hub: Arc<cordy_daemon::hub::DaemonHub>,
 }
@@ -52,8 +153,10 @@ pub struct HandlerState {
     /// Daemon WebSocket hub (cordy-daemon). `None` only in tests — the WS
     /// endpoint reports 503 and daemons fall back to HTTP polling.
     pub daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
-    /// Deployment-aware URL policy for attachment rows returned by issue APIs.
-    pub attachment_urls: crate::attachment_url::AttachmentUrlPolicy,
+    /// Shared attachment/object storage and its one download URL policy.
+    /// #70 extends this seam; it must not create a second policy or signer.
+    pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
+    pub attachment_download: AttachmentDownloadSettings,
     /// Keeps the weak notifier installed in `TaskService` alive.
     _task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier>,
 }
@@ -87,16 +190,19 @@ impl HandlerState {
             local_skill_list_store: None,
             local_skill_import_store: None,
             daemon_hub: Some(daemon_hub),
-            attachment_urls: crate::attachment_url::AttachmentUrlPolicy::default(),
+            attachment_storage: None,
+            attachment_download: AttachmentDownloadSettings::default(),
             _task_wakeup: task_wakeup,
         }
     }
 
-    pub fn with_attachment_urls(
+    pub fn with_attachment_storage(
         mut self,
-        attachment_urls: crate::attachment_url::AttachmentUrlPolicy,
+        storage: Arc<dyn crate::attachment_storage::AttachmentStorage>,
+        download: AttachmentDownloadSettings,
     ) -> Self {
-        self.attachment_urls = attachment_urls;
+        self.attachment_storage = Some(storage);
+        self.attachment_download = download;
         self
     }
 
