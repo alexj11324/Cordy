@@ -8,9 +8,9 @@ use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
 use crate::qoder::{
-    GrokBackend, GrokConfig, KimiBackend, KimiConfig, KiroBackend, KiroConfig, QoderBackend,
-    QoderConfig, QwenpawBackend, QwenpawConfig, ReasonixBackend, ReasonixConfig, TraecliBackend,
-    TraecliConfig,
+    GrokBackend, GrokConfig, KimiBackend, KimiConfig, KiroBackend, KiroConfig, McodeBackend,
+    McodeConfig, QoderBackend, QoderConfig, QwenpawBackend, QwenpawConfig, ReasonixBackend,
+    ReasonixConfig, TraecliBackend, TraecliConfig,
 };
 use crate::qwen::{QwenBackend, QwenConfig};
 
@@ -61,6 +61,10 @@ pub fn build_backend(
             env: config.env,
         }))),
         "grok" => Ok(Arc::new(GrokBackend::new(GrokConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "mcode" => Ok(Arc::new(McodeBackend::new(McodeConfig {
             command: config.command,
             env: config.env,
         }))),
@@ -486,6 +490,7 @@ mod tests {
         assert!(build_backend("kimi", BackendConfig::default()).is_ok());
         assert!(build_backend("reasonix", BackendConfig::default()).is_ok());
         assert!(build_backend("grok", BackendConfig::default()).is_ok());
+        assert!(build_backend("mcode", BackendConfig::default()).is_ok());
 
         let metadata_only = build_backend("claude", BackendConfig::default());
         assert!(matches!(
