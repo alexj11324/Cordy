@@ -10,8 +10,12 @@
 
 #![allow(clippy::result_large_err)]
 
+pub mod attachment_access;
+pub mod attachment_storage;
+pub mod avatar;
 pub mod claim_comments;
 pub mod claim_response;
+pub mod cloudfront;
 pub mod daemon;
 pub mod daemon_ws;
 pub mod error;
@@ -28,6 +32,7 @@ pub mod profile_json;
 pub mod quick_action;
 pub mod squad_briefing;
 pub mod state;
+pub mod task;
 pub mod task_json;
 pub mod timefmt;
 pub mod workspace;
@@ -142,6 +147,13 @@ pub fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<Hub>>) -> Router {
         ),
     };
 
+    build_router_from_state(state)
+}
+
+/// Assemble routes from a fully configured state. Production uses this entry
+/// point so storage, CloudFront and attachment download mode all come from the
+/// same loaded configuration; lightweight tests retain [`build_router`].
+pub fn build_router_from_state(state: HandlerState) -> Router {
     if let Some(hub) = state.hub.as_ref() {
         hub.set_authorizer(Arc::new(ws::DbScopeAuthorizer::new(state.tasks.clone())));
     }
@@ -160,9 +172,21 @@ pub fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<Hub>>) -> Router {
         WorkspaceGuardState::member_only(state.pool.clone()),
         issue::require_issue_workspace,
     ));
+    let task_routes = task::router().route_layer(middleware::from_fn_with_state(
+        WorkspaceGuardState::member_only(state.pool.clone()),
+        issue::require_issue_workspace,
+    ));
+    let attachment_routes =
+        attachment_access::workspace_router().route_layer(middleware::from_fn_with_state(
+            WorkspaceGuardState::member_only(state.pool.clone()),
+            issue::require_issue_workspace,
+        ));
     let authenticated = workspace::authenticated_router()
         .merge(pat::router())
+        .merge(attachment_access::authenticated_router())
+        .merge(attachment_routes)
         .merge(issue_routes)
+        .merge(task_routes)
         .merge(label::router().route_layer(middleware::from_fn_with_state(
             WorkspaceGuardState::member_only(state.pool.clone()),
             issue::require_issue_workspace,
@@ -198,6 +222,8 @@ pub fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<Hub>>) -> Router {
     Router::new()
         .merge(health::router())
         .merge(workspace::public_router())
+        .merge(attachment_access::public_router())
+        .merge(avatar::router())
         .merge(authenticated)
         .merge(daemon)
         .route("/ws", get(ws::ws_handler))
@@ -243,6 +269,11 @@ mod tests {
             "/api/issues/children?parent_ids=018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/issues/child-progress",
             "/api/assignee-frequency",
+            "/api/issues/CORD-14/usage",
+            "/api/issues/CORD-14/attachments",
+            "/api/issues/CORD-14/active-task",
+            "/api/issues/CORD-14/task-runs",
+            "/api/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/messages",
         ] {
             let response = build_router(None, None)
                 .oneshot(Request::get(uri).body(Body::empty()).unwrap())
@@ -264,10 +295,29 @@ mod tests {
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"issue_ids":[],"updates":{}}"#))
                 .unwrap(),
+            Request::post("/api/issues/CORD-14/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/cancel")
+                .body(Body::empty())
+                .unwrap(),
         ] {
             let response = build_router(None, None).oneshot(request).await.unwrap();
             assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         }
+    }
+
+    #[tokio::test]
+    async fn signed_attachment_route_is_public_but_rejects_invalid_capability() {
+        let response = build_router(None, None)
+            .oneshot(
+                Request::get(
+                    "/api/attachments/018f03a0-c4d2-7a37-ae4d-5aa45de12f13/signed-download?exp=1&sig=bad",
+                )
+                .body(Body::empty())
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]

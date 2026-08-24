@@ -17,11 +17,13 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{NaiveDate, SecondsFormat};
-use cordy_db::models::{Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber};
+use cordy_db::models::{
+    AgentTaskQueue, Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber,
+};
 use cordy_db::queries::issue_reaction::AddIssueReactionRow;
 use cordy_db::queries::{
     agent, agent_invocation_target, attachment, issue as issue_q, issue_label, issue_reaction,
-    member, squad, subscriber, task_usage, workspace,
+    member, squad, subscriber, task_usage, user, workspace,
 };
 use cordy_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use cordy_service::issue_service::{
@@ -51,6 +53,10 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/issues/{id}/move", post(move_issue))
         .route("/api/issues/{id}/children", get(list_child_issues))
         .route("/api/issues/{id}/usage", get(get_issue_usage))
+        .route("/api/issues/{id}/attachments", get(list_attachments))
+        .route("/api/issues/{id}/active-task", get(get_active_tasks))
+        .route("/api/issues/{id}/task-runs", get(list_task_runs))
+        .route("/api/issues/{id}/tasks/{task_id}/cancel", post(cancel_task))
         .route("/api/issues/{id}/metadata", get(list_issue_metadata))
         .route(
             "/api/issues/{id}/metadata/{key}",
@@ -1571,6 +1577,7 @@ async fn get_issue(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
+    headers: HeaderMap,
 ) -> Response {
     let issue = match resolve_issue(&state, &context, &id).await {
         Ok(issue) => issue,
@@ -1591,7 +1598,7 @@ async fn get_issue(
             .await
             .unwrap_or_default()
             .iter()
-            .map(AttachmentResponse::from)
+            .map(|attachment| AttachmentResponse::from_request(&state, &headers, attachment))
             .collect();
     Json(response).into_response()
 }
@@ -1651,6 +1658,197 @@ async fn get_issue_usage(
             )
         }
     }
+}
+
+async fn list_attachments(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+
+    match attachment::list_attachments_by_issue(&state.pool, issue.id, issue.workspace_id).await {
+        Ok(attachments) => Json(
+            attachments
+                .iter()
+                .map(|attachment| AttachmentResponse::from_request(&state, &headers, attachment))
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(error) => {
+            tracing::warn!(%error, issue_id = %issue.id, "failed to list attachments");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list attachments",
+            )
+        }
+    }
+}
+
+fn hydrate_task_user_ref(
+    attribution: &mut serde_json::Map<String, Value>,
+    key: &str,
+    users: &HashMap<Uuid, user::GetUsersByIDsRow>,
+) {
+    let Some(reference) = attribution.get_mut(key).and_then(Value::as_object_mut) else {
+        return;
+    };
+    let Some(id) = reference
+        .get("id")
+        .and_then(Value::as_str)
+        .and_then(|id| Uuid::parse_str(id).ok())
+    else {
+        return;
+    };
+    let Some(user) = users.get(&id) else { return };
+    if !user.name.is_empty() {
+        reference.insert("name".into(), Value::String(user.name.clone()));
+    }
+    if !user.email.is_empty() {
+        reference.insert("email".into(), Value::String(user.email.clone()));
+    }
+    if let Some(avatar_url) = user.avatar_url.as_deref().filter(|url| !url.is_empty()) {
+        reference.insert("avatar_url".into(), Value::String(avatar_url.into()));
+    }
+}
+
+async fn issue_task_maps(
+    state: &HandlerState,
+    issue: &Issue,
+    tasks: &[AgentTaskQueue],
+    include_usage: bool,
+) -> Vec<Value> {
+    let workspace_id = issue.workspace_id.to_string();
+    let mut maps = tasks
+        .iter()
+        .map(|task| crate::task_json::task_to_map(task, &workspace_id))
+        .collect::<Vec<_>>();
+
+    let mut user_ids = tasks
+        .iter()
+        .flat_map(|task| [task.accountable_user_id, task.originator_user_id])
+        .flatten()
+        .collect::<Vec<_>>();
+    user_ids.sort_unstable();
+    user_ids.dedup();
+    if !user_ids.is_empty() {
+        if let Ok(rows) = user::get_users_by_i_ds(&state.pool, user_ids).await {
+            let users = rows
+                .into_iter()
+                .filter_map(|row| row.id.map(|id| (id, row)))
+                .collect::<HashMap<_, _>>();
+            for map in &mut maps {
+                let Some(attribution) = map.get_mut("attribution").and_then(Value::as_object_mut)
+                else {
+                    continue;
+                };
+                hydrate_task_user_ref(attribution, "initiator", &users);
+                hydrate_task_user_ref(attribution, "originator", &users);
+            }
+        }
+    }
+
+    if include_usage {
+        if let Ok(rows) = task_usage::list_issue_task_usage(&state.pool, issue.id).await {
+            let mut by_task = HashMap::<Uuid, Vec<Value>>::new();
+            for row in rows {
+                let Some(task_id) = row.task_id else { continue };
+                let mut usage = serde_json::Map::new();
+                if !row.provider.is_empty() {
+                    usage.insert("provider".into(), Value::String(row.provider));
+                }
+                usage.insert("model".into(), Value::String(row.model));
+                usage.insert("input_tokens".into(), json!(row.input_tokens));
+                usage.insert("output_tokens".into(), json!(row.output_tokens));
+                usage.insert("cache_read_tokens".into(), json!(row.cache_read_tokens));
+                usage.insert("cache_write_tokens".into(), json!(row.cache_write_tokens));
+                if let Some(cost) = row.cost_usd_ticks {
+                    usage.insert("cost_usd_ticks".into(), json!(cost));
+                }
+                by_task
+                    .entry(task_id)
+                    .or_default()
+                    .push(Value::Object(usage));
+            }
+            for (task, map) in tasks.iter().zip(&mut maps) {
+                if let Some(usage) = by_task.remove(&task.id) {
+                    if let Some(map) = map.as_object_mut() {
+                        map.insert("usage".into(), Value::Array(usage));
+                    }
+                }
+            }
+        }
+    }
+
+    maps
+}
+
+async fn get_active_tasks(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+) -> Response {
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let tasks = agent::list_active_tasks_by_issue(&state.pool, issue.id)
+        .await
+        .unwrap_or_default();
+    let tasks = issue_task_maps(&state, &issue, &tasks, false).await;
+    Json(json!({ "tasks": tasks })).into_response()
+}
+
+async fn list_task_runs(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+) -> Response {
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let tasks = match agent::list_tasks_by_issue(&state.pool, issue.id).await {
+        Ok(tasks) => tasks,
+        Err(error) => {
+            tracing::warn!(%error, issue_id = %issue.id, "failed to list tasks");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to list tasks");
+        }
+    };
+    Json(issue_task_maps(&state, &issue, &tasks, true).await).into_response()
+}
+
+async fn cancel_task(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path((id, task_id)): Path<(String, String)>,
+) -> Response {
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let task_id = match Uuid::parse_str(&task_id) {
+        Ok(task_id) => task_id,
+        Err(_) => return error_response(StatusCode::NOT_FOUND, "task not found"),
+    };
+    let existing = match agent::get_agent_task(&state.pool, task_id).await {
+        Ok(Some(task)) if task.issue_id == Some(issue.id) => task,
+        Ok(_) => return error_response(StatusCode::NOT_FOUND, "task not found"),
+        Err(error) => {
+            tracing::warn!(%error, %task_id, "failed to load task for cancellation");
+            return error_response(StatusCode::NOT_FOUND, "task not found");
+        }
+    };
+    let task = match state.tasks.cancel_task_by_user(existing.id).await {
+        Ok(task) => task,
+        Err(error) => return error_response(StatusCode::BAD_REQUEST, &error.to_string()),
+    };
+    let mut tasks = issue_task_maps(&state, &issue, &[task], false).await;
+    Json(tasks.remove(0)).into_response()
 }
 
 async fn list_child_issues(
@@ -3853,6 +4051,16 @@ impl From<&Attachment> for AttachmentResponse {
     }
 }
 
+impl AttachmentResponse {
+    fn from_request(state: &HandlerState, headers: &HeaderMap, attachment: &Attachment) -> Self {
+        let urls = crate::attachment_access::response_urls(state, headers, attachment);
+        let mut response = Self::from(attachment);
+        response.download_url = urls.download_url;
+        response.markdown_url = urls.markdown_url;
+        response
+    }
+}
+
 fn object_or_empty(value: Value) -> Value {
     if value.is_object() {
         value
@@ -4192,5 +4400,18 @@ mod tests {
                 "task_count": 10,
             })
         );
+    }
+
+    #[test]
+    fn attachment_list_response_matches_go_stable_url_contract() {
+        let attachment =
+            fixture_attachment(Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f13").unwrap());
+        let response = serde_json::to_value(AttachmentResponse::from(&attachment)).unwrap();
+        let stable_url = format!("/api/attachments/{}/download", attachment.id);
+        assert_eq!(response["download_url"], stable_url);
+        assert_eq!(response["markdown_url"], stable_url);
+        assert_eq!(response["created_at"], "2026-08-23T03:30:00Z");
+        assert_eq!(response["issue_id"], fixture_issue().id.to_string());
+        assert!(response.get("task_id").is_none());
     }
 }

@@ -3,7 +3,7 @@
 //! null-vs-absent behavior match the Go struct tags byte-for-byte so clients
 //! type both shapes identically.
 
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 use cordy_db::models::AgentTaskQueue;
 
@@ -23,21 +23,26 @@ fn strip_home_prefix(p: &str) -> Option<String> {
     // Case-insensitive `(?:[A-Za-z]:)?/(?:Users|home)/[^/]+(?:/(.*))?`.
     let normalized = p.replace('\\', "/");
     let lower = normalized.to_lowercase();
-    let rest = if let Some(r) = lower.strip_prefix("/users/") {
-        r
-    } else if let Some(r) = lower.strip_prefix("/home/") {
-        r
+    let prefix_len = if lower.starts_with("/users/") {
+        "/users/".len()
+    } else if lower.starts_with("/home/") {
+        "/home/".len()
     } else {
         // Windows drive form `c:/users/...`
         let bytes = lower.as_bytes();
-        if bytes.len() > 8 && bytes[1] == b':' && lower[2..].starts_with("/users/") {
-            &lower[8..]
+        if bytes.len() > 2
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && lower[2..].starts_with("/users/")
+        {
+            2 + "/users/".len()
         } else {
             return None;
         }
     };
+    let rest = &normalized[prefix_len..];
     let remainder = match rest.find('/') {
-        Some(idx) => &normalized[normalized.len() - (rest.len() - idx)..],
+        Some(idx) => &rest[idx + 1..],
         None => "",
     };
     Some(remainder.to_string())
@@ -76,24 +81,41 @@ fn attribution_base(t: &AgentTaskQueue) -> Value {
         source.as_str(),
         "direct_human" | "delegation" | "comment_source" | "trigger_owner" | "rule_owner"
     );
-    let mut evidence = Value::Null;
-    if let Some(kind) = t.trigger_evidence_kind.as_deref().filter(|k| !k.is_empty()) {
-        evidence = json!({
-            "kind": kind,
-            "ref_id": t.trigger_evidence_ref_id.map(|u| u.to_string()).unwrap_or_default(),
-        });
+    let mut value = Map::new();
+    value.insert(
+        "source".into(),
+        Value::String(if source.is_empty() {
+            "unattributed".into()
+        } else {
+            source
+        }),
+    );
+    value.insert("precise".into(), Value::Bool(precise));
+
+    if let Some(id) = t.accountable_user_id {
+        value.insert("initiator".into(), json!({ "id": id.to_string() }));
     }
-    json!({
-        "source": if source.is_empty() { "unattributed".to_string() } else { source },
-        "precise": precise,
-        "initiator": t.accountable_user_id.map(|u| json!({ "id": u.to_string() })),
-        "originator": t.originator_user_id.map(|u| json!({ "id": u.to_string() })),
-        "evidence": evidence,
-        "rule_version_id": t.rule_version_id.map(|u| u.to_string()).unwrap_or_default(),
-        "delegated_from_task_id": t.delegated_from_task_id.map(|u| u.to_string()).unwrap_or_default(),
-        "retry_of_task_id": t.retry_of_task_id.map(|u| u.to_string()).unwrap_or_default(),
-        "rerun_of_task_id": t.rerun_of_task_id.map(|u| u.to_string()).unwrap_or_default(),
-    })
+    if let Some(id) = t.originator_user_id {
+        value.insert("originator".into(), json!({ "id": id.to_string() }));
+    }
+    if let Some(kind) = t.trigger_evidence_kind.as_deref().filter(|k| !k.is_empty()) {
+        value.insert(
+            "evidence".into(),
+            json!({
+                "kind": kind,
+                "ref_id": t.trigger_evidence_ref_id.map(|u| u.to_string()).unwrap_or_default(),
+            }),
+        );
+    }
+    insert_uuid(&mut value, "rule_version_id", t.rule_version_id);
+    insert_uuid(
+        &mut value,
+        "delegated_from_task_id",
+        t.delegated_from_task_id,
+    );
+    insert_uuid(&mut value, "retry_of_task_id", t.retry_of_task_id);
+    insert_uuid(&mut value, "rerun_of_task_id", t.rerun_of_task_id);
+    Value::Object(value)
 }
 
 /// Go computeTaskKind — pure discriminator from FK shape.
@@ -114,60 +136,244 @@ fn compute_task_kind(t: &AgentTaskQueue) -> &'static str {
 }
 
 fn opt_time(t: Option<chrono::DateTime<chrono::Utc>>) -> Value {
-    t.map(crate::timefmt::rfc3339_nano)
+    t.map(crate::timefmt::rfc3339)
         .map(Value::String)
         .unwrap_or(Value::Null)
+}
+
+fn insert_string(map: &mut Map<String, Value>, key: &str, value: Option<&str>) {
+    if let Some(value) = value.filter(|value| !value.is_empty()) {
+        map.insert(key.into(), Value::String(value.into()));
+    }
+}
+
+fn insert_uuid(map: &mut Map<String, Value>, key: &str, value: Option<uuid::Uuid>) {
+    if let Some(value) = value {
+        map.insert(key.into(), Value::String(value.to_string()));
+    }
+}
+
+fn insert_string_array(map: &mut Map<String, Value>, key: &str, values: &[uuid::Uuid]) {
+    if !values.is_empty() {
+        map.insert(
+            key.into(),
+            Value::Array(
+                values
+                    .iter()
+                    .map(|value| Value::String(value.to_string()))
+                    .collect(),
+            ),
+        );
+    }
 }
 
 /// Builds the full AgentTaskResponse map. Field order is irrelevant to JSON
 /// consumers; key names mirror the Go tags exactly.
 pub fn task_to_map(t: &AgentTaskQueue, workspace_id: &str) -> Value {
     let id = t.id.to_string();
-    let result = t.result.clone().unwrap_or(Value::Null);
-    json!({
-        "id": id,
-        "agent_id": t.agent_id.to_string(),
-        "runtime_id": t.runtime_id.map(|u| u.to_string()).unwrap_or_default(),
-        "issue_id": t.issue_id.map(|u| u.to_string()).unwrap_or_default(),
-        "workspace_id": workspace_id,
-        "status": t.status,
-        "priority": t.priority,
-        "dispatched_at": opt_time(t.dispatched_at),
-        "started_at": opt_time(t.started_at),
-        "completed_at": opt_time(t.completed_at),
-        "result": result,
-        "error": t.error.clone(),
-        "failure_reason": t.failure_reason.clone().unwrap_or_default(),
-        "attempt": t.attempt,
-        "max_attempts": t.max_attempts,
-        "parent_task_id": t.parent_task_id.map(|u| u.to_string()),
-        "is_leader_task": if t.is_leader_task { Some(true) } else { None },
-        "created_at": crate::timefmt::rfc3339(t.created_at),
-        "trigger_comment_id": t.trigger_comment_id.map(|u| u.to_string()),
-        "coalesced_comment_ids": t.coalesced_comment_ids.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
-        "delivered_comment_ids": t.delivered_comment_ids.iter().map(|u| u.to_string()).collect::<Vec<_>>(),
-        "trigger_summary": t.trigger_summary.clone(),
-        "handoff_note": t.handoff_note.clone().unwrap_or_default(),
-        "work_dir": t.work_dir.clone().unwrap_or_default(),
-        "relative_work_dir": relative_work_dir(
-            t.work_dir.as_deref().unwrap_or(""),
-            workspace_id,
-            &id,
+    let mut value = Map::new();
+    value.insert("id".into(), Value::String(id.clone()));
+    value.insert("agent_id".into(), Value::String(t.agent_id.to_string()));
+    value.insert(
+        "runtime_id".into(),
+        Value::String(t.runtime_id.map(|id| id.to_string()).unwrap_or_default()),
+    );
+    value.insert(
+        "issue_id".into(),
+        Value::String(t.issue_id.map(|id| id.to_string()).unwrap_or_default()),
+    );
+    value.insert("workspace_id".into(), Value::String(workspace_id.into()));
+    value.insert("status".into(), Value::String(t.status.clone()));
+    value.insert("priority".into(), json!(t.priority));
+    value.insert("dispatched_at".into(), opt_time(t.dispatched_at));
+    value.insert("started_at".into(), opt_time(t.started_at));
+    value.insert("completed_at".into(), opt_time(t.completed_at));
+    value.insert("result".into(), t.result.clone().unwrap_or(Value::Null));
+    value.insert(
+        "error".into(),
+        t.error.clone().map(Value::String).unwrap_or(Value::Null),
+    );
+    value.insert("attempt".into(), json!(t.attempt));
+    value.insert("max_attempts".into(), json!(t.max_attempts));
+    value.insert(
+        "created_at".into(),
+        Value::String(crate::timefmt::rfc3339(t.created_at)),
+    );
+    value.insert(
+        "delivered_comment_ids".into(),
+        Value::Array(
+            t.delivered_comment_ids
+                .iter()
+                .map(|id| Value::String(id.to_string()))
+                .collect(),
         ),
-        "durable_work_dir": t.durable_work_dir.clone().unwrap_or_default(),
-        "relative_durable_work_dir": relative_work_dir(
-            t.durable_work_dir.as_deref().unwrap_or(""),
-            "",
-            "",
-        ),
-        "chat_session_id": t.chat_session_id.map(|u| u.to_string()).unwrap_or_default(),
-        "autopilot_run_id": t.autopilot_run_id.map(|u| u.to_string()).unwrap_or_default(),
-        "kind": compute_task_kind(t),
-        "attribution": attribution_base(t),
-        "session_id": t.session_id.clone(),
-        "squad_id": t.squad_id.map(|u| u.to_string()).unwrap_or_default(),
-        "branch_name": t.branch_name.clone().unwrap_or_default(),
-        "wait_reason": t.wait_reason.clone(),
-        "fire_at": opt_time(t.fire_at),
-    })
+    );
+    value.insert("kind".into(), Value::String(compute_task_kind(t).into()));
+    value.insert("attribution".into(), attribution_base(t));
+
+    insert_string(&mut value, "failure_reason", t.failure_reason.as_deref());
+    insert_uuid(&mut value, "parent_task_id", t.parent_task_id);
+    if t.is_leader_task {
+        value.insert("is_leader_task".into(), Value::Bool(true));
+    }
+    insert_uuid(&mut value, "trigger_comment_id", t.trigger_comment_id);
+    insert_string_array(
+        &mut value,
+        "coalesced_comment_ids",
+        &t.coalesced_comment_ids,
+    );
+    if let Some(summary) = &t.trigger_summary {
+        value.insert("trigger_summary".into(), Value::String(summary.clone()));
+    }
+    insert_string(&mut value, "handoff_note", t.handoff_note.as_deref());
+    insert_string(&mut value, "work_dir", t.work_dir.as_deref());
+    let relative = relative_work_dir(t.work_dir.as_deref().unwrap_or(""), workspace_id, &id);
+    insert_string(&mut value, "relative_work_dir", Some(&relative));
+    insert_string(
+        &mut value,
+        "durable_work_dir",
+        t.durable_work_dir.as_deref(),
+    );
+    let relative_durable = relative_work_dir(t.durable_work_dir.as_deref().unwrap_or(""), "", "");
+    insert_string(
+        &mut value,
+        "relative_durable_work_dir",
+        Some(&relative_durable),
+    );
+    insert_uuid(&mut value, "chat_session_id", t.chat_session_id);
+    insert_uuid(&mut value, "autopilot_run_id", t.autopilot_run_id);
+    insert_string(&mut value, "branch_name", t.branch_name.as_deref());
+
+    Value::Object(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+    use uuid::Uuid;
+
+    fn task_fixture() -> AgentTaskQueue {
+        let id = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f11").unwrap();
+        AgentTaskQueue {
+            id,
+            agent_id: Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f12").unwrap(),
+            accountable_user_id: None,
+            attempt: 1,
+            autopilot_run_id: None,
+            branch_name: None,
+            chat_finalize_deferred_at: None,
+            chat_input_task_id: None,
+            chat_session_id: None,
+            coalesced_comment_ids: vec![],
+            completed_at: None,
+            context: None,
+            created_at: Utc.with_ymd_and_hms(2026, 8, 23, 7, 0, 0).unwrap(),
+            delegated_from_task_id: None,
+            delivered_comment_ids: vec![],
+            dispatched_at: None,
+            durable_work_dir: None,
+            error: None,
+            escalation_for_task_id: None,
+            failure_reason: None,
+            fire_at: None,
+            force_fresh_session: false,
+            handoff_note: None,
+            initiator_user_id: None,
+            is_leader_task: false,
+            issue_id: Some(Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f13").unwrap()),
+            max_attempts: 3,
+            originator_source: None,
+            originator_user_id: None,
+            parent_task_id: None,
+            prepare_lease_expires_at: None,
+            priority: 0,
+            quick_actions_disabled: false,
+            regenerate_quick_actions_for: None,
+            rerun_of_task_id: None,
+            result: None,
+            retired_session_id: None,
+            retry_of_task_id: None,
+            rule_version_id: None,
+            runtime_connected_apps: None,
+            runtime_id: None,
+            runtime_mcp_overlay: None,
+            session_id: Some("provider-session-must-not-leak".into()),
+            session_rollout_missing: false,
+            squad_id: None,
+            started_at: None,
+            status: "queued".into(),
+            trigger_comment_id: None,
+            trigger_evidence_kind: None,
+            trigger_evidence_ref_id: None,
+            trigger_summary: None,
+            wait_reason: Some("internal-wait-reason".into()),
+            work_dir: None,
+        }
+    }
+
+    #[test]
+    fn user_task_wire_matches_go_omitempty_and_time_contract() {
+        let value = task_to_map(&task_fixture(), "workspace-1");
+        assert_eq!(value["created_at"], "2026-08-23T07:00:00Z");
+        assert_eq!(value["delivered_comment_ids"], json!([]));
+        assert_eq!(value["attribution"]["source"], "unattributed");
+        assert_eq!(value["attribution"]["precise"], false);
+        for absent in [
+            "failure_reason",
+            "parent_task_id",
+            "is_leader_task",
+            "trigger_comment_id",
+            "coalesced_comment_ids",
+            "trigger_summary",
+            "handoff_note",
+            "work_dir",
+            "relative_work_dir",
+            "session_id",
+            "wait_reason",
+            "fire_at",
+        ] {
+            assert!(value.get(absent).is_none(), "unexpected field {absent}");
+        }
+        assert!(value["attribution"].get("initiator").is_none());
+        assert!(value["attribution"].get("originator").is_none());
+        assert!(value["attribution"].get("evidence").is_none());
+    }
+
+    #[test]
+    fn user_task_wire_preserves_optional_values_when_present() {
+        let mut task = task_fixture();
+        task.is_leader_task = true;
+        task.failure_reason = Some("runtime_offline".into());
+        task.accountable_user_id = Some(Uuid::nil());
+        task.originator_source = Some("direct_human".into());
+        task.dispatched_at = Some(
+            chrono::DateTime::parse_from_rfc3339("2026-08-23T07:00:00.987Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        );
+        let value = task_to_map(&task, "workspace-1");
+        assert_eq!(value["is_leader_task"], true);
+        assert_eq!(value["failure_reason"], "runtime_offline");
+        assert_eq!(
+            value["attribution"]["initiator"]["id"],
+            Uuid::nil().to_string()
+        );
+        assert_eq!(value["dispatched_at"], "2026-08-23T07:00:00Z");
+    }
+
+    #[test]
+    fn relative_work_dir_never_exposes_home_account_name() {
+        assert_eq!(relative_work_dir(r"C:\Users\Alice\repo", "", ""), "repo");
+        assert_eq!(
+            relative_work_dir("c:/users/Alice/repo/src", "", ""),
+            "repo/src"
+        );
+        assert_eq!(relative_work_dir("/Users/Alice/repo", "", ""), "repo");
+        assert_eq!(
+            relative_work_dir("/home/alice/repo/src", "", ""),
+            "repo/src"
+        );
+        assert_eq!(relative_work_dir(r"C:\Users\Alice", "", ""), "");
+    }
 }
