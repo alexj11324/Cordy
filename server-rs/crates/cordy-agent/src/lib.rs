@@ -7,6 +7,7 @@
 
 pub mod acp;
 pub mod claude;
+pub mod acp_mcp;
 pub mod antigravity;
 pub mod codebuddy;
 pub mod codebuddy_discovery;
@@ -30,6 +31,10 @@ pub mod version;
 
 pub use claude::{build_claude_args, ClaudeBackend, ClaudeConfig};
 pub use acp::{AcpClient, AcpError, AcpNotification};
+pub use acp_mcp::{
+    build_acp_mcp_servers, filter_acp_mcp_servers, parse_acp_mcp_capabilities, AcpMcpCapabilities,
+    AcpMcpCapabilityDeclaration, AcpMcpServer,
+};
 pub use antigravity::{AntigravityBackend, AntigravityConfig};
 pub use codebuddy::{CodebuddyBackend, CodebuddyConfig};
 pub use command::{BlockedArgMode, FilteredArgs, RuntimeCommand};
