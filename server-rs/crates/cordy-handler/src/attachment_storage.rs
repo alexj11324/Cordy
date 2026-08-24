@@ -650,6 +650,7 @@ impl S3Storage {
         if key.is_empty() || key.split('/').any(|v| v == "." || v == "..") {
             anyhow::bail!("invalid storage key")
         }
+        let encoded_key = key.split('/').map(aws_encode).collect::<Vec<_>>().join("/");
         let mut url = if !self.custom_endpoint && region != self.region {
             Url::parse(&format!("https://s3.{region}.amazonaws.com"))?
         } else {
@@ -658,13 +659,13 @@ impl S3Storage {
         let base_path = url.path().trim_end_matches('/').to_string();
         let path_style = self.path_style || (!self.custom_endpoint && self.bucket.contains('.'));
         if path_style {
-            url.set_path(&format!("{base_path}/{}/{key}", self.bucket));
+            url.set_path(&format!("{base_path}/{}/{encoded_key}", self.bucket));
         } else {
             let host = url
                 .host_str()
                 .ok_or_else(|| anyhow::anyhow!("S3 endpoint has no host"))?;
             url.set_host(Some(&format!("{}.{host}", self.bucket)))?;
-            url.set_path(&format!("{base_path}/{key}"));
+            url.set_path(&format!("{base_path}/{encoded_key}"));
         }
         Ok(url)
     }
@@ -2205,6 +2206,27 @@ mod tests {
         assert!(
             authorization
                 .contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-storage-class")
+        );
+    }
+
+    #[test]
+    fn s3_request_paths_use_sigv4_segment_encoding() {
+        let virtual_host = test_s3("https://s3.us-west-2.amazonaws.com", false, true);
+        assert_eq!(
+            virtual_host
+                .request_url("workspace/report.c++/%done")
+                .unwrap()
+                .path(),
+            "/workspace/report.c%2B%2B/%25done"
+        );
+
+        let path_style = test_s3("https://minio.example.test/base", true, true);
+        assert_eq!(
+            path_style
+                .request_url("workspace/report c++.txt")
+                .unwrap()
+                .path(),
+            "/base/test-bucket/workspace/report%20c%2B%2B.txt"
         );
     }
 
