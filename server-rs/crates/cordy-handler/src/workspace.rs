@@ -80,7 +80,7 @@ pub fn admin_router() -> Router<HandlerState> {
         .route_layer(axum::middleware::from_fn(require_human_admin_actor))
 }
 
-async fn require_human_admin_actor(request: Request, next: Next) -> Response {
+pub(crate) async fn require_human_admin_actor(request: Request, next: Next) -> Response {
     if matches!(
         request
             .headers()
@@ -2025,21 +2025,30 @@ mod tests {
     async fn machine_tokens_cannot_use_workspace_admin_routes() {
         let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
         let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None);
-        let app = admin_router().with_state(state);
+        let app = admin_router()
+            .merge(crate::invitation::workspace_admin_router())
+            .with_state(state);
         let workspace_id = Uuid::new_v4();
         for actor_source in ["task_token", "cloud_pat"] {
-            let response = app
-                .clone()
-                .oneshot(
-                    Request::delete(format!("/api/workspaces/{workspace_id}"))
-                        .header("x-actor-source", actor_source)
-                        .header("x-user-id", Uuid::new_v4().to_string())
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{actor_source}");
+            for (method, path) in [
+                ("DELETE", format!("/api/workspaces/{workspace_id}")),
+                ("POST", format!("/api/workspaces/{workspace_id}/members")),
+            ] {
+                let response = app
+                    .clone()
+                    .oneshot(
+                        Request::builder()
+                            .method(method)
+                            .uri(path)
+                            .header("x-actor-source", actor_source)
+                            .header("x-user-id", Uuid::new_v4().to_string())
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::FORBIDDEN, "{actor_source}");
+            }
         }
     }
 
