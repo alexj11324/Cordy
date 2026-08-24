@@ -303,6 +303,43 @@ pub struct Supervisor<S: InstallationStore, L: LeaseStore> {
     supervisor_gen: AtomicU64,
 }
 
+/// Keeps process-local lease gauges exact even when the owning async task is
+/// force-aborted after its graceful shutdown deadline. Token-fenced release is
+/// still attempted on every normal path; an aborted path deliberately relies
+/// on backend TTL expiry, but must stop reporting itself as a live owner.
+struct ActiveOwnerGuard<'a, S: InstallationStore + 'static, L: LeaseStore + 'static> {
+    supervisor: &'a Supervisor<S, L>,
+    installation_id: &'a str,
+    active: bool,
+}
+
+impl<'a, S: InstallationStore + 'static, L: LeaseStore + 'static> ActiveOwnerGuard<'a, S, L> {
+    fn new(supervisor: &'a Supervisor<S, L>, installation_id: &'a str) -> Self {
+        supervisor.adjust_active_owners(1);
+        Self {
+            supervisor,
+            installation_id,
+            active: true,
+        }
+    }
+
+    fn finish(&mut self) {
+        if !self.active {
+            return;
+        }
+        self.active = false;
+        self.supervisor
+            .set_renewal_error(self.installation_id, false);
+        self.supervisor.adjust_active_owners(-1);
+    }
+}
+
+impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Drop for ActiveOwnerGuard<'_, S, L> {
+    fn drop(&mut self) {
+        self.finish();
+    }
+}
+
 impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
     /// Constructs a Supervisor bound to the supplied store, channel
     /// registry, and shared inbound handler. The handler is injected into
@@ -635,7 +672,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                 Ok(Some(_confirmed_until)) => {
                     self.record_lease_operation("acquire", "success");
                     self.observe_takeover(&id);
-                    self.adjust_active_owners(1);
+                    let mut active_owner = ActiveOwnerGuard::new(self, &id);
 
                     // Build the platform channel via the registry, run it
                     // under a child token, and renew the lease in parallel.
@@ -660,7 +697,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                                 "channel engine: build channel failed"
                             );
                             self.release_lease(&inst.id, &lease_tok).await;
-                            self.adjust_active_owners(-1);
+                            active_owner.finish();
                             if sleep(&ctx, backoff).await {
                                 return;
                             }
@@ -694,7 +731,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                     let _ = renewed.await;
                     self.disconnect_channel(&ch, &id).await;
                     self.release_lease(&inst.id, &lease_tok).await;
-                    self.adjust_active_owners(-1);
+                    active_owner.finish();
 
                     if ctx.is_cancelled() {
                         return;
@@ -1082,6 +1119,65 @@ async fn sleep(ctx: &CancellationToken, d: Duration) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct NoopStore;
+
+    #[async_trait]
+    impl InstallationStore for NoopStore {
+        async fn list_active_installations(&self) -> anyhow::Result<Vec<Installation>> {
+            Ok(Vec::new())
+        }
+    }
+
+    struct NoopLease;
+
+    #[async_trait]
+    impl LeaseStore for NoopLease {
+        async fn list_held(&self, _ids: &[uuid::Uuid]) -> Result<HashSet<String>, LeaseError> {
+            Ok(HashSet::new())
+        }
+
+        async fn try_acquire(&self, _arg: AcquireLeaseParams) -> Result<(), LeaseError> {
+            Ok(())
+        }
+
+        async fn renew(&self, _arg: AcquireLeaseParams) -> Result<(), LeaseError> {
+            Ok(())
+        }
+
+        async fn release(&self, _arg: ReleaseLeaseParams) -> Result<(), LeaseError> {
+            Ok(())
+        }
+    }
+
+    fn test_supervisor() -> Arc<Supervisor<NoopStore, NoopLease>> {
+        Supervisor::new(
+            Arc::new(NoopStore),
+            Arc::new(NoopLease),
+            Arc::new(Registry::new()),
+            cordy_channel::InboundHandler::new(|_, _| Box::pin(async { Ok(()) })),
+            SupervisorConfig::default(),
+            None,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn active_owner_guard_cleans_up_once_on_finish_or_drop() {
+        let supervisor = test_supervisor();
+        {
+            let mut guard = ActiveOwnerGuard::new(supervisor.as_ref(), "installation");
+            assert_eq!(supervisor.lock().active_owners, 1);
+            guard.finish();
+            guard.finish();
+            assert_eq!(supervisor.lock().active_owners, 0);
+        }
+        {
+            let _guard = ActiveOwnerGuard::new(supervisor.as_ref(), "installation");
+            assert_eq!(supervisor.lock().active_owners, 1);
+        }
+        assert_eq!(supervisor.lock().active_owners, 0);
+    }
 
     #[tokio::test]
     async fn abort_waits_terminates_a_tracked_supervisor_task() {
