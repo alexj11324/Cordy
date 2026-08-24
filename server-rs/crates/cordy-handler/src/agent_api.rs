@@ -375,7 +375,7 @@ fn agent_response(target: Agent, reveal_secrets: bool, reveal_composio: bool) ->
     let system_instructions = system_instructions_for(target.system_key.as_deref(), &target.name);
     let mut mcp_config = target.mcp_config.clone().unwrap_or_else(|| json!({}));
     let mut mcp_config_redacted = false;
-    if !reveal_secrets && mcp_config.as_object().is_some_and(|map| !map.is_empty()) {
+    if !reveal_secrets && has_mcp_config(&mcp_config) {
         mcp_config = json!({});
         mcp_config_redacted = true;
     }
@@ -393,7 +393,7 @@ fn agent_response(target: Agent, reveal_secrets: bool, reveal_composio: bool) ->
     json!({
         "id": target.id,
         "workspace_id": target.workspace_id,
-        "runtime_id": target.runtime_id,
+        "runtime_id": target.runtime_id.map(|id| id.to_string()).unwrap_or_default(),
         "runtime_bound": target.runtime_id.is_some(),
         "name": target.name,
         "description": target.description,
@@ -426,6 +426,16 @@ fn agent_response(target: Agent, reveal_secrets: bool, reveal_composio: bool) ->
         "archived_at": target.archived_at.map(crate::timefmt::rfc3339),
         "archived_by": target.archived_by,
     })
+}
+
+fn has_mcp_config(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Object(value) => !value.is_empty(),
+        Value::Array(value) => !value.is_empty(),
+        Value::String(value) => !value.is_empty(),
+        Value::Bool(_) | Value::Number(_) => true,
+    }
 }
 
 #[derive(Default, Deserialize)]
@@ -2278,6 +2288,18 @@ mod tests {
         assert_eq!(response["composio_toolkit_allowlist_redacted"], true);
         assert!(response.get("custom_env").is_none());
         assert_eq!(response["custom_env_key_count"], 1);
+        assert_eq!(response["runtime_id"], "");
+    }
+
+    #[test]
+    fn agent_actor_projection_redacts_non_object_mcp_configuration() {
+        for mcp_config in [json!("secret"), json!(["secret"])] {
+            let mut agent = agent_fixture();
+            agent.mcp_config = Some(mcp_config);
+            let response = agent_response(agent, false, false);
+            assert_eq!(response["mcp_config"], json!({}));
+            assert_eq!(response["mcp_config_redacted"], true);
+        }
     }
     #[test]
     fn skill_ids_are_validated_and_deduplicated() {
