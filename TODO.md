@@ -1023,6 +1023,15 @@
       subagent reviewed exact head `47c86172` and found no issue. Scoped
       rustfmt/diff-check pass; Cargo was not run. Pro owns push/Ready PR, gate,
       and merge.
+- [ ] CLI label command structural refactor is committed at
+      `335954bb30849b66d24df4c5b4e8b95f0f305652` (parent
+      `47c86172b29ffda6cfd954a8c3f76d5cb89e48d5`, tree
+      `1ba50497795fc79510053d9e914022e219d3e081`): label list/get/create/update/
+      delete and table/result rendering now live in
+      `cordy-cli/src/label_commands.rs`; issue-label rendering reuses the
+      extracted formatter through parent imports. The serial subagent reviewed
+      exact head `335954bb` and found no issue. Scoped rustfmt/diff-check pass;
+      Cargo was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
