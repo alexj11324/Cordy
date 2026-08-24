@@ -29,7 +29,7 @@ use crate::bootstrap::{BootstrapClock, DaemonStackExit, SystemBootstrapClock};
 use crate::client::Client;
 use crate::config::Config;
 use crate::control_lifecycle::{run_daemon_control, ControlEventConsumer};
-use crate::daemon_core::{DaemonCoreHost, DaemonCoreServices};
+use crate::daemon_core::{DaemonCoreDependencies, DaemonCoreHost, DaemonCoreServices};
 use crate::gc::gc_loop;
 use crate::health::{
     authorize_repo_checkout_workdir, ActiveRepoCheckoutTask, HealthResponse, RepoCheckoutRegistry,
@@ -220,16 +220,16 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
             events_tx,
             Arc::clone(&runtime_set),
         );
-        let host = Arc::new(DaemonCoreHost::new(
-            Arc::clone(&self.config),
-            Arc::clone(&self.client),
-            Arc::clone(&self.repo_cache),
-            Arc::clone(&self.services),
-            Arc::clone(&registry),
-            Arc::clone(&self.update_executor),
-            Arc::clone(&activity),
-            root_ctx.clone(),
-        ));
+        let host = Arc::new(DaemonCoreHost::new(DaemonCoreDependencies {
+            config: Arc::clone(&self.config),
+            client: Arc::clone(&self.client),
+            repo_cache: Arc::clone(&self.repo_cache),
+            services: Arc::clone(&self.services),
+            registry: Arc::clone(&registry),
+            update_executor: Arc::clone(&self.update_executor),
+            activity: Arc::clone(&activity),
+            root_ctx: root_ctx.clone(),
+        }));
 
         // Bind before preflight so liveness reports `starting` during slow
         // auth/agent discovery, matching the Go daemon contract.

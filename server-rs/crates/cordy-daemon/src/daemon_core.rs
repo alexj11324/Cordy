@@ -92,17 +92,32 @@ pub(crate) struct DaemonCoreHost<S: DaemonCoreServices> {
     reload_pending: Mutex<Option<String>>,
 }
 
+/// Cohesive production dependencies required to own the daemon control plane.
+/// Keeping this typed prevents call sites from accidentally swapping the many
+/// shared owners that must all describe the same daemon instance.
+pub(crate) struct DaemonCoreDependencies<S: DaemonCoreServices> {
+    pub(crate) config: Arc<Config>,
+    pub(crate) client: Arc<Client>,
+    pub(crate) repo_cache: Arc<Cache>,
+    pub(crate) services: Arc<S>,
+    pub(crate) registry: Arc<RuntimeRegistry>,
+    pub(crate) update_executor: Arc<UpdateExecutor>,
+    pub(crate) activity: Arc<DaemonActivity>,
+    pub(crate) root_ctx: Ctx,
+}
+
 impl<S: DaemonCoreServices> DaemonCoreHost<S> {
-    pub(crate) fn new(
-        config: Arc<Config>,
-        client: Arc<Client>,
-        repo_cache: Arc<Cache>,
-        services: Arc<S>,
-        registry: Arc<RuntimeRegistry>,
-        update_executor: Arc<UpdateExecutor>,
-        activity: Arc<DaemonActivity>,
-        root_ctx: Ctx,
-    ) -> Self {
+    pub(crate) fn new(dependencies: DaemonCoreDependencies<S>) -> Self {
+        let DaemonCoreDependencies {
+            config,
+            client,
+            repo_cache,
+            services,
+            registry,
+            update_executor,
+            activity,
+            root_ctx,
+        } = dependencies;
         let auto_update = AutoUpdateSettings {
             launched_by: config.launched_by.clone(),
             cli_version: config.cli_version.clone(),
