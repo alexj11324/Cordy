@@ -2258,9 +2258,6 @@ func TestVerificationCodeConsumeCAS(t *testing.T) {
 	email := fmt.Sprintf("verify-cas-%d@cordy.ai", time.Now().UnixNano())
 	ctx := context.Background()
 
-	t.Cleanup(func() {
-		testPool.Exec(ctx, `DELETE FROM verification_code WHERE email = $1`, email)
-	})
 	createVerificationCodeForTest(t, email, "123456")
 	dbCode, err := testHandler.Queries.GetLatestVerificationCode(ctx, email)
 	if err != nil {
@@ -2300,9 +2297,6 @@ func TestVerificationCodeConcurrentAttemptBudget(t *testing.T) {
 	email := fmt.Sprintf("verify-attempt-cas-%d@cordy.ai", time.Now().UnixNano())
 	ctx := context.Background()
 
-	t.Cleanup(func() {
-		testPool.Exec(ctx, `DELETE FROM verification_code WHERE email = $1`, email)
-	})
 	createVerificationCodeForTest(t, email, "123456")
 	dbCode, err := testHandler.Queries.GetLatestVerificationCode(ctx, email)
 	if err != nil {
@@ -2348,13 +2342,11 @@ func TestVerificationCodeConcurrentAttemptBudget(t *testing.T) {
 func createVerificationCodeForTest(t *testing.T, email, code string) {
 	t.Helper()
 
-	_, err := testPool.Exec(context.Background(), `
-		INSERT INTO verification_code (email, code, expires_at)
-		VALUES ($1, $2, now() + interval '10 minutes')
-	`, email, code)
-	if err != nil {
-		t.Fatalf("create verification code: %v", err)
-	}
+	dbfx.Insert(t, "verification_code", testutil.Cols{
+		"email":      email,
+		"code":       code,
+		"expires_at": testutil.Raw("now() + interval '10 minutes'"),
+	})
 }
 
 func TestVerifyCodeRejectsDevCodeUnlessExplicitlyConfigured(t *testing.T) {
