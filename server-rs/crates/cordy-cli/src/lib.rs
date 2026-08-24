@@ -150,6 +150,32 @@ enum SkillCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
         output: OutputFormat,
     },
+    #[command(about = "Search for installable skills")]
+    Search {
+        #[arg(value_name = "QUERY")]
+        query: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
+    #[command(about = "Work with skill files")]
+    Files(SkillFilesArgs),
+}
+
+#[derive(Debug, Args)]
+struct SkillFilesArgs {
+    #[command(subcommand)]
+    command: SkillFilesCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum SkillFilesCommand {
+    #[command(about = "List files for a skill")]
+    List {
+        #[arg(value_name = "SKILL-ID")]
+        skill_id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -2567,6 +2593,15 @@ async fn run_with_input<R: Read>(
         Command::Skill(SkillArgs {
             command: SkillCommand::Refresh { id, output },
         }) => run_skill_refresh(cli, environment, id, *output).await,
+        Command::Skill(SkillArgs {
+            command: SkillCommand::Search { query, output },
+        }) => run_skill_search(cli, environment, query, *output).await,
+        Command::Skill(SkillArgs {
+            command:
+                SkillCommand::Files(SkillFilesArgs {
+                    command: SkillFilesCommand::List { skill_id, output },
+                }),
+        }) => run_skill_files_list(cli, environment, skill_id, *output).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -4470,6 +4505,93 @@ async fn run_skill_refresh(
                 value_string(&result, "id")
             ),
         },
+        stderr: String::new(),
+    })
+}
+
+async fn run_skill_search(
+    cli: &Cli,
+    environment: &Environment,
+    query: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let query = query.trim();
+    if query.is_empty() {
+        bail!("query is required");
+    }
+    let timeout = http_timeout(environment.raw("CORDY_HTTP_TIMEOUT"))
+        .saturating_add(Duration::from_secs(5))
+        .max(Duration::from_secs(60));
+    let client = client.with_request_timeout(timeout);
+    let mut encoded = form_urlencoded::Serializer::new(String::new());
+    encoded.append_pair("q", query);
+    let results: Vec<Value> = client
+        .get_json(&format!("/api/skills/search?{}", encoded.finish()))
+        .await
+        .context("search skills")?;
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&results)?),
+            OutputFormat::Table => format_skill_search_table(&results),
+        },
+        stderr: String::new(),
+    })
+}
+
+fn format_skill_search_table(results: &[Value]) -> String {
+    let mut rows = vec![vec![
+        "NAME".into(),
+        "URL".into(),
+        "SOURCE".into(),
+        "INSTALLS".into(),
+        "DESCRIPTION".into(),
+    ]];
+    rows.extend(results.iter().map(|result| {
+        vec![
+            value_string(result, "name"),
+            value_string(result, "url"),
+            value_string(result, "source"),
+            value_string(result, "install_count"),
+            value_string(result, "description"),
+        ]
+    }));
+    format_table(&rows)
+}
+
+async fn run_skill_files_list(
+    cli: &Cli,
+    environment: &Environment,
+    skill_id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let files: Vec<Value> = client
+        .get_json(&format!("/api/skills/{skill_id}/files"))
+        .await
+        .context("list skill files")?;
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&files)?),
+        OutputFormat::Table => {
+            let mut rows = vec![vec![
+                "ID".into(),
+                "PATH".into(),
+                "CREATED_AT".into(),
+                "UPDATED_AT".into(),
+            ]];
+            rows.extend(files.iter().map(|file| {
+                vec![
+                    value_string(file, "id"),
+                    value_string(file, "path"),
+                    value_string(file, "created_at"),
+                    value_string(file, "updated_at"),
+                ]
+            }));
+            format_table(&rows)
+        }
+    };
+    Ok(RunOutput {
+        stdout,
         stderr: String::new(),
     })
 }
@@ -13425,6 +13547,39 @@ mod tests {
                 }
             })
         ));
+        let search = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "search",
+            "react hooks",
+            "--output",
+            "table",
+        ])
+        .expect("skill search CLI");
+        assert!(matches!(
+            search.command,
+            Command::Skill(SkillArgs {
+                command: SkillCommand::Search {
+                    output: OutputFormat::Table,
+                    ..
+                }
+            })
+        ));
+        let files = Cli::try_parse_from([
+            "cordy", "skill", "files", "list", "skill-1", "--output", "json",
+        ])
+        .expect("skill files list CLI");
+        assert!(matches!(
+            files.command,
+            Command::Skill(SkillArgs {
+                command: SkillCommand::Files(SkillFilesArgs {
+                    command: SkillFilesCommand::List {
+                        output: OutputFormat::Json,
+                        ..
+                    }
+                })
+            })
+        ));
     }
 
     #[tokio::test]
@@ -13718,6 +13873,73 @@ mod tests {
             output.stdout,
             "Skill updated from source: review (skill-1)\n"
         );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn skill_search_and_files_list_match_go_read_contracts() {
+        let app = Router::new()
+            .route(
+                "/api/skills/search",
+                get(|request: Request| async move {
+                    assert_eq!(request.uri().query(), Some("q=react+hooks"));
+                    Json(vec![serde_json::json!({
+                        "name":"React",
+                        "url":"https://skills.sh/acme/react",
+                        "source":"skills.sh",
+                        "install_count":62,
+                        "description":"React engineering skill",
+                        "server_only":"preserved"
+                    })])
+                }),
+            )
+            .route(
+                "/api/skills/skill-1/files",
+                get(|| async {
+                    Json(vec![serde_json::json!({
+                        "id":"file-1",
+                        "path":"references/api.md",
+                        "created_at":"2026-08-24T00:00:00Z",
+                        "updated_at":"2026-08-24T01:00:00Z",
+                        "server_only":"preserved"
+                    })])
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+
+        let search = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "search",
+            "  react hooks  ",
+            "--output",
+            "table",
+        ])
+        .expect("skill search CLI");
+        let output = run_with_input(&search, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("search skills");
+        assert!(output.stdout.starts_with("NAME"));
+        assert!(output.stdout.contains("React"));
+        assert!(output.stdout.contains("62"));
+
+        let files = Cli::try_parse_from([
+            "cordy", "skill", "files", "list", "skill-1", "--output", "json",
+        ])
+        .expect("skill files list CLI");
+        let output = run_with_input(&files, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list skill files");
+        let value: Value = serde_json::from_str(&output.stdout).expect("JSON output");
+        assert_eq!(value[0]["path"], "references/api.md");
+        assert_eq!(value[0]["server_only"], "preserved");
         server.abort();
     }
 
