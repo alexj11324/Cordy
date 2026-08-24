@@ -799,6 +799,14 @@
       test-only module visibility/import omissions; diff-check passed, no
       Cargo was run, and the subagent could not rerun rustfmt because the
       command was unavailable. Pro owns Ready PR, Cargo gate, and merge.
+- [ ] CLI daemon lifecycle structural refactor is pushed at
+      `16540c59f974b74d9d6efdfca92b45fc33e966f0` (parent
+      `154df0b015a9a23ecd9c07720a5a9ffc6215ce93`, tree
+      `7e16b07aa89e890255063d813d307012c58a6ec8`): setup-after-daemon, start,
+      restart, and stop now live in `cordy-cli/src/daemon_commands.rs`;
+      parsing, setup policy, and status rendering remain in `lib.rs`. Scoped
+      rustfmt and diff-check pass; no Cargo was run. The serial subagent owns
+      exact-head review and minimal fixes; pro owns Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
