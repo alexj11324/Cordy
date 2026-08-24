@@ -132,6 +132,15 @@ static MCODE_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = La
         ("--help", BlockedArgMode::Standalone),
     ])
 });
+static DIM_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
+    BTreeMap::from([
+        ("acp", BlockedArgMode::Standalone),
+        ("--auth-setup", BlockedArgMode::Standalone),
+        ("--remote", BlockedArgMode::Standalone),
+        ("--help", BlockedArgMode::Standalone),
+        ("-h", BlockedArgMode::Standalone),
+    ])
+});
 static TERMINAL_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:(?:⚠️|❌|\[ERROR\]).*(?:BadRequestError|AuthenticationError|RateLimitError|HTTP \d{3}|Non-retryable|API call failed)|API call failed after \d+ retr(?:y|ies))")
         .unwrap_or_else(|error| panic!("invalid Qoder provider-error regex: {error}"))
@@ -162,6 +171,12 @@ pub struct QoderConfig {
     pub effort_process_arg: bool,
     pub explicit_authentication: bool,
     pub require_load_capability: bool,
+    pub minimum_agent_version: Option<&'static str>,
+    pub session_config: Vec<(String, String)>,
+    pub close_session: bool,
+    pub retry_held_session: bool,
+    pub held_retry_attempts: u8,
+    pub held_retry_delay: Duration,
 }
 
 impl Default for QoderConfig {
@@ -186,6 +201,12 @@ impl Default for QoderConfig {
             effort_process_arg: false,
             explicit_authentication: false,
             require_load_capability: false,
+            minimum_agent_version: None,
+            session_config: Vec::new(),
+            close_session: false,
+            retry_held_session: false,
+            held_retry_attempts: 0,
+            held_retry_delay: Duration::ZERO,
         }
     }
 }
@@ -244,6 +265,12 @@ impl TraecliBackend {
                 effort_process_arg: false,
                 explicit_authentication: false,
                 require_load_capability: false,
+                minimum_agent_version: None,
+                session_config: Vec::new(),
+                close_session: false,
+                retry_held_session: false,
+                held_retry_attempts: 0,
+                held_retry_delay: Duration::ZERO,
             }),
         }
     }
@@ -301,6 +328,12 @@ impl KiroBackend {
                 effort_process_arg: false,
                 explicit_authentication: false,
                 require_load_capability: false,
+                minimum_agent_version: None,
+                session_config: Vec::new(),
+                close_session: false,
+                retry_held_session: false,
+                held_retry_attempts: 0,
+                held_retry_delay: Duration::ZERO,
             }),
         }
     }
@@ -358,6 +391,12 @@ impl QwenpawBackend {
                 effort_process_arg: false,
                 explicit_authentication: false,
                 require_load_capability: false,
+                minimum_agent_version: None,
+                session_config: Vec::new(),
+                close_session: false,
+                retry_held_session: false,
+                held_retry_attempts: 0,
+                held_retry_delay: Duration::ZERO,
             }),
         }
     }
@@ -568,6 +607,63 @@ impl Backend for McodeBackend {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct DimConfig {
+    pub command: RuntimeCommand,
+    pub env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DimBackend {
+    inner: QoderBackend,
+}
+
+impl DimBackend {
+    pub fn new(config: DimConfig) -> Self {
+        Self {
+            inner: QoderBackend::new(QoderConfig {
+                command: config.command,
+                env: config.env,
+                default_command: "dim".to_string(),
+                provider: "dim".to_string(),
+                launch_args: vec!["acp".to_string()],
+                discovery_args: vec!["acp".to_string()],
+                resume_method: "session/load".to_string(),
+                reject_failed_load: true,
+                minimum_agent_version: Some("0.3.10"),
+                session_config: [
+                    ("permission".to_string(), "full-access".to_string()),
+                    ("mode".to_string(), "agent".to_string()),
+                ]
+                .to_vec(),
+                close_session: true,
+                retry_held_session: true,
+                held_retry_attempts: 3,
+                held_retry_delay: Duration::from_secs(2),
+                ..QoderConfig::default()
+            }),
+        }
+    }
+
+    pub async fn discover_models(
+        &self,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        self.inner
+            .discover_models(cache, cancellation, timeout)
+            .await
+    }
+}
+
+#[async_trait]
+impl Backend for DimBackend {
+    async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
+        self.inner.execute(prompt, options).await
+    }
+}
+
 pub fn build_qoder_args(options: &ExecOptions) -> Vec<String> {
     build_session_args(&QoderConfig::default(), options)
 }
@@ -645,6 +741,11 @@ pub fn build_mcode_args(options: &ExecOptions) -> Vec<String> {
     build_session_args(&backend.inner.config, options)
 }
 
+pub fn build_dim_args(options: &ExecOptions) -> Vec<String> {
+    let backend = DimBackend::new(DimConfig::default());
+    build_session_args(&backend.inner.config, options)
+}
+
 fn build_session_args(config: &QoderConfig, options: &ExecOptions) -> Vec<String> {
     let blocked = blocked_args(&config.provider);
     let mut args = config.launch_args.clone();
@@ -669,6 +770,7 @@ fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMod
         "reasonix" => &REASONIX_BLOCKED_ARGS,
         "grok" => &GROK_BLOCKED_ARGS,
         "mcode" => &MCODE_BLOCKED_ARGS,
+        "dim" => &DIM_BLOCKED_ARGS,
         _ => &BLOCKED_ARGS,
     }
 }
@@ -687,10 +789,15 @@ async fn discover_models(
     }
     let catalog = discover_acp_session(config, cancellation, timeout)
         .await
-        .map_or_else(Catalog::default, |(_, session)| {
+        .map_or_else(Catalog::default, |(initialize, session)| {
+            if let Some(minimum) = config.minimum_agent_version {
+                if check_minimum(extract_agent_version(&initialize), minimum, false).is_err() {
+                    return Catalog::default();
+                }
+            }
             let mut models = parse_acp_session_models(&session, &config.provider);
-            if config.provider == "reasonix" {
-                annotate_reasonix_effort(&mut models, &session);
+            if matches!(config.provider.as_str(), "reasonix" | "dim") {
+                annotate_acp_effort(&mut models, &session);
             }
             Catalog {
                 models,
@@ -1065,6 +1172,12 @@ impl Backend for QoderBackend {
         let strict_stop_reason = self.config.strict_stop_reason;
         let explicit_authentication = self.config.explicit_authentication;
         let require_load_capability = self.config.require_load_capability;
+        let minimum_agent_version = self.config.minimum_agent_version;
+        let session_config = self.config.session_config.clone();
+        let close_session = self.config.close_session;
+        let retry_held_session = self.config.retry_held_session;
+        let held_retry_attempts = self.config.held_retry_attempts;
+        let held_retry_delay = self.config.held_retry_delay;
         let have_api_key = effective_env_nonempty(&self.config.env, "XAI_API_KEY");
         let kimi_home = self.config.env.get("KIMI_CODE_HOME").cloned();
         let resumed = !options.resume_session_id.is_empty();
@@ -1106,6 +1219,12 @@ impl Backend for QoderBackend {
                 explicit_authentication,
                 have_api_key,
                 require_load_capability,
+                minimum_agent_version,
+                session_config,
+                close_session,
+                retry_held_session,
+                held_retry_attempts,
+                held_retry_delay,
             ));
             let end = if timeout.is_zero() {
                 tokio::select! {
@@ -1242,6 +1361,12 @@ async fn run_protocol(
     explicit_authentication: bool,
     have_api_key: bool,
     require_load_capability: bool,
+    minimum_agent_version: Option<&'static str>,
+    session_config: Vec<(String, String)>,
+    close_session: bool,
+    retry_held_session: bool,
+    held_retry_attempts: u8,
+    held_retry_delay: Duration,
 ) -> ProtocolOutcome {
     let mut client = AcpClient::new(BufReader::new(stdout), stdin);
     let initialize = match client
@@ -1280,6 +1405,19 @@ async fn run_protocol(
         {
             return ProtocolOutcome::failed(format!(
                 "grok authenticate ({method}) failed: {error}"
+            ));
+        }
+    }
+    if let Some(minimum) = minimum_agent_version {
+        let version = extract_agent_version(&initialize);
+        if check_minimum(version, minimum, false).is_err() {
+            let reported = if version.is_empty() {
+                "did not report an agent version".to_string()
+            } else {
+                format!("{version} is too old")
+            };
+            return ProtocolOutcome::failed(format!(
+                "{provider} {reported}: cross-run session resume requires {provider} >= {minimum}; please upgrade {provider}code"
             ));
         }
     }
@@ -1334,19 +1472,33 @@ async fn run_protocol(
             }
         }
     } else {
-        match client
-            .request(
-                &resume_method,
-                session_params(
-                    cwd,
-                    Some(&options.resume_session_id),
-                    mcp_servers,
-                    coding_project_meta.as_deref(),
-                ),
-                |_| {},
-            )
-            .await
-        {
+        let mut attempts = 0_u8;
+        let loaded = loop {
+            let result = client
+                .request(
+                    &resume_method,
+                    session_params(
+                        cwd,
+                        Some(&options.resume_session_id),
+                        mcp_servers.clone(),
+                        coding_project_meta.as_deref(),
+                    ),
+                    |_| {},
+                )
+                .await;
+            if result
+                .as_ref()
+                .is_err_and(|error| retry_held_session && is_acp_held_by_process(error))
+                && attempts < held_retry_attempts
+            {
+                attempts += 1;
+                tracing::warn!(provider = %provider, attempt = attempts, "session lock not yet released; retrying session load");
+                tokio::time::sleep(held_retry_delay).await;
+                continue;
+            }
+            break result;
+        };
+        match loaded {
             Ok(result) => {
                 let returned = extract_session_id(&result);
                 let session_id = if returned.is_empty() {
@@ -1376,6 +1528,38 @@ async fn run_protocol(
     } else {
         options.model.clone()
     };
+    for (config_id, value) in &session_config {
+        if let Err(error) = client
+            .request(
+                "session/set_config_option",
+                serde_json::json!({
+                    "sessionId":session_id,
+                    "configId":config_id,
+                    "value":value,
+                }),
+                |_| {},
+            )
+            .await
+        {
+            if close_session {
+                let _ = client
+                    .request(
+                        "session/close",
+                        serde_json::json!({"sessionId":session_id}),
+                        |_| {},
+                    )
+                    .await;
+            }
+            return ProtocolOutcome {
+                status: "failed".to_string(),
+                error: format!(
+                    "{provider} could not set session config {config_id}={value}: {error}"
+                ),
+                session_id,
+                ..ProtocolOutcome::default()
+            };
+        }
+    }
     if model_selection && !options.model.is_empty() {
         if let Err(error) = client
             .request(
@@ -1388,6 +1572,15 @@ async fn run_protocol(
             let rejected = !options.resume_session_id.is_empty() && error.is_session_not_found();
             if rejected {
                 session_id.clear();
+            }
+            if close_session && !session_id.is_empty() {
+                let _ = client
+                    .request(
+                        "session/close",
+                        serde_json::json!({"sessionId":session_id}),
+                        |_| {},
+                    )
+                    .await;
             }
             let stage = format!("could not switch to model {:?}", options.model);
             return protocol_failure(&provider, &stage, error, session_id, rejected);
@@ -1430,8 +1623,20 @@ async fn run_protocol(
         }
     }
     if provider == "reasonix" && !options.thinking_level.is_empty() {
-        apply_reasonix_effort(
+        apply_acp_effort(
             &mut client,
+            "reasonix",
+            &session_result,
+            &session_id,
+            &options.thinking_level,
+            options.model.is_empty(),
+        )
+        .await;
+    }
+    if provider == "dim" && !options.thinking_level.is_empty() {
+        apply_acp_effort(
+            &mut client,
+            "dim",
             &session_result,
             &session_id,
             &options.thinking_level,
@@ -1446,7 +1651,7 @@ async fn run_protocol(
     };
     let mut state = NotificationState {
         kiro_dialect: provider == "kiro",
-        extended_tool_names: matches!(provider.as_str(), "kiro" | "kimi" | "reasonix"),
+        extended_tool_names: matches!(provider.as_str(), "kiro" | "kimi" | "reasonix" | "dim"),
         reasonix_dialect: provider == "reasonix",
         ..NotificationState::default()
     };
@@ -1488,6 +1693,15 @@ async fn run_protocol(
     let prompt_result = match prompt_result {
         Ok(result) => result,
         Err(error) => {
+            if close_session && !session_id.is_empty() {
+                let _ = client
+                    .request(
+                        "session/close",
+                        serde_json::json!({"sessionId":session_id}),
+                        |notification| handle_notification(notification, &messages, &mut state),
+                    )
+                    .await;
+            }
             let rejected = !options.resume_session_id.is_empty() && error.is_session_not_found();
             if rejected {
                 session_id.clear();
@@ -1555,6 +1769,18 @@ async fn run_protocol(
             provider = "reasonix",
             "permission request omitted trusted metadata; protected-decision detection may be degraded"
         );
+    }
+    if close_session && !session_id.is_empty() {
+        if let Err(error) = client
+            .request(
+                "session/close",
+                serde_json::json!({"sessionId":session_id}),
+                |notification| handle_notification(notification, &messages, &mut state),
+            )
+            .await
+        {
+            tracing::debug!(provider = %provider, error = %error, "best-effort ACP session close failed");
+        }
     }
     let stop_reason = prompt_result
         .get("stopReason")
@@ -2139,6 +2365,16 @@ fn extract_current_model(value: &Value) -> String {
         .to_string()
 }
 
+fn extract_agent_version(value: &Value) -> &str {
+    value
+        .get("agentInfo")
+        .or_else(|| value.get("agent_info"))
+        .and_then(|info| info.get("version"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+}
+
 fn extract_config_value(value: &Value, config_id: &str) -> Option<String> {
     value
         .get("configOptions")
@@ -2250,8 +2486,9 @@ fn parse_acp_effort_option(value: &Value) -> Option<AcpEffortOption> {
     None
 }
 
-async fn apply_reasonix_effort<R, W>(
+async fn apply_acp_effort<R, W>(
     client: &mut AcpClient<R, W>,
+    provider: &str,
     session_result: &Value,
     session_id: &str,
     requested: &str,
@@ -2264,7 +2501,7 @@ async fn apply_reasonix_effort<R, W>(
         parse_acp_effort_option(session_result).filter(|option| !option.choices.is_empty())
     else {
         tracing::warn!(
-            provider = "reasonix",
+            provider,
             requested_level = requested,
             "session advertises no reasoning-effort option; sending the prompt without it"
         );
@@ -2283,7 +2520,7 @@ async fn apply_reasonix_effort<R, W>(
             .collect::<Vec<_>>()
             .join(",");
         tracing::warn!(
-            provider = "reasonix",
+            provider,
             config_id = option.config_id,
             requested_level = requested,
             advertised_levels = %advertised,
@@ -2307,14 +2544,14 @@ async fn apply_reasonix_effort<R, W>(
             if extract_config_value(&result, &option.config_id).as_deref() == Some(requested) =>
         {
             tracing::debug!(
-                provider = "reasonix",
+                provider,
                 config_id = option.config_id,
                 level = requested,
                 "session reasoning effort confirmed"
             );
         }
         Ok(result) => tracing::warn!(
-            provider = "reasonix",
+            provider,
             config_id = option.config_id,
             requested_level = requested,
             effective_level = extract_config_value(&result, &option.config_id)
@@ -2323,7 +2560,7 @@ async fn apply_reasonix_effort<R, W>(
             "runtime did not confirm the requested reasoning effort; sending the prompt anyway"
         ),
         Err(error) => tracing::warn!(
-            provider = "reasonix",
+            provider,
             config_id = option.config_id,
             requested_level = requested,
             effective_level = if option.current.is_empty() { "unknown" } else { &option.current },
@@ -2333,7 +2570,7 @@ async fn apply_reasonix_effort<R, W>(
     }
 }
 
-fn annotate_reasonix_effort(models: &mut [crate::model::Model], session: &Value) {
+fn annotate_acp_effort(models: &mut [crate::model::Model], session: &Value) {
     let Some(option) = parse_acp_effort_option(session).filter(|option| !option.choices.is_empty())
     else {
         return;
@@ -2469,6 +2706,13 @@ fn is_reasonix_lease_conflict(error: &AcpError) -> bool {
     error.rpc_details().is_some_and(|(_, code, message, data)| {
         let text = format!("{message} {data}").to_ascii_lowercase();
         code == -32600 && text.contains(" in use") && text.contains("close the other reasonix")
+    })
+}
+
+fn is_acp_held_by_process(error: &AcpError) -> bool {
+    error.rpc_details().is_some_and(|(_, _, message, data)| {
+        let text = format!("{message} {data}").to_ascii_lowercase();
+        text.contains("held by another process") || text.contains("session is held")
     })
 }
 
@@ -2789,6 +3033,17 @@ mod tests {
     }
 
     #[test]
+    fn dim_arguments_keep_acp_and_interactive_modes_owned() {
+        let args = build_dim_args(&ExecOptions {
+            custom_args: ["acp", "--auth-setup", "--remote", "--debug"]
+                .map(str::to_string)
+                .to_vec(),
+            ..ExecOptions::default()
+        });
+        assert_eq!(args, ["acp", "--debug"]);
+    }
+
+    #[test]
     fn reasonix_permission_policy_rejects_questions_and_fresh_decisions() {
         let question = serde_json::json!({
             "toolCall":{"toolCallId":"ask-1","title":"Choose a deployment"},
@@ -2889,7 +3144,7 @@ mod tests {
             }]
         });
         let mut models = parse_acp_session_models(&session, "reasonix");
-        annotate_reasonix_effort(&mut models, &session);
+        annotate_acp_effort(&mut models, &session);
         let thinking = models[0]
             .thinking
             .as_ref()
@@ -3168,6 +3423,26 @@ mod tests {
             env: BTreeMap::new(),
         });
         (directory, backend)
+    }
+
+    #[cfg(unix)]
+    fn fake_dim_backend(script: &str) -> (tempfile::TempDir, std::path::PathBuf, DimBackend) {
+        let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
+        let executable = directory.path().join("dim");
+        let requests = directory.path().join("requests.jsonl");
+        std::fs::write(&executable, script)
+            .unwrap_or_else(|error| panic!("write fake Dim: {error}"));
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|error| panic!("chmod fake Dim: {error}"));
+        let mut backend = DimBackend::new(DimConfig {
+            command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
+            env: BTreeMap::from([(
+                "DIM_REQUESTS".to_string(),
+                requests.to_string_lossy().into_owned(),
+            )]),
+        });
+        backend.inner.config.held_retry_delay = Duration::from_millis(1);
+        (directory, requests, backend)
     }
 
     #[cfg(unix)]
@@ -3771,6 +4046,95 @@ done
         assert_eq!(result.status, "failed");
         assert!(result.resume_rejected);
         assert!(result.error.contains("does not support session loading"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn dim_retries_resume_configures_session_and_closes_it() {
+        let (_directory, requests, backend) = fake_dim_backend(
+            r#"#!/bin/sh
+test "$1" = acp && test -z "$2" || exit 70
+held=true
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$DIM_REQUESTS"
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentInfo":{"version":"0.3.10"},"agentCapabilities":{"loadSession":true}}}\n' "$id" ;;
+    *'"method":"session/load"'*)
+      if [ "$held" = true ]; then
+        held=false
+        printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"Session held by another process"}}\n' "$id"
+      else
+        printf '{"jsonrpc":"2.0","id":%s,"result":{"models":{"currentModelId":"dim/model"},"configOptions":[{"id":"thought_level","currentValue":"auto","options":[{"value":"auto"},{"value":"high"}]}]}}\n' "$id"
+      fi
+      ;;
+    *'"method":"session/set_config_option"'*)
+      case "$line" in
+        *'"configId":"thought_level"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":[{"id":"thought_level","currentValue":"high"}]}}\n' "$id" ;;
+        *) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+      esac
+      ;;
+    *'"method":"session/prompt"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","usage":{"inputTokens":6,"outputTokens":2}}}\n' "$id" ;;
+    *'"method":"session/close"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    resume_session_id: "dim-prior".to_string(),
+                    thinking_level: "high".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Dim: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Dim result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.session_id, "dim-prior");
+        assert_eq!(result.usage["dim/model"].input_tokens, 6);
+        let requests = std::fs::read_to_string(requests)
+            .unwrap_or_else(|error| panic!("read Dim requests: {error}"));
+        assert_eq!(requests.matches("session/load").count(), 2);
+        assert!(requests.contains(r#""configId":"permission","value":"full-access""#));
+        assert!(requests.contains(r#""configId":"mode","value":"agent""#));
+        assert!(requests.contains(r#""configId":"thought_level","value":"high""#));
+        assert!(requests.contains("session/close"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn dim_fails_closed_on_unproven_cross_process_resume_version() {
+        let (_directory, requests, backend) = fake_dim_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$DIM_REQUESTS"
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentInfo":{"version":"0.3.9"}}}\n' "$id" ;;
+    *'"method":"session/'*) exit 71 ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute("prompt", ExecOptions::default())
+            .await
+            .unwrap_or_else(|error| panic!("execute old Dim: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("old Dim result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert!(result.error.contains("0.3.9 is too old"));
+        let requests = std::fs::read_to_string(requests)
+            .unwrap_or_else(|error| panic!("read old Dim requests: {error}"));
+        assert!(!requests.contains("session/new"));
     }
 
     #[cfg(unix)]
