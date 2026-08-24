@@ -168,11 +168,9 @@ impl InvitationAdmission {
             let cutoff =
                 now_nanos.saturating_sub(gate.window.as_nanos().min(i64::MAX as u128) as i64);
             let check = redis::Script::new(REDIS_CHECK_SCRIPT);
-            let operation = check
-                .key(&gate.key)
-                .arg(cutoff)
-                .arg(gate.limit)
-                .invoke_async::<i64>(&mut conn);
+            let mut invocation = check.prepare_invoke();
+            invocation.key(&gate.key).arg(cutoff).arg(gate.limit);
+            let operation = invocation.invoke_async::<i64>(&mut conn);
             let allowed = match tokio::time::timeout(INVITATION_REDIS_TIMEOUT, operation).await {
                 Ok(Ok(allowed)) => allowed,
                 Ok(Err(error)) => {
@@ -200,14 +198,15 @@ impl InvitationAdmission {
             let cutoff =
                 now_nanos.saturating_sub(gate.window.as_nanos().min(i64::MAX as u128) as i64);
             let consume = redis::Script::new(REDIS_CONSUME_SCRIPT);
-            let operation = consume
+            let mut invocation = consume.prepare_invoke();
+            invocation
                 .key(&gate.key)
                 .arg(now_nanos)
                 .arg(cutoff)
                 .arg(gate.limit)
                 .arg(gate.window.as_secs().saturating_mul(2).max(1))
-                .arg(Uuid::new_v4().to_string())
-                .invoke_async::<i64>(&mut conn);
+                .arg(Uuid::new_v4().to_string());
+            let operation = invocation.invoke_async::<i64>(&mut conn);
             match tokio::time::timeout(INVITATION_REDIS_TIMEOUT, operation).await {
                 Ok(Ok(_)) => {}
                 Ok(Err(error)) => {
