@@ -28,8 +28,127 @@ use cordy_auth::jwt::{hash_token, jwt_secret};
 use cordy_auth::pat_cache::{ttl_for_expiry, PatCache};
 use cordy_db::queries::user;
 use cordy_db::queries::{personal_access_token, task_token};
+use ipnetwork::IpNetwork;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
+
+const IDENTITY_PROXY_MARKER_HEADER: &str = "x-cordy-identity-proxy-token";
+const IDENTITY_PROXY_MIN_SECRET_BYTES: usize = 32;
+
+/// Explicit trust boundary for an upstream that authenticates a user and
+/// stamps `X-User-ID`. Both the direct peer and a private marker must match:
+/// a CIDR alone is insufficient because reverse proxies commonly forward
+/// client-supplied headers unchanged.
+#[derive(Clone, Default)]
+pub struct IdentityProxyTrust {
+    trusted_peers: Arc<[IpNetwork]>,
+    marker: Option<Arc<[u8]>>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct ProxyIdentity {
+    user_id: String,
+    email: String,
+}
+
+impl IdentityProxyTrust {
+    pub fn from_env() -> Self {
+        let cidrs = std::env::var("CORDY_IDENTITY_TRUSTED_PROXIES").unwrap_or_default();
+        let marker = std::env::var("CORDY_IDENTITY_PROXY_SECRET").unwrap_or_default();
+        match Self::configured(&cidrs, &marker) {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::warn!(%error, "identity proxy trust disabled");
+                Self::default()
+            }
+        }
+    }
+
+    fn configured(cidrs: &str, marker: &str) -> Result<Self, &'static str> {
+        if cidrs.trim().is_empty() && marker.is_empty() {
+            return Ok(Self::default());
+        }
+        if cidrs.trim().is_empty() || marker.len() < IDENTITY_PROXY_MIN_SECRET_BYTES {
+            return Err(
+                "CORDY_IDENTITY_TRUSTED_PROXIES and a 32-byte CORDY_IDENTITY_PROXY_SECRET are both required",
+            );
+        }
+        let trusted_peers = cidrs
+            .split(',')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                value
+                    .parse::<IpNetwork>()
+                    .map_err(|_| "CORDY_IDENTITY_TRUSTED_PROXIES contains an invalid CIDR")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        if trusted_peers.is_empty() {
+            return Err("CORDY_IDENTITY_TRUSTED_PROXIES must contain at least one CIDR");
+        }
+        Ok(Self {
+            trusted_peers: trusted_peers.into(),
+            marker: Some(Arc::from(marker.as_bytes())),
+        })
+    }
+
+    fn take_identity(&self, req: &mut Request) -> Option<ProxyIdentity> {
+        let trusted_peer = req
+            .extensions()
+            .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+            .map(|info| info.0.ip())
+            .is_some_and(|ip| {
+                self.trusted_peers
+                    .iter()
+                    .any(|network| network.contains(ip))
+            });
+        let marker_matches = self.marker.as_deref().is_some_and(|expected| {
+            req.headers()
+                .get(IDENTITY_PROXY_MARKER_HEADER)
+                .is_some_and(|actual| constant_time_eq(actual.as_bytes(), expected))
+        });
+        let identity = (trusted_peer && marker_matches)
+            .then(|| ProxyIdentity {
+                user_id: header_string(req, "x-user-id"),
+                email: header_string(req, "x-user-email"),
+            })
+            .filter(|identity| !identity.user_id.is_empty());
+
+        // These headers are owned by authentication. Always remove the
+        // request copies, then re-stamp only a verified proxy identity below.
+        req.headers_mut().remove("x-user-id");
+        req.headers_mut().remove("x-user-email");
+        req.headers_mut().remove(IDENTITY_PROXY_MARKER_HEADER);
+        if let Some(identity) = identity.as_ref() {
+            set_header(req, "x-user-id", &identity.user_id);
+            if !identity.email.is_empty() {
+                set_header(req, "x-user-email", &identity.email);
+            }
+        }
+        identity
+    }
+}
+
+fn header_string(req: &Request, name: &'static str) -> String {
+    req.headers()
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    left.iter()
+        .zip(right)
+        .fold(0_u8, |difference, (left, right)| {
+            difference | (left ^ right)
+        })
+        == 0
+}
 
 #[derive(Clone)]
 pub struct AuthState {
@@ -37,6 +156,7 @@ pub struct AuthState {
     pub pat_cache: PatCache,
     pub cloud_pat_verifier: Option<cordy_auth::cloud_pat::CloudPatVerifier>,
     pub side_effects: Arc<dyn AuthSideEffectSpawner>,
+    pub identity_proxy: IdentityProxyTrust,
 }
 
 pub(crate) enum CloudAuthError {
@@ -175,15 +295,17 @@ pub async fn auth_middleware(
     // handlers that its request came from a non-task-token path.
     req.headers_mut().remove("x-actor-source");
 
-    // When the Next.js / Clerk frontend has already authenticated the request
-    // and forwarded it with X-User-ID set, trust it directly — no JWT/PAT
-    // verification needed.
-    if req
-        .headers()
-        .get("x-user-id")
-        .and_then(|v| v.to_str().ok())
-        .is_some_and(|v| !v.is_empty())
-    {
+    // A managed identity proxy may authenticate upstream, but only an
+    // explicitly configured peer carrying the private marker can cross this
+    // boundary. Every other request has its identity headers stripped before
+    // the ordinary JWT/PAT/Cloud PAT branches inspect it.
+    if let Some(identity) = state.identity_proxy.take_identity(&mut req) {
+        if reject_disabled(&identity.user_id, &identity.email, "identity_proxy") {
+            return Err(err_response(
+                StatusCode::FORBIDDEN,
+                TEMPORARILY_DISABLED_USER_ERROR,
+            ));
+        }
         return Ok(next.run(req).await);
     }
 
@@ -402,4 +524,125 @@ pub fn decode_jwt_claims(token: &str) -> Option<serde_json::Map<String, serde_js
     )
     .ok()?;
     data.claims.as_object().cloned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::extract::ConnectInfo;
+    use axum::http::Request;
+    use std::net::SocketAddr;
+
+    const MARKER: &str = "0123456789abcdef0123456789abcdef";
+    const VICTIM: &str = "018f03a0-c4d2-7a37-ae4d-5aa45de12f11";
+
+    fn policy() -> IdentityProxyTrust {
+        IdentityProxyTrust::configured("10.0.0.0/8", MARKER).expect("valid policy")
+    }
+
+    fn request(peer: Option<&str>, bearer: &str, marker: &str) -> Request<Body> {
+        let mut request = Request::builder()
+            .header("x-user-id", VICTIM)
+            .header("x-user-email", "victim@example.com")
+            .header(IDENTITY_PROXY_MARKER_HEADER, marker)
+            .header(header::AUTHORIZATION, format!("Bearer {bearer}"))
+            .body(Body::empty())
+            .expect("request");
+        if let Some(peer) = peer {
+            request.extensions_mut().insert(ConnectInfo(
+                peer.parse::<SocketAddr>().expect("socket address"),
+            ));
+        }
+        request
+    }
+
+    #[test]
+    fn spoofed_identity_cannot_bypass_jwt_pat_or_cloud_pat_paths() {
+        for bearer in ["header.payload.signature", "mul_secret", "mcn_secret"] {
+            let mut request = request(Some("203.0.113.9:443"), bearer, MARKER);
+            let expected_authorization = format!("Bearer {bearer}");
+            assert_eq!(policy().take_identity(&mut request), None, "{bearer}");
+            assert!(request.headers().get("x-user-id").is_none(), "{bearer}");
+            assert!(request.headers().get("x-user-email").is_none(), "{bearer}");
+            assert!(
+                request
+                    .headers()
+                    .get(IDENTITY_PROXY_MARKER_HEADER)
+                    .is_none(),
+                "{bearer}"
+            );
+            assert_eq!(
+                request
+                    .headers()
+                    .get(header::AUTHORIZATION)
+                    .and_then(|value| value.to_str().ok()),
+                Some(expected_authorization.as_str()),
+                "the real authentication branch must still receive its credential"
+            );
+        }
+    }
+
+    #[test]
+    fn trusted_peer_and_private_marker_preserve_managed_identity() {
+        let mut request = request(Some("10.2.3.4:8443"), "unused", MARKER);
+        let identity = policy()
+            .take_identity(&mut request)
+            .expect("trusted identity");
+        assert_eq!(identity.user_id, VICTIM);
+        assert_eq!(identity.email, "victim@example.com");
+        assert_eq!(
+            request
+                .headers()
+                .get("x-user-id")
+                .and_then(|value| value.to_str().ok()),
+            Some(VICTIM)
+        );
+        assert!(request
+            .headers()
+            .get(IDENTITY_PROXY_MARKER_HEADER)
+            .is_none());
+    }
+
+    #[test]
+    fn source_and_marker_are_both_required() {
+        for (peer, marker) in [
+            (Some("203.0.113.9:443"), MARKER),
+            (Some("10.2.3.4:443"), "wrong-marker"),
+            (None, MARKER),
+        ] {
+            let mut request = request(peer, "mul_secret", marker);
+            assert_eq!(policy().take_identity(&mut request), None);
+            assert!(request.headers().get("x-user-id").is_none());
+        }
+    }
+
+    #[test]
+    fn trusted_identity_still_obeys_disabled_user_policy() {
+        let mut request = Request::builder()
+            .header("x-user-id", "514492f7-b30f-4147-bd33-c0e8ce5d6d4f")
+            .header(IDENTITY_PROXY_MARKER_HEADER, MARKER)
+            .body(Body::empty())
+            .expect("request");
+        request.extensions_mut().insert(ConnectInfo(
+            "10.2.3.4:443"
+                .parse::<SocketAddr>()
+                .expect("socket address"),
+        ));
+        let identity = policy()
+            .take_identity(&mut request)
+            .expect("trusted identity");
+        assert!(reject_disabled(
+            &identity.user_id,
+            &identity.email,
+            "identity_proxy"
+        ));
+    }
+
+    #[test]
+    fn partial_or_weak_configuration_fails_closed() {
+        assert!(IdentityProxyTrust::configured("", MARKER).is_err());
+        assert!(IdentityProxyTrust::configured("10.0.0.0/8", "short").is_err());
+        assert!(IdentityProxyTrust::configured("not-a-cidr", MARKER).is_err());
+    }
 }

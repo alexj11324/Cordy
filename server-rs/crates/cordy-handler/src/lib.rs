@@ -100,7 +100,7 @@ use std::time::Duration;
 use axum::http::{header, HeaderName, HeaderValue, Method};
 use axum::routing::get;
 use axum::{middleware, Router};
-use cordy_middleware::auth::{auth_middleware, AuthState};
+use cordy_middleware::auth::{auth_middleware, AuthState, IdentityProxyTrust};
 use cordy_middleware::daemon_auth::{daemon_auth_middleware, DaemonAuthState};
 use cordy_middleware::workspace::WorkspaceGuardState;
 use cordy_realtime::hub::Hub;
@@ -224,6 +224,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         pat_cache: state.pat_cache.clone(),
         cloud_pat_verifier: state.cloud_pat_verifier.clone(),
         side_effects: auth_side_effects.clone(),
+        identity_proxy: IdentityProxyTrust::from_env(),
     };
     let daemon_auth_state = DaemonAuthState {
         pool: state.pool.clone(),
