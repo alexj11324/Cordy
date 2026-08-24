@@ -38,6 +38,6 @@ pub use model::{
     ThinkingLevel,
 };
 pub use process::{OwnedProcessTree, ProcessTreeSignal};
-pub use qoder::{QoderBackend, QoderConfig};
+pub use qoder::{QoderBackend, QoderConfig, TraecliBackend, TraecliConfig};
 pub use qwen::{QwenBackend, QwenConfig};
 pub use registry::{build_backend, BackendConfig};

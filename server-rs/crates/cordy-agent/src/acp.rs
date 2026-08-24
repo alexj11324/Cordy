@@ -1,6 +1,7 @@
 //! Sequential ACP JSON-RPC transport with headless permission handling.
 
 use std::io;
+use std::time::Duration;
 
 use serde::Deserialize;
 use serde_json::Value;
@@ -115,6 +116,52 @@ where
                         return Err(rpc_error(method, error));
                     }
                     return Ok(frame.get("result").cloned().unwrap_or(Value::Null));
+                }
+                (None, Some(notification_method)) => on_notification(AcpNotification {
+                    method: notification_method.to_string(),
+                    params: frame.get("params").cloned().unwrap_or(Value::Null),
+                }),
+                _ => {}
+            }
+        }
+    }
+
+    /// Drains post-response notifications until the wire has been quiet for
+    /// `quiet` or the absolute `maximum` bound expires. Some ACP agents emit
+    /// their final message/tool update immediately after the terminal prompt
+    /// response; treating that response as EOF loses the user-facing tail.
+    pub async fn drain_notifications(
+        &mut self,
+        quiet: Duration,
+        maximum: Duration,
+        mut on_notification: impl FnMut(AcpNotification),
+    ) -> Result<(), AcpError> {
+        let deadline = tokio::time::Instant::now() + maximum;
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                return Ok(());
+            }
+            let wait = quiet.min(remaining);
+            let line = tokio::select! {
+                line = self.reader.next_line() => line?,
+                () = tokio::time::sleep(wait) => return Ok(()),
+            };
+            let Some(line) = line else {
+                return Ok(());
+            };
+            let Ok(frame) = serde_json::from_str::<Value>(line.trim()) else {
+                continue;
+            };
+            let Some(frame) = frame.as_object() else {
+                continue;
+            };
+            let frame_id = frame.get("id").and_then(Value::as_u64);
+            let frame_method = frame.get("method").and_then(Value::as_str);
+            match (frame_id, frame_method) {
+                (Some(request_id), Some(agent_method)) => {
+                    self.answer_agent_request(request_id, agent_method, frame.get("params"))
+                        .await?;
                 }
                 (None, Some(notification_method)) => on_notification(AcpNotification {
                     method: notification_method.to_string(),

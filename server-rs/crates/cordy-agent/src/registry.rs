@@ -7,7 +7,7 @@ use crate::antigravity::{AntigravityBackend, AntigravityConfig};
 use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
-use crate::qoder::{QoderBackend, QoderConfig};
+use crate::qoder::{QoderBackend, QoderConfig, TraecliBackend, TraecliConfig};
 use crate::qwen::{QwenBackend, QwenConfig};
 
 /// Provider-neutral launch inputs resolved by daemon profile/runtime loading.
@@ -48,6 +48,11 @@ pub fn build_backend(
             } else {
                 "qodercli".to_string()
             },
+            ..QoderConfig::default()
+        }))),
+        "traecli" => Ok(Arc::new(TraecliBackend::new(TraecliConfig {
+            command: config.command,
+            env: config.env,
         }))),
         _ => Err(AgentError::UnsupportedRuntime(runtime_id.to_string())),
     }
@@ -451,6 +456,7 @@ mod tests {
 
         assert!(build_backend("qoder", BackendConfig::default()).is_ok());
         assert!(build_backend("qoderclicn", BackendConfig::default()).is_ok());
+        assert!(build_backend("traecli", BackendConfig::default()).is_ok());
 
         let metadata_only = build_backend("claude", BackendConfig::default());
         assert!(matches!(
