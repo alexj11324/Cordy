@@ -14,6 +14,7 @@ members = [
     "crates/cordy-handler",
     "crates/cordy-ghsnapshot",
     "crates/cordy-lark",
+    "crates/cordy-llm",
     "crates/cordy-metrics",
     "crates/cordy-protocol",
     "crates/cordy-realtime",
@@ -39,7 +40,7 @@ license = "UNLICENSED"
 [workspace.dependencies]
 # async runtime & web
 tokio = { version = "1", features = ["full"] }
-axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "ws", "matched-path", "original-uri", "tower-log", "tracing"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "multipart", "ws", "matched-path", "original-uri", "tower-log", "tracing"] }
 tower-http = { version = "0.6", features = ["cors"] }
 percent-encoding = "2.3"
 # data
@@ -74,22 +75,19 @@ rand = "0.8"
 sha2 = "0.10"
 hex = "0.4"
 hmac = "0.12"
-rsa = { version = "0.9", features = ["pem"] }
-sha1 = { version = "0.10", features = ["oid"] }
 jsonwebtoken = "9"
 # async traits & lifecycle
 async-trait = "0.1"
 tokio-util = "0.7"
-aws-config = { version = "1", default-features = false, features = ["legacy-client", "rt-tokio"] }
-aws-credential-types = "1"
-aws-types = "1"
 ulid = "1"
 chrono-tz = "0.9"
 regex = "1"
 croner = "1"
 serde_yaml = "0.9"
+zip = { version = "2", default-features = false, features = ["deflate"] }
 # email & integrations
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+httpdate = "1"
 structured-email-address = { version = "0.0.16", default-features = false }
 # ring is the single crypto provider across the graph (sqlx/reqwest/jsonwebtoken
 # all enable rustls/ring); default features would also pull aws-lc-rs, and two

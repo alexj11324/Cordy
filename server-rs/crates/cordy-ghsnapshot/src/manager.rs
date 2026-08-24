@@ -206,6 +206,10 @@ impl Manager {
         self.client.as_ref().is_some_and(|c| c.enabled())
     }
 
+    pub fn client(&self) -> Option<Arc<Client>> {
+        self.client.clone()
+    }
+
     /// Token whose cancellation stops workers, the sweeper, and pending
     /// retry/defer timers. Mirrors cancelling the ctx given to Go's Start.
     pub fn shutdown_token(&self) -> tokio_util::sync::CancellationToken {
