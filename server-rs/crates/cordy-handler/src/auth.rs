@@ -28,8 +28,8 @@ pub struct AuthSettings {
     google_client_id: String,
     google_client_secret: String,
     google_redirect_uri: String,
-    cookie_domain: String,
-    frontend_origin: String,
+    pub(crate) cookie_domain: String,
+    pub(crate) frontend_origin: String,
 }
 
 impl AuthSettings {
