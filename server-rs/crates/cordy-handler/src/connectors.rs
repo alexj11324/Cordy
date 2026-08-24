@@ -349,7 +349,8 @@ async fn begin_lark_install(
     let task_session = session_id.clone();
     let poll_interval = begun.interval.as_secs().max(1);
     let expires = begun.expires_in;
-    tokio::spawn(run_lark_registration(
+    let side_effects = state.tasks.clone();
+    side_effects.spawn_side_effect(run_lark_registration(
         state,
         client,
         task_session,

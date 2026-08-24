@@ -329,7 +329,10 @@ impl TaskService {
         self.side_effect_tasks.start(parent)
     }
 
-    pub(crate) fn spawn_side_effect(&self, task: impl Future<Output = ()> + Send + 'static) {
+    /// Admits best-effort post-response work into the production-owned task
+    /// set. Callers must retain their own business timeout; shutdown supplies
+    /// the final process-level bound and abort fallback.
+    pub fn spawn_side_effect(&self, task: impl Future<Output = ()> + Send + 'static) {
         self.side_effect_tasks.spawn(task);
     }
 
