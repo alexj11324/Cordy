@@ -21,7 +21,7 @@ use crate::local_directory::local_directory_assignment_for_task;
 use crate::manager::DaemonControl;
 use crate::reconcile::ReconcileBroadcaster;
 use crate::repocache::{CancelCause, Ctx};
-use crate::types::{Task, TaskResult};
+use crate::types::{RuntimeExecutionTarget, Task, TaskResult};
 use crate::wakeup::TaskWakeup;
 
 const DEFAULT_CANCEL_POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -63,14 +63,19 @@ pub struct TaskRunOutcome {
 /// task becomes terminal or disappears.
 #[async_trait::async_trait]
 pub(crate) trait DaemonTaskExecutionHost: Send + Sync + 'static {
-    fn provider_for_runtime(&self, runtime_id: &str) -> Option<String>;
+    fn execution_target_for_runtime(&self, runtime_id: &str) -> Option<RuntimeExecutionTarget>;
 
     /// Preempt low-priority repository maintenance before a task starts, even
     /// when the runner reuses an existing worktree and never checks out.
     async fn cancel_repository_maintenance(&self);
 
-    async fn run_task(&self, ctx: Ctx, task: Task, provider: String, slot: usize)
-        -> TaskRunOutcome;
+    async fn run_task(
+        &self,
+        ctx: Ctx,
+        task: Task,
+        target: RuntimeExecutionTarget,
+        slot: usize,
+    ) -> TaskRunOutcome;
 }
 
 #[derive(Debug, Clone)]
@@ -345,7 +350,7 @@ async fn execute_claimed_task<H: DaemonTaskExecutionHost>(
     cancel_poll_interval: Duration,
     daemon_id: String,
 ) {
-    let Some(provider) = host.provider_for_runtime(&task.runtime_id) else {
+    let Some(target) = host.execution_target_for_runtime(&task.runtime_id) else {
         tracing::warn!(
             task = %task.id,
             runtime_id = %task.runtime_id,
@@ -383,7 +388,7 @@ async fn execute_claimed_task<H: DaemonTaskExecutionHost>(
         Arc::clone(&cancelled_by_server),
     ));
     let outcome = host
-        .run_task(run_ctx.clone(), task.clone(), provider, slot)
+        .run_task(run_ctx.clone(), task.clone(), target, slot)
         .await;
     run_ctx.cancel_with(CancelCause::Cancelled);
     let _ = watcher.await;

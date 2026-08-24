@@ -36,7 +36,7 @@ use crate::repo_state::DaemonRepoState;
 use crate::repocache::{is_repo_busy, Cache, Ctx, RepoInfo, WorktreeParams};
 use crate::runtime_registry::RuntimeRegistry;
 use crate::task_execution::TaskRunOutcome;
-use crate::types::Task;
+use crate::types::{RuntimeExecutionTarget, Task};
 use crate::wakeup::jitter_duration;
 
 const REPO_WARMUP_QUEUE_CAPACITY: usize = 64;
@@ -57,7 +57,7 @@ pub trait ProviderRuntimeAdapter: RuntimeRegistrationSource {
         &self,
         ctx: Ctx,
         task: Task,
-        provider: String,
+        target: RuntimeExecutionTarget,
         slot: usize,
         activity: Arc<DaemonActivity>,
         repo_state: Arc<DaemonRepoState>,
@@ -435,7 +435,7 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
         &self,
         ctx: Ctx,
         task: Task,
-        provider: String,
+        target: RuntimeExecutionTarget,
         slot: usize,
         activity: Arc<DaemonActivity>,
     ) -> TaskRunOutcome {
@@ -447,7 +447,7 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
             .run_task(
                 ctx,
                 task,
-                provider,
+                target,
                 slot,
                 activity,
                 Arc::clone(&self.repo_state),

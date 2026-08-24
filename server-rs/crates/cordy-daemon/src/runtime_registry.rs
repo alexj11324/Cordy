@@ -10,7 +10,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::health::HealthWorkspace;
 use crate::runtime_set::RuntimeSet;
-use crate::types::Runtime;
+use crate::types::{Runtime, RuntimeExecutionTarget};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct WorkspaceRuntimeState {
@@ -174,13 +174,19 @@ impl RuntimeRegistry {
         workspace.runtime_ids
     }
 
-    pub fn provider_for_runtime(&self, runtime_id: &str) -> Option<String> {
+    /// Resolves the complete launch identity from the same authoritative row
+    /// that accepted the task's runtime ID. Keeping `profile_id` attached is
+    /// required for custom runtime command overrides and fixed arguments.
+    pub fn execution_target_for_runtime(&self, runtime_id: &str) -> Option<RuntimeExecutionTarget> {
         self.state
             .read()
             .unwrap()
             .runtimes
             .get(runtime_id)
-            .map(|runtime| runtime.provider.clone())
+            .map(|runtime| RuntimeExecutionTarget {
+                provider: runtime.provider.clone(),
+                profile_id: runtime.profile_id.clone(),
+            })
     }
 
     pub fn workspace_for_runtime(&self, runtime_id: &str) -> Option<String> {
@@ -272,8 +278,11 @@ mod tests {
             vec!["r-1".to_string(), "r-2".to_string()]
         );
         assert_eq!(
-            registry.provider_for_runtime("r-2").as_deref(),
-            Some("claude")
+            registry.execution_target_for_runtime("r-2"),
+            Some(RuntimeExecutionTarget {
+                provider: "claude".to_string(),
+                profile_id: String::new(),
+            })
         );
 
         let second = registry
@@ -318,8 +327,11 @@ mod tests {
         assert!(error.to_string().contains("already owned"));
         assert_eq!(registry.workspace_ids(), vec!["ws-1".to_string()]);
         assert_eq!(
-            registry.provider_for_runtime("r-1").as_deref(),
-            Some("codex")
+            registry.execution_target_for_runtime("r-1"),
+            Some(RuntimeExecutionTarget {
+                provider: "codex".to_string(),
+                profile_id: String::new(),
+            })
         );
     }
 
@@ -347,8 +359,18 @@ mod tests {
             vec!["new-builtin".to_string(), "profile-runtime".to_string()]
         );
         assert_eq!(
-            registry.provider_for_runtime("profile-runtime").as_deref(),
-            Some("codex")
+            registry.execution_target_for_runtime("profile-runtime"),
+            Some(RuntimeExecutionTarget {
+                provider: "codex".to_string(),
+                profile_id: "profile-1".to_string(),
+            })
+        );
+        assert_eq!(
+            registry.execution_target_for_runtime("new-builtin"),
+            Some(RuntimeExecutionTarget {
+                provider: "claude".to_string(),
+                profile_id: String::new(),
+            })
         );
     }
 
