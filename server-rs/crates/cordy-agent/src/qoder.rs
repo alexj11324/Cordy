@@ -14,17 +14,17 @@ use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::acp::{
-    ACP_NOTIFICATION_DRAIN_GRACE, ACP_NOTIFICATION_QUIET_TIME, AcpClient, AcpError, AcpNotification,
+    AcpClient, AcpError, AcpNotification, ACP_NOTIFICATION_DRAIN_GRACE, ACP_NOTIFICATION_QUIET_TIME,
 };
 use crate::acp_mcp::{
-    AcpMcpServer, build_acp_mcp_servers, filter_acp_mcp_servers, parse_acp_mcp_capabilities,
+    build_acp_mcp_servers, filter_acp_mcp_servers, parse_acp_mcp_capabilities, AcpMcpServer,
 };
-use crate::command::{BlockedArgMode, RuntimeCommand, filter_custom_args, filter_launch_prefix};
+use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, RuntimeCommand};
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
 use crate::process::OwnedProcessTree;
-use crate::stderr::{DEFAULT_TAIL_BYTES, SharedDiagnosticBuffer, with_stderr};
+use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 
 const MESSAGE_BUFFER: usize = 256;
 const TERMINATION_GRACE: Duration = Duration::from_secs(2);
@@ -37,6 +37,19 @@ static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock
         ("--yolo", BlockedArgMode::Standalone),
     ])
 });
+static TRAECLI_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
+    LazyLock::new(|| {
+        BTreeMap::from([
+            ("acp", BlockedArgMode::Standalone),
+            ("serve", BlockedArgMode::Standalone),
+            ("-y", BlockedArgMode::Standalone),
+            ("--yolo", BlockedArgMode::Standalone),
+            ("-p", BlockedArgMode::Standalone),
+            ("--print", BlockedArgMode::Standalone),
+            ("--output-format", BlockedArgMode::WithValue),
+            ("--permission-mode", BlockedArgMode::WithValue),
+        ])
+    });
 static TERMINAL_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:(?:⚠️|❌|\[ERROR\]).*(?:BadRequestError|AuthenticationError|RateLimitError|HTTP \d{3}|Non-retryable|API call failed)|API call failed after \d+ retr(?:y|ies))")
         .unwrap_or_else(|error| panic!("invalid Qoder provider-error regex: {error}"))
@@ -51,6 +64,9 @@ pub struct QoderConfig {
     pub command: RuntimeCommand,
     pub env: BTreeMap<String, String>,
     pub default_command: String,
+    pub provider: String,
+    pub launch_args: Vec<String>,
+    pub resume_method: String,
 }
 
 impl Default for QoderConfig {
@@ -59,6 +75,9 @@ impl Default for QoderConfig {
             command: RuntimeCommand::default(),
             env: BTreeMap::new(),
             default_command: "qodercli".to_string(),
+            provider: "qoder".to_string(),
+            launch_args: vec!["--yolo".to_string(), "--acp".to_string()],
+            resume_method: "session/resume".to_string(),
         }
     }
 }
@@ -74,11 +93,70 @@ impl QoderBackend {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct TraecliConfig {
+    pub command: RuntimeCommand,
+    pub env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct TraecliBackend {
+    inner: QoderBackend,
+}
+
+impl TraecliBackend {
+    pub fn new(config: TraecliConfig) -> Self {
+        Self {
+            inner: QoderBackend::new(QoderConfig {
+                command: config.command,
+                env: config.env,
+                default_command: "traecli".to_string(),
+                provider: "traecli".to_string(),
+                launch_args: ["acp", "serve", "--yolo"].map(str::to_string).to_vec(),
+                resume_method: "session/load".to_string(),
+            }),
+        }
+    }
+}
+
+#[async_trait]
+impl Backend for TraecliBackend {
+    async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
+        self.inner.execute(prompt, options).await
+    }
+}
+
 pub fn build_qoder_args(options: &ExecOptions) -> Vec<String> {
-    let mut args = vec!["--yolo".to_string(), "--acp".to_string()];
-    args.extend(filter_custom_args(&options.extra_args, &BLOCKED_ARGS).args);
-    args.extend(filter_custom_args(&options.custom_args, &BLOCKED_ARGS).args);
+    build_session_args(&QoderConfig::default(), options)
+}
+
+pub fn build_traecli_args(options: &ExecOptions) -> Vec<String> {
+    build_session_args(
+        &QoderConfig {
+            provider: "traecli".to_string(),
+            launch_args: ["acp", "serve", "--yolo"].map(str::to_string).to_vec(),
+            resume_method: "session/load".to_string(),
+            default_command: "traecli".to_string(),
+            ..QoderConfig::default()
+        },
+        options,
+    )
+}
+
+fn build_session_args(config: &QoderConfig, options: &ExecOptions) -> Vec<String> {
+    let blocked = blocked_args(&config.provider);
+    let mut args = config.launch_args.clone();
+    args.extend(filter_custom_args(&options.extra_args, blocked).args);
+    args.extend(filter_custom_args(&options.custom_args, blocked).args);
     args
+}
+
+fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMode> {
+    if provider == "traecli" {
+        &TRAECLI_BLOCKED_ARGS
+    } else {
+        &BLOCKED_ARGS
+    }
 }
 
 #[async_trait]
@@ -90,11 +168,16 @@ impl Backend for QoderBackend {
         } else {
             self.config.command.path.as_str()
         };
-        let prefix = filter_launch_prefix(&self.config.command.prefix, &BLOCKED_ARGS);
-        log_blocked("launch prefix", &prefix.blocked_flags);
-        log_blocked_args(&options);
+        let blocked = blocked_args(&self.config.provider);
+        let prefix = filter_launch_prefix(&self.config.command.prefix, blocked);
+        log_blocked(
+            &self.config.provider,
+            "launch prefix",
+            &prefix.blocked_flags,
+        );
+        log_blocked_args(&self.config.provider, blocked, &options);
         let mut argv = prefix.args;
-        argv.extend(build_qoder_args(&options));
+        argv.extend(build_session_args(&self.config, &options));
         let mut command = Command::new(command_path);
         command
             .args(argv)
@@ -132,6 +215,9 @@ impl Backend for QoderBackend {
         let started = Instant::now();
         let stderr_tail = SharedDiagnosticBuffer::new(DEFAULT_TAIL_BYTES);
         let prompt = prompt.to_string();
+        let provider = self.config.provider.clone();
+        let resume_method = self.config.resume_method.clone();
+        let (prompt_response_tx, mut prompt_response_rx) = oneshot::channel();
 
         tokio::spawn(async move {
             let stderr_reader = stderr_tail.clone();
@@ -152,27 +238,37 @@ impl Backend for QoderBackend {
                 options,
                 mcp_servers,
                 message_tx,
+                provider.clone(),
+                resume_method,
+                prompt_response_tx,
             ));
             let end = if timeout.is_zero() {
                 tokio::select! {
+                    biased;
                     result = &mut protocol_task => RunEnd::Protocol(result),
+                    _ = &mut prompt_response_rx => RunEnd::PromptResolved,
                     () = cancellation.cancelled() => RunEnd::Cancelled,
                 }
             } else {
                 tokio::select! {
+                    biased;
                     result = &mut protocol_task => RunEnd::Protocol(result),
+                    _ = &mut prompt_response_rx => RunEnd::PromptResolved,
                     () = cancellation.cancelled() => RunEnd::Cancelled,
                     () = tokio::time::sleep(timeout) => RunEnd::TimedOut,
                 }
             };
             let mut outcome = match end {
                 RunEnd::Protocol(result) => result.unwrap_or_else(|error| {
-                    ProtocolOutcome::failed(format!("Qoder protocol task failed: {error}"))
+                    ProtocolOutcome::failed(format!("{provider} protocol task failed: {error}"))
+                }),
+                RunEnd::PromptResolved => (&mut protocol_task).await.unwrap_or_else(|error| {
+                    ProtocolOutcome::failed(format!("{provider} protocol task failed: {error}"))
                 }),
                 RunEnd::Cancelled => ProtocolOutcome::terminal("aborted", "execution cancelled"),
                 RunEnd::TimedOut => ProtocolOutcome::terminal(
                     "timeout",
-                    format!("qoder timed out after {}s", timeout.as_secs_f64()),
+                    format!("{provider} timed out after {}s", timeout.as_secs_f64()),
                 ),
             };
             let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
@@ -187,13 +283,15 @@ impl Backend for QoderBackend {
             }
             let stderr = stderr_tail.tail();
             if outcome.status == "completed" {
-                if let Some(provider_error) = provider_error(&stderr, &outcome.full_output) {
+                if let Some(provider_error) =
+                    provider_error(&provider, &stderr, &outcome.full_output)
+                {
                     outcome.status = "failed".to_string();
                     outcome.error = provider_error;
                 }
             }
             if !outcome.error.is_empty() {
-                outcome.error = with_stderr(&outcome.error, "qoder", &stderr);
+                outcome.error = with_stderr(&outcome.error, &provider, &stderr);
             }
             let _ = result_tx.send(ExecutionResult {
                 status: outcome.status,
@@ -215,6 +313,7 @@ impl Backend for QoderBackend {
 
 enum RunEnd {
     Protocol(Result<ProtocolOutcome, tokio::task::JoinError>),
+    PromptResolved,
     Cancelled,
     TimedOut,
 }
@@ -251,6 +350,9 @@ async fn run_protocol(
     options: ExecOptions,
     mcp_servers: Vec<AcpMcpServer>,
     messages: mpsc::Sender<Message>,
+    provider: String,
+    resume_method: String,
+    prompt_response: oneshot::Sender<()>,
 ) -> ProtocolOutcome {
     let mut client = AcpClient::new(BufReader::new(stdout), stdin);
     let initialize = match client
@@ -262,7 +364,7 @@ async fn run_protocol(
         .await
     {
         Ok(result) => result,
-        Err(error) => return ProtocolOutcome::failed(format!("qoder initialize failed: {error}")),
+        Err(error) => return ProtocolOutcome::failed(format!("{provider} initialize failed: {error}")),
     };
     let mcp_servers =
         filter_acp_mcp_servers(mcp_servers, parse_acp_mcp_capabilities(&initialize), false);
@@ -283,18 +385,20 @@ async fn run_protocol(
             Ok(result) => {
                 let session_id = extract_session_id(&result);
                 if session_id.is_empty() {
-                    return ProtocolOutcome::failed("qoder session/new returned no session ID");
+                    return ProtocolOutcome::failed(format!(
+                        "{provider} session/new returned no session ID"
+                    ));
                 }
                 (result, session_id)
             }
             Err(error) => {
-                return ProtocolOutcome::failed(format!("qoder session/new failed: {error}"));
+                return ProtocolOutcome::failed(format!("{provider} session/new failed: {error}"));
             }
         }
     } else {
         match client
             .request(
-                "session/resume",
+                &resume_method,
                 serde_json::json!({"cwd":cwd,"sessionId":options.resume_session_id,"mcpServers":mcp_servers}),
                 |_| {},
             )
@@ -305,7 +409,16 @@ async fn run_protocol(
                 let session_id = if returned.is_empty() { options.resume_session_id.clone() } else { returned };
                 (result, session_id)
             }
-            Err(error) => return protocol_failure("session/resume", error, String::new(), false),
+            Err(error) => {
+                let rejected = error.is_session_not_found();
+                return protocol_failure(
+                    &provider,
+                    &resume_method,
+                    error,
+                    String::new(),
+                    rejected,
+                );
+            }
         }
     };
     let mut effective_model = if options.model.is_empty() {
@@ -326,7 +439,8 @@ async fn run_protocol(
             if rejected {
                 session_id.clear();
             }
-            return protocol_failure("set_model", error, session_id, rejected);
+            let stage = format!("could not switch to model {:?}", options.model);
+            return protocol_failure(&provider, &stage, error, session_id, rejected);
         }
     }
     if effective_model.is_empty() {
@@ -352,9 +466,13 @@ async fn run_protocol(
             if rejected {
                 session_id.clear();
             }
-            return protocol_failure("session/prompt", error, session_id, rejected);
+            return protocol_failure(&provider, "session/prompt", error, session_id, rejected);
         }
     };
+    // The execution deadline governs the provider turn, not the bounded tail
+    // drain below. Signal the supervisor as soon as the terminal prompt
+    // response arrives so a valid result cannot be replaced by a timeout.
+    let _ = prompt_response.send(());
     // A few ACP runtimes flush their final session/update notifications after
     // resolving session/prompt. Keep reading briefly so trailing answer text,
     // tool completions, and usage updates are not lost when the process is
@@ -384,7 +502,7 @@ async fn run_protocol(
         }
         .to_string(),
         error: if stop_reason == "cancelled" {
-            "qoder cancelled the prompt".to_string()
+            format!("{provider} cancelled the prompt")
         } else {
             String::new()
         },
@@ -397,6 +515,7 @@ async fn run_protocol(
 }
 
 fn protocol_failure(
+    provider: &str,
     stage: &str,
     error: AcpError,
     session_id: String,
@@ -404,7 +523,7 @@ fn protocol_failure(
 ) -> ProtocolOutcome {
     ProtocolOutcome {
         status: "failed".to_string(),
-        error: format!("qoder {stage} failed: {error}"),
+        error: format!("{provider} {stage} failed: {error}"),
         session_id,
         resume_rejected: rejected,
         ..ProtocolOutcome::default()
@@ -792,13 +911,13 @@ fn extract_current_model(value: &Value) -> String {
         .to_string()
 }
 
-fn provider_error(stderr: &str, output: &str) -> Option<String> {
+fn provider_error(provider: &str, stderr: &str, output: &str) -> Option<String> {
     if let Some(found) = TERMINAL_PROVIDER_ERROR.find(stderr) {
-        return Some(format!("qoder provider error: {}", found.as_str()));
+        return Some(format!("{provider} provider error: {}", found.as_str()));
     }
     OUTPUT_PROVIDER_ERROR
         .find(output)
-        .map(|found| format!("qoder provider error: {}", found.as_str()))
+        .map(|found| format!("{provider} provider error: {}", found.as_str()))
 }
 
 fn message(message_type: MessageType, content: &str) -> Message {
@@ -827,20 +946,26 @@ fn send(messages: &mpsc::Sender<Message>, value: Message) {
     let _ = messages.try_send(value);
 }
 
-fn log_blocked_args(options: &ExecOptions) {
+fn log_blocked_args(
+    provider: &str,
+    blocked: &BTreeMap<&str, BlockedArgMode>,
+    options: &ExecOptions,
+) {
     log_blocked(
+        provider,
         "extra arguments",
-        &filter_custom_args(&options.extra_args, &BLOCKED_ARGS).blocked_flags,
+        &filter_custom_args(&options.extra_args, blocked).blocked_flags,
     );
     log_blocked(
+        provider,
         "custom arguments",
-        &filter_custom_args(&options.custom_args, &BLOCKED_ARGS).blocked_flags,
+        &filter_custom_args(&options.custom_args, blocked).blocked_flags,
     );
 }
 
-fn log_blocked(source: &str, flags: &[String]) {
+fn log_blocked(provider: &str, source: &str, flags: &[String]) {
     if !flags.is_empty() {
-        tracing::warn!(provider = "qoder", source, flags = ?flags, "ignored daemon-owned arguments");
+        tracing::warn!(provider, source, flags = ?flags, "ignored daemon-owned arguments");
     }
 }
 
@@ -866,6 +991,29 @@ mod tests {
         assert!(args.iter().any(|arg| arg == "--safe"));
         assert!(args.iter().any(|arg| arg == "--debug"));
         assert!(!args.iter().any(|arg| arg == "acp"));
+    }
+
+    #[test]
+    fn traecli_arguments_keep_acp_serve_and_headless_mode_owned() {
+        let args = build_traecli_args(&ExecOptions {
+            custom_args: [
+                "acp",
+                "serve",
+                "--yolo",
+                "--output-format",
+                "json",
+                "--add-dir",
+                "/extra",
+            ]
+            .map(str::to_string)
+            .to_vec(),
+            ..ExecOptions::default()
+        });
+        assert_eq!(&args[..3], ["acp", "serve", "--yolo"]);
+        assert_eq!(args.iter().filter(|arg| arg.as_str() == "acp").count(), 1);
+        assert_eq!(args.iter().filter(|arg| arg.as_str() == "serve").count(), 1);
+        assert!(!args.iter().any(|arg| arg == "json"));
+        assert!(args.windows(2).any(|pair| pair == ["--add-dir", "/extra"]));
     }
 
     #[test]
@@ -1051,5 +1199,139 @@ done
             .unwrap_or_else(|error| panic!("cancellation exceeded bound: {error}"))
             .unwrap_or_else(|error| panic!("Qoder result: {error}"));
         assert_eq!(result.status, "aborted");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn traecli_resume_uses_session_load_and_ignores_history_replay() {
+        let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
+        let executable = directory.path().join("traecli");
+        let requests = directory.path().join("requests.jsonl");
+        std::fs::write(
+            &executable,
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$TRAE_REQUESTS"
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentCapabilities":{"loadSession":true}}}\n' "$id" ;;
+    *'"method":"session/load"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"old history"}}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"current answer"}}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$id" ;;
+  esac
+done
+"#,
+        )
+        .unwrap_or_else(|error| panic!("write fake TRAE: {error}"));
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|error| panic!("chmod fake TRAE: {error}"));
+        let backend = TraecliBackend::new(TraecliConfig {
+            command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
+            env: BTreeMap::from([(
+                "TRAE_REQUESTS".to_string(),
+                requests.to_string_lossy().into_owned(),
+            )]),
+        });
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    resume_session_id: "existing-session".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute TRAE: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("TRAE result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "current answer");
+        assert_eq!(result.session_id, "existing-session");
+        let requests = std::fs::read_to_string(requests)
+            .unwrap_or_else(|error| panic!("read TRAE requests: {error}"));
+        assert!(requests.contains("\"method\":\"session/load\""));
+        assert!(!requests.contains("\"method\":\"session/resume\""));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn traecli_missing_loaded_session_requests_fresh_retry() {
+        let (_directory, qoder) = fake_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentCapabilities":{"loadSession":true}}}\n' "$id" ;;
+    *'"method":"session/load"'*) printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"Session not found"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let backend = TraecliBackend::new(TraecliConfig {
+            command: qoder.config.command,
+            env: BTreeMap::new(),
+        });
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    resume_session_id: "expired-session".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute TRAE: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("TRAE result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert!(result.resume_rejected);
+        assert!(result.session_id.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn completed_prompt_uses_its_own_notification_drain_grace() {
+        let (_directory, backend) = fake_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"near-deadline"}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      sleep 0.10
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"final"}}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$id"
+      sleep 0.10
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":" tail"}}}}'
+      ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    timeout: Duration::from_millis(150),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Qoder: {error}"));
+        let result = tokio::time::timeout(Duration::from_secs(5), session.result)
+            .await
+            .unwrap_or_else(|error| panic!("notification drain exceeded bound: {error}"))
+            .unwrap_or_else(|error| panic!("Qoder result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "final tail");
+        assert_eq!(result.session_id, "near-deadline");
     }
 }
