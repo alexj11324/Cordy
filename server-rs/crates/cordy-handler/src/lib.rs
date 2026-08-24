@@ -33,6 +33,7 @@ pub mod pending_store;
 pub mod pin;
 pub mod profile_json;
 pub mod quick_action;
+pub mod session;
 pub mod squad_briefing;
 pub mod state;
 pub mod task;
@@ -231,6 +232,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
 
     Router::new()
         .merge(health::router())
+        .merge(session::public_router())
         .merge(workspace::public_router())
         .merge(attachment_access::public_router())
         .merge(avatar::router())

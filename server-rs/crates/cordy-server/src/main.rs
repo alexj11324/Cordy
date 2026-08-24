@@ -36,6 +36,10 @@ async fn main() -> anyhow::Result<()> {
     validate_auth_config(&cfg)?;
     cordy_auth::jwt::configure_jwt_secret(cfg.auth.jwt_secret.as_deref())?;
     cordy_auth::cookie::configure_auth_token_ttl(cfg.auth.auth_token_ttl.as_deref())?;
+    cordy_auth::cookie::configure_cookie_settings(
+        cfg.auth.cookie_domain.as_deref(),
+        cfg.urls.frontend_origin.as_deref(),
+    )?;
     tracing::info!(port = cfg.server.port, "starting cordy-server");
 
     let db = cordy_db::connect(&cfg.database).await?;

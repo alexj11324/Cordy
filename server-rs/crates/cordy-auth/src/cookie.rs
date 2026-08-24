@@ -14,6 +14,13 @@ pub const DEFAULT_AUTH_TOKEN_TTL_SECS: i64 = 30 * 24 * 3600;
 
 const TEN_YEARS_SECS: i64 = 10 * 365 * 24 * 3600;
 static AUTH_TOKEN_TTL_SECS: OnceLock<i64> = OnceLock::new();
+static COOKIE_SETTINGS: OnceLock<CookieSettings> = OnceLock::new();
+
+#[derive(Debug)]
+struct CookieSettings {
+    domain: Option<String>,
+    secure: bool,
+}
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -126,19 +133,37 @@ pub fn auth_token_ttl() -> i64 {
     })
 }
 
-/// Resolves the cookie Domain attribute. An IP literal (optionally
-/// dot-prefixed) is rejected with a warning — RFC 6265 §4.1.2.3 forbids IP
-/// literals there and browsers silently drop such Set-Cookie headers.
+/// Resolves the cookie Domain attribute. Invalid domains are omitted so the
+/// caller still emits a valid host-only cookie, matching Go's net/http path.
 pub fn cookie_domain(raw: Option<&str>) -> Option<String> {
     let raw = raw?.trim();
     if raw.is_empty() {
         return None;
     }
     let bare = raw.strip_prefix('.').unwrap_or(raw);
-    if bare.parse::<std::net::IpAddr>().is_ok() {
+    let valid = bare.len() <= 253
+        && !bare.is_empty()
+        && !bare.ends_with('.')
+        && bare.parse::<std::net::IpAddr>().is_err()
+        && bare.split('.').all(|label| {
+            label.len() <= 63
+                && !label.is_empty()
+                && label
+                    .as_bytes()
+                    .first()
+                    .is_some_and(u8::is_ascii_alphanumeric)
+                && label
+                    .as_bytes()
+                    .last()
+                    .is_some_and(u8::is_ascii_alphanumeric)
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        });
+    if !valid {
         tracing::warn!(
             value = %raw,
-            "COOKIE_DOMAIN looks like an IP address; ignoring. RFC 6265 forbids IP literals in the cookie Domain attribute, so browsers would drop the Set-Cookie. Leave COOKIE_DOMAIN empty for single-host deployments, or use a real domain."
+            "COOKIE_DOMAIN is not a valid DNS domain; omitting the Domain attribute"
         );
         return None;
     }
@@ -157,6 +182,64 @@ pub fn is_secure_cookie(frontend_origin: Option<&str>) -> bool {
         Some((scheme, _)) => scheme.eq_ignore_ascii_case("https"),
         None => false,
     }
+}
+
+/// Installs the merged TOML/environment cookie settings during startup.
+pub fn configure_cookie_settings(
+    domain: Option<&str>,
+    frontend_origin: Option<&str>,
+) -> anyhow::Result<()> {
+    COOKIE_SETTINGS
+        .set(CookieSettings {
+            domain: cookie_domain(domain),
+            secure: is_secure_cookie(frontend_origin),
+        })
+        .map_err(|_| anyhow::anyhow!("cookie settings were already initialized"))
+}
+
+fn effective_cookie_settings() -> &'static CookieSettings {
+    COOKIE_SETTINGS.get_or_init(|| {
+        let domain = std::env::var("COOKIE_DOMAIN").ok();
+        let frontend_origin = std::env::var("FRONTEND_ORIGIN").ok();
+        CookieSettings {
+            domain: cookie_domain(domain.as_deref()),
+            secure: is_secure_cookie(frontend_origin.as_deref()),
+        }
+    })
+}
+
+pub fn configured_cookie_domain() -> Option<&'static str> {
+    effective_cookie_settings().domain.as_deref()
+}
+
+pub fn configured_secure_cookie() -> bool {
+    effective_cookie_settings().secure
+}
+
+/// Values for the two `Set-Cookie` headers that clear the session and CSRF
+/// cookies. `Max-Age=0` is Go net/http's wire representation for MaxAge=-1.
+pub fn clear_auth_cookie_values(domain: Option<&str>, secure: bool) -> [String; 2] {
+    [
+        clear_cookie_value(AUTH_COOKIE_NAME, domain, secure, true),
+        clear_cookie_value(CSRF_COOKIE_NAME, domain, secure, false),
+    ]
+}
+
+fn clear_cookie_value(name: &str, domain: Option<&str>, secure: bool, http_only: bool) -> String {
+    let mut value = format!("{name}=; Path=/");
+    if let Some(domain) = domain.filter(|value| !value.is_empty()) {
+        value.push_str("; Domain=");
+        value.push_str(domain);
+    }
+    value.push_str("; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0");
+    if http_only {
+        value.push_str("; HttpOnly");
+    }
+    if secure {
+        value.push_str("; Secure");
+    }
+    value.push_str("; SameSite=Strict");
+    value
 }
 
 /// CSRF token bound to the auth token via HMAC:
@@ -244,26 +327,33 @@ mod tests {
         let csrf = generate_csrf_token(auth_token).unwrap();
 
         assert!(verify_csrf_signature(auth_token, &csrf));
-        // Wrong auth token must fail.
         assert!(!verify_csrf_signature("mul_other", &csrf));
-        // Tampered signature must fail.
         let mut tampered = csrf.clone();
         tampered.replace_range(
             csrf.len() - 1..,
             if csrf.ends_with('0') { "1" } else { "0" },
         );
         assert!(!verify_csrf_signature(auth_token, &tampered));
-        // Malformed shapes must fail.
         assert!(!verify_csrf_signature(auth_token, "no-dot"));
         assert!(!verify_csrf_signature(auth_token, "zz.zz"));
     }
 
     #[test]
-    fn cookie_domain_rejects_ip_literals() {
+    fn cookie_domain_rejects_invalid_values() {
         assert_eq!(cookie_domain(None), None);
         assert_eq!(cookie_domain(Some("")), None);
-        assert_eq!(cookie_domain(Some("192.168.1.1")), None);
-        assert_eq!(cookie_domain(Some(".127.0.0.1")), None);
+        for invalid in [
+            "192.168.1.1",
+            ".127.0.0.1",
+            "bad domain",
+            "bad_domain.example",
+            "-bad.example",
+            "bad-.example",
+            "bad..example",
+            "example.com.",
+        ] {
+            assert_eq!(cookie_domain(Some(invalid)), None, "{invalid}");
+        }
         assert_eq!(
             cookie_domain(Some("example.com")),
             Some("example.com".to_string())
@@ -271,6 +361,10 @@ mod tests {
         assert_eq!(
             cookie_domain(Some(".example.com")),
             Some(".example.com".to_string())
+        );
+        assert_eq!(
+            cookie_domain(Some("xn--bcher-kva.example")),
+            Some("xn--bcher-kva.example".to_string())
         );
     }
 
@@ -282,5 +376,24 @@ mod tests {
         assert!(is_secure_cookie(Some("https://app.example.com")));
         assert!(is_secure_cookie(Some("HTTPS://app.example.com")));
         assert!(!is_secure_cookie(Some("app.example.com")));
+    }
+
+    #[test]
+    fn clear_cookie_values_match_go_logout_contract() {
+        let values = clear_auth_cookie_values(Some(".example.com"), true);
+        assert_eq!(
+            values[0],
+            "cordy_auth=; Path=/; Domain=.example.com; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; HttpOnly; Secure; SameSite=Strict"
+        );
+        assert_eq!(
+            values[1],
+            "cordy_csrf=; Path=/; Domain=.example.com; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; Secure; SameSite=Strict"
+        );
+
+        let local = clear_auth_cookie_values(None, false);
+        assert!(!local[0].contains("Domain="));
+        assert!(!local[0].contains("; Secure"));
+        assert!(local[0].contains("; HttpOnly"));
+        assert!(!local[1].contains("; HttpOnly"));
     }
 }
