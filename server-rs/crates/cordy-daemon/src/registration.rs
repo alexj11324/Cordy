@@ -10,12 +10,12 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::json;
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{mpsc, Mutex as AsyncMutex};
 
 use crate::client::{Client, WorkspaceInfo};
 use crate::config::Config;
 use crate::repo_state::DaemonRepoState;
-use crate::repocache::{Cache, Ctx, RepoInfo};
+use crate::repocache::{Ctx, RepoInfo};
 use crate::runtime_registry::RuntimeRegistry;
 
 const WORKSPACE_SYNC_TIMEOUT: Duration = Duration::from_secs(15);
@@ -32,6 +32,40 @@ pub struct RegistrationPayload {
 pub enum BuiltinRefreshReason {
     Discovery,
     Version,
+}
+
+/// Best-effort cache warmup request. Correctness does not depend on queue
+/// delivery: the authenticated checkout handler synchronizes a miss on demand.
+pub(crate) struct RepoWarmupRequest {
+    pub workspace_id: String,
+    pub repos: Vec<RepoInfo>,
+}
+
+pub(crate) fn enqueue_repo_warmup(
+    tx: &mpsc::Sender<RepoWarmupRequest>,
+    workspace_id: impl Into<String>,
+    repos: Vec<RepoInfo>,
+) {
+    if repos.is_empty() {
+        return;
+    }
+    let request = RepoWarmupRequest {
+        workspace_id: workspace_id.into(),
+        repos,
+    };
+    match tx.try_send(request) {
+        Ok(()) => {}
+        Err(mpsc::error::TrySendError::Full(request)) => tracing::debug!(
+            workspace_id = %request.workspace_id,
+            repos = request.repos.len(),
+            "repo warmup queue full; checkout will synchronize on demand"
+        ),
+        Err(mpsc::error::TrySendError::Closed(request)) => tracing::warn!(
+            workspace_id = %request.workspace_id,
+            repos = request.repos.len(),
+            "repo warmup owner stopped"
+        ),
+    }
 }
 
 #[async_trait::async_trait]
@@ -65,8 +99,8 @@ pub trait RuntimeRegistrationSource: Send + Sync + 'static {
 pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
     config: Arc<Config>,
     client: Arc<Client>,
-    repo_cache: Arc<Cache>,
     repo_state: Arc<DaemonRepoState>,
+    repo_warmups: mpsc::Sender<RepoWarmupRequest>,
     source: Arc<S>,
     serial: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
 }
@@ -75,15 +109,15 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
     pub fn new(
         config: Arc<Config>,
         client: Arc<Client>,
-        repo_cache: Arc<Cache>,
         repo_state: Arc<DaemonRepoState>,
+        repo_warmups: mpsc::Sender<RepoWarmupRequest>,
         source: Arc<S>,
     ) -> Self {
         Self {
             config,
             client,
-            repo_cache,
             repo_state,
+            repo_warmups,
             source,
             serial: Mutex::new(HashMap::new()),
         }
@@ -325,7 +359,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 }
             }
         }
-        self.sync_workspace_repos(&ctx, &workspace.id, repos).await;
+        self.enqueue_workspace_repos(&workspace.id, repos);
         Ok(())
     }
 
@@ -403,12 +437,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         )
     }
 
-    async fn sync_workspace_repos(
-        &self,
-        ctx: &Ctx,
-        workspace_id: &str,
-        repos: Vec<crate::types::RepoData>,
-    ) {
+    fn enqueue_workspace_repos(&self, workspace_id: &str, repos: Vec<crate::types::RepoData>) {
         if repos.is_empty() {
             return;
         }
@@ -420,14 +449,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         if repos.is_empty() {
             return;
         }
-        match self.repo_cache.sync_ctx(ctx, workspace_id, &repos).await {
-            Ok(()) => self.repo_state.set_sync_error(workspace_id, String::new()),
-            Err(error) => {
-                self.repo_state
-                    .set_sync_error(workspace_id, error.to_string());
-                tracing::warn!(%workspace_id, %error, "workspace repo cache sync failed");
-            }
-        }
+        enqueue_repo_warmup(&self.repo_warmups, workspace_id.to_string(), repos);
     }
 }
 
@@ -435,6 +457,30 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
 mod tests {
     use super::*;
     use serde_json::Value;
+
+    #[test]
+    fn repo_warmup_queue_is_bounded_and_keeps_existing_work() {
+        let (tx, mut rx) = mpsc::channel(1);
+        enqueue_repo_warmup(
+            &tx,
+            "workspace-1",
+            vec![RepoInfo {
+                url: "https://example.test/first.git".into(),
+            }],
+        );
+        enqueue_repo_warmup(
+            &tx,
+            "workspace-2",
+            vec![RepoInfo {
+                url: "https://example.test/second.git".into(),
+            }],
+        );
+
+        let queued = rx.try_recv().unwrap();
+        assert_eq!(queued.workspace_id, "workspace-1");
+        assert_eq!(queued.repos[0].url, "https://example.test/first.git");
+        assert!(rx.try_recv().is_err());
+    }
 
     #[test]
     fn registration_payload_preserves_provider_owned_wire_fields() {

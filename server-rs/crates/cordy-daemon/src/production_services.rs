@@ -6,11 +6,13 @@
 //! reconcile lifecycle remain daemon responsibilities.
 
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
 use serde_json::Value;
+use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 
 use crate::activity::DaemonActivity;
 use crate::agents_refresh::{AGENT_DISCOVERY_INTERVAL, AGENT_VERSION_REFRESH_INTERVAL};
@@ -27,7 +29,8 @@ use crate::health::{
 use crate::production_stack::{ProductionRuntimeServices, RepoCheckoutFailure};
 use crate::reconcile::{ReconcileBroadcaster, WorkspaceChangeSignal};
 use crate::registration::{
-    BuiltinRefreshReason, RuntimeRegistrationService, RuntimeRegistrationSource,
+    enqueue_repo_warmup, BuiltinRefreshReason, RepoWarmupRequest, RuntimeRegistrationService,
+    RuntimeRegistrationSource,
 };
 use crate::repo_state::DaemonRepoState;
 use crate::repocache::{is_repo_busy, Cache, Ctx, RepoInfo, WorktreeParams};
@@ -35,6 +38,10 @@ use crate::runtime_registry::RuntimeRegistry;
 use crate::task_execution::TaskRunOutcome;
 use crate::types::Task;
 use crate::wakeup::jitter_duration;
+
+const REPO_WARMUP_QUEUE_CAPACITY: usize = 64;
+const REPO_WARMUP_CONCURRENCY: usize = 2;
+const REPO_WARMUP_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[async_trait::async_trait]
 pub trait ProviderRuntimeAdapter: RuntimeRegistrationSource {
@@ -68,6 +75,8 @@ pub struct DaemonProductionServices<P: ProviderRuntimeAdapter> {
     repo_cache: Arc<Cache>,
     repo_state: Arc<DaemonRepoState>,
     checkout_registry: Arc<RepoCheckoutRegistry>,
+    repo_warmups: mpsc::Sender<RepoWarmupRequest>,
+    repo_warmup_rx: Mutex<Option<mpsc::Receiver<RepoWarmupRequest>>>,
 }
 
 impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
@@ -79,12 +88,13 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
         provider: Arc<P>,
     ) -> Self {
         let repo_state = Arc::new(DaemonRepoState::new());
+        let (repo_warmups, repo_warmup_rx) = mpsc::channel(REPO_WARMUP_QUEUE_CAPACITY);
         Self {
             registration: RuntimeRegistrationService::new(
                 Arc::clone(&config),
                 Arc::clone(&client),
-                Arc::clone(&repo_cache),
                 Arc::clone(&repo_state),
+                repo_warmups.clone(),
                 Arc::clone(&provider),
             ),
             config,
@@ -93,6 +103,8 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
             repo_cache,
             repo_state,
             checkout_registry,
+            repo_warmups,
+            repo_warmup_rx: Mutex::new(Some(repo_warmup_rx)),
         }
     }
 
@@ -284,7 +296,7 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
         }
     }
 
-    async fn sync_task_repos(&self, ctx: &Ctx, task: &Task) -> TaskRepoRefGuard {
+    fn sync_task_repos(&self, task: &Task) -> TaskRepoRefGuard {
         let candidates =
             self.repo_state
                 .register_task_repos(&task.workspace_id, &task.id, &task.repos);
@@ -293,24 +305,63 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
             .filter(|url| self.repo_cache.lookup(&task.workspace_id, url).is_none())
             .map(|url| RepoInfo { url })
             .collect();
-        if !repos.is_empty() {
-            if let Err(error) = self
-                .repo_cache
-                .sync_ctx(ctx, &task.workspace_id, &repos)
-                .await
-            {
-                tracing::warn!(
-                    workspace_id = %task.workspace_id,
-                    task_id = %task.id,
-                    %error,
-                    "task repository cache sync failed"
-                );
-            }
-        }
+        enqueue_repo_warmup(&self.repo_warmups, task.workspace_id.clone(), repos);
         TaskRepoRefGuard {
             state: Arc::clone(&self.repo_state),
             workspace_id: task.workspace_id.clone(),
             task_id: task.id.clone(),
+        }
+    }
+
+    async fn repo_warmup_loop(&self, ctx: Ctx, mut requests: mpsc::Receiver<RepoWarmupRequest>) {
+        let mut tasks = JoinSet::new();
+        loop {
+            tokio::select! {
+                () = ctx.cancelled() => break,
+                completed = tasks.join_next(), if !tasks.is_empty() => {
+                    if let Some(Err(error)) = completed {
+                        tracing::warn!(%error, "repo warmup task failed");
+                    }
+                }
+                request = requests.recv(), if tasks.len() < REPO_WARMUP_CONCURRENCY => {
+                    let Some(request) = request else { break };
+                    let cache = Arc::clone(&self.repo_cache);
+                    let state = Arc::clone(&self.repo_state);
+                    let child = ctx.child();
+                    tasks.spawn(async move {
+                        match cache
+                            .sync_ctx(&child, &request.workspace_id, &request.repos)
+                            .await
+                        {
+                            Ok(()) => state.set_sync_error(&request.workspace_id, String::new()),
+                            Err(error) => {
+                                state.set_sync_error(&request.workspace_id, error.to_string());
+                                tracing::warn!(
+                                    workspace_id = %request.workspace_id,
+                                    %error,
+                                    "workspace repo cache warmup failed"
+                                );
+                            }
+                        }
+                    });
+                }
+            }
+        }
+
+        let drain = async {
+            while let Some(result) = tasks.join_next().await {
+                if let Err(error) = result {
+                    tracing::warn!(%error, "repo warmup task failed during shutdown");
+                }
+            }
+        };
+        if tokio::time::timeout(REPO_WARMUP_DRAIN_TIMEOUT, drain)
+            .await
+            .is_err()
+        {
+            tasks.abort_all();
+            while tasks.join_next().await.is_some() {}
+            tracing::warn!("repo warmups exceeded shutdown deadline and were aborted");
         }
     }
 }
@@ -388,7 +439,10 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
         slot: usize,
         activity: Arc<DaemonActivity>,
     ) -> TaskRunOutcome {
-        let _repo_refs = self.sync_task_repos(&ctx, &task).await;
+        // Publish task references synchronously, but do not spend the prepare
+        // lease cloning repositories. The owned warmup worker prefetches in
+        // parallel; checkout readiness synchronizes a miss on demand.
+        let _repo_refs = self.sync_task_repos(&task);
         self.provider
             .run_task(
                 ctx,
@@ -423,6 +477,12 @@ impl<P: ProviderRuntimeAdapter> ProductionRuntimeServices for DaemonProductionSe
         workspace_changes: Arc<WorkspaceChangeSignal>,
         registry: Arc<RuntimeRegistry>,
     ) -> anyhow::Result<()> {
+        let repo_warmup_rx = self
+            .repo_warmup_rx
+            .lock()
+            .unwrap()
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("repo warmup owner already started"))?;
         tokio::join!(
             self.reconcile_loop(
                 ctx.child(),
@@ -430,7 +490,8 @@ impl<P: ProviderRuntimeAdapter> ProductionRuntimeServices for DaemonProductionSe
                 workspace_changes,
                 Arc::clone(&registry),
             ),
-            self.provider_refresh_loop(ctx, registry),
+            self.provider_refresh_loop(ctx.child(), registry),
+            self.repo_warmup_loop(ctx, repo_warmup_rx),
         );
         Ok(())
     }
