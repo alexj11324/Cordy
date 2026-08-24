@@ -23,21 +23,26 @@ fn strip_home_prefix(p: &str) -> Option<String> {
     // Case-insensitive `(?:[A-Za-z]:)?/(?:Users|home)/[^/]+(?:/(.*))?`.
     let normalized = p.replace('\\', "/");
     let lower = normalized.to_lowercase();
-    let rest = if let Some(r) = lower.strip_prefix("/users/") {
-        r
-    } else if let Some(r) = lower.strip_prefix("/home/") {
-        r
+    let prefix_len = if lower.starts_with("/users/") {
+        "/users/".len()
+    } else if lower.starts_with("/home/") {
+        "/home/".len()
     } else {
         // Windows drive form `c:/users/...`
         let bytes = lower.as_bytes();
-        if bytes.len() > 8 && bytes[1] == b':' && lower[2..].starts_with("/users/") {
-            &lower[8..]
+        if bytes.len() > 2
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && lower[2..].starts_with("/users/")
+        {
+            2 + "/users/".len()
         } else {
             return None;
         }
     };
+    let rest = &normalized[prefix_len..];
     let remainder = match rest.find('/') {
-        Some(idx) => &normalized[normalized.len() - (rest.len() - idx)..],
+        Some(idx) => &rest[idx + 1..],
         None => "",
     };
     Some(remainder.to_string())
@@ -355,5 +360,20 @@ mod tests {
             Uuid::nil().to_string()
         );
         assert_eq!(value["dispatched_at"], "2026-08-23T07:00:00Z");
+    }
+
+    #[test]
+    fn relative_work_dir_never_exposes_home_account_name() {
+        assert_eq!(relative_work_dir(r"C:\Users\Alice\repo", "", ""), "repo");
+        assert_eq!(
+            relative_work_dir("c:/users/Alice/repo/src", "", ""),
+            "repo/src"
+        );
+        assert_eq!(relative_work_dir("/Users/Alice/repo", "", ""), "repo");
+        assert_eq!(
+            relative_work_dir("/home/alice/repo/src", "", ""),
+            "repo/src"
+        );
+        assert_eq!(relative_work_dir(r"C:\Users\Alice", "", ""), "");
     }
 }
