@@ -1648,7 +1648,7 @@ impl Client {
                 apply_ctx_deadline(builder, ctx, CONTROL_PLANE_TIMEOUT),
                 ctx.clone(),
                 true,
-                "POST",
+                "GET",
             )
             .await?;
         Ok(opt.unwrap_or_else(|| serde_json::from_value(Value::Null).unwrap()))
