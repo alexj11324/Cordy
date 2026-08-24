@@ -6,6 +6,7 @@
 
 use std::ffi::OsString;
 use std::fs;
+use std::io::{Read, Seek};
 use std::path::PathBuf;
 use std::process::{Child, ExitStatus, Stdio};
 use std::time::{Duration, Instant};
@@ -33,6 +34,52 @@ pub struct StartupLogCursor {
     pub structured_offset: u64,
     pub crash_log: PathBuf,
     pub crash_offset: u64,
+}
+
+const STARTUP_LOG_READ_CAP: u64 = 64 * 1024;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartupFailureKind {
+    AuthenticationRejected,
+    ServerUnreachable,
+    Other,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartupFailureEvidence {
+    pub kind: StartupFailureKind,
+    pub structured_lines: Vec<String>,
+    pub crash_lines: Vec<String>,
+}
+
+impl StartupLogCursor {
+    /// Reads only bounded content appended by this launch attempt. Structured
+    /// DBG/INF noise is omitted from the user-facing excerpt; raw crash lines
+    /// are retained because they contain pre-subscriber failures and panics.
+    pub fn failure_evidence(&self, max_lines: usize) -> StartupFailureEvidence {
+        let structured = read_lines_since(&self.structured_log, self.structured_offset);
+        let crash = read_lines_since(&self.crash_log, self.crash_offset);
+        let combined = structured
+            .iter()
+            .chain(&crash)
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let kind = classify_startup_failure(&combined);
+        let structured_lines = tail_lines(
+            structured
+                .into_iter()
+                .filter(|line| !line.contains(" DBG ") && !line.contains(" INF "))
+                .collect(),
+            max_lines,
+        );
+        let crash_lines = tail_lines(crash, max_lines);
+        StartupFailureEvidence {
+            kind,
+            structured_lines,
+            crash_lines,
+        }
+    }
 }
 
 /// Owned early-start process handle. Dropping or explicitly detaching this
@@ -309,6 +356,65 @@ fn file_length(path: &std::path::Path) -> u64 {
     fs::metadata(path).map_or(0, |metadata| metadata.len())
 }
 
+fn read_lines_since(path: &std::path::Path, offset: u64) -> Vec<String> {
+    let Ok(mut file) = fs::File::open(path) else {
+        return Vec::new();
+    };
+    let length = file.metadata().map_or(0, |metadata| metadata.len());
+    let attempt_start = offset.min(length);
+    let available = length.saturating_sub(attempt_start);
+    let read_start = if available > STARTUP_LOG_READ_CAP {
+        length - STARTUP_LOG_READ_CAP
+    } else {
+        attempt_start
+    };
+    if file.seek(std::io::SeekFrom::Start(read_start)).is_err() {
+        return Vec::new();
+    }
+    let mut bytes = Vec::with_capacity((length - read_start) as usize);
+    if file
+        .take(STARTUP_LOG_READ_CAP)
+        .read_to_end(&mut bytes)
+        .is_err()
+    {
+        return Vec::new();
+    }
+    String::from_utf8_lossy(&bytes)
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn tail_lines(mut lines: Vec<String>, maximum: usize) -> Vec<String> {
+    if lines.len() > maximum {
+        lines.drain(..lines.len() - maximum);
+    }
+    lines
+}
+
+fn classify_startup_failure(logs: &str) -> StartupFailureKind {
+    if ["auth token rejected", "returned 401", "not authenticated"]
+        .iter()
+        .any(|needle| logs.contains(needle))
+    {
+        StartupFailureKind::AuthenticationRejected
+    } else if [
+        "connection refused",
+        "no such host",
+        "i/o timeout",
+        "network is unreachable",
+    ]
+    .iter()
+    .any(|needle| logs.contains(needle))
+    {
+        StartupFailureKind::ServerUnreachable
+    } else {
+        StartupFailureKind::Other
+    }
+}
+
 #[cfg(unix)]
 fn force_kill_pid(pid: u32) -> std::io::Result<()> {
     let pid = i32::try_from(pid)
@@ -392,6 +498,35 @@ mod tests {
     fn missing_logs_start_at_zero() {
         let directory = tempfile::tempdir().unwrap();
         assert_eq!(file_length(&directory.path().join("missing.log")), 0);
+    }
+
+    #[test]
+    fn startup_evidence_is_bounded_to_attempt_and_filters_noise() {
+        let directory = tempfile::tempdir().unwrap();
+        let structured = directory.path().join("daemon.log");
+        let crash = directory.path().join("daemon.err.log");
+        fs::write(&structured, "old secret\n").unwrap();
+        fs::write(&crash, "old crash\n").unwrap();
+        let cursor = StartupLogCursor {
+            structured_log: structured.clone(),
+            structured_offset: file_length(&structured),
+            crash_log: crash.clone(),
+            crash_offset: file_length(&crash),
+        };
+        fs::write(
+            &structured,
+            "old secret\n2026 INF routine\n2026 ERR auth token rejected\n",
+        )
+        .unwrap();
+        fs::write(&crash, "old crash\nchild exited\n").unwrap();
+
+        let evidence = cursor.failure_evidence(5);
+        assert_eq!(evidence.kind, StartupFailureKind::AuthenticationRejected);
+        assert_eq!(
+            evidence.structured_lines,
+            vec!["2026 ERR auth token rejected"]
+        );
+        assert_eq!(evidence.crash_lines, vec!["child exited"]);
     }
 
     #[test]
