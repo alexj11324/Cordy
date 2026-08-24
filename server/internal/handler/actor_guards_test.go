@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/cordy-ai/cordy/server/internal/testutil"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -82,6 +83,20 @@ func TestRequireHumanActor_BlocksMachineCredentials(t *testing.T) {
 			if w.Code != http.StatusForbidden {
 				t.Fatalf("status = %d, want 403", w.Code)
 			}
+		})
+	}
+}
+
+func TestUpdateMeBlocksMachineCredentialsAtHandlerBoundary(t *testing.T) {
+	for _, actorSource := range []string{"task_token", "cloud_pat"} {
+		t.Run(actorSource, func(t *testing.T) {
+			req := newPatchMeRequest(
+				"018f946a-1234-7890-abcd-1234567890ab",
+				`{"profile_description":"machine supplied"}`,
+			)
+			req.Header.Set("X-Actor-Source", actorSource)
+
+			testutil.Call(t, testHandler.UpdateMe, req).Want(http.StatusForbidden)
 		})
 	}
 }
