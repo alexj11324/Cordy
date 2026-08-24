@@ -184,6 +184,9 @@ where
     OnError: FnMut(&E),
 {
     loop {
+        if shutdown.is_cancelled() {
+            return None;
+        }
         let result = tokio::select! {
             biased;
             () = shutdown.cancelled() => return None,
