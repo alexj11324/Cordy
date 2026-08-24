@@ -95,6 +95,9 @@ pub struct BackgroundDaemon {
 
 pub trait ProcessTerminator: Send + Sync {
     fn force_kill(&self, pid: u32) -> anyhow::Result<()>;
+    /// `None` proves the profile kernel lock is free; `Some(pid)` means a
+    /// draining/starting daemon still owns it even if health is unavailable.
+    fn locked_profile_pid(&self, profile: &str) -> anyhow::Result<Option<u32>>;
 }
 
 #[derive(Debug, Default)]
@@ -104,6 +107,10 @@ impl ProcessTerminator for SystemProcessTerminator {
     fn force_kill(&self, pid: u32) -> anyhow::Result<()> {
         anyhow::ensure!(pid > 0, "daemon PID is zero");
         force_kill_pid(pid).with_context(|| format!("kill daemon process {pid}"))
+    }
+
+    fn locked_profile_pid(&self, profile: &str) -> anyhow::Result<Option<u32>> {
+        crate::bootstrap::locked_profile_pid(profile)
     }
 }
 
@@ -380,31 +387,29 @@ where
     K: StartupClock,
     T: ProcessTerminator,
 {
-    let snapshot = match control.health(port).await {
-        LocalDaemonHealth::Stopped => return Ok(DaemonStopOutcome::AlreadyStopped),
-        LocalDaemonHealth::Live(snapshot) => snapshot,
-    };
-    snapshot.confirm_profile(profile, port)?;
-    if let Some(preflight) = preflight {
-        DaemonRestartPreflight::check(preflight)
-            .await
-            .context("daemon restart preflight failed; running daemon was left untouched")?;
-    }
-    let pid = u32::try_from(snapshot.response.pid)
-        .ok()
-        .filter(|pid| *pid > 0)
-        .context("daemon health response has no valid PID")?;
-
-    let forced = match control.request_shutdown(port).await {
-        Ok(()) => false,
-        Err(shutdown_error) => {
-            terminator
-                .force_kill(pid)
-                .map_err(|kill_error| ForcedTerminationError {
-                    shutdown_error,
-                    kill_error,
-                })?;
-            true
+    let mut shutdown_sent = false;
+    let mut forced = false;
+    let mut preflight_checked = false;
+    let mut pid = match control.health(port).await {
+        LocalDaemonHealth::Stopped => match terminator.locked_profile_pid(profile)? {
+            Some(pid) => pid,
+            None => return Ok(DaemonStopOutcome::AlreadyStopped),
+        },
+        LocalDaemonHealth::Live(snapshot) => {
+            snapshot.confirm_profile(profile, port)?;
+            if let Some(preflight) = preflight {
+                DaemonRestartPreflight::check(preflight).await.context(
+                    "daemon restart preflight failed; running daemon was left untouched",
+                )?;
+                preflight_checked = true;
+            }
+            let pid = u32::try_from(snapshot.response.pid)
+                .ok()
+                .filter(|pid| *pid > 0)
+                .context("daemon health response has no valid PID")?;
+            forced = request_shutdown_or_kill(control, terminator, port, pid).await?;
+            shutdown_sent = true;
+            pid
         }
     };
     if wait_timeout.is_zero() {
@@ -421,10 +426,51 @@ where
         }
         clock.sleep(STARTUP_POLL_INTERVAL.min(deadline - now)).await;
         match control.health(port).await {
-            LocalDaemonHealth::Stopped => {
-                return Ok(DaemonStopOutcome::Stopped { pid, forced });
+            LocalDaemonHealth::Stopped => match terminator.locked_profile_pid(profile)? {
+                Some(owner_pid) => pid = owner_pid,
+                None => return Ok(DaemonStopOutcome::Stopped { pid, forced }),
+            },
+            LocalDaemonHealth::Live(current) => {
+                current.confirm_profile(profile, port)?;
+                let current_pid = u32::try_from(current.response.pid)
+                    .ok()
+                    .filter(|pid| *pid > 0)
+                    .context("daemon health response has no valid PID")?;
+                pid = current_pid;
+                if !shutdown_sent {
+                    if let Some(preflight) = preflight.filter(|_| !preflight_checked) {
+                        DaemonRestartPreflight::check(preflight).await.context(
+                            "daemon restart preflight failed; running daemon was left untouched",
+                        )?;
+                    }
+                    forced = request_shutdown_or_kill(control, terminator, port, pid).await?;
+                    shutdown_sent = true;
+                }
             }
-            LocalDaemonHealth::Live(current) => current.confirm_profile(profile, port)?,
+        }
+    }
+}
+
+async fn request_shutdown_or_kill<C, T>(
+    control: &C,
+    terminator: &T,
+    port: u16,
+    pid: u32,
+) -> anyhow::Result<bool>
+where
+    C: LocalDaemonControl,
+    T: ProcessTerminator,
+{
+    match control.request_shutdown(port).await {
+        Ok(()) => Ok(false),
+        Err(shutdown_error) => {
+            terminator
+                .force_kill(pid)
+                .map_err(|kill_error| ForcedTerminationError {
+                    shutdown_error,
+                    kill_error,
+                })?;
+            Ok(true)
         }
     }
 }
@@ -694,6 +740,9 @@ fn force_kill_pid(pid: u32) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
     use super::*;
 
     struct StoppedControl;
@@ -730,6 +779,91 @@ mod tests {
     impl ProcessTerminator for UnusedTerminator {
         fn force_kill(&self, _pid: u32) -> anyhow::Result<()> {
             panic!("a stopped daemon must not be killed")
+        }
+
+        fn locked_profile_pid(&self, _profile: &str) -> anyhow::Result<Option<u32>> {
+            Ok(None)
+        }
+    }
+
+    struct AdvancingClock {
+        now: Mutex<Instant>,
+        sleeps: AtomicUsize,
+    }
+
+    impl AdvancingClock {
+        fn new() -> Self {
+            Self {
+                now: Mutex::new(Instant::now()),
+                sleeps: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl StartupClock for AdvancingClock {
+        fn now(&self) -> Instant {
+            *self.now.lock().unwrap()
+        }
+
+        async fn sleep(&self, duration: Duration) {
+            *self.now.lock().unwrap() += duration;
+            self.sleeps.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    struct ReleasingTerminator {
+        probes_before_release: usize,
+        probes: AtomicUsize,
+    }
+
+    impl ReleasingTerminator {
+        fn after(probes_before_release: usize) -> Self {
+            Self {
+                probes_before_release,
+                probes: AtomicUsize::new(0),
+            }
+        }
+    }
+
+    impl ProcessTerminator for ReleasingTerminator {
+        fn force_kill(&self, _pid: u32) -> anyhow::Result<()> {
+            panic!("graceful stop must not force-kill")
+        }
+
+        fn locked_profile_pid(&self, profile: &str) -> anyhow::Result<Option<u32>> {
+            assert_eq!(profile, "profile");
+            let probe = self.probes.fetch_add(1, Ordering::SeqCst);
+            Ok((probe < self.probes_before_release).then_some(42))
+        }
+    }
+
+    struct ClosingHealthControl {
+        probes: AtomicUsize,
+        shutdowns: AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl LocalDaemonProbe for ClosingHealthControl {
+        async fn health(&self, _port: u16) -> LocalDaemonHealth {
+            if self.probes.fetch_add(1, Ordering::SeqCst) == 0 {
+                crate::control_client::parse_health(serde_json::json!({
+                    "status": "running",
+                    "pid": 42,
+                    "profile": "profile"
+                }))
+                .unwrap()
+            } else {
+                LocalDaemonHealth::Stopped
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl LocalDaemonControl for ClosingHealthControl {
+        async fn request_shutdown(&self, _port: u16) -> anyhow::Result<()> {
+            self.shutdowns.fetch_add(1, Ordering::SeqCst);
+            Ok(())
         }
     }
 
@@ -846,6 +980,65 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(outcome, DaemonStopOutcome::AlreadyStopped);
+    }
+
+    #[tokio::test]
+    async fn stop_waits_for_pid_owner_after_health_closes() {
+        let control = ClosingHealthControl {
+            probes: AtomicUsize::new(0),
+            shutdowns: AtomicUsize::new(0),
+        };
+        let clock = AdvancingClock::new();
+        let terminator = ReleasingTerminator::after(1);
+
+        let outcome = stop_daemon(
+            &control,
+            &clock,
+            &terminator,
+            "profile",
+            19515,
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            outcome,
+            DaemonStopOutcome::Stopped {
+                pid: 42,
+                forced: false
+            }
+        );
+        assert_eq!(control.shutdowns.load(Ordering::SeqCst), 1);
+        assert_eq!(terminator.probes.load(Ordering::SeqCst), 2);
+        assert_eq!(clock.sleeps.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
+    async fn repeated_stop_treats_healthless_lock_owner_as_still_draining() {
+        let clock = AdvancingClock::new();
+        let terminator = ReleasingTerminator::after(1);
+
+        let outcome = stop_daemon(
+            &StoppedControl,
+            &clock,
+            &terminator,
+            "profile",
+            19515,
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            outcome,
+            DaemonStopOutcome::Stopped {
+                pid: 42,
+                forced: false
+            }
+        );
+        assert_eq!(terminator.probes.load(Ordering::SeqCst), 2);
+        assert_eq!(clock.sleeps.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
