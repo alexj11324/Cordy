@@ -13,6 +13,7 @@ use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
 use serde_json::Value;
 
 use crate::activity::DaemonActivity;
+use crate::agents_refresh::{AGENT_DISCOVERY_INTERVAL, AGENT_VERSION_REFRESH_INTERVAL};
 use crate::client::Client;
 use crate::config::{
     Config, DEFAULT_WORKSPACE_BOOTSTRAP_SYNC_INTERVAL, DEFAULT_WORKSPACE_LEGACY_SYNC_INTERVAL,
@@ -22,7 +23,9 @@ use crate::daemon_core::DaemonCoreServices;
 use crate::health::{ActiveRepoCheckoutTask, HealthResponse, RepoCheckoutRequest};
 use crate::production_stack::{ProductionRuntimeServices, RepoCheckoutFailure};
 use crate::reconcile::{ReconcileBroadcaster, WorkspaceChangeSignal};
-use crate::registration::{RuntimeRegistrationService, RuntimeRegistrationSource};
+use crate::registration::{
+    BuiltinRefreshReason, RuntimeRegistrationService, RuntimeRegistrationSource,
+};
 use crate::repocache::Ctx;
 use crate::runtime_registry::RuntimeRegistry;
 use crate::task_execution::TaskRunOutcome;
@@ -127,6 +130,32 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
             }
         }
     }
+
+    async fn provider_refresh_loop(&self, ctx: Ctx, registry: Arc<RuntimeRegistry>) {
+        let now = tokio::time::Instant::now();
+        let mut discovery =
+            tokio::time::interval_at(now + AGENT_DISCOVERY_INTERVAL, AGENT_DISCOVERY_INTERVAL);
+        let mut versions = tokio::time::interval_at(
+            now + AGENT_VERSION_REFRESH_INTERVAL,
+            AGENT_VERSION_REFRESH_INTERVAL,
+        );
+        discovery.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        versions.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            let reason = tokio::select! {
+                () = ctx.cancelled() => return,
+                _ = discovery.tick() => BuiltinRefreshReason::Discovery,
+                _ = versions.tick() => BuiltinRefreshReason::Version,
+            };
+            if let Err(error) = self
+                .registration
+                .refresh_builtins_once(ctx.child(), &registry, reason)
+                .await
+            {
+                tracing::debug!(?reason, %error, "built-in runtime refresh round failed");
+            }
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -204,8 +233,15 @@ impl<P: ProviderRuntimeAdapter> ProductionRuntimeServices for DaemonProductionSe
         workspace_changes: Arc<WorkspaceChangeSignal>,
         registry: Arc<RuntimeRegistry>,
     ) -> anyhow::Result<()> {
-        self.reconcile_loop(ctx, reconcile, workspace_changes, registry)
-            .await;
+        tokio::join!(
+            self.reconcile_loop(
+                ctx.child(),
+                reconcile,
+                workspace_changes,
+                Arc::clone(&registry),
+            ),
+            self.provider_refresh_loop(ctx, registry),
+        );
         Ok(())
     }
 

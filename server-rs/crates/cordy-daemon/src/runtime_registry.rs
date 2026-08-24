@@ -112,6 +112,40 @@ impl RuntimeRegistry {
         Ok(RegistrationDelta { added, dropped })
     }
 
+    /// Applies a built-in-only registration response while preserving custom
+    /// profile runtimes already tracked for the workspace. The caller holds
+    /// the workspace registration serial across the server request and this
+    /// merge, so a profile refresh cannot interleave between the snapshot and
+    /// authoritative apply.
+    pub fn apply_builtin_registration(
+        &self,
+        workspace_id: &str,
+        workspace_name: &str,
+        builtins: Vec<Runtime>,
+    ) -> anyhow::Result<RegistrationDelta> {
+        anyhow::ensure!(
+            builtins.iter().all(|runtime| runtime.profile_id.is_empty()),
+            "built-in registration returned a custom profile runtime"
+        );
+        let custom_runtimes: Vec<Runtime> = {
+            let state = self.state.read().unwrap();
+            let runtime_ids = state
+                .workspaces
+                .get(workspace_id)
+                .map(|workspace| workspace.runtime_ids.as_slice())
+                .unwrap_or_default();
+            runtime_ids
+                .iter()
+                .filter_map(|runtime_id| state.runtimes.get(runtime_id))
+                .filter(|runtime| !runtime.profile_id.is_empty())
+                .cloned()
+                .collect()
+        };
+        let mut combined = builtins;
+        combined.extend(custom_runtimes);
+        self.apply_registration(workspace_id, workspace_name, combined)
+    }
+
     /// Removes one runtime after a server `runtime_gone` event. Returns its
     /// workspace so the caller can serialize and retry registration there.
     pub fn remove_runtime(&self, runtime_id: &str) -> Option<String> {
@@ -285,6 +319,35 @@ mod tests {
         assert_eq!(registry.workspace_ids(), vec!["ws-1".to_string()]);
         assert_eq!(
             registry.provider_for_runtime("r-1").as_deref(),
+            Some("codex")
+        );
+    }
+
+    #[test]
+    fn builtin_refresh_preserves_custom_profile_runtimes() {
+        let published = Arc::new(RuntimeSet::new());
+        let registry = RuntimeRegistry::new(Arc::clone(&published));
+        let mut profile = runtime("profile-runtime", "codex");
+        profile.profile_id = "profile-1".to_string();
+        registry
+            .apply_registration(
+                "ws-1",
+                "One",
+                vec![runtime("old-builtin", "codex"), profile],
+            )
+            .unwrap();
+
+        let delta = registry
+            .apply_builtin_registration("ws-1", "One", vec![runtime("new-builtin", "claude")])
+            .unwrap();
+        assert_eq!(delta.added, vec!["new-builtin".to_string()]);
+        assert_eq!(delta.dropped, vec!["old-builtin".to_string()]);
+        assert_eq!(
+            published.snapshot(),
+            vec!["new-builtin".to_string(), "profile-runtime".to_string()]
+        );
+        assert_eq!(
+            registry.provider_for_runtime("profile-runtime").as_deref(),
             Some("codex")
         );
     }

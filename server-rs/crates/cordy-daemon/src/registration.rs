@@ -27,6 +27,12 @@ pub struct RegistrationPayload {
     pub failed_profiles: Vec<BTreeMap<String, String>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BuiltinRefreshReason {
+    Discovery,
+    Version,
+}
+
 #[async_trait::async_trait]
 pub trait RuntimeRegistrationRound: Send + Sync + 'static {
     async fn payload_for_workspace(
@@ -41,6 +47,15 @@ pub trait RuntimeRegistrationSource: Send + Sync + 'static {
     /// Starts one machine-level probe round. The returned object is reused for
     /// every workspace in this sync so N workspaces never cause N×M CLI probes.
     async fn begin_round(&self, ctx: Ctx) -> anyhow::Result<Arc<dyn RuntimeRegistrationRound>>;
+
+    /// Probes built-in providers for the requested cadence. `None` means a
+    /// real probe found no registration change; `Some` carries one shared
+    /// built-in-only round for every tracked workspace.
+    async fn begin_builtin_refresh(
+        &self,
+        ctx: Ctx,
+        reason: BuiltinRefreshReason,
+    ) -> anyhow::Result<Option<Arc<dyn RuntimeRegistrationRound>>>;
 }
 
 pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
@@ -184,6 +199,33 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         .await
     }
 
+    pub async fn refresh_builtins_once(
+        &self,
+        ctx: Ctx,
+        registry: &RuntimeRegistry,
+        reason: BuiltinRefreshReason,
+    ) -> anyhow::Result<()> {
+        let Some(round) = self
+            .source
+            .begin_builtin_refresh(ctx.child(), reason)
+            .await?
+        else {
+            return Ok(());
+        };
+        for workspace_id in registry.workspace_ids() {
+            let Some(workspace) = registry.workspace(&workspace_id) else {
+                continue;
+            };
+            if let Err(error) = self
+                .register_builtin_workspace(ctx.child(), registry, &workspace, Arc::clone(&round))
+                .await
+            {
+                tracing::warn!(%workspace_id, %error, "built-in runtime refresh failed");
+            }
+        }
+        Ok(())
+    }
+
     async fn register_workspace(
         &self,
         ctx: Ctx,
@@ -244,6 +286,60 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                     tracing::warn!(%runtime_id, %error, "recover-orphans failed");
                 }
             }
+        }
+        Ok(())
+    }
+
+    async fn register_builtin_workspace(
+        &self,
+        ctx: Ctx,
+        registry: &RuntimeRegistry,
+        workspace: &crate::runtime_registry::WorkspaceRuntimeState,
+        round: Arc<dyn RuntimeRegistrationRound>,
+    ) -> anyhow::Result<()> {
+        let serial = self.workspace_lock(&workspace.id);
+        let _guard = serial.lock().await;
+        let payload = round
+            .payload_for_workspace(ctx.child(), &workspace.id)
+            .await?;
+        anyhow::ensure!(
+            payload.failed_profiles.is_empty(),
+            "built-in refresh returned profile failures for workspace {}",
+            workspace.id
+        );
+        if payload.runtimes.is_empty() {
+            return Ok(());
+        }
+        let response = self
+            .client
+            .register(
+                &ctx,
+                json!({
+                    "workspace_id": &workspace.id,
+                    "daemon_id": &self.config.daemon_id,
+                    "legacy_daemon_ids": &self.config.legacy_daemon_ids,
+                    "device_name": &self.config.device_name,
+                    "cli_version": &self.config.cli_version,
+                    "launched_by": &self.config.launched_by,
+                    "runtimes": &payload.runtimes,
+                    "failed_profiles": Vec::<BTreeMap<String, String>>::new(),
+                }),
+            )
+            .await?;
+        anyhow::ensure!(
+            !response.runtimes.is_empty(),
+            "built-in register returned an empty response for workspace {}",
+            workspace.id
+        );
+        let delta = registry.apply_builtin_registration(
+            &workspace.id,
+            &workspace.name,
+            response.runtimes,
+        )?;
+        if !delta.dropped.is_empty() {
+            self.client
+                .deregister(&ctx, &delta.dropped, HashMap::new())
+                .await?;
         }
         Ok(())
     }
