@@ -51,4 +51,4 @@ pub use message::{
     ChatType, InboundMessage, MediaRef, MsgType, OutboundMessage, ReplyCtx, SendResult, Source,
 };
 pub use registry::{Registry, UnknownTypeError};
-pub use runtime_tasks::RuntimeTasks;
+pub use runtime_tasks::{shutdown_join_handles, RuntimeTasks};

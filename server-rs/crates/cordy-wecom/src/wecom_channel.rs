@@ -209,7 +209,7 @@ impl Channel for WecomChannel {
         // via the shared writer mutex so it interleaves cleanly with other
         // outbound frames.
         let ping_ctx = ctx.child_token();
-        let mut ping_handle = tokio::spawn(ping_loop(ping_ctx.clone(), sender.clone()));
+        let ping_handle = tokio::spawn(ping_loop(ping_ctx.clone(), sender.clone()));
 
         // Inbound callbacks run on their own worker, not on the read loop.
         // The read loop is the sole deliverer of server verdicts, so anything
@@ -225,7 +225,7 @@ impl Channel for WecomChannel {
         let (cb_tx, mut cb_rx) = mpsc::channel::<FrameEnvelope>(CALLBACK_QUEUE_DEPTH);
         let worker_err: Arc<std::sync::Mutex<Option<anyhow::Error>>> =
             Arc::new(std::sync::Mutex::new(None));
-        let mut worker = {
+        let worker = {
             let w_err = worker_err.clone();
             let w_handler = handler.clone();
             let w_sender = sender.clone();
@@ -356,22 +356,16 @@ impl Channel for WecomChannel {
         // error".
         drop(cb_tx);
         ping_ctx.cancel();
-        let joined = async {
-            let _ = (&mut worker).await;
-            let _ = (&mut ping_handle).await;
-        };
-        if tokio::time::timeout(CONNECTOR_TASK_SHUTDOWN_TIMEOUT, joined)
-            .await
-            .is_err()
+        if !cordy_channel::shutdown_join_handles(
+            vec![worker, ping_handle],
+            CONNECTOR_TASK_SHUTDOWN_TIMEOUT,
+        )
+        .await
         {
             tracing::warn!(
                 installation_id = %self.installation_id,
                 "wecom: connector tasks exceeded shutdown deadline; aborting"
             );
-            worker.abort();
-            ping_handle.abort();
-            let _ = worker.await;
-            let _ = ping_handle.await;
         }
         if registered {
             if let Some(reg) = &self.senders {

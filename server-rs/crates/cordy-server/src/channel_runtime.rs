@@ -196,26 +196,11 @@ impl ChannelRuntime {
             tasks.push(handle);
         }
         tasks.append(&mut self.maintenance);
-        let joined = async {
-            for task in &mut tasks {
-                let _ = task.await;
-            }
-        };
-        if tokio::time::timeout(RUNTIME_SHUTDOWN_TIMEOUT, joined)
-            .await
-            .is_err()
-        {
+        if !cordy_channel::shutdown_join_handles(tasks, RUNTIME_SHUTDOWN_TIMEOUT).await {
             tracing::warn!(
                 timeout = ?RUNTIME_SHUTDOWN_TIMEOUT,
-                remaining = tasks.iter().filter(|task| !task.is_finished()).count(),
                 "channel runtime tasks exceeded shutdown deadline; aborting"
             );
-            for task in &tasks {
-                task.abort();
-            }
-            for task in tasks {
-                let _ = task.await;
-            }
         }
         if let Some(relay) = self.wecom_relay.take() {
             let metrics = relay.metrics();

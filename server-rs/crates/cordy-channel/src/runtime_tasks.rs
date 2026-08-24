@@ -9,6 +9,53 @@ struct State {
     handles: Vec<tokio::task::JoinHandle<()>>,
 }
 
+struct AbortTasksOnDrop {
+    handles: Vec<tokio::task::AbortHandle>,
+    armed: bool,
+}
+
+impl Drop for AbortTasksOnDrop {
+    fn drop(&mut self) {
+        if self.armed {
+            for handle in &self.handles {
+                handle.abort();
+            }
+        }
+    }
+}
+
+/// Joins owned tasks under one shared deadline. Any task still running at the
+/// deadline is aborted and joined. Dropping this future also aborts every task
+/// so cancellation cannot silently detach runtime work.
+pub async fn shutdown_join_handles(
+    mut handles: Vec<tokio::task::JoinHandle<()>>,
+    timeout: Duration,
+) -> bool {
+    let mut abort_on_drop = AbortTasksOnDrop {
+        handles: handles.iter().map(|handle| handle.abort_handle()).collect(),
+        armed: true,
+    };
+    let deadline = tokio::time::Instant::now() + timeout;
+    while let Some(mut handle) = handles.pop() {
+        if tokio::time::timeout_at(deadline, &mut handle)
+            .await
+            .is_err()
+        {
+            for handle in &abort_on_drop.handles {
+                handle.abort();
+            }
+            let _ = handle.await;
+            for handle in handles {
+                let _ = handle.await;
+            }
+            abort_on_drop.armed = false;
+            return false;
+        }
+    }
+    abort_on_drop.armed = false;
+    true
+}
+
 /// Tracks tasks spawned from synchronous event-bus callbacks so channel
 /// shutdown can stop accepting new work and join or abort every in-flight
 /// delivery before returning.
@@ -52,26 +99,12 @@ impl RuntimeTasks {
     /// Closes admission and waits under one deadline. Timed-out work is
     /// explicitly aborted and joined, so no task outlives this method.
     pub async fn shutdown(&self, timeout: Duration) -> bool {
-        let mut handles = {
+        let handles = {
             let mut state = self.state.lock().unwrap_or_else(|error| error.into_inner());
             state.closed = true;
             std::mem::take(&mut state.handles)
         };
-        let joined = async {
-            for handle in &mut handles {
-                let _ = handle.await;
-            }
-        };
-        if tokio::time::timeout(timeout, joined).await.is_ok() {
-            return true;
-        }
-        for handle in &handles {
-            handle.abort();
-        }
-        for handle in handles {
-            let _ = handle.await;
-        }
-        false
+        shutdown_join_handles(handles, timeout).await
     }
 }
 
@@ -83,6 +116,8 @@ mod tests {
     async fn shutdown_closes_admission_and_aborts_overdue_work() {
         let tasks = RuntimeTasks::new();
         assert!(tasks.spawn(std::future::pending()));
+        assert!(tasks.spawn(async {}));
+        tokio::task::yield_now().await;
         assert!(!tasks.shutdown(Duration::from_millis(1)).await);
         assert!(!tasks.spawn(async {}));
     }
