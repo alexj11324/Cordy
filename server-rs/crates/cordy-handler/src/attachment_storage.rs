@@ -349,6 +349,16 @@ struct EndpointCorrection {
     expires_at: Instant,
 }
 
+struct S3SigningContext<'a> {
+    method: &'a str,
+    url: &'a Url,
+    payload_hash: &'a str,
+    now: chrono::DateTime<chrono::Utc>,
+    extra: &'a HeaderMap,
+    credentials: &'a Credentials,
+    region: &'a str,
+}
+
 pub struct S3RequestError {
     pub operation: &'static str,
     pub status: reqwest::StatusCode,
@@ -658,16 +668,16 @@ impl S3Storage {
         }
         Ok(url)
     }
-    fn signed_headers(
-        &self,
-        method: &str,
-        url: &Url,
-        payload_hash: &str,
-        now: chrono::DateTime<chrono::Utc>,
-        extra: &HeaderMap,
-        credentials: &Credentials,
-        signing_region: &str,
-    ) -> anyhow::Result<HeaderMap> {
+    fn signed_headers(&self, context: S3SigningContext<'_>) -> anyhow::Result<HeaderMap> {
+        let S3SigningContext {
+            method,
+            url,
+            payload_hash,
+            now,
+            extra,
+            credentials,
+            region: signing_region,
+        } = context;
         let date = now.format("%Y%m%d").to_string();
         let timestamp = now.format("%Y%m%dT%H%M%SZ").to_string();
         let hostname = url
@@ -777,15 +787,15 @@ impl S3Storage {
             let signing_region = correction.region.as_deref().unwrap_or(&self.region);
             let url = self.request_url_for_region(key, signing_region)?;
             let now = chrono::Utc::now() + chrono::Duration::seconds(correction.clock_skew_seconds);
-            let mut headers = self.signed_headers(
-                method.as_str(),
-                &url,
+            let mut headers = self.signed_headers(S3SigningContext {
+                method: method.as_str(),
+                url: &url,
                 payload_hash,
                 now,
-                &extra,
-                &credentials,
-                signing_region,
-            )?;
+                extra: &extra,
+                credentials: &credentials,
+                region: signing_region,
+            })?;
             headers.extend(extra.clone());
             let response = self
                 .client
@@ -859,15 +869,15 @@ impl S3Storage {
             .provide_credentials()
             .await
             .map_err(|error| anyhow::anyhow!("resolve AWS credentials: {error}"))?;
-        let mut headers = self.signed_headers(
-            "PUT",
-            &url,
-            UNSIGNED_PAYLOAD,
-            chrono::Utc::now() + chrono::Duration::seconds(correction.clock_skew_seconds),
-            &extra,
-            &credentials,
-            signing_region,
-        )?;
+        let mut headers = self.signed_headers(S3SigningContext {
+            method: "PUT",
+            url: &url,
+            payload_hash: UNSIGNED_PAYLOAD,
+            now: chrono::Utc::now() + chrono::Duration::seconds(correction.clock_skew_seconds),
+            extra: &extra,
+            credentials: &credentials,
+            region: signing_region,
+        })?;
         extra.insert(
             reqwest::header::CONTENT_LENGTH,
             HeaderValue::from_str(&size_bytes.to_string())?,
@@ -2177,15 +2187,15 @@ mod tests {
             HeaderValue::from_static("INTELLIGENT_TIERING"),
         );
         let headers = store
-            .signed_headers(
-                "PUT",
-                &url,
-                &hex::encode(Sha256::digest(b"body")),
-                chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
-                &extra,
-                &test_credentials(None),
-                &store.region,
-            )
+            .signed_headers(S3SigningContext {
+                method: "PUT",
+                url: &url,
+                payload_hash: &hex::encode(Sha256::digest(b"body")),
+                now: chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+                extra: &extra,
+                credentials: &test_credentials(None),
+                region: &store.region,
+            })
             .unwrap();
         let authorization = headers
             .get(reqwest::header::AUTHORIZATION)
@@ -2208,15 +2218,15 @@ mod tests {
         )
         .unwrap();
         let headers = store
-            .signed_headers(
-                "PUT",
-                &url,
-                &prepared.payload_hash,
-                chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
-                &prepared.headers,
-                &test_credentials(Some("temporary-session-token")),
-                &store.region,
-            )
+            .signed_headers(S3SigningContext {
+                method: "PUT",
+                url: &url,
+                payload_hash: &prepared.payload_hash,
+                now: chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+                extra: &prepared.headers,
+                credentials: &test_credentials(Some("temporary-session-token")),
+                region: &store.region,
+            })
             .unwrap();
         let authorization = headers
             .get(reqwest::header::AUTHORIZATION)
@@ -2235,15 +2245,15 @@ mod tests {
         let store = test_s3("https://s3.us-west-2.amazonaws.com", false, true);
         let url = store.request_url("object").unwrap();
         let headers = store
-            .signed_headers(
-                "GET",
-                &url,
-                &hex::encode(Sha256::digest([])),
-                chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
-                &HeaderMap::new(),
-                &test_credentials(Some("temporary-session-token")),
-                &store.region,
-            )
+            .signed_headers(S3SigningContext {
+                method: "GET",
+                url: &url,
+                payload_hash: &hex::encode(Sha256::digest([])),
+                now: chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap(),
+                extra: &HeaderMap::new(),
+                credentials: &test_credentials(Some("temporary-session-token")),
+                region: &store.region,
+            })
             .unwrap();
         assert_eq!(
             headers.get("x-amz-security-token").unwrap(),
