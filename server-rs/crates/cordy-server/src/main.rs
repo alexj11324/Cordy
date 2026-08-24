@@ -72,10 +72,24 @@ async fn build_production_router(
     vcs: VcsWebhookConfig,
 ) -> anyhow::Result<Router> {
     let feature_flags = Arc::new(cordy_service::feature_flags::ConfiguredFlags::from_env()?);
-    let mut state = cordy_handler::HandlerState::new(
+    let composio_service =
+        if cordy_service::feature_flags::composio_mcp_apps_enabled(feature_flags.as_ref()) {
+            match cordy_handler::composio::build_service_from_config(db.clone(), cfg) {
+                Ok(service) => Some(Arc::new(service)),
+                Err(error) => {
+                    tracing::warn!(%error, "Composio integration disabled");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+    let mut state = cordy_handler::HandlerState::new_with_runtime_integrations(
         db,
         cordy_auth::pat_cache::PatCache::disabled(),
         Some(hub),
+        Some(feature_flags),
+        composio_service,
     )
     .with_observability(business_metrics, http_metrics)
     .with_github_snapshots(github_client)
@@ -92,7 +106,6 @@ async fn build_production_router(
     .with_plugins_from_env()
     .with_slack_history_from_env()
     .with_llm_from_env()?
-    .with_feature_flags(feature_flags)
     .with_public_config(cordy_handler::config::PublicConfigSettings {
         cdn_domain: cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
         cdn_signed: cfg.storage.cloudfront_key_pair_id.is_some()
