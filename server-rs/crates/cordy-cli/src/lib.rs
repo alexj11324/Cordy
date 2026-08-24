@@ -1037,7 +1037,7 @@ async fn run_issue_list(
         OutputFormat::Json => format!(
             "{}\n",
             serde_json::to_string_pretty(&IssueListEnvelope {
-                has_more: args.offset + issues.len() as i64 < total,
+                has_more: issue_list_has_more(args.offset, issues.len(), total),
                 issues: &issues,
                 limit: args.limit,
                 offset: args.offset,
@@ -1053,6 +1053,10 @@ async fn run_issue_list(
         stdout,
         stderr: String::new(),
     })
+}
+
+fn issue_list_has_more(offset: i64, issue_count: usize, total: i64) -> bool {
+    offset + (issue_count as i64) < total
 }
 
 async fn build_issue_list_query(
@@ -2698,6 +2702,13 @@ mod tests {
         let error =
             build_metadata_filter(&["missing-separator".into()]).expect_err("metadata key=value");
         assert!(error.to_string().contains("key=value form"));
+    }
+
+    #[test]
+    fn issue_list_has_more_uses_offset_and_returned_count() {
+        assert!(issue_list_has_more(1, 1, 3));
+        assert!(!issue_list_has_more(1, 2, 3));
+        assert!(issue_list_has_more(0, 0, 1));
     }
 
     #[test]
