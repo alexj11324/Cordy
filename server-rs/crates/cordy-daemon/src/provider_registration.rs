@@ -371,7 +371,6 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
     async fn begin_round(&self, ctx: Ctx) -> anyhow::Result<Arc<dyn RuntimeRegistrationRound>> {
         let snapshot = self.probe(ctx, ProviderProbeReason::Registration).await?;
         *self.last_builtin_snapshot.lock().unwrap() = Some(snapshot.clone());
-        self.retry_builtin.store(false, Ordering::Release);
         Ok(Arc::new(ProviderRegistrationRound {
             config: Arc::clone(&self.config),
             client: Arc::clone(&self.client),
@@ -393,7 +392,7 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
         let snapshot = self.probe(ctx, reason.into()).await?;
         let changed = {
             let mut previous = self.last_builtin_snapshot.lock().unwrap();
-            let retry = self.retry_builtin.load(Ordering::Acquire);
+            let retry = self.retry_builtin.swap(false, Ordering::AcqRel);
             let changed = builtin_refresh_needed(previous.as_ref(), &snapshot, retry);
             if changed {
                 *previous = Some(snapshot.clone());
@@ -403,7 +402,6 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
         if !changed {
             return Ok(None);
         }
-        self.retry_builtin.store(false, Ordering::Release);
         Ok(Some(Arc::new(ProviderRegistrationRound {
             config: Arc::clone(&self.config),
             client: Arc::clone(&self.client),
