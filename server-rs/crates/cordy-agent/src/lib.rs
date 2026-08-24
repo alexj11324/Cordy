@@ -51,5 +51,7 @@ pub use openclaw::{build_openclaw_args, OpenclawBackend, OpenclawConfig};
 pub use opencode::{build_opencode_args, OpencodeBackend, OpencodeConfig};
 pub use pi::{build_pi_args, PiBackend, PiConfig};
 pub use process::{OwnedProcessTree, ProcessTreeSignal};
-pub use qoder::{QoderBackend, QoderConfig, TraecliBackend, TraecliConfig};
+pub use qoder::{
+    KiroBackend, KiroConfig, QoderBackend, QoderConfig, TraecliBackend, TraecliConfig,
+};
 pub use qwen::{QwenBackend, QwenConfig};
