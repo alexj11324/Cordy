@@ -6,7 +6,8 @@
 //! (Slice4).
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::future::Future;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -212,8 +213,9 @@ pub trait ComposioOverlayBuilder: Send + Sync {
 }
 
 /// Wakeup seam used by dispatch to nudge runtimes.
+#[async_trait::async_trait]
 pub trait TaskWakeupNotifier: Send + Sync {
-    fn notify_task_available(&self, runtime_id: &str, task_id: &str);
+    async fn notify_task_available(&self, runtime_id: &str, task_id: &str);
 }
 
 /// Quick-create task context stored in `agent_task_queue.context`.
@@ -263,7 +265,7 @@ pub struct TaskService {
     pub metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     pub wakeup: Option<std::sync::Weak<dyn TaskWakeupNotifier>>,
     /// Server-side toggle router. `None` returns each call site's default.
-    pub feature_flags: Option<Box<dyn FlagSource>>,
+    pub feature_flags: Option<Arc<dyn FlagSource>>,
     /// Optional per-task MCP overlay builder; `None` makes the overlay step a
     /// no-op (deployments without Composio behave exactly as before).
     pub composio: Option<std::sync::Arc<dyn ComposioOverlayBuilder>>,
@@ -274,6 +276,7 @@ pub struct TaskService {
     /// process-wide ceiling. Zero values are usable.
     pub(crate) quick_actions_in_flight: Mutex<HashMap<Uuid, ()>>,
     pub(crate) quick_actions_running: AtomicI64,
+    side_effect_tasks: Arc<TaskSideEffectTasks>,
 
     /// LRU-ish analytics context cache keyed by task identity columns.
     analytics_context: Mutex<AnalyticsContextCache>,
@@ -315,8 +318,23 @@ impl TaskService {
             quick_actions: None,
             quick_actions_in_flight: Mutex::new(HashMap::new()),
             quick_actions_running: AtomicI64::new(0),
+            side_effect_tasks: Arc::new(TaskSideEffectTasks::new()),
             analytics_context: Mutex::new(AnalyticsContextCache::default()),
         }
+    }
+
+    pub fn start_side_effect_runtime(
+        self: &Arc<Self>,
+        parent: tokio_util::sync::CancellationToken,
+    ) -> Option<TaskSideEffectRuntime> {
+        self.side_effect_tasks.start(parent)
+    }
+
+    /// Admits best-effort post-response work into the production-owned task
+    /// set. Callers must retain their own business timeout; shutdown supplies
+    /// the final process-level bound and abort fallback.
+    pub fn spawn_side_effect(&self, task: impl Future<Output = ()> + Send + 'static) {
+        self.side_effect_tasks.spawn(task);
     }
 
     // --- Trigger summary ---------------------------------------------------
@@ -997,6 +1015,115 @@ impl TaskService {
     }
 }
 
+pub const DEFAULT_SIDE_EFFECT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
+
+struct TaskSideEffectTasks {
+    cancel: tokio_util::sync::CancellationToken,
+    started: AtomicBool,
+    accepting_tasks: AtomicBool,
+    tasks: Mutex<tokio::task::JoinSet<()>>,
+}
+
+impl TaskSideEffectTasks {
+    fn new() -> Self {
+        Self {
+            cancel: tokio_util::sync::CancellationToken::new(),
+            started: AtomicBool::new(false),
+            accepting_tasks: AtomicBool::new(true),
+            tasks: Mutex::new(tokio::task::JoinSet::new()),
+        }
+    }
+
+    fn start(
+        self: &Arc<Self>,
+        parent: tokio_util::sync::CancellationToken,
+    ) -> Option<TaskSideEffectRuntime> {
+        if self.started.swap(true, Ordering::AcqRel) {
+            return None;
+        }
+        let tasks = self.clone();
+        self.spawn(async move {
+            tokio::select! {
+                _ = parent.cancelled() => {}
+                _ = tasks.cancel.cancelled() => {}
+            }
+            tasks.cancel.cancel();
+        });
+        Some(TaskSideEffectRuntime {
+            tasks: self.clone(),
+        })
+    }
+
+    fn spawn(&self, task: impl Future<Output = ()> + Send + 'static) {
+        let mut tasks = self
+            .tasks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        while let Some(result) = tasks.try_join_next() {
+            if let Err(error) = result {
+                tracing::error!(%error, "task side-effect worker panicked");
+            }
+        }
+        if self.accepting_tasks.load(Ordering::Acquire) {
+            tasks.spawn(task);
+        }
+    }
+
+    fn stop_accepting(&self) -> tokio::task::JoinSet<()> {
+        let mut tasks = self
+            .tasks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.accepting_tasks.store(false, Ordering::Release);
+        std::mem::take(&mut *tasks)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskSideEffectShutdownOutcome {
+    Stopped,
+    Panicked,
+    TimedOut,
+}
+
+pub struct TaskSideEffectRuntime {
+    tasks: Arc<TaskSideEffectTasks>,
+}
+
+impl TaskSideEffectRuntime {
+    pub async fn shutdown(self, timeout: Duration) -> TaskSideEffectShutdownOutcome {
+        self.tasks.cancel.cancel();
+        let mut tasks = self.tasks.stop_accepting();
+        let mut panicked = false;
+        let joined = tokio::time::timeout(timeout, async {
+            while let Some(result) = tasks.join_next().await {
+                if result.is_err() {
+                    panicked = true;
+                }
+            }
+        })
+        .await;
+        if joined.is_err() {
+            tasks.abort_all();
+            while tasks.join_next().await.is_some() {}
+            return TaskSideEffectShutdownOutcome::TimedOut;
+        }
+        if panicked {
+            TaskSideEffectShutdownOutcome::Panicked
+        } else {
+            TaskSideEffectShutdownOutcome::Stopped
+        }
+    }
+}
+
+impl Drop for TaskSideEffectRuntime {
+    fn drop(&mut self) {
+        self.tasks.cancel.cancel();
+        let mut tasks = self.tasks.stop_accepting();
+        tasks.abort_all();
+    }
+}
+
 fn task_analytics_context_key(task: &AgentTaskQueue) -> Option<String> {
     let task_id = task.id;
     Some(format!(
@@ -1120,18 +1247,20 @@ impl TaskService {
     /// claim cannot read a still-current "empty" verdict.
     pub async fn notify_task_enqueued(&self, task: &AgentTaskQueue) {
         self.capture_task_queued(task).await;
-        self.notify_runtime_may_have_work(task.runtime_id, Some(&task.id.to_string()));
+        self.notify_runtime_may_have_work(task.runtime_id, Some(&task.id.to_string()))
+            .await;
     }
 
     /// Best-effort daemon wakeup after a terminal state. The task ID is
     /// deliberately omitted: the completed task is not available; the hint
     /// only means a queued successor may have become claimable.
-    pub fn notify_task_finished(&self, task: &AgentTaskQueue) {
-        self.notify_runtime_may_have_work(task.runtime_id, None);
+    pub async fn notify_task_finished(&self, task: &AgentTaskQueue) {
+        self.notify_runtime_may_have_work(task.runtime_id, None)
+            .await;
     }
 
     /// Batch form used by bulk terminal transitions; coalesces by runtime.
-    pub fn notify_tasks_finished(&self, tasks: &[AgentTaskQueue]) {
+    pub async fn notify_tasks_finished(&self, tasks: &[AgentTaskQueue]) {
         let mut seen = std::collections::HashSet::new();
         for task in tasks {
             let Some(runtime_id) = task.runtime_id else {
@@ -1140,16 +1269,19 @@ impl TaskService {
             if !seen.insert(runtime_id) {
                 continue;
             }
-            self.notify_runtime_may_have_work(Some(runtime_id), None);
+            self.notify_runtime_may_have_work(Some(runtime_id), None)
+                .await;
         }
     }
 
-    fn notify_runtime_may_have_work(&self, runtime_id: Option<Uuid>, task_id: Option<&str>) {
+    async fn notify_runtime_may_have_work(&self, runtime_id: Option<Uuid>, task_id: Option<&str>) {
         // EmptyClaim cache bump goes here once the Redis-backed cache lands;
         // the wakeup alone still unblocks the daemon's next poll.
         if let Some(wakeup) = self.wakeup.as_ref().and_then(|w| w.upgrade()) {
             if let Some(runtime_id) = runtime_id {
-                wakeup.notify_task_available(&runtime_id.to_string(), task_id.unwrap_or(""));
+                wakeup
+                    .notify_task_available(&runtime_id.to_string(), task_id.unwrap_or(""))
+                    .await;
             }
         }
     }
@@ -2184,7 +2316,7 @@ impl TaskService {
             self.broadcast_task_event(cordy_protocol::EVENT_TASK_CANCELLED, t, Default::default())
                 .await;
         }
-        self.notify_tasks_finished(&cancelled);
+        self.notify_tasks_finished(&cancelled).await;
         Ok(())
     }
 
@@ -2611,7 +2743,11 @@ impl TaskService {
         chat_session: &ChatSession,
         expected_message_id: Uuid,
     ) -> Result<(Uuid, AgentTaskQueue), TaskServiceError> {
-        if self.quick_actions.is_none() {
+        if !self
+            .quick_actions
+            .as_ref()
+            .is_some_and(|quick_actions| quick_actions.enabled())
+        {
             return Err(TaskServiceError::ChatQuickActionsUnavailable);
         }
         // Target is the latest assistant turn; only an ordinary message turn
@@ -2901,7 +3037,7 @@ impl TaskService {
         }
         // One reconcile: all rows belong to the same agent.
         self.reconcile_agent_status(agent_id).await;
-        self.notify_tasks_finished(&cancelled);
+        self.notify_tasks_finished(&cancelled).await;
         Ok(cancelled)
     }
 
@@ -2923,7 +3059,7 @@ impl TaskService {
         for agent_id in distinct_agent_ids(&cancelled) {
             self.reconcile_agent_status(agent_id).await;
         }
-        self.notify_tasks_finished(&cancelled);
+        self.notify_tasks_finished(&cancelled).await;
         Ok(cancelled)
     }
 
@@ -2948,7 +3084,7 @@ impl TaskService {
             )
             .await;
         }
-        self.notify_tasks_finished(cancelled);
+        self.notify_tasks_finished(cancelled).await;
     }
 
     /// Post-commit queue invalidation for clients.
@@ -3124,7 +3260,7 @@ impl TaskService {
             Default::default(),
         )
         .await;
-        self.notify_task_finished(&task);
+        self.notify_task_finished(&task).await;
 
         Ok(CancelTaskResult {
             task,
@@ -3175,7 +3311,7 @@ impl TaskService {
             )
             .await;
         }
-        self.notify_tasks_finished(&tasks);
+        self.notify_tasks_finished(&tasks).await;
         Ok(())
     }
 
@@ -3795,7 +3931,8 @@ impl TaskService {
             Default::default(),
         )
         .await;
-        self.notify_runtime_may_have_work(requeued.runtime_id, Some(&requeued.id.to_string()));
+        self.notify_runtime_may_have_work(requeued.runtime_id, Some(&requeued.id.to_string()))
+            .await;
         tracing::info!(
             task_id = %requeued.id,
             runtime_id = ?requeued.runtime_id,
@@ -4474,5 +4611,29 @@ mod tests {
 
         svc.release_quick_actions_pass(session);
         assert!(svc.try_admit_quick_actions_pass(third, 2));
+    }
+
+    #[tokio::test]
+    async fn task_side_effect_runtime_is_owned_and_idempotent() {
+        let pool =
+            sqlx::PgPool::connect_lazy("postgres://invalid.invalid/nope").expect("lazy pool");
+        let svc = Arc::new(TaskService::new(pool, Arc::new(cordy_events::Bus::new())));
+        let root = tokio_util::sync::CancellationToken::new();
+        let runtime = svc
+            .start_side_effect_runtime(root.child_token())
+            .expect("first start owns runtime");
+        assert!(svc.start_side_effect_runtime(root.child_token()).is_none());
+        let completed = Arc::new(AtomicBool::new(false));
+        let task_completed = completed.clone();
+        svc.spawn_side_effect(async move {
+            task_completed.store(true, Ordering::Release);
+        });
+
+        root.cancel();
+        assert_eq!(
+            runtime.shutdown(Duration::from_secs(1)).await,
+            TaskSideEffectShutdownOutcome::Stopped
+        );
+        assert!(completed.load(Ordering::Acquire));
     }
 }

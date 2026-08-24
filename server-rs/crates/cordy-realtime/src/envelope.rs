@@ -170,6 +170,24 @@ impl Envelope {
     }
 }
 
+pub(crate) fn xadd_envelope_command(
+    stream: &str,
+    stream_max_len: i64,
+    envelope: &Envelope,
+) -> redis::Cmd {
+    let mut command = redis::cmd("XADD");
+    command
+        .arg(stream)
+        .arg("MAXLEN")
+        .arg("~")
+        .arg(stream_max_len)
+        .arg("*");
+    for (key, value) in envelope.redis_field_pairs() {
+        command.arg(key).arg(value);
+    }
+    command
+}
+
 /// The hub-side fanout surface `deliver_envelope` needs. Implemented by the
 /// WS hub once ported; lets relays dispatch without a concrete Hub type.
 #[async_trait]
@@ -311,6 +329,26 @@ mod tests {
         // Missing payload_json invalidates the entry (Go's validity check).
         let empty: Vec<(String, String)> = vec![];
         assert!(Envelope::from_field_pairs(&empty).is_none());
+    }
+
+    #[test]
+    fn xadd_command_places_entry_id_before_fields() {
+        let envelope = Envelope::new(
+            "node",
+            "workspace",
+            "ws-1",
+            "",
+            br#"{"type":"ping"}"#,
+            "event",
+        );
+        let packed = String::from_utf8(
+            xadd_envelope_command("stream", 2_000, &envelope).get_packed_command(),
+        )
+        .expect("Redis command is UTF-8");
+
+        let entry_id = packed.find("$1\r\n*\r\n").expect("entry id");
+        let first_field = packed.find("$8\r\nevent_id\r\n").expect("first field");
+        assert!(entry_id < first_field);
     }
 
     #[test]

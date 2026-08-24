@@ -8,13 +8,16 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::{fmt::Display, future::Future};
 
 use async_trait::async_trait;
 use redis::aio::ConnectionManager;
 use tokio_util::sync::CancellationToken;
 
 use crate::broadcaster::{Broadcaster, DaemonRuntimeDeliverer, RelayPublisher, SCOPE_USER};
-use crate::envelope::{deliver_envelope, heartbeat_key, Envelope, HubFanout};
+use crate::envelope::{
+    deliver_envelope, heartbeat_key, xadd_envelope_command, Envelope, HubFanout,
+};
 use crate::metrics::M;
 use crate::stream_retention::{
     redis_info_int64, redis_ttl_millis, retention_subinterval, stream_min_id,
@@ -168,6 +171,39 @@ fn fnv32a(parts: &[&[u8]]) -> u32 {
     hash
 }
 
+async fn connect_with_retry<T, E, Connect, Connecting, OnError>(
+    shutdown: &CancellationToken,
+    retry_delay: Duration,
+    mut connect: Connect,
+    mut on_error: OnError,
+) -> Option<T>
+where
+    E: Display,
+    Connect: FnMut() -> Connecting,
+    Connecting: Future<Output = Result<T, E>>,
+    OnError: FnMut(&E),
+{
+    loop {
+        if shutdown.is_cancelled() {
+            return None;
+        }
+        let result = tokio::select! {
+            biased;
+            () = shutdown.cancelled() => return None,
+            result = connect() => result,
+        };
+        match result {
+            Ok(connection) => return Some(connection),
+            Err(error) => on_error(&error),
+        }
+        tokio::select! {
+            biased;
+            () = shutdown.cancelled() => return None,
+            () = tokio::time::sleep(retry_delay) => {}
+        }
+    }
+}
+
 /// Publishes all realtime events into a fixed set of Redis Streams.
 pub struct ShardedStreamRelay<H: HubFanout> {
     hub: Arc<H>,
@@ -188,6 +224,7 @@ pub struct ShardedStreamRelay<H: HubFanout> {
     stream_generation: Vec<AtomicU64>,
 
     daemon_runtime: Mutex<Option<Arc<dyn DaemonRuntimeDeliverer>>>,
+    tasks: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
 
 impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
@@ -216,6 +253,7 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
             stream_seen: (0..shards).map(|_| AtomicBool::new(false)).collect(),
             stream_generation: (0..shards).map(|_| AtomicU64::new(0)).collect(),
             daemon_runtime: Mutex::new(None),
+            tasks: Mutex::new(Vec::new()),
         })
     }
 
@@ -249,7 +287,7 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
             .clone_from(&self.node_id);
 
         let state = self.clone();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             // Initial connectivity probe — failures are logged but not fatal;
             // the loops retry and keep the connected gauge honest.
             let connected = state.ping_write().await.is_ok();
@@ -284,6 +322,10 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
             // Drain remaining tasks after cancellation.
             while set.join_next().await.is_some() {}
         });
+        self.tasks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(handle);
     }
 
     async fn ping_write(&self) -> anyhow::Result<()> {
@@ -296,6 +338,18 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
     pub fn stop(&self) {
         self.stopping.store(true, Ordering::Relaxed);
         self.shutdown.cancel();
+    }
+
+    pub async fn wait(&self) {
+        let handles: Vec<_> = self
+            .tasks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .drain(..)
+            .collect();
+        for handle in handles {
+            let _ = handle.await;
+        }
     }
 
     fn shard_for(&self, scope_type: &str, scope_id: &str) -> usize {
@@ -323,15 +377,7 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
         let shard = self.shard_for(scope_type, scope_id);
         let stream = sharded_stream_key(shard);
 
-        let mut cmd = redis::cmd("XADD");
-        cmd.arg(&stream)
-            .arg("MAXLEN")
-            .arg("~")
-            .arg(self.config.stream_max_len);
-        for (k, v) in ev.redis_field_pairs() {
-            cmd.arg(k).arg(v);
-        }
-        cmd.arg("*");
+        let cmd = xadd_envelope_command(&stream, self.config.stream_max_len, &ev);
 
         let start = std::time::Instant::now();
         let result: anyhow::Result<String> = {
@@ -376,8 +422,22 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
         let stream = sharded_stream_key(shard);
         // Dedicated connection per reader: XREAD BLOCK would otherwise stall a
         // multiplexed connection shared with other commands.
-        let Ok(mut conn) = self.read_client.get_connection_manager().await else {
-            tracing::error!("realtime/sharded-redis: reader connection failed, shard {shard}");
+        let Some(mut conn) = connect_with_retry(
+            &self.shutdown,
+            Duration::from_secs(1),
+            || self.read_client.get_connection_manager(),
+            |error| {
+                M.redis_xread_errors.fetch_add(1, Ordering::Relaxed);
+                M.set_redis_last_error(&error.to_string());
+                tracing::error!(
+                    error = %error,
+                    shard,
+                    "realtime/sharded-redis: reader connection failed; retrying"
+                );
+            },
+        )
+        .await
+        else {
             return;
         };
         // Start from a bounded lookback window, not "$", so that events
@@ -596,7 +656,7 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
                     for (id, fields) in messages {
                         *last_id = id.clone();
                         M.redis_xread_total.fetch_add(1, Ordering::Relaxed);
-                        self.deliver_fields(&fields);
+                        self.deliver_fields(&fields).await;
                     }
                 }
                 true
@@ -618,7 +678,7 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
         }
     }
 
-    fn deliver_fields(&self, fields: &[(String, String)]) {
+    async fn deliver_fields(&self, fields: &[(String, String)]) {
         if let Some(ev) = Envelope::from_field_pairs(fields) {
             if ev.scope.is_empty() || ev.scope_id.is_empty() {
                 return;
@@ -628,8 +688,7 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
                 .lock()
                 .unwrap_or_else(|e| e.into_inner())
                 .clone();
-            let hub = self.hub.clone();
-            tokio::spawn(deliver_envelope(hub, daemon_runtime, ev));
+            deliver_envelope(self.hub.clone(), daemon_runtime, ev).await;
         }
     }
 
@@ -756,6 +815,40 @@ impl<H: HubFanout + 'static> Broadcaster for ShardedStreamRelay<H> {
     // broadcast_to_workspace inherits the default SCOPE_WORKSPACE delegation.
 }
 
+#[async_trait]
+impl<H: HubFanout + 'static> crate::relay_lifecycle::ManagedRelay for ShardedStreamRelay<H> {
+    fn node_id(&self) -> String {
+        self.node_id()
+    }
+
+    fn start(self: Arc<Self>, shutdown: CancellationToken) {
+        ShardedStreamRelay::start(&self);
+        let relay = self.clone();
+        let handle = tokio::spawn(async move {
+            tokio::select! {
+                () = shutdown.cancelled() => relay.stop(),
+                () = relay.shutdown.cancelled() => {}
+            }
+        });
+        self.tasks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(handle);
+    }
+
+    fn stop(&self) {
+        ShardedStreamRelay::stop(self);
+    }
+
+    async fn wait(&self) {
+        ShardedStreamRelay::wait(self).await;
+    }
+
+    fn set_daemon_runtime_deliverer(&self, deliverer: Arc<dyn DaemonRuntimeDeliverer>) {
+        ShardedStreamRelay::set_daemon_runtime_deliverer(self, deliverer);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -795,6 +888,57 @@ mod tests {
 
         cfg.replay_grace = Duration::ZERO;
         assert!(cfg.validate().is_err());
+    }
+
+    #[tokio::test]
+    async fn reader_connection_retries_initial_failure() {
+        let shutdown = CancellationToken::new();
+        let attempts = AtomicU64::new(0);
+        let errors = AtomicU64::new(0);
+
+        let connection = connect_with_retry(
+            &shutdown,
+            Duration::ZERO,
+            || {
+                let attempt = attempts.fetch_add(1, Ordering::Relaxed);
+                async move {
+                    if attempt == 0 {
+                        Err("offline")
+                    } else {
+                        Ok("connected")
+                    }
+                }
+            },
+            |_| {
+                errors.fetch_add(1, Ordering::Relaxed);
+            },
+        )
+        .await;
+
+        assert_eq!(connection, Some("connected"));
+        assert_eq!(attempts.load(Ordering::Relaxed), 2);
+        assert_eq!(errors.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn cancelled_reader_does_not_attempt_connection() {
+        let shutdown = CancellationToken::new();
+        shutdown.cancel();
+        let attempts = AtomicU64::new(0);
+
+        let connection = connect_with_retry(
+            &shutdown,
+            Duration::ZERO,
+            || {
+                attempts.fetch_add(1, Ordering::Relaxed);
+                std::future::ready(Result::<(), &str>::Err("offline"))
+            },
+            |_| {},
+        )
+        .await;
+
+        assert_eq!(connection, None);
+        assert_eq!(attempts.load(Ordering::Relaxed), 0);
     }
 
     #[test]

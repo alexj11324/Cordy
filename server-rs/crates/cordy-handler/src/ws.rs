@@ -29,6 +29,7 @@ use cordy_realtime::broadcaster::{SCOPE_CHAT, SCOPE_TASK, SCOPE_USER, SCOPE_WORK
 use cordy_realtime::hub::PatResolver as _;
 use cordy_realtime::hub::{ClientHandle, Hub, ScopeAuthorizer};
 use cordy_realtime::metrics::M;
+use cordy_service::task_service::TaskService;
 use futures_util::{SinkExt, StreamExt};
 use serde_json::{json, Value};
 
@@ -124,7 +125,11 @@ pub async fn ws_handler(
     // failures answer over plain HTTP exactly like Go's http.Error.
     let mut user_id = String::new();
     if let Some(token) = cookie_token(&headers) {
-        let pr = DbPatResolver::new(state.pool.clone(), state.pat_cache.clone());
+        let pr = DbPatResolver::new(
+            state.pool.clone(),
+            state.pat_cache.clone(),
+            state.tasks.clone(),
+        );
         let uid = match authenticate_token(&pr, &token) {
             Ok(uid) => uid,
             Err(payload) => return auth_http_error(payload),
@@ -233,7 +238,11 @@ async fn post_upgrade(
                 return;
             }
         };
-        let pr = DbPatResolver::new(state.pool.clone(), state.pat_cache.clone());
+        let pr = DbPatResolver::new(
+            state.pool.clone(),
+            state.pat_cache.clone(),
+            state.tasks.clone(),
+        );
         let uid = match authenticate_token(&pr, &token) {
             Ok(uid) => uid,
             Err(payload) => {
@@ -283,6 +292,7 @@ async fn post_upgrade(
     // Reader exited: stop the writer, then unregister (drops the hub's
     // ClientHandle → sender dropped → any late writer sees None).
     writer.abort();
+    let _ = writer.await;
     hub.unregister(client_id);
 }
 
@@ -548,11 +558,20 @@ fn authenticate_token(pr: &DbPatResolver, token: &str) -> Result<String, &'stati
 pub struct DbPatResolver {
     pool: sqlx::PgPool,
     pat_cache: cordy_auth::pat_cache::PatCache,
+    side_effects: Arc<TaskService>,
 }
 
 impl DbPatResolver {
-    pub fn new(pool: sqlx::PgPool, pat_cache: cordy_auth::pat_cache::PatCache) -> Self {
-        Self { pool, pat_cache }
+    pub fn new(
+        pool: sqlx::PgPool,
+        pat_cache: cordy_auth::pat_cache::PatCache,
+        side_effects: Arc<TaskService>,
+    ) -> Self {
+        Self {
+            pool,
+            pat_cache,
+            side_effects,
+        }
     }
 }
 
@@ -562,6 +581,7 @@ impl cordy_realtime::hub::PatResolver for DbPatResolver {
         // the current runtime; bounded cost per Go's original design note.
         let pool = self.pool.clone();
         let cache = self.pat_cache.clone();
+        let side_effects = self.side_effects.clone();
         let hash = hash_token(token);
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async move {
@@ -577,7 +597,7 @@ impl cordy_realtime::hub::PatResolver for DbPatResolver {
                 // Cache miss = first WS auth in this TTL window; refresh
                 // last_used_at without blocking the handshake (Go does `go …`).
                 let p2 = pool.clone();
-                tokio::spawn(async move {
+                side_effects.spawn_side_effect(async move {
                     let _ =
                         personal_access_token::update_personal_access_token_last_used(&p2, pat.id)
                             .await;

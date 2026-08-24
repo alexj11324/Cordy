@@ -443,7 +443,7 @@ async fn create(
             .map(|user| user.name)
             .unwrap_or_else(|| email.clone());
         let target = email.clone();
-        tokio::spawn(async move {
+        state.tasks.spawn_side_effect(async move {
             if let Err(error) = email_service
                 .send_invitation_email(&target, &inviter_name, &workspace_name, &invitation_id)
                 .await
@@ -835,9 +835,10 @@ async fn accept(
         }),
         ..Default::default()
     });
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_workspaces_changed(&user_id.to_string());
-    }
+    state
+        .daemon_notifier
+        .notify_workspaces_changed(&user_id.to_string())
+        .await;
     if let Some(metrics) = state.business_metrics.as_deref() {
         for event in acceptance_metric_events(
             user_id,
