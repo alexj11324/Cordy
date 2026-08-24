@@ -14,11 +14,13 @@ use std::sync::Arc;
 
 use anyhow::Context as _;
 use axum::extract::{Path, Query as AxumQuery, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
-use cordy_daemon::hub::{ClientIdentity, HeartbeatHandler};
+use cordy_daemon::hub::{
+    ClientIdentity, HeartbeatHandler, RpcHandler, RpcHandlerError, RpcOutcome,
+};
 use cordy_db::models::AgentRuntime;
 use cordy_db::queries::{
     agent, autopilot, chat, comment as comment_q, issue, member, runtime, runtime_profile,
@@ -32,6 +34,9 @@ use cordy_protocol::{
     HEARTBEAT_STATUS_RUNTIME_GONE,
 };
 use cordy_service::issue_status as issue_status_svc;
+use cordy_service::plugin::PluginService;
+use cordy_service::task_service::TaskService;
+use http_body_util::BodyExt as _;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use uuid::Uuid;
@@ -1510,6 +1515,154 @@ struct BatchClaimRequest {
 /// Bounds one machine-level batch claim (Go claimBatchMaxTasksCap).
 const CLAIM_BATCH_MAX_TASKS_CAP: usize = 32;
 
+/// Exact production dependencies shared by HTTP and WebSocket task claims.
+/// Keeping this snapshot independent of `HandlerState` prevents installing an
+/// RPC handler from forming `DaemonHub -> handler state -> DaemonHub`.
+#[derive(Clone)]
+pub(crate) struct DaemonClaimServices {
+    pub(crate) pool: sqlx::PgPool,
+    pub(crate) tasks: Arc<TaskService>,
+    pub(crate) plugins: Arc<PluginService>,
+}
+
+impl DaemonClaimServices {
+    fn from_state(state: &HandlerState) -> Self {
+        Self {
+            pool: state.pool.clone(),
+            tasks: state.tasks.clone(),
+            plugins: state.plugins.clone(),
+        }
+    }
+}
+
+/// Production WS RPC dispatcher. The supported method intentionally stays
+/// narrow: every method must reuse the corresponding HTTP domain core rather
+/// than grow a second claim/finalization implementation.
+pub(crate) struct DaemonRpcProcessor {
+    claims: DaemonClaimServices,
+}
+
+impl DaemonRpcProcessor {
+    pub(crate) fn from_state(state: &HandlerState) -> Self {
+        Self {
+            claims: DaemonClaimServices::from_state(state),
+        }
+    }
+
+    fn identity_headers(identity: &ClientIdentity) -> Result<HeaderMap, RpcHandlerError> {
+        fn insert(
+            headers: &mut HeaderMap,
+            name: &'static str,
+            value: &str,
+        ) -> Result<(), RpcHandlerError> {
+            if value.is_empty() {
+                return Ok(());
+            }
+            let value = HeaderValue::from_str(value).map_err(|error| {
+                RpcHandlerError::new(
+                    StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                    anyhow::Error::new(error).context(format!("invalid {name} identity value")),
+                )
+            })?;
+            headers.insert(name, value);
+            Ok(())
+        }
+
+        let mut headers = HeaderMap::new();
+        if identity.daemon_id.is_empty() {
+            insert(&mut headers, "x-user-id", &identity.user_id)?;
+        } else {
+            insert(
+                &mut headers,
+                cordy_middleware::daemon_auth::DAEMON_WORKSPACE_HEADER,
+                &identity.primary_workspace_id(),
+            )?;
+            insert(
+                &mut headers,
+                cordy_middleware::daemon_auth::DAEMON_ID_HEADER,
+                &identity.daemon_id,
+            )?;
+        }
+        insert(
+            &mut headers,
+            "x-client-capabilities",
+            &identity.capabilities,
+        )?;
+        insert(&mut headers, "x-client-version", &identity.client_version)?;
+        Ok(headers)
+    }
+
+    async fn claim_tasks(
+        &self,
+        ctx: &tokio_util::sync::CancellationToken,
+        identity: &ClientIdentity,
+        body: Option<&Value>,
+    ) -> Result<RpcOutcome, RpcHandlerError> {
+        let request =
+            serde_json::from_value::<BatchClaimRequest>(body.cloned().unwrap_or_else(|| json!({})))
+                .map(Json)
+                .map_err(|error| {
+                    RpcHandlerError::new(
+                        StatusCode::BAD_REQUEST.as_u16(),
+                        anyhow::Error::new(error).context("invalid request body"),
+                    )
+                })?;
+        let headers = Self::identity_headers(identity)?;
+        let response = tokio::select! {
+            biased;
+            () = ctx.cancelled() => {
+                return Err(RpcHandlerError::new(
+                    StatusCode::SERVICE_UNAVAILABLE.as_u16(),
+                    anyhow::anyhow!("connection closed"),
+                ));
+            }
+            response = claim_tasks_by_runtime_core(&self.claims, headers, Some(request)) => response,
+        };
+        let status = response.status().as_u16();
+        let bytes = response
+            .into_body()
+            .collect()
+            .await
+            .map_err(|error| {
+                RpcHandlerError::new(
+                    StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                    anyhow::Error::new(error).context("collect tasks.claim response"),
+                )
+            })?
+            .to_bytes();
+        let body = if bytes.is_empty() {
+            None
+        } else {
+            Some(serde_json::from_slice(&bytes).map_err(|error| {
+                RpcHandlerError::new(
+                    StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                    anyhow::Error::new(error).context("decode tasks.claim response"),
+                )
+            })?)
+        };
+        Ok(RpcOutcome { status, body })
+    }
+}
+
+#[async_trait::async_trait]
+impl RpcHandler for DaemonRpcProcessor {
+    async fn handle_rpc(
+        &self,
+        ctx: &tokio_util::sync::CancellationToken,
+        identity: &ClientIdentity,
+        method: &str,
+        body: Option<&Value>,
+    ) -> Result<RpcOutcome, RpcHandlerError> {
+        match method {
+            "tasks.claim" => self.claim_tasks(ctx, identity, body).await,
+            _ => Err(RpcHandlerError::new(
+                StatusCode::NOT_FOUND.as_u16(),
+                anyhow::anyhow!("unknown rpc method {method:?}"),
+            )),
+        }
+    }
+}
+
 fn empty_tasks_response() -> Response {
     Json(json!({ "tasks": [] })).into_response()
 }
@@ -1527,11 +1680,23 @@ async fn claim_tasks_by_runtime(
     headers: HeaderMap,
     body: Option<Json<BatchClaimRequest>>,
 ) -> Response {
+    claim_tasks_by_runtime_core(&DaemonClaimServices::from_state(&state), headers, body).await
+}
+
+async fn claim_tasks_by_runtime_core(
+    state: &DaemonClaimServices,
+    headers: HeaderMap,
+    body: Option<Json<BatchClaimRequest>>,
+) -> Response {
     let Some(Json(req)) = body else {
         return error_response(StatusCode::BAD_REQUEST, "invalid request body");
     };
     if req.daemon_id.is_empty() {
         return error_response(StatusCode::BAD_REQUEST, "daemon_id is required");
+    }
+    let authenticated_daemon_id = daemon_id_of(daemon_context_from_headers(&headers));
+    if !authenticated_daemon_id.is_empty() && authenticated_daemon_id != req.daemon_id {
+        return error_response(StatusCode::FORBIDDEN, "daemon_id does not match token");
     }
     if req.max_tasks < 0 {
         return error_response(StatusCode::BAD_REQUEST, "max_tasks must not be negative");
@@ -1571,7 +1736,7 @@ async fn claim_tasks_by_runtime(
             true => {
                 let user_id = request_user_id(&headers);
                 !user_id.is_empty()
-                    && access_get_member(&state, &headers, &user_id, &ws_id)
+                    && claim_access_get_member(state, &user_id, &ws_id)
                         .await
                         .is_some()
             }
@@ -1622,7 +1787,7 @@ async fn claim_tasks_by_runtime(
         // Stale comment-plan repair: a claimed task whose trigger was cleared
         // (only coalesced survive) must never dispatch as a generic assignment.
         if task.trigger_comment_id.is_none() && !task.coalesced_comment_ids.is_empty() {
-            match repair_stale_comment_plan(&state, &task, &rt_workspace).await {
+            match repair_stale_comment_plan(state, &task, &rt_workspace).await {
                 RepairOutcome::NotApplicable => {}
                 RepairOutcome::RepairedClean => continue,
                 RepairOutcome::Failed(resp) => {
@@ -1635,7 +1800,7 @@ async fn claim_tasks_by_runtime(
         // task must not be dispatched; the builder cancelled it where the
         // semantics require it — skip it either way.
         let built = match crate::claim_response::build_claimed_task_response(
-            &state,
+            state,
             &headers,
             &task,
             rt,
@@ -1663,7 +1828,7 @@ async fn claim_tasks_by_runtime(
             let _ = state.tasks.cancel_task(task.id).await;
             continue;
         };
-        match finalize_claim_enriched_with_runtime(&state, &task, owner, &built, Some(rt)).await {
+        match finalize_claim_enriched_with_runtime(state, &task, owner, &built, Some(rt)).await {
             Ok((auth_token, remote_mcp_token, receipt)) => {
                 let mut payload = built.payload;
                 if let Some(obj) = payload.as_object_mut() {
@@ -1692,6 +1857,19 @@ async fn claim_tasks_by_runtime(
     Json(json!({ "tasks": out })).into_response()
 }
 
+async fn claim_access_get_member(
+    state: &DaemonClaimServices,
+    user_id: &str,
+    workspace_id: &str,
+) -> Option<cordy_db::models::Member> {
+    let user_id = Uuid::parse_str(user_id).ok()?;
+    let workspace_id = Uuid::parse_str(workspace_id).ok()?;
+    member::get_member_by_user_and_workspace(&state.pool, user_id, workspace_id)
+        .await
+        .ok()
+        .flatten()
+}
+
 /// Outcome of the stale comment-plan repair (Go repairStaleCommentPlanIfNeeded).
 enum RepairOutcome {
     /// The guard does not apply; proceed with a normal claim.
@@ -1712,7 +1890,7 @@ enum RepairOutcome {
 /// Port of Go `repairStaleCommentPlanIfNeeded`. Returns NotApplicable whenever
 /// the guard does not fire so callers can fall through.
 async fn repair_stale_comment_plan(
-    state: &HandlerState,
+    state: &DaemonClaimServices,
     task: &cordy_db::models::AgentTaskQueue,
     runtime_workspace_id: &str,
 ) -> RepairOutcome {
@@ -1826,7 +2004,7 @@ async fn repair_stale_comment_plan(
 /// daemon token can be bound to the claiming runtime's daemon.
 #[allow(clippy::too_many_arguments)]
 async fn finalize_claim_enriched_full(
-    state: &HandlerState,
+    state: &DaemonClaimServices,
     task: &cordy_db::models::AgentTaskQueue,
     owner_id: Uuid,
     built: &crate::claim_response::BuiltClaim,
@@ -1910,7 +2088,7 @@ async fn finalize_claim_enriched_full(
 }
 
 async fn finalize_claim_enriched_with_runtime(
-    state: &HandlerState,
+    state: &DaemonClaimServices,
     task: &cordy_db::models::AgentTaskQueue,
     owner_id: Uuid,
     built: &crate::claim_response::BuiltClaim,
@@ -1996,10 +2174,11 @@ async fn claim_task_by_runtime(
         Ok(Some(rt)) => rt,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load runtime"),
     };
+    let claim_services = DaemonClaimServices::from_state(&state);
     // Stale comment-plan repair (Go repairStaleCommentPlanIfNeeded): a claimed
     // task whose trigger was cleared must never dispatch as a generic assignment.
     if task.trigger_comment_id.is_none() && !task.coalesced_comment_ids.is_empty() {
-        match repair_stale_comment_plan(&state, &task, &ws_id).await {
+        match repair_stale_comment_plan(&claim_services, &task, &ws_id).await {
             RepairOutcome::NotApplicable => {}
             RepairOutcome::RepairedClean => {
                 return Json(json!({ "task": null })).into_response();
@@ -2008,7 +2187,7 @@ async fn claim_task_by_runtime(
         }
     }
     let built = match crate::claim_response::build_claimed_task_response(
-        &state,
+        &claim_services,
         &headers,
         &task,
         &rt,
@@ -2028,7 +2207,9 @@ async fn claim_task_by_runtime(
             "runtime owner required to mint task token",
         );
     };
-    match finalize_claim_enriched_with_runtime(&state, &task, owner, &built, Some(&rt)).await {
+    match finalize_claim_enriched_with_runtime(&claim_services, &task, owner, &built, Some(&rt))
+        .await
+    {
         Ok((token, remote_mcp_token, receipt)) => {
             let mut payload = built.payload;
             if let Some(obj) = payload.as_object_mut() {
@@ -4139,12 +4320,16 @@ fn plugin_error_response(err: &cordy_service::plugin::PluginError, fallback: &st
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn websocket_heartbeat_rejects_malformed_runtime_before_database_access() {
+    fn lazy_test_state() -> HandlerState {
         let pool = sqlx::postgres::PgPoolOptions::new()
             .connect_lazy("postgres://cordy:cordy@127.0.0.1/cordy")
             .expect("test database URL is valid");
-        let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None);
+        HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None)
+    }
+
+    #[tokio::test]
+    async fn websocket_heartbeat_rejects_malformed_runtime_before_database_access() {
+        let state = lazy_test_state();
         let processor = DaemonHeartbeatProcessor::from_state(&state);
 
         let error = processor
@@ -4156,6 +4341,76 @@ mod tests {
             error.to_string().contains("invalid runtime_id"),
             "{error:#}"
         );
+    }
+
+    #[tokio::test]
+    async fn batch_claim_rejects_daemon_token_spoof_before_database_access() {
+        let state = lazy_test_state();
+        let services = DaemonClaimServices::from_state(&state);
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            cordy_middleware::daemon_auth::DAEMON_ID_HEADER,
+            HeaderValue::from_static("authenticated-daemon"),
+        );
+        headers.insert(
+            cordy_middleware::daemon_auth::DAEMON_WORKSPACE_HEADER,
+            HeaderValue::from_static("workspace-1"),
+        );
+
+        let response = claim_tasks_by_runtime_core(
+            &services,
+            headers,
+            Some(Json(BatchClaimRequest {
+                daemon_id: "spoofed-daemon".to_string(),
+                runtime_ids: Vec::new(),
+                max_tasks: 1,
+            })),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap(),
+            json!({"error":"daemon_id does not match token"})
+        );
+    }
+
+    #[tokio::test]
+    async fn websocket_rpc_rejects_unknown_methods_and_cancelled_claims() {
+        let state = lazy_test_state();
+        let processor = DaemonRpcProcessor::from_state(&state);
+        let ctx = tokio_util::sync::CancellationToken::new();
+        let unknown = processor
+            .handle_rpc(&ctx, &ClientIdentity::default(), "unknown", None)
+            .await;
+        match unknown {
+            Err(error) => assert_eq!(error.status, StatusCode::NOT_FOUND.as_u16()),
+            Ok(_) => panic!("unknown RPC method unexpectedly succeeded"),
+        }
+
+        ctx.cancel();
+        let claim_body = json!({
+            "daemon_id": "daemon-1",
+            "runtime_ids": [],
+            "max_tasks": 1
+        });
+        let cancelled = processor
+            .handle_rpc(
+                &ctx,
+                &ClientIdentity {
+                    daemon_id: "daemon-1".to_string(),
+                    workspace_id: "workspace-1".to_string(),
+                    ..ClientIdentity::default()
+                },
+                "tasks.claim",
+                Some(&claim_body),
+            )
+            .await;
+        match cancelled {
+            Err(error) => assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE.as_u16()),
+            Ok(_) => panic!("cancelled RPC claim unexpectedly succeeded"),
+        }
     }
 
     #[test]

@@ -277,7 +277,8 @@ async fn build_production_router(
     }
     let state = install_pending_stores(state, redis_url)
         .await
-        .with_daemon_heartbeat_handler();
+        .with_daemon_heartbeat_handler()
+        .with_daemon_rpc_handler();
     let mut realtime = realtime_runtime::RealtimeRuntime::from_config(hub, &cfg.redis).await;
     realtime.attach(
         &state.bus,

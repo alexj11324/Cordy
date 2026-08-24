@@ -617,6 +617,18 @@ impl HandlerState {
         self
     }
 
+    /// Installs the production daemon WS RPC dispatcher after the shared task
+    /// and plugin services are finalized. Its dependency snapshot excludes the
+    /// hub, so the callback remains owned without retaining the server state.
+    pub fn with_daemon_rpc_handler(self) -> Self {
+        if let Some(hub) = self.daemon_hub.as_ref() {
+            hub.set_rpc_handler(Some(Arc::new(
+                crate::daemon::DaemonRpcProcessor::from_state(&self),
+            )));
+        }
+        self
+    }
+
     /// Wires only public-route rate limiting. Kept separate from `with_redis`
     /// so a handler-domain migration cannot implicitly activate pending-store
     /// behavior owned by other S8 domains.
