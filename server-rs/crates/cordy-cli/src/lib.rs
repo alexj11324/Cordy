@@ -2532,6 +2532,8 @@ struct SkillFilesArgs {
 enum SkillFilesCommand {
     #[command(about = "List files for a skill")]
     List(SkillFilesListArgs),
+    #[command(about = "Create or update a skill file")]
+    Upsert(SkillFilesUpsertArgs),
 }
 
 #[derive(Debug, Args)]
@@ -2539,6 +2541,26 @@ struct SkillFilesListArgs {
     #[arg(value_name = "SKILL-ID")]
     skill_id: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct SkillFilesUpsertArgs {
+    #[arg(value_name = "SKILL-ID")]
+    skill_id: String,
+    #[arg(long, help = "File path within the skill (required)")]
+    path: Option<String>,
+    #[arg(long, help = "File content")]
+    content: Option<String>,
+    #[arg(long, help = "Read file content from stdin")]
+    content_stdin: bool,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Read file content from a UTF-8 file"
+    )]
+    content_file: Option<PathBuf>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
 }
 
@@ -2967,6 +2989,12 @@ async fn run_with_input<R: Read>(
                     command: SkillFilesCommand::List(args),
                 }),
         }) => run_skill_files_list(cli, environment, args).await,
+        Command::Skill(SkillArgs {
+            command:
+                SkillCommand::Files(SkillFilesArgs {
+                    command: SkillFilesCommand::Upsert(args),
+                }),
+        }) => run_skill_files_upsert(cli, environment, args, input).await,
         Command::Autopilot(AutopilotArgs {
             command:
                 AutopilotCommand::List {
@@ -6766,6 +6794,56 @@ async fn run_skill_files_list(
     Ok(RunOutput {
         stdout,
         stderr: String::new(),
+    })
+}
+
+async fn run_skill_files_upsert<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SkillFilesUpsertArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let skill_id = args.skill_id.trim();
+    if skill_id.is_empty() {
+        bail!("skill ID must not be empty");
+    }
+    let path = args.path.as_deref().unwrap_or_default();
+    if path.is_empty() {
+        bail!("--path is required");
+    }
+    let content = resolve_skill_content_sources(
+        args.content.as_deref(),
+        args.content_stdin,
+        args.content_file.as_deref(),
+        environment,
+        input,
+    )?;
+    let content = content.filter(|content| !content.is_empty());
+    let content = content.context("--content is required")?;
+    let client = new_api_client(cli, environment)?;
+    let result: Value = client
+        .put_json(
+            &format!("/api/skills/{}/files", encoded_path_segment(skill_id)),
+            &serde_json::json!({
+                "path": path,
+                "content": content,
+            }),
+        )
+        .await
+        .context("upsert skill file")?;
+    Ok(match args.output {
+        OutputFormat::Json => RunOutput {
+            stdout: format!("{}\n", serde_json::to_string_pretty(&result)?),
+            stderr: String::new(),
+        },
+        OutputFormat::Table => RunOutput {
+            stdout: format!(
+                "Skill file upserted: {} ({})\n",
+                value_string(&result, "path"),
+                value_string(&result, "id")
+            ),
+            stderr: String::new(),
+        },
     })
 }
 
@@ -17799,6 +17877,140 @@ mod tests {
         let empty_table = format_skill_files_table(&[]);
         assert!(empty_table.starts_with("ID"));
         assert!(empty_table.contains("UPDATED_AT"));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn skill_files_upsert_matches_go_body_headers_and_output_contracts() {
+        let app = Router::new().route(
+            "/api/skills/skill-1/files",
+            put(|headers: HeaderMap, Json(body): Json<Value>| async move {
+                assert_eq!(headers["authorization"], "Bearer token-1");
+                assert_eq!(headers["x-workspace-id"], "workspace-1");
+                match body["path"].as_str() {
+                    Some("SKILL.md") => assert_eq!(body["content"], "body\n"),
+                    Some("notes.md") => assert_eq!(body["content"], "inline"),
+                    other => panic!("unexpected skill file path: {other:?}"),
+                }
+                Json(serde_json::json!({
+                    "id": "file-1",
+                    "path": body["path"].clone(),
+                    "content": body["content"].clone()
+                }))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let table_cli = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "files",
+            "upsert",
+            "skill-1",
+            "--path",
+            "SKILL.md",
+            "--content-stdin",
+            "--output",
+            "table",
+        ])
+        .expect("skill file upsert table CLI");
+        let Command::Skill(SkillArgs {
+            command:
+                SkillCommand::Files(SkillFilesArgs {
+                    command: SkillFilesCommand::Upsert(args),
+                }),
+        }) = &table_cli.command
+        else {
+            panic!("expected skill file upsert");
+        };
+        assert_eq!(args.path.as_deref(), Some("SKILL.md"));
+        assert_eq!(args.output, OutputFormat::Table);
+        let table = run_with_input(
+            &table_cli,
+            &environment,
+            &mut Cursor::new(b"body\n".to_vec()),
+        )
+        .await
+        .expect("upsert skill file table");
+        assert_eq!(table.stdout, "Skill file upserted: SKILL.md (file-1)\n");
+        assert!(table.stderr.is_empty());
+
+        let json_cli = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "files",
+            "upsert",
+            "skill-1",
+            "--path",
+            "notes.md",
+            "--content",
+            "inline",
+        ])
+        .expect("skill file upsert JSON CLI");
+        let json = run_with_input(&json_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("upsert skill file JSON");
+        let result: Value = serde_json::from_str(&json.stdout).expect("upsert JSON");
+        assert_eq!(result["id"], "file-1");
+        assert_eq!(result["path"], "notes.md");
+        assert!(json.stderr.is_empty());
+
+        let missing_path = SkillFilesUpsertArgs {
+            skill_id: "skill-1".into(),
+            path: None,
+            content: Some("inline".into()),
+            content_stdin: false,
+            content_file: None,
+            output: OutputFormat::Json,
+        };
+        let error = run_skill_files_upsert(
+            &json_cli,
+            &environment,
+            &missing_path,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .await
+        .expect_err("missing path");
+        assert_eq!(error.to_string(), "--path is required");
+        let missing_content = SkillFilesUpsertArgs {
+            path: Some("notes.md".into()),
+            content: None,
+            ..missing_path
+        };
+        let error = run_skill_files_upsert(
+            &json_cli,
+            &environment,
+            &missing_content,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .await
+        .expect_err("missing content");
+        assert_eq!(error.to_string(), "--content is required");
+        let conflict = SkillFilesUpsertArgs {
+            content: Some("inline".into()),
+            content_stdin: true,
+            ..missing_content
+        };
+        let error = run_skill_files_upsert(
+            &json_cli,
+            &environment,
+            &conflict,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .await
+        .expect_err("conflicting content");
+        assert_eq!(
+            error.to_string(),
+            "--content, --content-stdin, and --content-file are mutually exclusive"
+        );
         server.abort();
     }
 
