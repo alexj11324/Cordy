@@ -253,8 +253,9 @@ impl SlackChannel {
     /// (hello / events_api / slash_commands / disconnect envelopes, ACK per
     /// envelope id). The frame protocol is JSON text frames:
     /// {"type":"events_api","envelope_id":..,"payload":{...}} etc.; each
-    /// inbound envelope is ACKed with {"type":"ack","envelope_id":..} BEFORE
-    /// any processing, mirroring Go's Ack-first ordering.
+    /// inbound envelope is ACKed with {"envelope_id":..} BEFORE any
+    /// processing, mirroring Go's Ack-first ordering and Slack's response
+    /// schema (which permits only an optional response payload alongside it).
     async fn connect_impl(
         &self,
         ctx: CancellationToken,

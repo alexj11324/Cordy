@@ -60,7 +60,6 @@ impl Envelope {
         }
         Some(
             serde_json::json!({
-                "type": "ack",
                 "envelope_id": self.envelope_id,
             })
             .to_string(),
@@ -183,9 +182,6 @@ mod tests {
     fn ack_frame_echoes_envelope_id() {
         let e =
             Envelope::parse(r#"{"type":"events_api","envelope_id":"abc","payload":{}}"#).unwrap();
-        assert_eq!(
-            e.ack_frame().unwrap(),
-            r#"{"envelope_id":"abc","type":"ack"}"#
-        );
+        assert_eq!(e.ack_frame().unwrap(), r#"{"envelope_id":"abc"}"#);
     }
 }
