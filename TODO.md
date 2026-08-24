@@ -61,7 +61,14 @@
       compile, test, security, or lifecycle failure. Lock released.
 - [x] #89 merged with GraphQL expected head `2b7d31e5`; merge `ef7e3ba9`, parents
       `8b44b1ef + 2b7d31e5`, tree `83c10acd`; integration ref verified.
-- [ ] #113: refresh against integration `ef7e3ba9`, then review, gate, expected-head merge.
+- [ ] #113 restacked non-rewriting in clean `/home/ubuntu/Cordy/.worktrees/cord-113-restack`:
+      head `709838df71c1f6ba05651722b12c1367543c7671`, tree
+      `076a681b57b79d0a7e37da9bf9f85299a9ec6677`, parents `fb806b0f + ef7e3ba9`,
+      PR base now `2b7d31e5`, candidate `3dcffd6c169ad2772935955b868339fe1cf36de6`,
+      Ready/CLEAN, exact-head review requested at `5395491572`.
+- [ ] #113 gate remains pending review; original worktree
+      `.worktrees/cord-22-daemon-production-assembly` has unrelated uncommitted CLI
+      edits and must not be reset or used for the gate.
 - [ ] #114: restack only after #113 merge; review, gate, expected-head merge.
 - [ ] #126 → #127 → #128 → #129: process strictly in that order after daemon base moves.
 
