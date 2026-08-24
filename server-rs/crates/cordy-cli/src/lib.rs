@@ -155,6 +155,8 @@ enum DaemonCommand {
         hide = true
     )]
     ProbeRuntimes,
+    #[command(about = "Show local daemon workspace disk usage")]
+    DiskUsage(DaemonDiskUsageArgs),
 }
 
 #[derive(Debug, Args)]
@@ -167,6 +169,22 @@ struct DaemonStartArgs {
 struct DaemonRestartArgs {
     #[command(flatten)]
     launch: DaemonLaunchArgs,
+}
+
+#[derive(Debug, Args)]
+struct DaemonDiskUsageArgs {
+    #[arg(long, help = "Aggregate output by workspace instead of by task")]
+    by_workspace: bool,
+    #[arg(long, help = "Use the per-task view (default)")]
+    by_task: bool,
+    #[arg(long, default_value_t = 0, help = "Keep only the largest N entries")]
+    top: i64,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+    #[arg(long, help = "Override the workspaces root path")]
+    workspaces_root: Option<String>,
+    #[arg(long, help = "Scan the default root and every named profile root")]
+    all_profiles: bool,
 }
 
 #[derive(Debug, Args)]
@@ -3129,6 +3147,9 @@ async fn run_with_input<R: Read>(
         Command::Daemon(DaemonArgs {
             command: DaemonCommand::ProbeRuntimes,
         }) => run_daemon_probe_runtimes(cli, environment),
+        Command::Daemon(DaemonArgs {
+            command: DaemonCommand::DiskUsage(args),
+        }) => run_daemon_disk_usage(cli, environment, args).await,
         Command::Setup(args) => run_setup(cli, environment, args, input).await,
         Command::Version { output } => run_version(*output),
     }
@@ -3501,6 +3522,491 @@ fn run_daemon_probe_runtimes(cli: &Cli, environment: &Environment) -> Result<Run
         stdout: serde_json::to_string(&report)? + "\n",
         stderr: String::new(),
     })
+}
+
+/// The CLI owns argument validation and presentation only.  Filesystem
+/// traversal and parent-status HTTP semantics remain in the daemon facade;
+/// this keeps single-root and multi-profile reports on one implementation.
+async fn run_daemon_disk_usage(
+    cli: &Cli,
+    environment: &Environment,
+    args: &DaemonDiskUsageArgs,
+) -> Result<RunOutput> {
+    let task_context = disk_usage_task_context(environment);
+    validate_disk_usage_args(cli, environment, args, task_context)?;
+
+    let mut stderr = String::new();
+    if args.all_profiles {
+        let roots = enumerate_disk_usage_roots(environment)?;
+        let mut aggregate = cordy_daemon::diskusage::scan_disk_usage_roots(
+            &roots,
+            &cordy_daemon::diskusage::artifact_patterns_from_env(),
+        )?;
+        if !task_context && disk_usage_needs_parent_status(args) {
+            for root in &mut aggregate.roots {
+                if fill_disk_usage_parent_statuses(
+                    cli,
+                    environment,
+                    &root.profile,
+                    &mut root.report,
+                )
+                .await
+                {
+                    append_disk_usage_warning(&mut stderr);
+                }
+            }
+        }
+        limit_disk_usage_aggregate(&mut aggregate, args);
+        let stdout = match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&aggregate)?),
+            OutputFormat::Table => format_disk_usage_aggregate_table(&aggregate, args.by_workspace),
+        };
+        return Ok(RunOutput { stdout, stderr });
+    }
+
+    let root = resolve_disk_usage_root(cli, environment, args, task_context)?;
+    let mut report = cordy_daemon::diskusage::scan_disk_usage(
+        &root,
+        &cordy_daemon::diskusage::artifact_patterns_from_env(),
+    )?;
+    if !task_context
+        && disk_usage_needs_parent_status(args)
+        && fill_disk_usage_parent_statuses(cli, environment, &cli.profile, &mut report).await
+    {
+        append_disk_usage_warning(&mut stderr);
+    }
+    limit_disk_usage_report(&mut report, args);
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&report)?),
+        OutputFormat::Table => format_disk_usage_report_table(&report, args.by_workspace),
+    };
+    Ok(RunOutput { stdout, stderr })
+}
+
+fn disk_usage_task_context(environment: &Environment) -> bool {
+    environment.in_daemon_managed_execution_context()
+        || environment.in_daemon_task_identity_context()
+}
+
+fn validate_disk_usage_args(
+    cli: &Cli,
+    environment: &Environment,
+    args: &DaemonDiskUsageArgs,
+    task_context: bool,
+) -> Result<()> {
+    if args.by_workspace && args.by_task {
+        bail!("--by-workspace and --by-task are mutually exclusive");
+    }
+    if args.top < 0 {
+        bail!("--top must be a non-negative integer");
+    }
+    if args.all_profiles
+        && args
+            .workspaces_root
+            .as_deref()
+            .is_some_and(|root| !root.trim().is_empty())
+    {
+        bail!("--all-profiles and --workspaces-root are mutually exclusive");
+    }
+    if task_context {
+        if args.all_profiles {
+            bail!("daemon disk-usage --all-profiles is not available inside a daemon-managed task");
+        }
+        if !cli.profile.trim().is_empty() {
+            bail!("daemon disk-usage --profile is not available inside a daemon-managed task");
+        }
+        if args
+            .workspaces_root
+            .as_deref()
+            .is_some_and(|root| !root.trim().is_empty())
+        {
+            bail!(
+                "daemon disk-usage --workspaces-root is not available inside a daemon-managed task"
+            );
+        }
+        if environment
+            .trimmed(cordy_daemon::config::TASK_WORKSPACES_ROOT_ENV)
+            .is_none()
+        {
+            bail!(
+                "daemon-managed task requires {}",
+                cordy_daemon::config::TASK_WORKSPACES_ROOT_ENV
+            );
+        }
+    }
+    Ok(())
+}
+
+fn resolve_disk_usage_root(
+    cli: &Cli,
+    environment: &Environment,
+    args: &DaemonDiskUsageArgs,
+    task_context: bool,
+) -> Result<String> {
+    if task_context {
+        let root = environment
+            .trimmed(cordy_daemon::config::TASK_WORKSPACES_ROOT_ENV)
+            .context("resolve daemon task workspaces root")?;
+        let path = Path::new(root);
+        if !path.is_absolute() {
+            bail!(
+                "{} must be an absolute path",
+                cordy_daemon::config::TASK_WORKSPACES_ROOT_ENV
+            );
+        }
+        return Ok(path.to_path_buf().to_string_lossy().into_owned());
+    }
+
+    resolve_disk_usage_root_for_profile(environment, &cli.profile, args.workspaces_root.as_deref())
+}
+
+fn limit_disk_usage_report(
+    report: &mut cordy_daemon::diskusage::DiskUsageReport,
+    args: &DaemonDiskUsageArgs,
+) {
+    let Some(limit) = usize::try_from(args.top).ok().filter(|limit| *limit > 0) else {
+        return;
+    };
+    if args.by_workspace {
+        report.workspaces.truncate(limit);
+    } else {
+        report.tasks.truncate(limit);
+    }
+}
+
+fn limit_disk_usage_aggregate(
+    aggregate: &mut cordy_daemon::diskusage::AggregateDiskUsageReport,
+    args: &DaemonDiskUsageArgs,
+) {
+    for root in &mut aggregate.roots {
+        limit_disk_usage_report(&mut root.report, args);
+    }
+}
+
+fn resolve_disk_usage_root_for_profile(
+    environment: &Environment,
+    profile: &str,
+    flag_root: Option<&str>,
+) -> Result<String> {
+    let config = environment.load_config(profile).unwrap_or_default();
+    let configured_root = flag_root
+        .map(str::trim)
+        .filter(|root| !root.is_empty())
+        .or_else(|| environment.trimmed("CORDY_WORKSPACES_ROOT"))
+        .or_else(|| {
+            (!config.workspaces_root.trim().is_empty()).then_some(config.workspaces_root.trim())
+        })
+        .unwrap_or_default();
+    cordy_daemon::config::resolve_workspaces_root(profile, configured_root)
+        .context("resolve workspaces root")
+}
+
+fn enumerate_disk_usage_roots(
+    environment: &Environment,
+) -> Result<Vec<cordy_daemon::diskusage::DiskUsageRoot>> {
+    let mut roots = Vec::new();
+    let default_root = resolve_disk_usage_root_for_profile(environment, "", None)?;
+    roots.push(cordy_daemon::diskusage::DiskUsageRoot {
+        profile: String::new(),
+        root: default_root,
+    });
+
+    let profiles_root = environment
+        .config_path("")
+        .ok()
+        .and_then(|path| path.parent().map(|parent| parent.join("profiles")));
+    let Some(profiles_root) = profiles_root else {
+        return Ok(roots);
+    };
+    let Ok(entries) = fs::read_dir(profiles_root) else {
+        return Ok(roots);
+    };
+    let mut profiles = entries
+        .flatten()
+        .filter_map(|entry| {
+            entry
+                .file_type()
+                .ok()
+                .filter(|kind| kind.is_dir())
+                .and_then(|_| entry.file_name().into_string().ok())
+        })
+        .collect::<Vec<_>>();
+    profiles.sort();
+    for profile in profiles {
+        let root = match resolve_disk_usage_root_for_profile(environment, &profile, None) {
+            Ok(root) => root,
+            Err(_) => continue,
+        };
+        if roots
+            .iter()
+            .any(|existing| same_disk_usage_path(&existing.root, &root))
+        {
+            continue;
+        }
+        if !Path::new(&root).is_dir() {
+            continue;
+        }
+        roots.push(cordy_daemon::diskusage::DiskUsageRoot { profile, root });
+    }
+    Ok(roots)
+}
+
+fn same_disk_usage_path(left: &str, right: &str) -> bool {
+    let normalize =
+        |path: &str| fs::canonicalize(path).unwrap_or_else(|_| lexical_normalize(Path::new(path)));
+    normalize(left) == normalize(right)
+}
+
+fn disk_usage_needs_parent_status(args: &DaemonDiskUsageArgs) -> bool {
+    !args.by_workspace || args.output == OutputFormat::Json
+}
+
+async fn fill_disk_usage_parent_statuses(
+    cli: &Cli,
+    environment: &Environment,
+    profile: &str,
+    report: &mut cordy_daemon::diskusage::DiskUsageReport,
+) -> bool {
+    if !report
+        .tasks
+        .iter()
+        .any(|task| task.kind == "issue" && !task.parent_id.trim().is_empty())
+    {
+        return false;
+    }
+    let config = environment.load_config(profile).unwrap_or_default();
+    let token = environment
+        .trimmed("CORDY_TOKEN")
+        .map(ToOwned::to_owned)
+        .or_else(|| (!config.token.trim().is_empty()).then(|| config.token.clone()));
+    let Some(token) = token else {
+        // Go's fetcher returns nil when the profile is logged out; an offline
+        // diagnostic must not warn merely because no credentials are stored.
+        return false;
+    };
+    let raw_server_url = cli
+        .server_url
+        .as_deref()
+        .or_else(|| environment.trimmed("CORDY_SERVER_URL"))
+        .or_else(|| (!config.server_url.trim().is_empty()).then_some(config.server_url.as_str()))
+        .unwrap_or(cordy_daemon::config::DEFAULT_SERVER_URL);
+    let Ok(server_url) = cordy_daemon::config::normalize_server_base_url(raw_server_url) else {
+        // An invalid/unconfigured server URL is the same no-fetch case as a
+        // missing token. The local report remains useful and warning-free.
+        return false;
+    };
+    let client = Arc::new(cordy_daemon::client::Client::new(server_url));
+    client.set_token(&token);
+    let resolver = cordy_daemon::diskusage::ClientParentStatusResolver::new(client);
+    let cancellation = tokio_util::sync::CancellationToken::new();
+    cordy_daemon::diskusage::resolve_parent_statuses(&cancellation, report, &resolver)
+        .await
+        .is_err()
+}
+
+fn append_disk_usage_warning(stderr: &mut String) {
+    if stderr.is_empty() {
+        stderr.push_str("warning: could not resolve issue statuses; STATUS column may be blank\n");
+    }
+}
+
+fn format_disk_usage_report_table(
+    report: &cordy_daemon::diskusage::DiskUsageReport,
+    by_workspace: bool,
+) -> String {
+    let mut output = String::new();
+    let _ = writeln!(output, "Workspaces root: {}", report.workspaces_root);
+    if by_workspace && report.total_workspace_count == 0 {
+        output.push_str("(no workspaces)\n");
+        append_disk_usage_repo_cache_line(&mut output, report);
+        return output;
+    }
+    if !by_workspace && report.total_task_count == 0 {
+        output.push_str("(no task directories)\n");
+        append_disk_usage_repo_cache_line(&mut output, report);
+        return output;
+    }
+    if by_workspace {
+        if report.total_workspace_count == 0 {
+            output.push_str("(no workspaces)\n");
+        }
+        let mut rows = vec![vec![
+            "WORKSPACE".into(),
+            "TASKS".into(),
+            "SIZE".into(),
+            "ARTIFACTS".into(),
+            "ARTIFACT %".into(),
+            "OLDEST".into(),
+        ]];
+        rows.extend(report.workspaces.iter().map(|workspace| {
+            vec![
+                workspace.workspace_short.clone(),
+                workspace.task_count.to_string(),
+                format_disk_bytes(workspace.size_bytes),
+                format_disk_bytes(workspace.artifact_size_bytes),
+                format_disk_ratio(workspace.artifact_ratio),
+                format_disk_age(workspace.oldest_age_seconds),
+            ]
+        }));
+        output.push_str(&format_table(&rows));
+        if report.workspaces.len() < usize::try_from(report.total_workspace_count).unwrap_or(0) {
+            let _ = writeln!(
+                output,
+                "Showing top {} of {} workspace(s).",
+                report.workspaces.len(),
+                report.total_workspace_count
+            );
+        }
+        let _ = writeln!(
+            output,
+            "Total: {} across {} workspace(s); {} reclaimable as artifacts ({}).",
+            format_disk_bytes(report.total_size_bytes),
+            report.total_workspace_count,
+            format_disk_bytes(report.total_artifact_size_bytes),
+            format_disk_ratio(report.total_artifact_ratio),
+        );
+    } else {
+        if report.total_task_count == 0 {
+            output.push_str("(no task directories)\n");
+        }
+        let mut rows = vec![vec![
+            "PATH".into(),
+            "KIND".into(),
+            "STATUS".into(),
+            "AGE".into(),
+            "SIZE".into(),
+            "ARTIFACTS".into(),
+        ]];
+        rows.extend(report.tasks.iter().map(|task| {
+            vec![
+                format!("{}/{}", task.workspace_short, task.task_short),
+                task.kind.clone(),
+                if task.parent_status.is_empty() {
+                    "-".into()
+                } else {
+                    task.parent_status.clone()
+                },
+                format_disk_age(task.age_seconds),
+                format_disk_bytes(task.size_bytes),
+                format_disk_bytes(task.artifact_size_bytes),
+            ]
+        }));
+        output.push_str(&format_table(&rows));
+        if report.tasks.len() < usize::try_from(report.total_task_count).unwrap_or(0) {
+            let _ = writeln!(
+                output,
+                "Showing top {} of {} task(s).",
+                report.tasks.len(),
+                report.total_task_count
+            );
+        }
+        let _ = writeln!(
+            output,
+            "Total: {} across {} task(s); {} reclaimable as artifacts ({}).",
+            format_disk_bytes(report.total_size_bytes),
+            report.total_task_count,
+            format_disk_bytes(report.total_artifact_size_bytes),
+            format_disk_ratio(report.total_artifact_ratio),
+        );
+    }
+    append_disk_usage_repo_cache_line(&mut output, report);
+    output
+}
+
+fn append_disk_usage_repo_cache_line(
+    output: &mut String,
+    report: &cordy_daemon::diskusage::DiskUsageReport,
+) {
+    if report.repo_cache_count == 0 && report.repo_cache_size_bytes == 0 {
+        return;
+    }
+    let _ = writeln!(
+        output,
+        "Repo cache (.repos): {} across {} repo(s), not included above.",
+        format_disk_bytes(report.repo_cache_size_bytes),
+        report.repo_cache_count,
+    );
+}
+
+fn format_disk_usage_aggregate_table(
+    aggregate: &cordy_daemon::diskusage::AggregateDiskUsageReport,
+    by_workspace: bool,
+) -> String {
+    let mut output = String::new();
+    let _ = writeln!(
+        output,
+        "Scanned {} workspace root(s).",
+        aggregate.roots.len()
+    );
+    for root in &aggregate.roots {
+        let _ = writeln!(
+            output,
+            "\n[{}]",
+            if root.profile.is_empty() {
+                "default"
+            } else {
+                &root.profile
+            }
+        );
+        output.push_str(&format_disk_usage_report_table(&root.report, by_workspace));
+    }
+    let _ = writeln!(
+        output,
+        "\nGrand total: {} across {} task(s) in {} root(s); {} reclaimable as artifacts ({}).",
+        format_disk_bytes(aggregate.total_size_bytes),
+        aggregate.total_task_count,
+        aggregate.roots.len(),
+        format_disk_bytes(aggregate.total_artifact_size_bytes),
+        format_disk_ratio(aggregate.total_artifact_ratio),
+    );
+    if aggregate.total_repo_cache_count > 0 || aggregate.total_repo_cache_size_bytes > 0 {
+        let _ = writeln!(
+            output,
+            "Repo cache (.repos): {} across {} repo(s) in all roots, not included above.",
+            format_disk_bytes(aggregate.total_repo_cache_size_bytes),
+            aggregate.total_repo_cache_count,
+        );
+    }
+    output
+}
+
+fn format_disk_ratio(value: f64) -> String {
+    if !value.is_finite() || value < 0.0 {
+        return "0.0%".into();
+    }
+    format!("{:.1}%", value * 100.0)
+}
+
+fn format_disk_bytes(bytes: i64) -> String {
+    if bytes < 1024 {
+        return format!("{bytes} B");
+    }
+    let mut divisor = 1024_i64;
+    let mut exponent = 0_usize;
+    let mut value = bytes / 1024;
+    while value >= 1024 && exponent < 5 {
+        divisor *= 1024;
+        value /= 1024;
+        exponent += 1;
+    }
+    let prefix = ['K', 'M', 'G', 'T', 'P', 'E'][exponent];
+    format!("{:.1} {prefix}iB", bytes as f64 / divisor as f64)
+}
+
+fn format_disk_age(seconds: i64) -> String {
+    if seconds <= 0 {
+        return "0s".into();
+    }
+    if seconds >= 86_400 {
+        return format!("{}d {}h", seconds / 86_400, (seconds % 86_400) / 3_600);
+    }
+    if seconds >= 3_600 {
+        return format!("{}h {}m", seconds / 3_600, (seconds % 3_600) / 60);
+    }
+    if seconds >= 60 {
+        return format!("{}m {}s", seconds / 60, seconds % 60);
+    }
+    format!("{seconds}s")
 }
 
 fn render_daemon_start_outcome(
@@ -23163,5 +23669,290 @@ mod tests {
             normalize_api_base_url("wss://api.cordy.ai/ws?old=1#fragment").expect("URL"),
             "https://api.cordy.ai"
         );
+    }
+
+    #[test]
+    fn daemon_disk_usage_parses_all_typed_flags() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            "staging",
+            "daemon",
+            "disk-usage",
+            "--by-workspace",
+            "--top",
+            "7",
+            "--output",
+            "json",
+            "--workspaces-root",
+            "/var/lib/cordy/workspaces",
+            "--all-profiles",
+        ])
+        .expect("disk-usage args");
+        let Command::Daemon(DaemonArgs {
+            command: DaemonCommand::DiskUsage(args),
+        }) = cli.command
+        else {
+            panic!("expected daemon disk-usage");
+        };
+        assert!(args.by_workspace);
+        assert!(!args.by_task);
+        assert_eq!(args.top, 7);
+        assert_eq!(args.output, OutputFormat::Json);
+        assert_eq!(
+            args.workspaces_root.as_deref(),
+            Some("/var/lib/cordy/workspaces")
+        );
+        assert!(args.all_profiles);
+    }
+
+    #[test]
+    fn daemon_disk_usage_validation_rejects_unsafe_or_incomplete_modes() {
+        let home = tempfile::tempdir().expect("home");
+        let cwd = tempfile::tempdir().expect("cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from(["cordy", "daemon", "disk-usage"]).expect("CLI");
+        let both = DaemonDiskUsageArgs {
+            by_workspace: true,
+            by_task: true,
+            top: 0,
+            output: OutputFormat::Json,
+            workspaces_root: None,
+            all_profiles: false,
+        };
+        assert!(validate_disk_usage_args(&cli, &environment, &both, false)
+            .expect_err("conflicting views")
+            .to_string()
+            .contains("mutually exclusive"));
+
+        let negative = DaemonDiskUsageArgs {
+            by_workspace: false,
+            by_task: false,
+            top: -1,
+            output: OutputFormat::Json,
+            workspaces_root: None,
+            all_profiles: false,
+        };
+        assert!(
+            validate_disk_usage_args(&cli, &environment, &negative, false)
+                .expect_err("negative top")
+                .to_string()
+                .contains("non-negative")
+        );
+
+        let all_profiles_with_override = DaemonDiskUsageArgs {
+            by_workspace: false,
+            by_task: false,
+            top: 0,
+            output: OutputFormat::Table,
+            workspaces_root: Some("/tmp/workspaces".into()),
+            all_profiles: true,
+        };
+        assert!(
+            validate_disk_usage_args(&cli, &environment, &all_profiles_with_override, false)
+                .expect_err("all-profiles root override")
+                .to_string()
+                .contains("mutually exclusive")
+        );
+
+        environment.set("CORDY_TASK_WORKSPACES_ROOT", "/srv/cordy/workspaces");
+        assert!(validate_disk_usage_args(
+            &cli,
+            &environment,
+            &DaemonDiskUsageArgs {
+                by_workspace: false,
+                by_task: false,
+                top: 0,
+                output: OutputFormat::Json,
+                workspaces_root: None,
+                all_profiles: true,
+            },
+            true
+        )
+        .expect_err("task cannot enumerate owner profiles")
+        .to_string()
+        .contains("--all-profiles"));
+    }
+
+    #[test]
+    fn daemon_disk_usage_task_scope_requires_absolute_injected_root() {
+        let home = tempfile::tempdir().expect("home");
+        let cwd = tempfile::tempdir().expect("cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_AGENT_ID", "agent-1");
+        let cli = Cli::try_parse_from(["cordy", "daemon", "disk-usage"]).expect("CLI");
+        let args = DaemonDiskUsageArgs {
+            by_workspace: false,
+            by_task: false,
+            top: 0,
+            output: OutputFormat::Json,
+            workspaces_root: None,
+            all_profiles: false,
+        };
+        let missing = validate_disk_usage_args(&cli, &environment, &args, true)
+            .expect_err("task must carry an injected root");
+        assert!(missing.to_string().contains("CORDY_TASK_WORKSPACES_ROOT"));
+
+        environment.set("CORDY_TASK_WORKSPACES_ROOT", "relative/workspaces");
+        let relative = resolve_disk_usage_root(&cli, &environment, &args, true)
+            .expect_err("task root must be absolute");
+        assert!(relative.to_string().contains("absolute path"));
+
+        environment.set("CORDY_TASK_WORKSPACES_ROOT", "/srv/cordy/workspaces");
+        assert_eq!(
+            resolve_disk_usage_root(&cli, &environment, &args, true).expect("absolute root"),
+            "/srv/cordy/workspaces"
+        );
+    }
+
+    #[test]
+    fn daemon_disk_usage_json_preserves_scan_totals_when_limiting_rows() {
+        let report = cordy_daemon::diskusage::DiskUsageReport {
+            workspaces_root: "/srv/workspaces".into(),
+            tasks: vec![
+                cordy_daemon::diskusage::TaskDiskUsage {
+                    path: "/srv/workspaces/ws/task-a".into(),
+                    size_bytes: 20,
+                    ..Default::default()
+                },
+                cordy_daemon::diskusage::TaskDiskUsage {
+                    path: "/srv/workspaces/ws/task-b".into(),
+                    size_bytes: 10,
+                    ..Default::default()
+                },
+            ],
+            total_task_count: 2,
+            total_size_bytes: 30,
+            ..Default::default()
+        };
+        let args = DaemonDiskUsageArgs {
+            by_workspace: false,
+            by_task: true,
+            top: 1,
+            output: OutputFormat::Json,
+            workspaces_root: None,
+            all_profiles: false,
+        };
+        let mut limited = report;
+        limit_disk_usage_report(&mut limited, &args);
+        let json = serde_json::to_value(&limited).expect("disk-usage JSON");
+        assert_eq!(json["workspaces_root"], "/srv/workspaces");
+        assert_eq!(json["tasks"].as_array().map(|tasks| tasks.len()), Some(1));
+        assert_eq!(json["total_task_count"], 2);
+        assert_eq!(json["total_size_bytes"], 30);
+    }
+
+    #[test]
+    fn daemon_disk_usage_table_formats_task_status_and_iec_sizes() {
+        let report = cordy_daemon::diskusage::DiskUsageReport {
+            workspaces_root: "/srv/workspaces".into(),
+            tasks: vec![cordy_daemon::diskusage::TaskDiskUsage {
+                workspace_short: "workspace".into(),
+                task_short: "task".into(),
+                kind: "issue".into(),
+                parent_status: "in_progress".into(),
+                age_seconds: 3_661,
+                size_bytes: 2_048,
+                artifact_size_bytes: 1_024,
+                ..Default::default()
+            }],
+            total_task_count: 1,
+            total_size_bytes: 2_048,
+            total_artifact_size_bytes: 1_024,
+            total_artifact_ratio: 0.5,
+            ..Default::default()
+        };
+        let table = format_disk_usage_report_table(&report, false);
+        assert!(table.contains("PATH"));
+        assert!(table.contains("workspace/task"));
+        assert!(table.contains("in_progress"));
+        assert!(table.contains("2.0 KiB"));
+        assert!(table.contains("1h 1m"));
+        assert!(table.contains("50.0%"));
+    }
+
+    #[test]
+    fn daemon_disk_usage_empty_tables_match_go_diagnostics() {
+        let report = cordy_daemon::diskusage::DiskUsageReport {
+            workspaces_root: "/srv/workspaces".into(),
+            ..Default::default()
+        };
+        let task_table = format_disk_usage_report_table(&report, false);
+        let workspace_table = format_disk_usage_report_table(&report, true);
+        assert!(task_table.contains("(no task directories)"));
+        assert!(workspace_table.contains("(no workspaces)"));
+        assert!(!task_table.contains("PATH"));
+        assert!(!workspace_table.contains("WORKSPACE"));
+    }
+
+    #[test]
+    fn daemon_disk_usage_aggregate_top_keeps_grand_totals() {
+        let mut aggregate = cordy_daemon::diskusage::AggregateDiskUsageReport {
+            roots: vec![cordy_daemon::diskusage::RootDiskUsage {
+                profile: String::new(),
+                report: cordy_daemon::diskusage::DiskUsageReport {
+                    tasks: vec![
+                        cordy_daemon::diskusage::TaskDiskUsage::default(),
+                        cordy_daemon::diskusage::TaskDiskUsage::default(),
+                    ],
+                    total_task_count: 2,
+                    ..Default::default()
+                },
+            }],
+            total_task_count: 2,
+            ..Default::default()
+        };
+        let args = DaemonDiskUsageArgs {
+            by_workspace: false,
+            by_task: true,
+            top: 1,
+            output: OutputFormat::Json,
+            workspaces_root: None,
+            all_profiles: true,
+        };
+        limit_disk_usage_aggregate(&mut aggregate, &args);
+        assert_eq!(aggregate.roots[0].report.tasks.len(), 1);
+        assert_eq!(aggregate.total_task_count, 2);
+        assert_eq!(format_disk_ratio(f64::NAN), "0.0%");
+    }
+
+    #[test]
+    fn daemon_disk_usage_enumerates_default_and_existing_profile_roots() {
+        let home = tempfile::tempdir().expect("home");
+        let cwd = tempfile::tempdir().expect("cwd");
+        let default_root = home.path().join("default-workspaces");
+        let profile_root = home.path().join("staging-workspaces");
+        fs::create_dir_all(&default_root).expect("default root");
+        fs::create_dir_all(&profile_root).expect("profile root");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let default_config = environment.config_path("").expect("default config");
+        let profile_config = environment.config_path("staging").expect("profile config");
+        fs::create_dir_all(default_config.parent().expect("config directory"))
+            .expect("config directory");
+        fs::create_dir_all(profile_config.parent().expect("profile directory"))
+            .expect("profile directory");
+        fs::write(
+            default_config,
+            serde_json::json!({
+                "workspaces_root": default_root.to_string_lossy().to_string()
+            })
+            .to_string(),
+        )
+        .expect("default config");
+        fs::write(
+            profile_config,
+            serde_json::json!({
+                "workspaces_root": profile_root.to_string_lossy().to_string()
+            })
+            .to_string(),
+        )
+        .expect("profile config");
+
+        let roots = enumerate_disk_usage_roots(&environment).expect("profile roots");
+        assert_eq!(roots.len(), 2);
+        assert_eq!(roots[0].profile, "");
+        assert_eq!(roots[0].root, default_root.to_string_lossy().to_string());
+        assert_eq!(roots[1].profile, "staging");
+        assert_eq!(roots[1].root, profile_root.to_string_lossy().to_string());
     }
 }

@@ -554,7 +554,7 @@ impl ParentStatusResolver for ClientParentStatusResolver {
             result = self.client.get_issue_gc_checks(&ctx, workspace_id, issue_ids) => result,
             () = cancellation.cancelled() => {
                 ctx.cancel_with(CancelCause::Cancelled);
-                Err(anyhow::anyhow!(CancelCause::Cancelled))
+                Err(anyhow::anyhow!("context canceled"))
             }
         };
         result.map(|results| {
