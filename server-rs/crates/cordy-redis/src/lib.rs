@@ -96,4 +96,13 @@ mod tests {
         let clone = connection.clone();
         assert!(Arc::ptr_eq(&connection.manager, &clone.manager));
     }
+
+    #[test]
+    fn secure_redis_urls_are_supported_without_connecting() {
+        let Ok(client) = redis::Client::open("rediss://cache.example.test:6380/2") else {
+            panic!("secure Redis URLs must be enabled for production caches");
+        };
+        let connection = RecoveringConnection::new(client);
+        assert_eq!(connection.get_db(), 2);
+    }
 }
