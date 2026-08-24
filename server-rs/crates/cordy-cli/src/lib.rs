@@ -138,6 +138,13 @@ enum SquadCommand {
     Create(SquadCreateArgs),
     #[command(about = "Update a squad")]
     Update(SquadUpdateArgs),
+    #[command(about = "Delete (archive) a squad")]
+    Delete {
+        #[arg(value_name = "SQUAD-ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -2751,6 +2758,9 @@ async fn run_with_input<R: Read>(
         Command::Squad(SquadArgs {
             command: SquadCommand::Update(args),
         }) => run_squad_update(cli, environment, args).await,
+        Command::Squad(SquadArgs {
+            command: SquadCommand::Delete { id, output },
+        }) => run_squad_delete(cli, environment, id, *output).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -4975,6 +4985,35 @@ fn format_squad_mutation_result(
             ),
         },
         stderr: String::new(),
+    })
+}
+
+async fn run_squad_delete(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    client
+        .delete(&format!("/api/squads/{id}"))
+        .await
+        .context("delete squad")?;
+    Ok(match output {
+        OutputFormat::Json => RunOutput {
+            stdout: format!(
+                "{}\n",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "id":id,
+                    "deleted":true
+                }))?
+            ),
+            stderr: String::new(),
+        },
+        OutputFormat::Table => RunOutput {
+            stdout: String::new(),
+            stderr: format!("Squad {id} deleted.\n"),
+        },
     })
 }
 
@@ -14070,6 +14109,18 @@ mod tests {
         };
         assert_eq!(args.description.as_deref(), Some(""));
         assert_eq!(args.avatar_url.as_deref(), Some(""));
+        let delete =
+            Cli::try_parse_from(["cordy", "squad", "delete", "squad-1", "--output", "json"])
+                .expect("squad delete CLI");
+        assert!(matches!(
+            delete.command,
+            Command::Squad(SquadArgs {
+                command: SquadCommand::Delete {
+                    id,
+                    output: OutputFormat::Json
+                }
+            }) if id == "squad-1"
+        ));
     }
 
     #[tokio::test]
@@ -14299,6 +14350,48 @@ mod tests {
             error.to_string(),
             "no fields to update; use flags like --name, --description, --instructions, --leader"
         );
+    }
+
+    #[tokio::test]
+    async fn squad_delete_preserves_go_output_channels_and_json_shape() {
+        let calls = Arc::new(Mutex::new(0_u8));
+        let calls_handler = Arc::clone(&calls);
+        let app = Router::new().route(
+            "/api/squads/squad-1",
+            delete_route(move || {
+                let calls = Arc::clone(&calls_handler);
+                async move {
+                    *calls.lock().expect("delete calls") += 1;
+                    axum::http::StatusCode::NO_CONTENT
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+
+        let table = Cli::try_parse_from(["cordy", "squad", "delete", "squad-1"])
+            .expect("squad delete table CLI");
+        let output = run_with_input(&table, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("delete squad table");
+        assert!(output.stdout.is_empty());
+        assert_eq!(output.stderr, "Squad squad-1 deleted.\n");
+
+        let json = Cli::try_parse_from(["cordy", "squad", "delete", "squad-1", "--output", "json"])
+            .expect("squad delete JSON CLI");
+        let output = run_with_input(&json, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("delete squad JSON");
+        let value: Value = serde_json::from_str(&output.stdout).expect("JSON output");
+        assert_eq!(value, serde_json::json!({"id":"squad-1","deleted":true}));
+        assert_eq!(*calls.lock().expect("delete calls"), 2);
+        server.abort();
     }
 
     #[test]
