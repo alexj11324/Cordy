@@ -171,6 +171,8 @@ enum IssueCommand {
         about = "Chronological issue history — status, assignee, and comments"
     )]
     Timeline(IssueTimelineArgs),
+    #[command(about = "Manage custom property values on an issue")]
+    Property(IssuePropertyArgs),
 }
 
 #[derive(Debug, Args)]
@@ -665,6 +667,55 @@ struct IssueTimelineArgs {
 }
 
 #[derive(Debug, Args)]
+struct IssuePropertyArgs {
+    #[command(subcommand)]
+    command: IssuePropertyCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum IssuePropertyCommand {
+    #[command(about = "List custom property values set on an issue")]
+    List(IssuePropertyListArgs),
+    #[command(about = "Set a custom property value on an issue")]
+    Set(IssuePropertyMutationArgs),
+    #[command(about = "Remove a custom property value from an issue")]
+    Unset(IssuePropertyUnsetArgs),
+}
+
+#[derive(Debug, Args)]
+struct IssuePropertyListArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssuePropertyMutationArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(long, help = "Property name or UUID (required)")]
+    name: Option<String>,
+    #[arg(
+        long,
+        help = "Property value (required; see --help for per-type forms)"
+    )]
+    value: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssuePropertyUnsetArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(long, help = "Property name or UUID (required)")]
+    name: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
 struct IssuePullRequestArgs {
     #[command(subcommand)]
     command: IssuePullRequestCommand,
@@ -1147,6 +1198,24 @@ async fn run_with_input<R: Read>(
         Command::Issue(IssueArgs {
             command: IssueCommand::Timeline(args),
         }) => run_issue_timeline(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Property(IssuePropertyArgs {
+                    command: IssuePropertyCommand::List(args),
+                }),
+        }) => run_issue_property_list(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Property(IssuePropertyArgs {
+                    command: IssuePropertyCommand::Set(args),
+                }),
+        }) => run_issue_property_set(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Property(IssuePropertyArgs {
+                    command: IssuePropertyCommand::Unset(args),
+                }),
+        }) => run_issue_property_unset(cli, environment, args).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -4798,6 +4867,444 @@ fn format_issue_timeline_table(
         ]
     }));
     format_table(&rows)
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct PropertyOption {
+    id: String,
+    name: String,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+struct PropertyConfig {
+    #[serde(default)]
+    options: Vec<PropertyOption>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct PropertyDefinition {
+    id: String,
+    name: String,
+    #[serde(rename = "type")]
+    property_type: String,
+    #[serde(default)]
+    config: PropertyConfig,
+    #[serde(default)]
+    archived: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct IssuePropertyRow {
+    property_id: String,
+    name: String,
+    #[serde(rename = "type")]
+    property_type: String,
+    value: Value,
+    display: String,
+    #[serde(skip_serializing_if = "is_false")]
+    archived: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+async fn fetch_property_definitions(client: &ApiClient) -> Result<Vec<PropertyDefinition>> {
+    let result: Value = client
+        .get_json("/api/properties?include_archived=true")
+        .await
+        .context("list properties")?;
+    serde_json::from_value(
+        result
+            .get("properties")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(Vec::new())),
+    )
+    .context("decode properties")
+}
+
+fn resolve_property<'a>(
+    properties: &'a [PropertyDefinition],
+    reference: &str,
+) -> Result<&'a PropertyDefinition> {
+    if let Some(property) = properties.iter().find(|property| property.id == reference) {
+        return Ok(property);
+    }
+    let reference = reference.trim();
+    if let Some(property) = properties
+        .iter()
+        .find(|property| property.name.eq_ignore_ascii_case(reference))
+    {
+        return Ok(property);
+    }
+    bail!(
+        "property {reference:?} not found; available: {}",
+        properties
+            .iter()
+            .map(|property| property.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
+}
+
+async fn resolve_property_member(
+    client: &ApiClient,
+    workspace_id: &str,
+    raw: &str,
+) -> Result<String> {
+    if workspace_id.is_empty() {
+        bail!(
+            "workspace ID is required to resolve assignees; use --workspace-id or set CORDY_WORKSPACE_ID"
+        );
+    }
+    let token = raw.trim();
+    if let Some(id) = token.strip_prefix("member:") {
+        let id = id.trim();
+        if !is_canonical_uuid(id) {
+            bail!("actor id in {token:?} must be a UUID");
+        }
+        return Ok(format!("member:{id}"));
+    }
+    let input = normalize_assignee_input(token);
+    if input.is_empty() {
+        bail!("actor value cannot be empty");
+    }
+    let members =
+        retry_actor_get::<Vec<Value>>(client, &format!("/api/workspaces/{workspace_id}/members"))
+            .await
+            .context("fetch members")?;
+    let mut buckets = [Vec::new(), Vec::new(), Vec::new()];
+    for member in &members {
+        let id = value_string(member, "user_id");
+        let name = value_string(member, "name");
+        let email = value_string(member, "email");
+        if id.eq_ignore_ascii_case(&input)
+            || display_id(&id, false).eq_ignore_ascii_case(&input)
+            || (!email.is_empty() && email.eq_ignore_ascii_case(&input))
+        {
+            buckets[0].push((id, name));
+        } else if name.eq_ignore_ascii_case(&input) {
+            buckets[1].push((id, name));
+        } else if name
+            .to_ascii_lowercase()
+            .contains(&input.to_ascii_lowercase())
+        {
+            buckets[2].push((id, name));
+        }
+    }
+    for bucket in buckets {
+        match bucket.as_slice() {
+            [] => {}
+            [(id, _)] => return Ok(format!("member:{id}")),
+            matches => {
+                let matches = matches
+                    .iter()
+                    .map(|(id, name)| format!("  member {name:?} ({})", display_id(id, false)))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                bail!("ambiguous assignee {input:?}; matches:\n{matches}");
+            }
+        }
+    }
+    bail!("no member found matching {input:?}")
+}
+
+async fn encode_issue_property_value(
+    client: &ApiClient,
+    workspace_id: &str,
+    property: &PropertyDefinition,
+    raw: &str,
+) -> Result<Value> {
+    let valid_options = property
+        .config
+        .options
+        .iter()
+        .map(|option| option.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let resolve_option = |reference: &str| -> Result<String> {
+        let reference = reference.trim();
+        property
+            .config
+            .options
+            .iter()
+            .find(|option| option.id == reference || option.name.eq_ignore_ascii_case(reference))
+            .map(|option| option.id.clone())
+            .with_context(|| {
+                format!(
+                    "option {reference:?} not found on property {:?}; valid options: {valid_options}",
+                    property.name
+                )
+            })
+    };
+    match property.property_type.as_str() {
+        "select" => Ok(Value::String(resolve_option(raw)?)),
+        "multi_select" => {
+            let values = raw
+                .split(',')
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(resolve_option)
+                .collect::<Result<Vec<_>>>()?;
+            if values.is_empty() {
+                bail!("--value must list at least one option; valid options: {valid_options}");
+            }
+            Ok(Value::Array(
+                values.into_iter().map(Value::String).collect(),
+            ))
+        }
+        "actor" => Ok(Value::String(
+            resolve_property_member(client, workspace_id, raw).await?,
+        )),
+        "multi_actor" => {
+            let mut values = Vec::new();
+            for token in raw
+                .split(',')
+                .map(str::trim)
+                .filter(|token| !token.is_empty())
+            {
+                values.push(Value::String(
+                    resolve_property_member(client, workspace_id, token).await?,
+                ));
+            }
+            if values.is_empty() {
+                bail!("--value must list at least one member");
+            }
+            Ok(Value::Array(values))
+        }
+        "number" => match serde_json::from_str::<Value>(raw) {
+            Ok(value @ Value::Number(_)) => Ok(value),
+            _ => bail!("value {raw:?} is not a valid number"),
+        },
+        "checkbox" => match raw {
+            "true" => Ok(Value::Bool(true)),
+            "false" => Ok(Value::Bool(false)),
+            _ => bail!("value {raw:?} is not a valid bool (expected true or false)"),
+        },
+        _ => Ok(Value::String(raw.into())),
+    }
+}
+
+fn actor_property_inputs(
+    properties: &[PropertyDefinition],
+    bag: &serde_json::Map<String, Value>,
+) -> Vec<Value> {
+    let mut inputs = Vec::new();
+    for property in properties {
+        if !matches!(property.property_type.as_str(), "actor" | "multi_actor") {
+            continue;
+        }
+        let Some(value) = bag.get(&property.id) else {
+            continue;
+        };
+        let values = value
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or(std::slice::from_ref(value));
+        for value in values {
+            let Some(reference) = value.as_str() else {
+                continue;
+            };
+            let Some((actor_type, actor_id)) = reference.split_once(':') else {
+                continue;
+            };
+            inputs.push(serde_json::json!({"assignee_type":actor_type,"assignee_id":actor_id}));
+        }
+    }
+    inputs
+}
+
+fn format_issue_property_value(
+    property: &PropertyDefinition,
+    value: &Value,
+    actors: &IssueActorNames,
+) -> String {
+    let option_name = |id: &str| {
+        property
+            .config
+            .options
+            .iter()
+            .find(|option| option.id == id)
+            .map_or_else(|| id.into(), |option| option.name.clone())
+    };
+    let actor_name = |reference: &str| {
+        actors
+            .0
+            .get(reference)
+            .cloned()
+            .unwrap_or_else(|| reference.into())
+    };
+    match property.property_type.as_str() {
+        "select" => value.as_str().map(option_name),
+        "multi_select" => value.as_array().map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(option_name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        }),
+        "actor" => value.as_str().map(actor_name),
+        "multi_actor" => value.as_array().map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(actor_name)
+                .collect::<Vec<_>>()
+                .join(", ")
+        }),
+        "checkbox" => value
+            .as_bool()
+            .map(|checked| if checked { "✓".into() } else { "✗".into() }),
+        _ => None,
+    }
+    .unwrap_or_else(|| format_metadata_value(Some(value)))
+}
+
+fn build_issue_property_rows(
+    properties: &[PropertyDefinition],
+    bag: &serde_json::Map<String, Value>,
+    actors: &IssueActorNames,
+) -> Vec<IssuePropertyRow> {
+    properties
+        .iter()
+        .filter_map(|property| {
+            let value = bag.get(&property.id)?;
+            Some(IssuePropertyRow {
+                property_id: property.id.clone(),
+                name: property.name.clone(),
+                property_type: property.property_type.clone(),
+                value: value.clone(),
+                display: format_issue_property_value(property, value, actors),
+                archived: property.archived,
+            })
+        })
+        .collect()
+}
+
+fn format_issue_property_rows(rows: &[IssuePropertyRow], output: OutputFormat) -> Result<String> {
+    match output {
+        OutputFormat::Json => Ok(format!("{}\n", serde_json::to_string_pretty(rows)?)),
+        OutputFormat::Table => {
+            let mut table = vec![vec!["NAME".into(), "VALUE".into(), "TYPE".into()]];
+            table.extend(rows.iter().map(|row| {
+                vec![
+                    row.name.clone(),
+                    row.display.clone(),
+                    row.property_type.clone(),
+                ]
+            }));
+            Ok(format_table(&table))
+        }
+    }
+}
+
+async fn property_rows(
+    client: &ApiClient,
+    workspace_id: &str,
+    properties: &[PropertyDefinition],
+    bag: &serde_json::Map<String, Value>,
+) -> Vec<IssuePropertyRow> {
+    let inputs = actor_property_inputs(properties, bag);
+    let actors = load_issue_actor_names(client, workspace_id, &inputs).await;
+    build_issue_property_rows(properties, bag, &actors)
+}
+
+async fn run_issue_property_list(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssuePropertyListArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let properties = fetch_property_definitions(&client).await?;
+    let issue: Value = client
+        .get_json(&format!("/api/issues/{issue_id}"))
+        .await
+        .context("get issue")?;
+    let bag = issue
+        .get("properties")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let rows = property_rows(&client, &workspace_id, &properties, &bag).await;
+    Ok(RunOutput {
+        stdout: format_issue_property_rows(&rows, args.output)?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_issue_property_set(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssuePropertyMutationArgs,
+) -> Result<RunOutput> {
+    let name = args
+        .name
+        .as_deref()
+        .filter(|name| !name.is_empty())
+        .context("--name is required")?;
+    let raw = args.value.as_deref().context("--value is required")?;
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let properties = fetch_property_definitions(&client).await?;
+    let property = resolve_property(&properties, name)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let value = encode_issue_property_value(&client, &workspace_id, property, raw).await?;
+    let result: Value = client
+        .put_json(
+            &format!("/api/issues/{issue_id}/properties/{}", property.id),
+            &serde_json::json!({"value":value}),
+        )
+        .await
+        .context("set property")?;
+    let bag = result
+        .get("properties")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let rows = property_rows(&client, &workspace_id, &properties, &bag).await;
+    Ok(RunOutput {
+        stdout: format_issue_property_rows(&rows, args.output)?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_issue_property_unset(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssuePropertyUnsetArgs,
+) -> Result<RunOutput> {
+    let name = args
+        .name
+        .as_deref()
+        .filter(|name| !name.is_empty())
+        .context("--name is required")?;
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let properties = fetch_property_definitions(&client).await?;
+    let property = resolve_property(&properties, name)?;
+    client
+        .delete(&format!(
+            "/api/issues/{issue_id}/properties/{}",
+            property.id
+        ))
+        .await
+        .context("unset property")?;
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => "{\n  \"deleted\": true\n}\n".into(),
+            OutputFormat::Table => format!("Property {:?} unset.\n", property.name),
+        },
+        stderr: String::new(),
+    })
 }
 
 fn validate_issue_status(status: &str) -> Result<()> {
@@ -9546,6 +10053,170 @@ mod tests {
         assert_eq!(entries[0]["action"], "status_changed");
         assert!(output.stderr.contains("activity,comment"));
         assert!(output.stderr.contains("older entries are missing"));
+        task.abort();
+    }
+
+    #[test]
+    fn issue_property_parser_resolution_and_rendering_match_go_contract() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "property",
+            "set",
+            "CORD-18",
+            "--name",
+            "Platforms",
+            "--value=",
+            "--output",
+            "json",
+        ])
+        .expect("property set CLI");
+        let Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Property(IssuePropertyArgs {
+                    command: IssuePropertyCommand::Set(args),
+                }),
+        }) = &cli.command
+        else {
+            panic!("expected issue property set");
+        };
+        assert_eq!(args.value.as_deref(), Some(""));
+
+        let definitions: Vec<PropertyDefinition> = serde_json::from_value(serde_json::json!([
+            {
+                "id":"property-1","name":"Severity","type":"select","archived":false,
+                "config":{"options":[{"id":"option-1","name":"Critical","color":"#f00"}]}
+            },
+            {
+                "id":"property-2","name":"Reviewer","type":"actor","archived":true,
+                "config":{"options":[]}
+            }
+        ]))
+        .expect("property definitions");
+        assert_eq!(
+            resolve_property(&definitions, "severity")
+                .expect("case-insensitive name")
+                .id,
+            "property-1"
+        );
+        let bag = serde_json::Map::from_iter([
+            ("property-1".into(), Value::String("option-1".into())),
+            ("property-2".into(), Value::String("member:member-1".into())),
+        ]);
+        let actors = IssueActorNames(HashMap::from([("member:member-1".into(), "Ada".into())]));
+        let rows = build_issue_property_rows(&definitions, &bag, &actors);
+        assert_eq!(rows[0].display, "Critical");
+        assert_eq!(rows[1].display, "Ada");
+        let table = format_issue_property_rows(&rows, OutputFormat::Table).expect("table");
+        assert!(table.starts_with("NAME"));
+        assert!(table.contains("Severity"));
+        assert!(table.contains("Reviewer"));
+        let json = format_issue_property_rows(&rows, OutputFormat::Json).expect("JSON");
+        let json: Value = serde_json::from_str(&json).expect("rows JSON");
+        assert!(json[0].get("archived").is_none());
+        assert_eq!(json[1]["archived"], true);
+    }
+
+    #[tokio::test]
+    async fn issue_property_set_resolves_option_name_and_puts_typed_value() {
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/properties",
+                get(|request: Request| async move {
+                    assert_eq!(request.uri().query(), Some("include_archived=true"));
+                    Json(serde_json::json!({
+                        "properties":[{
+                            "id":"property-1","name":"Severity","type":"select",
+                            "config":{"options":[{"id":"option-1","name":"Critical","color":"#f00"}]}
+                        }]
+                    }))
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid/properties/property-1",
+                put(|Json(body): Json<Value>| async move {
+                    assert_eq!(body, serde_json::json!({"value":"option-1"}));
+                    Json(serde_json::json!({"properties":{"property-1":"option-1"}}))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy", "issue", "property", "set", "CORD-18", "--name", "severity", "--value",
+            "Critical", "--output", "json",
+        ])
+        .expect("property set CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("set issue property");
+        let rows: Value = serde_json::from_str(&output.stdout).expect("property rows JSON");
+        assert_eq!(rows[0]["display"], "Critical");
+        assert_eq!(rows[0]["value"], "option-1");
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn issue_property_list_resolves_member_actor_display() {
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/properties",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "properties":[{
+                            "id":"property-1","name":"Reviewer","type":"actor","config":{}
+                        }]
+                    }))
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid",
+                get(|| async {
+                    Json(serde_json::json!({"id":"issue-uuid","properties":{"property-1":"member:member-1"}}))
+                }),
+            )
+            .route(
+                "/api/workspaces/workspace-1/members",
+                get(|| async {
+                    Json(vec![serde_json::json!({"user_id":"member-1","name":"Ada"})])
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy", "issue", "property", "list", "CORD-18", "--output", "table",
+        ])
+        .expect("property list CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list issue properties");
+        assert!(output.stdout.contains("Reviewer"));
+        assert!(output.stdout.contains("Ada"));
         task.abort();
     }
 
