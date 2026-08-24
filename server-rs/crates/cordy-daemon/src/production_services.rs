@@ -5,6 +5,7 @@
 //! registration ordering, runtime-gone recovery, profile refresh, and the
 //! reconcile lifecycle remain daemon responsibilities.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -225,12 +226,11 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             return Ok(());
         }
 
-        let repos: Vec<RepoInfo> = response
-            .repos
-            .into_iter()
-            .filter(|repo| !repo.url.is_empty())
-            .map(|repo| RepoInfo { url: repo.url })
-            .collect();
+        // A project-only repository is authorized by the active task but is
+        // intentionally absent from the workspace repo response. Include the
+        // exact authorized miss so correctness does not depend on the
+        // best-effort warmup queue winning the race with first checkout.
+        let repos = repo_sync_candidates(response.repos, repo_url);
         match self.repo_cache.sync_ctx(ctx, workspace_id, &repos).await {
             Ok(()) => self.repo_state.set_sync_error(workspace_id, String::new()),
             Err(error) => self
@@ -386,6 +386,19 @@ fn checkout_failure(status_code: u16, message: impl Into<String>) -> RepoCheckou
         message: message.into(),
         retryable_busy: false,
     }
+}
+
+fn repo_sync_candidates(repos: Vec<crate::types::RepoData>, requested: &str) -> Vec<RepoInfo> {
+    let mut urls = repos
+        .into_iter()
+        .map(|repo| repo.url.trim().to_string())
+        .filter(|url| !url.is_empty())
+        .collect::<BTreeSet<_>>();
+    let requested = requested.trim();
+    if !requested.is_empty() {
+        urls.insert(requested.to_string());
+    }
+    urls.into_iter().map(|url| RepoInfo { url }).collect()
 }
 
 #[async_trait::async_trait]
@@ -554,6 +567,31 @@ mod tests {
         assert_eq!(
             workspace_sync_backoff(DEFAULT_WORKSPACE_SYNC_INTERVAL, 0),
             DEFAULT_WORKSPACE_SYNC_INTERVAL
+        );
+    }
+
+    #[test]
+    fn cold_miss_sync_includes_authorized_task_repo_not_in_workspace_response() {
+        let repos = repo_sync_candidates(
+            vec![
+                crate::types::RepoData {
+                    url: " https://example.test/workspace.git ".to_string(),
+                    ..crate::types::RepoData::default()
+                },
+                crate::types::RepoData {
+                    url: "https://example.test/workspace.git".to_string(),
+                    ..crate::types::RepoData::default()
+                },
+            ],
+            "https://example.test/project.git",
+        );
+
+        assert_eq!(
+            repos.into_iter().map(|repo| repo.url).collect::<Vec<_>>(),
+            vec![
+                "https://example.test/project.git".to_string(),
+                "https://example.test/workspace.git".to_string(),
+            ]
         );
     }
 }
