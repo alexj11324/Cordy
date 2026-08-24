@@ -13,7 +13,9 @@ use std::time::{Duration, Instant};
 use anyhow::Context;
 
 use crate::bootstrap::{open_bounded_crash_log, ProfileStatePaths};
-use crate::control_client::{DaemonHealthSnapshot, LocalDaemonHealth, LocalDaemonProbe};
+use crate::control_client::{
+    DaemonHealthSnapshot, LocalDaemonControl, LocalDaemonHealth, LocalDaemonProbe,
+};
 use crate::update_executor::{
     is_access_denied_spawn_error, restart_command, restart_command_after_access_denied,
 };
@@ -93,6 +95,94 @@ pub enum BackgroundStartupOutcome {
         last_status: Option<String>,
         logs: StartupLogCursor,
     },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DaemonStopOutcome {
+    AlreadyStopped,
+    Stopped { pid: u32, forced: bool },
+    StillStopping { pid: u32, forced: bool },
+}
+
+/// Executes the identity-safe cross-platform stop transaction used by both
+/// `daemon stop` and the stop phase of `daemon restart`.
+pub async fn stop_daemon<C, K, T>(
+    control: &C,
+    clock: &K,
+    terminator: &T,
+    profile: &str,
+    port: u16,
+    wait_timeout: Duration,
+) -> anyhow::Result<DaemonStopOutcome>
+where
+    C: LocalDaemonControl,
+    K: StartupClock,
+    T: ProcessTerminator,
+{
+    let snapshot = match control.health(port).await {
+        LocalDaemonHealth::Stopped => return Ok(DaemonStopOutcome::AlreadyStopped),
+        LocalDaemonHealth::Live(snapshot) => snapshot,
+    };
+    snapshot.confirm_profile(profile, port)?;
+    let pid = u32::try_from(snapshot.response.pid)
+        .ok()
+        .filter(|pid| *pid > 0)
+        .context("daemon health response has no valid PID")?;
+
+    let forced = match control.request_shutdown(port).await {
+        Ok(()) => false,
+        Err(shutdown_error) => {
+            terminator
+                .force_kill(pid)
+                .map_err(|kill_error| ForcedTerminationError {
+                    shutdown_error,
+                    kill_error,
+                })?;
+            true
+        }
+    };
+    if wait_timeout.is_zero() {
+        return Ok(DaemonStopOutcome::StillStopping { pid, forced });
+    }
+    let deadline = clock
+        .now()
+        .checked_add(wait_timeout)
+        .context("daemon stop deadline overflow")?;
+    loop {
+        let now = clock.now();
+        if now >= deadline {
+            return Ok(DaemonStopOutcome::StillStopping { pid, forced });
+        }
+        clock.sleep(STARTUP_POLL_INTERVAL.min(deadline - now)).await;
+        match control.health(port).await {
+            LocalDaemonHealth::Stopped => {
+                return Ok(DaemonStopOutcome::Stopped { pid, forced });
+            }
+            LocalDaemonHealth::Live(current) => current.confirm_profile(profile, port)?,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ForcedTerminationError {
+    shutdown_error: anyhow::Error,
+    kill_error: anyhow::Error,
+}
+
+impl std::fmt::Display for ForcedTerminationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            formatter,
+            "graceful daemon shutdown failed ({}); forced termination also failed: {}",
+            self.shutdown_error, self.kill_error
+        )
+    }
+}
+
+impl std::error::Error for ForcedTerminationError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.kill_error.as_ref())
+    }
 }
 
 impl BackgroundDaemon {
@@ -261,6 +351,43 @@ fn force_kill_pid(pid: u32) -> std::io::Result<()> {
 mod tests {
     use super::*;
 
+    struct StoppedControl;
+
+    #[async_trait::async_trait]
+    impl LocalDaemonProbe for StoppedControl {
+        async fn health(&self, _port: u16) -> LocalDaemonHealth {
+            LocalDaemonHealth::Stopped
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl LocalDaemonControl for StoppedControl {
+        async fn request_shutdown(&self, _port: u16) -> anyhow::Result<()> {
+            panic!("shutdown must not be requested for a stopped daemon")
+        }
+    }
+
+    struct UnusedClock;
+
+    #[async_trait::async_trait]
+    impl StartupClock for UnusedClock {
+        fn now(&self) -> Instant {
+            panic!("clock must not be read for a stopped daemon")
+        }
+
+        async fn sleep(&self, _duration: Duration) {
+            panic!("clock must not sleep for a stopped daemon")
+        }
+    }
+
+    struct UnusedTerminator;
+
+    impl ProcessTerminator for UnusedTerminator {
+        fn force_kill(&self, _pid: u32) -> anyhow::Result<()> {
+            panic!("a stopped daemon must not be killed")
+        }
+    }
+
     #[test]
     fn missing_logs_start_at_zero() {
         let directory = tempfile::tempdir().unwrap();
@@ -284,5 +411,20 @@ mod tests {
     fn refuses_to_kill_zero_pid() {
         let error = SystemProcessTerminator.force_kill(0).unwrap_err();
         assert!(error.to_string().contains("PID is zero"));
+    }
+
+    #[tokio::test]
+    async fn stop_is_idempotent_without_touching_process_or_clock() {
+        let outcome = stop_daemon(
+            &StoppedControl,
+            &UnusedClock,
+            &UnusedTerminator,
+            "profile",
+            19515,
+            Duration::from_secs(5),
+        )
+        .await
+        .unwrap();
+        assert_eq!(outcome, DaemonStopOutcome::AlreadyStopped);
     }
 }

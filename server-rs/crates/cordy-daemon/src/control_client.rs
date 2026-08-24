@@ -110,6 +110,11 @@ pub trait LocalDaemonProbe: Send + Sync {
     async fn health(&self, port: u16) -> LocalDaemonHealth;
 }
 
+#[async_trait::async_trait]
+pub trait LocalDaemonControl: LocalDaemonProbe {
+    async fn request_shutdown(&self, port: u16) -> anyhow::Result<()>;
+}
+
 impl DaemonControlClient {
     pub fn try_new() -> anyhow::Result<Self> {
         let client = reqwest::Client::builder()
@@ -159,6 +164,13 @@ impl DaemonControlClient {
 impl LocalDaemonProbe for DaemonControlClient {
     async fn health(&self, port: u16) -> LocalDaemonHealth {
         DaemonControlClient::health(self, port).await
+    }
+}
+
+#[async_trait::async_trait]
+impl LocalDaemonControl for DaemonControlClient {
+    async fn request_shutdown(&self, port: u16) -> anyhow::Result<()> {
+        DaemonControlClient::request_shutdown(self, port).await
     }
 }
 
