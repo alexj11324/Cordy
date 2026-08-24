@@ -242,7 +242,9 @@ pub async fn create_chat_session(
 ) -> anyhow::Result<Option<ChatSession>> {
     let row = sqlx::query(
         r#"INSERT INTO chat_session (workspace_id, agent_id, creator_id, title, runtime_id, is_agent_intro, project_id, id)
-VALUES ($1, $2, $3, $4, (SELECT runtime_id FROM agent WHERE id = $2), $5, $6, COALESCE($7::uuid, gen_random_uuid()))
+VALUES ($1, $2, $3, $4, (SELECT runtime_id FROM agent WHERE id = $2), $5,
+       NULLIF($6, '00000000-0000-0000-0000-000000000000'::uuid),
+       COALESCE(NULLIF($7, '00000000-0000-0000-0000-000000000000'::uuid), gen_random_uuid()))
 RETURNING id, workspace_id, agent_id, creator_id, title, session_id, work_dir, status, created_at, updated_at, unread_since, runtime_id, last_read_at, is_agent_intro, pinned_at, project_id"#
     )
         .bind(workspace_id)

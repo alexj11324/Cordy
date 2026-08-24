@@ -32,7 +32,7 @@ pub async fn create_project(
     icon: Option<&str>,
     status: &str,
     lead_type: Option<&str>,
-    lead_id: Uuid,
+    lead_id: Option<Uuid>,
     priority: &str,
     start_date: Option<chrono::NaiveDate>,
     due_date: Option<chrono::NaiveDate>,
@@ -220,6 +220,97 @@ ORDER BY created_at DESC"#
     Ok(out)
 }
 
+#[derive(Debug, Clone)]
+pub struct SearchProjectsRow {
+    pub project: Project,
+    pub total_count: i64,
+    pub match_source: String,
+}
+
+pub async fn search_projects(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    phrase: &str,
+    terms: &[String],
+    include_closed: bool,
+    limit: i64,
+    offset: i64,
+) -> anyhow::Result<Vec<SearchProjectsRow>> {
+    let rows = sqlx::query(
+        r#"SELECT p.id, p.workspace_id, p.title, p.description, p.icon,
+                  p.status, p.priority, p.lead_type, p.lead_id,
+                  p.start_date, p.due_date, p.created_at, p.updated_at,
+                  COUNT(*) OVER() AS total_count,
+                  CASE
+                    WHEN LOWER(p.title) LIKE '%' || $2 || '%'
+                      OR (cardinality($3::text[]) > 1 AND NOT EXISTS (
+                            SELECT 1 FROM unnest($3::text[]) AS term
+                            WHERE LOWER(p.title) NOT LIKE '%' || term || '%'
+                          ))
+                    THEN 'title'
+                    ELSE 'description'
+                  END AS match_source
+           FROM project p
+           WHERE p.workspace_id = $1
+             AND (
+               LOWER(p.title) LIKE '%' || $2 || '%'
+               OR LOWER(COALESCE(p.description, '')) LIKE '%' || $2 || '%'
+               OR (cardinality($3::text[]) > 1 AND NOT EXISTS (
+                     SELECT 1 FROM unnest($3::text[]) AS term
+                     WHERE LOWER(p.title) NOT LIKE '%' || term || '%'
+                       AND LOWER(COALESCE(p.description, '')) NOT LIKE '%' || term || '%'
+                   ))
+             )
+             AND ($4 OR p.status NOT IN ('completed', 'cancelled'))
+           ORDER BY
+             CASE WHEN p.status = 'cancelled' AND LOWER(p.title) <> $2 THEN 1 ELSE 0 END,
+             CASE
+               WHEN LOWER(p.title) = $2 THEN 0
+               WHEN LOWER(p.title) LIKE $2 || '%' THEN 1
+               WHEN LOWER(p.title) LIKE '%' || $2 || '%' THEN 2
+               WHEN cardinality($3::text[]) > 1 AND NOT EXISTS (
+                      SELECT 1 FROM unnest($3::text[]) AS term
+                      WHERE LOWER(p.title) NOT LIKE '%' || term || '%'
+                    ) THEN 3
+               WHEN LOWER(COALESCE(p.description, '')) LIKE '%' || $2 || '%' THEN 4
+               ELSE 5
+             END,
+             p.updated_at DESC
+           LIMIT $5 OFFSET $6"#,
+    )
+    .bind(workspace_id)
+    .bind(phrase)
+    .bind(terms)
+    .bind(include_closed)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(executor)
+    .await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for row in &rows {
+        out.push(SearchProjectsRow {
+            project: Project {
+                id: row.try_get(0)?,
+                workspace_id: row.try_get(1)?,
+                title: row.try_get(2)?,
+                description: row.try_get(3)?,
+                icon: row.try_get(4)?,
+                status: row.try_get(5)?,
+                priority: row.try_get(6)?,
+                lead_type: row.try_get(7)?,
+                lead_id: row.try_get(8)?,
+                start_date: row.try_get(9)?,
+                due_date: row.try_get(10)?,
+                created_at: row.try_get(11)?,
+                updated_at: row.try_get(12)?,
+            },
+            total_count: row.try_get(13)?,
+            match_source: row.try_get(14)?,
+        });
+    }
+    Ok(out)
+}
+
 pub async fn lock_project_for_chat_session_create(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
@@ -259,32 +350,34 @@ FOR UPDATE"#,
 pub async fn update_project(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
+    workspace_id: Uuid,
     title: Option<&str>,
     description: Option<&str>,
     icon: Option<&str>,
     status: Option<&str>,
     priority: Option<&str>,
     lead_type: Option<&str>,
-    lead_id: Uuid,
+    lead_id: Option<Uuid>,
     start_date: Option<chrono::NaiveDate>,
     due_date: Option<chrono::NaiveDate>,
 ) -> anyhow::Result<Option<Project>> {
     let row = sqlx::query(
         r#"UPDATE project SET
-    title = COALESCE($2, title),
-    description = $3,
-    icon = $4,
-    status = COALESCE($5, status),
-    priority = COALESCE($6, priority),
-    lead_type = $7,
-    lead_id = $8,
-    start_date = $9,
-    due_date = $10,
+    title = COALESCE($3, title),
+    description = $4,
+    icon = $5,
+    status = COALESCE($6, status),
+    priority = COALESCE($7, priority),
+    lead_type = $8,
+    lead_id = $9,
+    start_date = $10,
+    due_date = $11,
     updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND workspace_id = $2
 RETURNING id, workspace_id, title, description, icon, status, lead_type, lead_id, created_at, updated_at, priority, start_date, due_date"#
     )
         .bind(id)
+        .bind(workspace_id)
         .bind(title)
         .bind(description)
         .bind(icon)
