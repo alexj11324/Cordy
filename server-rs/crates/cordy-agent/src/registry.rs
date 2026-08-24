@@ -72,7 +72,7 @@ pub fn build_backend(
             command: config.command,
             env: config.env,
         }))),
-        "qoder" => Ok(Arc::new(QoderBackend::new(QoderConfig {
+        "qoder" | "qoderclicn" => Ok(Arc::new(QoderBackend::new(QoderConfig {
             command: config.command,
             env: config.env,
             default_command: if runtime_id == "qoderclicn" {
