@@ -14,8 +14,13 @@ python3 server-rs/scripts/route_parity.py
 Use the strict gate before declaring the handler migration complete:
 
 ```bash
-python3 server-rs/scripts/route_parity.py --require-complete
+python3 server-rs/scripts/route_parity.py --storage-backend local --require-complete
+python3 server-rs/scripts/route_parity.py --storage-backend object --require-complete
 ```
+
+Strict audits require the target storage backend because the Go server mounts
+`GET /uploads/*` only for local storage. Contract rows may use a third TSV
+column such as `storage=local` to describe that deployment condition.
 
 Regenerate the contract only from a reviewed change to the executable Go
 router. A task-document estimate is not sufficient evidence for changing this

@@ -781,29 +781,43 @@ def extract_rust_routes(source_root: Path) -> set[tuple[str, str]]:
     return routes
 
 
-def load_contract(contract_path: Path) -> set[tuple[str, str]]:
+def load_contract(
+    contract_path: Path, storage_backend: str = "local"
+) -> set[tuple[str, str]]:
+    if storage_backend not in {"local", "object"}:
+        raise ValueError(f"unsupported storage backend {storage_backend!r}")
     routes: set[tuple[str, str]] = set()
+    declared_routes: set[tuple[str, str]] = set()
     lines = contract_path.read_text(encoding="utf-8").splitlines()
     for line_number, line in enumerate(lines, start=1):
         if not line or line.startswith("#"):
             continue
-        try:
-            method, route = line.split("\t", 1)
-        except ValueError as error:
+        fields = line.split("\t")
+        if len(fields) not in {2, 3}:
             raise ValueError(
-                f"{contract_path}:{line_number}: expected METHOD<TAB>/path"
-            ) from error
+                f"{contract_path}:{line_number}: expected "
+                "METHOD<TAB>/path[<TAB>condition]"
+            )
+        method, route = fields[:2]
+        condition = fields[2] if len(fields) == 3 else None
+        if condition not in {None, "storage=local", "storage=object"}:
+            raise ValueError(
+                f"{contract_path}:{line_number}: unsupported route condition "
+                f"{condition!r}"
+            )
         normalized = (method.upper(), normalize_route(route))
-        if normalized in routes:
+        if normalized in declared_routes:
             raise ValueError(
                 f"{contract_path}:{line_number}: duplicate route "
                 f"{normalized[0]} {normalized[1]}"
             )
-        routes.add(normalized)
-    if len(routes) != EXPECTED_CONTRACT_SIZE:
+        declared_routes.add(normalized)
+        if condition is None or condition == f"storage={storage_backend}":
+            routes.add(normalized)
+    if len(declared_routes) != EXPECTED_CONTRACT_SIZE:
         raise ValueError(
             f"{contract_path}: expected {EXPECTED_CONTRACT_SIZE} routes, "
-            f"found {len(routes)}"
+            f"found {len(declared_routes)}"
         )
     return routes
 
@@ -836,6 +850,11 @@ def main(argv: list[str] | None = None) -> int:
         default=server_rs / "crates" / "cordy-handler" / "src",
     )
     parser.add_argument(
+        "--storage-backend",
+        choices=("local", "object"),
+        help="select the deployment-specific Go route contract",
+    )
+    parser.add_argument(
         "--require-complete",
         action="store_true",
         help="exit non-zero unless Rust exactly matches the Go contract",
@@ -845,8 +864,17 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    if args.require_complete and args.storage_backend is None:
+        print(
+            "route parity error: --storage-backend is required with "
+            "--require-complete",
+            file=sys.stderr,
+        )
+        return 2
+    storage_backend = args.storage_backend or "local"
+
     try:
-        expected = load_contract(args.contract)
+        expected = load_contract(args.contract, storage_backend)
         actual = extract_rust_routes(args.rust_source)
     except (OSError, ValueError) as error:
         print(f"route parity error: {error}", file=sys.stderr)
@@ -855,7 +883,7 @@ def main(argv: list[str] | None = None) -> int:
     missing = expected - actual
     extra = actual - expected
     print(
-        f"Go contract: {len(expected)} | Rust: {len(actual)} | "
+        f"Go contract ({storage_backend}): {len(expected)} | Rust: {len(actual)} | "
         f"covered: {len(expected & actual)} | missing: {len(missing)} | extra: {len(extra)}"
     )
 

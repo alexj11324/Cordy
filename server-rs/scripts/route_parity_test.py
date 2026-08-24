@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -341,6 +343,29 @@ class RouteParityTest(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "expected 424 routes"):
                 route_parity.load_contract(contract)
+
+    def test_filters_storage_dependent_contract_routes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            contract = Path(directory) / "routes.tsv"
+            lines = [f"GET\t/generated/{index}" for index in range(423)]
+            lines.append("GET\t/uploads/*\tstorage=local")
+            contract.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+            local = route_parity.load_contract(contract, "local")
+            object_storage = route_parity.load_contract(contract, "object")
+
+            self.assertEqual(len(local), 424)
+            self.assertIn(("GET", "/uploads/{*}"), local)
+            self.assertEqual(len(object_storage), 423)
+            self.assertNotIn(("GET", "/uploads/{*}"), object_storage)
+
+    def test_strict_gate_requires_an_explicit_storage_backend(self):
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            result = route_parity.main(["--require-complete"])
+
+        self.assertEqual(result, 2)
+        self.assertIn("--storage-backend is required", stderr.getvalue())
 
     def test_normalizes_chi_and_axum_wildcards_to_the_same_contract(self):
         self.assertEqual(route_parity.normalize_route("/uploads/*"), "/uploads/{*}")
