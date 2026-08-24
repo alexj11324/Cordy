@@ -152,6 +152,64 @@ pub enum DaemonStopOutcome {
 }
 
 #[async_trait::async_trait]
+pub trait DaemonStartPreflight: Send + Sync {
+    async fn check(&self) -> anyhow::Result<()>;
+}
+
+pub struct DaemonStartRequest {
+    pub launch: BackgroundLaunchOptions,
+    pub port: u16,
+    pub startup_timeout: Duration,
+}
+
+#[derive(Debug)]
+pub enum DaemonStartOutcome {
+    AlreadyRunning(DaemonHealthSnapshot),
+    Launch(BackgroundStartupOutcome),
+}
+
+/// Starts a background daemon only after proving that the profile is
+/// authenticated. An existing live daemon is identity-checked before being
+/// reported as already running because profile names can hash to one port.
+pub async fn start_daemon<C, K, P>(
+    control: &C,
+    clock: &K,
+    preflight: &P,
+    request: DaemonStartRequest,
+) -> anyhow::Result<DaemonStartOutcome>
+where
+    C: LocalDaemonProbe,
+    K: StartupClock,
+    P: DaemonStartPreflight,
+{
+    if let LocalDaemonHealth::Live(snapshot) = control.health(request.port).await {
+        snapshot.confirm_profile(&request.launch.profile, request.port)?;
+        return Ok(DaemonStartOutcome::AlreadyRunning(snapshot));
+    }
+    anyhow::ensure!(
+        !request.startup_timeout.is_zero(),
+        "daemon startup timeout is zero"
+    );
+    validate_background_launch(&request.launch)?;
+    preflight
+        .check()
+        .await
+        .context("daemon start preflight failed")?;
+    let profile = request.launch.profile.clone();
+    let daemon = BackgroundDaemon::spawn(request.launch)?;
+    let startup = daemon
+        .wait_until_ready(
+            control,
+            clock,
+            &profile,
+            request.port,
+            request.startup_timeout,
+        )
+        .await?;
+    Ok(DaemonStartOutcome::Launch(startup))
+}
+
+#[async_trait::async_trait]
 pub trait DaemonRestartPreflight: Send + Sync {
     async fn check(&self) -> anyhow::Result<()>;
 }
@@ -189,6 +247,11 @@ where
     T: ProcessTerminator,
     P: DaemonRestartPreflight,
 {
+    anyhow::ensure!(
+        !request.startup_timeout.is_zero(),
+        "daemon startup timeout is zero"
+    );
+    validate_background_launch(&request.launch)?;
     let stop = stop_daemon_with_preflight(
         control,
         clock,
@@ -331,10 +394,7 @@ impl std::error::Error for ForcedTerminationError {
 
 impl BackgroundDaemon {
     pub fn spawn(options: BackgroundLaunchOptions) -> anyhow::Result<Self> {
-        anyhow::ensure!(
-            !options.binary.as_os_str().is_empty(),
-            "daemon executable path is empty"
-        );
+        validate_background_launch(&options)?;
         let paths = ProfileStatePaths::resolve(&options.profile)?;
         fs::create_dir_all(&paths.directory).context("create daemon profile directory")?;
         let structured_offset = file_length(&paths.structured_log);
@@ -436,6 +496,29 @@ impl BackgroundDaemon {
     pub fn detach(self) -> u32 {
         self.child.id()
     }
+}
+
+fn validate_background_launch(options: &BackgroundLaunchOptions) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !options.binary.as_os_str().is_empty(),
+        "daemon executable path is empty"
+    );
+    anyhow::ensure!(
+        options.binary.is_absolute(),
+        "daemon executable path must be absolute"
+    );
+    let metadata = fs::metadata(&options.binary)
+        .with_context(|| format!("inspect daemon executable: {}", options.binary.display()))?;
+    anyhow::ensure!(metadata.is_file(), "daemon executable is not a file");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        anyhow::ensure!(
+            metadata.permissions().mode() & 0o111 != 0,
+            "daemon executable is not executable"
+        );
+    }
+    Ok(())
 }
 
 fn configure_stdio(command: &mut std::process::Command, crash: &fs::File) -> anyhow::Result<()> {
@@ -621,6 +704,15 @@ mod tests {
         }
     }
 
+    struct PanicStartPreflight;
+
+    #[async_trait::async_trait]
+    impl DaemonStartPreflight for PanicStartPreflight {
+        async fn check(&self) -> anyhow::Result<()> {
+            panic!("already-running start must not perform auth preflight")
+        }
+    }
+
     #[test]
     fn missing_logs_start_at_zero() {
         let directory = tempfile::tempdir().unwrap();
@@ -700,7 +792,7 @@ mod tests {
             DaemonRestartRequest {
                 launch: BackgroundLaunchOptions {
                     profile: "profile".to_string(),
-                    binary: PathBuf::from("/must/not/spawn"),
+                    binary: std::env::current_exe().unwrap(),
                     args: Vec::new(),
                 },
                 port: 19515,
@@ -716,5 +808,31 @@ mod tests {
         assert!(error
             .chain()
             .any(|cause| cause.to_string() == "server rejected token"));
+    }
+
+    #[tokio::test]
+    async fn start_reports_identity_checked_existing_daemon_without_spawn() {
+        let outcome = start_daemon(
+            &LiveControl,
+            &UnusedClock,
+            &PanicStartPreflight,
+            DaemonStartRequest {
+                launch: BackgroundLaunchOptions {
+                    profile: "profile".to_string(),
+                    binary: PathBuf::from("/must/not/spawn"),
+                    args: Vec::new(),
+                },
+                port: 19515,
+                startup_timeout: Duration::from_secs(45),
+            },
+        )
+        .await
+        .unwrap();
+        match outcome {
+            DaemonStartOutcome::AlreadyRunning(snapshot) => {
+                assert_eq!(snapshot.response.pid, 42);
+            }
+            DaemonStartOutcome::Launch(_) => panic!("existing daemon unexpectedly spawned child"),
+        }
     }
 }
