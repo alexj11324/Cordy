@@ -16,6 +16,7 @@ pub mod error;
 mod login;
 mod runtime_delete;
 mod runtime_output;
+mod runtime_update;
 mod setup_commands;
 mod update_commands;
 
@@ -33,7 +34,7 @@ use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write as IoWrite};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use url::{form_urlencoded, Url};
 
 use auth_commands::{display_token_prefix, run_auth_logout, run_auth_status};
@@ -65,6 +66,9 @@ use login::{
 };
 use runtime_delete::{format_runtime_delete_result, runtime_delete_conflict};
 use runtime_output::{format_runtime_rows, output_runtime_profiles};
+use runtime_update::{
+    format_runtime_update_result, run_runtime_update, run_runtime_update_with_policy,
+};
 use setup_commands::{
     confirm_setup_overwrite, dispatch_daemon_after_setup, format_setup_value_change,
     prepare_setup_profile, prepare_setup_profile_input, read_setup_confirmation,
@@ -4004,108 +4008,6 @@ async fn run_runtime_delete(
     result.insert("id".into(), Value::String(runtime_id.into()));
     result.insert("deleted".into(), Value::Bool(true));
     format_runtime_delete_result(&Value::Object(result), output)
-}
-
-async fn run_runtime_update(
-    cli: &Cli,
-    environment: &Environment,
-    runtime_id: &str,
-    target_version: Option<&str>,
-    output: OutputFormat,
-    wait: bool,
-) -> Result<RunOutput> {
-    run_runtime_update_with_policy(
-        cli,
-        environment,
-        runtime_id,
-        target_version,
-        output,
-        wait,
-        Duration::from_secs(2),
-        Duration::from_secs(150),
-    )
-    .await
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn run_runtime_update_with_policy(
-    cli: &Cli,
-    environment: &Environment,
-    runtime_id: &str,
-    target_version: Option<&str>,
-    output: OutputFormat,
-    wait: bool,
-    poll_interval: Duration,
-    max_wait: Duration,
-) -> Result<RunOutput> {
-    let request_timeout = http_timeout(environment.raw("CORDY_HTTP_TIMEOUT")).max(max_wait);
-    let client = new_api_client(cli, environment)?.with_request_timeout(request_timeout);
-    let target_version = target_version
-        .filter(|version| !version.is_empty())
-        .context("--target-version is required")?;
-    let started = Instant::now();
-    let mut update: Value = client
-        .post_json(
-            &format!("/api/runtimes/{runtime_id}/update"),
-            &serde_json::json!({"target_version":target_version}),
-        )
-        .await
-        .context("initiate update")?;
-    if !wait {
-        return format_runtime_update_result(&update, output, false);
-    }
-    let update_id = value_string(&update, "id");
-    let remaining = max_wait.saturating_sub(started.elapsed());
-    let poll = async {
-        loop {
-            tokio::time::sleep(poll_interval).await;
-            update = client
-                .get_json(&format!("/api/runtimes/{runtime_id}/update/{update_id}"))
-                .await
-                .context("get update status")?;
-            if matches!(
-                value_string(&update, "status").as_str(),
-                "completed" | "failed" | "timeout"
-            ) {
-                return Ok::<Value, anyhow::Error>(update.clone());
-            }
-        }
-    };
-    match tokio::time::timeout(remaining, poll).await {
-        Ok(Ok(final_update)) => format_runtime_update_result(&final_update, output, true),
-        Ok(Err(error)) => Err(error),
-        Err(_) => bail!(
-            "timed out waiting for update (last status: {})",
-            value_string(&update, "status")
-        ),
-    }
-}
-
-fn format_runtime_update_result(
-    update: &Value,
-    output: OutputFormat,
-    waited: bool,
-) -> Result<RunOutput> {
-    let stdout = match output {
-        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(update)?),
-        OutputFormat::Table if !waited => format!(
-            "Update initiated: {} (status: {})\n",
-            value_string(update, "id"),
-            value_string(update, "status")
-        ),
-        OutputFormat::Table if value_string(update, "status") == "completed" => {
-            format!("Update completed: {}\n", value_string(update, "output"))
-        }
-        OutputFormat::Table => format!(
-            "Update {}: {}\n",
-            value_string(update, "status"),
-            value_string(update, "error")
-        ),
-    };
-    Ok(RunOutput {
-        stdout,
-        stderr: String::new(),
-    })
 }
 
 const RUNTIME_PROTOCOL_FAMILIES: &[&str] = &[
