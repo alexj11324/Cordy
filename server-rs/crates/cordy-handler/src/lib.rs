@@ -16,6 +16,7 @@ pub mod avatar;
 pub mod claim_comments;
 pub mod claim_response;
 pub mod cloudfront;
+pub mod comment;
 pub mod daemon;
 pub mod daemon_ws;
 pub mod error;
@@ -181,12 +182,17 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             WorkspaceGuardState::member_only(state.pool.clone()),
             issue::require_issue_workspace,
         ));
+    let comment_routes = comment::router().route_layer(middleware::from_fn_with_state(
+        WorkspaceGuardState::member_only(state.pool.clone()),
+        issue::require_issue_workspace,
+    ));
     let authenticated = workspace::authenticated_router()
         .merge(pat::router())
         .merge(attachment_access::authenticated_router())
         .merge(attachment_routes)
         .merge(issue_routes)
         .merge(task_routes)
+        .merge(comment_routes)
         .merge(label::router().route_layer(middleware::from_fn_with_state(
             WorkspaceGuardState::member_only(state.pool.clone()),
             issue::require_issue_workspace,
@@ -297,6 +303,20 @@ mod tests {
                 .unwrap(),
             Request::post("/api/issues/CORD-14/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/cancel")
                 .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/comments/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/resolve")
+                .body(Body::empty())
+                .unwrap(),
+            Request::delete("/api/comments/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/resolve")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/comments/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/reactions")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"emoji":"👍"}"#))
+                .unwrap(),
+            Request::delete("/api/comments/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/reactions")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"emoji":"👍"}"#))
                 .unwrap(),
         ] {
             let response = build_router(None, None).oneshot(request).await.unwrap();
