@@ -559,15 +559,14 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .filter(|value| *value > 0)
         .unwrap_or(5);
     let contact_sales = contact_sales::router().route_layer(middleware::from_fn_with_state(
-        cordy_middleware::ratelimit::RateLimitState {
-            client: state.rate_limit_client.clone(),
-            conn: Arc::new(tokio::sync::Mutex::new(None)),
-            limit: contact_sales_limit,
-            window_secs: 60 * 60,
-            trusted_proxies: cordy_middleware::ratelimit::parse_trusted_proxies(
+        cordy_middleware::ratelimit::RateLimitState::configured(
+            state.rate_limit_client.clone(),
+            contact_sales_limit,
+            60 * 60,
+            cordy_middleware::ratelimit::parse_trusted_proxies(
                 &std::env::var("RATE_LIMIT_TRUSTED_PROXIES").unwrap_or_default(),
             ),
-        },
+        ),
         cordy_middleware::ratelimit::rate_limit,
     ));
     // Stripe ingress gets a coarse per-IP budget before body buffering or a
@@ -575,15 +574,14 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
     // fail-open path. Autopilot webhooks apply their separate token/IP gates
     // inside their handler because successful and bad-credential deliveries
     // intentionally consume different budgets.
-    let webhook_ip_limit = cordy_middleware::ratelimit::RateLimitState {
-        client: state.rate_limit_client.clone(),
-        conn: Arc::new(tokio::sync::Mutex::new(None)),
-        limit: 30,
-        window_secs: 60,
-        trusted_proxies: cordy_middleware::ratelimit::parse_trusted_proxies(
+    let webhook_ip_limit = cordy_middleware::ratelimit::RateLimitState::configured(
+        state.rate_limit_client.clone(),
+        30,
+        60,
+        cordy_middleware::ratelimit::parse_trusted_proxies(
             &std::env::var("RATE_LIMIT_TRUSTED_PROXIES").unwrap_or_default(),
         ),
-    };
+    );
     let stripe_webhooks = cloud_billing::stripe_webhook_router(cloud_runtime_proxy).route_layer(
         middleware::from_fn_with_state(webhook_ip_limit, cordy_middleware::ratelimit::rate_limit),
     );

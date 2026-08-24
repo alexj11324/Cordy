@@ -1083,6 +1083,7 @@ dependencies = [
  "chrono",
  "cordy-auth",
  "cordy-db",
+ "cordy-redis",
  "ipnetwork",
  "jsonwebtoken",
  "redis",
