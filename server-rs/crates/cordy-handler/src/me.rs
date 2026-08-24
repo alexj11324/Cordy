@@ -48,19 +48,19 @@ struct QuestionnaireAnswers {
     #[serde(default, deserialize_with = "deserialize_string_or_slice")]
     source: Vec<String>,
     #[serde(default)]
-    source_other: String,
+    source_other: Option<String>,
     #[serde(default)]
     source_skipped: bool,
     #[serde(default)]
-    role: String,
+    role: Option<String>,
     #[serde(default)]
-    role_other: String,
+    role_other: Option<String>,
     #[serde(default)]
     role_skipped: bool,
     #[serde(default, deserialize_with = "deserialize_string_or_slice")]
     use_case: Vec<String>,
     #[serde(default)]
-    use_case_other: String,
+    use_case_other: Option<String>,
     #[serde(default)]
     use_case_skipped: bool,
     #[serde(default)]
@@ -74,7 +74,7 @@ impl QuestionnaireAnswers {
 
     fn complete(&self) -> bool {
         self.version == QUESTIONNAIRE_SCHEMA_VERSION
-            && (!self.role.is_empty() || self.role_skipped)
+            && (self.role.as_deref().is_some_and(|role| !role.is_empty()) || self.role_skipped)
             && (!self.use_case.is_empty() || self.use_case_skipped)
     }
 }
@@ -279,14 +279,23 @@ async fn patch_onboarding(
             &cordy_analytics::onboarding_questionnaire_submitted(
                 &user_id.to_string(),
                 after.source.clone(),
-                &after.role,
+                after.role.as_deref().unwrap_or_default(),
                 after.use_case.clone(),
                 after.source_skipped,
                 after.role_skipped,
                 after.use_case_skipped,
-                !after.source_other.is_empty(),
-                !after.role_other.is_empty(),
-                !after.use_case_other.is_empty(),
+                after
+                    .source_other
+                    .as_deref()
+                    .is_some_and(|value| !value.is_empty()),
+                after
+                    .role_other
+                    .as_deref()
+                    .is_some_and(|value| !value.is_empty()),
+                after
+                    .use_case_other
+                    .as_deref()
+                    .is_some_and(|value| !value.is_empty()),
             ),
         );
     }
@@ -300,7 +309,10 @@ async fn patch_onboarding(
                 &user_id.to_string(),
                 after.source.clone(),
                 after.source_skipped,
-                !after.source_other.is_empty(),
+                after
+                    .source_other
+                    .as_deref()
+                    .is_some_and(|value| !value.is_empty()),
             ),
         );
     }
@@ -509,6 +521,27 @@ mod tests {
         .unwrap();
         assert!(current.source_resolved());
         assert!(current.complete());
+    }
+
+    #[test]
+    fn questionnaire_preserves_answers_when_optional_strings_are_null() {
+        let answers: QuestionnaireAnswers = serde_json::from_value(serde_json::json!({
+            "source": [],
+            "source_other": null,
+            "source_skipped": true,
+            "role": null,
+            "role_other": null,
+            "role_skipped": true,
+            "use_case": [],
+            "use_case_other": null,
+            "use_case_skipped": true,
+            "version": 2
+        }))
+        .unwrap();
+
+        assert!(answers.source_resolved());
+        assert!(answers.complete());
+        assert_eq!(answers.version, QUESTIONNAIRE_SCHEMA_VERSION);
     }
 
     #[test]
