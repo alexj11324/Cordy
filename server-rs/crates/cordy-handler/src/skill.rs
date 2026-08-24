@@ -1,12 +1,10 @@
 //! Workspace skill library handlers.
 //!
-//! This module ports the dependency-closed CRUD, supporting-file, and label
-//! assignment surface from Go. Network-backed search/import/refresh remains a
-//! separate slice because its source adapters and archive importer are not yet
-//! present in the Rust service layer.
+//! Network-backed search/import/refresh lives in the sibling `skill_import`
+//! module; both modules share the same wire shapes and transactional helpers.
 
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Extension, Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -21,40 +19,13 @@ use uuid::Uuid;
 use crate::error::error_response;
 use crate::state::HandlerState;
 
-// Imported skills may contain 8 MiB of supporting files plus the primary
-// SKILL.md. The editor writes that complete bundle back as JSON, whose string
-// escaping can expand a decoded byte by up to 6x. Keep the request bounded
-// while leaving enough room for every supported bundle and its metadata.
-const MAX_SKILL_WRITE_BODY: usize = 64 << 20;
-
 pub fn router() -> Router<HandlerState> {
     Router::new()
-        .route(
-            "/api/skills",
-            get(list)
-                .post(create)
-                .layer(DefaultBodyLimit::max(MAX_SKILL_WRITE_BODY)),
-        )
-        .route(
-            "/api/skills/",
-            get(list)
-                .post(create)
-                .layer(DefaultBodyLimit::max(MAX_SKILL_WRITE_BODY)),
-        )
-        .route(
-            "/api/skills/{id}",
-            get(get_one)
-                .put(update)
-                .delete(delete)
-                .layer(DefaultBodyLimit::max(MAX_SKILL_WRITE_BODY)),
-        )
-        .route(
-            "/api/skills/{id}/",
-            get(get_one)
-                .put(update)
-                .delete(delete)
-                .layer(DefaultBodyLimit::max(MAX_SKILL_WRITE_BODY)),
-        )
+        .merge(crate::skill_import::router())
+        .route("/api/skills", get(list).post(create))
+        .route("/api/skills/", get(list).post(create))
+        .route("/api/skills/{id}", get(get_one).put(update).delete(delete))
+        .route("/api/skills/{id}/", get(get_one).put(update).delete(delete))
         .route(
             "/api/skills/{id}/labels",
             get(list_labels).post(attach_label),
@@ -63,12 +34,7 @@ pub fn router() -> Router<HandlerState> {
             "/api/skills/{id}/labels/{label_id}",
             axum::routing::delete(detach_label),
         )
-        .route(
-            "/api/skills/{id}/files",
-            get(list_files)
-                .put(upsert_file)
-                .layer(DefaultBodyLimit::max(MAX_SKILL_WRITE_BODY)),
-        )
+        .route("/api/skills/{id}/files", get(list_files).put(upsert_file))
         .route(
             "/api/skills/{id}/files/{file_id}",
             axum::routing::delete(delete_file),
@@ -76,16 +42,16 @@ pub fn router() -> Router<HandlerState> {
 }
 
 #[derive(Debug, Serialize)]
-struct SkillResponse {
-    id: Uuid,
-    workspace_id: Uuid,
-    name: String,
-    description: String,
-    content: String,
-    config: Value,
-    created_by: Option<Uuid>,
-    created_at: String,
-    updated_at: String,
+pub(super) struct SkillResponse {
+    pub(super) id: Uuid,
+    pub(super) workspace_id: Uuid,
+    pub(super) name: String,
+    pub(super) description: String,
+    pub(super) content: String,
+    pub(super) config: Value,
+    pub(super) created_by: Option<Uuid>,
+    pub(super) created_at: String,
+    pub(super) updated_at: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -101,20 +67,20 @@ struct SkillSummaryResponse {
 }
 
 #[derive(Debug, Serialize)]
-struct SkillFileResponse {
-    id: Uuid,
-    skill_id: Uuid,
-    path: String,
-    content: String,
-    created_at: String,
-    updated_at: String,
+pub(super) struct SkillFileResponse {
+    pub(super) id: Uuid,
+    pub(super) skill_id: Uuid,
+    pub(super) path: String,
+    pub(super) content: String,
+    pub(super) created_at: String,
+    pub(super) updated_at: String,
 }
 
 #[derive(Debug, Serialize)]
-struct SkillWithFilesResponse {
+pub(super) struct SkillWithFilesResponse {
     #[serde(flatten)]
-    skill: SkillResponse,
-    files: Vec<SkillFileResponse>,
+    pub(super) skill: SkillResponse,
+    pub(super) files: Vec<SkillFileResponse>,
 }
 
 #[derive(Debug, Serialize)]
@@ -175,7 +141,7 @@ impl From<IssueLabel> for LabelResponse {
     }
 }
 
-fn object_config(value: Value) -> Value {
+pub(super) fn object_config(value: Value) -> Value {
     if value.is_null() {
         json!({})
     } else {
@@ -183,7 +149,7 @@ fn object_config(value: Value) -> Value {
     }
 }
 
-fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
+pub(super) fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
     Uuid::parse_str(&context.workspace_id)
         .map_err(|_| error_response(StatusCode::NOT_FOUND, "workspace not found"))
 }
@@ -193,12 +159,12 @@ fn parse_id(raw: &str, name: &str) -> Result<Uuid, Response> {
         .map_err(|_| error_response(StatusCode::BAD_REQUEST, &format!("invalid {name}")))
 }
 
-fn db_error(error: anyhow::Error, message: &str) -> Response {
+pub(super) fn db_error(error: anyhow::Error, message: &str) -> Response {
     tracing::warn!(%error, "{message}");
     error_response(StatusCode::INTERNAL_SERVER_ERROR, message)
 }
 
-fn unique_violation(error: &anyhow::Error) -> bool {
+pub(super) fn unique_violation(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<sqlx::Error>()
         .and_then(sqlx::Error::as_database_error)
@@ -206,7 +172,7 @@ fn unique_violation(error: &anyhow::Error) -> bool {
         .is_some_and(|code| code == "23505")
 }
 
-fn skill_event(
+pub(super) fn skill_event(
     event_type: &str,
     workspace_id: Uuid,
     actor_type: &str,
@@ -254,7 +220,7 @@ fn can_manage(context: &WorkspaceContext, value: &Skill) -> Result<(), Response>
     }
 }
 
-fn sanitize(value: &str) -> String {
+pub(super) fn sanitize(value: &str) -> String {
     value.replace('\0', "")
 }
 
@@ -277,13 +243,13 @@ fn clean_path(path: &str) -> String {
     }
 }
 
-fn valid_file_path(path: &str) -> bool {
+pub(super) fn valid_file_path(path: &str) -> bool {
     !path.is_empty()
         && !std::path::Path::new(path).is_absolute()
         && !clean_path(path).starts_with("..")
 }
 
-fn reserved_content_path(path: &str) -> bool {
+pub(super) fn reserved_content_path(path: &str) -> bool {
     clean_path(path).eq_ignore_ascii_case("SKILL.md")
 }
 
