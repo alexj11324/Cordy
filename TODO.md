@@ -885,6 +885,15 @@
       diff-check pass; no Cargo was run. The serial subagent reviewed exact
       head `e3ee3e87` and found no issue; pro owns push/Ready PR, gate, and
       merge.
+- [ ] CLI runtime rows/profile output structural refactor is committed at
+      `e39dcbaab46abdeb7c421af63106746b0179c4f8` (parent
+      `e3ee3e8740ddf0daa4b545a68f8e042d3c9d6a53`, tree
+      `b6530e7d5be56e32989c425875f7406fe86ea918`): runtime usage/activity
+      rows and runtime-profile JSON/table rendering now live in
+      `cordy-cli/src/runtime_output.rs`; API/update/profile policy remains in
+      `lib.rs`. Scoped rustfmt and diff-check pass; no Cargo was run. The
+      serial subagent reviewed exact head `e39dcbaa` and found no issue; pro
+      owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
