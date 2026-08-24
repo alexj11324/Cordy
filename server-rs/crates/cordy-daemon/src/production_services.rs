@@ -37,7 +37,7 @@ use crate::repo_state::DaemonRepoState;
 use crate::repocache::{is_repo_busy, Cache, Ctx, RepoInfo, WorktreeParams};
 use crate::runtime_registry::RuntimeRegistry;
 use crate::task_execution::TaskRunOutcome;
-use crate::types::{RuntimeExecutionTarget, Task};
+use crate::types::{RepoData, RuntimeExecutionTarget, Task};
 use crate::wakeup::jitter_duration;
 
 const REPO_WARMUP_QUEUE_CAPACITY: usize = 64;
@@ -54,6 +54,7 @@ pub trait ProviderRuntimeAdapter: Send + Sync + 'static {
         ack: DaemonHeartbeatAckPayload,
     );
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_task(
         &self,
         ctx: Ctx,
@@ -126,6 +127,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         reconcile: Arc<ReconcileBroadcaster>,
         workspace_changes: Arc<WorkspaceChangeSignal>,
         registry: Arc<RuntimeRegistry>,
+        activity: Arc<DaemonActivity>,
     ) {
         let mut reconcile_snapshot = reconcile.notify();
         let mut failures = 0u32;
@@ -146,7 +148,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             };
             match self
                 .registration
-                .sync_once(ctx.child(), &registry, reconcile_profiles)
+                .sync_once(ctx.child(), &registry, reconcile_profiles, Some(&activity))
                 .await
             {
                 Ok(()) => failures = 0,
@@ -158,7 +160,12 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         }
     }
 
-    async fn provider_refresh_loop(&self, ctx: Ctx, registry: Arc<RuntimeRegistry>) {
+    async fn provider_refresh_loop(
+        &self,
+        ctx: Ctx,
+        registry: Arc<RuntimeRegistry>,
+        activity: Arc<DaemonActivity>,
+    ) {
         let now = tokio::time::Instant::now();
         let mut discovery =
             tokio::time::interval_at(now + AGENT_DISCOVERY_INTERVAL, AGENT_DISCOVERY_INTERVAL);
@@ -176,7 +183,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             };
             if let Err(error) = self
                 .registration
-                .refresh_builtins_once(ctx.child(), &registry, reason)
+                .refresh_builtins_once(ctx.child(), &registry, reason, &activity)
                 .await
             {
                 tracing::debug!(?reason, %error, "built-in runtime refresh round failed");
@@ -227,11 +234,11 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             return Ok(());
         }
 
-        // A project-only repository is authorized by the active task but is
-        // intentionally absent from the workspace repo response. Include the
-        // exact authorized miss so correctness does not depend on the
-        // best-effort warmup queue winning the race with first checkout.
-        let repos = repo_sync_candidates(response.repos, repo_url);
+        // A claimed task may authorize a repository that is absent from the
+        // workspace-level response. Warmup delivery is deliberately
+        // best-effort, so the checkout miss itself must include that exact
+        // authorized URL in the synchronous cache round.
+        let repos = checkout_sync_repos(response.repos, repo_url);
         match self.repo_cache.sync_ctx(ctx, workspace_id, &repos).await {
             Ok(()) => self.repo_state.set_sync_error(workspace_id, String::new()),
             Err(error) => self
@@ -389,19 +396,6 @@ fn checkout_failure(status_code: u16, message: impl Into<String>) -> RepoCheckou
     }
 }
 
-fn repo_sync_candidates(repos: Vec<crate::types::RepoData>, requested: &str) -> Vec<RepoInfo> {
-    let mut urls = repos
-        .into_iter()
-        .map(|repo| repo.url.trim().to_string())
-        .filter(|url| !url.is_empty())
-        .collect::<BTreeSet<_>>();
-    let requested = requested.trim();
-    if !requested.is_empty() {
-        urls.insert(requested.to_string());
-    }
-    urls.into_iter().map(|url| RepoInfo { url }).collect()
-}
-
 #[async_trait::async_trait]
 impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
     for DaemonProductionServices<P, R>
@@ -425,11 +419,12 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
         &self,
         ctx: Ctx,
         registry: Arc<RuntimeRegistry>,
+        activity: Arc<DaemonActivity>,
         payload: RuntimeProfilesChangedPayload,
     ) {
         if let Err(error) = self
             .registration
-            .refresh_workspace(ctx, &registry, &payload.workspace_id)
+            .refresh_workspace(ctx, &registry, &payload.workspace_id, &activity)
             .await
         {
             tracing::debug!(workspace_id = %payload.workspace_id, %error, "runtime profile refresh failed");
@@ -486,7 +481,9 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeS
     for DaemonProductionServices<P, R>
 {
     async fn preflight(&self, ctx: Ctx, registry: Arc<RuntimeRegistry>) -> anyhow::Result<()> {
-        self.registration.sync_once(ctx, &registry, false).await
+        self.registration
+            .sync_once(ctx, &registry, false, None)
+            .await
     }
 
     async fn run_reconcile(
@@ -495,6 +492,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeS
         reconcile: Arc<ReconcileBroadcaster>,
         workspace_changes: Arc<WorkspaceChangeSignal>,
         registry: Arc<RuntimeRegistry>,
+        activity: Arc<DaemonActivity>,
     ) -> anyhow::Result<()> {
         let repo_warmup_rx = self
             .repo_warmup_rx
@@ -508,8 +506,9 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeS
                 reconcile,
                 workspace_changes,
                 Arc::clone(&registry),
+                Arc::clone(&activity),
             ),
-            self.provider_refresh_loop(ctx.child(), registry),
+            self.provider_refresh_loop(ctx.child(), registry, activity),
             self.repo_warmup_loop(ctx, repo_warmup_rx),
         );
         Ok(())
@@ -551,6 +550,29 @@ fn workspace_sync_backoff(base: Duration, failures: u32) -> Duration {
     interval
 }
 
+fn checkout_sync_repos(workspace_repos: Vec<RepoData>, requested_url: &str) -> Vec<RepoInfo> {
+    let requested_url = requested_url.trim();
+    let mut urls: BTreeSet<String> = workspace_repos
+        .into_iter()
+        .map(|repo| repo.url.trim().to_string())
+        .filter(|url| !url.is_empty())
+        .collect();
+    let mut repos = Vec::with_capacity(urls.len() + usize::from(!requested_url.is_empty()));
+    if !requested_url.is_empty() {
+        // The authenticated checkout request owns this bounded synchronous
+        // round. Always attempt its exact repository first: an unrelated
+        // workspace repository may be unreachable and consume the cache
+        // sync's entire timeout before the requested task-only URL otherwise
+        // gets a chance to clone.
+        urls.remove(requested_url);
+        repos.push(RepoInfo {
+            url: requested_url.to_string(),
+        });
+    }
+    repos.extend(urls.into_iter().map(|url| RepoInfo { url }));
+    repos
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -572,26 +594,80 @@ mod tests {
     }
 
     #[test]
-    fn cold_miss_sync_includes_authorized_task_repo_not_in_workspace_response() {
-        let repos = repo_sync_candidates(
+    fn checkout_sync_includes_task_only_url_after_warmup_is_dropped() {
+        let task_url = "https://example.test/task-only.git";
+        for queue_unavailable in ["full", "closed"] {
+            let (tx, rx) = mpsc::channel(1);
+            if queue_unavailable == "full" {
+                enqueue_repo_warmup(
+                    &tx,
+                    "other-workspace",
+                    vec![RepoInfo {
+                        url: "https://example.test/already-queued.git".into(),
+                    }],
+                );
+            } else {
+                drop(rx);
+            }
+            enqueue_repo_warmup(
+                &tx,
+                "workspace-1",
+                vec![RepoInfo {
+                    url: task_url.into(),
+                }],
+            );
+
+            let repos = checkout_sync_repos(Vec::new(), task_url);
+            assert_eq!(repos.len(), 1, "{queue_unavailable}");
+            assert_eq!(repos[0].url, task_url, "{queue_unavailable}");
+        }
+    }
+
+    #[test]
+    fn checkout_sync_trims_and_deduplicates_requested_url() {
+        let repos = checkout_sync_repos(
             vec![
-                crate::types::RepoData {
-                    url: " https://example.test/workspace.git ".to_string(),
-                    ..crate::types::RepoData::default()
+                RepoData {
+                    url: " https://example.test/task.git ".into(),
+                    ..RepoData::default()
                 },
-                crate::types::RepoData {
-                    url: "https://example.test/workspace.git".to_string(),
-                    ..crate::types::RepoData::default()
+                RepoData {
+                    url: "https://example.test/workspace.git".into(),
+                    ..RepoData::default()
                 },
             ],
-            "https://example.test/project.git",
+            "https://example.test/task.git",
+        );
+        assert_eq!(
+            repos.into_iter().map(|repo| repo.url).collect::<Vec<_>>(),
+            vec![
+                "https://example.test/task.git",
+                "https://example.test/workspace.git"
+            ]
+        );
+    }
+
+    #[test]
+    fn checkout_sync_prioritizes_requested_url_over_unrelated_workspace_repos() {
+        let repos = checkout_sync_repos(
+            vec![
+                RepoData {
+                    url: "https://example.test/a-unreachable.git".into(),
+                    ..RepoData::default()
+                },
+                RepoData {
+                    url: "https://example.test/z-requested.git".into(),
+                    ..RepoData::default()
+                },
+            ],
+            " https://example.test/z-requested.git ",
         );
 
         assert_eq!(
             repos.into_iter().map(|repo| repo.url).collect::<Vec<_>>(),
             vec![
-                "https://example.test/project.git".to_string(),
-                "https://example.test/workspace.git".to_string(),
+                "https://example.test/z-requested.git",
+                "https://example.test/a-unreachable.git"
             ]
         );
     }

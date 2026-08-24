@@ -1,15 +1,13 @@
 //! Durable PostgreSQL-backed Autopilot webhook delivery worker.
 
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
-use cordy_db::models::{AutopilotTrigger, WebhookDelivery};
+use cordy_db::models::WebhookDelivery;
 use cordy_db::queries::{autopilot, webhook_delivery};
 use cordy_service::autopilot::{AutopilotQuotaExceededError, AutopilotService};
-use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -226,7 +224,10 @@ impl WebhookDeliveryWorker {
                 Some("autopilot_archived")
             } else if autopilot_row.status != "active" {
                 Some("autopilot_paused")
-            } else if !event_allowed(&trigger, &envelope) {
+            } else if !crate::autopilot_webhook::event_allowed(
+                trigger.event_filters.as_ref(),
+                &envelope,
+            ) {
                 Some("event_filtered")
             } else {
                 None
@@ -426,116 +427,4 @@ fn normalize_stored_payload(delivery: &WebhookDelivery) -> Result<Value, &'stati
             "contentType": delivery.content_type,
         }
     }))
-}
-
-#[derive(Debug, Deserialize)]
-struct EventFilter {
-    event: String,
-    #[serde(default)]
-    actions: Vec<String>,
-}
-
-fn event_allowed(trigger: &AutopilotTrigger, envelope: &Value) -> bool {
-    let Some(raw) = trigger.event_filters.as_ref() else {
-        return true;
-    };
-    let Ok(filters) = serde_json::from_value::<Vec<EventFilter>>(raw.clone()) else {
-        tracing::warn!(trigger_id = %trigger.id, "webhook trigger has malformed event filters");
-        return false;
-    };
-    if filters.is_empty() {
-        return true;
-    }
-    let event = envelope
-        .get("event")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let (name, suffix) = split_event(event);
-    let payload = envelope.get("eventPayload").unwrap_or(&Value::Null);
-    let mut candidates = HashSet::new();
-    if !suffix.is_empty() {
-        candidates.insert(suffix.to_string());
-    }
-    if let Some(object) = payload.as_object() {
-        for field in ["action", "state", "conclusion", "status"] {
-            if let Some(value) = object
-                .get(field)
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            {
-                candidates.insert(value.to_string());
-            }
-        }
-    }
-    filters.into_iter().any(|filter| {
-        filter.event == name
-            && (filter.actions.is_empty()
-                || filter
-                    .actions
-                    .iter()
-                    .any(|action| candidates.contains(action)))
-    })
-}
-
-fn split_event(event: &str) -> (&str, &str) {
-    let mut parts = event.split('.');
-    let first = parts.next().unwrap_or_default();
-    let second = parts.next();
-    if matches!(first, "github" | "gitlab" | "bitbucket" | "gitea") {
-        let name = second.unwrap_or_default();
-        let offset = first.len() + usize::from(second.is_some()) + name.len();
-        return (
-            name,
-            event
-                .get(offset + usize::from(offset < event.len())..)
-                .unwrap_or_default(),
-        );
-    }
-    let suffix = second
-        .and_then(|_| event.get(first.len() + 1..))
-        .unwrap_or_default();
-    (first, suffix)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn split_event_preserves_multi_segment_action() {
-        assert_eq!(
-            split_event("github.workflow_run.completed.success"),
-            ("workflow_run", "completed.success")
-        );
-        assert_eq!(split_event("deploy.finished"), ("deploy", "finished"));
-    }
-
-    #[test]
-    fn filters_consider_payload_action() {
-        let now = Utc::now();
-        let trigger = AutopilotTrigger {
-            id: Uuid::new_v4(),
-            autopilot_id: Uuid::new_v4(),
-            kind: "webhook".into(),
-            enabled: true,
-            cron_expression: None,
-            timezone: None,
-            next_run_at: None,
-            webhook_token: None,
-            label: None,
-            last_fired_at: None,
-            created_at: now,
-            updated_at: now,
-            provider: "github".into(),
-            signing_secret: None,
-            event_filters: Some(json!([{"event":"pull_request","actions":["opened"]}])),
-            published_by_type: None,
-            published_by_id: None,
-        };
-        assert!(event_allowed(
-            &trigger,
-            &json!({"event":"github.pull_request","eventPayload":{"action":"opened"}})
-        ));
-    }
 }

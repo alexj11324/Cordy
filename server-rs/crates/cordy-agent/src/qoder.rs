@@ -2713,7 +2713,7 @@ fn parse_acp_effort_option(value: &Value) -> Option<AcpEffortOption> {
         {
             continue;
         }
-        let mut choices = Vec::new();
+        let mut choices = Vec::<crate::model::ThinkingLevel>::new();
         for choice in option
             .get("options")
             .and_then(Value::as_array)

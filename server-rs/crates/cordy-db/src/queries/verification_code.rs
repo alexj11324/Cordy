@@ -120,14 +120,17 @@ WHERE id = $1"#,
 pub async fn mark_verification_code_used(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
-) -> anyhow::Result<u64> {
+) -> anyhow::Result<bool> {
     let r = sqlx::query(
         r#"UPDATE verification_code
 SET used = TRUE
-WHERE id = $1"#,
+WHERE id = $1
+  AND used = FALSE
+  AND expires_at > now()
+  AND attempts < 5"#,
     )
     .bind(id)
     .execute(executor)
     .await?;
-    Ok(r.rows_affected())
+    Ok(r.rows_affected() == 1)
 }

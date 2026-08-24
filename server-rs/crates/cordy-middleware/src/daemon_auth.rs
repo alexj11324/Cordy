@@ -73,12 +73,7 @@ pub async fn daemon_auth_middleware(
     mut req: Request,
     next: Next,
 ) -> Result<Response, (StatusCode, &'static str)> {
-    // X-Actor-Source is server-set only — strip any client-supplied value
-    // before any branch can re-stamp it, keeping the contract uniform with
-    // the regular Auth middleware.
-    req.headers_mut().remove("x-actor-source");
-    req.headers_mut().remove(DAEMON_WORKSPACE_HEADER);
-    req.headers_mut().remove(DAEMON_ID_HEADER);
+    clear_untrusted_identity_headers(&mut req);
 
     let Some(auth_header) = req
         .headers()
@@ -280,6 +275,18 @@ pub async fn daemon_auth_middleware(
     Ok(next.run(req).await)
 }
 
+/// Clears every identity header owned by authentication before inspecting the
+/// presented credential. In particular, an `mdt_` token deliberately has no
+/// human user identity; retaining a client-supplied `X-User-ID` would let that
+/// daemon enter handlers or WebSocket indexes as an arbitrary user.
+fn clear_untrusted_identity_headers(req: &mut Request) {
+    req.headers_mut().remove("x-user-id");
+    req.headers_mut().remove("x-user-email");
+    req.headers_mut().remove("x-actor-source");
+    req.headers_mut().remove(DAEMON_WORKSPACE_HEADER);
+    req.headers_mut().remove(DAEMON_ID_HEADER);
+}
+
 fn err_disabled() -> (StatusCode, &'static str) {
     (StatusCode::FORBIDDEN, r#"{"error":"account disabled"}"#)
 }
@@ -288,5 +295,60 @@ fn set_user(req: &mut Request, user_id: &str) {
     use axum::http::HeaderValue;
     if let Ok(v) = HeaderValue::from_str(user_id) {
         req.headers_mut().insert("x-user-id", v);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use axum::body::Body;
+
+    use super::*;
+
+    #[test]
+    fn daemon_auth_boundary_drops_spoofed_human_identity() {
+        let victim_id = "01972f7e-7e8d-77ef-a13d-1b0ce3e9c001";
+        let mut request = Request::builder()
+            .header("x-user-id", victim_id)
+            .header("x-user-email", "victim@example.com")
+            .header("x-actor-source", "jwt")
+            .header(DAEMON_WORKSPACE_HEADER, "spoofed-workspace")
+            .header(DAEMON_ID_HEADER, "spoofed-daemon")
+            .body(Body::empty())
+            .unwrap();
+
+        clear_untrusted_identity_headers(&mut request);
+
+        for name in [
+            "x-user-id",
+            "x-user-email",
+            "x-actor-source",
+            DAEMON_WORKSPACE_HEADER,
+            DAEMON_ID_HEADER,
+        ] {
+            assert!(
+                request.headers().get(name).is_none(),
+                "client-controlled {name} crossed the daemon auth boundary"
+            );
+        }
+    }
+
+    #[test]
+    fn authenticated_user_can_be_restamped_after_boundary_clear() {
+        let authenticated_id = "01972f7e-7e8d-77ef-a13d-1b0ce3e9c002";
+        let mut request = Request::builder()
+            .header("x-user-id", "01972f7e-7e8d-77ef-a13d-1b0ce3e9c001")
+            .body(Body::empty())
+            .unwrap();
+
+        clear_untrusted_identity_headers(&mut request);
+        set_user(&mut request, authenticated_id);
+
+        assert_eq!(
+            request
+                .headers()
+                .get("x-user-id")
+                .and_then(|value| value.to_str().ok()),
+            Some(authenticated_id)
+        );
     }
 }
