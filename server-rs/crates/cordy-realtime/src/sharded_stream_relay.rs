@@ -8,6 +8,7 @@
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use std::{fmt::Display, future::Future};
 
 use async_trait::async_trait;
 use redis::aio::ConnectionManager;
@@ -168,6 +169,36 @@ fn fnv32a(parts: &[&[u8]]) -> u32 {
         }
     }
     hash
+}
+
+async fn connect_with_retry<T, E, Connect, Connecting, OnError>(
+    shutdown: &CancellationToken,
+    retry_delay: Duration,
+    mut connect: Connect,
+    mut on_error: OnError,
+) -> Option<T>
+where
+    E: Display,
+    Connect: FnMut() -> Connecting,
+    Connecting: Future<Output = Result<T, E>>,
+    OnError: FnMut(&E),
+{
+    loop {
+        let result = tokio::select! {
+            biased;
+            () = shutdown.cancelled() => return None,
+            result = connect() => result,
+        };
+        match result {
+            Ok(connection) => return Some(connection),
+            Err(error) => on_error(&error),
+        }
+        tokio::select! {
+            biased;
+            () = shutdown.cancelled() => return None,
+            () = tokio::time::sleep(retry_delay) => {}
+        }
+    }
 }
 
 /// Publishes all realtime events into a fixed set of Redis Streams.
@@ -388,8 +419,22 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
         let stream = sharded_stream_key(shard);
         // Dedicated connection per reader: XREAD BLOCK would otherwise stall a
         // multiplexed connection shared with other commands.
-        let Ok(mut conn) = self.read_client.get_connection_manager().await else {
-            tracing::error!("realtime/sharded-redis: reader connection failed, shard {shard}");
+        let Some(mut conn) = connect_with_retry(
+            &self.shutdown,
+            Duration::from_secs(1),
+            || self.read_client.get_connection_manager(),
+            |error| {
+                M.redis_xread_errors.fetch_add(1, Ordering::Relaxed);
+                M.set_redis_last_error(&error.to_string());
+                tracing::error!(
+                    error = %error,
+                    shard,
+                    "realtime/sharded-redis: reader connection failed; retrying"
+                );
+            },
+        )
+        .await
+        else {
             return;
         };
         // Start from a bounded lookback window, not "$", so that events
@@ -840,6 +885,57 @@ mod tests {
 
         cfg.replay_grace = Duration::ZERO;
         assert!(cfg.validate().is_err());
+    }
+
+    #[tokio::test]
+    async fn reader_connection_retries_initial_failure() {
+        let shutdown = CancellationToken::new();
+        let attempts = AtomicU64::new(0);
+        let errors = AtomicU64::new(0);
+
+        let connection = connect_with_retry(
+            &shutdown,
+            Duration::ZERO,
+            || {
+                let attempt = attempts.fetch_add(1, Ordering::Relaxed);
+                async move {
+                    if attempt == 0 {
+                        Err("offline")
+                    } else {
+                        Ok("connected")
+                    }
+                }
+            },
+            |_| {
+                errors.fetch_add(1, Ordering::Relaxed);
+            },
+        )
+        .await;
+
+        assert_eq!(connection, Some("connected"));
+        assert_eq!(attempts.load(Ordering::Relaxed), 2);
+        assert_eq!(errors.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn cancelled_reader_does_not_attempt_connection() {
+        let shutdown = CancellationToken::new();
+        shutdown.cancel();
+        let attempts = AtomicU64::new(0);
+
+        let connection = connect_with_retry(
+            &shutdown,
+            Duration::ZERO,
+            || {
+                attempts.fetch_add(1, Ordering::Relaxed);
+                std::future::ready(Result::<(), &str>::Err("offline"))
+            },
+            |_| {},
+        )
+        .await;
+
+        assert_eq!(connection, None);
+        assert_eq!(attempts.load(Ordering::Relaxed), 0);
     }
 
     #[test]
