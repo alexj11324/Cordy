@@ -10,6 +10,7 @@ pub mod error;
 
 use anyhow::{bail, Context, Result};
 use api::{http_timeout, ApiClient, HttpError, NetworkError};
+use chrono::{DateTime, FixedOffset};
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use config::Environment;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -165,6 +166,11 @@ enum IssueCommand {
     Label(IssueLabelArgs),
     #[command(about = "Manage per-issue metadata (KV)")]
     Metadata(IssueMetadataArgs),
+    #[command(
+        alias = "history",
+        about = "Chronological issue history — status, assignee, and comments"
+    )]
+    Timeline(IssueTimelineArgs),
 }
 
 #[derive(Debug, Args)]
@@ -627,6 +633,35 @@ struct IssueMetadataSetArgs {
     value_type: Option<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
     output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssueTimelineArgs {
+    #[arg(value_name = "ID")]
+    issue_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+    #[arg(long, help = "Drop comments and return activity records only")]
+    activity_only: bool,
+    #[arg(
+        long,
+        value_delimiter = ',',
+        help = "Only return activities with these actions (repeatable or comma-separated)"
+    )]
+    action: Vec<String>,
+    #[arg(
+        long,
+        help = "Only return entries created after this RFC3339 timestamp"
+    )]
+    since: Option<String>,
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Only return the N most recent entries"
+    )]
+    tail: i64,
+    #[arg(long, help = "Show full UUIDs in table output")]
+    full_id: bool,
 }
 
 #[derive(Debug, Args)]
@@ -1109,6 +1144,9 @@ async fn run_with_input<R: Read>(
                     command: IssueMetadataCommand::Delete(args),
                 }),
         }) => run_issue_metadata_delete(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command: IssueCommand::Timeline(args),
+        }) => run_issue_timeline(cli, environment, args).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -4529,6 +4567,237 @@ async fn run_issue_metadata_delete(
         stdout,
         stderr: String::new(),
     })
+}
+
+#[derive(Debug)]
+struct TimelineFilter {
+    activity_only: bool,
+    actions: HashSet<String>,
+    since: Option<DateTime<FixedOffset>>,
+    tail: usize,
+}
+
+fn build_timeline_filter(args: &IssueTimelineArgs) -> Result<TimelineFilter> {
+    if args.tail < 0 {
+        bail!("--tail must be >= 0");
+    }
+    let actions = args
+        .action
+        .iter()
+        .map(|action| action.trim())
+        .filter(|action| !action.is_empty())
+        .map(ToOwned::to_owned)
+        .collect::<HashSet<_>>();
+    let since = args
+        .since
+        .as_deref()
+        .filter(|since| !since.is_empty())
+        .map(|since| {
+            DateTime::parse_from_rfc3339(since).with_context(|| {
+                format!("invalid --since {since:?}: expected RFC3339, e.g. 2026-08-19T00:00:00Z")
+            })
+        })
+        .transpose()?;
+    Ok(TimelineFilter {
+        activity_only: args.activity_only || !actions.is_empty(),
+        actions,
+        since,
+        tail: args.tail as usize,
+    })
+}
+
+fn filter_timeline(entries: Vec<Value>, filter: &TimelineFilter) -> Vec<Value> {
+    let mut entries = entries
+        .into_iter()
+        .filter(|entry| {
+            if filter.activity_only && value_string(entry, "type") != "activity" {
+                return false;
+            }
+            if !filter.actions.is_empty()
+                && !filter.actions.contains(&value_string(entry, "action"))
+            {
+                return false;
+            }
+            let Some(since) = filter.since.as_ref() else {
+                return true;
+            };
+            DateTime::parse_from_rfc3339(&value_string(entry, "created_at"))
+                .is_ok_and(|created| created > *since)
+        })
+        .collect::<Vec<_>>();
+    if filter.tail > 0 && entries.len() > filter.tail {
+        entries.drain(..entries.len() - filter.tail);
+    }
+    entries
+}
+
+fn timeline_actor_inputs(entries: &[Value]) -> Vec<Value> {
+    let mut actors = Vec::new();
+    for entry in entries {
+        actors.push(serde_json::json!({
+            "assignee_type":entry.get("actor_type").cloned().unwrap_or(Value::Null),
+            "assignee_id":entry.get("actor_id").cloned().unwrap_or(Value::Null),
+        }));
+        if let Some(details) = entry.get("details") {
+            for prefix in ["from", "to"] {
+                actors.push(serde_json::json!({
+                    "assignee_type":details.get(&format!("{prefix}_type")).cloned().unwrap_or(Value::Null),
+                    "assignee_id":details.get(&format!("{prefix}_id")).cloned().unwrap_or(Value::Null),
+                }));
+            }
+        }
+    }
+    actors
+}
+
+async fn run_issue_timeline(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueTimelineArgs,
+) -> Result<RunOutput> {
+    let filter = build_timeline_filter(args)?;
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let (entries, headers) = client
+        .get_json_with_headers::<Vec<Value>>(&format!("/api/issues/{issue_id}/timeline"))
+        .await
+        .context("list issue timeline")?;
+    let entries = filter_timeline(entries, &filter);
+    let truncated = headers
+        .get("X-Timeline-Truncated")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    let stderr = if truncated.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "warning: timeline truncated by the server cap ({truncated}): older entries are missing. Durations and \"first entered <status>\" cannot be concluded from this read.\n"
+        )
+    };
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&entries)?),
+        OutputFormat::Table => {
+            let workspace_id = resolve_current_workspace_id(cli, environment);
+            let actor_inputs = timeline_actor_inputs(&entries);
+            let actors = load_issue_actor_names(&client, &workspace_id, &actor_inputs).await;
+            format_issue_timeline_table(&entries, &actors, args.full_id)
+        }
+    };
+    Ok(RunOutput { stdout, stderr })
+}
+
+fn timeline_actor(
+    actor_type: &str,
+    actor_id: &str,
+    actors: &IssueActorNames,
+    full_id: bool,
+) -> String {
+    match (actor_type.is_empty(), actor_id.is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => actor_type.into(),
+        (true, false) => display_id(actor_id, full_id),
+        (false, false) => actors
+            .0
+            .get(&format!("{actor_type}:{actor_id}"))
+            .map_or_else(
+                || format!("{actor_type}:{}", display_id(actor_id, full_id)),
+                |name| format!("{actor_type}:{name}"),
+            ),
+    }
+}
+
+fn timeline_transition(from: String, to: String) -> String {
+    format!(
+        "{} → {}",
+        if from.is_empty() { "(none)" } else { &from },
+        if to.is_empty() { "(none)" } else { &to }
+    )
+}
+
+fn timeline_detail(entry: &Value, actors: &IssueActorNames, full_id: bool) -> String {
+    if value_string(entry, "type") == "comment" {
+        let content = value_string(entry, "content")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        return truncate_text(&content, 60);
+    }
+    let Some(details) = entry.get("details").and_then(Value::as_object) else {
+        return String::new();
+    };
+    if details.contains_key("from") || details.contains_key("to") {
+        return timeline_transition(
+            value_string(&Value::Object(details.clone()), "from"),
+            value_string(&Value::Object(details.clone()), "to"),
+        );
+    }
+    if ["from_type", "from_id", "to_type", "to_id"]
+        .iter()
+        .any(|key| details.contains_key(*key))
+    {
+        let details = Value::Object(details.clone());
+        return timeline_transition(
+            timeline_actor(
+                &value_string(&details, "from_type"),
+                &value_string(&details, "from_id"),
+                actors,
+                full_id,
+            ),
+            timeline_actor(
+                &value_string(&details, "to_type"),
+                &value_string(&details, "to_id"),
+                actors,
+                full_id,
+            ),
+        );
+    }
+    let mut keys = details.keys().collect::<Vec<_>>();
+    keys.sort();
+    let text = keys
+        .into_iter()
+        .map(|key| {
+            format!(
+                "{key}={}",
+                value_string(&Value::Object(details.clone()), key)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(" ");
+    truncate_text(&text, 60)
+}
+
+fn format_issue_timeline_table(
+    entries: &[Value],
+    actors: &IssueActorNames,
+    full_id: bool,
+) -> String {
+    let mut rows = vec![vec![
+        "TIME".into(),
+        "TYPE".into(),
+        "ACTOR".into(),
+        "DETAIL".into(),
+    ]];
+    rows.extend(entries.iter().map(|entry| {
+        let action = value_string(entry, "action");
+        vec![
+            value_string(entry, "created_at").chars().take(16).collect(),
+            if action.is_empty() {
+                value_string(entry, "type")
+            } else {
+                action
+            },
+            timeline_actor(
+                &value_string(entry, "actor_type"),
+                &value_string(entry, "actor_id"),
+                actors,
+                full_id,
+            ),
+            timeline_detail(entry, actors, full_id),
+        ]
+    }));
+    format_table(&rows)
 }
 
 fn validate_issue_status(status: &str) -> Result<()> {
@@ -9107,6 +9376,176 @@ mod tests {
         let metadata: Value = serde_json::from_str(&output.stdout).expect("metadata JSON");
         assert_eq!(metadata["attempt"], 3);
         assert_eq!(metadata["ready"], true);
+        task.abort();
+    }
+
+    #[test]
+    fn issue_timeline_parser_filter_and_table_match_go_contract() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "history",
+            "CORD-18",
+            "--action",
+            "status_changed,priority_changed",
+            "--since",
+            "2026-08-19T00:00:00Z",
+            "--tail",
+            "1",
+            "--full-id",
+        ])
+        .expect("timeline CLI alias");
+        let Command::Issue(IssueArgs {
+            command: IssueCommand::Timeline(args),
+        }) = &cli.command
+        else {
+            panic!("expected issue timeline");
+        };
+        let filter = build_timeline_filter(args).expect("timeline filter");
+        assert!(filter.activity_only);
+        assert!(filter.actions.contains("status_changed"));
+        assert_eq!(filter.tail, 1);
+        let entries = filter_timeline(
+            vec![
+                serde_json::json!({
+                    "type":"comment","created_at":"2026-08-20T00:00:00Z","content":"ignored"
+                }),
+                serde_json::json!({
+                    "type":"activity","action":"status_changed",
+                    "created_at":"2026-08-20T00:00:00Z","details":{"from":"todo","to":"done"}
+                }),
+                serde_json::json!({
+                    "type":"activity","action":"priority_changed",
+                    "created_at":"2026-08-21T00:00:00Z","details":{"from":"low","to":"high"}
+                }),
+            ],
+            &filter,
+        );
+        assert_eq!(entries.len(), 1);
+        assert_eq!(value_string(&entries[0], "action"), "priority_changed");
+
+        let actors = IssueActorNames(HashMap::from([("member:member-1".into(), "Ada".into())]));
+        let table = format_issue_timeline_table(
+            &[
+                serde_json::json!({
+                    "type":"activity","action":"assignee_changed",
+                    "actor_type":"member","actor_id":"member-1",
+                    "created_at":"2026-08-24T12:34:56Z",
+                    "details":{"from_type":"member","from_id":"old-member","to_type":"member","to_id":"member-1"}
+                }),
+                serde_json::json!({
+                    "type":"comment","actor_type":"system","actor_id":null,
+                    "created_at":"2026-08-24T13:00:00Z",
+                    "content":"multi\nline   comment"
+                }),
+            ],
+            &actors,
+            false,
+        );
+        assert!(table.starts_with("TIME"));
+        assert!(table.contains("member:Ada"));
+        assert!(table.contains("member:old-memb → member:Ada"));
+        assert!(table.contains("multi line comment"));
+        assert!(table.contains("system"));
+    }
+
+    #[test]
+    fn issue_timeline_rejects_invalid_since_and_negative_tail() {
+        let invalid_since = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "timeline",
+            "CORD-18",
+            "--since",
+            "yesterday",
+        ])
+        .expect("invalid since parses");
+        let Command::Issue(IssueArgs {
+            command: IssueCommand::Timeline(args),
+        }) = &invalid_since.command
+        else {
+            panic!("expected timeline");
+        };
+        assert!(build_timeline_filter(args)
+            .expect_err("invalid since")
+            .to_string()
+            .contains("expected RFC3339"));
+
+        let negative_tail =
+            Cli::try_parse_from(["cordy", "issue", "timeline", "CORD-18", "--tail", "-1"])
+                .expect("negative tail parses");
+        let Command::Issue(IssueArgs {
+            command: IssueCommand::Timeline(args),
+        }) = &negative_tail.command
+        else {
+            panic!("expected timeline");
+        };
+        assert_eq!(
+            build_timeline_filter(args)
+                .expect_err("negative tail")
+                .to_string(),
+            "--tail must be >= 0"
+        );
+    }
+
+    #[tokio::test]
+    async fn issue_timeline_filters_json_and_surfaces_truncation_header() {
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid/timeline",
+                get(|| async {
+                    let mut headers = HeaderMap::new();
+                    headers.insert(
+                        "X-Timeline-Truncated",
+                        "activity,comment".parse().expect("truncation header"),
+                    );
+                    (
+                        headers,
+                        Json(vec![
+                            serde_json::json!({
+                                "type":"comment","created_at":"2026-08-20T00:00:00Z","content":"note"
+                            }),
+                            serde_json::json!({
+                                "type":"activity","action":"status_changed",
+                                "created_at":"2026-08-21T00:00:00Z","details":{"from":"todo","to":"done"}
+                            }),
+                        ]),
+                    )
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "timeline",
+            "CORD-18",
+            "--activity-only",
+            "--output",
+            "json",
+        ])
+        .expect("timeline CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("timeline");
+        let entries: Value = serde_json::from_str(&output.stdout).expect("timeline JSON");
+        assert_eq!(entries.as_array().expect("entries").len(), 1);
+        assert_eq!(entries[0]["action"], "status_changed");
+        assert!(output.stderr.contains("activity,comment"));
+        assert!(output.stderr.contains("older entries are missing"));
         task.abort();
     }
 
