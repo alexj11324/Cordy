@@ -666,6 +666,13 @@
       credentials. Scoped rustfmt and `git diff --check` pass; pushed on the
       same cumulative branch for pro's Ready PR handling; Cargo/review/gate/
       merge remain with pro.
+- [x] Fixed a concrete daemon lifecycle boundary in
+      `8512f58720307ca0dcc8f0c79e07fa6a7039d122` (parent `a39be40d`, tree
+      `e8769c86102c1c1e59d2a7f570650f84fd8a2344`): Rust `daemon stop` now
+      applies the existing human-local guard before any host daemon control,
+      matching Go and preventing task/daemon-managed contexts from reaching
+      stop logic. Added a regression test; scoped rustfmt and diff-check pass.
+      Pushed on the cumulative branch; Cargo/review/PR/merge remain with pro.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
