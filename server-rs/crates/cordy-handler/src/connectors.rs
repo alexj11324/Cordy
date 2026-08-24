@@ -535,70 +535,101 @@ async fn run_lark_registration(
                 finish_lark_session(
                     &session_id,
                     None,
-                    Some("persist_failed"),
+                    Some("internal_error"),
                     Some(&error.to_string()),
                 );
                 return;
             }
         };
-        let persisted = async {
-            cordy_lark::channel_store::reclaim_dead_installation_with(
-                &mut *tx,
+        let app_id = result.client_id.clone();
+        if let Err(error) = cordy_lark::channel_store::reclaim_dead_installation_with(
+            &mut *tx,
+            workspace_id,
+            agent_id,
+            &app_id,
+        )
+        .await
+        {
+            let _ = tx.rollback().await;
+            finish_lark_session(
+                &session_id,
+                None,
+                Some("internal_error"),
+                Some(&format!("{error:#}")),
+            );
+            return;
+        }
+        let installation = match cordy_lark::channel_store::upsert_lark_installation_with(
+            &mut *tx,
+            cordy_lark::params::UpsertInstallationParams {
                 workspace_id,
                 agent_id,
-                &result.client_id,
-            )
-            .await?;
-            let installation = cordy_lark::channel_store::upsert_lark_installation_with(
-                &mut *tx,
-                cordy_lark::params::UpsertInstallationParams {
-                    workspace_id,
-                    agent_id,
-                    app_id: result.client_id,
-                    app_secret_encrypted: sealed,
-                    bot_open_id: bot.open_id.0,
-                    installer_user_id: actor,
-                    tenant_key: None,
-                    bot_union_id: (!bot.union_id.is_empty()).then_some(bot.union_id),
-                    region: region.as_str().into(),
-                },
-            )
-            .await?;
-            cordy_lark::channel_store::create_lark_user_binding_with(
-                &mut *tx,
-                cordy_lark::params::CreateUserBindingParams {
-                    workspace_id,
-                    cordy_user_id: actor,
-                    installation_id: installation.id,
-                    channel_user_id: result.open_id.0,
-                    union_id: None,
-                },
-            )
-            .await?;
-            Ok::<_, anyhow::Error>(installation)
-        }
-        .await;
-        let installation = match persisted {
-            Ok(value) if tx.commit().await.is_ok() => value,
-            Ok(_) => {
-                finish_lark_session(
-                    &session_id,
-                    None,
-                    Some("persist_failed"),
-                    Some("failed to commit installation"),
-                );
-                return;
-            }
+                app_id: app_id.clone(),
+                app_secret_encrypted: sealed,
+                bot_open_id: bot.open_id.0,
+                installer_user_id: actor,
+                tenant_key: None,
+                bot_union_id: (!bot.union_id.is_empty()).then_some(bot.union_id),
+                region: region.as_str().into(),
+            },
+        )
+        .await
+        {
+            Ok(value) => value,
             Err(error) => {
-                finish_lark_session(
-                    &session_id,
-                    None,
-                    Some("persist_failed"),
-                    Some(&format!("{error:#}")),
-                );
+                let is_conflict = cordy_lark::channel_store::is_unique_violation(&error);
+                let _ = tx.rollback().await;
+                if is_conflict {
+                    let message =
+                        lark_live_owner_conflict_message(&runtime.pool, workspace_id, &app_id)
+                            .await;
+                    finish_lark_session(
+                        &session_id,
+                        None,
+                        Some("installation_conflict"),
+                        Some(&message),
+                    );
+                } else {
+                    finish_lark_session(
+                        &session_id,
+                        None,
+                        Some("internal_error"),
+                        Some(&format!("{error:#}")),
+                    );
+                }
                 return;
             }
         };
+        if let Err(error) = cordy_lark::channel_store::create_lark_user_binding_with(
+            &mut *tx,
+            cordy_lark::params::CreateUserBindingParams {
+                workspace_id,
+                cordy_user_id: actor,
+                installation_id: installation.id,
+                channel_user_id: result.open_id.0,
+                union_id: None,
+            },
+        )
+        .await
+        {
+            let _ = tx.rollback().await;
+            finish_lark_session(
+                &session_id,
+                None,
+                Some("installer_bind_failed"),
+                Some(&format!("{error:#}")),
+            );
+            return;
+        }
+        if let Err(error) = tx.commit().await {
+            finish_lark_session(
+                &session_id,
+                None,
+                Some("internal_error"),
+                Some(&format!("{error:#}")),
+            );
+            return;
+        }
         runtime.bus.publish(&cordy_events::Event {
             event_type: cordy_protocol::EVENT_LARK_INSTALLATION_CREATED.into(),
             workspace_id: workspace_id.to_string(),
@@ -615,6 +646,36 @@ fn lark_poll_protocol_error(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<cordy_lark::registration::RegistrationError>()
         .is_some()
+}
+
+async fn lark_live_owner_conflict_message(
+    pool: &sqlx::PgPool,
+    requesting_workspace_id: Uuid,
+    app_id: &str,
+) -> String {
+    let owner = cordy_lark::channel_store::ChannelStore::new(pool.clone())
+        .installation_owner_by_app_id(app_id)
+        .await
+        .ok()
+        .flatten();
+    lark_owner_conflict_message(requesting_workspace_id, owner.as_ref())
+}
+
+fn lark_owner_conflict_message(
+    requesting_workspace_id: Uuid,
+    owner: Option<&cordy_db::queries::channel::GetChannelInstallationOwnerByAppIDRow>,
+) -> String {
+    match owner {
+        Some(owner) if owner.workspace_id != Some(requesting_workspace_id) =>
+            "This Feishu app is already connected to a different Cordy workspace. Disconnect it there before connecting it here.",
+        Some(owner) if owner.agent_archived_at.is_some() =>
+            "This Feishu app is connected to an archived agent in this workspace. Restore that agent, or disconnect its bot, before connecting it here.",
+        Some(_) =>
+            "This Feishu app is already connected to another agent in this workspace. Disconnect it there first, then connect it here.",
+        None =>
+            "This Feishu app is already connected to another agent. Disconnect it there first, then connect it here.",
+    }
+    .into()
 }
 
 fn finish_lark_session(
@@ -1522,6 +1583,31 @@ mod tests {
 
         let transport = anyhow::anyhow!("registration: http do: connection reset");
         assert!(!lark_poll_protocol_error(&transport));
+    }
+
+    #[test]
+    fn lark_install_conflicts_name_the_live_owner_scope() {
+        use chrono::Utc;
+        use cordy_db::queries::channel::GetChannelInstallationOwnerByAppIDRow;
+
+        let workspace_id = Uuid::new_v4();
+        let other_workspace_id = Uuid::new_v4();
+        let mut owner = GetChannelInstallationOwnerByAppIDRow {
+            workspace_id: Some(other_workspace_id),
+            agent_id: Some(Uuid::new_v4()),
+            agent_archived_at: None,
+        };
+        assert!(lark_owner_conflict_message(workspace_id, Some(&owner))
+            .contains("different Cordy workspace"));
+
+        owner.workspace_id = Some(workspace_id);
+        assert!(lark_owner_conflict_message(workspace_id, Some(&owner))
+            .contains("another agent in this workspace"));
+
+        owner.agent_archived_at = Some(Utc::now());
+        assert!(lark_owner_conflict_message(workspace_id, Some(&owner)).contains("archived agent"));
+
+        assert!(lark_owner_conflict_message(workspace_id, None).contains("another agent"));
     }
 
     #[tokio::test]
