@@ -515,6 +515,10 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeS
     ) -> Result<Value, RepoCheckoutFailure> {
         self.checkout_repo(ctx, active_task, request).await
     }
+
+    async fn flush_runtime_cleanup(&self, ctx: Ctx) -> anyhow::Result<()> {
+        self.registration.flush_deregistrations(&ctx).await
+    }
 }
 
 fn workspace_sync_backoff(base: Duration, failures: u32) -> Duration {
