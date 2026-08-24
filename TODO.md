@@ -833,8 +833,9 @@
       `c4e5479c892aeacc6cdd23d95de7d3ac58ee9a3b`): status output, logout, and
       credential resolution now live in `cordy-cli/src/auth_commands.rs`;
       task-local guard remains shared in `lib.rs`. Scoped rustfmt/diff-check
-      pass; no Cargo was run. The serial subagent owns review/minimal fixes;
-      pro owns Ready PR, gate, and merge.
+      pass; no Cargo was run. The serial subagent reviewed exact head
+      `97170826` and found no issue (environment lacked a rustfmt binary for a
+      second pass); pro owns Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
