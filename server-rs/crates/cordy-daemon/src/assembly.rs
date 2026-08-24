@@ -88,6 +88,9 @@ impl DaemonLaunchOverrides {
                 &self.max_concurrent_tasks.to_string(),
             );
         }
+        if self.health_port > 0 {
+            push_string_arg(&mut args, "--health-port", &self.health_port.to_string());
+        }
         if self.disable_auto_update {
             args.push(OsString::from("--no-auto-update"));
         }
@@ -318,6 +321,7 @@ mod tests {
             poll_interval: Duration::from_secs(3),
             agent_timeout: Some(Duration::ZERO),
             max_concurrent_tasks: 4,
+            health_port: 20123,
             profile: "staging".to_string(),
             disable_auto_update: true,
             disable_auto_reload: true,
@@ -338,6 +342,9 @@ mod tests {
         assert!(args
             .windows(2)
             .any(|pair| pair[0] == "--max-concurrent-tasks" && pair[1] == "4"));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--health-port" && pair[1] == "20123"));
         assert!(args
             .windows(2)
             .any(|pair| pair[0] == "--profile" && pair[1] == "staging"));
