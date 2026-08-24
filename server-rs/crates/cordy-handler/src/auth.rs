@@ -198,6 +198,9 @@ async fn send_code(State(state): State<HandlerState>, body: Bytes) -> Response {
     if email.is_empty() {
         return error_response(StatusCode::BAD_REQUEST, "email is required");
     }
+    if email.contains(['\r', '\n']) {
+        return error_response(StatusCode::BAD_REQUEST, "invalid email");
+    }
     if cordy_auth::disabled_users::is_temporarily_disabled_user_email(&email) {
         return error_response(StatusCode::FORBIDDEN, "account disabled");
     }
@@ -651,6 +654,12 @@ mod tests {
                 "null true",
                 StatusCode::BAD_REQUEST,
                 "email is required",
+            ),
+            (
+                "/auth/send-code",
+                r#"{"email":"victim@example.com\r\nRCPT TO:<attacker@example.com>"}"#,
+                StatusCode::BAD_REQUEST,
+                "invalid email",
             ),
             (
                 "/auth/verify-code",
