@@ -99,10 +99,47 @@ enum Command {
     Attachment(AttachmentArgs),
     #[command(about = "Work with repositories")]
     Repo(RepoArgs),
+    #[command(about = "Work with agent runtimes")]
+    Runtime(RuntimeArgs),
     #[command(about = "Print version information")]
     Version {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
         output: VersionOutput,
+    },
+}
+
+#[derive(Debug, Args)]
+struct RuntimeArgs {
+    #[command(subcommand)]
+    command: RuntimeCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum RuntimeCommand {
+    #[command(about = "List runtimes in the workspace")]
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
+    #[command(about = "Get token usage for a runtime")]
+    Usage {
+        #[arg(value_name = "RUNTIME-ID")]
+        runtime_id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+        #[arg(
+            long,
+            default_value_t = 90,
+            help = "Number of days of usage data (max 365)"
+        )]
+        days: i32,
+    },
+    #[command(about = "Get hourly task activity for a runtime")]
+    Activity {
+        #[arg(value_name = "RUNTIME-ID")]
+        runtime_id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
 }
 
@@ -2472,6 +2509,20 @@ async fn run_with_input<R: Read>(
         Command::Repo(RepoArgs {
             command: RepoCommand::Checkout { url, checkout_ref },
         }) => run_repo_checkout(environment, url, checkout_ref.as_deref()).await,
+        Command::Runtime(RuntimeArgs {
+            command: RuntimeCommand::List { output },
+        }) => run_runtime_list(cli, environment, *output).await,
+        Command::Runtime(RuntimeArgs {
+            command:
+                RuntimeCommand::Usage {
+                    runtime_id,
+                    output,
+                    days,
+                },
+        }) => run_runtime_usage(cli, environment, runtime_id, *output, *days).await,
+        Command::Runtime(RuntimeArgs {
+            command: RuntimeCommand::Activity { runtime_id, output },
+        }) => run_runtime_activity(cli, environment, runtime_id, *output).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -2497,6 +2548,112 @@ fn run_version(output: VersionOutput) -> Result<RunOutput> {
         stdout,
         stderr: String::new(),
     })
+}
+
+async fn run_runtime_list(
+    cli: &Cli,
+    environment: &Environment,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let runtimes: Vec<Value> = client
+        .get_json("/api/runtimes")
+        .await
+        .context("list runtimes")?;
+    Ok(RunOutput {
+        stdout: format_runtime_rows(
+            &runtimes,
+            output,
+            &["ID", "NAME", "MODE", "PROVIDER", "STATUS", "LAST_SEEN"],
+            &[
+                "id",
+                "name",
+                "runtime_mode",
+                "provider",
+                "status",
+                "last_seen_at",
+            ],
+        )?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_runtime_usage(
+    cli: &Cli,
+    environment: &Environment,
+    runtime_id: &str,
+    output: OutputFormat,
+    days: i32,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    if !(1..=365).contains(&days) {
+        bail!("--days must be between 1 and 365");
+    }
+    let usage: Vec<Value> = client
+        .get_json(&format!("/api/runtimes/{runtime_id}/usage?days={days}"))
+        .await
+        .context("get runtime usage")?;
+    Ok(RunOutput {
+        stdout: format_runtime_rows(
+            &usage,
+            output,
+            &[
+                "DATE",
+                "PROVIDER",
+                "MODEL",
+                "INPUT_TOKENS",
+                "OUTPUT_TOKENS",
+                "CACHE_READ",
+                "CACHE_WRITE",
+            ],
+            &[
+                "date",
+                "provider",
+                "model",
+                "input_tokens",
+                "output_tokens",
+                "cache_read_tokens",
+                "cache_write_tokens",
+            ],
+        )?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_runtime_activity(
+    cli: &Cli,
+    environment: &Environment,
+    runtime_id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let activity: Vec<Value> = client
+        .get_json(&format!("/api/runtimes/{runtime_id}/activity"))
+        .await
+        .context("get runtime activity")?;
+    Ok(RunOutput {
+        stdout: format_runtime_rows(&activity, output, &["HOUR", "COUNT"], &["hour", "count"])?,
+        stderr: String::new(),
+    })
+}
+
+fn format_runtime_rows(
+    values: &[Value],
+    output: OutputFormat,
+    headers: &[&str],
+    fields: &[&str],
+) -> Result<String> {
+    if output == OutputFormat::Json {
+        return Ok(format!("{}\n", serde_json::to_string_pretty(values)?));
+    }
+    let mut rows = vec![headers.iter().map(|header| (*header).into()).collect()];
+    rows.extend(values.iter().map(|value| {
+        fields
+            .iter()
+            .map(|field| value_string(value, field))
+            .collect()
+    }));
+    Ok(format_table(&rows))
 }
 
 fn chat_reply_count(message: &Value) -> String {
@@ -12090,6 +12247,97 @@ mod tests {
         assert!(Cli::try_parse_from(["cordy", "version", "--output", "text"]).is_ok());
         assert!(Cli::try_parse_from(["cordy", "version", "--output", "json"]).is_ok());
         assert!(Cli::try_parse_from(["cordy", "version", "--output", "table"]).is_err());
+    }
+
+    #[tokio::test]
+    async fn runtime_read_commands_match_go_requests_and_tables() {
+        let app = Router::new()
+            .route(
+                "/api/runtimes",
+                get(|| async {
+                    Json(vec![serde_json::json!({
+                        "id":"runtime-1","name":"Mac","runtime_mode":"local",
+                        "provider":"codex","status":"online","last_seen_at":"now",
+                        "server_only":"preserved"
+                    })])
+                }),
+            )
+            .route(
+                "/api/runtimes/runtime-1/usage",
+                get(|request: Request| async move {
+                    assert_eq!(request.uri().query(), Some("days=30"));
+                    Json(vec![serde_json::json!({
+                        "date":"2026-08-24","provider":"codex","model":"gpt",
+                        "input_tokens":10,"output_tokens":5,
+                        "cache_read_tokens":2,"cache_write_tokens":1
+                    })])
+                }),
+            )
+            .route(
+                "/api/runtimes/runtime-1/activity",
+                get(|| async { Json(vec![serde_json::json!({"hour":"12","count":3})]) }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let list = Cli::try_parse_from(["cordy", "runtime", "list"]).expect("runtime list CLI");
+        let listed = run_with_input(&list, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list runtimes");
+        assert!(listed.stdout.starts_with("ID"));
+        assert!(listed.stdout.contains("runtime-1"));
+        assert!(listed.stdout.contains("codex"));
+
+        let usage = Cli::try_parse_from(["cordy", "runtime", "usage", "runtime-1", "--days", "30"])
+            .expect("runtime usage CLI");
+        let used = run_with_input(&usage, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("runtime usage");
+        assert!(used.stdout.starts_with("DATE"));
+        assert!(used.stdout.contains("2026-08-24"));
+        assert!(used.stdout.contains("10"));
+
+        let activity = Cli::try_parse_from([
+            "cordy",
+            "runtime",
+            "activity",
+            "runtime-1",
+            "--output",
+            "json",
+        ])
+        .expect("runtime activity CLI");
+        let active = run_with_input(&activity, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("runtime activity");
+        assert_eq!(
+            serde_json::from_str::<Value>(&active.stdout).expect("JSON")[0]["count"],
+            3
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn runtime_usage_rejects_days_outside_go_range() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "http://127.0.0.1:9");
+        environment.set("CORDY_TOKEN", "token-1");
+        for days in ["0", "366"] {
+            let cli =
+                Cli::try_parse_from(["cordy", "runtime", "usage", "runtime-1", "--days", days])
+                    .expect("runtime usage CLI");
+            let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .await
+                .expect_err("days range");
+            assert_eq!(error.to_string(), "--days must be between 1 and 365");
+        }
     }
 
     async fn test_server() -> (String, tokio::task::JoinHandle<()>) {
