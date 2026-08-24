@@ -176,6 +176,31 @@ enum SkillFilesCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
+    #[command(about = "Create or update a skill file")]
+    Upsert(SkillFileUpsertArgs),
+    #[command(about = "Delete a skill file")]
+    Delete {
+        #[arg(value_name = "SKILL-ID")]
+        skill_id: String,
+        #[arg(value_name = "FILE-ID")]
+        file_id: String,
+    },
+}
+
+#[derive(Debug, Args)]
+struct SkillFileUpsertArgs {
+    #[arg(value_name = "SKILL-ID")]
+    skill_id: String,
+    #[arg(long, help = "File path within the skill (required)")]
+    path: Option<String>,
+    #[arg(long, help = "File content (required)")]
+    content: Option<String>,
+    #[arg(long)]
+    content_stdin: bool,
+    #[arg(long, default_value = "", value_name = "PATH")]
+    content_file: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -2602,6 +2627,18 @@ async fn run_with_input<R: Read>(
                     command: SkillFilesCommand::List { skill_id, output },
                 }),
         }) => run_skill_files_list(cli, environment, skill_id, *output).await,
+        Command::Skill(SkillArgs {
+            command:
+                SkillCommand::Files(SkillFilesArgs {
+                    command: SkillFilesCommand::Upsert(args),
+                }),
+        }) => run_skill_file_upsert(cli, environment, args, input).await,
+        Command::Skill(SkillArgs {
+            command:
+                SkillCommand::Files(SkillFilesArgs {
+                    command: SkillFilesCommand::Delete { skill_id, file_id },
+                }),
+        }) => run_skill_file_delete(cli, environment, skill_id, file_id).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -4592,6 +4629,63 @@ async fn run_skill_files_list(
     };
     Ok(RunOutput {
         stdout,
+        stderr: String::new(),
+    })
+}
+
+async fn run_skill_file_upsert<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SkillFileUpsertArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let path = args.path.as_deref().unwrap_or_default();
+    if path.is_empty() {
+        bail!("--path is required");
+    }
+    let content = resolve_skill_content(
+        args.content.as_deref(),
+        args.content_stdin,
+        &args.content_file,
+        environment,
+        input,
+    )?
+    .filter(|content| !content.is_empty())
+    .context("--content is required")?;
+    let result: Value = client
+        .put_json(
+            &format!("/api/skills/{}/files", args.skill_id),
+            &serde_json::json!({"path":path,"content":content}),
+        )
+        .await
+        .context("upsert skill file")?;
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+            OutputFormat::Table => format!(
+                "Skill file upserted: {} ({})\n",
+                value_string(&result, "path"),
+                value_string(&result, "id")
+            ),
+        },
+        stderr: String::new(),
+    })
+}
+
+async fn run_skill_file_delete(
+    cli: &Cli,
+    environment: &Environment,
+    skill_id: &str,
+    file_id: &str,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    client
+        .delete(&format!("/api/skills/{skill_id}/files/{file_id}"))
+        .await
+        .context("delete skill file")?;
+    Ok(RunOutput {
+        stdout: format!("Skill file deleted: {file_id}\n"),
         stderr: String::new(),
     })
 }
@@ -13580,6 +13674,36 @@ mod tests {
                 })
             })
         ));
+        let upsert = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "files",
+            "upsert",
+            "skill-1",
+            "--path",
+            "references/api.md",
+            "--content-stdin",
+        ])
+        .expect("skill files upsert CLI");
+        assert!(matches!(
+            upsert.command,
+            Command::Skill(SkillArgs {
+                command: SkillCommand::Files(SkillFilesArgs {
+                    command: SkillFilesCommand::Upsert(_)
+                })
+            })
+        ));
+        let delete =
+            Cli::try_parse_from(["cordy", "skill", "files", "delete", "skill-1", "file-1"])
+                .expect("skill files delete CLI");
+        assert!(matches!(
+            delete.command,
+            Command::Skill(SkillArgs {
+                command: SkillCommand::Files(SkillFilesArgs {
+                    command: SkillFilesCommand::Delete { .. }
+                })
+            })
+        ));
     }
 
     #[tokio::test]
@@ -13940,6 +14064,78 @@ mod tests {
         let value: Value = serde_json::from_str(&output.stdout).expect("JSON output");
         assert_eq!(value[0]["path"], "references/api.md");
         assert_eq!(value[0]["server_only"], "preserved");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn skill_file_upsert_and_delete_preserve_content_and_paths() {
+        let captured = Arc::new(Mutex::new(None));
+        let captured_handler = Arc::clone(&captured);
+        let app = Router::new()
+            .route(
+                "/api/skills/skill-1/files",
+                put(move |Json(body): Json<Value>| {
+                    let captured = Arc::clone(&captured_handler);
+                    async move {
+                        *captured.lock().expect("captured body") = Some(body);
+                        Json(serde_json::json!({
+                            "id":"file-1",
+                            "path":"references/api.md",
+                            "server_only":"preserved"
+                        }))
+                    }
+                }),
+            )
+            .route(
+                "/api/skills/skill-1/files/file-1",
+                delete_route(|| async { axum::http::StatusCode::NO_CONTENT }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let content = "file asset body\n\n";
+        fs::write(cwd.path().join("asset.txt"), content).expect("write asset");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        let upsert = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "files",
+            "upsert",
+            "skill-1",
+            "--path",
+            "references/api.md",
+            "--content-file",
+            "asset.txt",
+            "--output",
+            "table",
+        ])
+        .expect("skill file upsert CLI");
+        let output = run_with_input(&upsert, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("upsert skill file");
+        assert_eq!(
+            output.stdout,
+            "Skill file upserted: references/api.md (file-1)\n"
+        );
+        let body = captured
+            .lock()
+            .expect("captured body")
+            .clone()
+            .expect("request body");
+        assert_eq!(body["path"], "references/api.md");
+        assert_eq!(body["content"], content);
+
+        let delete =
+            Cli::try_parse_from(["cordy", "skill", "files", "delete", "skill-1", "file-1"])
+                .expect("skill file delete CLI");
+        let output = run_with_input(&delete, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("delete skill file");
+        assert_eq!(output.stdout, "Skill file deleted: file-1\n");
         server.abort();
     }
 
