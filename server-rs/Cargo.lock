@@ -1072,6 +1072,7 @@ dependencies = [
  "serde_json",
  "sqlx",
  "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -1187,7 +1188,9 @@ dependencies = [
  "cordy-channel",
  "cordy-channel-engine",
  "cordy-config",
+ "cordy-daemon",
  "cordy-db",
+ "cordy-events",
  "cordy-dingtalk",
  "cordy-ghsnapshot",
  "cordy-handler",

@@ -357,9 +357,10 @@ async fn join_by_share_link(
         payload: serde_json::json!({"member": &member_response}),
         ..Default::default()
     });
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_workspaces_changed(&user_id.to_string());
-    }
+    state
+        .daemon_notifier
+        .notify_workspaces_changed(&user_id.to_string())
+        .await;
 
     Json(JoinByShareLinkResponse {
         member: member_response,
@@ -576,9 +577,10 @@ async fn create_workspace(
     if let Some(metrics) = state.business_metrics.as_deref() {
         metrics.inc_for_event(&event);
     }
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_workspaces_changed(&user_id.to_string());
-    }
+    state
+        .daemon_notifier
+        .notify_workspaces_changed(&user_id.to_string())
+        .await;
     (
         StatusCode::CREATED,
         Json(workspace_response(&state, created)),
@@ -728,12 +730,12 @@ async fn update_workspace(
         ..Default::default()
     });
     if request.name.is_some() {
-        if let (Ok(members), Some(hub)) = (
-            member::list_members(&state.pool, updated.id).await,
-            state.daemon_hub.as_ref(),
-        ) {
+        if let Ok(members) = member::list_members(&state.pool, updated.id).await {
             for member in members {
-                hub.notify_workspaces_changed(&member.user_id.to_string());
+                state
+                    .daemon_notifier
+                    .notify_workspaces_changed(&member.user_id.to_string())
+                    .await;
             }
         }
     }
@@ -1082,9 +1084,10 @@ async fn remove_member_common(
         payload: serde_json::json!({"member_id": target.id, "workspace_id": workspace_id, "user_id": target.user_id}),
         ..Default::default()
     });
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_workspaces_changed(&target.user_id.to_string());
-    }
+    state
+        .daemon_notifier
+        .notify_workspaces_changed(&target.user_id.to_string())
+        .await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -1690,10 +1693,11 @@ async fn delete_workspace(
         payload: serde_json::json!({"workspace_id": workspace_id}),
         ..Default::default()
     });
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        for user_id in affected_users {
-            hub.notify_workspaces_changed(&user_id.to_string());
-        }
+    for user_id in affected_users {
+        state
+            .daemon_notifier
+            .notify_workspaces_changed(&user_id.to_string())
+            .await;
     }
     StatusCode::NO_CONTENT.into_response()
 }

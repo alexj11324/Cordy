@@ -2,7 +2,7 @@
 //! port of `server/internal/relay_lifecycle.go`.
 
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
 use tokio_util::sync::CancellationToken;
@@ -10,6 +10,7 @@ use tokio_util::sync::CancellationToken;
 use crate::broadcaster::{
     Broadcaster, DaemonRuntimeDeliverer, RelayPublisher, SCOPE_DAEMON_RUNTIME, SCOPE_USER,
 };
+use crate::envelope::{inject_event_id, HubFanout};
 use crate::metrics::M;
 
 /// Redis-backed realtime relay with explicit task lifecycle management.
@@ -22,7 +23,7 @@ pub trait ManagedRelay: RelayPublisher + Broadcaster {
     fn node_id(&self) -> String;
 
     /// Starts background consumer tasks; they stop when `shutdown` fires.
-    fn start(&self, shutdown: CancellationToken);
+    fn start(self: Arc<Self>, shutdown: CancellationToken);
 
     /// Signals background tasks to stop.
     fn stop(&self);
@@ -34,6 +35,103 @@ pub trait ManagedRelay: RelayPublisher + Broadcaster {
     /// Default no-op; relays that support daemon-runtime fanout override it
     /// (Go uses an optional interface upgrade at the call site).
     fn set_daemon_runtime_deliverer(&self, _deliverer: Arc<dyn DaemonRuntimeDeliverer>) {}
+}
+
+/// Local-first broadcaster whose Redis relay can attach after startup.
+///
+/// The server always installs this stable producer handle. If Redis is down at
+/// boot, events still reach local clients while a supervisor retries relay
+/// construction. Once attached, the same handle dual-writes without requiring
+/// producers or event-bus listeners to be rebuilt.
+pub struct SwitchableRelayBroadcaster {
+    hub: Arc<dyn HubFanout>,
+    relay: RwLock<Option<Arc<dyn ManagedRelay>>>,
+}
+
+impl SwitchableRelayBroadcaster {
+    pub fn new(hub: Arc<dyn HubFanout>) -> Self {
+        Self {
+            hub,
+            relay: RwLock::new(None),
+        }
+    }
+
+    pub fn set_relay(&self, relay: Option<Arc<dyn ManagedRelay>>) {
+        *self.relay.write().unwrap_or_else(|e| e.into_inner()) = relay;
+    }
+
+    pub fn relay(&self) -> Option<Arc<dyn ManagedRelay>> {
+        self.relay.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    async fn deliver_and_publish(
+        &self,
+        scope_type: &str,
+        scope_id: &str,
+        exclude: &str,
+        message: &[u8],
+    ) {
+        let Some(relay) = self.relay() else {
+            if scope_type == "global" {
+                self.hub.fanout_all_dedup(message, exclude, "").await;
+            } else if scope_type == SCOPE_USER {
+                self.hub.fanout_user(scope_id, message, exclude, "").await;
+            } else {
+                self.hub
+                    .broadcast_to_scope_dedup(scope_type, scope_id, message, "")
+                    .await;
+            }
+            return;
+        };
+
+        let event_id = ulid::Ulid::new().to_string();
+        let frame = inject_event_id(message, &event_id);
+        if scope_type == "global" {
+            self.hub.fanout_all_dedup(&frame, exclude, &event_id).await;
+        } else if scope_type == SCOPE_USER {
+            self.hub
+                .fanout_user(scope_id, &frame, exclude, &event_id)
+                .await;
+        } else {
+            self.hub
+                .broadcast_to_scope_dedup(scope_type, scope_id, &frame, &event_id)
+                .await;
+        }
+        if let Err(error) = relay
+            .publish_with_id(scope_type, scope_id, exclude, &frame, &event_id)
+            .await
+        {
+            tracing::warn!(
+                %error,
+                scope = scope_type,
+                scope_id,
+                event_id,
+                "realtime relay publish failed after local delivery"
+            );
+        }
+    }
+}
+
+#[async_trait]
+impl Broadcaster for SwitchableRelayBroadcaster {
+    async fn broadcast_to_scope(&self, scope_type: &str, scope_id: &str, message: &[u8]) {
+        self.deliver_and_publish(scope_type, scope_id, "", message)
+            .await;
+    }
+
+    async fn send_to_user(&self, user_id: &str, message: &[u8], exclude_workspace: Option<&str>) {
+        self.deliver_and_publish(
+            SCOPE_USER,
+            user_id,
+            exclude_workspace.unwrap_or_default(),
+            message,
+        )
+        .await;
+    }
+
+    async fn broadcast(&self, message: &[u8]) {
+        self.deliver_and_publish("global", "all", "", message).await;
+    }
 }
 
 /// Temporary rollout helper: starts two relay backends, reads from both, and
@@ -158,9 +256,9 @@ impl ManagedRelay for MirroredRelay {
         self.primary.node_id()
     }
 
-    fn start(&self, shutdown: CancellationToken) {
-        self.primary.start(shutdown.clone());
-        self.mirror.start(shutdown);
+    fn start(self: Arc<Self>, shutdown: CancellationToken) {
+        self.primary.clone().start(shutdown.clone());
+        self.mirror.clone().start(shutdown);
         *M.node_id.write().unwrap_or_else(|e| e.into_inner()) = self.node_id();
     }
 
@@ -172,6 +270,11 @@ impl ManagedRelay for MirroredRelay {
     async fn wait(&self) {
         self.primary.wait().await;
         self.mirror.wait().await;
+    }
+
+    fn set_daemon_runtime_deliverer(&self, deliverer: Arc<dyn DaemonRuntimeDeliverer>) {
+        self.primary.set_daemon_runtime_deliverer(deliverer.clone());
+        self.mirror.set_daemon_runtime_deliverer(deliverer);
     }
 }
 
@@ -194,8 +297,10 @@ mod tests {
         fail_publish: AtomicBool,
         /// (scope_type, scope_id, event_id) per publish.
         published: Mutex<Vec<(String, String, String)>>,
+        frames: Mutex<Vec<Vec<u8>>>,
         started: AtomicBool,
         stopped: AtomicBool,
+        daemon_deliverer_set: AtomicBool,
     }
 
     impl MockRelay {
@@ -222,6 +327,7 @@ mod tests {
                 scope_id.to_string(),
                 event_id.to_string(),
             ));
+            self.frames.lock().unwrap().push(_frame.to_vec());
             if self.fail_publish.load(Ordering::Relaxed) {
                 anyhow::bail!("{} publish failed", self.name);
             }
@@ -253,13 +359,22 @@ mod tests {
         fn node_id(&self) -> String {
             format!("node-{}", self.name)
         }
-        fn start(&self, _shutdown: CancellationToken) {
+        fn start(self: Arc<Self>, _shutdown: CancellationToken) {
             self.started.store(true, Ordering::Relaxed);
         }
         fn stop(&self) {
             self.stopped.store(true, Ordering::Relaxed);
         }
         async fn wait(&self) {}
+        fn set_daemon_runtime_deliverer(&self, _deliverer: Arc<dyn DaemonRuntimeDeliverer>) {
+            self.daemon_deliverer_set.store(true, Ordering::Relaxed);
+        }
+    }
+
+    struct NoopDaemonDeliverer;
+
+    impl DaemonRuntimeDeliverer for NoopDaemonDeliverer {
+        fn deliver_daemon_runtime(&self, _scope_id: &str, _frame: &[u8], _event_id: &str) {}
     }
 
     #[tokio::test]
@@ -278,6 +393,44 @@ mod tests {
         // Same event id on both backends — client-side dedup relies on it.
         assert_eq!(primary.published.lock().unwrap()[0].2, "evt-1");
         assert_eq!(mirror.published.lock().unwrap()[0].2, "evt-1");
+    }
+
+    #[tokio::test]
+    async fn switchable_broadcaster_delivers_locally_before_relay_recovers() {
+        let hub = Arc::new(crate::hub::Hub::new());
+        let mut client = hub.register("user-1", "ws-1").1;
+        let broadcaster = SwitchableRelayBroadcaster::new(hub);
+
+        broadcaster
+            .broadcast_to_scope(SCOPE_WORKSPACE, "ws-1", br#"{"type":"issue:updated"}"#)
+            .await;
+
+        assert_eq!(
+            client.recv().await.as_deref(),
+            Some(br#"{"type":"issue:updated"}"#.as_slice())
+        );
+    }
+
+    #[tokio::test]
+    async fn switchable_broadcaster_uses_one_event_id_for_local_and_relay_delivery() {
+        let hub = Arc::new(crate::hub::Hub::new());
+        let mut client = hub.register("user-1", "ws-1").1;
+        let broadcaster = SwitchableRelayBroadcaster::new(hub);
+        let relay = MockRelay::new("recovered");
+        broadcaster.set_relay(Some(relay.clone()));
+
+        broadcaster
+            .broadcast_to_scope(SCOPE_WORKSPACE, "ws-1", br#"{"type":"issue:updated"}"#)
+            .await;
+
+        let local_frame = client.recv().await.expect("local delivery");
+        let published = relay.published.lock().unwrap();
+        let frames = relay.frames.lock().unwrap();
+        assert_eq!(published.len(), 1);
+        assert!(!published[0].2.is_empty());
+        assert_eq!(frames.as_slice(), &[local_frame]);
+        let decoded: serde_json::Value = serde_json::from_slice(&frames[0]).unwrap();
+        assert_eq!(decoded["event_id"], published[0].2);
     }
 
     #[tokio::test]
@@ -328,9 +481,9 @@ mod tests {
         M.reset();
         let primary = MockRelay::new("primary");
         let mirror = MockRelay::new("mirror");
-        let relay = MirroredRelay::new(primary.clone(), mirror.clone());
+        let relay = Arc::new(MirroredRelay::new(primary.clone(), mirror.clone()));
 
-        relay.start(CancellationToken::new());
+        relay.clone().start(CancellationToken::new());
         assert!(primary.started.load(Ordering::Relaxed));
         assert!(mirror.started.load(Ordering::Relaxed));
         assert_eq!(M.node_id.read().unwrap().as_str(), "node-primary");
@@ -339,6 +492,19 @@ mod tests {
         assert!(primary.stopped.load(Ordering::Relaxed));
         assert!(mirror.stopped.load(Ordering::Relaxed));
         M.reset();
+    }
+
+    #[test]
+    fn managed_mirror_forwards_daemon_deliverer_to_children() {
+        let primary = MockRelay::new("primary");
+        let mirror = MockRelay::new("mirror");
+        let relay: Arc<dyn ManagedRelay> =
+            Arc::new(MirroredRelay::new(primary.clone(), mirror.clone()));
+
+        relay.set_daemon_runtime_deliverer(Arc::new(NoopDaemonDeliverer));
+
+        assert!(primary.daemon_deliverer_set.load(Ordering::Relaxed));
+        assert!(mirror.daemon_deliverer_set.load(Ordering::Relaxed));
     }
 
     #[tokio::test]

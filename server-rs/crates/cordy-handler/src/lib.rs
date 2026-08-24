@@ -65,6 +65,7 @@ pub mod profile_json;
 pub mod project;
 pub mod property;
 pub mod quick_action;
+pub mod realtime_forwarder;
 pub mod runtime;
 pub mod runtime_liveness;
 pub mod runtime_profile;

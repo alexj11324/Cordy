@@ -45,29 +45,42 @@ impl WebhookDeliveryWorker {
         })
     }
 
-    pub fn start(self: Arc<Self>) {
+    pub fn start(self: Arc<Self>, shutdown: CancellationToken) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let mut workers = tokio::task::JoinSet::new();
             for _ in 0..CONCURRENCY {
                 let worker = self.clone();
-                workers.spawn(async move { worker.run_loop().await });
+                let worker_shutdown = shutdown.clone();
+                workers.spawn(async move { worker.run_loop(worker_shutdown).await });
             }
-            while let Some(result) = workers.join_next().await {
-                if let Err(error) = result {
-                    tracing::error!(%error, "webhook delivery worker stopped unexpectedly");
+            loop {
+                tokio::select! {
+                    () = shutdown.cancelled() => break,
+                    result = workers.join_next() => match result {
+                        Some(Err(error)) => {
+                            tracing::error!(%error, "webhook delivery worker stopped unexpectedly");
+                        }
+                        Some(Ok(())) => {}
+                        None => break,
+                    }
                 }
             }
-        });
+            while workers.join_next().await.is_some() {}
+        })
     }
 
-    async fn run_loop(&self) {
+    async fn run_loop(&self, shutdown: CancellationToken) {
         loop {
+            if shutdown.is_cancelled() {
+                return;
+            }
             match self.process_next().await {
                 Ok(true) => continue,
                 Ok(false) => {}
                 Err(error) => tracing::error!(%error, "webhook worker failed to process delivery"),
             }
             tokio::select! {
+                () = shutdown.cancelled() => return,
                 () = self.notify.notified() => {},
                 () = tokio::time::sleep(POLL_INTERVAL) => {},
             }

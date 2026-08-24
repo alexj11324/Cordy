@@ -65,11 +65,10 @@ use cordy_db::queries::task_token::{create_task_token, delete_task_tokens_by_tas
 use cordy_db::queries::workspace::get_workspace_attribution_fail_closed;
 
 use crate::attribution::{
-    self, classify_comment, classify_direct, direct_human_run, evidence_chat, owner_fallback,
-    rule_owner, trigger_owner, CommentFacts, DirectFacts, EvidenceKind,
-    Result_ as AttributionResult,
+    self, CommentFacts, DirectFacts, EvidenceKind, Result_ as AttributionResult, classify_comment,
+    classify_direct, direct_human_run, evidence_chat, owner_fallback, rule_owner, trigger_owner,
 };
-use crate::feature_flags::{composio_mcp_apps_enabled, FlagSource};
+use crate::feature_flags::{FlagSource, composio_mcp_apps_enabled};
 use crate::task_helpers::{compute_chat_elapsed_ms, priority_to_int, truncate_for_summary};
 
 /// Cap for the trigger-comment snapshot stored on the task row: enough for a
@@ -95,7 +94,9 @@ const TASK_ANALYTICS_CONTEXT_CACHE_MAX: usize = 4096;
 /// Signals that a run resolved to no precise accountable human and the enqueue
 /// is REFUSED rather than started (MUL-4302 §1/§3.5).
 #[derive(Debug, thiserror::Error)]
-#[error("attribution: no precise accountable human and enqueue refused (fail-closed policy, policy read failed, or no agent owner)")]
+#[error(
+    "attribution: no precise accountable human and enqueue refused (fail-closed policy, policy read failed, or no agent owner)"
+)]
 pub struct ErrAttributionFailClosed;
 
 /// A fresh enqueue lost the race to a concurrent one (#5914). Benign — a
@@ -212,8 +213,9 @@ pub trait ComposioOverlayBuilder: Send + Sync {
 }
 
 /// Wakeup seam used by dispatch to nudge runtimes.
+#[async_trait::async_trait]
 pub trait TaskWakeupNotifier: Send + Sync {
-    fn notify_task_available(&self, runtime_id: &str, task_id: &str);
+    async fn notify_task_available(&self, runtime_id: &str, task_id: &str);
 }
 
 /// Quick-create task context stored in `agent_task_queue.context`.
@@ -1181,7 +1183,7 @@ impl TaskService {
         let tail = tokio::spawn(async move {
             empty_claim.bump(&runtime_id).await;
             if let Some(wakeup) = wakeup.as_ref().and_then(std::sync::Weak::upgrade) {
-                wakeup.notify_task_available(&runtime_id, &task_id);
+                wakeup.notify_task_available(&runtime_id, &task_id).await;
             }
         });
         if let Err(error) = tail.await {
@@ -2291,7 +2293,7 @@ impl TaskService {
                 Err(e) => {
                     return Err(TaskServiceError::Internal(format!(
                         "lock channel pending fresh: {e}"
-                    )))
+                    )));
                 }
             };
         if pending_fresh {
@@ -2346,7 +2348,7 @@ impl TaskService {
             Err(e) => {
                 return Err(TaskServiceError::Internal(format!(
                     "defer chat task for sealed pending media: {e}"
-                )))
+                )));
             }
         }
         if pending_fresh {
@@ -2741,11 +2743,7 @@ fn attribution_create_params(
 }
 
 pub(crate) fn opt_str(s: &str) -> Option<&str> {
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
+    if s.is_empty() { None } else { Some(s) }
 }
 
 pub(crate) fn overlay_value_or_null(v: &Option<serde_json::Value>) -> serde_json::Value {
@@ -3769,7 +3767,7 @@ impl TaskService {
             Err(e) => {
                 return Err(TaskServiceError::Internal(format!(
                     "reclaim stale dispatched task: {e}"
-                )))
+                )));
             }
         }
 
@@ -3893,7 +3891,9 @@ impl TaskService {
                 if is_duplicate_pending_task_anyhow(&e) {
                     // One contended row must not fail the claim for EVERY
                     // runtime in the batch; promote nothing this tick.
-                    tracing::info!("promote deferred tasks (batch): slot taken by a concurrent enqueue, skipping this tick");
+                    tracing::info!(
+                        "promote deferred tasks (batch): slot taken by a concurrent enqueue, skipping this tick"
+                    );
                     vec![]
                 } else {
                     return Err(TaskServiceError::Internal(format!(
