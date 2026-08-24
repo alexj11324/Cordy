@@ -386,8 +386,7 @@ where
     };
     snapshot.confirm_profile(profile, port)?;
     if let Some(preflight) = preflight {
-        preflight
-            .check()
+        DaemonRestartPreflight::check(preflight)
             .await
             .context("daemon restart preflight failed; running daemon was left untouched")?;
     }
