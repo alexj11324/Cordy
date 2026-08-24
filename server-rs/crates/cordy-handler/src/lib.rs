@@ -586,6 +586,8 @@ mod tests {
     async fn authenticated_issue_collection_rejects_anonymous_requests() {
         for uri in [
             "/api/issues",
+            "/api/issues/search?q=router",
+            "/api/issues/grouped",
             "/api/issues/children?parent_ids=018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/issues/child-progress",
             "/api/assignee-frequency",
@@ -594,6 +596,7 @@ mod tests {
             "/api/issues/CORD-14/active-task",
             "/api/issues/CORD-14/task-runs",
             "/api/issues/CORD-14/comments",
+            "/api/issues/CORD-14/timeline",
             "/api/issues/CORD-14/pull-requests",
             "/api/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/messages",
             "/api/me",
@@ -705,6 +708,59 @@ mod tests {
     #[tokio::test]
     async fn authenticated_issue_mutations_reject_anonymous_requests() {
         for request in [
+            Request::post("/api/issues/table/groups")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"query":{},"group":{"kind":"status"}}"#))
+                .unwrap(),
+            Request::post("/api/issues/table/rows")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"query":{}}"#))
+                .unwrap(),
+            Request::post("/api/issues/table/facets")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"query":{},"facets":[{"kind":"status"}]}"#))
+                .unwrap(),
+            Request::post("/api/issues/quick-create")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"agent_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f11","prompt":"make it"}"#))
+                .unwrap(),
+            Request::post("/api/issues/preview-trigger")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"issue_ids":[]}"#))
+                .unwrap(),
+            Request::post("/api/issues/batch-delete")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"issue_ids":[]}"#))
+                .unwrap(),
+            Request::delete("/api/issues/CORD-14").body(Body::empty()).unwrap(),
+            Request::post("/api/issues/CORD-14/comments")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"content":"hello"}"#))
+                .unwrap(),
+            Request::post("/api/issues/CORD-14/comments/trigger-preview")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"content":"hello"}"#))
+                .unwrap(),
+            Request::put("/api/comments/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"content":"edited"}"#))
+                .unwrap(),
+            Request::delete("/api/comments/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/issues/CORD-14/rerun")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/issues/CORD-14/quick-actions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/render")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/issues/CORD-14/quick-actions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/run")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/issues/CORD-14/squad-evaluated")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"outcome":"no_action"}"#))
+                .unwrap(),
             Request::put("/api/issues/CORD-14/")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"status":"in_review"}"#))
