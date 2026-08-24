@@ -729,6 +729,12 @@
       implementation; issue deletion cancels tasks before deleting all
       comments, so no live survivors require replay. Transaction, attachment
       cleanup, event, and fail-closed cancellation boundaries remain intact.
+- [x] Autopilot/webhook route and worker audit completed: workspace/creator
+      guards, trigger/delivery ownership, token rotation/revocation, ingress
+      body/signature/dedupe handling, Redis admission and Retry-After, lease
+      retries, paused/disabled/quota terminal states, replay idempotency, and
+      bounded shutdown match Go. No additional P0/P1 or changed-code blocker;
+      no implementation change was justified.
 
 ## Phase 4 — S8 route and API parity
 
