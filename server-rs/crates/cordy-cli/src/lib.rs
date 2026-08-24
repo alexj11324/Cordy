@@ -6,6 +6,7 @@
 
 mod api;
 pub mod config;
+pub mod daemon;
 pub mod error;
 
 use anyhow::{bail, Context, Result};
