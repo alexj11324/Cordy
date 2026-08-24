@@ -129,6 +129,8 @@ enum AgentCommand {
     },
     #[command(about = "Create a new agent")]
     Create(AgentCreateArgs),
+    #[command(about = "Update an agent")]
+    Update(AgentUpdateArgs),
 }
 
 #[derive(Debug, Args)]
@@ -180,6 +182,63 @@ struct AgentCreateArgs {
     #[arg(long, action = clap::ArgAction::Append, value_delimiter = ',', help = "Allow a workspace member ID to invoke this agent (repeatable)")]
     public_to_member: Vec<String>,
     #[arg(long, help = "Maximum concurrent tasks (1-50)")]
+    max_concurrent_tasks: Option<i32>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct AgentUpdateArgs {
+    #[arg(value_name = "ID")]
+    id: String,
+    #[arg(long, help = "New name")]
+    name: Option<String>,
+    #[arg(long, help = "New description")]
+    description: Option<String>,
+    #[arg(long, help = "New instructions")]
+    instructions: Option<String>,
+    #[arg(long, help = "New runtime ID")]
+    runtime_id: Option<String>,
+    #[arg(long, help = "New runtime config as JSON string")]
+    runtime_config: Option<String>,
+    #[arg(
+        long,
+        help = "New model identifier; empty clears to the runtime default"
+    )]
+    model: Option<String>,
+    #[arg(
+        long,
+        help = "New reasoning/effort level; empty clears to the runtime default"
+    )]
+    thinking_level: Option<String>,
+    #[arg(
+        long,
+        help = "New Codex execution service tier; empty inherits local config"
+    )]
+    service_tier: Option<String>,
+    #[arg(long, help = "New custom CLI arguments as a JSON array")]
+    custom_args: Option<String>,
+    #[arg(long, help = "New MCP server configuration; pass null to clear")]
+    mcp_config: Option<String>,
+    #[arg(long, help = "Read the new MCP server configuration from stdin")]
+    mcp_config_stdin: bool,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Read the new MCP server configuration from a file"
+    )]
+    mcp_config_file: Option<PathBuf>,
+    #[arg(long, help = "New visibility: private or workspace")]
+    visibility: Option<String>,
+    #[arg(long, help = "New invocation permission mode: private or public_to")]
+    permission_mode: Option<String>,
+    #[arg(long, num_args = 0..=1, default_missing_value = "true", help = "Allow every workspace member to invoke this agent")]
+    public_to_workspace: Option<bool>,
+    #[arg(long, action = clap::ArgAction::Append, value_delimiter = ',', help = "Allow a workspace member ID to invoke this agent (repeatable)")]
+    public_to_member: Vec<String>,
+    #[arg(long, help = "New status")]
+    status: Option<String>,
+    #[arg(long, help = "New maximum concurrent tasks (1-50)")]
     max_concurrent_tasks: Option<i32>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
@@ -1751,6 +1810,9 @@ async fn run_with_input<R: Read>(
         Command::Agent(AgentArgs {
             command: AgentCommand::Create(args),
         }) => run_agent_create(cli, environment, args, input).await,
+        Command::Agent(AgentArgs {
+            command: AgentCommand::Update(args),
+        }) => run_agent_update(cli, environment, args, input).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -2303,7 +2365,12 @@ async fn run_agent_create<R: Read>(
             body.insert(key.into(), Value::String(value.clone()));
         }
     }
-    apply_agent_permission_args(args, &mut body);
+    apply_agent_permission_args(
+        args.permission_mode.as_deref(),
+        args.public_to_workspace,
+        &args.public_to_member,
+        &mut body,
+    );
     if let Some(value) = args.max_concurrent_tasks {
         body.insert("max_concurrent_tasks".into(), Value::from(value));
     }
@@ -2326,27 +2393,109 @@ async fn run_agent_create<R: Read>(
     })
 }
 
-fn apply_agent_permission_args(args: &AgentCreateArgs, body: &mut serde_json::Map<String, Value>) {
-    if args.permission_mode.is_none()
-        && args.public_to_workspace.is_none()
-        && args.public_to_member.is_empty()
-    {
+async fn run_agent_update<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &AgentUpdateArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    if let Some(value) = args.max_concurrent_tasks {
+        if !(1..=50).contains(&value) {
+            bail!("--max-concurrent-tasks must be between 1 and 50 (got {value})");
+        }
+    }
+    let mut body = serde_json::Map::new();
+    for (key, value) in [
+        ("name", &args.name),
+        ("description", &args.description),
+        ("instructions", &args.instructions),
+        ("runtime_id", &args.runtime_id),
+        ("model", &args.model),
+        ("thinking_level", &args.thinking_level),
+        ("service_tier", &args.service_tier),
+        ("visibility", &args.visibility),
+        ("status", &args.status),
+    ] {
+        if let Some(value) = value {
+            body.insert(key.into(), Value::String(value.clone()));
+        }
+    }
+    if let Some(raw) = &args.runtime_config {
+        body.insert(
+            "runtime_config".into(),
+            serde_json::from_str(raw).context("--runtime-config must be valid JSON")?,
+        );
+    }
+    if let Some(raw) = &args.custom_args {
+        let values: Vec<String> = serde_json::from_str(raw)
+            .map_err(|_| anyhow::anyhow!("--custom-args must be a valid JSON array of strings"))?;
+        body.insert("custom_args".into(), serde_json::to_value(values)?);
+    }
+    if let Some(value) = resolve_agent_secret_json(
+        args.mcp_config.as_deref(),
+        args.mcp_config_stdin,
+        args.mcp_config_file.as_deref(),
+        "mcp-config",
+        true,
+        environment,
+        input,
+    )? {
+        body.insert("mcp_config".into(), value);
+    }
+    apply_agent_permission_args(
+        args.permission_mode.as_deref(),
+        args.public_to_workspace,
+        &args.public_to_member,
+        &mut body,
+    );
+    if let Some(value) = args.max_concurrent_tasks {
+        body.insert("max_concurrent_tasks".into(), Value::from(value));
+    }
+    if body.is_empty() {
+        bail!("no fields to update; use --name, --description, --instructions, --runtime-id, --runtime-config, --model, --thinking-level, --service-tier, --custom-args, --mcp-config, --visibility, --status, or --max-concurrent-tasks (env vars now live behind `cordy agent env set <id>`)");
+    }
+    let agent: Value = client
+        .put_json(&format!("/api/agents/{}", args.id), &body)
+        .await
+        .context("update agent")?;
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&agent)?),
+        OutputFormat::Table => format!(
+            "Agent updated: {} ({})\n",
+            value_string(&agent, "name"),
+            value_string(&agent, "id")
+        ),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn apply_agent_permission_args(
+    permission_mode: Option<&str>,
+    public_to_workspace: Option<bool>,
+    public_to_member: &[String],
+    body: &mut serde_json::Map<String, Value>,
+) {
+    if permission_mode.is_none() && public_to_workspace.is_none() && public_to_member.is_empty() {
         return;
     }
     body.insert(
         "permission_mode".into(),
         Value::String(
-            args.permission_mode
-                .clone()
+            permission_mode
+                .map(str::to_owned)
                 .unwrap_or_else(|| "public_to".into()),
         ),
     );
     let mut targets = Vec::new();
-    if args.public_to_workspace == Some(true) {
+    if public_to_workspace == Some(true) {
         targets.push(serde_json::json!({"target_type":"workspace"}));
     }
     targets.extend(
-        args.public_to_member
+        public_to_member
             .iter()
             .map(|member| serde_json::json!({"target_type":"member","target_id":member})),
     );
@@ -10378,6 +10527,86 @@ mod tests {
             panic!("expected agent create");
         };
         assert_eq!(args.max_concurrent_tasks, Some(51));
+    }
+
+    #[tokio::test]
+    async fn agent_update_puts_only_changed_fields_and_supports_mcp_clear() {
+        let captured = Arc::new(Mutex::new(None));
+        let captured_handler = Arc::clone(&captured);
+        let app = Router::new().route(
+            "/api/agents/agent-1",
+            put(move |Json(body): Json<Value>| {
+                let captured = Arc::clone(&captured_handler);
+                async move {
+                    *captured.lock().expect("captured body") = Some(body);
+                    Json(serde_json::json!({"id":"agent-1","name":"Builder v2"}))
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "agent",
+            "update",
+            "agent-1",
+            "--name",
+            "Builder v2",
+            "--thinking-level",
+            "",
+            "--mcp-config",
+            "null",
+            "--permission-mode",
+            "private",
+            "--output",
+            "table",
+        ])
+        .expect("agent update CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("update agent");
+        assert_eq!(output.stdout, "Agent updated: Builder v2 (agent-1)\n");
+        assert_eq!(
+            captured
+                .lock()
+                .expect("captured body")
+                .clone()
+                .expect("body"),
+            serde_json::json!({
+                "name":"Builder v2",
+                "thinking_level":"",
+                "mcp_config":null,
+                "permission_mode":"private",
+                "invocation_targets":[]
+            })
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn agent_update_rejects_no_changes_and_does_not_expose_custom_env() {
+        assert!(
+            Cli::try_parse_from(["cordy", "agent", "update", "agent-1", "--custom-env", "{}"])
+                .is_err()
+        );
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "http://127.0.0.1:9");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli =
+            Cli::try_parse_from(["cordy", "agent", "update", "agent-1"]).expect("agent update CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("no changes");
+        assert!(error.to_string().contains("no fields to update"));
+        assert!(error.to_string().contains("cordy agent env set <id>"));
     }
 
     #[test]
