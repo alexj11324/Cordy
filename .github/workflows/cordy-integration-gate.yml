@@ -1,0 +1,29 @@
+name: Cordy integration exact-head gate
+
+on:
+  push:
+    branches:
+      - codex/cord-14-s8-integrations
+
+permissions:
+  contents: write
+
+jobs:
+  smoke:
+    if: "!startsWith(github.event.head_commit.message, 'ci(marker):')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/cord-14-s8-integrations
+      - name: Record successful runner execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          printf '%s\n' "head=$(git rev-parse HEAD)" "status=ok" > .github/cordy-integration-gate.marker
+          git add .github/cordy-integration-gate.marker
+          git commit -m "ci(marker): integration runner executed"
+          git push origin HEAD:codex/cord-14-s8-integrations

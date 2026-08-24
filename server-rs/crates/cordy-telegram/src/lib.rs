@@ -6,6 +6,7 @@ pub mod api;
 pub mod channel;
 pub mod config;
 pub mod inbound;
+pub mod install;
 pub mod markdown;
 pub mod media;
 pub mod outbound;

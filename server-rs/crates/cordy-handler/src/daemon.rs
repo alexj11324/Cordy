@@ -1679,7 +1679,7 @@ impl DaemonRpcProcessor {
         let body = if bytes.is_empty() {
             None
         } else {
-            Some(serde_json::from_slice(&bytes).map_err(|error| {
+            Some(serde_json::from_slice::<Value>(&bytes).map_err(|error| {
                 RpcHandlerError::new(
                     StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
                     anyhow::Error::new(error).context("decode tasks.claim response"),
