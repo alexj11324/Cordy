@@ -1,0 +1,49 @@
+name: Trigger one-shot stack sync 132
+
+on:
+  pull_request:
+    branches:
+      - codex/cord-14-s8-integrations
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: github.head_ref == 'automation/stack-sync-132'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: automation/stack-sync-132
+          fetch-depth: 0
+
+      - name: Extract authoritative sync script
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          source = Path('.github/workflows/stack-sync-132.yml').read_text().splitlines()
+          try:
+              start = next(i for i, line in enumerate(source) if line == '        run: |') + 1
+          except StopIteration as error:
+              raise SystemExit('authoritative run block not found') from error
+
+          block = []
+          for line in source[start:]:
+              if line and not line.startswith('          '):
+                  break
+              block.append(line[10:] if line.startswith('          ') else '')
+          if not block:
+              raise SystemExit('authoritative run block is empty')
+          Path('/tmp/stack-sync-132.sh').write_text('\n'.join(block) + '\n')
+          PY
+
+      - name: Execute against exact integration head
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin codex/cord-14-s8-integrations main
+          git switch --detach origin/codex/cord-14-s8-integrations
+          bash /tmp/stack-sync-132.sh
