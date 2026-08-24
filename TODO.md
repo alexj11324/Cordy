@@ -982,6 +982,16 @@
       their existing contract. Scoped rustfmt and diff-check pass; Cargo was
       not run. The serial subagent reviewed exact head `a04eef47` and found no
       issue; pro owns push/Ready PR, gate, and merge.
+- [ ] CLI squad command structural refactor is committed at
+      `639684cb7f4f0179f2d291c96a0a0c9a1322e2cd` (parent
+      `a04eef47a230b5feac50a80e56f96846915115da`, tree
+      `e3c5adc8661a6ac5dc61ff2303b339489c9e06f6`), with the serial subagent's
+      test-visibility fix at `06d85e22384389403003ba75caf11b5954c8f967`
+      (tree `b983162642dfa545ea874f0e2cf61b2c08d49db8`). Squad CRUD, member
+      role/membership operations, activity recording, and table output now
+      live in `cordy-cli/src/squad_commands.rs`; dispatch and parent tests keep
+      their existing contract. Scoped rustfmt and diff-check pass; Cargo was
+      not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
