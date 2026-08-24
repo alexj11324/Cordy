@@ -136,6 +136,11 @@ services:
       # Empty default = headers ignored, RemoteAddr used. Set e.g.
       # "127.0.0.1/32" when running behind a same-host reverse proxy.
       CORDY_TRUSTED_PROXIES: ${CORDY_TRUSTED_PROXIES:-}
+      # Managed identity proxy: both the peer CIDRs and shared marker are
+      # required. Forward both values from .env so Compose deployments do not
+      # silently strip a correctly configured upstream identity.
+      CORDY_IDENTITY_TRUSTED_PROXIES: ${CORDY_IDENTITY_TRUSTED_PROXIES:-}
+      CORDY_IDENTITY_PROXY_SECRET: ${CORDY_IDENTITY_PROXY_SECRET:-}
       # Server-side LLM layer, backing internal helpers such as chat title
       # generation. Both the API key and the base URL empty = layer disabled,
       # and callers fall back silently rather than failing. CORDY_LLM_MAX_RETRIES
