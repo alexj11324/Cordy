@@ -574,6 +574,17 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy skill files list <skill-id>` to PR #129. It fetches the
+      encoded skill-file endpoint, preserves the Go table columns, keeps JSON
+      objects intact, and intentionally omits sensitive file content from
+      table output. Exact head is
+      `ef5cc6370c2bce1cc4fc1fa3b0cee0bce9bde098`, parent
+      `5121aaad75fb7dcb8150a4bf48cd0eae812078ba`, tree
+      `08b2fbb94edc3d26837fa767b5983fead4ad2131`, candidate
+      `c6880d6fe033fe3d62233f992a1fc3928733986e`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
