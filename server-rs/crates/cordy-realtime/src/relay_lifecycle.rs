@@ -271,6 +271,11 @@ impl ManagedRelay for MirroredRelay {
         self.primary.wait().await;
         self.mirror.wait().await;
     }
+
+    fn set_daemon_runtime_deliverer(&self, deliverer: Arc<dyn DaemonRuntimeDeliverer>) {
+        self.primary.set_daemon_runtime_deliverer(deliverer.clone());
+        self.mirror.set_daemon_runtime_deliverer(deliverer);
+    }
 }
 
 #[cfg(test)]
@@ -295,6 +300,7 @@ mod tests {
         frames: Mutex<Vec<Vec<u8>>>,
         started: AtomicBool,
         stopped: AtomicBool,
+        daemon_deliverer_set: AtomicBool,
     }
 
     impl MockRelay {
@@ -360,6 +366,15 @@ mod tests {
             self.stopped.store(true, Ordering::Relaxed);
         }
         async fn wait(&self) {}
+        fn set_daemon_runtime_deliverer(&self, _deliverer: Arc<dyn DaemonRuntimeDeliverer>) {
+            self.daemon_deliverer_set.store(true, Ordering::Relaxed);
+        }
+    }
+
+    struct NoopDaemonDeliverer;
+
+    impl DaemonRuntimeDeliverer for NoopDaemonDeliverer {
+        fn deliver_daemon_runtime(&self, _scope_id: &str, _frame: &[u8], _event_id: &str) {}
     }
 
     #[tokio::test]
@@ -477,6 +492,19 @@ mod tests {
         assert!(primary.stopped.load(Ordering::Relaxed));
         assert!(mirror.stopped.load(Ordering::Relaxed));
         M.reset();
+    }
+
+    #[test]
+    fn managed_mirror_forwards_daemon_deliverer_to_children() {
+        let primary = MockRelay::new("primary");
+        let mirror = MockRelay::new("mirror");
+        let relay: Arc<dyn ManagedRelay> =
+            Arc::new(MirroredRelay::new(primary.clone(), mirror.clone()));
+
+        relay.set_daemon_runtime_deliverer(Arc::new(NoopDaemonDeliverer));
+
+        assert!(primary.daemon_deliverer_set.load(Ordering::Relaxed));
+        assert!(mirror.daemon_deliverer_set.load(Ordering::Relaxed));
     }
 
     #[tokio::test]
