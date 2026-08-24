@@ -2436,6 +2436,8 @@ enum SkillCommand {
     Update(SkillUpdateArgs),
     #[command(about = "Delete a skill")]
     Delete(SkillDeleteArgs),
+    #[command(about = "Re-download a skill from its imported source")]
+    Refresh(SkillRefreshArgs),
 }
 
 #[derive(Debug, Args)]
@@ -2498,6 +2500,14 @@ struct SkillDeleteArgs {
     skill_id: String,
     #[arg(long, help = "Skip the confirmation prompt")]
     yes: bool,
+}
+
+#[derive(Debug, Args)]
+struct SkillRefreshArgs {
+    #[arg(value_name = "SKILL-ID")]
+    skill_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Subcommand)]
@@ -2913,6 +2923,9 @@ async fn run_with_input<R: Read>(
         Command::Skill(SkillArgs {
             command: SkillCommand::Delete(args),
         }) => run_skill_delete(cli, environment, args, input).await,
+        Command::Skill(SkillArgs {
+            command: SkillCommand::Refresh(args),
+        }) => run_skill_refresh(cli, environment, args).await,
         Command::Autopilot(AutopilotArgs {
             command:
                 AutopilotCommand::List {
@@ -6606,6 +6619,39 @@ async fn run_skill_delete<R: Read>(
     Ok(RunOutput {
         stdout,
         stderr: String::new(),
+    })
+}
+
+async fn run_skill_refresh(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SkillRefreshArgs,
+) -> Result<RunOutput> {
+    let skill_id = args.skill_id.trim();
+    if skill_id.is_empty() {
+        bail!("skill ID must not be empty");
+    }
+    let client = new_api_client(cli, environment)?;
+    let result: Value = client
+        .post_json(
+            &format!("/api/skills/{}/refresh", encoded_path_segment(skill_id)),
+            &serde_json::json!({}),
+        )
+        .await
+        .context("refresh skill")?;
+    Ok(match args.output {
+        OutputFormat::Json => RunOutput {
+            stdout: format!("{}\n", serde_json::to_string_pretty(&result)?),
+            stderr: String::new(),
+        },
+        OutputFormat::Table => RunOutput {
+            stdout: format!(
+                "Skill updated from source: {} ({})\n",
+                value_string(&result, "name"),
+                value_string(&result, "id")
+            ),
+            stderr: String::new(),
+        },
     })
 }
 
@@ -17402,6 +17448,71 @@ mod tests {
         )
         .await
         .expect_err("empty skill id");
+        assert_eq!(error.to_string(), "skill ID must not be empty");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn skill_refresh_matches_go_body_headers_and_output_contracts() {
+        let app = Router::new().route(
+            "/api/skills/skill-1/refresh",
+            post(|headers: HeaderMap, Json(body): Json<Value>| async move {
+                assert_eq!(headers["authorization"], "Bearer token-1");
+                assert_eq!(headers["x-workspace-id"], "workspace-1");
+                assert_eq!(body, serde_json::json!({}));
+                Json(serde_json::json!({
+                    "id": "skill-1",
+                    "name": "Reviewer",
+                    "description": "Refreshed"
+                }))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let defaults = Cli::try_parse_from(["cordy", "skill", "refresh", "skill-1"])
+            .expect("skill refresh default CLI");
+        let Command::Skill(SkillArgs {
+            command: SkillCommand::Refresh(args),
+        }) = &defaults.command
+        else {
+            panic!("expected skill refresh");
+        };
+        assert_eq!(args.output, OutputFormat::Json);
+        let json = run_with_input(&defaults, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("refresh skill JSON");
+        let refreshed: Value = serde_json::from_str(&json.stdout).expect("refreshed skill JSON");
+        assert_eq!(refreshed["name"], "Reviewer");
+        assert_eq!(refreshed["id"], "skill-1");
+        assert!(json.stderr.is_empty());
+
+        let table_cli =
+            Cli::try_parse_from(["cordy", "skill", "refresh", "skill-1", "--output", "table"])
+                .expect("skill refresh table CLI");
+        let table = run_with_input(&table_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("refresh skill table");
+        assert_eq!(
+            table.stdout,
+            "Skill updated from source: Reviewer (skill-1)\n"
+        );
+        assert!(table.stderr.is_empty());
+
+        let empty = SkillRefreshArgs {
+            skill_id: " ".into(),
+            output: OutputFormat::Json,
+        };
+        let error = run_skill_refresh(&defaults, &environment, &empty)
+            .await
+            .expect_err("empty skill ID");
         assert_eq!(error.to_string(), "skill ID must not be empty");
         server.abort();
     }
