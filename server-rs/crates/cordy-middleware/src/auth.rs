@@ -14,6 +14,9 @@
 //!   stripped before the auth branches run.
 
 use std::collections::HashSet;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 
 use axum::extract::{Request, State};
 use axum::http::{header, HeaderValue, Method, StatusCode};
@@ -34,6 +37,25 @@ const CLOUD_PAT_PREFIX: &str = "mcn_";
 pub struct AuthState {
     pub pool: sqlx::PgPool,
     pub pat_cache: PatCache,
+    pub side_effects: Arc<dyn AuthSideEffectSpawner>,
+}
+
+pub type AuthSideEffect = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
+
+/// Narrow ownership seam supplied by the production server. Keeping it in
+/// middleware avoids a service-layer dependency while ensuring auth writes
+/// join the same bounded shutdown drain as other request side effects.
+pub trait AuthSideEffectSpawner: Send + Sync {
+    fn spawn(&self, task: AuthSideEffect);
+}
+
+impl<F> AuthSideEffectSpawner for F
+where
+    F: Fn(AuthSideEffect) + Send + Sync,
+{
+    fn spawn(&self, task: AuthSideEffect) {
+        self(task);
+    }
 }
 
 fn err_response(status: StatusCode, msg: &'static str) -> (StatusCode, &'static str) {
@@ -237,13 +259,13 @@ pub async fn auth_middleware(
         // last_used_at asynchronously; subsequent hits skip the write.
         let pool = state.pool.clone();
         let pat_id = pat.id;
-        tokio::spawn(async move {
+        state.side_effects.spawn(Box::pin(async move {
             if let Err(e) =
                 personal_access_token::update_personal_access_token_last_used(&pool, pat_id).await
             {
                 tracing::warn!(error = %e, "auth: failed to refresh PAT last_used_at");
             }
-        });
+        }));
 
         return Ok(next.run(req).await);
     }

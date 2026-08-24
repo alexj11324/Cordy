@@ -212,14 +212,20 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         hub.set_authorizer(Arc::new(ws::DbScopeAuthorizer::new(state.tasks.clone())));
     }
 
+    let auth_side_effects: Arc<dyn cordy_middleware::auth::AuthSideEffectSpawner> = {
+        let tasks = state.tasks.clone();
+        Arc::new(move |task| tasks.spawn_side_effect(task))
+    };
     let auth_state = AuthState {
         pool: state.pool.clone(),
         pat_cache: state.pat_cache.clone(),
+        side_effects: auth_side_effects.clone(),
     };
     let daemon_auth_state = DaemonAuthState {
         pool: state.pool.clone(),
         pat_cache: state.pat_cache.clone(),
         daemon_cache: state.daemon_token_cache.clone(),
+        side_effects: auth_side_effects,
     };
     let public_auth = auth::public_router(
         state.auth_rate_limit.clone(),
@@ -536,12 +542,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
                 issue::require_issue_workspace,
             )),
         )
-        .route_layer(middleware::from_fn_with_state(auth_state, auth_middleware));
+        .route_layer(middleware::from_fn_with_state(
+            auth_state.clone(),
+            auth_middleware,
+        ));
     let plugin_action = plugin_action::router().route_layer(middleware::from_fn_with_state(
-        AuthState {
-            pool: state.pool.clone(),
-            pat_cache: state.pat_cache.clone(),
-        },
+        auth_state,
         cordy_middleware::plugin_auth::plugin_auth,
     ));
     let daemon = daemon::router().route_layer(middleware::from_fn_with_state(
