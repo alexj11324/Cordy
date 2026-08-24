@@ -89,24 +89,30 @@ pub struct RuntimeLaunchSpec {
 
 #[derive(Default)]
 struct LaunchState {
-    builtins: BTreeMap<String, RuntimeLaunchSpec>,
+    builtins: HashMap<String, BTreeMap<String, RuntimeLaunchSpec>>,
     profiles: HashMap<String, BTreeMap<String, RuntimeLaunchSpec>>,
 }
 
-/// Authoritative daemon-local launch registry. Successful profile fetches
-/// replace one workspace atomically, including the empty set; fetch failures
-/// leave the last accepted set untouched.
+/// Authoritative daemon-local launch registry. Built-ins and custom profiles
+/// are published per workspace only after that workspace accepts the matching
+/// registration response. Failed registrations leave its last accepted launch
+/// set untouched, including when another workspace advances successfully.
 #[derive(Default)]
 pub struct RuntimeLaunchRegistry {
     state: RwLock<LaunchState>,
 }
 
 impl RuntimeLaunchRegistry {
-    fn replace_builtins(&self, specs: Vec<RuntimeLaunchSpec>) {
-        self.state.write().unwrap().builtins = specs
+    fn replace_builtins(&self, workspace_id: &str, specs: Vec<RuntimeLaunchSpec>) {
+        let builtins = specs
             .into_iter()
             .map(|spec| (spec.target.provider.clone(), spec))
             .collect();
+        self.state
+            .write()
+            .unwrap()
+            .builtins
+            .insert(workspace_id.to_string(), builtins);
     }
 
     fn replace_workspace_profiles(&self, workspace_id: &str, specs: Vec<RuntimeLaunchSpec>) {
@@ -132,7 +138,9 @@ impl RuntimeLaunchRegistry {
     }
 
     pub fn remove_workspace(&self, workspace_id: &str) {
-        self.state.write().unwrap().profiles.remove(workspace_id);
+        let mut state = self.state.write().unwrap();
+        state.builtins.remove(workspace_id);
+        state.profiles.remove(workspace_id);
     }
 
     pub fn resolve(
@@ -142,7 +150,11 @@ impl RuntimeLaunchRegistry {
     ) -> Option<RuntimeLaunchSpec> {
         let state = self.state.read().unwrap();
         if target.profile_id.is_empty() {
-            return state.builtins.get(&target.provider).cloned();
+            return state
+                .builtins
+                .get(workspace_id)
+                .and_then(|builtins| builtins.get(&target.provider))
+                .cloned();
         }
         state
             .profiles
@@ -218,13 +230,13 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
                 version: runtime.version,
             });
         }
-        self.launches.replace_builtins(launches);
-        Ok(BuiltinSnapshot { payload })
+        Ok(BuiltinSnapshot { payload, launches })
     }
 }
 
 struct BuiltinSnapshot {
     payload: Vec<BTreeMap<String, String>>,
+    launches: Vec<RuntimeLaunchSpec>,
 }
 
 struct ProviderRegistrationRound<C: ProviderCatalog> {
@@ -233,6 +245,7 @@ struct ProviderRegistrationRound<C: ProviderCatalog> {
     catalog: Arc<C>,
     launches: Arc<RuntimeLaunchRegistry>,
     builtins: Vec<BTreeMap<String, String>>,
+    builtin_launches: Vec<RuntimeLaunchSpec>,
     include_profiles: bool,
     pending_profiles: Mutex<HashMap<String, Vec<RuntimeLaunchSpec>>>,
 }
@@ -332,6 +345,8 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
     }
 
     fn registration_applied(&self, workspace_id: &str) {
+        self.launches
+            .replace_builtins(workspace_id, self.builtin_launches.clone());
         let Some(specs) = self.pending_profiles.lock().unwrap().remove(workspace_id) else {
             return;
         };
@@ -351,6 +366,7 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
             catalog: Arc::clone(&self.catalog),
             launches: Arc::clone(&self.launches),
             builtins: snapshot.payload,
+            builtin_launches: snapshot.launches,
             include_profiles: true,
             pending_profiles: Mutex::new(HashMap::new()),
         }))
@@ -380,6 +396,7 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
             catalog: Arc::clone(&self.catalog),
             launches: Arc::clone(&self.launches),
             builtins: snapshot.payload,
+            builtin_launches: snapshot.launches,
             include_profiles: false,
             pending_profiles: Mutex::new(HashMap::new()),
         })))
@@ -431,16 +448,19 @@ mod tests {
     #[test]
     fn launch_registry_keeps_provider_and_profile_identity_atomic() {
         let registry = RuntimeLaunchRegistry::default();
-        registry.replace_builtins(vec![RuntimeLaunchSpec {
-            target: RuntimeExecutionTarget {
-                provider: "codex".to_string(),
-                profile_id: String::new(),
-            },
-            display_name: "Codex".to_string(),
-            command_path: "/bin/codex".to_string(),
-            fixed_args: Vec::new(),
-            version: "1.0.0".to_string(),
-        }]);
+        registry.replace_builtins(
+            "ws-1",
+            vec![RuntimeLaunchSpec {
+                target: RuntimeExecutionTarget {
+                    provider: "codex".to_string(),
+                    profile_id: String::new(),
+                },
+                display_name: "Codex".to_string(),
+                command_path: "/bin/codex".to_string(),
+                fixed_args: Vec::new(),
+                version: "1.0.0".to_string(),
+            }],
+        );
         registry.replace_workspace_profiles(
             "ws-1",
             vec![RuntimeLaunchSpec {
@@ -465,6 +485,15 @@ mod tests {
             )
             .unwrap();
         assert_eq!(builtin.command_path, "/bin/codex");
+        assert!(registry
+            .resolve(
+                "ws-2",
+                &RuntimeExecutionTarget {
+                    provider: "codex".to_string(),
+                    profile_id: String::new(),
+                },
+            )
+            .is_none());
 
         let profile = registry
             .resolve(
@@ -495,6 +524,38 @@ mod tests {
                 },
             )
             .is_none());
+    }
+
+    #[test]
+    fn builtin_replacement_is_scoped_to_the_applied_workspace() {
+        let registry = RuntimeLaunchRegistry::default();
+        let launch = |command_path: &str| RuntimeLaunchSpec {
+            target: RuntimeExecutionTarget {
+                provider: "codex".to_string(),
+                profile_id: String::new(),
+            },
+            display_name: "Codex".to_string(),
+            command_path: command_path.to_string(),
+            fixed_args: Vec::new(),
+            version: "1.0.0".to_string(),
+        };
+        registry.replace_builtins("ws-1", vec![launch("/old/codex")]);
+        registry.replace_builtins("ws-2", vec![launch("/old/codex")]);
+
+        registry.replace_builtins("ws-1", vec![launch("/new/codex")]);
+
+        let target = RuntimeExecutionTarget {
+            provider: "codex".to_string(),
+            profile_id: String::new(),
+        };
+        assert_eq!(
+            registry.resolve("ws-1", &target).unwrap().command_path,
+            "/new/codex"
+        );
+        assert_eq!(
+            registry.resolve("ws-2", &target).unwrap().command_path,
+            "/old/codex"
+        );
     }
 
     #[test]
