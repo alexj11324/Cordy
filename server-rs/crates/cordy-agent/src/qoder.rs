@@ -89,6 +89,40 @@ static REASONIX_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
             ("--workspace-only", BlockedArgMode::Standalone),
         ])
     });
+static GROK_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
+    BTreeMap::from([
+        ("agent", BlockedArgMode::Standalone),
+        ("stdio", BlockedArgMode::Standalone),
+        ("headless", BlockedArgMode::Standalone),
+        ("serve", BlockedArgMode::Standalone),
+        ("leader", BlockedArgMode::Standalone),
+        ("--always-approve", BlockedArgMode::Standalone),
+        ("--yolo", BlockedArgMode::Standalone),
+        ("--no-auto-update", BlockedArgMode::Standalone),
+        ("--no-alt-screen", BlockedArgMode::Standalone),
+        ("-p", BlockedArgMode::Standalone),
+        ("--print", BlockedArgMode::Standalone),
+        ("--single", BlockedArgMode::WithValue),
+        ("--output-format", BlockedArgMode::WithValue),
+        ("--permission-mode", BlockedArgMode::WithValue),
+        ("-m", BlockedArgMode::WithValue),
+        ("--model", BlockedArgMode::WithValue),
+        ("--reasoning-effort", BlockedArgMode::WithValue),
+        ("--effort", BlockedArgMode::WithValue),
+        ("-r", BlockedArgMode::WithValue),
+        ("--resume", BlockedArgMode::WithValue),
+        ("-c", BlockedArgMode::Standalone),
+        ("--continue", BlockedArgMode::Standalone),
+        ("-s", BlockedArgMode::WithValue),
+        ("--session-id", BlockedArgMode::WithValue),
+        ("--system-prompt-override", BlockedArgMode::WithValue),
+        ("--cwd", BlockedArgMode::WithValue),
+        ("-w", BlockedArgMode::OptionalValue),
+        ("--worktree", BlockedArgMode::OptionalValue),
+        ("--ref", BlockedArgMode::WithValue),
+        ("--fork-session", BlockedArgMode::Standalone),
+    ])
+});
 static TERMINAL_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:(?:⚠️|❌|\[ERROR\]).*(?:BadRequestError|AuthenticationError|RateLimitError|HTTP \d{3}|Non-retryable|API call failed)|API call failed after \d+ retr(?:y|ies))")
         .unwrap_or_else(|error| panic!("invalid Qoder provider-error regex: {error}"))
@@ -115,6 +149,9 @@ pub struct QoderConfig {
     pub usage_model_unknown: bool,
     pub use_system_prompt: bool,
     pub strict_stop_reason: bool,
+    pub launch_tail: Vec<String>,
+    pub effort_process_arg: bool,
+    pub explicit_authentication: bool,
 }
 
 impl Default for QoderConfig {
@@ -135,6 +172,9 @@ impl Default for QoderConfig {
             usage_model_unknown: false,
             use_system_prompt: true,
             strict_stop_reason: false,
+            launch_tail: Vec::new(),
+            effort_process_arg: false,
+            explicit_authentication: false,
         }
     }
 }
@@ -189,6 +229,9 @@ impl TraecliBackend {
                 usage_model_unknown: false,
                 use_system_prompt: true,
                 strict_stop_reason: false,
+                launch_tail: Vec::new(),
+                effort_process_arg: false,
+                explicit_authentication: false,
             }),
         }
     }
@@ -242,6 +285,9 @@ impl KiroBackend {
                 usage_model_unknown: false,
                 use_system_prompt: true,
                 strict_stop_reason: false,
+                launch_tail: Vec::new(),
+                effort_process_arg: false,
+                explicit_authentication: false,
             }),
         }
     }
@@ -295,6 +341,9 @@ impl QwenpawBackend {
                 usage_model_unknown: true,
                 use_system_prompt: true,
                 strict_stop_reason: false,
+                launch_tail: Vec::new(),
+                effort_process_arg: false,
+                explicit_authentication: false,
             }),
         }
     }
@@ -412,6 +461,60 @@ impl Backend for ReasonixBackend {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct GrokConfig {
+    pub command: RuntimeCommand,
+    pub env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct GrokBackend {
+    inner: QoderBackend,
+}
+
+impl GrokBackend {
+    pub fn new(config: GrokConfig) -> Self {
+        Self {
+            inner: QoderBackend::new(QoderConfig {
+                command: config.command,
+                env: config.env,
+                default_command: "grok".to_string(),
+                provider: "grok".to_string(),
+                launch_args: ["--no-auto-update", "agent", "--always-approve"]
+                    .map(str::to_string)
+                    .to_vec(),
+                launch_tail: vec!["stdio".to_string()],
+                discovery_args: ["--no-auto-update", "agent", "--always-approve", "stdio"]
+                    .map(str::to_string)
+                    .to_vec(),
+                resume_method: "session/load".to_string(),
+                reject_failed_load: true,
+                effort_process_arg: true,
+                explicit_authentication: true,
+                ..QoderConfig::default()
+            }),
+        }
+    }
+
+    pub async fn discover_models(
+        &self,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        self.inner
+            .discover_models(cache, cancellation, timeout)
+            .await
+    }
+}
+
+#[async_trait]
+impl Backend for GrokBackend {
+    async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
+        self.inner.execute(prompt, options).await
+    }
+}
+
 pub fn build_qoder_args(options: &ExecOptions) -> Vec<String> {
     build_session_args(&QoderConfig::default(), options)
 }
@@ -479,14 +582,23 @@ pub fn build_reasonix_args(options: &ExecOptions) -> Vec<String> {
     build_session_args(&backend.inner.config, options)
 }
 
+pub fn build_grok_args(options: &ExecOptions) -> Vec<String> {
+    let backend = GrokBackend::new(GrokConfig::default());
+    build_session_args(&backend.inner.config, options)
+}
+
 fn build_session_args(config: &QoderConfig, options: &ExecOptions) -> Vec<String> {
     let blocked = blocked_args(&config.provider);
     let mut args = config.launch_args.clone();
+    if config.effort_process_arg && !options.thinking_level.is_empty() {
+        args.extend(["--effort".to_string(), options.thinking_level.clone()]);
+    }
     args.extend(filter_custom_args(&options.extra_args, blocked).args);
     args.extend(filter_custom_args(&options.custom_args, blocked).args);
     if config.provider == "qwenpaw" && !options.qwenpaw_workspace.is_empty() {
         args.extend(["--workspace".to_string(), options.qwenpaw_workspace.clone()]);
     }
+    args.extend(config.launch_tail.clone());
     args
 }
 
@@ -497,6 +609,7 @@ fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMod
         "qwenpaw" => &QWENPAW_BLOCKED_ARGS,
         "kimi" => &KIMI_BLOCKED_ARGS,
         "reasonix" => &REASONIX_BLOCKED_ARGS,
+        "grok" => &GROK_BLOCKED_ARGS,
         _ => &BLOCKED_ARGS,
     }
 }
@@ -584,6 +697,8 @@ async fn discover_acp_session(
         return None;
     };
     let provider = config.provider.clone();
+    let explicit_authentication = config.explicit_authentication;
+    let have_api_key = effective_env_nonempty(&config.env, "XAI_API_KEY");
     let mut handshake = tokio::spawn(async move {
         let mut client = AcpClient::new(BufReader::new(stdout), stdin);
         let initialize = client
@@ -593,6 +708,23 @@ async fn discover_acp_session(
                 |_| {},
             )
             .await?;
+        if explicit_authentication {
+            let method = select_grok_auth_method(&initialize, have_api_key).map_err(|message| {
+                AcpError::Rpc {
+                    method: "authenticate".to_string(),
+                    code: -32603,
+                    message,
+                    data: String::new(),
+                }
+            })?;
+            client
+                .request(
+                    "authenticate",
+                    serde_json::json!({"methodId":method,"_meta":{"headless":true}}),
+                    |_| {},
+                )
+                .await?;
+        }
         let directory = tempfile::Builder::new()
             .prefix(&format!("cordy-{provider}-discovery-"))
             .tempdir()
@@ -872,6 +1004,8 @@ impl Backend for QoderBackend {
         let usage_model_unknown = self.config.usage_model_unknown;
         let use_system_prompt = self.config.use_system_prompt;
         let strict_stop_reason = self.config.strict_stop_reason;
+        let explicit_authentication = self.config.explicit_authentication;
+        let have_api_key = effective_env_nonempty(&self.config.env, "XAI_API_KEY");
         let kimi_home = self.config.env.get("KIMI_CODE_HOME").cloned();
         let resumed = !options.resume_session_id.is_empty();
         let fallback_model = if options.model.is_empty() {
@@ -909,6 +1043,8 @@ impl Backend for QoderBackend {
                 usage_model_unknown,
                 use_system_prompt,
                 strict_stop_reason,
+                explicit_authentication,
+                have_api_key,
             ));
             let end = if timeout.is_zero() {
                 tokio::select! {
@@ -1042,6 +1178,8 @@ async fn run_protocol(
     usage_model_unknown: bool,
     use_system_prompt: bool,
     strict_stop_reason: bool,
+    explicit_authentication: bool,
+    have_api_key: bool,
 ) -> ProtocolOutcome {
     let mut client = AcpClient::new(BufReader::new(stdout), stdin);
     let initialize = match client
@@ -1060,6 +1198,28 @@ async fn run_protocol(
             provider = "reasonix",
             "ACP status capabilities are unavailable or incompatible; usage and cost may be incomplete"
         );
+    }
+    if explicit_authentication {
+        let method = match select_grok_auth_method(&initialize, have_api_key) {
+            Ok(method) => method,
+            Err(error) => {
+                return ProtocolOutcome::failed(format!(
+                    "grok authentication setup failed: {error}"
+                ))
+            }
+        };
+        if let Err(error) = client
+            .request(
+                "authenticate",
+                serde_json::json!({"methodId":method,"_meta":{"headless":true}}),
+                |_| {},
+            )
+            .await
+        {
+            return ProtocolOutcome::failed(format!(
+                "grok authenticate ({method}) failed: {error}"
+            ));
+        }
     }
     let mcp_servers =
         filter_acp_mcp_servers(mcp_servers, parse_acp_mcp_capabilities(&initialize), false);
@@ -1322,12 +1482,30 @@ async fn run_protocol(
         .and_then(Value::as_str)
         .unwrap_or_default();
     let mut usage = BTreeMap::new();
-    let mut turn_usage = merge_usage(state.usage, parse_usage(prompt_result.get("usage")));
+    let prompt_meta = prompt_result.get("_meta");
+    let prompt_usage = merge_usage(
+        parse_usage(prompt_result.get("usage")),
+        merge_usage(
+            parse_usage(prompt_meta),
+            parse_usage(prompt_meta.and_then(|meta| meta.get("usage"))),
+        ),
+    );
+    let mut turn_usage = merge_usage(state.usage, prompt_usage);
     if provider == "reasonix" && turn_usage == TokenUsage::default() {
         turn_usage = state.reasonix_usage;
     }
     if provider == "reasonix" && options.model.is_empty() && !state.reasonix_model.is_empty() {
         effective_model.clone_from(&state.reasonix_model);
+    }
+    if provider == "grok" && effective_model == "unknown" {
+        if let Some(model) = prompt_meta
+            .and_then(|meta| meta.get("modelId"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|model| !model.is_empty())
+        {
+            effective_model = model.to_string();
+        }
     }
     if turn_usage != TokenUsage::default() {
         usage.insert(effective_model, turn_usage);
@@ -2222,6 +2400,46 @@ fn reasonix_session_new_error(error: &AcpError) -> String {
     format!("reasonix session/new failed: {error}{suffix}")
 }
 
+fn effective_env_nonempty(overrides: &BTreeMap<String, String>, key: &str) -> bool {
+    overrides.get(key).map_or_else(
+        || std::env::var_os(key).is_some_and(|value| !value.to_string_lossy().trim().is_empty()),
+        |value| !value.trim().is_empty(),
+    )
+}
+
+fn select_grok_auth_method(initialize: &Value, have_api_key: bool) -> Result<&'static str, String> {
+    let offered: std::collections::BTreeSet<&str> = initialize
+        .get("authMethods")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|method| method.get("id").and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|method| !method.is_empty())
+        .collect();
+    if have_api_key && offered.contains("xai.api_key") {
+        return Ok("xai.api_key");
+    }
+    if offered.contains("cached_token") {
+        return Ok("cached_token");
+    }
+    if offered.contains("xai.api_key") {
+        return Err(
+            "Grok advertised only API-key authentication, but XAI_API_KEY is not set".to_string(),
+        );
+    }
+    if offered.is_empty() {
+        return Err(
+            "Grok advertised no usable authentication methods; set XAI_API_KEY or run `grok login`"
+                .to_string(),
+        );
+    }
+    Err(format!(
+        "Grok advertised unsupported authentication methods {:?}; update Cordy or authenticate with XAI_API_KEY / `grok login`",
+        offered
+    ))
+}
+
 fn provider_error(provider: &str, stderr: &str, output: &str) -> Option<String> {
     if let Some(found) = TERMINAL_PROVIDER_ERROR.find(stderr) {
         return Some(format!("{provider} provider error: {}", found.as_str()));
@@ -2420,6 +2638,59 @@ mod tests {
         assert_eq!(args.iter().filter(|arg| arg.as_str() == "acp").count(), 1);
         assert!(!args.iter().any(|arg| arg == "unsafe" || arg == "off"));
         assert!(args.iter().any(|arg| arg == "--debug"));
+    }
+
+    #[test]
+    fn grok_arguments_keep_transport_effort_and_update_policy_owned() {
+        let args = build_grok_args(&ExecOptions {
+            thinking_level: "high".to_string(),
+            custom_args: [
+                "agent",
+                "--no-auto-update",
+                "--effort",
+                "low",
+                "stdio",
+                "--debug",
+            ]
+            .map(str::to_string)
+            .to_vec(),
+            ..ExecOptions::default()
+        });
+        assert_eq!(
+            args,
+            [
+                "--no-auto-update",
+                "agent",
+                "--always-approve",
+                "--effort",
+                "high",
+                "--debug",
+                "stdio",
+            ]
+        );
+    }
+
+    #[test]
+    fn grok_authentication_prefers_api_key_then_cached_login() {
+        let initialize = serde_json::json!({"authMethods":[
+            {"id":"cached_token"},
+            {"id":"xai.api_key"}
+        ]});
+        assert_eq!(
+            select_grok_auth_method(&initialize, true),
+            Ok("xai.api_key")
+        );
+        assert_eq!(
+            select_grok_auth_method(&initialize, false),
+            Ok("cached_token")
+        );
+        let api_only = serde_json::json!({"authMethods":[{"id":"xai.api_key"}]});
+        assert!(select_grok_auth_method(&api_only, false)
+            .unwrap_err()
+            .contains("XAI_API_KEY"));
+        assert!(select_grok_auth_method(&Value::Null, false)
+            .unwrap_err()
+            .contains("grok login"));
     }
 
     #[test]
@@ -2770,6 +3041,21 @@ mod tests {
         let backend = ReasonixBackend::new(ReasonixConfig {
             command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
             env: BTreeMap::new(),
+        });
+        (directory, backend)
+    }
+
+    #[cfg(unix)]
+    fn fake_grok_backend(script: &str) -> (tempfile::TempDir, GrokBackend) {
+        let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
+        let executable = directory.path().join("grok");
+        std::fs::write(&executable, script)
+            .unwrap_or_else(|error| panic!("write fake Grok: {error}"));
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|error| panic!("chmod fake Grok: {error}"));
+        let backend = GrokBackend::new(GrokConfig {
+            command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
+            env: BTreeMap::from([("XAI_API_KEY".to_string(), "test-key".to_string())]),
         });
         (directory, backend)
     }
@@ -3225,6 +3511,82 @@ done
         assert_eq!(thinking.default_level, "high");
         assert_eq!(thinking.supported_levels.len(), 2);
         assert!(catalog.models[1].thinking.is_none());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn grok_authenticates_executes_and_preserves_authoritative_cost() {
+        let (_directory, backend) = fake_grok_backend(
+            r#"#!/bin/sh
+test "$1 $2 $3 $4 $5 $6" = "--no-auto-update agent --always-approve --effort high stdio" || exit 40
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"authMethods":[{"id":"cached_token"},{"id":"xai.api_key"}]}}\n' "$id" ;;
+    *'"method":"authenticate"'*)
+      case "$line" in *'"methodId":"xai.api_key"'*'"headless":true'*) ;; *) exit 41 ;; esac
+      printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id"
+      ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"grok-1"}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"done"}}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","_meta":{"modelId":"grok-4.5","inputTokens":120,"outputTokens":30,"cachedReadTokens":20,"cachedWriteTokens":5,"usage":{"costUsdTicks":98765}}}}\n' "$id"
+      ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    thinking_level: "high".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Grok: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Grok result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "done");
+        assert_eq!(result.usage["grok-4.5"].input_tokens, 120);
+        assert_eq!(result.usage["grok-4.5"].cache_write_tokens, 5);
+        assert_eq!(result.usage["grok-4.5"].cost_usd_ticks, 98_765);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn grok_discovery_authenticates_before_creating_session() {
+        let (_directory, backend) = fake_grok_backend(
+            r#"#!/bin/sh
+test "$1 $2 $3 $4" = "--no-auto-update agent --always-approve stdio" || exit 50
+authenticated=false
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"authMethods":[{"id":"xai.api_key"}]}}\n' "$id" ;;
+    *'"method":"authenticate"'*) authenticated=true; printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*)
+      test "$authenticated" = true || exit 51
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"discovery","models":{"currentModelId":"grok-4.5","availableModels":[{"modelId":"grok-4.5","name":"Grok 4.5"}]}}}\n' "$id"
+      ;;
+  esac
+done
+"#,
+        );
+        let catalog = backend
+            .discover_models(
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(catalog.models.len(), 1);
+        assert_eq!(catalog.models[0].id, "grok-4.5");
+        assert!(catalog.models[0].default);
     }
 
     #[cfg(unix)]
