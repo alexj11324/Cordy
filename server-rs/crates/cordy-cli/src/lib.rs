@@ -2428,6 +2428,16 @@ enum SkillCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
+    #[command(about = "Get skill details")]
+    Get(SkillGetArgs),
+}
+
+#[derive(Debug, Args)]
+struct SkillGetArgs {
+    #[arg(value_name = "SKILL-ID")]
+    skill_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Subcommand)]
@@ -2831,6 +2841,9 @@ async fn run_with_input<R: Read>(
         Command::Skill(SkillArgs {
             command: SkillCommand::List { output },
         }) => run_skill_list(cli, environment, *output).await,
+        Command::Skill(SkillArgs {
+            command: SkillCommand::Get(args),
+        }) => run_skill_get(cli, environment, args).await,
         Command::Autopilot(AutopilotArgs {
             command:
                 AutopilotCommand::List {
@@ -6310,6 +6323,30 @@ async fn run_skill_list(
     })
 }
 
+async fn run_skill_get(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SkillGetArgs,
+) -> Result<RunOutput> {
+    let skill_id = args.skill_id.trim();
+    if skill_id.is_empty() {
+        bail!("skill ID must not be empty");
+    }
+    let client = new_api_client(cli, environment)?;
+    let skill: Value = client
+        .get_json(&format!("/api/skills/{}", encoded_path_segment(skill_id)))
+        .await
+        .context("get skill")?;
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&skill)?),
+        OutputFormat::Table => format_skill_details_table(&skill),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
 fn format_skill_list_table(skills: &[Value]) -> String {
     let mut rows = vec![vec![
         "ID".into(),
@@ -6326,6 +6363,23 @@ fn format_skill_list_table(skills: &[Value]) -> String {
         ]
     }));
     format_table(&rows)
+}
+
+fn format_skill_details_table(skill: &Value) -> String {
+    format_table(&[
+        vec![
+            "ID".into(),
+            "NAME".into(),
+            "DESCRIPTION".into(),
+            "CREATED_AT".into(),
+        ],
+        vec![
+            value_string(skill, "id"),
+            value_string(skill, "name"),
+            value_string(skill, "description"),
+            value_string(skill, "created_at"),
+        ],
+    ])
 }
 
 async fn run_agent_list(
@@ -16626,6 +16680,72 @@ mod tests {
         let empty = format_skill_list_table(&[]);
         assert!(empty.starts_with("ID"));
         assert!(empty.contains("CREATED_AT"));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn skill_get_matches_go_path_headers_and_output_contracts() {
+        let app = Router::new().route(
+            "/api/skills/skill-1",
+            get(|headers: HeaderMap| async move {
+                assert_eq!(headers["authorization"], "Bearer token-1");
+                assert_eq!(headers["x-workspace-id"], "workspace-1");
+                Json(serde_json::json!({
+                    "id": "skill-1",
+                    "name": "Reviewer",
+                    "description": "Reviews changes",
+                    "created_at": "2026-08-24T00:00:00Z",
+                    "server_only": "preserved"
+                }))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let defaults = Cli::try_parse_from(["cordy", "skill", "get", "skill-1"])
+            .expect("skill get default CLI");
+        let Command::Skill(SkillArgs {
+            command: SkillCommand::Get(args),
+        }) = &defaults.command
+        else {
+            panic!("expected skill get");
+        };
+        assert_eq!(args.output, OutputFormat::Json);
+        let json = run_with_input(&defaults, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("get skill JSON");
+        let skill: Value = serde_json::from_str(&json.stdout).expect("skill JSON");
+        assert_eq!(skill["server_only"], "preserved");
+        assert!(json.stderr.is_empty());
+
+        let table_cli =
+            Cli::try_parse_from(["cordy", "skill", "get", "skill-1", "--output", "table"])
+                .expect("skill get table CLI");
+        let table = run_with_input(&table_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("get skill table");
+        assert!(table.stdout.starts_with("ID"));
+        assert!(table.stdout.contains("NAME"));
+        assert!(table.stdout.contains("DESCRIPTION"));
+        assert!(table.stdout.contains("CREATED_AT"));
+        assert!(table.stdout.contains("Reviews changes"));
+        assert!(table.stderr.is_empty());
+
+        let empty = SkillGetArgs {
+            skill_id: " ".into(),
+            output: OutputFormat::Json,
+        };
+        let error = run_skill_get(&defaults, &environment, &empty)
+            .await
+            .expect_err("empty skill ID");
+        assert_eq!(error.to_string(), "skill ID must not be empty");
         server.abort();
     }
 
