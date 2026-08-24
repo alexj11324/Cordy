@@ -1219,25 +1219,29 @@ impl LocalSkillListStore {
             };
             req.updated_at = Utc::now();
             self.persist_request(&req).await?;
-            let _: () = redis::cmd("ZREM")
-                .arg(local_skill_list_pending_key(&req.runtime_id))
-                .arg(&req.id)
-                .query_async(&mut self.conn.clone())
-                .await?;
+            zrem(
+                &mut self.conn.clone(),
+                &local_skill_list_pending_key(&req.runtime_id),
+                &req.id,
+            )
+            .await?;
         }
         Ok(Some(req))
     }
 
     async fn persist_request(&self, req: &RuntimeLocalSkillListRequest) -> anyhow::Result<()> {
         let data = marshal_skill_list(req)?;
-        let (): () = redis::cmd("SET")
+        let mut conn = self.conn.clone();
+        let mut command = redis::cmd("SET");
+        command
             .arg(local_skill_list_key(&req.id))
             .arg(data)
             .arg("EX")
-            .arg(LOCAL_SKILL_STORE_RETENTION_SECS)
-            .query_async(&mut self.conn.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("persist list request: {e}"))?;
+            .arg(LOCAL_SKILL_STORE_RETENTION_SECS);
+        let (): () =
+            bounded_pending_redis("persist local skill list", command.query_async(&mut conn))
+                .await
+                .map_err(|e| anyhow::anyhow!("persist list request: {e}"))?;
         Ok(())
     }
 
@@ -1255,8 +1259,8 @@ impl LocalSkillListStore {
         let data = marshal_skill_list(&req)?;
         let mut conn = self.conn.clone();
         let pending_key = local_skill_list_pending_key(runtime_id);
-        let (): () = redis::pipe()
-            .cmd("SET")
+        let mut pipe = redis::pipe();
+        pipe.cmd("SET")
             .arg(local_skill_list_key(&req.id))
             .arg(&data)
             .arg("EX")
@@ -1270,8 +1274,8 @@ impl LocalSkillListStore {
             .cmd("EXPIRE")
             .arg(&pending_key)
             .arg(LOCAL_SKILL_STORE_RETENTION_SECS * 2)
-            .ignore()
-            .query_async(&mut conn)
+            .ignore();
+        let (): () = bounded_pending_redis("persist local skill list", pipe.query_async(&mut conn))
             .await
             .map_err(|e| anyhow::anyhow!("persist list request: {e}"))?;
         Ok(req)
@@ -1296,32 +1300,26 @@ impl LocalSkillListStore {
     ) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>> {
         let pending_key = local_skill_list_pending_key(runtime_id);
         for _ in 0..POP_MAX_RETRIES {
-            let ids: Vec<String> = redis::cmd("ZRANGE")
-                .arg(&pending_key)
-                .arg(0)
-                .arg(0)
-                .query_async(&mut self.conn.clone())
-                .await
-                .map_err(|e| anyhow::anyhow!("zrange pending: {e}"))?;
+            let mut conn = self.conn.clone();
+            let mut range = redis::cmd("ZRANGE");
+            range.arg(&pending_key).arg(0).arg(0);
+            let ids: Vec<String> = bounded_pending_redis(
+                "list pending local skill requests",
+                range.query_async(&mut conn),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("zrange pending: {e}"))?;
             let Some(id) = ids.into_iter().next() else {
                 return Ok(None);
             };
             let Some(mut req) = load_local_skill_list(&mut self.conn.clone(), &id).await? else {
                 // Record expired but the zset still references it — drop and retry.
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             };
             if req.status != LocalSkillRequestStatus::Pending {
                 // Timeout fired inside load_request or another node picked it up.
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             }
             let now = Utc::now();
@@ -1413,25 +1411,29 @@ impl LocalSkillImportStore {
             };
             req.updated_at = Utc::now();
             self.persist_request(&req).await?;
-            let _: () = redis::cmd("ZREM")
-                .arg(local_skill_import_pending_key(&req.runtime_id))
-                .arg(&req.id)
-                .query_async(&mut self.conn.clone())
-                .await?;
+            zrem(
+                &mut self.conn.clone(),
+                &local_skill_import_pending_key(&req.runtime_id),
+                &req.id,
+            )
+            .await?;
         }
         Ok(Some(req))
     }
 
     async fn persist_request(&self, req: &RuntimeLocalSkillImportRequest) -> anyhow::Result<()> {
         let data = marshal_skill_import(req)?;
-        let (): () = redis::cmd("SET")
+        let mut conn = self.conn.clone();
+        let mut command = redis::cmd("SET");
+        command
             .arg(local_skill_import_key(&req.id))
             .arg(data)
             .arg("EX")
-            .arg(LOCAL_SKILL_STORE_RETENTION_SECS)
-            .query_async(&mut self.conn.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("persist import request: {e}"))?;
+            .arg(LOCAL_SKILL_STORE_RETENTION_SECS);
+        let (): () =
+            bounded_pending_redis("persist local skill import", command.query_async(&mut conn))
+                .await
+                .map_err(|e| anyhow::anyhow!("persist import request: {e}"))?;
         Ok(())
     }
 
@@ -1467,8 +1469,8 @@ impl LocalSkillImportStore {
         let data = marshal_skill_import(&req)?;
         let mut conn = self.conn.clone();
         let pending_key = local_skill_import_pending_key(runtime_id);
-        let (): () = redis::pipe()
-            .cmd("SET")
+        let mut pipe = redis::pipe();
+        pipe.cmd("SET")
             .arg(local_skill_import_key(&req.id))
             .arg(&data)
             .arg("EX")
@@ -1482,10 +1484,11 @@ impl LocalSkillImportStore {
             .cmd("EXPIRE")
             .arg(&pending_key)
             .arg(LOCAL_SKILL_STORE_RETENTION_SECS * 2)
-            .ignore()
-            .query_async(&mut conn)
-            .await
-            .map_err(|e| anyhow::anyhow!("persist import request: {e}"))?;
+            .ignore();
+        let (): () =
+            bounded_pending_redis("persist local skill import", pipe.query_async(&mut conn))
+                .await
+                .map_err(|e| anyhow::anyhow!("persist import request: {e}"))?;
         Ok(req)
     }
 
@@ -1508,32 +1511,26 @@ impl LocalSkillImportStore {
     ) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>> {
         let pending_key = local_skill_import_pending_key(runtime_id);
         for _ in 0..POP_MAX_RETRIES {
-            let ids: Vec<String> = redis::cmd("ZRANGE")
-                .arg(&pending_key)
-                .arg(0)
-                .arg(0)
-                .query_async(&mut self.conn.clone())
-                .await
-                .map_err(|e| anyhow::anyhow!("zrange pending: {e}"))?;
+            let mut conn = self.conn.clone();
+            let mut range = redis::cmd("ZRANGE");
+            range.arg(&pending_key).arg(0).arg(0);
+            let ids: Vec<String> = bounded_pending_redis(
+                "list pending local skill imports",
+                range.query_async(&mut conn),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("zrange pending: {e}"))?;
             let Some(id) = ids.into_iter().next() else {
                 return Ok(None);
             };
             let Some(mut req) = load_local_skill_import(&mut self.conn.clone(), &id).await? else {
                 // Record expired but the zset still references it — drop and retry.
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             };
             if req.status != LocalSkillRequestStatus::Pending {
                 // Timeout fired inside load_request or another node picked it up.
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             }
             let now = Utc::now();
@@ -1567,29 +1564,26 @@ impl LocalSkillImportStore {
         limit: usize,
     ) -> anyhow::Result<Vec<RuntimeLocalSkillImportRequest>> {
         let pending_key = local_skill_import_pending_key(runtime_id);
-        let ids: Vec<String> = redis::cmd("ZRANGE")
+        let mut conn = self.conn.clone();
+        let mut range = redis::cmd("ZRANGE");
+        range
             .arg(&pending_key)
             .arg(0)
-            .arg(limit.saturating_sub(1) as i64)
-            .query_async(&mut self.conn.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("zrange pending batch: {e}"))?;
+            .arg(limit.saturating_sub(1) as i64);
+        let ids: Vec<String> = bounded_pending_redis(
+            "list pending local skill import batch",
+            range.query_async(&mut conn),
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("zrange pending batch: {e}"))?;
         let mut out = Vec::new();
         for id in ids {
             let Some(mut req) = load_local_skill_import(&mut self.conn.clone(), &id).await? else {
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             };
             if req.status != LocalSkillRequestStatus::Pending {
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             }
             let now = Utc::now();
