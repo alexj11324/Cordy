@@ -6,11 +6,17 @@
 //! `run_production_daemon` boundary; this module does not install a fallback.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
-use cordy_daemon::assembly::{DaemonLaunchOverrides, DaemonProductionInputs, DaemonProfileInput};
+use cordy_daemon::assembly::{
+    DaemonLaunchOverrides, DaemonProductionAssembly, DaemonProductionInputs, DaemonProfileInput,
+};
 use cordy_daemon::bootstrap::{BootstrapContext, BootstrapOptions};
+use cordy_daemon::health::RepoCheckoutRegistry;
 use cordy_daemon::lifecycle::DaemonLifecycleOptions;
+use cordy_daemon::provider_adapter::ProductionProviderAdapter;
+use cordy_daemon::provider_registration::{ProviderCatalog, ProviderRegistrationSource};
 
 use crate::config::{resolve_daemon_launch_overrides, CliConfig, DaemonLaunchFlags, Environment};
 
@@ -92,6 +98,21 @@ impl DaemonStartAssembly {
             context.launched_by.clone(),
         )
         .context("assemble foreground daemon production inputs")
+    }
+
+    /// Completes the typed foreground assembly once the command layer has a
+    /// real provider catalog. The catalog is mandatory: CLI wiring must not
+    /// manufacture a placeholder adapter for an unsupported provider family.
+    pub fn production_assembly<C: ProviderCatalog>(
+        &self,
+        context: &BootstrapContext,
+        cli_version: impl Into<String>,
+        catalog: Arc<C>,
+        checkout_registry: Arc<RepoCheckoutRegistry>,
+    ) -> Result<DaemonProductionAssembly<ProductionProviderAdapter, ProviderRegistrationSource<C>>>
+    {
+        let inputs = self.production_inputs(context, cli_version)?;
+        Ok(inputs.into_production_assembly(catalog, checkout_registry))
     }
 }
 

@@ -19,7 +19,10 @@ use crate::execenv::context::ensure_workspaces_root_marker;
 use crate::health::RepoCheckoutRegistry;
 use crate::production_services::{DaemonProductionServices, ProviderRuntimeAdapter};
 use crate::production_stack::DaemonProductionStack;
-use crate::provider_registration::RuntimeLaunchRegistry;
+use crate::provider_adapter::ProductionProviderAdapter;
+use crate::provider_registration::{
+    ProviderCatalog, ProviderRegistrationSource, RuntimeLaunchRegistry,
+};
 use crate::registration::RuntimeRegistrationSource;
 use crate::repocache::Cache;
 use crate::types::AgentEntry;
@@ -145,7 +148,7 @@ pub struct DaemonProfileInput {
 /// configuration, authentication, the root marker, and cache location have
 /// all passed their production checks.
 pub struct DaemonProductionInputs {
-    pub config: Config,
+    pub config: Arc<Config>,
     pub client: Arc<Client>,
     pub repo_cache: Arc<Cache>,
     /// Shared by the registration source and provider adapter. A provider
@@ -263,6 +266,7 @@ impl DaemonProductionInputs {
         // process can inherit a working directory below it.
         ensure_workspaces_root_marker(&config.workspaces_root)?;
 
+        let config = Arc::new(config);
         let client = Arc::new(Client::new(&config.server_base_url));
         client.set_token(&profile.token);
         client.set_version(&config.cli_version);
@@ -278,6 +282,31 @@ impl DaemonProductionInputs {
         })
     }
 
+    /// Builds the concrete production provider and registration owners from
+    /// one resolved profile snapshot. The caller supplies the real provider
+    /// catalog; there is intentionally no metadata-only or no-op fallback.
+    /// The adapter, registration source, and stack all share this input's
+    /// config, authenticated client, launch registry, and checkout registry.
+    pub fn into_production_assembly<C: ProviderCatalog>(
+        self,
+        catalog: Arc<C>,
+        checkout_registry: Arc<RepoCheckoutRegistry>,
+    ) -> DaemonProductionAssembly<ProductionProviderAdapter, ProviderRegistrationSource<C>> {
+        let provider = Arc::new(ProductionProviderAdapter::new(Arc::clone(&self.config)));
+        let registration_source = Arc::new(ProviderRegistrationSource::new(
+            Arc::clone(&self.config),
+            Arc::clone(&self.client),
+            catalog,
+            Arc::clone(&self.launch_registry),
+        ));
+        DaemonProductionAssembly {
+            inputs: self,
+            provider,
+            registration_source,
+            checkout_registry,
+        }
+    }
+
     /// Consumes validated inputs into the only production stack assembly
     /// path. Registration, provider execution, and checkout are mandatory
     /// shared dependencies; there is no default or no-op construction.
@@ -287,7 +316,7 @@ impl DaemonProductionInputs {
         registration_source: Arc<R>,
         checkout_registry: Arc<RepoCheckoutRegistry>,
     ) -> anyhow::Result<DaemonProductionStack<DaemonProductionServices<P, R>>> {
-        let config = Arc::new(self.config);
+        let config = self.config;
         let services = Arc::new(DaemonProductionServices::new(
             Arc::clone(&config),
             Arc::clone(&self.client),
