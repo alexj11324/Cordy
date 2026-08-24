@@ -98,6 +98,8 @@ pub struct Cli {
 enum Command {
     #[command(about = "Work with agents")]
     Agent(AgentArgs),
+    #[command(about = "Work with skills")]
+    Skill(SkillArgs),
     #[command(about = "Work with issues")]
     Issue(IssueArgs),
     #[command(about = "Authenticate cordy with Cordy")]
@@ -2413,6 +2415,21 @@ struct SquadActivityArgs {
     output: OutputFormat,
 }
 
+#[derive(Debug, Args)]
+struct SkillArgs {
+    #[command(subcommand)]
+    command: SkillCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum SkillCommand {
+    #[command(about = "List skills in the workspace")]
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
+}
+
 #[derive(Debug, Subcommand)]
 enum WorkspaceCommand {
     #[command(about = "List all workspaces you belong to")]
@@ -2811,6 +2828,9 @@ async fn run_with_input<R: Read>(
         Command::Agent(AgentArgs {
             command: AgentCommand::Copy(args),
         }) => run_agent_copy(cli, environment, args, input).await,
+        Command::Skill(SkillArgs {
+            command: SkillCommand::List { output },
+        }) => run_skill_list(cli, environment, *output).await,
         Command::Autopilot(AutopilotArgs {
             command:
                 AutopilotCommand::List {
@@ -6268,6 +6288,44 @@ fn chat_reply_count(message: &Value) -> String {
         .filter(|count| *count != 0.0)
         .map(|count| (count as i64).to_string())
         .unwrap_or_default()
+}
+
+async fn run_skill_list(
+    cli: &Cli,
+    environment: &Environment,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let skills: Vec<Value> = client
+        .get_json("/api/skills")
+        .await
+        .context("list skills")?;
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&skills)?),
+        OutputFormat::Table => format_skill_list_table(&skills),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn format_skill_list_table(skills: &[Value]) -> String {
+    let mut rows = vec![vec![
+        "ID".into(),
+        "NAME".into(),
+        "DESCRIPTION".into(),
+        "CREATED_AT".into(),
+    ]];
+    rows.extend(skills.iter().map(|skill| {
+        vec![
+            value_string(skill, "id"),
+            value_string(skill, "name"),
+            value_string(skill, "description"),
+            value_string(skill, "created_at"),
+        ]
+    }));
+    format_table(&rows)
 }
 
 async fn run_agent_list(
@@ -16508,6 +16566,67 @@ mod tests {
             error.to_string(),
             "workspace_id is required: use --workspace-id flag, set CORDY_WORKSPACE_ID env, or run 'cordy config set workspace_id <id>'"
         );
+    }
+
+    #[tokio::test]
+    async fn skill_list_matches_go_requests_and_table_json_outputs() {
+        let app = Router::new().route(
+            "/api/skills",
+            get(|headers: HeaderMap| async move {
+                assert_eq!(headers["authorization"], "Bearer token-1");
+                assert_eq!(headers["x-workspace-id"], "workspace-1");
+                Json(vec![serde_json::json!({
+                    "id": "skill-1",
+                    "name": "Reviewer",
+                    "description": "Reviews changes",
+                    "created_at": "2026-08-24T00:00:00Z",
+                    "server_only": "preserved"
+                })])
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let table_cli =
+            Cli::try_parse_from(["cordy", "skill", "list"]).expect("skill list table CLI");
+        let Command::Skill(SkillArgs {
+            command: SkillCommand::List { output },
+        }) = &table_cli.command
+        else {
+            panic!("expected skill list");
+        };
+        assert_eq!(*output, OutputFormat::Table);
+        let table = run_with_input(&table_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list skills table");
+        assert!(table.stdout.starts_with("ID"));
+        assert!(table.stdout.contains("NAME"));
+        assert!(table.stdout.contains("DESCRIPTION"));
+        assert!(table.stdout.contains("CREATED_AT"));
+        assert!(table.stdout.contains("skill-1"));
+        assert!(table.stdout.contains("Reviewer"));
+        assert!(table.stderr.is_empty());
+
+        let json_cli = Cli::try_parse_from(["cordy", "skill", "list", "--output", "json"])
+            .expect("skill list JSON CLI");
+        let json = run_with_input(&json_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list skills JSON");
+        let skills: Value = serde_json::from_str(&json.stdout).expect("skills JSON");
+        assert_eq!(skills[0]["server_only"], "preserved");
+        assert!(json.stderr.is_empty());
+
+        let empty = format_skill_list_table(&[]);
+        assert!(empty.starts_with("ID"));
+        assert!(empty.contains("CREATED_AT"));
+        server.abort();
     }
 
     #[tokio::test]
