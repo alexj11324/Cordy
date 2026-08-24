@@ -171,6 +171,62 @@ class RouteParityTest(unittest.TestCase):
                 {("GET", "/mounted")},
             )
 
+    def test_resolves_router_modules_relative_to_the_calling_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            nested = root / "nested"
+            nested.mkdir()
+            (root / "lib.rs").write_text(
+                """
+                pub fn build_router() -> Router {
+                    nested::router()
+                }
+                """,
+                encoding="utf-8",
+            )
+            (nested / "mod.rs").write_text(
+                """
+                pub fn router() -> Router {
+                    Router::new()
+                        .merge(self::foo::router())
+                        .merge(child::router())
+                }
+                """,
+                encoding="utf-8",
+            )
+            for path, route in (
+                (root / "foo.rs", "/wrong-root-foo"),
+                (root / "child.rs", "/wrong-root-child"),
+                (nested / "foo.rs", "/nested-foo"),
+                (nested / "child.rs", "/nested-child"),
+            ):
+                path.write_text(
+                    f"""
+                    pub fn router() -> Router {{
+                        Router::new().route("{route}", get(handler))
+                    }}
+                    """,
+                    encoding="utf-8",
+                )
+
+            self.assertEqual(
+                route_parity.extract_rust_routes(root),
+                {("GET", "/nested-foo"), ("GET", "/nested-child")},
+            )
+
+            deep = nested / "deep.rs"
+            deep.touch()
+            (nested / "sibling.rs").touch()
+            (root / "sibling.rs").touch()
+            self.assertEqual(
+                route_parity.module_source(root, deep, ["super", "sibling"]),
+                nested / "sibling.rs",
+            )
+            self.assertEqual(
+                route_parity.module_source(root, deep, ["crate", "sibling"]),
+                root / "sibling.rs",
+            )
+
     def test_rejects_match_arms_with_different_router_bindings(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -411,16 +411,42 @@ def top_level_functions(source: str) -> dict[str, tuple[int, int, bool]]:
     return functions
 
 
-def module_source(source_root: Path, parts: list[str]) -> Path | None:
+def source_module_parts(source_root: Path, source_path: Path) -> list[str]:
+    """Return the Rust module path represented by a source file."""
+    relative = source_path.relative_to(source_root)
+    if relative.name in {"lib.rs", "main.rs"}:
+        return []
+    if relative.name == "mod.rs":
+        return list(relative.parent.parts)
+    return list(relative.with_suffix("").parts)
+
+
+def module_source(
+    source_root: Path, source_path: Path, parts: list[str]
+) -> Path | None:
+    """Resolve a module path using the calling Rust module as its base."""
     normalized = [part.removeprefix("r#") for part in parts]
-    while normalized and normalized[0] in {"crate", "self", "super"}:
+    current = source_module_parts(source_root, source_path)
+    if normalized and normalized[0] == "crate":
+        current = []
         normalized.pop(0)
-    if not normalized:
-        return None
-    direct = source_root.joinpath(*normalized).with_suffix(".rs")
+    elif normalized and normalized[0] == "self":
+        normalized.pop(0)
+    else:
+        while normalized and normalized[0] == "super":
+            if not current:
+                raise ValueError(f"{source_path}: module path escapes source root")
+            current.pop()
+            normalized.pop(0)
+
+    target_parts = [*current, *normalized]
+    if not target_parts:
+        root = source_root / "lib.rs"
+        return root if root.is_file() else None
+    direct = source_root.joinpath(*target_parts).with_suffix(".rs")
     if direct.is_file():
         return direct
-    nested = source_root.joinpath(*normalized, "mod.rs")
+    nested = source_root.joinpath(*target_parts, "mod.rs")
     return nested if nested.is_file() else None
 
 
@@ -668,7 +694,7 @@ def extract_rust_routes(source_root: Path) -> set[tuple[str, str]]:
             if qualified:
                 match = qualified
                 parts = [part.removeprefix("r#") for part in match.group(1).split("::")]
-                target = module_source(source_root, parts[:-1])
+                target = module_source(source_root, source_path, parts[:-1])
                 if target is not None:
                     _, target_functions = load(target)
                     target_function = target_functions.get(parts[-1])
