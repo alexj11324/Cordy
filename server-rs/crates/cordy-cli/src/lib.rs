@@ -147,6 +147,17 @@ enum SquadCommand {
     },
     #[command(about = "Work with squad members")]
     Member(SquadMemberArgs),
+    #[command(about = "Record a squad leader evaluation on an issue")]
+    Activity {
+        #[arg(value_name = "ISSUE-ID")]
+        issue_id: String,
+        #[arg(value_name = "OUTCOME")]
+        outcome: String,
+        #[arg(long, default_value = "", help = "Short explanation of the decision")]
+        reason: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -2858,6 +2869,15 @@ async fn run_with_input<R: Read>(
                     command: SquadMemberCommand::Remove(args),
                 }),
         }) => run_squad_member_remove(cli, environment, args).await,
+        Command::Squad(SquadArgs {
+            command:
+                SquadCommand::Activity {
+                    issue_id,
+                    outcome,
+                    reason,
+                    output,
+                },
+        }) => run_squad_activity(cli, environment, issue_id, outcome, reason, *output).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -5263,6 +5283,40 @@ async fn run_squad_member_remove(
             stdout: String::new(),
             stderr: format!("Member {member_id} removed from squad.\n"),
         },
+    })
+}
+
+async fn run_squad_activity(
+    cli: &Cli,
+    environment: &Environment,
+    issue_id: &str,
+    outcome: &str,
+    reason: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    if !matches!(outcome, "action" | "no_action" | "failed") {
+        bail!("invalid outcome {outcome:?}; valid values: action, no_action, failed")
+    }
+    let client = new_api_client(cli, environment)?;
+    let (resolved_id, display) = resolve_issue_ref_with_display(&client, issue_id)
+        .await
+        .context("resolve issue")?;
+    let result: Value = client
+        .post_json(
+            &format!("/api/issues/{resolved_id}/squad-evaluated"),
+            &serde_json::json!({
+                "outcome":outcome,
+                "reason":reason
+            }),
+        )
+        .await
+        .context("record evaluation")?;
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+            OutputFormat::Table => String::new(),
+        },
+        stderr: format!("Squad evaluation recorded: {outcome} (issue {display})\n"),
     })
 }
 
@@ -8437,13 +8491,29 @@ async fn run_issue_get(
 }
 
 async fn resolve_issue_ref(client: &ApiClient, input: &str) -> Result<String> {
+    resolve_issue_ref_with_display(client, input)
+        .await
+        .map(|(id, _)| id)
+}
+
+async fn resolve_issue_ref_with_display(
+    client: &ApiClient,
+    input: &str,
+) -> Result<(String, String)> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         bail!("issue id is required");
     }
     if looks_like_issue_identifier(trimmed) || is_canonical_uuid(trimmed) {
         let issue: Value = client.get_json(&format!("/api/issues/{trimmed}")).await?;
-        return Ok(value_string(&issue, "id"));
+        let id = value_string(&issue, "id");
+        let identifier = value_string(&issue, "identifier");
+        let display = if identifier.is_empty() {
+            id.clone()
+        } else {
+            identifier
+        };
+        return Ok((id, display));
     }
     if normalize_uuid_prefix(trimmed).is_some() {
         bail!(
@@ -14414,6 +14484,29 @@ mod tests {
                 })
             })
         ));
+        let activity = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "activity",
+            "MUL-42",
+            "no_action",
+            "--reason",
+            "already handled",
+            "--output",
+            "json",
+        ])
+        .expect("squad activity CLI");
+        assert!(matches!(
+            activity.command,
+            Command::Squad(SquadArgs {
+                command: SquadCommand::Activity {
+                    issue_id,
+                    outcome,
+                    output: OutputFormat::Json,
+                    ..
+                }
+            }) if issue_id == "MUL-42" && outcome == "no_action"
+        ));
     }
 
     #[tokio::test]
@@ -14895,6 +14988,93 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "--member-type must be 'agent' or 'member'"
+        );
+    }
+
+    #[tokio::test]
+    async fn squad_activity_resolves_issue_and_records_exact_outcome_body() {
+        let captured = Arc::new(Mutex::new(None));
+        let captured_handler = Arc::clone(&captured);
+        let app = Router::new()
+            .route(
+                "/api/issues/MUL-42",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "id":"22222222-2222-2222-2222-222222222222",
+                        "identifier":"MUL-42",
+                        "title":"Review incident"
+                    }))
+                }),
+            )
+            .route(
+                "/api/issues/22222222-2222-2222-2222-222222222222/squad-evaluated",
+                post(move |Json(body): Json<Value>| {
+                    let captured = Arc::clone(&captured_handler);
+                    async move {
+                        *captured.lock().expect("activity body") = Some(body);
+                        Json(serde_json::json!({
+                            "id":"event-1",
+                            "outcome":"no_action",
+                            "server_only":"preserved"
+                        }))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "activity",
+            "MUL-42",
+            "no_action",
+            "--reason",
+            "already handled",
+            "--output",
+            "json",
+        ])
+        .expect("squad activity CLI");
+
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("record squad activity");
+        let value: Value = serde_json::from_str(&output.stdout).expect("activity JSON output");
+        assert_eq!(value["server_only"], "preserved");
+        assert_eq!(
+            output.stderr,
+            "Squad evaluation recorded: no_action (issue MUL-42)\n"
+        );
+        assert_eq!(
+            captured.lock().expect("activity body").as_ref(),
+            Some(&serde_json::json!({
+                "outcome":"no_action",
+                "reason":"already handled"
+            }))
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn squad_activity_rejects_invalid_outcomes_before_requests() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "http://127.0.0.1:9");
+        let cli = Cli::try_parse_from(["cordy", "squad", "activity", "MUL-42", "maybe"])
+            .expect("squad activity CLI");
+
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("invalid outcome rejected");
+        assert_eq!(
+            error.to_string(),
+            "invalid outcome \"maybe\"; valid values: action, no_action, failed"
         );
     }
 
