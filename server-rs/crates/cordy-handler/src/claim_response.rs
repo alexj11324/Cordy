@@ -309,7 +309,7 @@ async fn workspace_repos_or(
 /// A returned Err means the task must NOT be dispatched; the builder has already
 /// cancelled it where the failure semantics require it.
 #[allow(clippy::too_many_lines)]
-pub async fn build_claimed_task_response(
+pub(crate) async fn build_claimed_task_response(
     state: &DaemonClaimServices,
     headers: &HeaderMap,
     task: &AgentTaskQueue,

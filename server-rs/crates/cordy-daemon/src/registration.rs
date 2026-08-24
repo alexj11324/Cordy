@@ -129,7 +129,7 @@ pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
 }
 
 impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
-    pub fn new(
+    pub(crate) fn new(
         config: Arc<Config>,
         client: Arc<Client>,
         repo_state: Arc<DaemonRepoState>,
@@ -313,6 +313,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn register_workspace(
         &self,
         ctx: Ctx,

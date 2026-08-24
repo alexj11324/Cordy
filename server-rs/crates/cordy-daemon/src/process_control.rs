@@ -137,6 +137,9 @@ impl StartupClock for SystemStartupClock {
 }
 
 #[derive(Debug)]
+// The public outcome intentionally carries the full health snapshot so CLI
+// callers can inspect it without another request or heap indirection.
+#[allow(clippy::large_enum_variant)]
 pub enum BackgroundStartupOutcome {
     Ready {
         pid: u32,
@@ -284,6 +287,9 @@ pub struct DaemonRestartRequest {
 }
 
 #[derive(Debug)]
+// Preserve the public restart result shape; callers need both stop and launch
+// diagnostics from one operation.
+#[allow(clippy::large_enum_variant)]
 pub enum DaemonRestartOutcome {
     StopIncomplete(DaemonStopOutcome),
     Launch {

@@ -46,6 +46,9 @@ const REPO_WARMUP_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[async_trait::async_trait]
 pub trait ProviderRuntimeAdapter: RuntimeRegistrationSource {
+    // Provider execution needs the complete daemon-owned context and keeps
+    // this trait boundary explicit instead of hiding it in an untyped bag.
+    #[allow(clippy::too_many_arguments)]
     async fn handle_non_update_heartbeat_actions(
         &self,
         ctx: Ctx,
@@ -54,6 +57,7 @@ pub trait ProviderRuntimeAdapter: RuntimeRegistrationSource {
         ack: DaemonHeartbeatAckPayload,
     );
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_task(
         &self,
         ctx: Ctx,
