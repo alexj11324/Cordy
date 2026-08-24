@@ -6,8 +6,9 @@
 //! RFC3339, nullable columns as absent-or-null JSON.
 
 use axum::body::Bytes;
-use axum::extract::{Extension, Path, State};
+use axum::extract::{Extension, Path, Request, State};
 use axum::http::{header, HeaderValue, StatusCode};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
@@ -76,6 +77,23 @@ pub fn admin_router() -> Router<HandlerState> {
             "/api/workspaces/{id}/share-links/{link_id}",
             delete(revoke_share_link),
         )
+        .route_layer(axum::middleware::from_fn(require_human_admin_actor))
+}
+
+async fn require_human_admin_actor(request: Request, next: Next) -> Response {
+    if matches!(
+        request
+            .headers()
+            .get("x-actor-source")
+            .and_then(|value| value.to_str().ok()),
+        Some("task_token" | "cloud_pat")
+    ) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "workspace administration is only available to human actors",
+        );
+    }
+    next.run(request).await
 }
 
 type HmacSha256 = Hmac<Sha256>;
@@ -955,10 +973,6 @@ async fn update_member(
     let Ok(member_id) = Uuid::parse_str(&path.member_id) else {
         return error_response(StatusCode::BAD_REQUEST, "invalid member id");
     };
-    let target = match member::get_member(&state.pool, member_id).await {
-        Ok(Some(target)) if target.workspace_id == context.member.workspace_id => target,
-        _ => return error_response(StatusCode::NOT_FOUND, "member not found"),
-    };
     let request: UpdateMemberRequest = match serde_json::from_slice(&body) {
         Ok(request) => request,
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
@@ -969,11 +983,39 @@ async fn update_member(
     let Some(role) = normalized_member_role(&request.role, false) else {
         return error_response(StatusCode::BAD_REQUEST, "invalid member role");
     };
-    if (target.role == "owner" || role == "owner") && context.member.role != "owner" {
+
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update member")
+        }
+    };
+    // All owner-set reductions share the workspace row lock, including full
+    // workspace deletion, so concurrent demotions/removals serialize here.
+    match workspace::lock_workspace_for_delete(&mut *transaction, context.member.workspace_id).await
+    {
+        Ok(Some(_)) => {}
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "workspace not found"),
+        Err(_) => {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update member")
+        }
+    }
+    let actor = match member::get_member(&mut *transaction, context.member.id).await {
+        Ok(Some(actor)) if actor.workspace_id == context.member.workspace_id => actor,
+        _ => return error_response(StatusCode::FORBIDDEN, "insufficient permissions"),
+    };
+    if !matches!(actor.role.as_str(), "owner" | "admin") {
+        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
+    }
+    let target = match member::get_member(&mut *transaction, member_id).await {
+        Ok(Some(target)) if target.workspace_id == context.member.workspace_id => target,
+        _ => return error_response(StatusCode::NOT_FOUND, "member not found"),
+    };
+    if (target.role == "owner" || role == "owner") && actor.role != "owner" {
         return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
     }
     if target.role == "owner" && role != "owner" {
-        match member::list_members(&state.pool, target.workspace_id).await {
+        match member::list_members(&mut *transaction, target.workspace_id).await {
             Ok(rows) if rows.iter().filter(|member| member.role == "owner").count() <= 1 => {
                 return error_response(
                     StatusCode::BAD_REQUEST,
@@ -986,10 +1028,13 @@ async fn update_member(
             _ => {}
         }
     }
-    let updated = match member::update_member_role(&state.pool, target.id, role).await {
+    let updated = match member::update_member_role(&mut *transaction, target.id, role).await {
         Ok(Some(updated)) => updated,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update member"),
     };
+    if transaction.commit().await.is_err() {
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update member");
+    }
     let found_user = match user::get_user(&state.pool, updated.user_id).await {
         Ok(Some(user)) => user,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load member"),
@@ -1009,11 +1054,40 @@ async fn update_member(
 async fn revoke_and_remove_member(
     state: &HandlerState,
     workspace_id: Uuid,
-    user_id: Uuid,
     member_id: Uuid,
-    archived_by: Uuid,
-) -> anyhow::Result<MemberRevocation> {
+    actor_member_id: Uuid,
+) -> Result<(Member, MemberRevocation), RemoveMemberError> {
     let mut transaction = state.pool.begin().await?;
+    let Some(_) = workspace::lock_workspace_for_delete(&mut *transaction, workspace_id).await?
+    else {
+        return Err(RemoveMemberError::NotFound);
+    };
+    let actor = member::get_member(&mut *transaction, actor_member_id)
+        .await?
+        .filter(|actor| actor.workspace_id == workspace_id)
+        .ok_or(RemoveMemberError::Forbidden)?;
+    let target = member::get_member(&mut *transaction, member_id)
+        .await?
+        .filter(|target| target.workspace_id == workspace_id)
+        .ok_or(RemoveMemberError::NotFound)?;
+    if actor.id != target.id && !matches!(actor.role.as_str(), "owner" | "admin") {
+        return Err(RemoveMemberError::Forbidden);
+    }
+    if target.role == "owner" && actor.role != "owner" {
+        return Err(RemoveMemberError::Forbidden);
+    }
+    if target.role == "owner"
+        && member::list_members(&mut *transaction, workspace_id)
+            .await?
+            .iter()
+            .filter(|member| member.role == "owner")
+            .count()
+            <= 1
+    {
+        return Err(RemoveMemberError::LastOwner);
+    }
+    let user_id = target.user_id;
+    let archived_by = actor.user_id;
     cordy_db::queries::subscriber::lock_subscriber_writes(&mut *transaction, workspace_id, user_id)
         .await?;
     let runtimes = cordy_db::queries::runtime::list_agent_runtimes_by_owner(
@@ -1104,7 +1178,27 @@ async fn revoke_and_remove_member(
     .await?;
     member::delete_member(&mut *transaction, member_id).await?;
     transaction.commit().await?;
-    Ok(result)
+    Ok((target, result))
+}
+
+#[derive(Debug)]
+enum RemoveMemberError {
+    Forbidden,
+    LastOwner,
+    NotFound,
+    Storage(anyhow::Error),
+}
+
+impl From<anyhow::Error> for RemoveMemberError {
+    fn from(error: anyhow::Error) -> Self {
+        Self::Storage(error)
+    }
+}
+
+impl From<sqlx::Error> for RemoveMemberError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Storage(error.into())
+    }
 }
 
 #[derive(Default)]
@@ -1168,38 +1262,31 @@ async fn remove_member_common(
     context: &WorkspaceContext,
     target: Member,
 ) -> Response {
-    if target.role == "owner" && context.member.role != "owner" {
-        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
-    }
-    if target.role == "owner" {
-        match member::list_members(&state.pool, target.workspace_id).await {
-            Ok(rows) if rows.iter().filter(|member| member.role == "owner").count() <= 1 => {
+    let (target, revocation) =
+        match revoke_and_remove_member(state, target.workspace_id, target.id, context.member.id)
+            .await
+        {
+            Ok(result) => result,
+            Err(RemoveMemberError::Forbidden) => {
+                return error_response(StatusCode::FORBIDDEN, "insufficient permissions")
+            }
+            Err(RemoveMemberError::LastOwner) => {
                 return error_response(
                     StatusCode::BAD_REQUEST,
                     "workspace must have at least one owner",
                 )
             }
-            Err(_) => {
-                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete member")
+            Err(RemoveMemberError::NotFound) => {
+                return error_response(StatusCode::NOT_FOUND, "member not found")
             }
-            _ => {}
-        }
-    }
-    let revocation = match revoke_and_remove_member(
-        state,
-        target.workspace_id,
-        target.user_id,
-        target.id,
-        context.member.user_id,
-    )
-    .await
-    {
-        Ok(result) => result,
-        Err(error) => {
-            tracing::warn!(%error, member_id = %target.id, "failed to revoke member");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete member");
-        }
-    };
+            Err(RemoveMemberError::Storage(error)) => {
+                tracing::warn!(%error, member_id = %target.id, "failed to revoke member");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to delete member",
+                );
+            }
+        };
     publish_member_revocation(
         state,
         target.workspace_id,
@@ -1932,6 +2019,28 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn machine_tokens_cannot_use_workspace_admin_routes() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None);
+        let app = admin_router().with_state(state);
+        let workspace_id = Uuid::new_v4();
+        for actor_source in ["task_token", "cloud_pat"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::delete(format!("/api/workspaces/{workspace_id}"))
+                        .header("x-actor-source", actor_source)
+                        .header("x-user-id", Uuid::new_v4().to_string())
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{actor_source}");
+        }
     }
 
     #[test]
