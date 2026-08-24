@@ -83,6 +83,7 @@ pub mod timefmt;
 pub mod vcs;
 pub mod vcs_webhook;
 pub mod webhook_delivery_worker;
+pub mod webhook_rate_limit;
 pub mod workspace;
 pub mod workspace_mcp;
 pub mod ws;

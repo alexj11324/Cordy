@@ -11,6 +11,7 @@ use cordy_service::autopilot::{AutopilotQuotaExceededError, AutopilotService};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
@@ -23,6 +24,8 @@ pub struct WebhookDeliveryWorker {
     pool: sqlx::PgPool,
     autopilots: Arc<AutopilotService>,
     notify: Arc<Notify>,
+    rate_limit: crate::webhook_rate_limit::SlidingWindowGate,
+    metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
 }
 
 impl WebhookDeliveryWorker {
@@ -30,11 +33,15 @@ impl WebhookDeliveryWorker {
         pool: sqlx::PgPool,
         autopilots: Arc<AutopilotService>,
         notify: Arc<Notify>,
+        rate_limit: crate::webhook_rate_limit::SlidingWindowGate,
+        metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     ) -> Arc<Self> {
         Arc::new(Self {
             pool,
             autopilots,
             notify,
+            rate_limit,
+            metrics,
         })
     }
 
@@ -75,6 +82,29 @@ impl WebhookDeliveryWorker {
         let Some(lease_token) = delivery.lease_token else {
             anyhow::bail!("claimed webhook delivery has no lease token");
         };
+
+        let cancel = CancellationToken::new();
+        if let crate::webhook_rate_limit::GateDecision::Limited { retry_after } = self
+            .rate_limit
+            .allow(&delivery.trigger_id.to_string(), &cancel)
+            .await
+        {
+            if let Some(metrics) = self.metrics.as_deref() {
+                metrics.record_webhook_rate_limited("worker_trigger");
+            }
+            let available_at = Utc::now()
+                + chrono::Duration::from_std(retry_after.max(Duration::from_secs(1)))
+                    .expect("webhook retry delay fits chrono");
+            let _ = webhook_delivery::defer_claimed_webhook_delivery(
+                &self.pool,
+                delivery.id,
+                lease_token,
+                Some(available_at),
+            )
+            .await?;
+            tracing::warn!("autopilot webhook worker rate limited");
+            return Ok(true);
+        }
 
         let trigger = match autopilot::get_autopilot_trigger(&self.pool, delivery.trigger_id).await
         {

@@ -261,6 +261,7 @@ pub struct HandlerState {
     pub model_list_store: Option<Arc<crate::pending_store::ModelListStore>>,
     pub model_catalog_cache: Option<Arc<crate::pending_store::ModelCatalogCache>>,
     pub runtime_liveness: Option<Arc<dyn crate::runtime_liveness::RuntimeLivenessStore>>,
+    pub webhook_rate_limits: crate::webhook_rate_limit::WebhookRateLimits,
     pub local_skill_list_store: Option<Arc<crate::pending_store::LocalSkillListStore>>,
     pub local_skill_import_store: Option<Arc<crate::pending_store::LocalSkillImportStore>>,
     /// Shared Redis connection for per-IP public-route rate limiting. None is
@@ -357,6 +358,7 @@ impl HandlerState {
             model_list_store: None,
             model_catalog_cache: None,
             runtime_liveness: None,
+            webhook_rate_limits: crate::webhook_rate_limit::WebhookRateLimits::default(),
             local_skill_list_store: None,
             local_skill_import_store: None,
             rate_limit_client: None,
@@ -516,6 +518,8 @@ impl HandlerState {
             self.pool.clone(),
             self.autopilots.clone(),
             notify.clone(),
+            self.webhook_rate_limits.token.clone(),
+            self.business_metrics.clone(),
         )
         .start();
         self.webhook_delivery_notify = Some(notify);
@@ -658,6 +662,8 @@ impl HandlerState {
         self.runtime_liveness = Some(Arc::new(
             crate::runtime_liveness::RedisRuntimeLivenessStore::new(conn.clone()),
         ));
+        self.webhook_rate_limits =
+            crate::webhook_rate_limit::WebhookRateLimits::redis(conn.clone());
         self.local_skill_list_store = Some(Arc::new(
             crate::pending_store::LocalSkillListStore::new(conn.clone()),
         ));

@@ -3,8 +3,8 @@
 //! provider retries are idempotent and recoverable.
 
 use axum::body::Body;
-use axum::extract::{Path, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::extract::{ConnectInfo, Extension, Path, State};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
@@ -14,8 +14,11 @@ use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
 use serde_json::{json, Value};
 use sha2::Sha256;
+use std::net::SocketAddr;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use crate::webhook_rate_limit::{GateDecision, SlidingWindowGate};
 use crate::{error::error_response, state::HandlerState};
 
 const MAX_BODY: usize = 256 * 1024;
@@ -255,15 +258,46 @@ async fn duplicate_response(
 async fn webhook(
     State(state): State<HandlerState>,
     Path(token): Path<String>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
     headers: HeaderMap,
     body: Body,
 ) -> Response {
     if token.is_empty() {
         return error_response(StatusCode::NOT_FOUND, "webhook not found");
     }
+    let cancel = CancellationToken::new();
+    let ip = webhook_client_ip(&headers, peer, &state.auth_rate_limit.trusted_proxies);
+    if !ip.is_empty() {
+        if let Some(response) = limited_response(
+            state
+                .webhook_rate_limits
+                .absolute_ip
+                .allow(&ip, &cancel)
+                .await,
+            "absolute_ip",
+            state.business_metrics.as_deref(),
+        ) {
+            return response;
+        }
+        if let Some(response) = limited_response(
+            state
+                .webhook_rate_limits
+                .bad_credential_ip
+                .check(&ip, &cancel)
+                .await,
+            "bad_credential_ip",
+            state.business_metrics.as_deref(),
+        ) {
+            return response;
+        }
+    }
     let trigger = match autopilot::get_webhook_trigger_by_token(&state.pool, Some(&token)).await {
         Ok(Some(value)) => value,
-        Ok(None) => return error_response(StatusCode::NOT_FOUND, "webhook not found"),
+        Ok(None) => {
+            consume_bad_credential(&state.webhook_rate_limits.bad_credential_ip, &ip, &cancel)
+                .await;
+            return error_response(StatusCode::NOT_FOUND, "webhook not found");
+        }
         Err(error) => {
             tracing::error!(%error, "autopilot webhook token lookup failed");
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
@@ -365,6 +399,7 @@ async fn webhook(
             "invalid_signature"
         };
         let response = json!({"status": "rejected", "delivery_id": delivery.id, "reason": reason});
+        consume_bad_credential(&state.webhook_rate_limits.bad_credential_ip, &ip, &cancel).await;
         terminal(
             &state,
             delivery.id,
@@ -433,6 +468,60 @@ async fn webhook(
     .await;
     state.notify_webhook_delivery();
     Json(response).into_response()
+}
+
+async fn consume_bad_credential(gate: &SlidingWindowGate, ip: &str, cancel: &CancellationToken) {
+    if !ip.is_empty() {
+        let _ = gate.allow(ip, cancel).await;
+    }
+}
+
+fn limited_response(
+    decision: GateDecision,
+    gate: &'static str,
+    metrics: Option<&cordy_metrics::BusinessMetrics>,
+) -> Option<Response> {
+    let GateDecision::Limited { retry_after } = decision else {
+        return None;
+    };
+    if let Some(metrics) = metrics {
+        metrics.record_webhook_rate_limited(gate);
+    }
+    tracing::warn!(gate, "autopilot webhook rate limited");
+    let seconds = retry_after.as_millis().div_ceil(1_000).max(1);
+    let mut response = error_response(StatusCode::TOO_MANY_REQUESTS, "rate limit exceeded");
+    if let Ok(value) = HeaderValue::from_str(&seconds.to_string()) {
+        response.headers_mut().insert(header::RETRY_AFTER, value);
+    }
+    Some(response)
+}
+
+fn webhook_client_ip(
+    headers: &HeaderMap,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
+    trusted_proxies: &[ipnetwork::IpNetwork],
+) -> String {
+    let remote = peer.map(|Extension(ConnectInfo(peer))| peer.ip());
+    if remote.is_some_and(|ip| trusted_proxies.iter().any(|network| network.contains(ip))) {
+        if let Some(forwarded) = headers
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(',').next())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            return forwarded.to_string();
+        }
+        if let Some(real) = headers
+            .get("x-real-ip")
+            .and_then(|value| value.to_str().ok())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            return real.to_string();
+        }
+    }
+    remote.map(|ip| ip.to_string()).unwrap_or_default()
 }
 
 #[cfg(test)]
