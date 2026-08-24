@@ -148,6 +148,8 @@ enum IssueCommand {
     Runs(IssueRunsArgs),
     #[command(about = "Show aggregated token usage for an issue")]
     Usage(IssueUsageArgs),
+    #[command(about = "Re-enqueue an issue assignment as a fresh task")]
+    Rerun(IssueRerunArgs),
 }
 
 #[derive(Debug, Args)]
@@ -433,6 +435,14 @@ struct IssueUsageArgs {
     #[arg(value_name = "ISSUE-ID")]
     issue_id: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssueRerunArgs {
+    #[arg(value_name = "ID")]
+    issue_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
 }
 
@@ -844,6 +854,9 @@ async fn run_with_input<R: Read>(
         Command::Issue(IssueArgs {
             command: IssueCommand::Usage(args),
         }) => run_issue_usage(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command: IssueCommand::Rerun(args),
+        }) => run_issue_rerun(cli, environment, args).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -3476,6 +3489,48 @@ fn format_metadata_value(value: Option<&Value>) -> String {
     }
 }
 
+async fn run_issue_rerun(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueRerunArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let task: Value = client
+        .post_json(
+            &format!("/api/issues/{issue_id}/rerun"),
+            &serde_json::Map::<String, Value>::new(),
+        )
+        .await
+        .context("rerun issue")?;
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&task)?),
+        OutputFormat::Table => {
+            let agent_id = value_string(&task, "agent_id");
+            let synthetic = [serde_json::json!({
+                "assignee_type":"agent","assignee_id":agent_id.clone()
+            })];
+            let workspace_id = resolve_current_workspace_id(cli, environment);
+            let actors = load_issue_actor_names(&client, &workspace_id, &synthetic).await;
+            let agent = actors
+                .0
+                .get(&format!("agent:{agent_id}"))
+                .cloned()
+                .unwrap_or(agent_id);
+            format!(
+                "Re-enqueued task {} on agent {agent}\n",
+                value_string(&task, "id")
+            )
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
 fn validate_issue_status(status: &str) -> Result<()> {
     let normalized = status.trim().to_ascii_lowercase();
     let bytes = normalized.as_bytes();
@@ -5009,6 +5064,15 @@ mod tests {
                 command: IssueCommand::Usage(args),
             }) => args,
             _ => panic!("expected issue usage"),
+        }
+    }
+
+    fn issue_rerun_args(cli: &Cli) -> &IssueRerunArgs {
+        match &cli.command {
+            Command::Issue(IssueArgs {
+                command: IssueCommand::Rerun(args),
+            }) => args,
+            _ => panic!("expected issue rerun"),
         }
     }
 
@@ -7312,6 +7376,46 @@ mod tests {
         assert!(output.stdout.contains("1000"));
         assert!(output.stdout.contains("300"));
         assert!(output.stdout.contains("2"));
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn issue_rerun_posts_fresh_task_and_formats_agent_name() {
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid/rerun",
+                post(|Json(body): Json<Value>| async move {
+                    assert_eq!(body, serde_json::json!({}));
+                    Json(serde_json::json!({"id":"task-1","agent_id":"agent-1","status":"queued"}))
+                }),
+            )
+            .route(
+                "/api/agents",
+                get(|| async { Json(vec![serde_json::json!({"id":"agent-1","name":"CodeBot"})]) }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from(["cordy", "issue", "rerun", "CORD-18", "--output", "table"])
+            .expect("rerun CLI");
+        assert_eq!(issue_rerun_args(&cli).issue_id, "CORD-18");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("rerun issue");
+        assert_eq!(output.stdout, "Re-enqueued task task-1 on agent CodeBot\n");
+        assert!(output.stderr.is_empty());
         task.abort();
     }
 
