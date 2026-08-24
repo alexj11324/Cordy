@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/cordy-ai/cordy/server/internal/auth"
 	"github.com/cordy-ai/cordy/server/internal/util"
 	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func uuidToString(u pgtype.UUID) string { return util.UUIDToString(u) }
@@ -49,24 +49,29 @@ func rejectTemporarilyDisabledUser(w http.ResponseWriter, r *http.Request, userI
 // prefix branch — we don't fall through to the mul_ / JWT paths, since
 // an mcn_ string is by construction not a valid mul_ PAT or JWT.
 func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATVerifier) func(http.Handler) http.Handler {
+	return authWithIdentityProxyTrust(queries, patCache, cloudPAT, identityProxyTrustFromEnv())
+}
+
+func authWithIdentityProxyTrust(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATVerifier, identityProxy identityProxyTrust) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// X-Actor-Source is server-set only — any value supplied by
 			// the client is untrusted and discarded before the auth
-			// branches run. Only the mat_ branch below re-sets it. This
+			// branches run. Machine-credential branches below re-set it. This
 			// is what prevents a client from sending a normal mul_ PAT
 			// plus a forged `X-Actor-Source: member` (or anything else)
 			// to convince a downstream handler that its request came
 			// from a non-task-token path.
 			r.Header.Del("X-Actor-Source")
 
-			// When the Next.js / Clerk frontend has already authenticated
-			// the request and forwarded it with X-User-ID set, trust it
-			// directly — no JWT/PAT verification needed. This is the
-			// standard path for web app requests: Clerk middleware
-			// validates the session, then the API route forwards to Go
-			// with X-User-ID populated from the Clerk session.
-			if userID := r.Header.Get("X-User-ID"); userID != "" {
+			// The managed Clerk proxy path is trusted only when both the
+			// direct peer CIDR and its private marker match. takeIdentity
+			// always clears client-supplied identity headers first, so an
+			// untrusted request continues through normal credential auth.
+			if identity := identityProxy.takeIdentity(r); identity != nil {
+				if rejectTemporarilyDisabledUser(w, r, identity.userID, identity.email, "identity_proxy") {
+					return
+				}
 				next.ServeHTTP(w, r)
 				return
 			}
