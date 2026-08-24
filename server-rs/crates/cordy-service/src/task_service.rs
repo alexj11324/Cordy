@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use sqlx::PgPool;
@@ -267,8 +267,8 @@ pub struct TaskService {
     /// Optional per-task MCP overlay builder; `None` makes the overlay step a
     /// no-op (deployments without Composio behave exactly as before).
     pub composio: Option<std::sync::Arc<dyn ComposioOverlayBuilder>>,
-    /// Optional follow-up suggestion generator; `None` disables the feature.
-    pub quick_actions: Option<std::sync::Arc<dyn ChatQuickActionsLlm>>,
+    /// Optional follow-up suggestion generator; unset disables the feature.
+    quick_actions: OnceLock<Arc<dyn ChatQuickActionsLlm>>,
 
     /// chat session id -> admitted; one suggestion pass per session plus a
     /// process-wide ceiling. Zero values are usable.
@@ -312,11 +312,19 @@ impl TaskService {
             wakeup: None,
             feature_flags: None,
             composio: None,
-            quick_actions: None,
+            quick_actions: OnceLock::new(),
             quick_actions_in_flight: Mutex::new(HashMap::new()),
             quick_actions_running: AtomicI64::new(0),
             analytics_context: Mutex::new(AnalyticsContextCache::default()),
         }
+    }
+
+    pub fn install_quick_actions(&self, quick_actions: Arc<dyn ChatQuickActionsLlm>) -> bool {
+        self.quick_actions.set(quick_actions).is_ok()
+    }
+
+    pub fn quick_actions(&self) -> Option<&Arc<dyn ChatQuickActionsLlm>> {
+        self.quick_actions.get()
     }
 
     // --- Trigger summary ---------------------------------------------------
@@ -2611,7 +2619,7 @@ impl TaskService {
         chat_session: &ChatSession,
         expected_message_id: Uuid,
     ) -> Result<(Uuid, AgentTaskQueue), TaskServiceError> {
-        if self.quick_actions.is_none() {
+        if self.quick_actions().is_none() {
             return Err(TaskServiceError::ChatQuickActionsUnavailable);
         }
         // Target is the latest assistant turn; only an ordinary message turn

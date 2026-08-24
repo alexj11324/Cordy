@@ -16,6 +16,31 @@ struct DaemonTaskWakeup {
     hub: Arc<cordy_daemon::hub::DaemonHub>,
 }
 
+struct ChatQuickActionsClient {
+    llm: Arc<cordy_llm::Client>,
+}
+
+#[async_trait::async_trait]
+impl cordy_service::chat_quick_actions::ChatQuickActionsLlm for ChatQuickActionsClient {
+    fn enabled(&self) -> bool {
+        self.llm.enabled()
+    }
+
+    async fn generate_json(
+        &self,
+        model: &str,
+        system_prompt: &str,
+        user_prompt: &str,
+        _temperature: f64,
+        _max_completion_tokens: i64,
+    ) -> anyhow::Result<String> {
+        Ok(self
+            .llm
+            .generate_text(model, system_prompt, user_prompt)
+            .await?)
+    }
+}
+
 struct DaemonMessageMetrics {
     metrics: Arc<cordy_metrics::BusinessMetrics>,
 }
@@ -29,6 +54,14 @@ impl cordy_daemon::hub::MessageKindRecorder for DaemonMessageMetrics {
 impl cordy_service::task_service::TaskWakeupNotifier for DaemonTaskWakeup {
     fn notify_task_available(&self, runtime_id: &str, task_id: &str) {
         self.hub.notify_task_available(runtime_id, task_id);
+    }
+}
+
+struct SharedFlagSource(Arc<dyn cordy_service::feature_flags::FlagSource>);
+
+impl cordy_service::feature_flags::FlagSource for SharedFlagSource {
+    fn is_enabled(&self, key: &str, default: bool) -> bool {
+        self.0.is_enabled(key, default)
     }
 }
 
@@ -57,6 +90,8 @@ pub struct HandlerState {
     pub github_snapshots: Arc<cordy_ghsnapshot::Manager>,
     /// Feature flag source. `None` fails closed for rollout-gated writes.
     pub feature_flags: Option<Arc<dyn cordy_service::feature_flags::FlagSource>>,
+    /// Shared Composio service used by both HTTP routes and task overlays.
+    pub composio_service: Option<Arc<cordy_composio::Service>>,
     /// Task domain service (Go h.TaskService).
     pub tasks: Arc<TaskService>,
     /// Shared Autopilot service. It must be reused by HTTP paths and durable
@@ -111,6 +146,16 @@ pub struct HandlerState {
 
 impl HandlerState {
     pub fn new(pool: sqlx::PgPool, pat_cache: PatCache, hub: Option<Arc<Hub>>) -> Self {
+        Self::new_with_runtime_integrations(pool, pat_cache, hub, None, None)
+    }
+
+    pub fn new_with_runtime_integrations(
+        pool: sqlx::PgPool,
+        pat_cache: PatCache,
+        hub: Option<Arc<Hub>>,
+        feature_flags: Option<Arc<dyn cordy_service::feature_flags::FlagSource>>,
+        composio_service: Option<Arc<cordy_composio::Service>>,
+    ) -> Self {
         let bus = Arc::new(cordy_events::Bus::new());
         let daemon_hub = Arc::new(cordy_daemon::hub::DaemonHub::new());
         let task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier> =
@@ -119,6 +164,14 @@ impl HandlerState {
             });
         let mut task_service = TaskService::new(pool.clone(), bus.clone());
         task_service.wakeup = Some(Arc::downgrade(&task_wakeup));
+        task_service.feature_flags = feature_flags.as_ref().map(|flags| {
+            Box::new(SharedFlagSource(flags.clone()))
+                as Box<dyn cordy_service::feature_flags::FlagSource>
+        });
+        task_service.composio = composio_service.as_ref().map(|service| {
+            Arc::new(crate::composio::TaskOverlayBuilder::new(service.clone()))
+                as Arc<dyn cordy_service::task_service::ComposioOverlayBuilder>
+        });
         let tasks = Arc::new(task_service);
         let autopilots = Arc::new(AutopilotService::new(
             pool.clone(),
@@ -155,7 +208,8 @@ impl HandlerState {
             auth_verify_rate_limit,
             public_config: crate::config::PublicConfigSettings::default(),
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
-            feature_flags: None,
+            feature_flags,
+            composio_service,
             tasks,
             autopilots,
             issues,
@@ -186,7 +240,7 @@ impl HandlerState {
 
     /// Wires the internal OpenAI-compatible assist layer. Invalid retry
     /// budgets fail startup rather than silently selecting another policy.
-    pub fn with_llm_from_env(mut self) -> anyhow::Result<Self> {
+    pub fn with_llm_from_env(self) -> anyhow::Result<Self> {
         const MAX_RETRIES: u32 = 5;
         let raw_retries = std::env::var("CORDY_LLM_MAX_RETRIES").unwrap_or_default();
         let max_retries = if raw_retries.trim().is_empty() {
@@ -204,12 +258,24 @@ impl HandlerState {
             );
             Some(parsed)
         };
-        self.llm = Arc::new(cordy_llm::Client::new(cordy_llm::Config {
+        self.with_llm_config(cordy_llm::Config {
             api_key: std::env::var("CORDY_LLM_API_KEY").unwrap_or_default(),
             base_url: std::env::var("CORDY_LLM_BASE_URL").unwrap_or_default(),
             default_model: std::env::var("CORDY_LLM_DEFAULT_MODEL").unwrap_or_default(),
             max_retries,
-        }));
+        })
+    }
+
+    fn with_llm_config(mut self, config: cordy_llm::Config) -> anyhow::Result<Self> {
+        let llm = Arc::new(cordy_llm::Client::new(config));
+        if llm.enabled() {
+            anyhow::ensure!(
+                self.tasks
+                    .install_quick_actions(Arc::new(ChatQuickActionsClient { llm: llm.clone() })),
+                "chat quick-actions LLM is already configured"
+            );
+        }
+        self.llm = llm;
         tracing::info!(
             enabled = self.llm.enabled(),
             max_retries = self.llm.max_retries(),
@@ -497,4 +563,26 @@ fn positive_env_i64(name: &str, default: i64) -> i64 {
         .and_then(|value| value.trim().parse::<i64>().ok())
         .filter(|value| *value > 0)
         .unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn configured_llm_is_shared_with_chat_quick_actions() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = HandlerState::new(pool, PatCache::disabled(), None)
+            .with_llm_config(cordy_llm::Config {
+                base_url: "http://127.0.0.1:9/v1".into(),
+                ..Default::default()
+            })
+            .unwrap();
+
+        assert!(state.llm.enabled());
+        assert!(state
+            .tasks
+            .quick_actions()
+            .is_some_and(|quick_actions| quick_actions.enabled()));
+    }
 }
