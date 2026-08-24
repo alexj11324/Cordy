@@ -31,6 +31,7 @@ use url::Url;
 
 type HmacSha256 = Hmac<Sha256>;
 const MAX_SECRET_RESPONSE_BYTES: usize = 1 << 20;
+const MAX_COOKIE_TTL: chrono::Duration = chrono::Duration::hours(1);
 
 #[derive(Clone)]
 pub struct CloudFrontSigner {
@@ -134,6 +135,18 @@ impl CloudFrontSigner {
         ])
     }
 
+    pub fn clear_cookie_headers(&self) -> [String; 3] {
+        let suffix = format!(
+            "; Domain={}; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Max-Age=0; HttpOnly; Secure; SameSite=None",
+            self.cookie_domain
+        );
+        [
+            format!("CloudFront-Policy={suffix}"),
+            format!("CloudFront-Signature={suffix}"),
+            format!("CloudFront-Key-Pair-Id={suffix}"),
+        ]
+    }
+
     fn sign(&self, policy: &str) -> anyhow::Result<Vec<u8>> {
         let digest = Sha1::digest(policy.as_bytes());
         self.private_key
@@ -155,8 +168,7 @@ pub async fn refresh_signed_cookies(
     let Some(signer) = signer else {
         return response;
     };
-    let expiry =
-        chrono::Utc::now() + chrono::Duration::seconds(cordy_auth::cookie::auth_token_ttl());
+    let expiry = cloudfront_cookie_expiry(chrono::Utc::now());
     match signer.signed_cookie_headers(expiry) {
         Ok(cookies) => {
             for cookie in cookies {
@@ -168,6 +180,12 @@ pub async fn refresh_signed_cookies(
         Err(error) => tracing::warn!(%error, "failed to sign CloudFront cookies"),
     }
     response
+}
+
+pub fn cloudfront_cookie_expiry(
+    now: chrono::DateTime<chrono::Utc>,
+) -> chrono::DateTime<chrono::Utc> {
+    now + chrono::Duration::seconds(cordy_auth::cookie::auth_token_ttl()).min(MAX_COOKIE_TTL)
 }
 
 fn has_cookie(headers: &axum::http::HeaderMap, name: &str) -> bool {
@@ -549,6 +567,16 @@ mod tests {
             assert!(cookie.contains("HttpOnly; Secure; SameSite=None"));
             let value = cookie.split_once(';').unwrap().0;
             assert!(!value.contains(['+', '/']));
+        }
+    }
+
+    #[test]
+    fn cookie_authorization_is_short_lived_and_revocable_on_logout() {
+        let now = chrono::DateTime::from_timestamp(1_893_456_000, 0).unwrap();
+        assert!(cloudfront_cookie_expiry(now) <= now + MAX_COOKIE_TTL);
+        for cookie in signer().clear_cookie_headers() {
+            assert!(cookie.contains("Max-Age=0"));
+            assert!(cookie.contains("Expires=Thu, 01 Jan 1970 00:00:00 GMT"));
         }
     }
 }

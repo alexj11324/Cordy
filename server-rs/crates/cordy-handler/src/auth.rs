@@ -402,11 +402,6 @@ async fn complete_login(
     email: &str,
     google_profile: Option<GoogleUserInfo>,
 ) -> Response {
-    let cloudfront_cookie_ttl = if google_profile.is_some() {
-        chrono::Duration::hours(72)
-    } else {
-        chrono::Duration::seconds(cordy_auth::cookie::auth_token_ttl())
-    };
     if cordy_auth::disabled_users::is_temporarily_disabled_user_email(email) {
         return error_response(StatusCode::FORBIDDEN, "account disabled");
     }
@@ -520,7 +515,8 @@ async fn complete_login(
         }
     }
     if let Some(signer) = state.attachment_download.cloudfront_signer.as_ref() {
-        match signer.signed_cookie_headers(Utc::now() + cloudfront_cookie_ttl) {
+        match signer.signed_cookie_headers(crate::cloudfront::cloudfront_cookie_expiry(Utc::now()))
+        {
             Ok(cookies) => {
                 for cookie in cookies {
                     if let Ok(value) = HeaderValue::from_str(&cookie) {
