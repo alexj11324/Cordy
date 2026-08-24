@@ -161,7 +161,7 @@ struct IssueCreateArgs {
         value_name = "PATH",
         help = "Read issue description from a UTF-8 file"
     )]
-    description_file: Option<PathBuf>,
+    description_file: Option<String>,
     #[arg(
         long,
         help = "Allow --description-file / --attachment outside the current working directory"
@@ -226,7 +226,7 @@ struct IssueUpdateArgs {
         value_name = "PATH",
         help = "Read new description from a UTF-8 file"
     )]
-    description_file: Option<PathBuf>,
+    description_file: Option<String>,
     #[arg(
         long,
         help = "Allow --description-file outside the current working directory"
@@ -2587,8 +2587,9 @@ fn resolve_issue_create_description<R: Read>(
     let inline = args.description.as_deref().unwrap_or_default();
     let description_file = args
         .description_file
-        .as_ref()
-        .filter(|path| !path.as_os_str().is_empty());
+        .as_deref()
+        .filter(|path| !path.is_empty())
+        .map(Path::new);
     let sources = [
         args.description_stdin,
         !inline.is_empty(),
@@ -2619,7 +2620,7 @@ fn resolve_issue_create_description<R: Read>(
             "description",
         )?;
         let path = if path.is_absolute() {
-            path.clone()
+            path.to_path_buf()
         } else {
             environment.current_dir().join(path)
         };
@@ -2641,8 +2642,9 @@ fn resolve_issue_update_description<R: Read>(
     let inline = args.description.as_deref().unwrap_or_default();
     let description_file = args
         .description_file
-        .as_ref()
-        .filter(|path| !path.as_os_str().is_empty());
+        .as_deref()
+        .filter(|path| !path.is_empty())
+        .map(Path::new);
     let sources = [
         args.description_stdin,
         args.description
@@ -2675,7 +2677,7 @@ fn resolve_issue_update_description<R: Read>(
             "description",
         )?;
         let path = if path.is_absolute() {
-            path.clone()
+            path.to_path_buf()
         } else {
             environment.current_dir().join(path)
         };
@@ -5001,12 +5003,13 @@ mod tests {
         let markdown = format!("[result]({})", artifact.display());
 
         let human = Environment::for_test(home.path().into(), cwd.path().into());
-        guard_issue_description_local_links(&markdown, &human, "attach it")
+        let remediation = "Deliver it with `cordy issue create --attachment <path>`.";
+        guard_issue_description_local_links(&markdown, &human, remediation)
             .expect("human links are allowed");
 
         let mut agent = Environment::for_test(home.path().into(), cwd.path().into());
         agent.set("CORDY_AGENT_ID", "agent-1");
-        let error = guard_issue_description_local_links(&markdown, &agent, "attach it")
+        let error = guard_issue_description_local_links(&markdown, &agent, remediation)
             .expect_err("agent local link");
         assert!(error.to_string().contains("runtime-local path"));
         assert!(error.to_string().contains("--attachment"));
@@ -5017,7 +5020,7 @@ mod tests {
                 artifact.display()
             ),
             &agent,
-            "attach it",
+            remediation,
         )
         .expect("code spans and fences are ignored");
     }
@@ -5314,7 +5317,7 @@ mod tests {
             )
             .route(
                 "/api/projects",
-                get(|| async { Json(serde_json::json!({"projects":[{"id":"project-uuid","title":"Migration","status":"active"}]})) }),
+                get(|| async { Json(serde_json::json!({"projects":[{"id":"abcd0000-0000-0000-0000-000000000000","title":"Migration","status":"active"}]})) }),
             )
             .route(
                 "/api/workspaces/workspace-1/members",
@@ -5361,7 +5364,7 @@ mod tests {
             "--assignee",
             "Ada",
             "--project",
-            "project",
+            "abcd",
             "--start-date",
             "",
             "--due-date",
@@ -5393,7 +5396,7 @@ mod tests {
         assert_eq!(body["priority"], "urgent");
         assert_eq!(body["assignee_type"], "member");
         assert_eq!(body["assignee_id"], "member-uuid");
-        assert_eq!(body["project_id"], "project-uuid");
+        assert_eq!(body["project_id"], "abcd0000-0000-0000-0000-000000000000");
         assert_eq!(body["start_date"], "");
         assert_eq!(body["due_date"], "2026-08-31");
         assert_eq!(body["parent_issue_id"], "parent-uuid");
