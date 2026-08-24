@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cordy_events::{Bus, Event};
+use cordy_service::autopilot::AutopilotService;
 use futures_util::FutureExt;
 use sqlx::PgPool;
 use tokio::sync::mpsc;
@@ -24,12 +25,13 @@ pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 type EventFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 type EventProcessor = Arc<dyn Fn(Event) -> EventFuture + Send + Sync>;
 
-const ORDERED_EVENT_TYPES: [&str; 7] = [
+const ORDERED_EVENT_TYPES: [&str; 8] = [
     cordy_protocol::EVENT_ISSUE_CREATED,
     cordy_protocol::EVENT_ISSUE_UPDATED,
     cordy_protocol::EVENT_COMMENT_CREATED,
     cordy_protocol::EVENT_TASK_COMPLETED,
     cordy_protocol::EVENT_TASK_FAILED,
+    cordy_protocol::EVENT_TASK_CANCELLED,
     cordy_protocol::EVENT_ISSUE_REACTION_ADDED,
     cordy_protocol::EVENT_REACTION_ADDED,
 ];
@@ -43,14 +45,16 @@ pub struct OrderedEventSideEffects {
 }
 
 impl OrderedEventSideEffects {
-    pub fn new(pool: PgPool, bus: Arc<Bus>) -> Arc<Self> {
+    pub fn new(pool: PgPool, bus: Arc<Bus>, autopilots: Arc<AutopilotService>) -> Arc<Self> {
         let processor_bus = bus.clone();
         let processor: EventProcessor = Arc::new(move |event| {
             let pool = pool.clone();
             let bus = processor_bus.clone();
+            let autopilots = autopilots.clone();
             Box::pin(async move {
                 crate::subscriber_activity_listeners::handle_event(&pool, &bus, &event).await;
-                crate::notification_listeners::handle_event(pool, bus, event).await;
+                crate::notification_listeners::handle_event(pool, bus, event.clone()).await;
+                crate::autopilot_listeners::handle_event(&autopilots, &event).await;
             })
         });
         Self::with_processor(bus, processor)
@@ -213,8 +217,10 @@ mod tests {
 
     #[tokio::test]
     async fn runtime_start_is_idempotent_and_shutdown_is_owned() {
-        let pool = PgPool::connect_lazy("postgres://invalid/invalid").expect("valid test URL");
-        let side_effects = OrderedEventSideEffects::new(pool, Arc::new(Bus::new()));
+        let side_effects = OrderedEventSideEffects::with_processor(
+            Arc::new(Bus::new()),
+            Arc::new(|_| Box::pin(async {})),
+        );
         let root = CancellationToken::new();
         let runtime = side_effects
             .start(root.child_token())

@@ -272,8 +272,9 @@ async fn build_production_router(
     // FIFO while a producer is publishing a final event during shutdown.
     let (state, ordered_event_side_effects) =
         state.start_ordered_event_side_effects(CancellationToken::new());
-    let (state, autopilot_event_listeners) =
-        state.start_autopilot_event_listeners(CancellationToken::new());
+    // Autopilot reconciliation is the final stage of the ordered consumer;
+    // do not register a second production subscriber for the same events.
+    let autopilot_event_listeners = None;
     // Event-hook delivery is a consumer lifecycle. It is stopped explicitly
     // after every event producer/listener has drained, rather than sharing the
     // producer root and racing their final publications.

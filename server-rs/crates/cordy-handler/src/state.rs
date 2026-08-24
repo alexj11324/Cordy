@@ -516,9 +516,9 @@ impl HandlerState {
         (self, runtime)
     }
 
-    /// Starts the owned subscriber → activity → notification pipeline. One
-    /// event stays ordered inside one task; independent events remain
-    /// concurrent as they are across Go request goroutines.
+    /// Starts the owned subscriber → activity → notification → Autopilot
+    /// pipeline. One FIFO preserves Go's synchronous registration order for
+    /// consecutive publications without blocking the synchronous Rust bus.
     pub fn start_ordered_event_side_effects(
         mut self,
         cancel: tokio_util::sync::CancellationToken,
@@ -532,6 +532,7 @@ impl HandlerState {
         let side_effects = crate::ordered_event_side_effects::OrderedEventSideEffects::new(
             self.pool.clone(),
             self.bus.clone(),
+            self.autopilots.clone(),
         );
         let runtime = side_effects.start(cancel);
         self.ordered_event_side_effects = Some(side_effects);

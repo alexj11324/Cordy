@@ -47,36 +47,7 @@ impl AutopilotEventListeners {
     pub fn new(bus: Arc<Bus>, service: Arc<AutopilotService>) -> Arc<Self> {
         let processor: WorkProcessor = Arc::new(move |work| {
             let service = service.clone();
-            Box::pin(async move {
-                match work {
-                    AutopilotEventWork::Issue(issue_id) => {
-                        match cordy_db::queries::issue::get_issue(&service.pool, issue_id).await {
-                            Ok(Some(issue)) => service.sync_run_from_issue(&issue).await,
-                            Ok(None) => {}
-                            Err(error) => tracing::debug!(
-                                %issue_id,
-                                %error,
-                                "autopilot listener: failed to load issue"
-                            ),
-                        }
-                    }
-                    AutopilotEventWork::Task {
-                        task_id,
-                        sync_linked_issue_failure,
-                    } => {
-                        let Ok(Some(task)) =
-                            cordy_db::queries::agent::get_agent_task(&service.pool, task_id).await
-                        else {
-                            return;
-                        };
-                        if task.autopilot_run_id.is_some() {
-                            service.sync_run_from_task(&task).await;
-                        } else if sync_linked_issue_failure {
-                            service.sync_run_from_linked_issue_task(&task).await;
-                        }
-                    }
-                }
-            })
+            Box::pin(async move { handle_work(&service, work).await })
         });
         Self::with_processor(bus, processor)
     }
@@ -173,6 +144,61 @@ impl AutopilotEventListeners {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .take();
+    }
+}
+
+async fn handle_work(service: &Arc<AutopilotService>, work: AutopilotEventWork) {
+    match work {
+        AutopilotEventWork::Issue(issue_id) => {
+            match cordy_db::queries::issue::get_issue(&service.pool, issue_id).await {
+                Ok(Some(issue)) => service.sync_run_from_issue(&issue).await,
+                Ok(None) => {}
+                Err(error) => tracing::debug!(
+                    %issue_id,
+                    %error,
+                    "autopilot listener: failed to load issue"
+                ),
+            }
+        }
+        AutopilotEventWork::Task {
+            task_id,
+            sync_linked_issue_failure,
+        } => {
+            let Ok(Some(task)) =
+                cordy_db::queries::agent::get_agent_task(&service.pool, task_id).await
+            else {
+                return;
+            };
+            if task.autopilot_run_id.is_some() {
+                service.sync_run_from_task(&task).await;
+            } else if sync_linked_issue_failure {
+                service.sync_run_from_linked_issue_task(&task).await;
+            }
+        }
+    }
+}
+
+pub(crate) async fn handle_event(service: &Arc<AutopilotService>, event: &Event) {
+    let work = match event.event_type.as_str() {
+        cordy_protocol::EVENT_ISSUE_UPDATED => {
+            terminal_issue_id(event).map(AutopilotEventWork::Issue)
+        }
+        cordy_protocol::EVENT_TASK_COMPLETED | cordy_protocol::EVENT_TASK_CANCELLED => {
+            task_id(event).map(|task_id| AutopilotEventWork::Task {
+                task_id,
+                sync_linked_issue_failure: false,
+            })
+        }
+        cordy_protocol::EVENT_TASK_FAILED => {
+            task_id(event).map(|task_id| AutopilotEventWork::Task {
+                task_id,
+                sync_linked_issue_failure: true,
+            })
+        }
+        _ => None,
+    };
+    if let Some(work) = work {
+        handle_work(service, work).await;
     }
 }
 
