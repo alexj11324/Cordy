@@ -292,7 +292,7 @@ impl TaskService {
         }
 
         let svc = Arc::clone(self);
-        tokio::spawn(async move {
+        self.spawn_side_effect(async move {
             let outcome = tokio::time::timeout(CHAT_QUICK_ACTIONS_TIMEOUT, async {
                 svc.generate_chat_quick_actions_for_task(&task, origin)
                     .await
@@ -335,7 +335,7 @@ impl TaskService {
     /// leaving it to expire would show a spinner for work that never started.
     pub fn resolve_chat_quick_actions_placeholder(self: &Arc<Self>, task: AgentTaskQueue) {
         let svc = Arc::clone(self);
-        tokio::spawn(async move {
+        self.spawn_side_effect(async move {
             if let Err(err) = supplement_chat_quick_actions(&svc, &task, "", false).await {
                 tracing::warn!(
                     task_id = %task.id,
