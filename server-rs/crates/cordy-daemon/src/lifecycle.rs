@@ -190,4 +190,26 @@ mod tests {
         );
         assert!(result.is_err());
     }
+
+    #[test]
+    fn explicit_health_port_is_forwarded_to_foreground_child() {
+        let lifecycle = DaemonLifecycle::assemble(
+            DaemonLifecycleOptions::new(
+                std::env::current_exe().unwrap(),
+                DaemonLaunchOverrides {
+                    health_port: 20123,
+                    ..DaemonLaunchOverrides::default()
+                },
+                "1.2.3",
+            ),
+            &DaemonProfileInput::default(),
+        )
+        .unwrap();
+
+        assert_eq!(lifecycle.port(), 20123);
+        assert!(lifecycle.launch.args.windows(2).any(|pair| {
+            pair[0] == std::ffi::OsStr::new("--health-port")
+                && pair[1] == std::ffi::OsStr::new("20123")
+        }));
+    }
 }

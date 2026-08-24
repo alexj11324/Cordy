@@ -84,6 +84,11 @@ pub trait ProductionRuntimeServices: DaemonCoreServices {
         active_task: ActiveRepoCheckoutTask,
         request: RepoCheckoutRequest,
     ) -> Result<Value, RepoCheckoutFailure>;
+
+    /// Flushes lifecycle cleanup for runtimes removed before the final current
+    /// runtime snapshot. Called with a fresh shutdown context after owners
+    /// drain, so transient deregistration failures get one bounded last try.
+    async fn flush_runtime_cleanup(&self, ctx: Ctx) -> anyhow::Result<()>;
 }
 
 #[derive(Debug)]
@@ -446,6 +451,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
             stop_health_task(&mut health_task).await;
         }
 
+        self.flush_runtime_cleanup().await;
         self.deregister_runtimes(registered_control.runtime_ids())
             .await;
         if let Some(error) = health_failure {
@@ -477,6 +483,20 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
             Ok(Ok(())) => tracing::info!(count = runtime_ids.len(), "deregistered runtimes"),
             Ok(Err(error)) => tracing::warn!(%error, "failed to deregister runtimes"),
             Err(_) => tracing::warn!("runtime deregistration timed out"),
+        }
+    }
+
+    async fn flush_runtime_cleanup(&self) {
+        let cleanup_ctx = Ctx::new();
+        let result = tokio::time::timeout(
+            DEREGISTER_TIMEOUT,
+            self.services.flush_runtime_cleanup(cleanup_ctx),
+        )
+        .await;
+        match result {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => tracing::warn!(%error, "failed to flush dropped runtime cleanup"),
+            Err(_) => tracing::warn!("dropped runtime cleanup timed out"),
         }
     }
 }

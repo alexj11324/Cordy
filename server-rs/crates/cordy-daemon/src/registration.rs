@@ -101,6 +101,16 @@ pub trait RuntimeRegistrationRound: Send + Sync + 'static {
         ctx: Ctx,
         workspace_id: &str,
     ) -> anyhow::Result<RegistrationPayload>;
+
+    /// Publishes provider-owned launch state only after the corresponding
+    /// server response has been accepted into the authoritative registry.
+    /// Failed register calls never invoke this hook.
+    fn registration_applied(&self, workspace_id: &str);
+
+    /// Records a workspace whose refresh did not reach the authoritative
+    /// apply step. Implementations that deduplicate probe payloads can use
+    /// this to retry the unchanged payload on the next refresh.
+    fn registration_failed(&self, _workspace_id: &str) {}
 }
 
 #[async_trait::async_trait]
@@ -117,6 +127,11 @@ pub trait RuntimeRegistrationSource: Send + Sync + 'static {
         ctx: Ctx,
         reason: BuiltinRefreshReason,
     ) -> anyhow::Result<Option<Arc<dyn RuntimeRegistrationRound>>>;
+
+    /// Releases provider-owned launch state when workspace membership is
+    /// removed. A later re-add must not revive stale custom profile commands
+    /// if its first profile fetch fails.
+    fn workspace_removed(&self, workspace_id: &str);
 }
 
 pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
@@ -126,6 +141,33 @@ pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
     repo_warmups: mpsc::Sender<RepoWarmupRequest>,
     source: Arc<S>,
     serial: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
+    pending_deregistrations: PendingDeregistrations,
+    deregistration_flush: AsyncMutex<()>,
+}
+
+#[derive(Default)]
+struct PendingDeregistrations {
+    runtime_ids: Mutex<BTreeSet<String>>,
+}
+
+impl PendingDeregistrations {
+    fn queue(&self, runtime_ids: &[String]) {
+        self.runtime_ids
+            .lock()
+            .unwrap()
+            .extend(runtime_ids.iter().filter(|id| !id.is_empty()).cloned());
+    }
+
+    fn snapshot(&self) -> Vec<String> {
+        self.runtime_ids.lock().unwrap().iter().cloned().collect()
+    }
+
+    fn acknowledge(&self, runtime_ids: &[String]) {
+        let mut pending = self.runtime_ids.lock().unwrap();
+        for runtime_id in runtime_ids {
+            pending.remove(runtime_id);
+        }
+    }
 }
 
 impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
@@ -143,6 +185,8 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             repo_warmups,
             source,
             serial: Mutex::new(HashMap::new()),
+            pending_deregistrations: PendingDeregistrations::default(),
+            deregistration_flush: AsyncMutex::new(()),
         }
     }
 
@@ -156,6 +200,9 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         reconcile_profiles: bool,
         activity: Option<&Arc<DaemonActivity>>,
     ) -> anyhow::Result<()> {
+        if let Err(error) = self.flush_pending_deregistrations(&ctx).await {
+            tracing::warn!(%error, "pending runtime deregistration retry failed");
+        }
         let workspaces =
             tokio::time::timeout(WORKSPACE_SYNC_TIMEOUT, self.client.list_workspaces(&ctx))
                 .await
@@ -204,8 +251,18 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         }
 
         for workspace_id in tracked.difference(&api_ids) {
-            registry.remove_workspace(workspace_id);
+            let dropped = registry.remove_workspace(workspace_id);
+            self.source.workspace_removed(workspace_id);
             self.repo_state.remove_workspace(workspace_id);
+            self.pending_deregistrations.queue(&dropped);
+            if let Err(error) = self.flush_pending_deregistrations(&ctx).await {
+                tracing::warn!(
+                    %workspace_id,
+                    runtimes = dropped.len(),
+                    %error,
+                    "removed workspace runtime deregistration deferred"
+                );
+            }
             tracing::info!(%workspace_id, "stopped watching workspace");
         }
 
@@ -307,6 +364,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 )
                 .await
             {
+                round.registration_failed(&workspace_id);
                 tracing::warn!(%workspace_id, %error, "built-in runtime refresh failed");
             }
         }
@@ -354,7 +412,8 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 workspace.name.clone(),
                 Vec::new(),
             )?;
-            self.deregister_dropped(&ctx, &delta.dropped).await?;
+            round.registration_applied(&workspace.id);
+            self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
             tracing::info!(
                 workspace_id = %workspace.id,
                 dropped = delta.dropped.len(),
@@ -362,53 +421,80 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             );
             return Ok(());
         }
-        let response = self
-            .client
-            .register(
-                &ctx,
-                json!({
-                    "workspace_id": &workspace.id,
-                    "daemon_id": &self.config.daemon_id,
-                    "legacy_daemon_ids": &self.config.legacy_daemon_ids,
-                    "device_name": &self.config.device_name,
-                    "cli_version": &self.config.cli_version,
-                    "launched_by": &self.config.launched_by,
-                    "runtimes": &payload.runtimes,
-                    "failed_profiles": &payload.failed_profiles,
-                }),
-            )
-            .await?;
-        anyhow::ensure!(
-            !response.runtimes.is_empty() || !payload.failed_profiles.is_empty(),
-            "register runtimes returned an empty response for workspace {}",
-            workspace.id
-        );
-        let runtime_ids: Vec<String> = response
-            .runtimes
-            .iter()
-            .map(|runtime| runtime.id.clone())
-            .collect();
-        let incoming_runtime_ids: BTreeSet<String> = runtime_ids.iter().cloned().collect();
-        let repos = response.repos;
-        let settings = response.settings;
-        {
-            let _demotion_barrier = acquire_registration_demotion_barrier(
-                &ctx,
-                registry,
-                &workspace.id,
-                &incoming_runtime_ids,
-                activity,
-            )
-            .await?;
-            let delta = registry.apply_registration(
-                workspace.id.clone(),
-                workspace.name.clone(),
-                response.runtimes,
-            )?;
-            self.deregister_dropped(&ctx, &delta.dropped).await?;
-        }
+        let (runtime_ids, repos, settings, delta) = {
+            // A failed deregistration may be retried while this workspace is
+            // being re-added. Fence the server register and authoritative apply
+            // together so an old retry cannot take a newly accepted, server-reused
+            // runtime ID offline after it becomes active again.
+            let _fence = self.deregistration_flush.lock().await;
+            let response = self
+                .client
+                .register(
+                    &ctx,
+                    json!({
+                        "workspace_id": &workspace.id,
+                        "daemon_id": &self.config.daemon_id,
+                        "legacy_daemon_ids": &self.config.legacy_daemon_ids,
+                        "device_name": &self.config.device_name,
+                        "cli_version": &self.config.cli_version,
+                        "launched_by": &self.config.launched_by,
+                        "runtimes": &payload.runtimes,
+                        "failed_profiles": &payload.failed_profiles,
+                    }),
+                )
+                .await?;
+            anyhow::ensure!(
+                !response.runtimes.is_empty() || !payload.failed_profiles.is_empty(),
+                "register runtimes returned an empty response for workspace {}",
+                workspace.id
+            );
+            let runtime_ids: Vec<String> = response
+                .runtimes
+                .iter()
+                .map(|runtime| runtime.id.clone())
+                .collect();
+            let incoming_runtime_ids: BTreeSet<String> = runtime_ids.iter().cloned().collect();
+            let repos = response.repos;
+            let settings = response.settings;
+            let delta = {
+                let _demotion_barrier = match acquire_registration_demotion_barrier(
+                    &ctx,
+                    registry,
+                    &workspace.id,
+                    &incoming_runtime_ids,
+                    activity,
+                )
+                .await
+                {
+                    Ok(barrier) => barrier,
+                    Err(error) => {
+                        // The server accepted these rows before the local
+                        // demotion drain. Retain them for cleanup if cancellation
+                        // prevents the authoritative apply from completing.
+                        self.pending_deregistrations.queue(&runtime_ids);
+                        return Err(error);
+                    }
+                };
+                let delta = registry
+                    .apply_registration(
+                        workspace.id.clone(),
+                        workspace.name.clone(),
+                        response.runtimes,
+                    )
+                    .inspect_err(|_error| {
+                        // The server already accepted these rows. Retain them for
+                        // cleanup because the local registry rejected the reply.
+                        self.pending_deregistrations.queue(&runtime_ids);
+                    })?;
+                self.pending_deregistrations.acknowledge(&runtime_ids);
+                round.registration_applied(&workspace.id);
+                delta
+            };
+            (runtime_ids, repos, settings, delta)
+        };
         self.repo_state
             .replace_workspace(&workspace.id, &repos, settings);
+        self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
         if recover_orphans {
             for runtime_id in runtime_ids {
                 if let Err(error) = self.client.recover_orphans(&ctx, &runtime_id).await {
@@ -446,6 +532,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             .filter(|provider| !provider.is_empty())
             .map(str::to_string)
             .collect();
+        let _fence = self.deregistration_flush.lock().await;
         let _demotion_barrier =
             if registry.builtin_demotion_required(&workspace.id, &incoming_providers) {
                 Some(
@@ -468,46 +555,89 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             // vanished executable while preserving custom-profile runtimes.
             let delta =
                 registry.apply_builtin_registration(&workspace.id, &workspace.name, Vec::new())?;
-            self.deregister_dropped(&ctx, &delta.dropped).await?;
+            round.registration_applied(&workspace.id);
+            drop(_demotion_barrier);
+            drop(_fence);
+            self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
             return Ok(());
         }
-        let response = self
-            .client
-            .register(
-                &ctx,
-                json!({
-                    "workspace_id": &workspace.id,
-                    "daemon_id": &self.config.daemon_id,
-                    "legacy_daemon_ids": &self.config.legacy_daemon_ids,
-                    "device_name": &self.config.device_name,
-                    "cli_version": &self.config.cli_version,
-                    "launched_by": &self.config.launched_by,
-                    "runtimes": &payload.runtimes,
-                    "failed_profiles": Vec::<BTreeMap<String, String>>::new(),
-                }),
-            )
-            .await?;
-        anyhow::ensure!(
-            !response.runtimes.is_empty(),
-            "built-in register returned an empty response for workspace {}",
-            workspace.id
-        );
-        let delta = registry.apply_builtin_registration(
-            &workspace.id,
-            &workspace.name,
-            response.runtimes,
-        )?;
-        self.deregister_dropped(&ctx, &delta.dropped).await?;
+        let delta = {
+            let response = self
+                .client
+                .register(
+                    &ctx,
+                    json!({
+                        "workspace_id": &workspace.id,
+                        "daemon_id": &self.config.daemon_id,
+                        "legacy_daemon_ids": &self.config.legacy_daemon_ids,
+                        "device_name": &self.config.device_name,
+                        "cli_version": &self.config.cli_version,
+                        "launched_by": &self.config.launched_by,
+                        "runtimes": &payload.runtimes,
+                        "failed_profiles": Vec::<BTreeMap<String, String>>::new(),
+                    }),
+                )
+                .await?;
+            anyhow::ensure!(
+                !response.runtimes.is_empty(),
+                "built-in register returned an empty response for workspace {}",
+                workspace.id
+            );
+            let runtime_ids = response
+                .runtimes
+                .iter()
+                .map(|runtime| runtime.id.clone())
+                .collect::<Vec<_>>();
+            let delta = match registry.apply_builtin_registration(
+                &workspace.id,
+                &workspace.name,
+                response.runtimes,
+            ) {
+                Ok(delta) => delta,
+                Err(error) => {
+                    self.pending_deregistrations.queue(&runtime_ids);
+                    return Err(error);
+                }
+            };
+            self.pending_deregistrations.acknowledge(&runtime_ids);
+            round.registration_applied(&workspace.id);
+            delta
+        };
+        drop(_demotion_barrier);
+        drop(_fence);
+        self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
         Ok(())
     }
 
-    async fn deregister_dropped(&self, ctx: &Ctx, runtime_ids: &[String]) -> anyhow::Result<()> {
+    /// Final best-effort delivery for rows dropped before the daemon's current
+    /// runtime set. The caller supplies a fresh context because the daemon root
+    /// is already cancelled during shutdown.
+    pub(crate) async fn flush_deregistrations(&self, ctx: &Ctx) -> anyhow::Result<()> {
+        self.flush_pending_deregistrations(ctx).await
+    }
+
+    async fn queue_and_flush_dropped(&self, ctx: &Ctx, runtime_ids: &[String]) {
+        self.pending_deregistrations.queue(runtime_ids);
+        if let Err(error) = self.flush_pending_deregistrations(ctx).await {
+            tracing::warn!(
+                runtimes = runtime_ids.len(),
+                %error,
+                "runtime deregistration deferred"
+            );
+        }
+    }
+
+    async fn flush_pending_deregistrations(&self, ctx: &Ctx) -> anyhow::Result<()> {
+        let _flush = self.deregistration_flush.lock().await;
+        let runtime_ids = self.pending_deregistrations.snapshot();
         if runtime_ids.is_empty() {
             return Ok(());
         }
         self.client
-            .deregister(ctx, runtime_ids, HashMap::new())
-            .await
+            .deregister(ctx, &runtime_ids, HashMap::new())
+            .await?;
+        self.pending_deregistrations.acknowledge(&runtime_ids);
+        Ok(())
     }
 
     fn workspace_lock(&self, workspace_id: &str) -> Arc<AsyncMutex<()>> {
@@ -546,6 +676,27 @@ mod tests {
             provider: provider.to_string(),
             ..crate::types::Runtime::default()
         }
+    }
+
+    #[test]
+    fn pending_deregistrations_are_deduplicated_and_acknowledged_by_snapshot() {
+        let pending = PendingDeregistrations::default();
+        pending.queue(&[
+            "runtime-2".to_string(),
+            "runtime-1".to_string(),
+            "runtime-2".to_string(),
+            String::new(),
+        ]);
+
+        let first = pending.snapshot();
+        assert_eq!(
+            first,
+            vec!["runtime-1".to_string(), "runtime-2".to_string()]
+        );
+
+        pending.queue(&["runtime-3".to_string()]);
+        pending.acknowledge(&first);
+        assert_eq!(pending.snapshot(), vec!["runtime-3".to_string()]);
     }
 
     #[test]

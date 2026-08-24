@@ -37,7 +37,7 @@ use crate::repo_state::DaemonRepoState;
 use crate::repocache::{is_repo_busy, Cache, Ctx, RepoInfo, WorktreeParams};
 use crate::runtime_registry::RuntimeRegistry;
 use crate::task_execution::TaskRunOutcome;
-use crate::types::{RepoData, Task};
+use crate::types::{RepoData, RuntimeExecutionTarget, Task};
 use crate::wakeup::jitter_duration;
 
 const REPO_WARMUP_QUEUE_CAPACITY: usize = 64;
@@ -45,10 +45,7 @@ const REPO_WARMUP_CONCURRENCY: usize = 2;
 const REPO_WARMUP_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[async_trait::async_trait]
-pub trait ProviderRuntimeAdapter: RuntimeRegistrationSource {
-    // Provider execution needs the complete daemon-owned context and keeps
-    // this trait boundary explicit instead of hiding it in an untyped bag.
-    #[allow(clippy::too_many_arguments)]
+pub trait ProviderRuntimeAdapter: Send + Sync + 'static {
     async fn handle_non_update_heartbeat_actions(
         &self,
         ctx: Ctx,
@@ -62,7 +59,7 @@ pub trait ProviderRuntimeAdapter: RuntimeRegistrationSource {
         &self,
         ctx: Ctx,
         task: Task,
-        provider: String,
+        target: RuntimeExecutionTarget,
         slot: usize,
         activity: Arc<DaemonActivity>,
         repo_state: Arc<DaemonRepoState>,
@@ -72,11 +69,11 @@ pub trait ProviderRuntimeAdapter: RuntimeRegistrationSource {
     fn health_snapshot(&self) -> HealthResponse;
 }
 
-pub struct DaemonProductionServices<P: ProviderRuntimeAdapter> {
+pub struct DaemonProductionServices<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> {
     config: Arc<Config>,
     client: Arc<Client>,
     provider: Arc<P>,
-    registration: RuntimeRegistrationService<P>,
+    registration: RuntimeRegistrationService<R>,
     repo_cache: Arc<Cache>,
     repo_state: Arc<DaemonRepoState>,
     checkout_registry: Arc<RepoCheckoutRegistry>,
@@ -84,13 +81,14 @@ pub struct DaemonProductionServices<P: ProviderRuntimeAdapter> {
     repo_warmup_rx: Mutex<Option<mpsc::Receiver<RepoWarmupRequest>>>,
 }
 
-impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
+impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionServices<P, R> {
     pub fn new(
         config: Arc<Config>,
         client: Arc<Client>,
         repo_cache: Arc<Cache>,
         checkout_registry: Arc<RepoCheckoutRegistry>,
         provider: Arc<P>,
+        registration_source: Arc<R>,
     ) -> Self {
         let repo_state = Arc::new(DaemonRepoState::new());
         let (repo_warmups, repo_warmup_rx) = mpsc::channel(REPO_WARMUP_QUEUE_CAPACITY);
@@ -100,7 +98,7 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
                 Arc::clone(&client),
                 Arc::clone(&repo_state),
                 repo_warmups.clone(),
-                Arc::clone(&provider),
+                registration_source,
             ),
             config,
             client,
@@ -205,14 +203,15 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
                 format!("workspace is not watched by this daemon: {workspace_id}"),
             )
         })?;
-        let cache_hit_on_entry = self.repo_state.is_allowed(workspace_id, repo_url)
-            && self.repo_cache.lookup(workspace_id, repo_url).is_some();
         let _guard = tokio::select! {
             () = ctx.cancelled() => return Err(checkout_failure(500, "repo checkout cancelled")),
             guard = refresh_lock.lock() => guard,
         };
-        if !cache_hit_on_entry
-            && self.repo_state.is_allowed(workspace_id, repo_url)
+        // Re-check under the workspace refresh lock. A warm authorized cache
+        // is already complete and must remain usable during transient server
+        // outages; a concurrent refresh may also have filled a prior miss
+        // while this request waited for the lock.
+        if self.repo_state.is_allowed(workspace_id, repo_url)
             && self.repo_cache.lookup(workspace_id, repo_url).is_some()
         {
             return Ok(());
@@ -398,7 +397,9 @@ fn checkout_failure(status_code: u16, message: impl Into<String>) -> RepoCheckou
 }
 
 #[async_trait::async_trait]
-impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<P> {
+impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
+    for DaemonProductionServices<P, R>
+{
     async fn handle_runtime_gone(
         &self,
         ctx: Ctx,
@@ -446,7 +447,7 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
         &self,
         ctx: Ctx,
         task: Task,
-        provider: String,
+        target: RuntimeExecutionTarget,
         slot: usize,
         activity: Arc<DaemonActivity>,
     ) -> TaskRunOutcome {
@@ -458,7 +459,7 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
             .run_task(
                 ctx,
                 task,
-                provider,
+                target,
                 slot,
                 activity,
                 Arc::clone(&self.repo_state),
@@ -476,7 +477,9 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
 }
 
 #[async_trait::async_trait]
-impl<P: ProviderRuntimeAdapter> ProductionRuntimeServices for DaemonProductionServices<P> {
+impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeServices
+    for DaemonProductionServices<P, R>
+{
     async fn preflight(&self, ctx: Ctx, registry: Arc<RuntimeRegistry>) -> anyhow::Result<()> {
         self.registration
             .sync_once(ctx, &registry, false, None)
@@ -524,6 +527,10 @@ impl<P: ProviderRuntimeAdapter> ProductionRuntimeServices for DaemonProductionSe
         request: RepoCheckoutRequest,
     ) -> Result<Value, RepoCheckoutFailure> {
         self.checkout_repo(ctx, active_task, request).await
+    }
+
+    async fn flush_runtime_cleanup(&self, ctx: Ctx) -> anyhow::Result<()> {
+        self.registration.flush_deregistrations(&ctx).await
     }
 }
 
