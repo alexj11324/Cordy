@@ -77,6 +77,11 @@
       is checked before `fs::read`, outside absolute and traversal paths are rejected,
       and no new P0/P1 was found. GitHub review remains advisory/delayed; the serial
       gate may proceed under the current-thread-only execution rule.
+- [ ] #113 first serial gate attempt found a changed-code compile blocker in the new
+      CLI property test (`definition` borrowed `property_id` into a `'static` route).
+      Minimal fix `ec0d3620de2764b97851ce793da3460fe864f0c8` (parent `ad36bc3a`) adds
+      `move`; rustfmt/diff-check pass and it is pushed. Current candidate is
+      `ca25863970d6f2e2a8620ed071f56e15d1ef28fd`; prior gate is invalid and must rerun.
 - [ ] #113 gate remains pending review; original worktree
       `.worktrees/cord-22-daemon-production-assembly` has unrelated uncommitted CLI
       edits and must not be reset or used for the gate. Restacked tree has passed
