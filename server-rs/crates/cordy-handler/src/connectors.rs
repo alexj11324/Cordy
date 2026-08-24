@@ -269,6 +269,13 @@ struct LarkSession {
     expires_at: Instant,
 }
 
+struct LarkRegistrationRuntime {
+    pool: sqlx::PgPool,
+    bus: Arc<cordy_events::Bus>,
+    http_base_url: String,
+    cancel: CancellationToken,
+}
+
 fn lark_sessions() -> &'static Mutex<HashMap<String, LarkSession>> {
     static SESSIONS: OnceLock<Mutex<HashMap<String, LarkSession>>> = OnceLock::new();
     SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -317,7 +324,19 @@ async fn begin_lark_install(
         format!("{} - Cordy", target.name.trim())
     };
     let client = Arc::new(cordy_lark::registration::RegistrationClient::new(
-        cordy_lark::registration::RegistrationConfig::default(),
+        cordy_lark::registration::RegistrationConfig {
+            domain: state
+                .integrations
+                .lark_registration_domain
+                .clone()
+                .unwrap_or_default(),
+            lark_domain: state
+                .integrations
+                .lark_registration_lark_domain
+                .clone()
+                .unwrap_or_default(),
+            ..Default::default()
+        },
     ));
     let begun = match client.begin(&preset, region).await {
         Ok(value) => value,
@@ -349,15 +368,30 @@ async fn begin_lark_install(
     let task_session = session_id.clone();
     let poll_interval = begun.interval.as_secs().max(1);
     let expires = begun.expires_in;
-    let side_effects = state.tasks.clone();
-    side_effects.spawn_side_effect(run_lark_registration(
-        state,
+    let runtime = LarkRegistrationRuntime {
+        pool: state.pool.clone(),
+        bus: state.bus.clone(),
+        http_base_url: state
+            .integrations
+            .lark_http_base_url
+            .clone()
+            .unwrap_or_default(),
+        cancel: state.channel_cancel.clone(),
+    };
+    if !state.channel_tasks.spawn(run_lark_registration(
+        runtime,
         client,
         task_session,
         (workspace_id, agent_id, actor),
         region,
         begun.clone(),
-    ));
+    )) {
+        lark_sessions().lock().unwrap().remove(&session_id);
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "channel runtime is shutting down",
+        );
+    }
     Json(
         json!({"session_id": session_id, "qr_code_url": begun.qr_code_url,
         "expires_in_seconds": expires.as_secs(), "poll_interval_seconds": poll_interval}),
@@ -366,7 +400,7 @@ async fn begin_lark_install(
 }
 
 async fn run_lark_registration(
-    state: HandlerState,
+    runtime: LarkRegistrationRuntime,
     client: Arc<cordy_lark::registration::RegistrationClient>,
     session_id: String,
     identity: (Uuid, Uuid, Uuid),
@@ -378,6 +412,9 @@ async fn run_lark_registration(
     let mut domain = begun.domain;
     let mut interval = begun.interval.max(std::time::Duration::from_secs(1));
     loop {
+        if runtime.cancel.is_cancelled() {
+            return;
+        }
         if tokio::time::Instant::now() >= deadline {
             finish_lark_session(
                 &session_id,
@@ -387,17 +424,38 @@ async fn run_lark_registration(
             );
             return;
         }
-        tokio::time::sleep(interval).await;
-        let result = match client.poll(&domain, &begun.device_code).await {
+        tokio::select! {
+            _ = runtime.cancel.cancelled() => return,
+            _ = tokio::time::sleep(interval) => {}
+        }
+        let poll = tokio::select! {
+            _ = runtime.cancel.cancelled() => return,
+            result = client.poll(&domain, &begun.device_code) => result,
+        };
+        let result = match poll {
             Ok(value) => value,
-            Err(error) => {
+            Err(error) if lark_poll_protocol_error(&error) => {
                 finish_lark_session(
                     &session_id,
                     None,
-                    Some("poll_failed"),
+                    Some("lark_protocol_error"),
                     Some(&format!("{error:#}")),
                 );
                 return;
+            }
+            Err(error) => {
+                // A short-lived DNS, connect, timeout, or response-body read
+                // failure must not invalidate an otherwise live device code.
+                // Keep the original Lark deadline and retry on the next tick,
+                // matching the Go registration service. Typed protocol errors
+                // remain terminal above because another poll cannot repair a
+                // malformed or explicitly rejected exchange.
+                tracing::warn!(
+                    session_id = %session_id,
+                    %error,
+                    "Lark registration transport error; retrying"
+                );
+                continue;
             }
         };
         if !result.switched_domain.is_empty() {
@@ -425,7 +483,7 @@ async fn run_lark_registration(
         }
         let api = cordy_lark::http_client::HttpApiClient::new(
             cordy_lark::http_client::HttpClientConfig {
-                base_url: std::env::var("CORDY_LARK_HTTP_BASE_URL").unwrap_or_default(),
+                base_url: runtime.http_base_url.clone(),
                 ..Default::default()
             },
         );
@@ -471,7 +529,7 @@ async fn run_lark_registration(
                 return;
             }
         };
-        let mut tx = match state.pool.begin().await {
+        let mut tx = match runtime.pool.begin().await {
             Ok(value) => value,
             Err(error) => {
                 finish_lark_session(
@@ -541,7 +599,7 @@ async fn run_lark_registration(
                 return;
             }
         };
-        state.bus.publish(&cordy_events::Event {
+        runtime.bus.publish(&cordy_events::Event {
             event_type: cordy_protocol::EVENT_LARK_INSTALLATION_CREATED.into(),
             workspace_id: workspace_id.to_string(),
             actor_type: "system".into(),
@@ -551,6 +609,12 @@ async fn run_lark_registration(
         finish_lark_session(&session_id, Some(installation.id), None, None);
         return;
     }
+}
+
+fn lark_poll_protocol_error(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<cordy_lark::registration::RegistrationError>()
+        .is_some()
 }
 
 fn finish_lark_session(
@@ -1446,6 +1510,18 @@ mod tests {
             dingtalk_install_error(&internal).0,
             StatusCode::INTERNAL_SERVER_ERROR
         );
+    }
+
+    #[test]
+    fn lark_poll_errors_retry_only_transport_failures() {
+        let protocol = anyhow::Error::new(cordy_lark::registration::RegistrationError {
+            code: "http_502".into(),
+            description: "invalid response".into(),
+        });
+        assert!(lark_poll_protocol_error(&protocol));
+
+        let transport = anyhow::anyhow!("registration: http do: connection reset");
+        assert!(!lark_poll_protocol_error(&transport));
     }
 
     #[tokio::test]

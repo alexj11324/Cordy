@@ -2319,7 +2319,7 @@ async fn complete_task(
         .await
     {
         Ok(task) => {
-            state.tasks.notify_task_finished(&task);
+            state.tasks.notify_task_finished(&task).await;
             revoke_tokens_best_effort(&state, task.id).await;
             tracing::info!(task_id = %task_id, agent_id = %task.agent_id, "task completed");
             Json(crate::task_json::task_to_map(&task, &ws_id)).into_response()
@@ -2415,7 +2415,7 @@ async fn fail_task_impl(
         .await
     {
         Ok(task) => {
-            state.tasks.notify_task_finished(&task);
+            state.tasks.notify_task_finished(&task).await;
             revoke_tokens_best_effort(state, task.id).await;
             tracing::info!(
                 task_id = %task_id,

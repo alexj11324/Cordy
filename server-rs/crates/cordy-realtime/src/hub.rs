@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use async_trait::async_trait;
 use serde_json::json;
 
-use crate::broadcaster::{SCOPE_USER, SCOPE_WORKSPACE};
+use crate::broadcaster::{Broadcaster, SCOPE_USER, SCOPE_WORKSPACE};
 use crate::metrics::M;
 
 /// A scope currently active on this node.
@@ -566,6 +566,21 @@ impl Hub {
 }
 
 // ---- trait integrations -------------------------------------------------
+
+#[async_trait]
+impl Broadcaster for Hub {
+    async fn broadcast_to_scope(&self, scope_type: &str, scope_id: &str, message: &[u8]) {
+        self.broadcast_to_scope_dedup(scope_type, scope_id, message, "");
+    }
+
+    async fn send_to_user(&self, user_id: &str, message: &[u8], exclude_workspace: Option<&str>) {
+        self.fanout_user(user_id, message, exclude_workspace.unwrap_or_default(), "");
+    }
+
+    async fn broadcast(&self, message: &[u8]) {
+        self.fanout_all_dedup(message, "", "");
+    }
+}
 
 #[async_trait]
 impl crate::envelope::HubFanout for Hub {

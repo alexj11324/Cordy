@@ -27,6 +27,7 @@ use uuid::Uuid;
 use cordy_channel::capability::Capability;
 use cordy_channel::channel::{BuiltChannel, Channel, Config, Factory, FactoryFuture, Type};
 use cordy_channel::handler::InboundHandler;
+use cordy_channel::LeaseGeneration;
 
 use crate::credential_probe::{classify_subscribe_ack, is_credentials_rejected};
 use crate::credentials::CredentialsResolver;
@@ -68,6 +69,7 @@ pub const WRITE_DEADLINE: Duration = Duration::from_secs(10);
 
 /// Bounds the initial TCP + WS handshake dial.
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
+const CONNECTOR_TASK_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// How far the callback worker may fall behind the read loop before the read
 /// loop blocks. Past this the socket stops being drained, WeCom notices, and
@@ -117,6 +119,7 @@ pub struct WecomChannel {
     /// The process-wide installation→sender registry. We hold a reference so
     /// connect can register itself on entry and clear on exit.
     senders: Option<Arc<SendersRegistry>>,
+    generation: Arc<LeaseGeneration>,
     /// The health sink. Never called directly — go through `metrics`, which is
     /// always a safe-to-call sink.
     metrics: Arc<dyn Metrics>,
@@ -172,7 +175,10 @@ impl Channel for WecomChannel {
             }
         };
 
-        let sender = Arc::new(WsSender::new(conn.clone()));
+        let sender = Arc::new(WsSender::with_generation(
+            conn.clone(),
+            self.generation.clone(),
+        ));
 
         // Subscribe — auth the connection. Any error here yields the loop back
         // to the Supervisor for backoff + retry.
@@ -189,7 +195,11 @@ impl Channel for WecomChannel {
         // sender for a dead connection is never dispatched to.
         let registered = match (&self.senders, self.installation_id != Uuid::nil()) {
             (Some(reg), true) => {
-                reg.set(self.installation_id, sender.clone());
+                reg.set(
+                    self.installation_id,
+                    sender.clone(),
+                    self.generation.clone(),
+                );
                 true
             }
             _ => false,
@@ -240,7 +250,7 @@ impl Channel for WecomChannel {
                         // parked on the queue send is woken by the dropped
                         // receiver instead.
                         *w_err.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
-                        w_conn.close().await;
+                        let _ = tokio::time::timeout(WRITE_DEADLINE, w_conn.close()).await;
                         break;
                     }
                 }
@@ -345,15 +355,32 @@ impl Channel for WecomChannel {
         // callback's error would report a spurious "connection exited with
         // error".
         drop(cb_tx);
-        let _ = worker.await;
         ping_ctx.cancel();
-        let _ = ping_handle.await;
+        if !cordy_channel::shutdown_join_handles(
+            vec![worker, ping_handle],
+            CONNECTOR_TASK_SHUTDOWN_TIMEOUT,
+        )
+        .await
+        {
+            tracing::warn!(
+                installation_id = %self.installation_id,
+                "wecom: connector tasks exceeded shutdown deadline; aborting"
+            );
+        }
         if registered {
             if let Some(reg) = &self.senders {
-                reg.clear(self.installation_id, &sender);
+                reg.clear(self.installation_id, &self.generation);
             }
         }
-        conn.close().await;
+        if tokio::time::timeout(WRITE_DEADLINE, conn.close())
+            .await
+            .is_err()
+        {
+            tracing::warn!(
+                installation_id = %self.installation_id,
+                "wecom: websocket close exceeded shutdown deadline"
+            );
+        }
 
         let worker_error = worker_err.lock().unwrap_or_else(|e| e.into_inner()).take();
         match (worker_error, result) {
@@ -470,6 +497,9 @@ async fn dispatch_frame(
     bot_id: &str,
     bot_display_name: &str,
 ) -> anyhow::Result<()> {
+    if ctx.is_cancelled() {
+        return Ok(());
+    }
     match env.cmd.as_str() {
         CMD_MSG_CALLBACK => {
             let mc: AibotMsgCallback = match serde_json::from_value(env.body.clone()) {
@@ -655,6 +685,7 @@ fn new_wecom_factory(deps: ChannelDeps) -> Factory {
                 dialer: deps.dialer.clone().unwrap_or_else(default_dialer),
                 ws_url: deps.ws_url.clone(),
                 senders: deps.senders.clone(),
+                generation: cfg.generation.unwrap_or_else(LeaseGeneration::standalone),
                 metrics: or_nop_metrics(deps.metrics.clone()),
             }) as BuiltChannel)
         })
@@ -789,6 +820,7 @@ mod tests {
             dialer,
             ws_url: String::new(),
             senders: None,
+            generation: LeaseGeneration::standalone(),
             metrics: Arc::new(crate::metrics::NopMetrics),
         }
     }
@@ -831,6 +863,42 @@ mod tests {
         let writes = conn.writes();
         assert_eq!(writes[0]["cmd"], json!("aibot_subscribe"));
         assert_eq!(writes[0]["body"]["bot_id"], json!("bot-1"));
+    }
+
+    #[tokio::test]
+    async fn cancelled_generation_drops_queued_callback_before_dispatch() {
+        let called = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let handler_called = called.clone();
+        let handler = InboundHandler::new(move |_ctx, _msg| {
+            let called = handler_called.clone();
+            Box::pin(async move {
+                called.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            })
+        });
+        let conn = ScriptedConn::new(Vec::new());
+        let sender = WsSender::new(conn);
+        let ctx = CancellationToken::new();
+        ctx.cancel();
+        let env = FrameEnvelope {
+            cmd: CMD_MSG_CALLBACK.to_string(),
+            headers: crate::ws_frame::FrameHeaders {
+                req_id: "cancelled".to_string(),
+            },
+            body: json!({
+                "msgid": "m-cancelled",
+                "chattype": "single",
+                "from": {"userid": "u1"},
+                "msgtype": "text",
+                "text": {"content": "do not dispatch"}
+            }),
+            ..Default::default()
+        };
+
+        dispatch_frame(&ctx, &env, &handler, &sender, "bot-1", "Cordy")
+            .await
+            .unwrap();
+        assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
     }
 
     #[tokio::test]
@@ -1015,6 +1083,7 @@ mod tests {
             raw: json!({"bot_id": "bot-9", "secret_encrypted": null}),
             id: Some(Uuid::now_v7()),
             handler: Some(InboundHandler::new(|_ctx, _msg| Box::pin(async { Ok(()) }))),
+            generation: None,
         };
         let built = rt.block_on(factory(cfg)).unwrap();
         assert_eq!(built.r#type(), crate::type_wecom());
@@ -1032,6 +1101,7 @@ mod tests {
             raw: json!({"bot_id": "b"}),
             id: None,
             handler: None,
+            generation: None,
         };
         assert!(factory(cfg).await.is_err());
 
@@ -1045,6 +1115,7 @@ mod tests {
             raw: json!({}),
             id: None,
             handler: None,
+            generation: None,
         };
         let err = match factory(cfg).await {
             Ok(_) => panic!("expected factory error"),

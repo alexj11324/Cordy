@@ -147,10 +147,11 @@ fn profile_response(profile: &RuntimeProfile) -> Value {
     crate::profile_json::profile_to_map(profile)
 }
 
-fn notify_profile_changed(state: &HandlerState, workspace_id: Uuid, profile_id: Uuid) {
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_runtime_profiles_changed(&workspace_id.to_string(), &profile_id.to_string());
-    }
+async fn notify_profile_changed(state: &HandlerState, workspace_id: Uuid, profile_id: Uuid) {
+    state
+        .daemon_notifier
+        .notify_runtime_profiles_changed(&workspace_id.to_string(), &profile_id.to_string())
+        .await;
 }
 
 fn publish_daemon_register(
@@ -277,7 +278,7 @@ async fn create(
     .await
     {
         Ok(Some(profile)) => {
-            notify_profile_changed(&state, workspace_id, profile.id);
+            notify_profile_changed(&state, workspace_id, profile.id).await;
             publish_daemon_register(
                 &state,
                 workspace_id,
@@ -381,7 +382,7 @@ RETURNING command_name, created_at, created_by, description, display_name,
 
     match updated {
         Ok(Some(profile)) => {
-            notify_profile_changed(&state, workspace_id, profile.id);
+            notify_profile_changed(&state, workspace_id, profile.id).await;
             publish_daemon_register(
                 &state,
                 workspace_id,
@@ -643,7 +644,7 @@ async fn delete_profile(
             .await;
         publish_teardown(&state, workspace_id, context.member.user_id, teardown);
     }
-    notify_profile_changed(&state, workspace_id, profile_id);
+    notify_profile_changed(&state, workspace_id, profile_id).await;
     publish_daemon_register(
         &state,
         workspace_id,

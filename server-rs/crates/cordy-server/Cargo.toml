@@ -13,17 +13,29 @@ path = "src/main.rs"
 cordy-config = { path = "../cordy-config" }
 cordy-auth = { path = "../cordy-auth" }
 cordy-analytics = { path = "../cordy-analytics" }
+cordy-channel = { path = "../cordy-channel" }
+cordy-channel-engine = { path = "../cordy-channel-engine" }
 cordy-db = { path = "../cordy-db" }
+cordy-daemon = { path = "../cordy-daemon" }
+cordy-events = { path = "../cordy-events" }
+cordy-dingtalk = { path = "../cordy-dingtalk" }
 cordy-handler = { path = "../cordy-handler" }
+cordy-lark = { path = "../cordy-lark" }
 cordy-ghsnapshot = { path = "../cordy-ghsnapshot" }
 cordy-metrics = { path = "../cordy-metrics" }
 cordy-realtime = { path = "../cordy-realtime" }
 cordy-scheduler = { path = "../cordy-scheduler" }
 cordy-service = { path = "../cordy-service" }
+cordy-slack = { path = "../cordy-slack" }
+cordy-telegram = { path = "../cordy-telegram" }
 cordy-util = { path = "../cordy-util" }
+cordy-wecom = { path = "../cordy-wecom" }
 
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 axum = { workspace = true }
+chrono = { workspace = true }
+http-body-util = { workspace = true }
 redis = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
@@ -31,6 +43,7 @@ tokio = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

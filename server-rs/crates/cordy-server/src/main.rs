@@ -10,11 +10,16 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
+mod channel_runtime;
+mod realtime_runtime;
+
 const PENDING_STORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
 struct ProductionApp {
     router: Router,
     root_cancel: CancellationToken,
+    realtime: realtime_runtime::RealtimeRuntime,
+    channel_runtime: Option<channel_runtime::ChannelRuntime>,
     failure_monitor: cordy_service::autopilot_failure_monitor::FailureMonitorRuntime,
     quota_reconciler: cordy_service::autopilot_quota_reconciler::QuotaReconcilerRuntime,
     webhook_delivery: cordy_handler::webhook_delivery_worker::WebhookDeliveryRuntime,
@@ -35,6 +40,30 @@ struct ProductionApp {
 struct VcsWebhookConfig {
     enabled: bool,
     secret_box: Option<cordy_util::secretbox::SecretBox>,
+}
+
+struct MetricsRuntime {
+    shutdown: tokio_util::sync::CancellationToken,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl MetricsRuntime {
+    async fn shutdown(self) {
+        if !self.shutdown_with_timeout(Duration::from_secs(3)).await {
+            tracing::warn!("metrics server did not exit within shutdown timeout");
+        }
+    }
+
+    async fn shutdown_with_timeout(self, timeout: Duration) -> bool {
+        self.shutdown.cancel();
+        let mut task = self.task;
+        if tokio::time::timeout(timeout, &mut task).await.is_ok() {
+            return true;
+        }
+        task.abort();
+        let _ = task.await;
+        false
+    }
 }
 
 impl VcsWebhookConfig {
@@ -203,7 +232,10 @@ async fn build_production_router(
     hub: Arc<cordy_realtime::hub::Hub>,
     business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
+    channel_lease_metrics: Option<Arc<cordy_metrics::ChannelLeaseMetrics>>,
     channel_media_metrics: Option<Arc<cordy_metrics::ChannelMediaReconcilerMetrics>>,
+    wecom_metrics: Option<Arc<cordy_metrics::WecomMetrics>>,
+    lark_backfill_metrics: Option<Arc<cordy_metrics::LarkBackfillMetrics>>,
     github_client: Option<cordy_ghsnapshot::Client>,
     cfg: &cordy_config::Config,
     attachment_storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
@@ -217,7 +249,7 @@ async fn build_production_router(
     let mut state = cordy_handler::HandlerState::new_with_production_dependencies(
         db,
         cordy_auth::pat_cache::PatCache::disabled(),
-        Some(hub),
+        Some(hub.clone()),
         analytics.clone(),
         feature_flags,
         business_metrics.clone(),
@@ -237,6 +269,7 @@ async fn build_production_router(
     .with_plugins_from_env()
     .with_slack_history_from_env()
     .with_llm_from_env()?
+    .with_integrations(cfg.integrations.clone())
     .with_public_config(cordy_handler::config::PublicConfigSettings {
         cdn_domain: cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
         cdn_signed: cfg.storage.cloudfront_key_pair_id.is_some()
@@ -267,6 +300,16 @@ async fn build_production_router(
     }
     let root_cancel = CancellationToken::new();
     let state = install_pending_stores(state, redis_url).await;
+    // Go registers realtime fanout before subscriber/activity/notification
+    // side effects. Preserve that callback order while retaining async relay
+    // ownership outside the handler state.
+    let mut realtime = realtime_runtime::RealtimeRuntime::from_config(hub, &cfg.redis).await;
+    realtime.attach(
+        &state.bus,
+        state.daemon_hub.clone(),
+        state.daemon_notifier.clone(),
+        state.background_runtime.clone(),
+    );
     // These consumers drain after every root-owned producer has joined. Give
     // them dedicated cancellation roots so the process root cannot close a
     // FIFO while a producer is publishing a final event during shutdown.
@@ -335,19 +378,34 @@ async fn build_production_router(
         )
         .start(root_cancel.child_token());
     let webhook_delivery = webhook_worker.start(root_cancel.child_token());
-    let channel_media = state.attachment_storage.as_ref().map(|storage| {
-        let deleter = Arc::new(
-            cordy_handler::attachment_storage::AttachmentMediaDeleter::new(storage.clone()),
-        );
-        Arc::new(
-            cordy_service::channel_media_reconciler::ChannelMediaReconciler::new(
-                state.pool.clone(),
-                deleter,
-                channel_media_metrics,
-            ),
-        )
-        .start(root_cancel.child_token())
-    });
+    let channel_runtime = channel_runtime::ChannelRuntime::start(
+        &state,
+        cfg,
+        channel_lease_metrics,
+        channel_media_metrics.clone(),
+        wecom_metrics,
+        lark_backfill_metrics,
+    )
+    .await?;
+    // ChannelRuntime owns this reconciler whenever channel adapters are
+    // configured. Keep the standalone worker only for storage-only installs.
+    let channel_media = channel_runtime
+        .is_none()
+        .then(|| state.attachment_storage.as_ref())
+        .flatten()
+        .map(|storage| {
+            let deleter = Arc::new(
+                cordy_handler::attachment_storage::AttachmentMediaDeleter::new(storage.clone()),
+            );
+            Arc::new(
+                cordy_service::channel_media_reconciler::ChannelMediaReconciler::new(
+                    state.pool.clone(),
+                    deleter,
+                    channel_media_metrics,
+                ),
+            )
+            .start(root_cancel.child_token())
+        });
     let scheduler = cordy_scheduler::Manager::new(
         state.pool.clone(),
         cordy_scheduler::ManagerOptions::default(),
@@ -367,6 +425,8 @@ async fn build_production_router(
     Ok(ProductionApp {
         router: cordy_handler::build_router_from_state(state),
         root_cancel,
+        realtime,
+        channel_runtime,
         failure_monitor,
         quota_reconciler,
         webhook_delivery,
@@ -381,27 +441,6 @@ async fn build_production_router(
         task_side_effects,
         analytics,
     })
-}
-
-async fn shutdown_signal() {
-    #[cfg(unix)]
-    {
-        let mut terminate =
-            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                .expect("install SIGTERM handler");
-        tokio::select! {
-            result = tokio::signal::ctrl_c() => {
-                if let Err(error) = result {
-                    tracing::error!(%error, "failed to listen for shutdown signal");
-                }
-            }
-            _ = terminate.recv() => {}
-        }
-    }
-    #[cfg(not(unix))]
-    if let Err(error) = tokio::signal::ctrl_c().await {
-        tracing::error!(%error, "failed to listen for shutdown signal");
-    }
 }
 
 async fn shutdown_channel_media(
@@ -492,7 +531,15 @@ async fn main() -> anyhow::Result<()> {
     let db = cordy_db::connect(&cfg.database).await?;
     let hub = Arc::new(cordy_realtime::hub::Hub::new());
     let metrics_config = cordy_metrics::Config::from_env();
-    let (business_metrics, http_metrics, channel_media_metrics) = if metrics_config.enabled() {
+    let (
+        business_metrics,
+        http_metrics,
+        channel_lease_metrics,
+        channel_media_metrics,
+        wecom_metrics,
+        lark_backfill_metrics,
+        metrics_runtime,
+    ) = if metrics_config.enabled() {
         let registry = cordy_metrics::Registry::new(cordy_metrics::registry::RegistryOptions {
             pool: Some(Arc::new(db.clone())),
             realtime: Some(&cordy_realtime::M),
@@ -504,21 +551,36 @@ async fn main() -> anyhow::Result<()> {
         });
         let business = registry.business.clone();
         let http = registry.http.clone();
+        let channel_lease = registry.channel_lease.clone();
         let channel_media = registry.channel_media.clone();
+        let wecom = registry.wecom.clone();
+        let lark_backfill = registry.lark_backfill.clone();
         let gatherer = Arc::new(registry.gatherer.clone());
         let metrics_addr = metrics_config.addr.clone();
         let effective_metrics_addr = cordy_metrics::server::normalized_bind_addr(&metrics_addr);
         if !cordy_metrics::is_loopback_addr(&effective_metrics_addr) {
             tracing::warn!(addr = %metrics_addr, "metrics listener is not loopback-only; restrict access with private networking, allowlists, or proxy auth");
         }
-        tokio::spawn(async move {
-            if let Err(error) = cordy_metrics::server::serve(metrics_addr, gatherer).await {
+        let shutdown = tokio_util::sync::CancellationToken::new();
+        let serve_shutdown = shutdown.clone();
+        let task = tokio::spawn(async move {
+            if let Err(error) =
+                cordy_metrics::server::serve(metrics_addr, gatherer, serve_shutdown).await
+            {
                 tracing::error!(%error, "metrics server stopped");
             }
         });
-        (Some(business), Some(http), Some(channel_media))
+        (
+            Some(business),
+            Some(http),
+            Some(channel_lease),
+            Some(channel_media),
+            Some(wecom),
+            Some(lark_backfill),
+            Some(MetricsRuntime { shutdown, task }),
+        )
     } else {
-        (None, None, None)
+        (None, None, None, None, None, None, None)
     };
     let github_client = cordy_ghsnapshot::Client::new_from_env()?;
     let attachment_storage = cordy_handler::attachment_storage::from_env(
@@ -545,7 +607,10 @@ async fn main() -> anyhow::Result<()> {
         hub,
         business_metrics,
         http_metrics,
+        channel_lease_metrics,
         channel_media_metrics,
+        wecom_metrics,
+        lark_backfill_metrics,
         github_client,
         &cfg,
         attachment_storage,
@@ -563,6 +628,8 @@ async fn main() -> anyhow::Result<()> {
     let ProductionApp {
         router,
         root_cancel,
+        realtime,
+        channel_runtime,
         failure_monitor,
         quota_reconciler,
         webhook_delivery,
@@ -584,8 +651,13 @@ async fn main() -> anyhow::Result<()> {
     .with_graceful_shutdown(shutdown_signal())
     .await;
     // Match Go's shutdown ordering: drain every in-flight HTTP handler before
-    // stopping maintenance workers. In particular, a heartbeat must not queue
-    // an ID after the batched scheduler has performed its final flush.
+    // stopping maintenance workers. Channel adapters are producers and must
+    // drain while realtime fanout is still accepting their final events.
+    if let Some(channel_runtime) = channel_runtime {
+        channel_runtime.shutdown().await;
+    }
+    // In particular, a heartbeat must not queue an ID after the batched
+    // scheduler has performed its final flush.
     root_cancel.cancel();
     let (
         failure_shutdown,
@@ -625,6 +697,9 @@ async fn main() -> anyhow::Result<()> {
     let ordered_event_side_effects_shutdown =
         shutdown_ordered_event_side_effects(ordered_event_side_effects).await;
     let plugin_events_shutdown = shutdown_plugin_events(plugin_events).await;
+    // Realtime registered first and is the last event consumer to stop. Its
+    // shutdown drains handler background work, forwarder, and Redis relay.
+    realtime.shutdown().await;
     // Every analytics producer above has stopped. Close the shared client last
     // so its owned worker can flush the final bounded queue before process exit.
     analytics.close().await;
@@ -741,8 +816,37 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(cordy_service::task_service::TaskSideEffectShutdownOutcome::Stopped) | None => {}
     }
+    if let Some(metrics_runtime) = metrics_runtime {
+        metrics_runtime.shutdown().await;
+    }
     serve_result?;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        if let Err(error) = tokio::signal::ctrl_c().await {
+            tracing::error!(%error, "failed to install Ctrl-C handler");
+        }
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()) {
+            Ok(mut signal) => {
+                signal.recv().await;
+            }
+            Err(error) => tracing::error!(%error, "failed to install SIGTERM handler"),
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        () = ctrl_c => {},
+        () = terminate => {},
+    }
+    tracing::info!("shutdown signal received; draining HTTP server");
 }
 
 #[cfg(test)]
@@ -750,7 +854,17 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tokio::sync::Notify;
     use tower::ServiceExt;
+
+    struct DropSignal(Arc<AtomicBool>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Relaxed);
+        }
+    }
 
     fn test_attachment_storage() -> Arc<dyn cordy_handler::attachment_storage::AttachmentStorage> {
         Arc::new(
@@ -783,14 +897,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn metrics_shutdown_aborts_a_stalled_server_task() {
+        let shutdown = tokio_util::sync::CancellationToken::new();
+        let entered = Arc::new(Notify::new());
+        let dropped = Arc::new(AtomicBool::new(false));
+        let task = tokio::spawn({
+            let entered = entered.clone();
+            let dropped = dropped.clone();
+            async move {
+                let _drop_signal = DropSignal(dropped);
+                entered.notify_one();
+                std::future::pending::<()>().await;
+            }
+        });
+        entered.notified().await;
+
+        let runtime = MetricsRuntime { shutdown, task };
+        assert!(!runtime.shutdown_with_timeout(Duration::ZERO).await);
+        assert!(dropped.load(Ordering::Relaxed));
+    }
+
+    #[tokio::test]
     async fn unavailable_rate_limit_redis_fails_open() {
         let db = sqlx::PgPool::connect_lazy("postgres://invalid/invalid")
             .unwrap_or_else(|_| unreachable!("static test URL is valid"));
         let mut cfg = cordy_config::Config::default();
         cfg.redis.url = Some("redis://127.0.0.1:1/".into());
-        let router = build_production_router(
+        let ProductionApp {
+            router,
+            root_cancel,
+            realtime,
+            channel_runtime,
+            ..
+        } = build_production_router(
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -801,8 +945,7 @@ mod tests {
             VcsWebhookConfig::disabled(),
         )
         .await
-        .unwrap()
-        .router;
+        .unwrap();
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(1),
             router.oneshot(
@@ -815,6 +958,11 @@ mod tests {
         .await
         .expect("unavailable Redis must not block the request")
         .expect("response");
+        if let Some(channel_runtime) = channel_runtime {
+            channel_runtime.shutdown().await;
+        }
+        root_cancel.cancel();
+        realtime.shutdown().await;
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
@@ -834,9 +982,18 @@ mod tests {
         let redis_url = format!("redis://{address}/");
         let mut cfg = cordy_config::Config::default();
         cfg.redis.url = Some(redis_url);
-        let router = build_production_router(
+        let ProductionApp {
+            router,
+            root_cancel,
+            realtime,
+            channel_runtime,
+            ..
+        } = build_production_router(
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -847,8 +1004,7 @@ mod tests {
             VcsWebhookConfig::disabled(),
         )
         .await
-        .unwrap()
-        .router;
+        .unwrap();
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(1),
             router.oneshot(
@@ -862,6 +1018,11 @@ mod tests {
         .expect("unresponsive Redis must not block the request")
         .expect("response");
         black_hole.abort();
+        if let Some(channel_runtime) = channel_runtime {
+            channel_runtime.shutdown().await;
+        }
+        root_cancel.cancel();
+        realtime.shutdown().await;
 
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
@@ -917,9 +1078,17 @@ mod tests {
         let mut cfg = cordy_config::Config::default();
         cfg.redis.url = Some("not a redis URL".into());
         cfg.urls.rate_limit_trusted_proxies = Some("10.0.0.0/8".into());
-        let _router = build_production_router(
+        let ProductionApp {
+            root_cancel,
+            realtime,
+            channel_runtime,
+            ..
+        } = build_production_router(
             pool,
             Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -931,5 +1100,10 @@ mod tests {
         )
         .await
         .unwrap();
+        if let Some(channel_runtime) = channel_runtime {
+            channel_runtime.shutdown().await;
+        }
+        root_cancel.cancel();
+        realtime.shutdown().await;
     }
 }

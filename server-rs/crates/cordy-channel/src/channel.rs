@@ -7,6 +7,8 @@ use async_trait::async_trait;
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::generation::LeaseGeneration;
+
 /// Identifies an inbound channel platform — the discriminator the
 /// [`crate::registry::Registry`] keys on and the value persisted in the
 /// `channel_type` column of the generalized channel_* tables. Use the
@@ -125,6 +127,9 @@ pub struct Config {
     /// a Channel is built purely for its outbound send path (no inbound
     /// delivery needed).
     pub handler: Option<crate::handler::InboundHandler>,
+
+    /// Lease-owner generation fencing this build and every derived handle.
+    pub generation: Option<std::sync::Arc<LeaseGeneration>>,
 }
 
 impl std::fmt::Debug for Config {
@@ -134,6 +139,13 @@ impl std::fmt::Debug for Config {
             .field("type", &self.r#type)
             .field("id", &self.id)
             .field("handler_set", &self.handler.is_some())
+            .field(
+                "generation",
+                &self
+                    .generation
+                    .as_ref()
+                    .map(|generation| generation.epoch()),
+            )
             .finish_non_exhaustive()
     }
 }

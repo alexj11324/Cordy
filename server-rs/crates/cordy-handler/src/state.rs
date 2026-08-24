@@ -2,6 +2,7 @@
 //! DB/redis wiring. Domain services are added per-slice as routes land.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use cordy_auth::daemon_token_cache::DaemonTokenCache;
 use cordy_auth::pat_cache::PatCache;
@@ -13,6 +14,98 @@ use cordy_service::plugin::PluginService;
 use cordy_service::plugin_event_dispatch::PluginEventDispatcher;
 use cordy_service::plugin_token::CallbackTokens;
 use cordy_service::task_service::TaskService;
+use tokio_util::sync::CancellationToken;
+
+/// Cancellation and join ownership for handler background maintenance loops.
+#[derive(Clone)]
+pub struct BackgroundRuntime {
+    shutdown: CancellationToken,
+    tasks: Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+}
+
+impl Default for BackgroundRuntime {
+    fn default() -> Self {
+        Self {
+            shutdown: CancellationToken::new(),
+            tasks: Arc::new(std::sync::Mutex::new(Vec::new())),
+        }
+    }
+}
+
+impl BackgroundRuntime {
+    fn token(&self) -> CancellationToken {
+        self.shutdown.clone()
+    }
+
+    fn track(&self, task: tokio::task::JoinHandle<()>) {
+        self.tasks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(task);
+    }
+
+    /// Cancels every loop and waits up to `timeout` for the owned tasks.
+    pub async fn shutdown(&self, timeout: Duration) -> bool {
+        self.shutdown.cancel();
+        let tasks: Vec<_> = self
+            .tasks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .drain(..)
+            .collect();
+        let abort_handles: Vec<_> = tasks
+            .iter()
+            .map(tokio::task::JoinHandle::abort_handle)
+            .collect();
+        let stopped = tokio::time::timeout(timeout, async move {
+            for task in tasks {
+                let _ = task.await;
+            }
+        })
+        .await
+        .is_ok();
+        if !stopped {
+            for task in abort_handles {
+                task.abort();
+            }
+        }
+        stopped
+    }
+}
+
+#[cfg(test)]
+mod background_runtime_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct DropSignal(Arc<AtomicBool>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn shutdown_aborts_tasks_after_the_deadline() {
+        let runtime = BackgroundRuntime::default();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let signal = DropSignal(dropped.clone());
+        runtime.track(tokio::spawn(async move {
+            let _signal = signal;
+            std::future::pending::<()>().await;
+        }));
+
+        assert!(!runtime.shutdown(Duration::ZERO).await);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !dropped.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("aborted task should be dropped");
+    }
+}
 
 /// One replaceable client shared by handler assists and TaskService quick
 /// actions. Builder-time configuration happens after domain services already
@@ -84,7 +177,7 @@ impl cordy_analytics::AnalyticsClient for SharedAnalyticsClient {
 }
 
 struct DaemonTaskWakeup {
-    hub: Arc<cordy_daemon::hub::DaemonHub>,
+    notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
 }
 
 struct DaemonMessageMetrics {
@@ -97,9 +190,12 @@ impl cordy_daemon::hub::MessageKindRecorder for DaemonMessageMetrics {
     }
 }
 
+#[async_trait::async_trait]
 impl cordy_service::task_service::TaskWakeupNotifier for DaemonTaskWakeup {
-    fn notify_task_available(&self, runtime_id: &str, task_id: &str) {
-        self.hub.notify_task_available(runtime_id, task_id);
+    async fn notify_task_available(&self, runtime_id: &str, task_id: &str) {
+        self.notifier
+            .notify_task_available(runtime_id, task_id)
+            .await;
     }
 }
 
@@ -113,6 +209,11 @@ pub struct HandlerState {
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
     pub bus: Arc<cordy_events::Bus>,
+    /// Owned background work started by channel HTTP/event surfaces. The
+    /// production ChannelRuntime closes admission and joins/aborts this group
+    /// during shutdown.
+    pub channel_tasks: Arc<cordy_channel::RuntimeTasks>,
+    pub channel_cancel: tokio_util::sync::CancellationToken,
     /// Prometheus business counters. None when METRICS_ADDR is disabled.
     pub business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     /// HTTP request metrics. None when METRICS_ADDR is disabled.
@@ -129,6 +230,10 @@ pub struct HandlerState {
     pub invitation_admission: crate::invitation::InvitationAdmission,
     /// Anonymous frontend capability/configuration response.
     pub public_config: crate::config::PublicConfigSettings,
+    /// Immutable integration endpoint configuration loaded once at boot.
+    /// Channel install flows use this same snapshot as the runtime connectors
+    /// instead of re-reading process environment mid-session.
+    pub integrations: cordy_config::IntegrationsConfig,
     /// GitHub GraphQL snapshot refresh pipeline. Disabled in lightweight tests.
     pub github_snapshots: Arc<cordy_ghsnapshot::Manager>,
     /// Feature flag source. `None` fails closed for rollout-gated writes.
@@ -181,6 +286,12 @@ pub struct HandlerState {
     /// Daemon WebSocket hub (cordy-daemon). `None` only in tests — the WS
     /// endpoint reports 503 and daemons fall back to HTTP polling.
     pub daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
+    /// Local-first daemon wakeup publisher. Production runtime installs the
+    /// shared Redis relay for sharded/dual modes before the router is served.
+    pub daemon_notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
+    /// Owns cancellable workers that must stop after HTTP drain and before
+    /// realtime fanout is torn down.
+    pub background_runtime: BackgroundRuntime,
     /// Attachment object store. None is the explicit unconfigured test path.
     pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
     pub attachment_frame_ancestors: Vec<String>,
@@ -249,9 +360,14 @@ impl HandlerState {
     ) -> Self {
         let bus = Arc::new(cordy_events::Bus::new());
         let daemon_hub = Arc::new(cordy_daemon::hub::DaemonHub::new());
+        let daemon_notifier = Arc::new(cordy_daemon::notifier::RelayNotifier::new(
+            Some(daemon_hub.clone()),
+            None,
+        ));
+        let background_runtime = BackgroundRuntime::default();
         let task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier> =
             Arc::new(DaemonTaskWakeup {
-                hub: daemon_hub.clone(),
+                notifier: daemon_notifier.clone(),
             });
         let llm = Arc::new(HandlerAssistLlm::new(cordy_llm::Client::new(
             cordy_llm::Config::default(),
@@ -298,6 +414,8 @@ impl HandlerState {
             daemon_token_cache: DaemonTokenCache::disabled(),
             hub,
             bus,
+            channel_tasks: Arc::new(cordy_channel::RuntimeTasks::new()),
+            channel_cancel: tokio_util::sync::CancellationToken::new(),
             business_metrics,
             http_metrics: None,
             heartbeat_scheduler,
@@ -310,6 +428,7 @@ impl HandlerState {
             webhook_rate_limits,
             invitation_admission: crate::invitation::InvitationAdmission::default(),
             public_config: crate::config::PublicConfigSettings::default(),
+            integrations: cordy_config::IntegrationsConfig::default(),
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
             feature_flags,
             composio,
@@ -335,6 +454,8 @@ impl HandlerState {
             vcs_integration_enabled: false,
             vcs_secret_box: None,
             daemon_hub: Some(daemon_hub),
+            daemon_notifier,
+            background_runtime,
             attachment_storage: None,
             attachment_frame_ancestors: Vec::new(),
             slack_history: None,
@@ -411,6 +532,19 @@ impl HandlerState {
 
     pub fn with_public_config(mut self, settings: crate::config::PublicConfigSettings) -> Self {
         self.public_config = settings;
+        self
+    }
+
+    pub fn with_integrations(mut self, integrations: cordy_config::IntegrationsConfig) -> Self {
+        self.integrations = integrations;
+        self
+    }
+
+    pub fn with_feature_flags(
+        mut self,
+        flags: Arc<dyn cordy_service::feature_flags::FlagSource>,
+    ) -> Self {
+        self.feature_flags = Some(flags);
         self
     }
 

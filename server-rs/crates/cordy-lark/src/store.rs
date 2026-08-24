@@ -204,6 +204,28 @@ pub fn installation_from_row(row: ChannelInstallation) -> anyhow::Result<Install
     })
 }
 
+/// Decodes the opaque JSONB config supplied to a channel Factory. Identity
+/// columns are intentionally absent: the Router resolves those from the
+/// durable installation row for every inbound event.
+pub fn installation_from_config(config: serde_json::Value) -> anyhow::Result<Installation> {
+    let cfg: FeishuInstallConfig = if config.is_null() {
+        FeishuInstallConfig::default()
+    } else {
+        serde_json::from_value(config)
+            .map_err(|e| anyhow::anyhow!("decode installation config: {e}"))?
+    };
+    Ok(Installation {
+        app_id: cfg.app_id,
+        app_secret_encrypted: decode_secret(&cfg.app_secret_encrypted)
+            .map_err(|e| anyhow::anyhow!("decode app_secret_encrypted: {e}"))?,
+        tenant_key: text_or_none(&cfg.tenant_key),
+        bot_open_id: cfg.bot_open_id,
+        bot_union_id: text_or_none(&cfg.bot_union_id),
+        region: cfg.region,
+        ..Default::default()
+    })
+}
+
 /// Builds the channel_installation.config JSONB from the feishu fields of an
 /// [`Installation`]. The secret is emitted as unwrapped base64.
 pub fn encode_install_config(inst: &Installation) -> anyhow::Result<serde_json::Value> {

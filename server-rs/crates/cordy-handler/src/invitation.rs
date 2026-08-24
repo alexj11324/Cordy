@@ -835,9 +835,10 @@ async fn accept(
         }),
         ..Default::default()
     });
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_workspaces_changed(&user_id.to_string());
-    }
+    state
+        .daemon_notifier
+        .notify_workspaces_changed(&user_id.to_string())
+        .await;
     if let Some(metrics) = state.business_metrics.as_deref() {
         for event in acceptance_metric_events(
             user_id,
