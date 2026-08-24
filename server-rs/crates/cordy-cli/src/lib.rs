@@ -7,6 +7,7 @@
 mod api;
 pub mod config;
 pub mod daemon;
+mod daemon_commands;
 pub mod error;
 mod login;
 
@@ -27,6 +28,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use url::{form_urlencoded, Url};
 
+use daemon_commands::{
+    run_daemon_after_setup, run_daemon_restart, run_daemon_start, run_daemon_stop,
+};
 use login::{
     build_login_url, build_workspace_creation_url, constant_time_equal, run_browser_login,
     validate_login_token, wait_for_login_callback, wait_for_workspace_creation,
@@ -3887,57 +3891,6 @@ where
     }
 }
 
-/// Applies a successfully persisted setup profile to the local daemon. The
-/// local control client deliberately treats an unreachable health port as no
-/// daemon, matching the existing lifecycle command contract; all subsequent
-/// start/restart and readiness errors are propagated so setup never reports a
-/// false completion.
-async fn run_daemon_after_setup(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
-    let flags = config::DaemonLaunchFlags {
-        server_url: cli.server_url.clone(),
-        ..config::DaemonLaunchFlags::default()
-    };
-    let start = daemon::DaemonStartAssembly::load(&cli.profile, &flags, environment)
-        .context("load setup daemon profile")?;
-    let executable = std::env::current_exe().context("resolve cordy executable")?;
-    let lifecycle = cordy_daemon::lifecycle::DaemonLifecycle::assemble(
-        start.lifecycle_options(executable, CLIENT_VERSION),
-        &start.profile_input,
-    )
-    .context("assemble setup daemon lifecycle")?;
-    let control = cordy_daemon::control_client::DaemonControlClient::try_new()
-        .context("build setup daemon health client")?;
-    let health = control.health(lifecycle.port()).await;
-    let (daemon_running, active_task_count) = match health {
-        cordy_daemon::control_client::LocalDaemonHealth::Stopped => (false, 0),
-        cordy_daemon::control_client::LocalDaemonHealth::Live(snapshot) => {
-            snapshot
-                .confirm_profile(&cli.profile, lifecycle.port())
-                .context("setup daemon health profile mismatch")?;
-            (true, snapshot.response.active_task_count)
-        }
-    };
-    let action = setup_daemon_action(daemon_running, active_task_count);
-    dispatch_daemon_after_setup(
-        action,
-        || async {
-            let outcome = lifecycle
-                .start()
-                .await
-                .context("start daemon after setup")?;
-            render_daemon_start_outcome(outcome)
-        },
-        || async {
-            let outcome = lifecycle
-                .restart()
-                .await
-                .context("restart daemon after setup")?;
-            render_daemon_restart_outcome(outcome)
-        },
-    )
-    .await
-}
-
 fn resolve_setup_profile_input(
     cli: &Cli,
     environment: &Environment,
@@ -4000,93 +3953,6 @@ fn setup_server_is_local(server_url: &str) -> bool {
         || host
             .parse::<std::net::IpAddr>()
             .is_ok_and(|ip| ip.is_loopback())
-}
-
-async fn run_daemon_start(
-    cli: &Cli,
-    environment: &Environment,
-    args: &DaemonStartArgs,
-) -> Result<RunOutput> {
-    let launch = &args.launch;
-    let launch_flags = launch.to_launch_flags(cli.server_url.clone());
-    let start = daemon::DaemonStartAssembly::load(&cli.profile, &launch_flags, environment)
-        .context("load daemon start profile")?;
-    validate_daemon_health_port(launch.health_port, &start.launch)?;
-
-    if !launch.foreground {
-        let executable = std::env::current_exe().context("resolve cordy executable")?;
-        let lifecycle = cordy_daemon::lifecycle::DaemonLifecycle::assemble(
-            start.lifecycle_options(executable, CLIENT_VERSION),
-            &start.profile_input,
-        )
-        .context("assemble background daemon lifecycle")?;
-        let outcome = lifecycle.start().await.context("start daemon")?;
-        return render_daemon_start_outcome(outcome);
-    }
-
-    let options = start.bootstrap_options();
-    let checkout_registry = Arc::new(cordy_daemon::health::RepoCheckoutRegistry::default());
-    cordy_daemon::assembly::run_production_daemon(options, move |context| {
-        start.production_assembly_with_local_catalog(&context, CLIENT_VERSION, checkout_registry)
-    })
-    .await
-    .context("run foreground daemon")?;
-
-    Ok(RunOutput {
-        stdout: String::new(),
-        stderr: String::new(),
-    })
-}
-
-async fn run_daemon_restart(
-    cli: &Cli,
-    environment: &Environment,
-    args: &DaemonRestartArgs,
-) -> Result<RunOutput> {
-    require_human_local_command(environment, "daemon restart")?;
-    ensure_restart_is_background(&args.launch)?;
-    let flags = args.launch.to_launch_flags(cli.server_url.clone());
-    let start = daemon::DaemonStartAssembly::load(&cli.profile, &flags, environment)
-        .context("load daemon restart profile")?;
-    validate_daemon_health_port(args.launch.health_port, &start.launch)?;
-    let executable = std::env::current_exe().context("resolve cordy executable")?;
-    let lifecycle = cordy_daemon::lifecycle::DaemonLifecycle::assemble(
-        start.lifecycle_options(executable, CLIENT_VERSION),
-        &start.profile_input,
-    )
-    .context("assemble daemon restart lifecycle")?;
-    let outcome = lifecycle.restart().await.context("restart daemon")?;
-    render_daemon_restart_outcome(outcome)
-}
-
-async fn run_daemon_stop(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
-    require_human_local_command(environment, "daemon stop")?;
-    let flags = config::DaemonLaunchFlags {
-        server_url: cli.server_url.clone(),
-        ..config::DaemonLaunchFlags::default()
-    };
-    let start = daemon::DaemonStartAssembly::load_for_control(&cli.profile, &flags, environment)
-        .context("load daemon stop profile")?;
-    let executable = std::env::current_exe().context("resolve cordy executable")?;
-    let lifecycle = cordy_daemon::lifecycle::DaemonLifecycle::assemble(
-        start.lifecycle_options(executable, CLIENT_VERSION),
-        &start.profile_input,
-    )
-    .context("assemble daemon stop lifecycle")?;
-    let outcome = lifecycle.stop().await.context("stop daemon")?;
-    match outcome {
-        cordy_daemon::process_control::DaemonStopOutcome::AlreadyStopped => Ok(RunOutput {
-            stdout: "daemon already stopped\n".to_string(),
-            stderr: String::new(),
-        }),
-        cordy_daemon::process_control::DaemonStopOutcome::Stopped { .. } => Ok(RunOutput {
-            stdout: "daemon stopped\n".to_string(),
-            stderr: String::new(),
-        }),
-        cordy_daemon::process_control::DaemonStopOutcome::StillStopping { pid, .. } => {
-            bail!("daemon is still stopping (pid {pid}); refusing to report success")
-        }
-    }
 }
 
 async fn run_daemon_status(
