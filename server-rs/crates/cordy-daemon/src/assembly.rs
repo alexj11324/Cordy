@@ -193,6 +193,7 @@ impl DaemonProductionInputs {
         let services = Arc::new(DaemonProductionServices::new(
             Arc::clone(&config),
             Arc::clone(&self.client),
+            Arc::clone(&self.repo_cache),
             provider,
         ));
         DaemonProductionStack::new_shared(

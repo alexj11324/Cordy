@@ -14,7 +14,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use crate::client::{Client, WorkspaceInfo};
 use crate::config::Config;
-use crate::repocache::Ctx;
+use crate::repocache::{Cache, Ctx, RepoInfo};
 use crate::runtime_registry::RuntimeRegistry;
 
 const WORKSPACE_SYNC_TIMEOUT: Duration = Duration::from_secs(15);
@@ -61,15 +61,22 @@ pub trait RuntimeRegistrationSource: Send + Sync + 'static {
 pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
     config: Arc<Config>,
     client: Arc<Client>,
+    repo_cache: Arc<Cache>,
     source: Arc<S>,
     serial: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
 }
 
 impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
-    pub fn new(config: Arc<Config>, client: Arc<Client>, source: Arc<S>) -> Self {
+    pub fn new(
+        config: Arc<Config>,
+        client: Arc<Client>,
+        repo_cache: Arc<Cache>,
+        source: Arc<S>,
+    ) -> Self {
         Self {
             config,
             client,
+            repo_cache,
             source,
             serial: Mutex::new(HashMap::new()),
         }
@@ -270,6 +277,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             .iter()
             .map(|runtime| runtime.id.clone())
             .collect();
+        let repos = response.repos;
         let delta = registry.apply_registration(
             workspace.id.clone(),
             workspace.name.clone(),
@@ -287,6 +295,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 }
             }
         }
+        self.sync_workspace_repos(&ctx, &workspace.id, repos).await;
         Ok(())
     }
 
@@ -351,6 +360,28 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 .entry(workspace_id.to_string())
                 .or_insert_with(|| Arc::new(AsyncMutex::new(()))),
         )
+    }
+
+    async fn sync_workspace_repos(
+        &self,
+        ctx: &Ctx,
+        workspace_id: &str,
+        repos: Vec<crate::types::RepoData>,
+    ) {
+        if repos.is_empty() {
+            return;
+        }
+        let repos: Vec<RepoInfo> = repos
+            .into_iter()
+            .filter(|repo| !repo.url.is_empty())
+            .map(|repo| RepoInfo { url: repo.url })
+            .collect();
+        if repos.is_empty() {
+            return;
+        }
+        if let Err(error) = self.repo_cache.sync_ctx(ctx, workspace_id, &repos).await {
+            tracing::warn!(%workspace_id, %error, "workspace repo cache sync failed");
+        }
     }
 }
 

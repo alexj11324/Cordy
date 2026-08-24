@@ -26,7 +26,7 @@ use crate::reconcile::{ReconcileBroadcaster, WorkspaceChangeSignal};
 use crate::registration::{
     BuiltinRefreshReason, RuntimeRegistrationService, RuntimeRegistrationSource,
 };
-use crate::repocache::Ctx;
+use crate::repocache::{Cache, Ctx};
 use crate::runtime_registry::RuntimeRegistry;
 use crate::task_execution::TaskRunOutcome;
 use crate::types::Task;
@@ -70,11 +70,17 @@ pub struct DaemonProductionServices<P: ProviderRuntimeAdapter> {
 }
 
 impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
-    pub fn new(config: Arc<Config>, client: Arc<Client>, provider: Arc<P>) -> Self {
+    pub fn new(
+        config: Arc<Config>,
+        client: Arc<Client>,
+        repo_cache: Arc<Cache>,
+        provider: Arc<P>,
+    ) -> Self {
         Self {
             registration: RuntimeRegistrationService::new(
                 Arc::clone(&config),
                 Arc::clone(&client),
+                repo_cache,
                 Arc::clone(&provider),
             ),
             config,
