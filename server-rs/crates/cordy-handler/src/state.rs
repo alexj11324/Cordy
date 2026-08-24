@@ -3,183 +3,49 @@
 
 use std::sync::Arc;
 
+use cordy_auth::daemon_token_cache::DaemonTokenCache;
 use cordy_auth::pat_cache::PatCache;
 use cordy_realtime::hub::Hub;
+use cordy_service::autopilot::{AutopilotService, EntitlementProvider};
 use cordy_service::email::EmailService;
 use cordy_service::issue_service::IssueService;
 use cordy_service::plugin::PluginService;
 use cordy_service::plugin_token::CallbackTokens;
 use cordy_service::task_service::TaskService;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AttachmentDownloadMode {
-    Auto,
-    CloudFront,
-    Presign,
-    Proxy,
-}
-
-#[derive(Clone)]
-pub struct AttachmentDownloadSettings {
-    pub mode: AttachmentDownloadMode,
-    pub public_url: String,
-    pub ttl: std::time::Duration,
-    pub cloudfront_signer: Option<Arc<crate::cloudfront::CloudFrontSigner>>,
-}
-
-impl Default for AttachmentDownloadSettings {
-    fn default() -> Self {
-        Self {
-            mode: AttachmentDownloadMode::Auto,
-            public_url: String::new(),
-            ttl: std::time::Duration::from_secs(30 * 60),
-            cloudfront_signer: None,
-        }
-    }
-}
-
-impl AttachmentDownloadSettings {
-    pub async fn from_config(config: &cordy_config::Config) -> anyhow::Result<Self> {
-        let mode = match config
-            .storage
-            .attachment_download_mode
-            .as_deref()
-            .unwrap_or("auto")
-            .trim()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "" | "auto" => AttachmentDownloadMode::Auto,
-            "cloudfront" => AttachmentDownloadMode::CloudFront,
-            "presign" => AttachmentDownloadMode::Presign,
-            "proxy" => AttachmentDownloadMode::Proxy,
-            _ => anyhow::bail!(
-                "ATTACHMENT_DOWNLOAD_MODE must be auto, cloudfront, presign, or proxy"
-            ),
-        };
-        let ttl = config
-            .storage
-            .attachment_download_url_ttl
-            .as_deref()
-            .map(parse_attachment_ttl)
-            .transpose()?
-            .unwrap_or_else(|| std::time::Duration::from_secs(30 * 60));
-        let cloudfront_signer = crate::cloudfront::CloudFrontSigner::from_config(config)
-            .await?
-            .map(Arc::new);
-        anyhow::ensure!(
-            mode != AttachmentDownloadMode::CloudFront || cloudfront_signer.is_some(),
-            "ATTACHMENT_DOWNLOAD_MODE=cloudfront requires a CloudFront signing key"
-        );
-        Ok(Self {
-            mode,
-            public_url: config
-                .urls
-                .public_url
-                .as_deref()
-                .unwrap_or_default()
-                .trim()
-                .trim_end_matches('/')
-                .to_string(),
-            ttl,
-            cloudfront_signer,
-        })
-    }
-}
-
-fn parse_attachment_ttl(raw: &str) -> anyhow::Result<std::time::Duration> {
-    let raw = raw.trim();
-    anyhow::ensure!(
-        !raw.is_empty(),
-        "ATTACHMENT_DOWNLOAD_URL_TTL cannot be empty"
-    );
-    let raw = raw.strip_prefix('+').unwrap_or(raw);
-    anyhow::ensure!(
-        !raw.starts_with('-'),
-        "ATTACHMENT_DOWNLOAD_URL_TTL must be positive"
-    );
-    anyhow::ensure!(raw != "0", "ATTACHMENT_DOWNLOAD_URL_TTL must be positive");
-
-    let mut rest = raw;
-    let mut total_nanos = 0_u128;
-    while !rest.is_empty() {
-        let integer_len = rest.bytes().take_while(u8::is_ascii_digit).count();
-        let mut number_len = integer_len;
-        let mut fraction = None;
-        if rest[integer_len..].starts_with('.') {
-            let fraction_start = integer_len + 1;
-            let fraction_len = rest[fraction_start..]
-                .bytes()
-                .take_while(u8::is_ascii_digit)
-                .count();
-            anyhow::ensure!(
-                integer_len > 0 || fraction_len > 0,
-                "invalid ATTACHMENT_DOWNLOAD_URL_TTL {raw:?}"
-            );
-            number_len = fraction_start + fraction_len;
-            fraction = Some(&rest[fraction_start..number_len]);
-        } else {
-            anyhow::ensure!(
-                integer_len > 0,
-                "invalid ATTACHMENT_DOWNLOAD_URL_TTL {raw:?}"
-            );
-        }
-
-        let unit_text = &rest[number_len..];
-        let (unit, unit_nanos) = [
-            ("ns", 1_u128),
-            ("us", 1_000),
-            ("µs", 1_000),
-            ("μs", 1_000),
-            ("ms", 1_000_000),
-            ("s", 1_000_000_000),
-            ("m", 60 * 1_000_000_000),
-            ("h", 60 * 60 * 1_000_000_000),
-        ]
-        .into_iter()
-        .find(|(unit, _)| unit_text.starts_with(unit))
-        .ok_or_else(|| anyhow::anyhow!("invalid ATTACHMENT_DOWNLOAD_URL_TTL {raw:?}"))?;
-
-        let whole = if integer_len == 0 {
-            0
-        } else {
-            rest[..integer_len].parse::<u128>()?
-        };
-        let mut segment = whole
-            .checked_mul(unit_nanos)
-            .ok_or_else(|| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too large"))?;
-        if let Some(fraction) = fraction.filter(|fraction| !fraction.is_empty()) {
-            let scale = 10_u128
-                .checked_pow(u32::try_from(fraction.len())?)
-                .ok_or_else(|| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too precise"))?;
-            let fractional_nanos = fraction
-                .parse::<u128>()?
-                .checked_mul(unit_nanos)
-                .ok_or_else(|| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too large"))?
-                / scale;
-            segment = segment
-                .checked_add(fractional_nanos)
-                .ok_or_else(|| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too large"))?;
-        }
-        total_nanos = total_nanos
-            .checked_add(segment)
-            .ok_or_else(|| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too large"))?;
-        rest = &unit_text[unit.len()..];
-    }
-
-    anyhow::ensure!(
-        total_nanos > 0,
-        "ATTACHMENT_DOWNLOAD_URL_TTL must be positive"
-    );
-    anyhow::ensure!(
-        total_nanos <= i64::MAX as u128,
-        "ATTACHMENT_DOWNLOAD_URL_TTL is too large"
-    );
-    Ok(std::time::Duration::from_nanos(u64::try_from(total_nanos)?))
-}
-
 struct DaemonTaskWakeup {
     hub: Arc<cordy_daemon::hub::DaemonHub>,
+}
+
+struct ChatQuickActionsClient {
+    llm: Arc<cordy_llm::Client>,
+}
+
+#[async_trait::async_trait]
+impl cordy_service::chat_quick_actions::ChatQuickActionsLlm for ChatQuickActionsClient {
+    fn enabled(&self) -> bool {
+        self.llm.enabled()
+    }
+
+    async fn generate_json(
+        &self,
+        model: &str,
+        system_prompt: &str,
+        user_prompt: &str,
+        temperature: f64,
+        max_completion_tokens: i64,
+    ) -> anyhow::Result<String> {
+        Ok(self
+            .llm
+            .generate_json(
+                model,
+                system_prompt,
+                user_prompt,
+                temperature,
+                max_completion_tokens,
+            )
+            .await?)
+    }
 }
 
 struct DaemonMessageMetrics {
@@ -198,26 +64,12 @@ impl cordy_service::task_service::TaskWakeupNotifier for DaemonTaskWakeup {
     }
 }
 
-fn fanout_workspace_event(hub: &Hub, event: &cordy_events::Event) {
-    if event.workspace_id.is_empty() {
-        return;
+struct SharedFlagSource(Arc<dyn cordy_service::feature_flags::FlagSource>);
+
+impl cordy_service::feature_flags::FlagSource for SharedFlagSource {
+    fn is_enabled(&self, key: &str, default: bool) -> bool {
+        self.0.is_enabled(key, default)
     }
-    let Ok(frame) = serde_json::to_vec(&serde_json::json!({
-        "type": event.event_type,
-        "payload": event.payload,
-        "actor_id": event.actor_id,
-        "actor_type": event.actor_type,
-    })) else {
-        return;
-    };
-    let event_id = uuid::Uuid::now_v7().to_string();
-    cordy_realtime::M.record_event(&event.event_type);
-    hub.broadcast_to_scope_dedup(
-        cordy_realtime::SCOPE_WORKSPACE,
-        &event.workspace_id,
-        &frame,
-        &event_id,
-    );
 }
 
 /// Handler-layer state shared by all axum extractors.
@@ -225,27 +77,35 @@ fn fanout_workspace_event(hub: &Hub, event: &cordy_events::Event) {
 pub struct HandlerState {
     pub pool: sqlx::PgPool,
     pub pat_cache: PatCache,
+    pub daemon_token_cache: DaemonTokenCache,
     /// Realtime WS hub (cordy-realtime). `None` only in tests.
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
     pub bus: Arc<cordy_events::Bus>,
     /// Prometheus business counters. None when METRICS_ADDR is disabled.
     pub business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
-    /// Product analytics sink. A no-op client keeps tests and self-hosting inert.
-    pub analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
     /// HTTP request metrics. None when METRICS_ADDR is disabled.
     pub http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
     /// Public authentication dependencies and boot-time policy.
     pub auth_settings: crate::auth::AuthSettings,
     pub email_service: Arc<EmailService>,
+    pub analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
     pub auth_rate_limit: cordy_middleware::ratelimit::RateLimitState,
     pub auth_verify_rate_limit: cordy_middleware::ratelimit::RateLimitState,
+    pub invitation_admission: crate::invitation::InvitationAdmission,
+    /// Anonymous frontend capability/configuration response.
+    pub public_config: crate::config::PublicConfigSettings,
     /// GitHub GraphQL snapshot refresh pipeline. Disabled in lightweight tests.
     pub github_snapshots: Arc<cordy_ghsnapshot::Manager>,
     /// Feature flag source. `None` fails closed for rollout-gated writes.
     pub feature_flags: Option<Arc<dyn cordy_service::feature_flags::FlagSource>>,
+    /// Shared Composio service used by both HTTP routes and task overlays.
+    pub composio_service: Option<Arc<cordy_composio::Service>>,
     /// Task domain service (Go h.TaskService).
     pub tasks: Arc<TaskService>,
+    /// Shared Autopilot service. It must be reused by HTTP paths and durable
+    /// workers so entitlement/quota configuration cannot disappear per request.
+    pub autopilots: Arc<AutopilotService>,
     /// Issue domain service (Go h.IssueService).
     pub issues: Arc<IssueService>,
     /// Plugin service (Go h.PluginService).
@@ -269,20 +129,42 @@ pub struct HandlerState {
     /// Shared Redis connection for per-IP public-route rate limiting. None is
     /// the Go nil-client path and deliberately fails open.
     pub rate_limit_client: Option<redis::Client>,
+    /// Public VCS webhook gate and at-rest secret decryptor. The feature is
+    /// deliberately invisible when disabled and 503s when enabled without a
+    /// usable key, matching Go's deployment boundary.
+    pub vcs_integration_enabled: bool,
+    pub vcs_secret_box: Option<cordy_util::secretbox::SecretBox>,
     /// Daemon WebSocket hub (cordy-daemon). `None` only in tests — the WS
     /// endpoint reports 503 and daemons fall back to HTTP polling.
     pub daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
-    /// Shared attachment/object storage and its one download URL policy.
-    /// #70 extends this seam; it must not create a second policy or signer.
+    /// Attachment object store. None is the explicit unconfigured test path.
     pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
-    pub attachment_download: AttachmentDownloadSettings,
     pub attachment_frame_ancestors: Vec<String>,
+    /// On-demand Slack channel history reader. `None` means Slack history is
+    /// not configured; chat history then falls back to the persisted transcript.
+    pub slack_history: Option<Arc<cordy_slack::history::History>>,
+    /// Server-internal assist LLM. An unconfigured client is deliberately
+    /// inert and guarantees that private chat content produces no egress.
+    pub llm: Arc<cordy_llm::Client>,
+    /// Low-latency hint for the durable webhook worker. PostgreSQL polling is
+    /// authoritative and recovers missed notifications or process restarts.
+    webhook_delivery_notify: Option<Arc<tokio::sync::Notify>>,
     /// Keeps the weak notifier installed in `TaskService` alive.
     _task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier>,
 }
 
 impl HandlerState {
     pub fn new(pool: sqlx::PgPool, pat_cache: PatCache, hub: Option<Arc<Hub>>) -> Self {
+        Self::new_with_runtime_integrations(pool, pat_cache, hub, None, None)
+    }
+
+    pub fn new_with_runtime_integrations(
+        pool: sqlx::PgPool,
+        pat_cache: PatCache,
+        hub: Option<Arc<Hub>>,
+        feature_flags: Option<Arc<dyn cordy_service::feature_flags::FlagSource>>,
+        composio_service: Option<Arc<cordy_composio::Service>>,
+    ) -> Self {
         let bus = Arc::new(cordy_events::Bus::new());
         let daemon_hub = Arc::new(cordy_daemon::hub::DaemonHub::new());
         let task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier> =
@@ -291,7 +173,20 @@ impl HandlerState {
             });
         let mut task_service = TaskService::new(pool.clone(), bus.clone());
         task_service.wakeup = Some(Arc::downgrade(&task_wakeup));
+        task_service.feature_flags = feature_flags.as_ref().map(|flags| {
+            Box::new(SharedFlagSource(flags.clone()))
+                as Box<dyn cordy_service::feature_flags::FlagSource>
+        });
+        task_service.composio = composio_service.as_ref().map(|service| {
+            Arc::new(crate::composio::TaskOverlayBuilder::new(service.clone()))
+                as Arc<dyn cordy_service::task_service::ComposioOverlayBuilder>
+        });
         let tasks = Arc::new(task_service);
+        let autopilots = Arc::new(AutopilotService::new(
+            pool.clone(),
+            bus.clone(),
+            tasks.clone(),
+        ));
         let issues = Arc::new(IssueService::new(pool.clone(), bus.clone(), tasks.clone()));
         let plugins = Arc::new(PluginService::with_pool(pool.clone()));
         let trusted_proxies = cordy_middleware::ratelimit::parse_trusted_proxies(
@@ -307,21 +202,27 @@ impl HandlerState {
             60,
         );
         auth_verify_rate_limit.trusted_proxies = trusted_proxies;
+        let llm = cordy_llm::Client::new(cordy_llm::Config::default());
         Self {
             pool,
             pat_cache,
+            daemon_token_cache: DaemonTokenCache::disabled(),
             hub,
             bus,
             business_metrics: None,
-            analytics: Arc::new(cordy_analytics::NoopClient),
             http_metrics: None,
             auth_settings: crate::auth::AuthSettings::from_env(),
             email_service: Arc::new(EmailService::new()),
+            analytics: Arc::new(cordy_analytics::NoopClient),
             auth_rate_limit,
             auth_verify_rate_limit,
+            invitation_admission: crate::invitation::InvitationAdmission::default(),
+            public_config: crate::config::PublicConfigSettings::default(),
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
-            feature_flags: None,
+            feature_flags,
+            composio_service,
             tasks,
+            autopilots,
             issues,
             plugins,
             callbacks: Some(Arc::new(CallbackTokens::new())),
@@ -336,34 +237,123 @@ impl HandlerState {
             local_skill_list_store: None,
             local_skill_import_store: None,
             rate_limit_client: None,
+            vcs_integration_enabled: false,
+            vcs_secret_box: None,
             daemon_hub: Some(daemon_hub),
             attachment_storage: None,
-            attachment_download: AttachmentDownloadSettings::default(),
             attachment_frame_ancestors: Vec::new(),
+            slack_history: None,
+            llm: Arc::new(llm),
+            webhook_delivery_notify: None,
             _task_wakeup: task_wakeup,
         }
+    }
+
+    /// Wires the internal OpenAI-compatible assist layer. Invalid retry
+    /// budgets fail startup rather than silently selecting another policy.
+    pub fn with_llm_from_env(self) -> anyhow::Result<Self> {
+        const MAX_RETRIES: u32 = 5;
+        let raw_retries = std::env::var("CORDY_LLM_MAX_RETRIES").unwrap_or_default();
+        let max_retries = if raw_retries.trim().is_empty() {
+            None
+        } else {
+            let parsed = raw_retries.trim().parse::<u32>().map_err(|_| {
+                anyhow::anyhow!(
+                    "CORDY_LLM_MAX_RETRIES must be an integer from 0 to {MAX_RETRIES}, got {:?}",
+                    raw_retries.trim()
+                )
+            })?;
+            anyhow::ensure!(
+                parsed <= MAX_RETRIES,
+                "CORDY_LLM_MAX_RETRIES must be at most {MAX_RETRIES}, got {parsed}"
+            );
+            Some(parsed)
+        };
+        self.with_llm_config(cordy_llm::Config {
+            api_key: std::env::var("CORDY_LLM_API_KEY").unwrap_or_default(),
+            base_url: std::env::var("CORDY_LLM_BASE_URL").unwrap_or_default(),
+            default_model: std::env::var("CORDY_LLM_DEFAULT_MODEL").unwrap_or_default(),
+            max_retries,
+        })
+    }
+
+    fn with_llm_config(mut self, config: cordy_llm::Config) -> anyhow::Result<Self> {
+        let llm = Arc::new(cordy_llm::Client::new(config));
+        if llm.enabled() {
+            anyhow::ensure!(
+                self.tasks
+                    .install_quick_actions(Arc::new(ChatQuickActionsClient { llm: llm.clone() })),
+                "chat quick-actions LLM is already configured"
+            );
+        }
+        self.llm = llm;
+        tracing::info!(
+            enabled = self.llm.enabled(),
+            max_retries = self.llm.max_retries(),
+            default_model = self.llm.default_model(),
+            "llm assist policy"
+        );
+        Ok(self)
+    }
+
+    /// Wires the S7 Slack history service with the same secretbox key used by
+    /// channel installation credentials. Missing or invalid keys leave the
+    /// reader disabled instead of interpreting ciphertext as plaintext.
+    pub fn with_slack_history_from_env(mut self) -> Self {
+        let Ok(key) = cordy_util::secretbox::load_key("CORDY_SLACK_SECRET_KEY") else {
+            return self;
+        };
+        let Ok(secret_box) = cordy_util::secretbox::SecretBox::new(&key) else {
+            return self;
+        };
+        let decrypt: Arc<cordy_slack::config::Decrypter> =
+            Arc::new(move |sealed| secret_box.open(sealed).map_err(anyhow::Error::from));
+        self.slack_history = Some(Arc::new(cordy_slack::history::History::new(
+            self.pool.clone(),
+            Some(decrypt),
+        )));
+        self
     }
 
     pub fn with_attachment_storage(
         mut self,
         storage: Arc<dyn crate::attachment_storage::AttachmentStorage>,
-        download: AttachmentDownloadSettings,
+        frame_ancestors: Vec<String>,
     ) -> Self {
         self.attachment_storage = Some(storage);
-        self.attachment_download = download;
+        self.attachment_frame_ancestors = frame_ancestors;
         self
     }
 
-    pub fn with_attachment_frame_ancestors(mut self, origins: Vec<String>) -> Self {
-        self.attachment_frame_ancestors = origins;
+    pub fn with_public_config(mut self, settings: crate::config::PublicConfigSettings) -> Self {
+        self.public_config = settings;
         self
     }
 
-    /// Applies the merged TOML+environment realtime metrics credential. The
-    /// constructor's environment fallback remains available to lightweight
-    /// tests, while production uses the already-loaded config snapshot.
-    pub fn with_realtime_metrics_token(mut self, raw: Option<&str>) -> Self {
-        self.realtime_metrics_token = raw.unwrap_or_default().trim().to_string();
+    pub fn with_feature_flags(
+        mut self,
+        flags: Arc<dyn cordy_service::feature_flags::FlagSource>,
+    ) -> Self {
+        self.feature_flags = Some(flags);
+        self
+    }
+
+    /// Replaces the lightweight test plugin service with production env
+    /// wiring, including the encryption/signing key and callback URL.
+    pub fn with_plugins_from_env(mut self) -> Self {
+        let mut plugins = PluginService::new_from_env(self.pool.clone());
+        if let Ok(key) = cordy_util::secretbox::load_key("CORDY_PLUGIN_SECRET_KEY") {
+            plugins.secrets = cordy_util::secretbox::SecretBox::new(&key).ok();
+        }
+        self.plugins = Arc::new(plugins);
+        self.callback_base_url = std::env::var("CORDY_PUBLIC_URL")
+            .unwrap_or_default()
+            .trim()
+            .trim_end_matches('/')
+            .to_string();
+        if !self.callback_base_url.is_empty() {
+            self.callback_base_url.push_str("/api/v1/plugin");
+        }
         self
     }
 
@@ -372,9 +362,6 @@ impl HandlerState {
         business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
         http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
     ) -> Self {
-        if let Some(metrics) = business_metrics.as_ref() {
-            self.tasks.configure_metrics(metrics.clone());
-        }
         if let (Some(hub), Some(metrics)) = (self.daemon_hub.as_ref(), business_metrics.as_ref()) {
             hub.set_message_kind_recorder(Some(Arc::new(DaemonMessageMetrics {
                 metrics: metrics.clone(),
@@ -383,6 +370,74 @@ impl HandlerState {
         self.business_metrics = business_metrics;
         self.http_metrics = http_metrics;
         self
+    }
+
+    /// Installs the production entitlement provider on the one shared
+    /// Autopilot service. `None` is the self-hosted/off policy and deliberately
+    /// avoids all quota-table reads.
+    pub fn with_autopilot_entitlements(
+        mut self,
+        entitlements: Option<Arc<dyn EntitlementProvider>>,
+    ) -> Self {
+        let mut service =
+            AutopilotService::new(self.pool.clone(), self.bus.clone(), self.tasks.clone());
+        service.entitlements = entitlements;
+        service.quota_metrics = self
+            .business_metrics
+            .clone()
+            .map(|metrics| metrics as Arc<dyn cordy_service::autopilot::AutopilotQuotaMetrics>);
+        self.autopilots = Arc::new(service);
+        self
+    }
+
+    /// Starts the bounded PostgreSQL-leased webhook worker pool. Call only
+    /// from production startup after all Autopilot service wiring is complete.
+    pub fn start_webhook_delivery_worker(mut self) -> Self {
+        let notify = Arc::new(tokio::sync::Notify::new());
+        crate::webhook_delivery_worker::WebhookDeliveryWorker::new(
+            self.pool.clone(),
+            self.autopilots.clone(),
+            notify.clone(),
+        )
+        .start();
+        self.webhook_delivery_notify = Some(notify);
+        self
+    }
+
+    pub fn start_autopilot_quota_reconciler(self) -> Self {
+        if !self.autopilots.quota_enabled() {
+            return self;
+        }
+        let service = self.autopilots.clone();
+        tokio::spawn(async move {
+            loop {
+                let now = chrono::Utc::now();
+                match service
+                    .reconcile_quota_reservations(
+                        now - chrono::Duration::minutes(10),
+                        now - chrono::Duration::hours(6),
+                        100,
+                    )
+                    .await
+                {
+                    Ok(settled) if settled > 0 => {
+                        tracing::info!(settled, "autopilot quota reconciler settled reservations");
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, "autopilot quota reconciler failed");
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            }
+        });
+        self
+    }
+
+    pub fn notify_webhook_delivery(&self) {
+        if let Some(notify) = &self.webhook_delivery_notify {
+            notify.notify_one();
+        }
     }
 
     pub fn with_analytics(mut self, analytics: Arc<dyn cordy_analytics::AnalyticsClient>) -> Self {
@@ -406,17 +461,16 @@ impl HandlerState {
         self.auth_verify_rate_limit.trusted_proxies = trusted;
         self
     }
+
     /// Installs and starts the S7 GitHub snapshot manager. Applied snapshots
     /// are broadcast with the same weakest-role PR payload as the Go handler.
     pub fn with_github_snapshots(mut self, client: Option<cordy_ghsnapshot::Client>) -> Self {
         let pool = self.pool.clone();
         let event_pool = pool.clone();
         let bus = self.bus.clone();
-        let hub = self.hub.clone();
         let on_applied: cordy_ghsnapshot::OnApplied = Arc::new(move |pull_request_id| {
             let pool = event_pool.clone();
             let bus = bus.clone();
-            let hub = hub.clone();
             tokio::spawn(async move {
                 let Ok(Some(pull_request)) =
                     cordy_db::queries::github_snapshot::get_git_hub_pull_request_by_id(
@@ -437,7 +491,7 @@ impl HandlerState {
                 };
                 let payload =
                     crate::issue_pull_request::github_model_response(pull_request.clone(), true);
-                let event = cordy_events::Event {
+                bus.publish(&cordy_events::Event {
                     event_type: cordy_protocol::EVENT_PULL_REQUEST_UPDATED.into(),
                     workspace_id: pull_request.workspace_id.to_string(),
                     actor_type: "system".into(),
@@ -446,11 +500,7 @@ impl HandlerState {
                         "linked_issue_ids": issue_ids.into_iter().flatten().map(|id| id.to_string()).collect::<Vec<_>>(),
                     }),
                     ..Default::default()
-                };
-                bus.publish(&event);
-                if let Some(hub) = hub.as_deref() {
-                    fanout_workspace_event(hub, &event);
-                }
+                });
             });
         });
         let manager = Arc::new(cordy_ghsnapshot::Manager::new(
@@ -470,6 +520,7 @@ impl HandlerState {
     pub async fn with_redis(mut self, client: redis::Client) -> Result<Self, redis::RedisError> {
         self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
         self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client.clone());
+        self.daemon_token_cache = DaemonTokenCache::new(client.clone()).await?;
         let conn = client.get_connection_manager().await?;
         self.update_store = Some(Arc::new(crate::pending_store::UpdateStore::new(
             conn.clone(),
@@ -506,6 +557,16 @@ impl HandlerState {
         self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client);
         self
     }
+
+    pub fn with_vcs_webhooks(
+        mut self,
+        enabled: bool,
+        secret_box: Option<cordy_util::secretbox::SecretBox>,
+    ) -> Self {
+        self.vcs_integration_enabled = enabled;
+        self.vcs_secret_box = secret_box;
+        self
+    }
 }
 
 fn positive_env_i64(name: &str, default: i64) -> i64 {
@@ -519,73 +580,21 @@ fn positive_env_i64(name: &str, default: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
 
     #[test]
-    fn attachment_ttl_preserves_go_duration_grammar() {
-        assert_eq!(
-            parse_attachment_ttl("1h30m").unwrap(),
-            Duration::from_secs(90 * 60)
-        );
-        assert_eq!(
-            parse_attachment_ttl("1.5h250ms").unwrap(),
-            Duration::from_secs(90 * 60) + Duration::from_millis(250)
-        );
-        assert_eq!(
-            parse_attachment_ttl("500us").unwrap(),
-            Duration::from_micros(500)
-        );
-        for invalid in ["", "0", "-1s", "30", "1d", "1hour"] {
-            assert!(parse_attachment_ttl(invalid).is_err(), "{invalid}");
-        }
-    }
-
-    #[test]
-    fn observability_wires_the_already_shared_task_service() {
-        let pool =
-            sqlx::PgPool::connect_lazy("postgres://invalid.invalid/nope").expect("lazy test pool");
-        let state = HandlerState::new(pool, PatCache::disabled(), None);
-        let original_tasks = state.tasks.clone();
-        let metrics = Arc::new(cordy_metrics::BusinessMetrics::new());
-
-        let state = state.with_observability(Some(metrics.clone()), None);
-
-        assert!(Arc::ptr_eq(&state.tasks, &original_tasks));
-        assert!(Arc::ptr_eq(
-            state.tasks.metrics.get().expect("task metrics configured"),
-            &metrics
-        ));
-    }
-
-    #[test]
-    fn snapshot_event_fanout_reaches_only_its_workspace() {
-        let hub = Hub::new();
-        let (_target_id, mut target_rx) = hub.register("user-1", "workspace-1");
-        let (_other_id, mut other_rx) = hub.register("user-2", "workspace-2");
-        let event = cordy_events::Event {
-            event_type: cordy_protocol::EVENT_PULL_REQUEST_UPDATED.into(),
-            workspace_id: "workspace-1".into(),
-            actor_type: "system".into(),
-            payload: serde_json::json!({"pull_request": {"id": "pr-1"}}),
-            ..Default::default()
-        };
-
-        fanout_workspace_event(&hub, &event);
-
-        let frame = target_rx.try_recv().expect("workspace event frame");
-        let frame: serde_json::Value = serde_json::from_slice(&frame).expect("valid event json");
-        assert_eq!(
-            frame,
-            serde_json::json!({
-                "type": cordy_protocol::EVENT_PULL_REQUEST_UPDATED,
-                "payload": {"pull_request": {"id": "pr-1"}},
-                "actor_id": "",
-                "actor_type": "system",
+    fn configured_llm_is_shared_with_chat_quick_actions() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = HandlerState::new(pool, PatCache::disabled(), None)
+            .with_llm_config(cordy_llm::Config {
+                base_url: "http://127.0.0.1:9/v1".into(),
+                ..Default::default()
             })
-        );
-        assert!(matches!(
-            other_rx.try_recv(),
-            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
-        ));
+            .unwrap();
+
+        assert!(state.llm.enabled());
+        assert!(state
+            .tasks
+            .quick_actions()
+            .is_some_and(|quick_actions| quick_actions.enabled()));
     }
 }

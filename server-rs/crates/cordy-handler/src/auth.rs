@@ -82,13 +82,6 @@ impl AuthSettings {
             && is_six_digit_code(&self.dev_verification_code)
             && constant_time_eq(code.as_bytes(), self.dev_verification_code.as_bytes())
     }
-
-    pub(crate) fn cookie_attributes(&self) -> (Option<String>, bool) {
-        (
-            cordy_auth::cookie::cookie_domain(Some(&self.cookie_domain)),
-            cordy_auth::cookie::is_secure_cookie(Some(&self.frontend_origin)),
-        )
-    }
 }
 
 pub fn public_router(
@@ -497,7 +490,8 @@ async fn complete_login(
             );
         }
     };
-    let (domain, secure) = state.auth_settings.cookie_attributes();
+    let domain = cordy_auth::cookie::cookie_domain(Some(&state.auth_settings.cookie_domain));
+    let secure = cordy_auth::cookie::is_secure_cookie(Some(&state.auth_settings.frontend_origin));
     let cookies =
         match cordy_auth::cookie::set_auth_cookie_values(&token, domain.as_deref(), secure) {
             Ok(cookies) => cookies,

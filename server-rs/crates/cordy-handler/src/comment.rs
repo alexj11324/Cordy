@@ -20,7 +20,15 @@ pub fn router() -> Router<HandlerState> {
     Router::new()
         .route(
             "/api/issues/{id}/comments",
-            get(crate::comment_list::list_comments),
+            get(crate::comment_list::list_comments).post(create),
+        )
+        .route(
+            "/api/issues/{id}/comments/trigger-preview",
+            post(preview_triggers),
+        )
+        .route(
+            "/api/comments/{comment_id}",
+            axum::routing::put(update).delete(delete),
         )
         .route(
             "/api/comments/{comment_id}/resolve",
@@ -30,6 +38,594 @@ pub fn router() -> Router<HandlerState> {
             "/api/comments/{comment_id}/reactions",
             post(add_reaction).delete(remove_reaction),
         )
+}
+
+#[derive(Debug, Deserialize)]
+struct CommentWriteRequest {
+    content: String,
+    #[serde(default, rename = "type")]
+    type_: String,
+    parent_id: Option<String>,
+    expected_revision: Option<i64>,
+    content_base: Option<String>,
+    attachment_ids: Option<Vec<String>>,
+    editing_comment_id: Option<String>,
+    #[serde(default)]
+    suppress_agent_ids: Vec<String>,
+}
+
+fn clean_content(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| *character != '\0')
+        .collect()
+}
+
+fn mention_ids(content: &str, kind: &str) -> Vec<Uuid> {
+    let needle = format!("mention://{kind}/");
+    let mut ids = Vec::new();
+    let mut rest = content;
+    while let Some(index) = rest.find(&needle) {
+        let tail = &rest[index + needle.len()..];
+        let raw = tail
+            .split(|character: char| !character.is_ascii_hexdigit() && character != '-')
+            .next()
+            .unwrap_or_default();
+        if let Ok(id) = Uuid::parse_str(raw) {
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        rest = &tail[raw.len()..];
+    }
+    ids
+}
+
+fn uuid_list(values: &[String], field: &str) -> Result<Vec<Uuid>, Response> {
+    values
+        .iter()
+        .map(|raw| {
+            Uuid::parse_str(raw)
+                .map_err(|_| error_response(StatusCode::BAD_REQUEST, &format!("invalid {field}")))
+        })
+        .collect()
+}
+
+async fn preview_triggers(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(issue_id): Path<String>,
+    Json(request): Json<CommentWriteRequest>,
+) -> Response {
+    let issue = match crate::issue::resolve_issue(&state, &context, &issue_id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let content = clean_content(&request.content);
+    if let Some(raw) = request.editing_comment_id.as_deref() {
+        let Ok(id) = Uuid::parse_str(raw) else {
+            return error_response(StatusCode::BAD_REQUEST, "invalid editing_comment_id");
+        };
+        if !matches!(comment::get_comment_in_workspace(&state.pool, id, issue.workspace_id).await, Ok(Some(editing)) if editing.issue_id == issue.id && editing.parent_id.map(|id| id.to_string()) == request.parent_id)
+        {
+            return error_response(StatusCode::BAD_REQUEST, "invalid editing comment");
+        }
+    }
+    let mut agents = Vec::new();
+    let mut blocked = Vec::new();
+    for id in mention_ids(&content, "agent") {
+        match cordy_db::queries::agent::get_agent_in_workspace(&state.pool, id, issue.workspace_id).await {
+            Ok(Some(agent)) if agent.archived_at.is_none() && agent.runtime_id.is_some() && crate::issue::can_member_invoke_agent(&state, context.member.user_id, issue.workspace_id, &agent).await => agents.push(json!({ "id":agent.id, "name":agent.name, "avatar_url":agent.avatar_url, "source":"mention_agent", "reason":"This agent was mentioned in the comment." })),
+            Ok(_) => blocked.push(json!({"target_type":"agent","target_id":id,"reason_code":"target_unavailable"})),
+            Err(_) => blocked.push(json!({"target_type":"agent","target_id":id,"reason_code":"internal_error"})),
+        }
+    }
+    for squad_id in mention_ids(&content, "squad") {
+        match cordy_db::queries::squad::get_squad_in_workspace(&state.pool, squad_id, issue.workspace_id).await {
+            Ok(Some(squad)) if squad.archived_at.is_none() => {
+                if let Ok(Some(agent)) = cordy_db::queries::agent::get_agent_in_workspace(&state.pool, squad.leader_id, issue.workspace_id).await {
+                    if agent.archived_at.is_none() && agent.runtime_id.is_some() && crate::issue::can_member_invoke_agent(&state, context.member.user_id, issue.workspace_id, &agent).await {
+                        agents.push(json!({ "id":agent.id, "name":agent.name, "avatar_url":agent.avatar_url, "source":"mention_squad_leader", "reason":"A mentioned squad will trigger its leader." }));
+                    } else { blocked.push(json!({"target_type":"squad","target_id":squad_id,"reason_code":"target_unavailable"})); }
+                }
+            }
+            _ => blocked.push(json!({"target_type":"squad","target_id":squad_id,"reason_code":"target_unavailable"})),
+        }
+    }
+    Json(json!({ "agents":agents, "blocked":blocked })).into_response()
+}
+
+async fn create(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(issue_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<CommentWriteRequest>,
+) -> Response {
+    let issue = match crate::issue::resolve_issue(&state, &context, &issue_id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let content = clean_content(&request.content);
+    if content.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "content is required");
+    }
+    let type_ = if request.type_.is_empty() {
+        "comment"
+    } else {
+        request.type_.as_str()
+    };
+    if !matches!(type_, "comment" | "progress_update") {
+        return error_response(StatusCode::BAD_REQUEST, "invalid comment type");
+    }
+    let parent_id = match request
+        .parent_id
+        .as_deref()
+        .map(Uuid::parse_str)
+        .transpose()
+    {
+        Ok(value) => value,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid parent_id"),
+    };
+    if let Some(parent_id) = parent_id {
+        if !matches!(comment::get_comment_in_workspace(&state.pool, parent_id, issue.workspace_id).await, Ok(Some(parent)) if parent.issue_id == issue.id)
+        {
+            return error_response(StatusCode::BAD_REQUEST, "invalid parent comment");
+        }
+    }
+    let (author_type, author_id, task_id) =
+        crate::issue::mutation_actor(&state, &context, &headers).await;
+    if author_type == "agent" {
+        if let Some(task_id) = task_id {
+            if let Ok(Some(task)) =
+                cordy_db::queries::agent::get_agent_task(&state.pool, task_id).await
+            {
+                if task.issue_id == Some(issue.id)
+                    && task.trigger_comment_id.is_some()
+                    && parent_id != task.trigger_comment_id
+                    && !task
+                        .coalesced_comment_ids
+                        .contains(&parent_id.unwrap_or_default())
+                {
+                    return error_response(
+                        StatusCode::CONFLICT,
+                        "parent_id is not a comment this task may reply under",
+                    );
+                }
+            }
+        }
+    }
+    let attachment_ids = match uuid_list(
+        request.attachment_ids.as_deref().unwrap_or_default(),
+        "attachment_ids",
+    ) {
+        Ok(ids) => ids,
+        Err(response) => return response,
+    };
+    let suppressed = match uuid_list(&request.suppress_agent_ids, "suppress_agent_ids") {
+        Ok(ids) => ids,
+        Err(response) => return response,
+    };
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(error) => {
+            tracing::warn!(%error, "failed to begin comment create");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to create comment",
+            );
+        }
+    };
+    let row = match comment::create_comment(
+        &mut *tx,
+        issue.id,
+        issue.workspace_id,
+        &author_type,
+        author_id,
+        &content,
+        type_,
+        parent_id,
+        task_id,
+        None,
+        None,
+        cordy_db::dbid::new_v7(),
+    )
+    .await
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "issue not found"),
+        Err(error) => {
+            tracing::warn!(%error, "failed to create comment");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to create comment",
+            );
+        }
+    };
+    let id = row.id.unwrap_or_default();
+    if attachment::link_attachments_to_comment(&mut *tx, id, issue.id, attachment_ids)
+        .await
+        .is_err()
+        || tx.commit().await.is_err()
+    {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to link comment attachments",
+        );
+    }
+    let created = comment::get_comment_in_workspace(&state.pool, id, issue.workspace_id)
+        .await
+        .ok()
+        .flatten()
+        .expect("created comment");
+    let mut outcomes = Vec::new();
+    for agent_id in mention_ids(&content, "agent") {
+        if suppressed.contains(&agent_id) {
+            continue;
+        }
+        let allowed = match cordy_db::queries::agent::get_agent_in_workspace(
+            &state.pool,
+            agent_id,
+            issue.workspace_id,
+        )
+        .await
+        {
+            Ok(Some(agent)) => {
+                crate::issue::can_member_invoke_agent(
+                    &state,
+                    context.member.user_id,
+                    issue.workspace_id,
+                    &agent,
+                )
+                .await
+            }
+            _ => false,
+        };
+        if !allowed {
+            outcomes.push(
+                json!({"agent_id":agent_id,"status":"blocked","reason":"invocation_not_allowed"}),
+            );
+            continue;
+        }
+        let outcome = match state
+            .tasks
+            .enqueue_task_for_mention(&issue, agent_id, Some(id))
+            .await
+        {
+            Ok(task) => json!({"agent_id":agent_id,"status":"queued","task_id":task.id}),
+            Err(error) => {
+                json!({"agent_id":agent_id,"status":"blocked","reason":error.to_string()})
+            }
+        };
+        outcomes.push(outcome);
+    }
+    for squad_id in mention_ids(&content, "squad") {
+        if let Ok(Some(squad)) = cordy_db::queries::squad::get_squad_in_workspace(
+            &state.pool,
+            squad_id,
+            issue.workspace_id,
+        )
+        .await
+        {
+            if suppressed.contains(&squad.leader_id) {
+                continue;
+            }
+            let allowed = match cordy_db::queries::agent::get_agent_in_workspace(
+                &state.pool,
+                squad.leader_id,
+                issue.workspace_id,
+            )
+            .await
+            {
+                Ok(Some(agent)) => {
+                    crate::issue::can_member_invoke_agent(
+                        &state,
+                        context.member.user_id,
+                        issue.workspace_id,
+                        &agent,
+                    )
+                    .await
+                }
+                _ => false,
+            };
+            if !allowed {
+                outcomes.push(json!({"agent_id":squad.leader_id,"status":"blocked","reason":"invocation_not_allowed"}));
+                continue;
+            }
+            let outcome = match state
+                .tasks
+                .enqueue_task_for_squad_leader(&issue, squad.leader_id, squad.id, Some(id))
+                .await
+            {
+                Ok(task) => json!({"agent_id":squad.leader_id,"status":"queued","task_id":task.id}),
+                Err(error) => {
+                    json!({"agent_id":squad.leader_id,"status":"blocked","reason":error.to_string()})
+                }
+            };
+            outcomes.push(outcome);
+        }
+    }
+    let mut value = comment_json(&state, &created).await;
+    if let Some(object) = value.as_object_mut() {
+        object.insert("issue_revision".into(), json!(row.issue_revision));
+        object.insert("trigger_outcomes".into(), json!(outcomes));
+    }
+    publish(
+        &state,
+        &context,
+        cordy_protocol::EVENT_COMMENT_CREATED,
+        &author_type,
+        author_id,
+        value.clone(),
+    );
+    (StatusCode::CREATED, Json(value)).into_response()
+}
+
+async fn update(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(comment_id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<CommentWriteRequest>,
+) -> Response {
+    let current = match load_comment(&state, &context, &comment_id).await {
+        Ok(comment) => comment,
+        Err(response) => return response,
+    };
+    let (actor_type, actor_id, task_id) =
+        crate::issue::mutation_actor(&state, &context, &headers).await;
+    let is_admin = matches!(context.member.role.as_str(), "owner" | "admin");
+    if !(current.author_type == actor_type && current.author_id == actor_id) && !is_admin {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "only comment author or admin can edit",
+        );
+    }
+    let content = clean_content(&request.content);
+    if content.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "content is required");
+    }
+    if request
+        .expected_revision
+        .is_some_and(|revision| revision < 1)
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "expected_revision must be a positive integer",
+        );
+    }
+    if let Some(expected) = request.expected_revision {
+        if expected != current.revision {
+            return (StatusCode::CONFLICT,Json(json!({"error":"revision conflict","resource":"comment","id":current.id,"expected_revision":expected,"actual_revision":current.revision}))).into_response();
+        }
+    }
+    let source = if actor_type == "agent" && current.author_id == actor_id {
+        task_id.unwrap_or_default()
+    } else {
+        Uuid::nil()
+    };
+    let replacement_attachments = match request.attachment_ids.as_deref() {
+        Some(values) => match uuid_list(values, "attachment_ids") {
+            Ok(ids) => Some(ids),
+            Err(response) => return response,
+        },
+        None => None,
+    };
+    let suppressed = match uuid_list(&request.suppress_agent_ids, "suppress_agent_ids") {
+        Ok(ids) => ids,
+        Err(response) => return response,
+    };
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update comment",
+            );
+        }
+    };
+    let updated = match comment::update_comment(
+        &mut *tx,
+        current.id,
+        &content,
+        source,
+        request.expected_revision,
+        request.content_base.as_deref(),
+    )
+    .await
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => return error_response(StatusCode::CONFLICT, "comment was edited concurrently"),
+        Err(error) => {
+            tracing::warn!(%error,"failed to update comment");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update comment",
+            );
+        }
+    };
+    if let Some(ids) = replacement_attachments {
+        if attachment::replace_comment_attachments(&mut *tx, current.id, current.issue_id, ids)
+            .await
+            .is_err()
+        {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to replace comment attachments",
+            );
+        }
+    }
+    if tx.commit().await.is_err() {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to update comment",
+        );
+    }
+    let comment = comment::get_comment_in_workspace(&state.pool, current.id, current.workspace_id)
+        .await
+        .ok()
+        .flatten()
+        .expect("updated comment");
+    let mut value = comment_json(&state, &comment).await;
+    let issue =
+        issue_q::get_issue_in_workspace(&state.pool, current.issue_id, current.workspace_id)
+            .await
+            .ok()
+            .flatten();
+    let mut outcomes = Vec::new();
+    if let Some(issue) = issue.as_ref() {
+        for agent_id in mention_ids(&content, "agent") {
+            if suppressed.contains(&agent_id) {
+                continue;
+            }
+            let allowed = match cordy_db::queries::agent::get_agent_in_workspace(
+                &state.pool,
+                agent_id,
+                current.workspace_id,
+            )
+            .await
+            {
+                Ok(Some(agent)) => {
+                    crate::issue::can_member_invoke_agent(
+                        &state,
+                        context.member.user_id,
+                        current.workspace_id,
+                        &agent,
+                    )
+                    .await
+                }
+                _ => false,
+            };
+            if allowed {
+                let outcome = match state
+                    .tasks
+                    .enqueue_task_for_mention(issue, agent_id, Some(current.id))
+                    .await
+                {
+                    Ok(task) => json!({"agent_id":agent_id,"status":"queued","task_id":task.id}),
+                    Err(error) => {
+                        json!({"agent_id":agent_id,"status":"blocked","reason":error.to_string()})
+                    }
+                };
+                outcomes.push(outcome);
+            } else {
+                outcomes.push(json!({"agent_id":agent_id,"status":"blocked","reason":"invocation_not_allowed"}));
+            }
+        }
+        for squad_id in mention_ids(&content, "squad") {
+            let squad = match cordy_db::queries::squad::get_squad_in_workspace(
+                &state.pool,
+                squad_id,
+                current.workspace_id,
+            )
+            .await
+            {
+                Ok(Some(squad)) if squad.archived_at.is_none() => squad,
+                _ => continue,
+            };
+            if suppressed.contains(&squad.leader_id) {
+                continue;
+            }
+            let allowed = match cordy_db::queries::agent::get_agent_in_workspace(
+                &state.pool,
+                squad.leader_id,
+                current.workspace_id,
+            )
+            .await
+            {
+                Ok(Some(agent)) => {
+                    crate::issue::can_member_invoke_agent(
+                        &state,
+                        context.member.user_id,
+                        current.workspace_id,
+                        &agent,
+                    )
+                    .await
+                }
+                _ => false,
+            };
+            if allowed {
+                let outcome = match state
+                    .tasks
+                    .enqueue_task_for_squad_leader(
+                        issue,
+                        squad.leader_id,
+                        squad.id,
+                        Some(current.id),
+                    )
+                    .await
+                {
+                    Ok(task) => {
+                        json!({"agent_id":squad.leader_id,"status":"queued","task_id":task.id})
+                    }
+                    Err(error) => {
+                        json!({"agent_id":squad.leader_id,"status":"blocked","reason":error.to_string()})
+                    }
+                };
+                outcomes.push(outcome);
+            } else {
+                outcomes.push(json!({"agent_id":squad.leader_id,"status":"blocked","reason":"invocation_not_allowed"}));
+            }
+        }
+    }
+    if let Some(object) = value.as_object_mut() {
+        object.insert("issue_revision".into(), json!(updated.issue_revision));
+        object.insert("trigger_outcomes".into(), json!(outcomes));
+    }
+    publish(
+        &state,
+        &context,
+        cordy_protocol::EVENT_COMMENT_UPDATED,
+        &actor_type,
+        actor_id,
+        value.clone(),
+    );
+    Json(value).into_response()
+}
+
+async fn delete(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(comment_id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    let current = match load_comment(&state, &context, &comment_id).await {
+        Ok(comment) => comment,
+        Err(response) => return response,
+    };
+    let (actor_type, actor_id, _) = crate::issue::mutation_actor(&state, &context, &headers).await;
+    let is_admin = matches!(context.member.role.as_str(), "owner" | "admin");
+    if !(current.author_type == actor_type && current.author_id == actor_id) && !is_admin {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "only comment author or admin can delete",
+        );
+    }
+    if let Err(error) = state
+        .tasks
+        .cancel_tasks_by_trigger_comment(current.id)
+        .await
+    {
+        tracing::warn!(%error, "failed to cancel tasks for deleted trigger comment");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to delete comment",
+        );
+    }
+    match comment::delete_comment(&state.pool, current.id, current.workspace_id).await {
+        Ok(Some(row)) if row.changed => {
+            state.bus.publish(&cordy_events::Event{event_type:cordy_protocol::EVENT_COMMENT_DELETED.into(),workspace_id:current.workspace_id.to_string(),actor_type,actor_id:actor_id.to_string(),payload:json!({"comment_id":current.id,"issue_id":current.issue_id,"issue_revision":row.issue_revision}),..Default::default()});
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(_) => error_response(StatusCode::NOT_FOUND, "comment not found"),
+        Err(error) => {
+            tracing::warn!(%error,"failed to delete comment");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to delete comment",
+            )
+        }
+    }
 }
 
 fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
@@ -171,7 +767,7 @@ pub(crate) fn comment_json_with_related(
     Value::Object(response)
 }
 
-fn publish(
+pub(crate) fn publish(
     state: &HandlerState,
     context: &WorkspaceContext,
     event_type: &str,
@@ -195,53 +791,22 @@ async fn resolve(
     Path(comment_id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let initial = match load_comment(&state, &context, &comment_id).await {
+    let current = match load_comment(&state, &context, &comment_id).await {
         Ok(comment) => comment,
         Err(response) => return response,
     };
+    let was_resolved = current.resolved_at.is_some();
     let (actor_type, actor_id, _) = crate::issue::mutation_actor(&state, &context, &headers).await;
     let mut transaction = match state.pool.begin().await {
         Ok(transaction) => transaction,
         Err(error) => {
-            tracing::warn!(%error, comment_id = %initial.id, "failed to begin comment resolution");
+            tracing::warn!(%error, comment_id = %current.id, "failed to begin comment resolution");
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to resolve comment",
             );
         }
     };
-    if !matches!(
-        comment::lock_comment_thread(
-            &mut *transaction,
-            initial.id,
-            initial.issue_id,
-            initial.workspace_id,
-        )
-        .await,
-        Ok(Some(_))
-    ) {
-        tracing::warn!(comment_id = %initial.id, "failed to lock comment thread");
-        return error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to resolve comment",
-        );
-    }
-    let current = match comment::get_comment_in_workspace(
-        &mut *transaction,
-        initial.id,
-        initial.workspace_id,
-    )
-    .await
-    {
-        Ok(Some(comment)) => comment,
-        Ok(None) | Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to resolve comment",
-            );
-        }
-    };
-    let was_resolved = current.resolved_at.is_some();
     let cleared = match comment::clear_other_thread_resolutions(
         &mut *transaction,
         current.id,
@@ -268,7 +833,7 @@ async fn resolve(
                 return error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "failed to resolve comment",
-                )
+                );
             }
         };
     if let Err(error) = transaction.commit().await {
@@ -310,69 +875,21 @@ async fn unresolve(
     Path(comment_id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    let initial = match load_comment(&state, &context, &comment_id).await {
+    let current = match load_comment(&state, &context, &comment_id).await {
         Ok(comment) => comment,
         Err(response) => return response,
     };
-    let (actor_type, actor_id, _) = crate::issue::mutation_actor(&state, &context, &headers).await;
-    let mut transaction = match state.pool.begin().await {
-        Ok(transaction) => transaction,
-        Err(error) => {
-            tracing::warn!(%error, comment_id = %initial.id, "failed to begin comment resolution");
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to unresolve comment",
-            );
-        }
-    };
-    if !matches!(
-        comment::lock_comment_thread(
-            &mut *transaction,
-            initial.id,
-            initial.issue_id,
-            initial.workspace_id,
-        )
-        .await,
-        Ok(Some(_))
-    ) {
-        tracing::warn!(comment_id = %initial.id, "failed to lock comment thread");
-        return error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to unresolve comment",
-        );
-    }
-    let current = match comment::get_comment_in_workspace(
-        &mut *transaction,
-        initial.id,
-        initial.workspace_id,
-    )
-    .await
-    {
-        Ok(Some(comment)) => comment,
-        Ok(None) | Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to unresolve comment",
-            );
-        }
-    };
     let was_resolved = current.resolved_at.is_some();
-    let updated = match comment::unresolve_comment(&mut *transaction, current.id).await {
+    let (actor_type, actor_id, _) = crate::issue::mutation_actor(&state, &context, &headers).await;
+    let updated = match comment::unresolve_comment(&state.pool, current.id).await {
         Ok(Some(updated)) => updated,
         Ok(None) | Err(_) => {
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to unresolve comment",
-            )
+            );
         }
     };
-    if let Err(error) = transaction.commit().await {
-        tracing::warn!(%error, comment_id = %current.id, "failed to commit comment resolution");
-        return error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to unresolve comment",
-        );
-    }
     let response = comment_json(&state, &updated).await;
     if was_resolved {
         publish(
@@ -422,22 +939,7 @@ async fn add_reaction(
     .await
     {
         Ok(Some(added)) => added,
-        Ok(None) => match reaction::get_reaction_for_actor(
-            &state.pool,
-            current.id,
-            current.workspace_id,
-            &actor_type,
-            actor_id,
-            &request.emoji,
-        )
-        .await
-        {
-            Ok(Some(added)) => added,
-            Ok(None) | Err(_) => {
-                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to add reaction");
-            }
-        },
-        Err(_) => {
+        Ok(None) | Err(_) => {
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to add reaction");
         }
     };
@@ -502,7 +1004,7 @@ async fn remove_reaction(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to remove reaction",
-            )
+            );
         }
     };
     if removed.changed {
@@ -528,6 +1030,28 @@ async fn remove_reaction(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comment_write_normalization_and_mentions_match_boundary_contract() {
+        let first = Uuid::parse_str("018f946a-1234-7890-abcd-1234567890ab").unwrap();
+        let second = Uuid::parse_str("018f946a-2234-7890-abcd-1234567890ab").unwrap();
+        let content = format!(
+            "a\0 [@one](mention://agent/{first}) duplicate mention://agent/{first} and mention://agent/{second})"
+        );
+        assert!(!clean_content(&content).contains('\0'));
+        assert_eq!(mention_ids(&content, "agent"), vec![first, second]);
+        assert!(mention_ids(&content, "squad").is_empty());
+    }
+
+    #[test]
+    fn attachment_and_suppression_ids_fail_closed() {
+        let valid = Uuid::new_v4();
+        assert_eq!(
+            uuid_list(&[valid.to_string()], "attachment_ids").unwrap(),
+            vec![valid]
+        );
+        assert!(uuid_list(&["not-a-uuid".into()], "suppress_agent_ids").is_err());
+    }
 
     #[test]
     fn comment_response_preserves_nullable_and_omitempty_fields() {
