@@ -24,6 +24,7 @@ const OFFLINE_TASK_BATCH_SIZE: i32 = 500;
 const RECONNECT_RETRY_BATCH_SIZE: i32 = 500;
 const STALE_TASK_BATCH_SIZE: i32 = 500;
 const QUEUED_TASK_BATCH_SIZE: i32 = 500;
+const DELEGATED_RECOVERY_BATCH_SIZE: i32 = 100;
 const DISPATCH_TIMEOUT: Duration = Duration::from_secs(300);
 const RUNNING_TIMEOUT: Duration = Duration::from_secs(9_000);
 const QUEUED_TTL: Duration = Duration::from_secs(2 * 60 * 60);
@@ -124,6 +125,13 @@ impl RuntimeSweeper {
         )
         .await?
         .unwrap_or_default();
+        let delegated_recovery = isolate_stage(
+            cancel,
+            "delegated failure recovery",
+            self.sweep_delegated_failure_recovery(cancel),
+        )
+        .await?
+        .unwrap_or_default();
         Ok(SweepResult {
             candidates,
             offlined,
@@ -131,6 +139,8 @@ impl RuntimeSweeper {
             expired_reconnect_retries,
             stale_tasks,
             expired_queued_tasks,
+            delegated_recoveries_replayed: delegated_recovery.0,
+            delegated_recoveries_exhausted: delegated_recovery.1,
         })
     }
 
@@ -360,6 +370,33 @@ impl RuntimeSweeper {
         .await
     }
 
+    async fn sweep_delegated_failure_recovery(
+        &self,
+        cancel: &CancellationToken,
+    ) -> anyhow::Result<(i32, i32)> {
+        let result = cancellable(cancel, async {
+            self.state
+                .tasks
+                .recover_pending_delegated_failures(DELEGATED_RECOVERY_BATCH_SIZE)
+                .await
+                .map_err(anyhow::Error::from)
+        })
+        .await?;
+        if result.replayed > 0 {
+            tracing::info!(
+                count = result.replayed,
+                "runtime sweeper replayed delegated failure recoveries"
+            );
+        }
+        if result.exhausted > 0 {
+            tracing::warn!(
+                count = result.exhausted,
+                "runtime sweeper exhausted delegated failure recoveries"
+            );
+        }
+        Ok((result.replayed, result.exhausted))
+    }
+
     async fn filter_alive(
         &self,
         cancel: &CancellationToken,
@@ -390,6 +427,8 @@ pub struct SweepResult {
     pub expired_reconnect_retries: usize,
     pub stale_tasks: usize,
     pub expired_queued_tasks: usize,
+    pub delegated_recoveries_replayed: i32,
+    pub delegated_recoveries_exhausted: i32,
 }
 
 async fn isolate_stage<T>(
@@ -481,6 +520,7 @@ mod tests {
         assert_eq!(RECONNECT_RETRY_BATCH_SIZE, 500);
         assert_eq!(STALE_TASK_BATCH_SIZE, 500);
         assert_eq!(QUEUED_TASK_BATCH_SIZE, 500);
+        assert_eq!(DELEGATED_RECOVERY_BATCH_SIZE, 100);
         assert_eq!(DISPATCH_TIMEOUT, Duration::from_secs(300));
         assert_eq!(RUNNING_TIMEOUT, Duration::from_secs(9_000));
         assert_eq!(QUEUED_TTL, Duration::from_secs(7_200));
