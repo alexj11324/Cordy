@@ -179,12 +179,20 @@ fn public_config(provider: Provider, config: &Value) -> Value {
         Provider::DingTalk => {
             json!({"app_id": config.get("app_id").and_then(Value::as_str).unwrap_or("")})
         }
-        Provider::Lark => json!({
-            "app_id": config.get("app_id").and_then(Value::as_str).unwrap_or(""),
-            "tenant_key": config.get("tenant_key").and_then(Value::as_str),
-            "bot_open_id": config.get("bot_open_id").and_then(Value::as_str).unwrap_or(""),
-            "region": config.get("region").and_then(Value::as_str).unwrap_or("feishu"),
-        }),
+        Provider::Lark => {
+            let mut value = json!({
+                "app_id": config.get("app_id").and_then(Value::as_str).unwrap_or(""),
+                "bot_open_id": config.get("bot_open_id").and_then(Value::as_str).unwrap_or(""),
+                "region": config.get("region").and_then(Value::as_str).unwrap_or("feishu"),
+            });
+            if let (Some(target), Some(tenant_key)) = (
+                value.as_object_mut(),
+                config.get("tenant_key").and_then(Value::as_str),
+            ) {
+                target.insert("tenant_key".into(), Value::String(tenant_key.into()));
+            }
+            value
+        }
         Provider::Slack => {
             let value = cordy_slack::config::decode_public_config(config);
             json!({"team_id": value.team_id, "bot_user_id": value.bot_user_id})
@@ -1467,6 +1475,24 @@ mod tests {
             assert!(!encoded.contains("encrypted"));
             assert!(!encoded.contains("cipher"));
         }
+    }
+
+    #[test]
+    fn lark_public_projection_omits_absent_tenant_key() {
+        let without_tenant = public_config(
+            Provider::Lark,
+            &json!({"app_id":"cli_1", "bot_open_id":"ou_1", "region":"lark"}),
+        );
+        assert!(!without_tenant
+            .as_object()
+            .unwrap()
+            .contains_key("tenant_key"));
+
+        let with_tenant = public_config(
+            Provider::Lark,
+            &json!({"app_id":"cli_1", "tenant_key":"tenant-1"}),
+        );
+        assert_eq!(with_tenant["tenant_key"], "tenant-1");
     }
 
     #[test]
