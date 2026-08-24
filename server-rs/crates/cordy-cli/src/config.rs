@@ -337,15 +337,23 @@ fn read_config_document(path: &Path) -> Result<Value> {
 }
 
 fn ensure_config_directory(directory: &Path, task_root: Option<&str>) -> Result<()> {
-    fs::create_dir_all(directory).context("create CLI config directory")?;
     let Some(task_root) = task_root else {
+        fs::create_dir_all(directory).context("create CLI config directory")?;
         return Ok(());
     };
-    let task_root = Path::new(task_root);
+    let task_root = normalize_path(Path::new(task_root));
+    if !directory.starts_with(&task_root) {
+        bail!(
+            "task-local CLI config directory {:?} escapes root {:?}",
+            directory,
+            task_root
+        );
+    }
+    fs::create_dir_all(directory).context("create CLI config directory")?;
     let mut current = directory;
     loop {
         restrict_directory_permissions(current)?;
-        if current == task_root {
+        if current == task_root.as_path() {
             return Ok(());
         }
         current = current.parent().with_context(|| {
@@ -614,5 +622,58 @@ mod tests {
             fs::read(profile_dir.join(".config.lock")).expect("lock file"),
             b"lock-sentinel"
         );
+    }
+
+    #[test]
+    fn task_root_with_parent_components_is_normalized_before_permission_walk() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let container = tempfile::tempdir().expect("temp task container");
+        let task_root = container.path().join("task-config");
+        let raw_task_root = container.path().join("unused/../task-config");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set(TASK_CONFIG_ROOT_ENV, raw_task_root.display().to_string());
+
+        #[cfg(unix)]
+        let container_mode = {
+            use std::os::unix::fs::PermissionsExt;
+            fs::metadata(container.path())
+                .expect("task container metadata")
+                .permissions()
+                .mode()
+                & 0o777
+        };
+
+        environment
+            .set_profile_value(
+                "dev",
+                "workspace_id",
+                Some(Value::String("workspace-1".into())),
+            )
+            .expect("set task profile value");
+
+        assert!(task_root.join("profiles/dev/config.json").is_file());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(container.path())
+                    .expect("task container metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                container_mode
+            );
+            for directory in [task_root.clone(), task_root.join("profiles/dev")] {
+                assert_eq!(
+                    fs::metadata(directory)
+                        .expect("task config directory metadata")
+                        .permissions()
+                        .mode()
+                        & 0o777,
+                    0o700
+                );
+            }
+        }
     }
 }
