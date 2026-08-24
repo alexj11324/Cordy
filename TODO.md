@@ -596,6 +596,19 @@
       temporarily reported `candidate=null`, `mergeable=dirty` (restack is
       delegated to pro). Remote head and `draft=false` were verified. Scoped
       rustfmt/diff-check pass; Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy skill files delete <skill-id> <file-id>` to PR #129. It
+      encodes both path segments, preserves authenticated workspace headers,
+      and matches Go's 204 success output with empty-ID guards. The slice
+      commit is `206e6f1e`; during push, pro added daemon auth and cumulative
+      main/base commits, so the current non-rewrite-synced PR head is
+      `dc7b9843ecede29df3f25697b7656407ca8b21e2`, parents
+      `9950f3d270118d7f011745ceb5c21ef5127dde07` +
+      `c60582804597d2b94b90c8621fa3983d5c506b1a`, tree
+      `46e43bb50364224a7431d7e8743c243a886dc317`, candidate
+      `3d5dfe0f1fd010310941344a562587efb5c5daeb`, base
+      `f78aa57fb09e8db0d6cc79c823658d0789cdb3ed`; remote head, `draft=false`,
+      and CLEAN/MERGEABLE were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
