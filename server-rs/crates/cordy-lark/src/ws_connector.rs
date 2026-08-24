@@ -720,19 +720,28 @@ impl WsConn for ActorWsConn {
 }
 
 /// The production WsDialer over tokio-tungstenite (Go: GorillaDialer).
-///
-/// Port note: Go's Proxy / ProxyURL options have no direct equivalent here —
-/// tokio-tungstenite dials directly and does not implement HTTP CONNECT
-/// tunneling. Deployments that must traverse a proxy need a tunnel at the OS
-/// layer (or a future dialer extension); the trait seam stays open for that.
+/// Supports the same explicit HTTP CONNECT proxy used by
+/// `CORDY_LARK_WS_PROXY_URL`; the target TLS and WebSocket handshakes happen
+/// only after the proxy acknowledges the tunnel.
 pub struct TungsteniteDialer {
     handshake_timeout: Duration,
+    proxy_url: Option<String>,
 }
 
 impl TungsteniteDialer {
     pub fn new() -> Self {
         Self {
             handshake_timeout: Duration::from_secs(15),
+            proxy_url: None,
+        }
+    }
+
+    pub fn with_proxy_url(proxy_url: impl Into<String>) -> Self {
+        let proxy_url = proxy_url.into();
+        let proxy_url = (!proxy_url.trim().is_empty()).then(|| proxy_url.trim().to_owned());
+        Self {
+            handshake_timeout: Duration::from_secs(15),
+            proxy_url,
         }
     }
 }
@@ -766,12 +775,23 @@ impl WsDialer for TungsteniteDialer {
             request.headers_mut().insert(name, value);
         }
 
-        let (ws, _resp) = tokio::time::timeout(self.handshake_timeout, connect_async(request))
+        let handshake = async {
+            if let Some(proxy_url) = &self.proxy_url {
+                let tunnel = open_http_connect_tunnel(proxy_url, url).await?;
+                tokio_tungstenite::client_async_tls_with_config(request, tunnel, None, None)
+                    .await
+                    .map_err(|error| anyhow::anyhow!("ws handshake failed: {error}"))
+            } else {
+                connect_async(request)
+                    .await
+                    .map_err(|error| anyhow::anyhow!("ws handshake failed: {error}"))
+            }
+        };
+        let (ws, _resp) = tokio::time::timeout(self.handshake_timeout, handshake)
             .await
             .map_err(|_| {
                 anyhow::anyhow!("ws handshake timed out after {:?}", self.handshake_timeout)
-            })?
-            .map_err(|e| anyhow::anyhow!("ws handshake failed: {e}"))?;
+            })??;
 
         let (mut sink, mut stream) = ws.split();
         let (outbound_tx, mut outbound_rx) = mpsc::channel::<Outbound>(64);
@@ -869,6 +889,133 @@ impl WsDialer for TungsteniteDialer {
             closed,
             actor: tokio::sync::Mutex::new(Some(actor)),
         }))
+    }
+}
+
+const PROXY_RESPONSE_MAX_BYTES: usize = 16 * 1024;
+
+async fn open_http_connect_tunnel(
+    proxy_url: &str,
+    target_url: &str,
+) -> anyhow::Result<tokio::net::TcpStream> {
+    use base64::Engine as _;
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    let proxy = url::Url::parse(proxy_url)
+        .map_err(|error| anyhow::anyhow!("lark ws proxy URL is invalid: {error}"))?;
+    if proxy.scheme() != "http" {
+        anyhow::bail!("lark ws proxy URL must use http");
+    }
+    let proxy_host = proxy
+        .host_str()
+        .ok_or_else(|| anyhow::anyhow!("lark ws proxy URL has no host"))?;
+    let proxy_port = proxy.port_or_known_default().unwrap_or(80);
+    let proxy_addr = format_host_port(proxy_host, proxy_port);
+
+    let target = url::Url::parse(target_url)
+        .map_err(|error| anyhow::anyhow!("lark ws target URL is invalid: {error}"))?;
+    if !matches!(target.scheme(), "ws" | "wss") {
+        anyhow::bail!("lark ws target URL must use ws or wss");
+    }
+    let target_host = target
+        .host_str()
+        .ok_or_else(|| anyhow::anyhow!("lark ws target URL has no host"))?;
+    let target_port = target
+        .port_or_known_default()
+        .ok_or_else(|| anyhow::anyhow!("lark ws target URL has no port"))?;
+    let authority = format_host_port(target_host, target_port);
+
+    let mut stream = tokio::net::TcpStream::connect(&proxy_addr)
+        .await
+        .map_err(|error| anyhow::anyhow!("connect to Lark WS proxy {proxy_addr}: {error}"))?;
+    let mut request = format!(
+        "CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nProxy-Connection: Keep-Alive\r\n"
+    );
+    if !proxy.username().is_empty() || proxy.password().is_some() {
+        let username = percent_decode_userinfo(proxy.username())?;
+        let password = percent_decode_userinfo(proxy.password().unwrap_or_default())?;
+        let credentials = format!("{username}:{password}");
+        let encoded = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
+        request.push_str("Proxy-Authorization: Basic ");
+        request.push_str(&encoded);
+        request.push_str("\r\n");
+    }
+    request.push_str("\r\n");
+    stream
+        .write_all(request.as_bytes())
+        .await
+        .map_err(|error| anyhow::anyhow!("write Lark WS proxy CONNECT request: {error}"))?;
+
+    let mut response = Vec::with_capacity(1024);
+    while !response.windows(4).any(|window| window == b"\r\n\r\n") {
+        if response.len() >= PROXY_RESPONSE_MAX_BYTES {
+            anyhow::bail!("Lark WS proxy CONNECT response exceeded byte limit");
+        }
+        let remaining = PROXY_RESPONSE_MAX_BYTES - response.len();
+        let mut chunk = [0_u8; 1024];
+        let chunk_len = remaining.min(chunk.len());
+        let read = stream
+            .read(&mut chunk[..chunk_len])
+            .await
+            .map_err(|error| anyhow::anyhow!("read Lark WS proxy CONNECT response: {error}"))?;
+        if read == 0 {
+            anyhow::bail!("Lark WS proxy closed before CONNECT completed");
+        }
+        response.extend_from_slice(&chunk[..read]);
+    }
+    let status_line = response
+        .split(|byte| *byte == b'\n')
+        .next()
+        .and_then(|line| std::str::from_utf8(line).ok())
+        .map(str::trim)
+        .unwrap_or_default();
+    let mut status_parts = status_line.split_ascii_whitespace();
+    let version = status_parts.next();
+    let status = status_parts
+        .next()
+        .and_then(|status| status.parse::<u16>().ok());
+    if !matches!(version, Some("HTTP/1.0" | "HTTP/1.1")) || status != Some(200) {
+        anyhow::bail!("Lark WS proxy CONNECT refused with status {status:?}");
+    }
+    Ok(stream)
+}
+
+fn format_host_port(host: &str, port: u16) -> String {
+    if host.contains(':') {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
+
+fn percent_decode_userinfo(value: &str) -> anyhow::Result<String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] != b'%' {
+            decoded.push(bytes[index]);
+            index += 1;
+            continue;
+        }
+        if index + 2 >= bytes.len() {
+            anyhow::bail!("lark ws proxy credentials contain invalid percent encoding");
+        }
+        let high = hex_digit(bytes[index + 1])?;
+        let low = hex_digit(bytes[index + 2])?;
+        decoded.push((high << 4) | low);
+        index += 3;
+    }
+    String::from_utf8(decoded)
+        .map_err(|_| anyhow::anyhow!("lark ws proxy credentials are not valid UTF-8"))
+}
+
+fn hex_digit(value: u8) -> anyhow::Result<u8> {
+    match value {
+        b'0'..=b'9' => Ok(value - b'0'),
+        b'a'..=b'f' => Ok(value - b'a' + 10),
+        b'A'..=b'F' => Ok(value - b'A' + 10),
+        _ => anyhow::bail!("lark ws proxy credentials contain invalid percent encoding"),
     }
 }
 
@@ -982,6 +1129,52 @@ mod tests {
             endpoint.ping_interval
         };
         assert_eq!(effective, Duration::from_secs(120));
+    }
+
+    #[tokio::test]
+    async fn http_connect_proxy_receives_target_and_basic_auth() {
+        use base64::Engine as _;
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy_addr = listener.local_addr().unwrap();
+        let proxy = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let mut byte = [0_u8; 1];
+            while !request.ends_with(b"\r\n\r\n") {
+                stream.read_exact(&mut byte).await.unwrap();
+                request.push(byte[0]);
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+                .await
+                .unwrap();
+            String::from_utf8(request).unwrap()
+        });
+
+        let proxy_url = format!("http://user:p%40ss@{proxy_addr}");
+        let tunnel =
+            open_http_connect_tunnel(&proxy_url, "wss://open.feishu.cn/callback/ws?service_id=1")
+                .await
+                .unwrap();
+        drop(tunnel);
+        let request = proxy.await.unwrap();
+        assert!(request
+            .starts_with("CONNECT open.feishu.cn:443 HTTP/1.1\r\nHost: open.feishu.cn:443\r\n"));
+        let auth = base64::engine::general_purpose::STANDARD.encode(b"user:p@ss");
+        assert!(request.contains(&format!("Proxy-Authorization: Basic {auth}\r\n")));
+    }
+
+    #[tokio::test]
+    async fn proxy_rejects_non_http_scheme_before_dial() {
+        let error = open_http_connect_tunnel(
+            "socks5://127.0.0.1:1080",
+            "wss://open.feishu.cn/callback/ws",
+        )
+        .await
+        .unwrap_err();
+        assert!(error.to_string().contains("must use http"));
     }
 
     #[tokio::test]

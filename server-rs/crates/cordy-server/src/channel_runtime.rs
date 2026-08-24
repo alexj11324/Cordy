@@ -748,10 +748,16 @@ fn configure_lark(
         api.clone(),
         cordy_lark::inbound_enricher::InboundEnricherConfig::default(),
     ));
+    let dialer = cfg
+        .integrations
+        .lark_ws_proxy_url
+        .as_deref()
+        .map(cordy_lark::ws_connector::TungsteniteDialer::with_proxy_url)
+        .unwrap_or_default();
     let connector: Arc<dyn cordy_lark::connector::EventConnector> = Arc::new(
         cordy_lark::ws_connector::WsLongConnConnector::new(
             cordy_lark::ws_connector::WsConnectorConfig {
-                dialer: Some(Arc::new(cordy_lark::ws_connector::TungsteniteDialer::new())),
+                dialer: Some(Arc::new(dialer)),
                 endpoint_fetcher: Some(endpoint),
                 frame_decoder: Some(Arc::new(
                     cordy_lark::frame_decoder::LarkJsonFrameDecoder::new(),
