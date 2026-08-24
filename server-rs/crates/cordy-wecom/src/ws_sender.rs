@@ -440,8 +440,14 @@ impl WsSender {
             };
             tokio::select! {
                 biased;
-                _ = self.generation.cancelled() => Err(anyhow::Error::new(cordy_channel::GenerationExpired)
-                    .context(format!("wecom: lease generation ended waiting for {cmd} verdict"))),
+                // `write` already returned success, so cancellation here is
+                // an unknown delivery, not a safe pre-write failure. Preserve
+                // GenerationExpired in the source chain for fencing while
+                // marking the outer error as attempted for relay idempotency.
+                _ = self.generation.cancelled() => Err(anyhow::Error::new(WriteAttemptedError(
+                    anyhow::Error::new(cordy_channel::GenerationExpired)
+                        .context(format!("wecom: lease generation ended waiting for {cmd} verdict")),
+                ))),
                 res = wait => match res? {
                     r if r.code != 0 => Err(anyhow::Error::new(WecomApiError {
                         cmd: cmd.to_string(),
@@ -652,6 +658,42 @@ mod tests {
             .await
             .unwrap_err();
         assert!(is_ack_timeout(&err), "{err}");
+    }
+
+    #[tokio::test]
+    async fn generation_loss_after_write_is_marked_attempted() {
+        struct RevokingConn(Arc<LeaseGeneration>);
+
+        #[async_trait]
+        impl WsConn for RevokingConn {
+            async fn read_message(&self, _: Option<Instant>) -> anyhow::Result<Vec<u8>> {
+                std::future::pending().await
+            }
+
+            async fn write_message(&self, _: String, _: Option<Instant>) -> anyhow::Result<()> {
+                self.0.revoke();
+                Ok(())
+            }
+
+            async fn close(&self) {}
+        }
+
+        let generation = LeaseGeneration::standalone();
+        let sender =
+            WsSender::with_generation(Arc::new(RevokingConn(generation.clone())), generation);
+        let error = sender
+            .request(
+                &CancellationToken::new(),
+                "aibot_send_msg",
+                serde_json::json!({}),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(is_write_attempted(&error), "{error:#}");
+        assert!(error.chain().any(|cause| cause
+            .downcast_ref::<cordy_channel::GenerationExpired>()
+            .is_some()));
     }
 
     #[tokio::test]
