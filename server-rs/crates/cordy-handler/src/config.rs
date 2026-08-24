@@ -10,77 +10,11 @@ use url::Url;
 
 use crate::state::HandlerState;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PublicConfigSettings {
     pub cdn_domain: String,
     pub cdn_signed: bool,
     pub server_version: String,
-    pub allow_signup: bool,
-    pub google_client_id: String,
-    pub daemon_server_url: String,
-    pub daemon_app_url: String,
-    pub official_cloud: bool,
-}
-
-impl Default for PublicConfigSettings {
-    fn default() -> Self {
-        Self {
-            cdn_domain: String::new(),
-            cdn_signed: false,
-            server_version: String::new(),
-            allow_signup: true,
-            google_client_id: String::new(),
-            daemon_server_url: String::new(),
-            daemon_app_url: String::new(),
-            official_cloud: false,
-        }
-    }
-}
-
-impl PublicConfigSettings {
-    pub fn from_config(
-        config: &cordy_config::Config,
-        cdn_domain: String,
-        cdn_signed: bool,
-        server_version: String,
-    ) -> Self {
-        let app_url = resolve_frontend_app_url_from_config(config);
-        let official_cloud = is_official_cloud_daemon_config(&app_url);
-        let (daemon_server_url, daemon_app_url) = if app_url.is_empty() || official_cloud {
-            (String::new(), String::new())
-        } else {
-            let public_url = normalize_public_url(
-                config.urls.public_url.as_deref().unwrap_or_default(),
-            );
-            let server_url = if public_url.is_empty() {
-                app_url.clone()
-            } else {
-                public_url
-            };
-            (server_url, app_url.clone())
-        };
-        Self {
-            cdn_domain,
-            cdn_signed,
-            server_version,
-            allow_signup: config
-                .auth
-                .allow_signup
-                .as_deref()
-                .map(str::trim)
-                != Some("false"),
-            google_client_id: config
-                .auth
-                .google_client_id
-                .as_deref()
-                .unwrap_or_default()
-                .trim()
-                .to_string(),
-            daemon_server_url,
-            daemon_app_url,
-            official_cloud,
-        }
-    }
 }
 
 #[derive(Serialize)]
@@ -129,6 +63,7 @@ fn workspace_creation_disabled_value(value: Option<&str>) -> bool {
 }
 
 async fn get_config(State(state): State<HandlerState>) -> Json<AppConfig> {
+    let (daemon_server_url, daemon_app_url) = daemon_setup_urls_from_env();
     let analytics_disabled = matches!(
         std::env::var("ANALYTICS_DISABLED").as_deref(),
         Ok("true") | Ok("1")
@@ -157,18 +92,18 @@ async fn get_config(State(state): State<HandlerState>) -> Json<AppConfig> {
     Json(AppConfig {
         cdn_domain: state.public_config.cdn_domain.clone(),
         cdn_signed: state.public_config.cdn_signed,
-        allow_signup: state.public_config.allow_signup,
-        google_client_id: state.public_config.google_client_id.clone(),
+        allow_signup: std::env::var("ALLOW_SIGNUP").as_deref() != Ok("false"),
+        google_client_id: std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
         workspace_creation_disabled: workspace_creation_disabled(),
-        daemon_server_url: state.public_config.daemon_server_url.clone(),
-        daemon_app_url: state.public_config.daemon_app_url.clone(),
+        daemon_server_url,
+        daemon_app_url,
         vcs_integration_available: state.vcs_integration_enabled,
         posthog_key,
         posthog_host,
         analytics_environment,
         feature_flags: feature_flags::evaluate_frontend_public_flags(flags),
         local_worktree_supported: true,
-        server_version: if state.public_config.official_cloud {
+        server_version: if is_official_cloud_deployment() {
             String::new()
         } else {
             state.public_config.server_version.clone()
@@ -176,10 +111,23 @@ async fn get_config(State(state): State<HandlerState>) -> Json<AppConfig> {
     })
 }
 
-fn resolve_frontend_app_url_from_config(config: &cordy_config::Config) -> String {
-    let app_url = normalize_public_url(config.urls.app_url.as_deref().unwrap_or_default());
+fn daemon_setup_urls_from_env() -> (String, String) {
+    let mut server_url =
+        normalize_public_url(&std::env::var("CORDY_PUBLIC_URL").unwrap_or_default());
+    let app_url = resolve_frontend_app_url();
+    if app_url.is_empty() || is_official_cloud_daemon_config(&app_url) {
+        return (String::new(), String::new());
+    }
+    if server_url.is_empty() {
+        server_url.clone_from(&app_url);
+    }
+    (server_url, app_url)
+}
+
+fn resolve_frontend_app_url() -> String {
+    let app_url = normalize_public_url(&std::env::var("CORDY_APP_URL").unwrap_or_default());
     if app_url.is_empty() {
-        normalize_public_url(config.urls.frontend_origin.as_deref().unwrap_or_default())
+        normalize_public_url(&std::env::var("FRONTEND_ORIGIN").unwrap_or_default())
     } else {
         app_url
     }
@@ -191,6 +139,10 @@ fn normalize_public_url(raw: &str) -> String {
 
 fn is_official_cloud_daemon_config(app_url: &str) -> bool {
     url_host_equals(app_url, "cordy.ai")
+}
+
+fn is_official_cloud_deployment() -> bool {
+    is_official_cloud_daemon_config(&resolve_frontend_app_url())
 }
 
 fn url_host_equals(raw: &str, expected: &str) -> bool {
@@ -237,45 +189,11 @@ mod tests {
 
     #[test]
     fn workspace_creation_flag_matches_go_exactly() {
+        // The Go server deliberately checks os.Getenv(...) == "true".
         assert!(workspace_creation_disabled_value(Some("true")));
         for value in [None, Some("TRUE"), Some("1"), Some("yes"), Some(" true ")] {
             assert!(!workspace_creation_disabled_value(value));
         }
-    }
-
-    #[test]
-    fn loaded_config_drives_public_auth_and_daemon_urls() {
-        let mut config = cordy_config::Config::default();
-        config.auth.allow_signup = Some(" false ".into());
-        config.auth.google_client_id = Some(" google-client ".into());
-        config.urls.public_url = Some("https://api.example/".into());
-        config.urls.app_url = Some("https://app.example/".into());
-        let settings = PublicConfigSettings::from_config(
-            &config,
-            String::new(),
-            false,
-            "v1".into(),
-        );
-        assert!(!settings.allow_signup);
-        assert_eq!(settings.google_client_id, "google-client");
-        assert_eq!(settings.daemon_server_url, "https://api.example");
-        assert_eq!(settings.daemon_app_url, "https://app.example");
-        assert!(!settings.official_cloud);
-    }
-
-    #[test]
-    fn official_cloud_suppresses_daemon_urls_and_version() {
-        let mut config = cordy_config::Config::default();
-        config.urls.app_url = Some("https://cordy.ai".into());
-        let settings = PublicConfigSettings::from_config(
-            &config,
-            String::new(),
-            false,
-            "v1".into(),
-        );
-        assert!(settings.official_cloud);
-        assert!(settings.daemon_server_url.is_empty());
-        assert!(settings.daemon_app_url.is_empty());
     }
 
     #[test]
