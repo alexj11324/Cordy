@@ -627,6 +627,7 @@ struct AgentWrite {
     visibility: Option<String>,
     permission_mode: Option<String>,
     invocation_targets: Option<Vec<InvocationTargetInput>>,
+    status: Option<String>,
     max_concurrent_tasks: Option<i32>,
     model: Option<String>,
     thinking_level: Option<String>,
@@ -1229,7 +1230,7 @@ async fn update_agent(
         runtime_id,
         resolved_visibility.or(request.visibility.as_deref()),
         resolved_permission.as_deref(),
-        None,
+        request.status.as_deref(),
         request.max_concurrent_tasks,
         request.instructions.as_deref().map(str::trim),
         &custom_env,
@@ -2276,6 +2277,12 @@ mod tests {
             mask_gateway_token(json!({"gateway":{"token":"secret"}}))["gateway"]["token"],
             "***"
         );
+    }
+
+    #[test]
+    fn agent_write_preserves_status_updates() {
+        let request: AgentWrite = serde_json::from_value(json!({ "status": "offline" })).unwrap();
+        assert_eq!(request.status.as_deref(), Some("offline"));
     }
 
     #[test]
