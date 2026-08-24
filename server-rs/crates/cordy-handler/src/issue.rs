@@ -16,14 +16,16 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{NaiveDate, SecondsFormat};
 use cordy_db::models::{
     AgentTaskQueue, Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber,
 };
 use cordy_db::queries::issue_reaction::AddIssueReactionRow;
 use cordy_db::queries::{
-    agent, agent_invocation_target, attachment, issue as issue_q, issue_label, issue_property,
-    issue_reaction, member, squad, subscriber, task_usage, user, workspace,
+    activity, agent, agent_invocation_target, attachment, autopilot, comment as comment_q,
+    issue as issue_q, issue_label, issue_property, issue_reaction, member, quick_action, squad,
+    subscriber, task_usage, user, workspace,
 };
 use cordy_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use cordy_service::issue_service::{
@@ -45,17 +47,45 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/issues", get(list_issues).post(create_issue))
         .route("/api/issues/", get(list_issues).post(create_issue))
         .route("/api/issues/query", post(query_issues))
+        .route("/api/issues/search", get(search_issues))
+        .route("/api/issues/grouped", get(grouped_issues))
+        .route("/api/issues/table/rows", post(table_rows))
+        .route("/api/issues/table/groups", post(table_groups))
+        .route("/api/issues/table/facets", post(table_facets))
+        .route("/api/issues/quick-create", post(quick_create_issue))
+        .route("/api/issues/preview-trigger", post(preview_trigger))
+        .route("/api/issues/batch-delete", post(batch_delete_issues))
         .route("/api/issues/child-progress", get(child_issue_progress))
         .route("/api/issues/children", get(list_children_by_parents))
         .route("/api/issues/batch-update", post(batch_update_issues))
-        .route("/api/issues/{id}", get(get_issue).put(update_issue))
-        .route("/api/issues/{id}/", get(get_issue).put(update_issue))
+        .route(
+            "/api/issues/{id}",
+            get(get_issue).put(update_issue).delete(delete_issue),
+        )
+        .route(
+            "/api/issues/{id}/",
+            get(get_issue).put(update_issue).delete(delete_issue),
+        )
         .route("/api/issues/{id}/move", post(move_issue))
         .route("/api/issues/{id}/children", get(list_child_issues))
         .route("/api/issues/{id}/usage", get(get_issue_usage))
         .route("/api/issues/{id}/attachments", get(list_attachments))
         .route("/api/issues/{id}/active-task", get(get_active_tasks))
         .route("/api/issues/{id}/task-runs", get(list_task_runs))
+        .route("/api/issues/{id}/timeline", get(issue_timeline))
+        .route("/api/issues/{id}/rerun", post(rerun_issue))
+        .route(
+            "/api/issues/{id}/quick-actions/{quick_action_id}/render",
+            post(render_quick_action),
+        )
+        .route(
+            "/api/issues/{id}/quick-actions/{quick_action_id}/run",
+            post(run_quick_action),
+        )
+        .route(
+            "/api/issues/{id}/squad-evaluated",
+            post(record_squad_evaluated),
+        )
         .route(
             "/api/issues/{id}/pull-requests",
             get(crate::issue_pull_request::list)
@@ -91,6 +121,2218 @@ pub fn router() -> Router<HandlerState> {
             "/api/issues/{id}/labels/{label_id}",
             axum::routing::delete(detach_label),
         )
+}
+
+fn context_workspace(context: &WorkspaceContext) -> Result<Uuid, Response> {
+    Uuid::parse_str(&context.workspace_id)
+        .map_err(|_| error_response(StatusCode::NOT_FOUND, "workspace not found"))
+}
+
+const ISSUE_COLUMNS: &str = "id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at";
+
+fn search_patterns(raw: &str) -> Vec<String> {
+    raw.split_whitespace()
+        .filter(|term| !term.is_empty())
+        .map(|term| {
+            format!(
+                "%{}%",
+                term.to_lowercase()
+                    .replace('\\', "\\\\")
+                    .replace('%', "\\%")
+                    .replace('_', "\\_")
+            )
+        })
+        .collect()
+}
+
+fn search_number(raw: &str) -> Option<i32> {
+    let raw = raw.trim();
+    let parsed = if let Some((prefix, number)) = raw.split_once('-') {
+        (!prefix.is_empty() && prefix.chars().all(|ch| ch.is_ascii_alphabetic()))
+            .then(|| number.parse::<i32>().ok())
+            .flatten()
+    } else {
+        raw.parse::<i32>().ok()
+    };
+    parsed.filter(|number| *number > 0)
+}
+
+fn push_search_membership(
+    query: &mut QueryBuilder<'_, Postgres>,
+    workspace_id: Uuid,
+    include_closed: bool,
+    patterns: &[String],
+    number: Option<i32>,
+) {
+    query.push("i.workspace_id = ").push_bind(workspace_id);
+    if !include_closed {
+        query.push(
+            " AND issue_effective_status(i.workspace_id,i.status) NOT IN ('done','cancelled')",
+        );
+    }
+    query.push(" AND (");
+    let mut has_alternative = false;
+    if let Some(number) = number {
+        query.push("i.number = ").push_bind(number);
+        has_alternative = true;
+    }
+    if !patterns.is_empty() {
+        if has_alternative {
+            query.push(" OR ");
+        }
+        query.push("(");
+        for (index, pattern) in patterns.iter().enumerate() {
+            if index > 0 {
+                query.push(" AND ");
+            }
+            query.push("(LOWER(i.title) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\' OR LOWER(COALESCE(i.description,'')) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\' OR EXISTS(SELECT 1 FROM comment c WHERE c.issue_id=i.id AND c.workspace_id=").push_bind(workspace_id).push(" AND LOWER(c.content) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\'))");
+        }
+        query.push(")");
+    }
+    query.push(")");
+}
+
+fn search_snippet(raw: &str, query: &str) -> String {
+    const MAX: usize = 240;
+    let chars = raw.chars().collect::<Vec<_>>();
+    if chars.len() <= MAX {
+        return raw.to_string();
+    }
+    let lower = raw.to_lowercase();
+    let byte_index = lower.find(&query.to_lowercase()).unwrap_or(0);
+    let char_index = raw[..byte_index.min(raw.len())].chars().count();
+    let start = char_index.saturating_sub(60).min(chars.len() - MAX);
+    let mut result = chars[start..start + MAX].iter().collect::<String>();
+    if start > 0 {
+        result.insert(0, '…');
+    }
+    if start + MAX < chars.len() {
+        result.push('…');
+    }
+    result
+}
+
+async fn search_issues(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let query = params
+        .get("q")
+        .map(|value| value.trim())
+        .unwrap_or_default();
+    if query.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "q parameter is required");
+    }
+    let workspace_id = match context_workspace(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let limit = params
+        .get("limit")
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(20)
+        .min(50);
+    let offset = params
+        .get("offset")
+        .and_then(|value| value.parse::<i64>().ok())
+        .filter(|value| *value >= 0)
+        .unwrap_or(0);
+    let include_closed = params
+        .get("include_closed")
+        .is_some_and(|value| value == "true");
+    let patterns = search_patterns(query);
+    let number = search_number(query).filter(|number| *number > 0);
+    let phrase = format!(
+        "%{}%",
+        query
+            .to_lowercase()
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_")
+    );
+    let mut statement =
+        QueryBuilder::<Postgres>::new(format!("SELECT {ISSUE_COLUMNS} FROM issue i WHERE "));
+    push_search_membership(
+        &mut statement,
+        workspace_id,
+        include_closed,
+        &patterns,
+        number,
+    );
+    statement.push(" ORDER BY CASE ");
+    if let Some(number) = number {
+        statement
+            .push("WHEN i.number = ")
+            .push_bind(number)
+            .push(" THEN 0 ");
+    }
+    statement.push("WHEN LOWER(i.title) = ").push_bind(query.to_lowercase()).push(" THEN 1 WHEN LOWER(i.title) LIKE ").push_bind(phrase.clone()).push(" ESCAPE '\\\\' THEN 2 WHEN LOWER(COALESCE(i.description,'')) LIKE ").push_bind(phrase.clone()).push(" ESCAPE '\\\\' THEN 3 ELSE 4 END, CASE i.status WHEN 'in_progress' THEN 0 WHEN 'in_review' THEN 1 WHEN 'todo' THEN 2 ELSE 3 END, i.updated_at DESC, i.id DESC LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(offset);
+    let issues = match statement
+        .build_query_as::<Issue>()
+        .fetch_all(&state.pool)
+        .await
+    {
+        Ok(issues) => issues,
+        Err(error) => {
+            tracing::warn!(%error, "failed to search issues");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to search issues");
+        }
+    };
+    let mut count = QueryBuilder::<Postgres>::new("SELECT count(*) FROM issue i WHERE ");
+    push_search_membership(&mut count, workspace_id, include_closed, &patterns, number);
+    let total = count
+        .build_query_scalar::<i64>()
+        .fetch_one(&state.pool)
+        .await
+        .unwrap_or(issues.len() as i64);
+    let prefix = issue_prefix(&state, workspace_id).await;
+    let mut response = Vec::with_capacity(issues.len());
+    let terms = query
+        .split_whitespace()
+        .map(str::to_lowercase)
+        .collect::<Vec<_>>();
+    for issue in issues {
+        let source = if terms
+            .iter()
+            .all(|term| issue.title.to_lowercase().contains(term))
+        {
+            "title"
+        } else if issue
+            .description
+            .as_deref()
+            .is_some_and(|value| terms.iter().all(|term| value.to_lowercase().contains(term)))
+        {
+            "description"
+        } else {
+            "comment"
+        };
+        let matching_comment = if source == "comment" || patterns.len() > 1 {
+            let mut comment =
+                QueryBuilder::<Postgres>::new("SELECT content FROM comment c WHERE c.issue_id=");
+            comment
+                .push_bind(issue.id)
+                .push(" AND c.workspace_id=")
+                .push_bind(workspace_id)
+                .push(" AND (");
+            for (index, pattern) in patterns.iter().enumerate() {
+                if index > 0 {
+                    comment.push(" AND ");
+                }
+                comment
+                    .push("LOWER(c.content) LIKE ")
+                    .push_bind(pattern.clone())
+                    .push(" ESCAPE '\\\\'");
+            }
+            comment.push(") ORDER BY c.created_at DESC LIMIT 1");
+            comment
+                .build_query_scalar::<String>()
+                .fetch_optional(&state.pool)
+                .await
+                .unwrap_or(None)
+        } else {
+            None
+        };
+        let mut value = serde_json::to_value(IssueResponse::from_issue(&issue, &prefix))
+            .unwrap_or_else(|_| json!({}));
+        if let Some(object) = value.as_object_mut() {
+            object.insert("match_source".into(), json!(source));
+            if let Some(content) = matching_comment {
+                let snippet = search_snippet(&content, query);
+                object.insert("matched_comment_snippet".into(), json!(snippet));
+                if source == "comment" {
+                    object.insert("matched_snippet".into(), json!(snippet));
+                }
+            }
+            if issue
+                .description
+                .as_deref()
+                .is_some_and(|text| terms.iter().all(|term| text.to_lowercase().contains(term)))
+            {
+                object.insert(
+                    "matched_description_snippet".into(),
+                    json!(search_snippet(
+                        issue.description.as_deref().unwrap_or_default(),
+                        query
+                    )),
+                );
+            }
+        }
+        response.push(value);
+    }
+    let mut http = Json(json!({ "issues": response, "total": total })).into_response();
+    if let Ok(value) = total.to_string().parse() {
+        http.headers_mut().insert("x-total-count", value);
+    }
+    http
+}
+
+async fn grouped_issues(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Query(params): Query<ListParams>,
+) -> Response {
+    if params.group_by.as_deref().unwrap_or("assignee") != "assignee" {
+        return error_response(StatusCode::BAD_REQUEST, "unsupported group_by");
+    }
+    let workspace_id = match context_workspace(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let limit = params
+        .limit
+        .as_deref()
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(50)
+        .clamp(1, 100);
+    let offset = params
+        .offset
+        .as_deref()
+        .and_then(|value| value.parse::<i64>().ok())
+        .unwrap_or(0)
+        .max(0);
+    let mut filters = serde_json::Map::new();
+    let list = |raw: Option<&str>| {
+        raw.unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(|v| json!(v))
+            .collect::<Vec<_>>()
+    };
+    let statuses = list(params.statuses.as_deref().or(params.status.as_deref()));
+    if !statuses.is_empty() {
+        filters.insert("statuses".into(), Value::Array(statuses));
+    }
+    let priorities = list(params.priorities.as_deref().or(params.priority.as_deref()));
+    if !priorities.is_empty() {
+        filters.insert("priorities".into(), Value::Array(priorities));
+    }
+    if let Some(raw) = params.assignee_filters.as_deref() {
+        let actors = raw
+            .split(',')
+            .filter_map(|entry| entry.split_once(':'))
+            .map(|(kind, id)| json!({"type":kind,"id":id}))
+            .collect::<Vec<_>>();
+        filters.insert("assignees".into(), Value::Array(actors));
+    }
+    if params.include_no_assignee.as_deref() == Some("true") {
+        filters.insert("include_no_assignee".into(), Value::Bool(true));
+    }
+    let projects = list(
+        params
+            .project_ids
+            .as_deref()
+            .or(params.project_id.as_deref()),
+    );
+    if !projects.is_empty() {
+        filters.insert("project_ids".into(), Value::Array(projects));
+    }
+    if params.include_no_project.as_deref() == Some("true") {
+        filters.insert("include_no_project".into(), Value::Bool(true));
+    }
+    let labels = list(params.label_ids.as_deref());
+    if !labels.is_empty() {
+        filters.insert("label_ids".into(), Value::Array(labels));
+    }
+    if params.top_level_only.as_deref() == Some("true") {
+        filters.insert("include_sub_issues".into(), Value::Bool(false));
+    }
+    let request = TableRequest {
+        query: json!({"scope":{"kind":"workspace"},"filters":filters,"search":params.q.clone().unwrap_or_default(),"sort":{"field":params.sort.clone().unwrap_or_else(|| "position".into()),"direction":params.direction.clone().unwrap_or_else(|| "asc".into())}}),
+        group: Value::Null,
+        group_key: None,
+        hierarchy: Value::Null,
+        parent_id: None,
+        facets: Vec::new(),
+        page: Value::Null,
+    };
+    let rows = match table_all_rows(&state, workspace_id, context.member.user_id, &request).await {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::warn!(status = %error.status(), "failed to list grouped issues");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list grouped issues",
+            );
+        }
+    };
+    let prefix = issue_prefix(&state, workspace_id).await;
+    type IssueGroup = (Option<String>, Option<Uuid>, Vec<IssueResponse>);
+    let mut grouped: std::collections::BTreeMap<String, IssueGroup> =
+        std::collections::BTreeMap::new();
+    for row in rows {
+        let key = match (&row.assignee_type, row.assignee_id) {
+            (Some(kind), Some(id)) => format!("{kind}:{id}"),
+            _ => "none".to_string(),
+        };
+        grouped
+            .entry(key)
+            .or_insert_with(|| (row.assignee_type.clone(), row.assignee_id, Vec::new()))
+            .2
+            .push(IssueResponse::from_issue(&row, &prefix));
+    }
+    let groups = grouped
+        .into_iter()
+        .map(|(id, (kind, actor_id, issues))| {
+            let total = issues.len();
+            let issues = issues
+                .into_iter()
+                .skip(offset as usize)
+                .take(limit as usize)
+                .collect::<Vec<_>>();
+            json!({
+                "id": id, "assignee_type": kind, "assignee_id": actor_id,
+                "total": total, "issues": issues,
+            })
+        })
+        .collect::<Vec<_>>();
+    Json(json!({ "groups": groups })).into_response()
+}
+
+#[derive(Debug, Default, Clone, Deserialize)]
+struct TableRequest {
+    #[serde(default)]
+    query: Value,
+    #[serde(default)]
+    group: Value,
+    #[serde(default)]
+    group_key: Option<String>,
+    #[serde(default)]
+    hierarchy: Value,
+    #[serde(default)]
+    parent_id: Option<String>,
+    #[serde(default)]
+    facets: Vec<Value>,
+    #[serde(default)]
+    page: Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct TableCursor {
+    v: u8,
+    query: String,
+    offset: i64,
+    #[serde(default)]
+    group_key: Option<String>,
+    #[serde(default)]
+    parent_id: Option<String>,
+}
+
+fn table_fingerprint(request: &TableRequest) -> String {
+    use sha2::{Digest, Sha256};
+    let bytes = serde_json::to_vec(&request.query).unwrap_or_default();
+    format!("sha256:{:x}", Sha256::digest(bytes))
+}
+
+fn table_cursor(request: &TableRequest, fingerprint: &str) -> Result<(i64, i64), Response> {
+    let limit = request
+        .page
+        .get("limit")
+        .and_then(Value::as_i64)
+        .unwrap_or(50);
+    if !(1..=100).contains(&limit) {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "page.limit must be between 1 and 100",
+        ));
+    }
+    let Some(raw) = request
+        .page
+        .get("cursor")
+        .and_then(Value::as_str)
+        .filter(|v| !v.trim().is_empty())
+    else {
+        return Ok((limit, 0));
+    };
+    let decoded = URL_SAFE_NO_PAD
+        .decode(raw)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<TableCursor>(&bytes).ok())
+        .filter(|cursor| cursor.v == 1)
+        .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid cursor"))?;
+    let group_binding = request.group_key.clone().or_else(|| {
+        request
+            .group
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(|kind| {
+                format!(
+                    "group:{kind}:{}",
+                    request
+                        .group
+                        .get("property_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                )
+            })
+    });
+    if decoded.query != fingerprint
+        || decoded.group_key != group_binding
+        || decoded.parent_id != request.parent_id
+    {
+        return Err(error_response(
+            StatusCode::CONFLICT,
+            "cursor does not belong to this table query",
+        ));
+    }
+    Ok((limit, decoded.offset.max(0)))
+}
+
+fn encode_table_cursor(request: &TableRequest, fingerprint: &str, offset: i64) -> String {
+    let group_key = request.group_key.clone().or_else(|| {
+        request
+            .group
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(|kind| {
+                format!(
+                    "group:{kind}:{}",
+                    request
+                        .group
+                        .get("property_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                )
+            })
+    });
+    URL_SAFE_NO_PAD.encode(
+        serde_json::to_vec(&TableCursor {
+            v: 1,
+            query: fingerprint.into(),
+            offset,
+            group_key,
+            parent_id: request.parent_id.clone(),
+        })
+        .unwrap_or_default(),
+    )
+}
+
+fn parse_table_uuid(raw: &Value, field: &str) -> Result<Uuid, Response> {
+    raw.as_str()
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, &format!("invalid {field}")))
+}
+
+fn push_table_filters(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    request: &TableRequest,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> Result<(), Response> {
+    builder.push("i.workspace_id=").push_bind(workspace_id);
+    let scope = request.query.get("scope").unwrap_or(&Value::Null);
+    match scope
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("workspace")
+    {
+        "workspace" => {}
+        "project" => {
+            builder
+                .push(" AND i.project_id=")
+                .push_bind(parse_table_uuid(&scope["project_id"], "scope.project_id")?);
+        }
+        "assignee" | "creator" => {
+            let kind = scope["kind"].as_str().unwrap();
+            let actor = scope.get("actor").ok_or_else(|| {
+                error_response(StatusCode::BAD_REQUEST, "scope.actor is required")
+            })?;
+            let actor_type = actor
+                .get("type")
+                .and_then(Value::as_str)
+                .filter(|v| matches!(*v, "member" | "agent" | "squad"))
+                .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid scope.actor"))?;
+            let id = parse_table_uuid(&actor["id"], "scope.actor")?;
+            builder
+                .push(" AND i.")
+                .push(kind)
+                .push("_type=")
+                .push_bind(actor_type.to_string())
+                .push(" AND i.")
+                .push(kind)
+                .push("_id=")
+                .push_bind(id);
+        }
+        "my" => match scope
+            .get("relation")
+            .and_then(Value::as_str)
+            .unwrap_or("any")
+        {
+            "assigned" => {
+                builder
+                    .push(" AND i.assignee_type='member' AND i.assignee_id=")
+                    .push_bind(user_id);
+            }
+            "created" => {
+                builder
+                    .push(" AND i.creator_type='member' AND i.creator_id=")
+                    .push_bind(user_id);
+            }
+            "involved" => {
+                builder.push(" AND ((i.assignee_type='agent' AND i.assignee_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push(")) OR (i.assignee_type='squad' AND i.assignee_id IN(SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id=sm.squad_id WHERE s.workspace_id=").push_bind(workspace_id).push(" AND ((sm.member_type='member' AND sm.member_id=").push_bind(user_id).push(") OR (sm.member_type='agent' AND sm.member_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push(")))))");
+            }
+            "any" => {
+                builder.push(" AND ((i.assignee_type='member' AND i.assignee_id=").push_bind(user_id).push(") OR (i.creator_type='member' AND i.creator_id=").push_bind(user_id).push(") OR (i.assignee_type='agent' AND i.assignee_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push(")) OR (i.assignee_type='squad' AND i.assignee_id IN(SELECT sm.squad_id FROM squad_member sm JOIN squad s ON s.id=sm.squad_id WHERE s.workspace_id=").push_bind(workspace_id).push(" AND ((sm.member_type='member' AND sm.member_id=").push_bind(user_id).push(") OR (sm.member_type='agent' AND sm.member_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push("))))))");
+            }
+            _ => {
+                return Err(error_response(
+                    StatusCode::BAD_REQUEST,
+                    "invalid scope.relation",
+                ));
+            }
+        },
+        other => {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                &format!("unsupported scope.kind: {other}"),
+            ));
+        }
+    }
+    if let Some(types) = scope.get("assignee_types").and_then(Value::as_array) {
+        let values = types
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        if values
+            .iter()
+            .any(|v| !matches!(v.as_str(), "member" | "agent" | "squad"))
+        {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid scope.assignee_types",
+            ));
+        }
+        if !values.is_empty() {
+            builder
+                .push(" AND i.assignee_type=ANY(")
+                .push_bind(values)
+                .push(")");
+        }
+    }
+    let filters = request.query.get("filters").unwrap_or(&Value::Null);
+    for (field, column) in [("statuses", "status"), ("priorities", "priority")] {
+        if let Some(values) = filters.get(field).and_then(Value::as_array) {
+            let values = values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect::<Vec<_>>();
+            if !values.is_empty() {
+                builder
+                    .push(" AND i.")
+                    .push(column)
+                    .push("=ANY(")
+                    .push_bind(values)
+                    .push(")");
+            }
+        }
+    }
+    for (field, type_col, id_col) in [
+        ("assignees", "assignee_type", "assignee_id"),
+        ("creators", "creator_type", "creator_id"),
+    ] {
+        if let Some(actors) = filters.get(field).and_then(Value::as_array) {
+            if actors.is_empty() && field == "assignees" {
+                builder.push(" AND FALSE");
+                continue;
+            }
+            if !actors.is_empty() {
+                builder.push(" AND (");
+                for (index, actor) in actors.iter().enumerate() {
+                    if index > 0 {
+                        builder.push(" OR ");
+                    }
+                    let actor_type = actor
+                        .get("type")
+                        .and_then(Value::as_str)
+                        .filter(|v| matches!(*v, "member" | "agent" | "squad"))
+                        .ok_or_else(|| {
+                            error_response(
+                                StatusCode::BAD_REQUEST,
+                                &format!("invalid filters.{field}"),
+                            )
+                        })?;
+                    let id = parse_table_uuid(&actor["id"], &format!("filters.{field}"))?;
+                    builder
+                        .push("(i.")
+                        .push(type_col)
+                        .push("=")
+                        .push_bind(actor_type.to_string())
+                        .push(" AND i.")
+                        .push(id_col)
+                        .push("=")
+                        .push_bind(id)
+                        .push(")");
+                }
+                if field == "assignees"
+                    && filters
+                        .get("include_no_assignee")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+                {
+                    builder.push(" OR (i.assignee_type IS NULL AND i.assignee_id IS NULL)");
+                }
+                builder.push(")");
+            }
+        } else if field == "assignees"
+            && filters
+                .get("include_no_assignee")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        {
+            builder.push(" AND i.assignee_id IS NULL");
+        }
+    }
+    if let Some(values) = filters.get("project_ids").and_then(Value::as_array) {
+        let ids = values
+            .iter()
+            .map(|v| parse_table_uuid(v, "filters.project_ids"))
+            .collect::<Result<Vec<_>, _>>()?;
+        let include_none = filters
+            .get("include_no_project")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let has_ids = !ids.is_empty();
+        if has_ids || include_none {
+            builder.push(" AND (");
+            if has_ids {
+                builder.push("i.project_id=ANY(").push_bind(ids).push(")");
+            }
+            if include_none {
+                if has_ids {
+                    builder.push(" OR ");
+                }
+                builder.push("i.project_id IS NULL");
+            }
+            builder.push(")");
+        }
+    }
+    if let Some(values) = filters.get("label_ids").and_then(Value::as_array) {
+        let ids = values
+            .iter()
+            .map(|v| parse_table_uuid(v, "filters.label_ids"))
+            .collect::<Result<Vec<_>, _>>()?;
+        if !ids.is_empty() {
+            builder.push(" AND EXISTS(SELECT 1 FROM issue_to_label itl WHERE itl.issue_id=i.id AND itl.label_id=ANY(").push_bind(ids).push("))");
+        }
+    }
+    if let Some(properties) = filters.get("properties").and_then(Value::as_object) {
+        let mut alternatives = 0usize;
+        for (definition_id, values) in properties {
+            Uuid::parse_str(definition_id).map_err(|_| {
+                error_response(StatusCode::BAD_REQUEST, "invalid filters.properties")
+            })?;
+            let values = values.as_array().ok_or_else(|| {
+                error_response(StatusCode::BAD_REQUEST, "invalid filters.properties")
+            })?;
+            if values.is_empty() {
+                continue;
+            }
+            alternatives += values.len();
+            if alternatives > 256 {
+                return Err(error_response(
+                    StatusCode::BAD_REQUEST,
+                    "properties filter is too large",
+                ));
+            }
+            builder.push(" AND (");
+            for (index, value) in values.iter().enumerate() {
+                if index > 0 {
+                    builder.push(" OR ");
+                }
+                if value
+                    .as_str()
+                    .is_some_and(|value| matches!(value, "__none__" | "unset:"))
+                {
+                    builder
+                        .push("NOT(i.properties ? ")
+                        .push_bind(definition_id.clone())
+                        .push(")");
+                } else {
+                    builder
+                        .push("i.properties @> ")
+                        .push_bind(json!({(definition_id): value}));
+                }
+            }
+            builder.push(")");
+        }
+    }
+    if let Some(values) = filters.get("working_issue_ids").and_then(Value::as_array) {
+        let ids = values
+            .iter()
+            .map(|v| parse_table_uuid(v, "filters.working_issue_ids"))
+            .collect::<Result<Vec<_>, _>>()?;
+        if ids.is_empty() {
+            builder.push(" AND FALSE");
+        } else {
+            builder.push(" AND i.id=ANY(").push_bind(ids).push(")");
+        }
+    }
+    if let Some(date) = filters.get("date").and_then(Value::as_object) {
+        let field = date
+            .get("field")
+            .and_then(Value::as_str)
+            .filter(|field| matches!(*field, "created_at" | "updated_at"))
+            .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid filters.date.field"))?;
+        let start = date
+            .get("start")
+            .and_then(Value::as_str)
+            .and_then(|raw| raw.parse::<chrono::DateTime<chrono::Utc>>().ok())
+            .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid filters.date range"))?;
+        let end = date
+            .get("end")
+            .and_then(Value::as_str)
+            .and_then(|raw| raw.parse::<chrono::DateTime<chrono::Utc>>().ok())
+            .filter(|end| start < *end)
+            .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid filters.date range"))?;
+        builder
+            .push(" AND i.")
+            .push(field)
+            .push(">=")
+            .push_bind(start)
+            .push(" AND i.")
+            .push(field)
+            .push("<")
+            .push_bind(end);
+    }
+    if filters.get("include_sub_issues").and_then(Value::as_bool) == Some(false) {
+        builder.push(" AND i.parent_issue_id IS NULL");
+    }
+    if filters.get("working_only").and_then(Value::as_bool) == Some(true) {
+        builder.push(" AND EXISTS(SELECT 1 FROM agent_task_queue atq WHERE atq.issue_id=i.id AND atq.status='running')");
+    }
+    if let Some(raw) = request
+        .query
+        .get("search")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+    {
+        let patterns = search_patterns(raw);
+        let number = search_number(raw).filter(|v| *v > 0);
+        builder.push(" AND (");
+        if let Some(number) = number {
+            builder.push("i.number=").push_bind(number).push(" OR ");
+        }
+        for (index, pattern) in patterns.iter().enumerate() {
+            if index > 0 {
+                builder.push(" AND ");
+            }
+            builder.push("(LOWER(i.title) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\' OR LOWER(COALESCE(i.description,'')) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\' OR EXISTS(SELECT 1 FROM comment c WHERE c.issue_id=i.id AND c.workspace_id=").push_bind(workspace_id).push(" AND LOWER(c.content) LIKE ").push_bind(pattern.clone()).push(" ESCAPE '\\\\'))");
+        }
+        builder.push(")");
+    }
+    Ok(())
+}
+
+fn push_table_branch(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    request: &TableRequest,
+) -> Result<(), Response> {
+    let hierarchy = request
+        .hierarchy
+        .get("enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    if request.parent_id.is_some() && !hierarchy {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "parent_id requires hierarchy.enabled=true",
+        ));
+    }
+    if hierarchy {
+        if let Some(parent) = request.parent_id.as_deref() {
+            builder.push(" AND i.parent_issue_id=").push_bind(
+                Uuid::parse_str(parent)
+                    .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid parent_id"))?,
+            );
+        } else {
+            builder.push(" AND i.parent_issue_id IS NULL");
+        }
+    }
+    let Some(raw_key) = request.group_key.as_deref() else {
+        return Ok(());
+    };
+    let kind = request
+        .group
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("none");
+    if kind == "none" {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "group_key requires a group",
+        ));
+    }
+    let value = raw_key.strip_prefix(&format!("{kind}:")).unwrap_or(raw_key);
+    match kind {
+        "status" => {
+            builder.push(" AND i.status=").push_bind(value.to_string());
+        }
+        "status_category" => {
+            builder
+                .push(" AND issue_effective_status(i.workspace_id,i.status)=")
+                .push_bind(value.to_string());
+        }
+        "assignee" => {
+            if matches!(value, "unassigned" | "__none__") {
+                builder.push(" AND i.assignee_id IS NULL");
+            } else {
+                let (actor_type, id) = value
+                    .split_once(':')
+                    .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid group_key"))?;
+                builder
+                    .push(" AND i.assignee_type=")
+                    .push_bind(actor_type.to_string())
+                    .push(" AND i.assignee_id=")
+                    .push_bind(Uuid::parse_str(id).map_err(|_| {
+                        error_response(StatusCode::BAD_REQUEST, "invalid group_key")
+                    })?);
+            }
+        }
+        "project" => {
+            if matches!(value, "unassigned" | "__none__") {
+                builder.push(" AND i.project_id IS NULL");
+            } else {
+                builder.push(" AND i.project_id=").push_bind(
+                    Uuid::parse_str(value).map_err(|_| {
+                        error_response(StatusCode::BAD_REQUEST, "invalid group_key")
+                    })?,
+                );
+            }
+        }
+        "parent" => {
+            if value == "root" {
+                builder.push(" AND i.parent_issue_id IS NULL");
+            } else {
+                builder.push(" AND i.parent_issue_id=").push_bind(
+                    Uuid::parse_str(value).map_err(|_| {
+                        error_response(StatusCode::BAD_REQUEST, "invalid group_key")
+                    })?,
+                );
+            }
+        }
+        "property" => {
+            let property_id = request
+                .group
+                .get("property_id")
+                .and_then(Value::as_str)
+                .filter(|id| Uuid::parse_str(id).is_ok())
+                .ok_or_else(|| {
+                    error_response(StatusCode::BAD_REQUEST, "invalid group.property_id")
+                })?;
+            if value == "unset:" {
+                builder
+                    .push(" AND NOT(i.properties ? ")
+                    .push_bind(property_id.to_string())
+                    .push(")");
+            } else {
+                builder
+                    .push(" AND i.properties->>")
+                    .push_bind(property_id.to_string())
+                    .push("=")
+                    .push_bind(value.trim_start_matches("value:").to_string());
+            }
+        }
+        "compound" => {}
+        _ => {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "unsupported table group",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn table_order(request: &TableRequest) -> Result<String, Response> {
+    let sort = request.query.get("sort").unwrap_or(&Value::Null);
+    let field = sort
+        .get("field")
+        .and_then(Value::as_str)
+        .unwrap_or("position");
+    let column = match field {
+        "position" => "i.position",
+        "created_at" => "i.created_at",
+        "updated_at" => "i.updated_at",
+        "last_activity_at" => "i.last_activity_at",
+        "priority" => "i.priority",
+        "status" => "i.status",
+        "due_date" => "i.due_date",
+        "number" => "i.number",
+        _ => {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid sort.field",
+            ));
+        }
+    };
+    let direction = match sort
+        .get("direction")
+        .and_then(Value::as_str)
+        .unwrap_or("asc")
+    {
+        "asc" => "ASC",
+        "desc" => "DESC",
+        _ => {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid sort.direction",
+            ));
+        }
+    };
+    Ok(format!(
+        "{column} {direction} NULLS LAST, i.created_at DESC, i.id DESC"
+    ))
+}
+
+async fn table_base_rows(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    request: &TableRequest,
+) -> Result<(Vec<Issue>, i64, Option<String>), Response> {
+    let fingerprint = table_fingerprint(request);
+    let (limit, offset) = table_cursor(request, &fingerprint)?;
+    let order = table_order(request)?;
+    let mut count = QueryBuilder::<Postgres>::new("SELECT count(*) FROM issue i WHERE ");
+    push_table_filters(&mut count, request, workspace_id, user_id)?;
+    push_table_branch(&mut count, request)?;
+    let total = count
+        .build_query_scalar::<i64>()
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to count issue table");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to query issue table",
+            )
+        })?;
+    let mut query =
+        QueryBuilder::<Postgres>::new(format!("SELECT {ISSUE_COLUMNS} FROM issue i WHERE "));
+    push_table_filters(&mut query, request, workspace_id, user_id)?;
+    push_table_branch(&mut query, request)?;
+    query
+        .push(" ORDER BY ")
+        .push(order)
+        .push(" LIMIT ")
+        .push_bind(limit)
+        .push(" OFFSET ")
+        .push_bind(offset);
+    let rows = query
+        .build_query_as::<Issue>()
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to query issue table");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to query issue table",
+            )
+        })?;
+    let next = ((offset + rows.len() as i64) < total)
+        .then(|| encode_table_cursor(request, &fingerprint, offset + rows.len() as i64));
+    Ok((rows, total, next))
+}
+
+async fn table_all_rows(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    request: &TableRequest,
+) -> Result<Vec<Issue>, Response> {
+    let order = table_order(request)?;
+    let mut query =
+        QueryBuilder::<Postgres>::new(format!("SELECT {ISSUE_COLUMNS} FROM issue i WHERE "));
+    push_table_filters(&mut query, request, workspace_id, user_id)?;
+    query.push(" ORDER BY ").push(order);
+    query
+        .build_query_as::<Issue>()
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to query issue table");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to query issue table",
+            )
+        })
+}
+
+async fn table_rows(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Json(request): Json<TableRequest>,
+) -> Response {
+    let workspace_id = match context_workspace(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let (rows, total, next_cursor) =
+        match table_base_rows(&state, workspace_id, context.member.user_id, &request).await {
+            Ok(rows) => rows,
+            Err(response) => return response,
+        };
+    let prefix = issue_prefix(&state, workspace_id).await;
+    let ids = rows.iter().map(|issue| issue.id).collect::<Vec<_>>();
+    let child_counts = match sqlx::query_as::<_, (Uuid, i64)>("SELECT parent_issue_id, count(*)::bigint FROM issue WHERE workspace_id=$1 AND parent_issue_id=ANY($2) GROUP BY parent_issue_id")
+        .bind(workspace_id).bind(ids).fetch_all(&state.pool).await {
+            Ok(rows) => rows.into_iter().collect::<HashMap<_, _>>(),
+            Err(error) => {
+                tracing::warn!(%error, "failed to count issue table children");
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to query issue table");
+            }
+        };
+    let response_rows = rows.iter().map(|issue| json!({ "issue": IssueResponse::from_issue(issue, &prefix), "direct_child_count": child_counts.get(&issue.id).copied().unwrap_or(0) })).collect::<Vec<_>>();
+    Json(json!({
+        "query_fingerprint": table_fingerprint(&request), "group_key": request.group_key,
+        "parent_id": request.parent_id, "total": total, "rows": response_rows,
+        "branch_total": total, "next_cursor": next_cursor,
+    }))
+    .into_response()
+}
+
+async fn table_groups(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Json(request): Json<TableRequest>,
+) -> Response {
+    let workspace_id = match context_workspace(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let rows = match table_all_rows(&state, workspace_id, context.member.user_id, &request).await {
+        Ok(rows) => rows,
+        Err(response) => return response,
+    };
+    let kind = request
+        .group
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("status");
+    if !matches!(
+        kind,
+        "status" | "status_category" | "assignee" | "project" | "parent" | "property" | "compound"
+    ) {
+        return error_response(StatusCode::BAD_REQUEST, "unsupported table group");
+    }
+    let category_by_id = if matches!(kind, "status_category")
+        || (kind == "compound"
+            && request.group.get("secondary").and_then(Value::as_str) == Some("status_category"))
+    {
+        match sqlx::query_as::<_, (Uuid, String)>("SELECT id, issue_effective_status(workspace_id, status) FROM issue WHERE workspace_id=$1 AND id=ANY($2)")
+            .bind(workspace_id).bind(rows.iter().map(|row| row.id).collect::<Vec<_>>()).fetch_all(&state.pool).await {
+                Ok(rows) => rows.into_iter().collect::<HashMap<_, _>>(),
+                Err(error) => {
+                    tracing::warn!(%error, "failed to resolve issue table status categories");
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to query issue table");
+                }
+            }
+    } else {
+        HashMap::new()
+    };
+    let property_id = request.group.get("property_id").and_then(Value::as_str);
+    if kind == "property"
+        && property_id
+            .and_then(|id| Uuid::parse_str(id).ok())
+            .is_none()
+    {
+        return error_response(StatusCode::BAD_REQUEST, "invalid group.property_id");
+    }
+    let primary = request
+        .group
+        .get("primary")
+        .and_then(Value::as_str)
+        .unwrap_or("assignee");
+    let secondary = request
+        .group
+        .get("secondary")
+        .and_then(Value::as_str)
+        .unwrap_or("status");
+    let dimension = |issue: &Issue, dimension: &str| -> String {
+        match dimension {
+            "status" => issue.status.clone(),
+            "status_category" => category_by_id
+                .get(&issue.id)
+                .cloned()
+                .unwrap_or_else(|| issue.status.clone()),
+            "assignee" => issue
+                .assignee_type
+                .as_ref()
+                .zip(issue.assignee_id)
+                .map(|(kind, id)| format!("{kind}:{id}"))
+                .unwrap_or_else(|| "unassigned".into()),
+            "project" => issue
+                .project_id
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "unassigned".into()),
+            "parent" => issue
+                .parent_issue_id
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "root".into()),
+            "property" => issue
+                .properties
+                .get(property_id.unwrap_or_default())
+                .map(|value| match value {
+                    Value::String(value) => value.clone(),
+                    Value::Null => "unset:".into(),
+                    other => other.to_string(),
+                })
+                .unwrap_or_else(|| "unset:".into()),
+            _ => "unassigned".into(),
+        }
+    };
+    let mut counts =
+        std::collections::BTreeMap::<String, (i64, std::collections::BTreeMap<String, i64>)>::new();
+    for issue in &rows {
+        let key = dimension(issue, if kind == "compound" { primary } else { kind });
+        let entry = counts.entry(key).or_default();
+        entry.0 += 1;
+        if kind == "compound" {
+            *entry.1.entry(dimension(issue, secondary)).or_default() += 1;
+        }
+    }
+    let fingerprint = table_fingerprint(&request);
+    let (limit, offset) = match table_cursor(&request, &fingerprint) {
+        Ok(page) => page,
+        Err(response) => return response,
+    };
+    let total = rows.len();
+    let all_groups = counts.into_iter().map(|(key,(count, secondary_counts))| {
+        let secondary_groups = secondary_counts.into_iter().map(|(secondary_key,count)| json!({"key":format!("{secondary}:{secondary_key}"),"value":{"kind":secondary,"value":secondary_key},"count":count})).collect::<Vec<_>>();
+        json!({ "key": format!("{}:{key}", if kind == "compound" { primary } else { kind }), "value": { "kind": if kind == "compound" { primary } else { kind }, "status": (kind == "status").then_some(key.clone()), "value": key }, "count": count, "secondary_groups": secondary_groups })
+    }).collect::<Vec<_>>();
+    let next_offset = offset + limit;
+    let next_cursor = (next_offset < all_groups.len() as i64)
+        .then(|| encode_table_cursor(&request, &fingerprint, next_offset));
+    let groups = all_groups
+        .into_iter()
+        .skip(offset as usize)
+        .take(limit as usize)
+        .collect::<Vec<_>>();
+    Json(json!({ "query_fingerprint": fingerprint, "total": total, "groups": groups, "next_cursor": next_cursor })).into_response()
+}
+
+async fn table_facets(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Json(request): Json<TableRequest>,
+) -> Response {
+    if request.facets.is_empty() || request.facets.len() > 32 {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "facets must contain between 1 and 32 entries",
+        );
+    }
+    let workspace_id = match context_workspace(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let rows = match table_all_rows(&state, workspace_id, context.member.user_id, &request).await {
+        Ok(rows) => rows,
+        Err(response) => return response,
+    };
+    let mut facets = Vec::with_capacity(request.facets.len());
+    for facet in &request.facets {
+        let kind = facet
+            .get("kind")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if !matches!(
+            kind,
+            "status"
+                | "priority"
+                | "assignee"
+                | "creator"
+                | "project"
+                | "label"
+                | "property"
+                | "working_agents"
+        ) {
+            return error_response(StatusCode::BAD_REQUEST, "unsupported table facet");
+        }
+        let mut facet_request = request.clone();
+        if let Some(filters) = facet_request
+            .query
+            .get_mut("filters")
+            .and_then(Value::as_object_mut)
+        {
+            match kind {
+                "status" => {
+                    filters.remove("statuses");
+                }
+                "priority" => {
+                    filters.remove("priorities");
+                }
+                "assignee" => {
+                    filters.remove("assignees");
+                    filters.remove("include_no_assignee");
+                }
+                "creator" => {
+                    filters.remove("creators");
+                }
+                "project" => {
+                    filters.remove("project_ids");
+                    filters.remove("include_no_project");
+                }
+                "label" => {
+                    filters.remove("label_ids");
+                }
+                "working_agents" => {
+                    filters.remove("working_only");
+                    filters.remove("working_issue_ids");
+                }
+                "property" => {
+                    if let Some(id) = facet.get("property_id").and_then(Value::as_str) {
+                        if let Some(properties) =
+                            filters.get_mut("properties").and_then(Value::as_object_mut)
+                        {
+                            properties.remove(id);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        let facet_rows = match table_all_rows(
+            &state,
+            workspace_id,
+            context.member.user_id,
+            &facet_request,
+        )
+        .await
+        {
+            Ok(rows) => rows,
+            Err(response) => return response,
+        };
+        let mut counts = std::collections::BTreeMap::<String, i64>::new();
+        for issue in &facet_rows {
+            let key = match kind {
+                "status" => issue.status.clone(),
+                "priority" => issue.priority.clone(),
+                "assignee" => issue
+                    .assignee_type
+                    .as_ref()
+                    .zip(issue.assignee_id)
+                    .map(|(t, id)| format!("{t}:{id}"))
+                    .unwrap_or_else(|| "__none__".into()),
+                "creator" => format!("{}:{}", issue.creator_type, issue.creator_id),
+                "project" => issue
+                    .project_id
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "__none__".into()),
+                "property" => {
+                    let Some(property_id) = facet
+                        .get("property_id")
+                        .and_then(Value::as_str)
+                        .filter(|id| Uuid::parse_str(id).is_ok())
+                    else {
+                        return error_response(
+                            StatusCode::BAD_REQUEST,
+                            "invalid facet.property_id",
+                        );
+                    };
+                    issue
+                        .properties
+                        .get(property_id)
+                        .map(|value| match value {
+                            Value::String(value) => value.clone(),
+                            Value::Null => "unset:".into(),
+                            other => other.to_string(),
+                        })
+                        .unwrap_or_else(|| "unset:".into())
+                }
+                "label" | "working_agents" => continue,
+                _ => unreachable!(),
+            };
+            *counts.entry(key).or_default() += 1;
+        }
+        let issue_ids = facet_rows.iter().map(|issue| issue.id).collect::<Vec<_>>();
+        if kind == "label" && !issue_ids.is_empty() {
+            let rows = match sqlx::query_as::<_, (Uuid, i64)>("SELECT label_id, count(DISTINCT issue_id)::bigint FROM issue_to_label WHERE issue_id=ANY($1) GROUP BY label_id").bind(&issue_ids).fetch_all(&state.pool).await {
+                Ok(rows) => rows,
+                Err(error) => {
+                    tracing::warn!(%error, "failed to query issue label facets");
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to query issue facets");
+                }
+            };
+            for (key, count) in rows {
+                counts.insert(key.to_string(), count);
+            }
+        }
+        if kind == "working_agents" && !issue_ids.is_empty() {
+            let rows = match sqlx::query_as::<_, (Uuid, i64)>("SELECT agent_id, count(DISTINCT issue_id)::bigint FROM agent_task_queue WHERE workspace_id=$1 AND issue_id=ANY($2) AND status='running' GROUP BY agent_id").bind(workspace_id).bind(&issue_ids).fetch_all(&state.pool).await {
+                Ok(rows) => rows,
+                Err(error) => {
+                    tracing::warn!(%error, "failed to query working-agent facets");
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to query issue facets");
+                }
+            };
+            for (key, count) in rows {
+                counts.insert(key.to_string(), count);
+            }
+        }
+        facets.push(json!({ "kind": kind, "property_id": facet.get("property_id"), "values": counts.into_iter().map(|(key,count)| json!({"key":key,"count":count})).collect::<Vec<_>>() }));
+    }
+    Json(json!({ "query_fingerprint": table_fingerprint(&request), "total": rows.len(), "facets": facets })).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct BatchDeleteRequest {
+    issue_ids: Vec<String>,
+}
+
+async fn delete_issue_and_collect_attachment_urls(
+    state: &HandlerState,
+    issue: &Issue,
+) -> anyhow::Result<Vec<String>> {
+    let mut tx = state.pool.begin().await?;
+    issue_q::lock_issue_for_delete(&mut *tx, issue.id, issue.workspace_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("issue not found while locking for delete"))?;
+    let urls = attachment::list_attachment_ur_ls_by_issue_or_comments(&mut *tx, issue.id).await?;
+    if issue_q::delete_issue(&mut *tx, issue.id, issue.workspace_id).await? != 1 {
+        anyhow::bail!("issue disappeared while deleting");
+    }
+    tx.commit().await?;
+    Ok(urls)
+}
+
+async fn delete_attachment_objects(state: &HandlerState, urls: Vec<String>) {
+    let Some(storage) = state.attachment_storage.as_ref() else {
+        return;
+    };
+    for url in urls {
+        let Some(key) = storage.key_from_url(&url) else {
+            tracing::warn!(%url, "skipping issue attachment URL outside configured storage");
+            continue;
+        };
+        if let Err(error) = storage.delete(&key).await {
+            tracing::warn!(%error, %key, "failed to delete issue attachment object");
+        }
+    }
+}
+
+async fn batch_delete_issues(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    headers: HeaderMap,
+    Json(request): Json<BatchDeleteRequest>,
+) -> Response {
+    if request.issue_ids.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "issue_ids is required");
+    }
+    let workspace_id = match context_workspace(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let (actor_type, actor_id, _) = mutation_actor(&state, &context, &headers).await;
+    let mut deleted = 0usize;
+    for raw_id in request.issue_ids {
+        let Ok(id) = Uuid::parse_str(&raw_id) else {
+            continue;
+        };
+        let Ok(Some(issue)) = issue_q::get_issue_in_workspace(&state.pool, id, workspace_id).await
+        else {
+            continue;
+        };
+        if state.tasks.cancel_tasks_for_issue(issue.id).await.is_err() {
+            continue;
+        }
+        let _ = autopilot::fail_autopilot_runs_by_issue(&state.pool, issue.id).await;
+        let Ok(attachment_urls) = delete_issue_and_collect_attachment_urls(&state, &issue).await
+        else {
+            continue;
+        };
+        delete_attachment_objects(&state, attachment_urls).await;
+        state.bus.publish(&cordy_events::Event {
+            event_type: cordy_protocol::EVENT_ISSUE_DELETED.into(),
+            workspace_id: workspace_id.to_string(),
+            actor_type: actor_type.clone(),
+            actor_id: actor_id.to_string(),
+            payload: json!({"issue_id": issue.id}),
+            ..Default::default()
+        });
+        deleted += 1;
+    }
+    Json(json!({ "deleted": deleted })).into_response()
+}
+
+async fn delete_issue(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    if let Err(error) = state.tasks.cancel_tasks_for_issue(issue.id).await {
+        tracing::warn!(%error, issue_id=%issue.id, "failed to cancel issue tasks");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete issue");
+    }
+    let _ = autopilot::fail_autopilot_runs_by_issue(&state.pool, issue.id).await;
+    match delete_issue_and_collect_attachment_urls(&state, &issue).await {
+        Ok(attachment_urls) => {
+            delete_attachment_objects(&state, attachment_urls).await;
+            let (actor_type, actor_id, _) = mutation_actor(&state, &context, &headers).await;
+            state.bus.publish(&cordy_events::Event {
+                event_type: cordy_protocol::EVENT_ISSUE_DELETED.into(),
+                workspace_id: issue.workspace_id.to_string(),
+                actor_type,
+                actor_id: actor_id.to_string(),
+                payload: json!({"issue_id":issue.id}),
+                ..Default::default()
+            });
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Err(error) => {
+            tracing::warn!(%error, issue_id=%issue.id, "failed to delete issue");
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete issue")
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct QuickCreateRequest {
+    #[serde(default)]
+    agent_id: String,
+    #[serde(default)]
+    squad_id: String,
+    prompt: String,
+    #[serde(default)]
+    priority: String,
+    #[serde(default)]
+    due_date: String,
+    #[serde(default)]
+    project_id: String,
+    #[serde(default)]
+    parent_issue_id: String,
+    #[serde(default)]
+    attachment_ids: Vec<String>,
+}
+
+async fn quick_create_issue(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Json(request): Json<QuickCreateRequest>,
+) -> Response {
+    let prompt = request.prompt.trim();
+    if prompt.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "prompt is required");
+    }
+    let has_agent = !request.agent_id.trim().is_empty();
+    let has_squad = !request.squad_id.trim().is_empty();
+    if has_agent == has_squad {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "exactly one of agent_id or squad_id is required",
+        );
+    }
+    let priority = request.priority.trim().to_lowercase();
+    if !priority.is_empty() && !matches!(priority.as_str(), "urgent" | "high" | "medium" | "low") {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "priority must be one of: urgent, high, medium, low",
+        );
+    }
+    if !request.due_date.is_empty()
+        && NaiveDate::parse_from_str(&request.due_date, "%Y-%m-%d").is_err()
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid due_date format, expected YYYY-MM-DD",
+        );
+    }
+    let workspace_id = match context_workspace(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let requested_assignee = if has_squad {
+        ("squad", request.squad_id.trim())
+    } else {
+        ("agent", request.agent_id.trim())
+    };
+    let requested_id = match Uuid::parse_str(requested_assignee.1) {
+        Ok(id) => id,
+        Err(_) => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                if has_squad {
+                    "invalid squad_id"
+                } else {
+                    "invalid agent_id"
+                },
+            );
+        }
+    };
+    if let Err(message) =
+        validate_assignee(&state, &context, requested_assignee.0, requested_id).await
+    {
+        return error_response(StatusCode::FORBIDDEN, &message);
+    }
+    let mut squad_id = None;
+    let agent_id = if has_squad {
+        let id = match Uuid::parse_str(request.squad_id.trim()) {
+            Ok(id) => id,
+            Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid squad_id"),
+        };
+        let selected = match squad::get_squad_in_workspace(&state.pool, id, workspace_id).await {
+            Ok(Some(value)) if value.archived_at.is_none() => value,
+            Ok(_) => return error_response(StatusCode::NOT_FOUND, "squad not found"),
+            Err(_) => {
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load squad");
+            }
+        };
+        squad_id = Some(id);
+        selected.leader_id
+    } else {
+        match Uuid::parse_str(request.agent_id.trim()) {
+            Ok(id) => id,
+            Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid agent_id"),
+        }
+    };
+    let selected_agent = match agent::get_agent_in_workspace(&state.pool, agent_id, workspace_id)
+        .await
+    {
+        Ok(Some(value)) if value.archived_at.is_none() => value,
+        Ok(_) => return error_response(StatusCode::NOT_FOUND, "agent not found"),
+        Err(_) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load agent"),
+    };
+    if selected_agent.runtime_id.is_none() {
+        return error_response(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "agent runtime is required",
+        );
+    }
+    let project_id = match optional_uuid(Some(request.project_id.trim()), "project_id") {
+        Ok(value) => value,
+        Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
+    };
+    if let Some(id) = project_id {
+        if !matches!(
+            cordy_db::queries::project::get_project_in_workspace(&state.pool, id, workspace_id)
+                .await,
+            Ok(Some(_))
+        ) {
+            return error_response(StatusCode::BAD_REQUEST, "project not found");
+        }
+    }
+    let parent_issue_id =
+        match optional_uuid(Some(request.parent_issue_id.trim()), "parent_issue_id") {
+            Ok(value) => value,
+            Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
+        };
+    if let Some(id) = parent_issue_id {
+        if !matches!(
+            issue_q::get_issue_in_workspace(&state.pool, id, workspace_id).await,
+            Ok(Some(_))
+        ) {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "parent issue not found in this workspace",
+            );
+        }
+    }
+    let attachment_ids = match uuid_strings(&request.attachment_ids, "attachment_ids") {
+        Ok(ids) => ids,
+        Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
+    };
+    match state
+        .tasks
+        .enqueue_quick_create_task(
+            workspace_id,
+            context.member.user_id,
+            agent_id,
+            squad_id,
+            prompt,
+            &priority,
+            request.due_date.trim(),
+            project_id,
+            parent_issue_id,
+            attachment_ids,
+        )
+        .await
+    {
+        Ok(task) => (StatusCode::ACCEPTED, Json(json!({"task_id":task.id}))).into_response(),
+        Err(error) => {
+            tracing::warn!(%error, "quick-create enqueue failed");
+            error_response(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "failed to enqueue quick-create task",
+            )
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct TriggerPreviewRequest {
+    #[serde(default)]
+    issue_ids: Vec<String>,
+    #[serde(default)]
+    is_create: bool,
+    assignee_type: Option<String>,
+    assignee_id: Option<String>,
+    status: Option<String>,
+}
+
+async fn preview_trigger(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Json(request): Json<TriggerPreviewRequest>,
+) -> Response {
+    if request.issue_ids.len() > 500 {
+        return error_response(StatusCode::BAD_REQUEST, "too many issue_ids");
+    }
+    let workspace_id = match context_workspace(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let prospective_id = match request
+        .assignee_id
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .map(Uuid::parse_str)
+        .transpose()
+    {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid assignee_id"),
+    };
+    let mut candidates = Vec::new();
+    if request.is_create {
+        let now = chrono::Utc::now();
+        candidates.push((
+            Issue {
+                id: Uuid::nil(),
+                workspace_id,
+                title: String::new(),
+                description: None,
+                status: request
+                    .status
+                    .clone()
+                    .filter(|v| !v.is_empty())
+                    .unwrap_or_else(|| "todo".into()),
+                priority: "none".into(),
+                assignee_type: request.assignee_type.clone(),
+                assignee_id: prospective_id,
+                creator_type: "member".into(),
+                creator_id: context.member.user_id,
+                parent_issue_id: None,
+                acceptance_criteria: json!([]),
+                context_refs: json!([]),
+                position: 0.0,
+                due_date: None,
+                created_at: now,
+                updated_at: now,
+                number: 0,
+                project_id: None,
+                origin_type: None,
+                origin_id: None,
+                first_executed_at: None,
+                start_date: None,
+                metadata: json!({}),
+                stage: None,
+                properties: json!({}),
+                revision: 1,
+                last_activity_at: None,
+            },
+            String::new(),
+            true,
+        ));
+    } else {
+        for raw in request.issue_ids {
+            let Ok(id) = Uuid::parse_str(&raw) else {
+                continue;
+            };
+            let Ok(Some(mut issue)) =
+                issue_q::get_issue_in_workspace(&state.pool, id, workspace_id).await
+            else {
+                continue;
+            };
+            let previous = issue.status.clone();
+            if prospective_id.is_some() {
+                issue.assignee_id = prospective_id;
+                issue.assignee_type = request.assignee_type.clone();
+            }
+            if let Some(status) = request.status.as_ref().filter(|value| !value.is_empty()) {
+                issue.status = status.clone();
+            }
+            candidates.push((issue, previous, false));
+        }
+    }
+    let mut triggers = Vec::new();
+    for (issue, previous, is_create) in candidates {
+        let input = IssueTriggerInput {
+            assignee_changed: prospective_id.is_some(),
+            status_changed: issue.status != previous,
+            prev_status: previous,
+            is_create,
+            issue,
+        };
+        if let Some(trigger) = state
+            .issues
+            .will_enqueue_run(
+                input,
+                IssueTriggerProbe {
+                    can_access_agent: None,
+                    is_self_loop: None,
+                    suppress_active_self_assignment: None,
+                },
+            )
+            .await
+        {
+            triggers.push(json!({ "issue_id": trigger.issue_id, "agent_id": trigger.agent_id, "source": trigger.source.as_str(), "handoff_supported": false }));
+        }
+    }
+    Json(json!({ "total_count": triggers.len(), "triggers": triggers })).into_response()
+}
+
+async fn issue_timeline(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Response {
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let comments =
+        match comment_q::list_comments_for_issue(&state.pool, issue.id, issue.workspace_id, 2001)
+            .await
+        {
+            Ok(rows) => rows,
+            Err(_) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to list comments",
+                );
+            }
+        };
+    let activities = match activity::list_activities_for_issue(&state.pool, issue.id, 2001).await {
+        Ok(rows) => rows,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list activities",
+            );
+        }
+    };
+    let truncated_comments = comments.len() > 2000;
+    let truncated_activities = activities.len() > 2000;
+    let mut entries = Vec::new();
+    for comment in comments.into_iter().rev().take(2000) {
+        entries.push(json!({ "type":"comment", "id":comment.id, "actor_type":comment.author_type, "actor_id":comment.author_id, "created_at":crate::timefmt::rfc3339(comment.created_at), "content":comment.content, "parent_id":comment.parent_id, "updated_at":crate::timefmt::rfc3339(comment.updated_at), "revision":comment.revision, "comment_type":comment.type_, "quick_action_id":comment.quick_action_id, "resolved_at":comment.resolved_at.map(crate::timefmt::rfc3339), "resolved_by_type":comment.resolved_by_type, "resolved_by_id":comment.resolved_by_id, "source_task_id":comment.source_task_id }));
+    }
+    for row in activities.into_iter().rev().take(2000) {
+        entries.push(json!({ "type":"activity", "id":row.id, "actor_type":row.actor_type, "actor_id":row.actor_id, "created_at":crate::timefmt::rfc3339(row.created_at), "action":row.action, "details":row.details }));
+    }
+    entries.sort_by_key(|entry| {
+        (
+            entry["created_at"].as_str().unwrap_or_default().to_string(),
+            entry["id"].as_str().unwrap_or_default().to_string(),
+        )
+    });
+    let wrapped = ["limit", "before", "after", "around"]
+        .iter()
+        .any(|key| params.contains_key(*key));
+    if wrapped {
+        entries.reverse();
+    }
+    let body = if wrapped {
+        let target_index = params.get("around").and_then(|anchor| {
+            entries
+                .iter()
+                .position(|entry| entry["id"].as_str() == Some(anchor.as_str()))
+        });
+        json!({ "entries":entries, "next_cursor":Value::Null, "prev_cursor":Value::Null, "has_more_before":truncated_comments || truncated_activities, "has_more_after":false, "target_index":target_index })
+    } else {
+        json!(entries)
+    };
+    let mut response = Json(body).into_response();
+    let truncated = match (truncated_comments, truncated_activities) {
+        (true, true) => Some("activity,comment"),
+        (true, false) => Some("comment"),
+        (false, true) => Some("activity"),
+        _ => None,
+    };
+    if let Some(value) = truncated {
+        response.headers_mut().insert(
+            "x-timeline-truncated",
+            value.parse().expect("static header"),
+        );
+    }
+    response
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RerunIssueRequest {
+    task_id: Option<String>,
+}
+
+async fn rerun_issue(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let request = if body.is_empty() {
+        RerunIssueRequest::default()
+    } else {
+        match serde_json::from_slice::<RerunIssueRequest>(&body) {
+            Ok(request) => request,
+            Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+        }
+    };
+    let source_task_id = match request.task_id {
+        Some(raw) if !raw.is_empty() => match Uuid::parse_str(&raw) {
+            Ok(id) => Some(id),
+            Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid task_id"),
+        },
+        _ => None,
+    };
+
+    // Resolve and authorize the actual rerun target before the service clears
+    // or enqueues anything. A historical task may belong to an agent that is
+    // no longer the issue assignee, so checking only the current assignee would
+    // cross the private-agent invocation boundary.
+    let target_agent_id = if let Some(task_id) = source_task_id {
+        match agent::get_agent_task(&state.pool, task_id).await {
+            Ok(Some(task)) if task.issue_id == Some(issue.id) => task.agent_id,
+            Ok(Some(_)) => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "source task does not belong to this issue",
+                );
+            }
+            Ok(None) => return error_response(StatusCode::BAD_REQUEST, "source task not found"),
+            Err(_) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load source task",
+                );
+            }
+        }
+    } else {
+        match (issue.assignee_type.as_deref(), issue.assignee_id) {
+            (Some("agent"), Some(agent_id)) => agent_id,
+            (Some("squad"), Some(squad_id)) => {
+                match squad::get_squad_in_workspace(&state.pool, squad_id, issue.workspace_id).await
+                {
+                    Ok(Some(squad)) => squad.leader_id,
+                    _ => {
+                        return error_response(
+                            StatusCode::BAD_REQUEST,
+                            "issue is assigned to a squad but squad not found",
+                        );
+                    }
+                }
+            }
+            _ => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "issue is not assigned to an agent or squad",
+                );
+            }
+        }
+    };
+    let target = match agent::get_agent(&state.pool, target_agent_id).await {
+        Ok(Some(target)) if target.workspace_id == issue.workspace_id => target,
+        Ok(_) => return error_response(StatusCode::BAD_REQUEST, "target agent not found"),
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load target agent",
+            );
+        }
+    };
+    if !can_member_invoke_agent(&state, context.member.user_id, issue.workspace_id, &target).await {
+        return error_response(StatusCode::FORBIDDEN, "agent invocation is not allowed");
+    }
+
+    match state
+        .tasks
+        .rerun_issue(
+            issue.id,
+            source_task_id,
+            None,
+            Some(context.member.user_id),
+            None,
+        )
+        .await
+    {
+        Ok(task) => (
+            StatusCode::ACCEPTED,
+            Json(crate::task_json::task_to_map(
+                &task,
+                &issue.workspace_id.to_string(),
+            )),
+        )
+            .into_response(),
+        Err(error) => error_response(StatusCode::BAD_REQUEST, &error.to_string()),
+    }
+}
+
+async fn quick_action_for_issue(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    issue_id: &str,
+    action_id: &str,
+) -> Result<
+    (
+        Issue,
+        cordy_db::models::QuickAction,
+        String,
+        cordy_db::models::Agent,
+    ),
+    Response,
+> {
+    let issue = resolve_issue(state, context, issue_id).await?;
+    let id = Uuid::parse_str(action_id)
+        .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid quick action id"))?;
+    let action = quick_action::get_quick_action(&state.pool, id, issue.workspace_id)
+        .await
+        .map_err(|_| {
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load quick action",
+            )
+        })?
+        .filter(|action| {
+            action.visibility == "public" || action.created_by_id == context.member.user_id
+        })
+        .ok_or_else(|| error_response(StatusCode::NOT_FOUND, "quick action not found"))?;
+    let (name, agent, _) = crate::quick_action::target(
+        state,
+        issue.workspace_id,
+        &action.assignee_type,
+        action.assignee_id,
+    )
+    .await?;
+    if !can_member_invoke_agent(state, context.member.user_id, issue.workspace_id, &agent).await {
+        return Err(error_response(
+            StatusCode::FORBIDDEN,
+            "agent invocation is not allowed",
+        ));
+    }
+    Ok((issue, action, name, agent))
+}
+
+fn quick_action_body(action: &cordy_db::models::QuickAction, name: &str) -> String {
+    format!(
+        "[@{name}](mention://{}/{})\n\n{}",
+        action.assignee_type, action.assignee_id, action.prompt
+    )
+}
+
+async fn render_quick_action(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path((issue_id, action_id)): Path<(String, String)>,
+) -> Response {
+    match quick_action_for_issue(&state, &context, &issue_id, &action_id).await {
+        Ok((_issue, action, name, _)) => {
+            Json(json!({"content":quick_action_body(&action,&name)})).into_response()
+        }
+        Err(response) => response,
+    }
+}
+
+async fn run_quick_action(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path((issue_id, action_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    let (issue, action, name, target_agent) =
+        match quick_action_for_issue(&state, &context, &issue_id, &action_id).await {
+            Ok(value) => value,
+            Err(response) => return response,
+        };
+    if action.status != "active" {
+        return error_response(StatusCode::BAD_REQUEST, "quick action is archived");
+    }
+    let (actor_type, actor_id, source_task_id) = mutation_actor(&state, &context, &headers).await;
+    let row = match comment_q::create_comment(
+        &state.pool,
+        issue.id,
+        issue.workspace_id,
+        &actor_type,
+        actor_id,
+        &quick_action_body(&action, &name).replace('\0', ""),
+        "comment",
+        None,
+        source_task_id,
+        Some(action.id),
+        None,
+        cordy_db::dbid::new_v7(),
+    )
+    .await
+    {
+        Ok(Some(row)) => row,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "issue not found"),
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to run quick action",
+            );
+        }
+    };
+    let comment = comment_q::get_comment_in_workspace(
+        &state.pool,
+        row.id.unwrap_or_default(),
+        issue.workspace_id,
+    )
+    .await
+    .ok()
+    .flatten()
+    .expect("created comment");
+    let trigger = if action.assignee_type == "squad" {
+        match squad::get_squad_in_workspace(&state.pool, action.assignee_id, issue.workspace_id)
+            .await
+        {
+            Ok(Some(squad)) => {
+                state
+                    .tasks
+                    .enqueue_task_for_squad_leader(
+                        &issue,
+                        target_agent.id,
+                        squad.id,
+                        Some(comment.id),
+                    )
+                    .await
+            }
+            _ => {
+                return error_response(StatusCode::CONFLICT, "quick action target unavailable");
+            }
+        }
+    } else {
+        state
+            .tasks
+            .enqueue_task_for_mention(&issue, target_agent.id, Some(comment.id))
+            .await
+    };
+    let trigger_outcomes = match trigger {
+        Ok(task) => vec![json!({"agent_id":target_agent.id,"status":"queued","task_id":task.id})],
+        Err(error) => {
+            vec![json!({"agent_id":target_agent.id,"status":"blocked","reason":error.to_string()})]
+        }
+    };
+    let _ =
+        quick_action::touch_quick_action_usage(&state.pool, action.id, issue.workspace_id).await;
+    let mut value = crate::comment::comment_json(&state, &comment).await;
+    if let Some(object) = value.as_object_mut() {
+        object.insert("issue_revision".into(), json!(row.issue_revision));
+        object.insert("trigger_outcomes".into(), json!(trigger_outcomes));
+    }
+    crate::comment::publish(
+        &state,
+        &context,
+        cordy_protocol::EVENT_COMMENT_CREATED,
+        &actor_type,
+        actor_id,
+        value.clone(),
+    );
+    (StatusCode::CREATED, Json(value)).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+struct SquadEvaluationRequest {
+    outcome: String,
+    #[serde(default)]
+    reason: String,
+}
+async fn record_squad_evaluated(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(request): Json<SquadEvaluationRequest>,
+) -> Response {
+    if !matches!(request.outcome.as_str(), "action" | "no_action" | "failed") {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "outcome must be 'action', 'no_action', or 'failed'",
+        );
+    }
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let Some(squad_id) = issue
+        .assignee_id
+        .filter(|_| issue.assignee_type.as_deref() == Some("squad"))
+    else {
+        return error_response(StatusCode::BAD_REQUEST, "issue is not assigned to a squad");
+    };
+    let selected =
+        match squad::get_squad_in_workspace(&state.pool, squad_id, issue.workspace_id).await {
+            Ok(Some(value)) => value,
+            _ => return error_response(StatusCode::NOT_FOUND, "squad not found"),
+        };
+    let (actor_type, actor_id, task_id) = mutation_actor(&state, &context, &headers).await;
+    if actor_type != "agent" || actor_id != selected.leader_id {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "only the squad leader agent can record evaluations",
+        );
+    }
+    let Some(task_id) = task_id else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid task id");
+    };
+    let task = match agent::get_agent_task(&state.pool, task_id).await {
+        Ok(Some(task)) if task.issue_id == Some(issue.id) => task,
+        _ => return error_response(StatusCode::BAD_REQUEST, "task does not belong to issue"),
+    };
+    let details = json!({"squad_id":selected.id,"task_id":task.id,"outcome":request.outcome,"reason":request.reason});
+    match activity::create_activity(
+        &state.pool,
+        issue.workspace_id,
+        issue.id,
+        Some("agent"),
+        actor_id,
+        "squad_leader_evaluated",
+        &details,
+        cordy_db::dbid::new_v7(),
+    )
+    .await
+    {
+        Ok(Some(row)) => {
+            state.bus.publish(&cordy_events::Event {
+                event_type: cordy_protocol::EVENT_ACTIVITY_CREATED.into(),
+                workspace_id: issue.workspace_id.to_string(),
+                actor_type: "agent".into(),
+                actor_id: actor_id.to_string(),
+                payload: json!({
+                    "issue_id": issue.id,
+                    "entry": {
+                        "type": "activity", "id": row.id, "actor_type": "agent",
+                        "actor_id": actor_id, "action": row.action, "details": details,
+                        "created_at": crate::timefmt::rfc3339(row.created_at),
+                    }
+                }),
+                ..Default::default()
+            });
+            (
+                StatusCode::CREATED,
+                Json(json!({"id":row.id,"action":row.action})),
+            )
+                .into_response()
+        }
+        _ => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to record evaluation",
+        ),
+    }
 }
 
 async fn move_anchor_position(
@@ -430,7 +2672,7 @@ async fn unsubscribe(
                     return error_response(
                         StatusCode::FORBIDDEN,
                         "target user is not a member of this workspace",
-                    )
+                    );
                 }
                 Err(error) => {
                     tracing::warn!(%error, "failed to recheck subscriber membership");
@@ -731,7 +2973,7 @@ async fn set_issue_property(
                         "{:?} does not refer to a member of this workspace",
                         actor.value
                     ),
-                )
+                );
             }
         }
     }
@@ -746,7 +2988,7 @@ async fn set_issue_property(
     {
         Ok(Some(updated)) => updated,
         Ok(None) => {
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to set property")
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to set property");
         }
         Err(error)
             if error
@@ -758,7 +3000,7 @@ async fn set_issue_property(
             return error_response(
                 StatusCode::BAD_REQUEST,
                 "issue properties exceed the 16KB size limit",
-            )
+            );
         }
         Err(error) => {
             tracing::warn!(%error, issue_id = %issue.id, %property_id, "failed to set property");
@@ -829,7 +3071,7 @@ async fn unset_issue_property(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to unset property",
-            )
+            );
         }
         Err(error) => {
             tracing::warn!(%error, issue_id = %issue.id, %property_id, "failed to unset property");
@@ -1048,6 +3290,7 @@ fn query_owned(request: &Request, name: &str) -> Option<String> {
 
 #[derive(Debug, Default, Deserialize)]
 struct ListParams {
+    group_by: Option<String>,
     limit: Option<String>,
     offset: Option<String>,
     status: Option<String>,
@@ -1802,7 +4045,6 @@ async fn get_issue(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
-    headers: HeaderMap,
 ) -> Response {
     let issue = match resolve_issue(&state, &context, &id).await {
         Ok(issue) => issue,
@@ -1823,7 +4065,7 @@ async fn get_issue(
             .await
             .unwrap_or_default()
             .iter()
-            .map(|attachment| AttachmentResponse::from_request(&state, &headers, attachment))
+            .map(AttachmentResponse::from)
             .collect();
     Json(response).into_response()
 }
@@ -1889,7 +4131,6 @@ async fn list_attachments(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
-    headers: HeaderMap,
 ) -> Response {
     let issue = match resolve_issue(&state, &context, &id).await {
         Ok(issue) => issue,
@@ -1900,7 +4141,7 @@ async fn list_attachments(
         Ok(attachments) => Json(
             attachments
                 .iter()
-                .map(|attachment| AttachmentResponse::from_request(&state, &headers, attachment))
+                .map(AttachmentResponse::from)
                 .collect::<Vec<_>>(),
         )
         .into_response(),
@@ -2208,7 +4449,7 @@ async fn apply_issue_update(
             return Err(error_response(
                 StatusCode::BAD_REQUEST,
                 "expected_revision must be a positive integer",
-            ))
+            ));
         }
     };
     if let Some(expected) = expected_revision {
@@ -2362,7 +4603,7 @@ async fn apply_issue_update(
                         return Err(error_response(
                             StatusCode::BAD_REQUEST,
                             "project not found in this workspace",
-                        ))
+                        ));
                     }
                     Err(error) => {
                         tracing::warn!(%error, %project_id, "failed to validate issue project");
@@ -2385,7 +4626,7 @@ async fn apply_issue_update(
                 return Err(error_response(
                     StatusCode::BAD_REQUEST,
                     "stage must be >= 1",
-                ))
+                ));
             }
         };
     }
@@ -2905,7 +5146,7 @@ pub(crate) async fn mutation_actor(
     }
 }
 
-async fn publish_issue_updated(
+pub(crate) async fn publish_issue_updated(
     state: &HandlerState,
     previous: &Issue,
     issue: &Issue,
@@ -3648,10 +5889,7 @@ async fn create_issue(
     match result {
         Ok(result) => {
             let Some(issue) = result.issue else {
-                return error_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to create issue",
-                );
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to create issue");
             };
             let mut response = IssueResponse::from_issue(&issue, &prefix);
             response.status_category = Some(status_category);
@@ -3660,11 +5898,14 @@ async fn create_issue(
         }
         Err(IssueCreateError::ActiveDuplicate { duplicate }) => {
             let duplicate = duplicate.map(|issue| IssueResponse::from_issue(&issue, &prefix));
-            (StatusCode::CONFLICT, Json(json!({
-                "code": "active_duplicate_issue",
-                "error": "an active duplicate issue already exists",
-                "issue": duplicate,
-            })))
+            (
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "code": "active_duplicate_issue",
+                    "error": "an active duplicate issue already exists",
+                    "issue": duplicate,
+                })),
+            )
                 .into_response()
         }
         Err(IssueCreateError::ParentIssueNotFound) => error_response(
@@ -3772,7 +6013,7 @@ async fn validate_assignee(
     Ok(())
 }
 
-async fn can_member_invoke_agent(
+pub(crate) async fn can_member_invoke_agent(
     state: &HandlerState,
     user_id: Uuid,
     workspace_id: Uuid,
@@ -3894,7 +6135,7 @@ async fn labels_for_issues(
     Ok(labels)
 }
 
-async fn issue_prefix(state: &HandlerState, workspace_id: Uuid) -> String {
+pub(crate) async fn issue_prefix(state: &HandlerState, workspace_id: Uuid) -> String {
     workspace::get_workspace(&state.pool, workspace_id)
         .await
         .ok()
@@ -4168,7 +6409,7 @@ fn timestamp(value: chrono::DateTime<chrono::Utc>) -> String {
 }
 
 #[derive(Debug, Serialize)]
-struct IssueResponse {
+pub(crate) struct IssueResponse {
     id: String,
     workspace_id: String,
     number: i32,
@@ -4204,7 +6445,7 @@ struct IssueResponse {
 }
 
 impl IssueResponse {
-    fn from_issue(issue: &Issue, prefix: &str) -> Self {
+    pub(crate) fn from_issue(issue: &Issue, prefix: &str) -> Self {
         Self {
             id: issue.id.to_string(),
             workspace_id: issue.workspace_id.to_string(),
@@ -4346,16 +6587,6 @@ impl From<&Attachment> for AttachmentResponse {
     }
 }
 
-impl AttachmentResponse {
-    fn from_request(state: &HandlerState, headers: &HeaderMap, attachment: &Attachment) -> Self {
-        let urls = crate::attachment_access::response_urls(state, headers, attachment);
-        let mut response = Self::from(attachment);
-        response.download_url = urls.download_url;
-        response.markdown_url = urls.markdown_url;
-        response
-    }
-}
-
 fn object_or_empty(value: Value) -> Value {
     if value.is_object() {
         value
@@ -4397,6 +6628,19 @@ impl From<&IssueLabel> for LabelResponse {
 mod tests {
     use super::*;
     use chrono::{TimeZone, Utc};
+
+    #[test]
+    fn table_fingerprint_is_stable_for_the_same_query() {
+        let left = TableRequest {
+            query: json!({"filters":{"statuses":["todo"]}}),
+            ..Default::default()
+        };
+        let right = TableRequest {
+            query: json!({"filters":{"statuses":["todo"]}}),
+            ..Default::default()
+        };
+        assert_eq!(table_fingerprint(&left), table_fingerprint(&right));
+    }
 
     fn fixture_issue() -> Issue {
         let timestamp = Utc.with_ymd_and_hms(2026, 8, 23, 3, 30, 0).unwrap();
@@ -4748,5 +6992,40 @@ mod tests {
         assert_eq!(response["created_at"], "2026-08-23T03:30:00Z");
         assert_eq!(response["issue_id"], fixture_issue().id.to_string());
         assert!(response.get("task_id").is_none());
+    }
+
+    #[test]
+    fn search_parser_matches_identifier_and_multi_term_contract() {
+        assert_eq!(search_number("CORD-42"), Some(42));
+        assert_eq!(search_number("42"), Some(42));
+        assert_eq!(search_number("CORD-extra-42"), None);
+        assert_eq!(search_number("bad-0"), None);
+        assert_eq!(
+            search_patterns("  Alpha   beta "),
+            vec!["%alpha%", "%beta%"]
+        );
+        assert_eq!(
+            search_patterns(r"100% _done"),
+            vec![r"%100\%%", r"%\_done%"]
+        );
+    }
+
+    #[test]
+    fn table_cursor_is_bound_to_query_group_and_parent() {
+        let mut request = TableRequest {
+            query: json!({"scope":{"kind":"workspace"},"filters":{},"sort":{"field":"position","direction":"asc"}}),
+            group: json!({"kind":"status"}),
+            group_key: Some("status:todo".into()),
+            hierarchy: json!({"enabled":true}),
+            parent_id: Some("018f03a0-c4d2-7a37-ae4d-5aa45de12f11".into()),
+            facets: Vec::new(),
+            page: json!({"limit":25}),
+        };
+        let fingerprint = table_fingerprint(&request);
+        let cursor = encode_table_cursor(&request, &fingerprint, 25);
+        request.page = json!({"limit":25,"cursor":cursor});
+        assert_eq!(table_cursor(&request, &fingerprint).unwrap(), (25, 25));
+        request.group_key = Some("status:done".into());
+        assert!(table_cursor(&request, &fingerprint).is_err());
     }
 }
