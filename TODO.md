@@ -87,6 +87,10 @@
       Kimi reader reborrow. Minimal fix `0a071cba399515977fd0b70e4f9fe844c6a458fb`
       (parent `ec0d3620`) passes scoped rustfmt/diff-check and is pushed. Current
       candidate is `c419ab0bb316938877e2e89af0ac9b210c7b7cda`; gate must rerun again.
+- [ ] Third #113 check attempt found the remaining ACP callback mutability error in
+      `request_with_permission`; corrected in `0415dd6a2fd62ae6521b7a5fe2a132e7a8ddefbf`
+      (parent `0a071cba`), with scoped rustfmt/diff-check pass and FF push. Current
+      candidate is `89e60eb3ed057952c0c024353f3b5d535ea7e478`; gate must rerun.
 - [ ] #113 gate remains pending review; original worktree
       `.worktrees/cord-22-daemon-production-assembly` has unrelated uncommitted CLI
       edits and must not be reset or used for the gate. Restacked tree has passed
