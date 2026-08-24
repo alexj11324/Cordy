@@ -44,6 +44,7 @@ pub struct RelayMetricsSnapshot {
     pub replayed: u64,
     pub owner_misses: u64,
     pub rollovers: u64,
+    pub claim_handoffs: u64,
     pub timeouts: u64,
     pub ambiguous: u64,
     pub transport_errors: u64,
@@ -58,6 +59,7 @@ struct RelayMetrics {
     replayed: AtomicU64,
     owner_misses: AtomicU64,
     rollovers: AtomicU64,
+    claim_handoffs: AtomicU64,
     timeouts: AtomicU64,
     ambiguous: AtomicU64,
     transport_errors: AtomicU64,
@@ -240,6 +242,7 @@ impl OutboundRelay {
             replayed: self.metrics.replayed.load(Ordering::Relaxed),
             owner_misses: self.metrics.owner_misses.load(Ordering::Relaxed),
             rollovers: self.metrics.rollovers.load(Ordering::Relaxed),
+            claim_handoffs: self.metrics.claim_handoffs.load(Ordering::Relaxed),
             timeouts: self.metrics.timeouts.load(Ordering::Relaxed),
             ambiguous: self.metrics.ambiguous.load(Ordering::Relaxed),
             transport_errors: self.metrics.transport_errors.load(Ordering::Relaxed),
@@ -395,8 +398,11 @@ impl OutboundRelay {
                 }
             }
             match redis_op(self.claim_exists(&request_id)).await {
-                Ok(true) => claim_seen = true,
-                Ok(false) => {}
+                // Claims outlive the ten-second request by several minutes,
+                // so a claim that disappears during this loop was explicitly
+                // CAS-released by a holder that proved it had not written.
+                // Clear the sticky observation and allow successor routing.
+                Ok(exists) => claim_seen = exists,
                 Err(error) => {
                     self.record_transport_error("read claim", &error);
                     if !wait_request(ctx).await {
@@ -424,7 +430,7 @@ impl OutboundRelay {
                             // otherwise.
                             may_have_published = true;
                             if let Err(error) =
-                                redis_op(self.publish(&node, &request_id, &encoded)).await
+                                redis_op(self.publish(&node, &route, &request_id, &encoded)).await
                             {
                                 published_to.remove(&route);
                                 self.record_transport_error("publish request", &error);
@@ -444,7 +450,13 @@ impl OutboundRelay {
         }
     }
 
-    async fn publish(&self, owner: &str, request_id: &str, payload: &str) -> anyhow::Result<()> {
+    async fn publish(
+        &self,
+        owner: &str,
+        route: &str,
+        request_id: &str,
+        payload: &str,
+    ) -> anyhow::Result<()> {
         let stream = self.node_stream(owner);
         let mut conn = self.connection().await?;
         let result: redis::RedisResult<String> = redis::cmd("XADD")
@@ -455,6 +467,8 @@ impl OutboundRelay {
             .arg("*")
             .arg("request_id")
             .arg(request_id)
+            .arg("route")
+            .arg(route)
             .arg("payload")
             .arg(payload)
             .query_async(&mut conn)
@@ -567,7 +581,14 @@ impl OutboundRelay {
                             let fields: HashMap<_, _> = fields.into_iter().collect();
                             if let Some(payload) = fields.get("payload") {
                                 self.metrics.received.fetch_add(1, Ordering::Relaxed);
-                                if !self.consume_one(&handler, payload).await {
+                                if !self
+                                    .consume_one(
+                                        &handler,
+                                        payload,
+                                        fields.get("route").map(String::as_str),
+                                    )
+                                    .await
+                                {
                                     continue;
                                 }
                             }
@@ -589,7 +610,12 @@ impl OutboundRelay {
         }
     }
 
-    async fn consume_one(&self, handler: &Arc<dyn RelayEventHandler>, raw: &str) -> bool {
+    async fn consume_one(
+        &self,
+        handler: &Arc<dyn RelayEventHandler>,
+        raw: &str,
+        target_route: Option<&str>,
+    ) -> bool {
         if raw.len() > MAX_REQUEST_BYTES {
             tracing::warn!(bytes = raw.len(), "wecom outbound relay: oversized request");
             return true;
@@ -604,8 +630,20 @@ impl OutboundRelay {
         if request.version != 1 {
             return true;
         }
-        if self.senders.get(request.installation_id).is_none() {
-            self.clear_stale_owner(request.installation_id).await;
+        let Some((sender, local_route)) = self.local_sender_route(request.installation_id) else {
+            match target_route {
+                Some(route) => self.clear_owner_route(request.installation_id, route).await,
+                None => self.clear_stale_owner(request.installation_id).await,
+            }
+            return true;
+        };
+        let target_route = target_route.unwrap_or(&local_route);
+        if target_route != local_route.as_str() {
+            // This copy was published to a predecessor generation. It has not
+            // claimed or written anything, so acknowledge it and leave the
+            // source free to publish the same request to the successor.
+            self.clear_owner_route(request.installation_id, target_route)
+                .await;
             return true;
         }
         match redis_op(self.read_result(&request.request_id)).await {
@@ -619,7 +657,7 @@ impl OutboundRelay {
                 return false;
             }
         }
-        if !redis_op(self.claim(&request.request_id))
+        if !redis_op(self.claim(&request.request_id, target_route))
             .await
             .unwrap_or(false)
         {
@@ -629,6 +667,11 @@ impl OutboundRelay {
             // result exists: executing again could duplicate a WS send.
             tokio::time::sleep(POLL_INTERVAL).await;
             return false;
+        }
+        if !self.route_is_current(request.installation_id, target_route) {
+            return self
+                .release_unwritten_claim(&request.request_id, target_route)
+                .await;
         }
         let result = if request.expires_at_ms <= self.clock.unix_millis() {
             RelayResult {
@@ -643,8 +686,30 @@ impl OutboundRelay {
                     .saturating_sub(self.clock.unix_millis())
                     .max(1),
             );
-            match tokio::time::timeout(remaining, self.execute(handler, &request)).await {
-                Ok(result) => result,
+            match tokio::time::timeout(remaining, self.execute(handler, &request, sender)).await {
+                Ok(Ok(())) => RelayResult {
+                    request_id: request.request_id.clone(),
+                    status: RelayStatus::Delivered,
+                    error: String::new(),
+                },
+                Ok(Err(error))
+                    if !is_write_attempted(&error)
+                        && !is_ack_timeout(&error)
+                        && !self.route_is_current(request.installation_id, target_route) =>
+                {
+                    return self
+                        .release_unwritten_claim(&request.request_id, target_route)
+                        .await;
+                }
+                Ok(Err(error)) => RelayResult {
+                    request_id: request.request_id.clone(),
+                    status: if is_write_attempted(&error) || is_ack_timeout(&error) {
+                        RelayStatus::Unknown
+                    } else {
+                        RelayStatus::Failed
+                    },
+                    error: format!("{error:#}"),
+                },
                 Err(_) => RelayResult {
                     request_id: request.request_id.clone(),
                     status: RelayStatus::Unknown,
@@ -677,22 +742,17 @@ impl OutboundRelay {
         &self,
         handler: &Arc<dyn RelayEventHandler>,
         request: &RelayRequest,
-    ) -> RelayResult {
-        let outcome = match &request.payload {
+        sender: Arc<crate::ws_sender::WsSender>,
+    ) -> anyhow::Result<()> {
+        match &request.payload {
             RelayPayload::Text {
                 chat_id,
                 chat_type,
                 text,
             } => {
-                let Some(sender) = self.senders.get(request.installation_id) else {
-                    return RelayResult {
-                        request_id: request.request_id.clone(),
-                        status: RelayStatus::Failed,
-                        error: "connection lost before execution".to_string(),
-                    };
-                };
-                let ctx = CancellationToken::new();
-                sender.send_text_ctx(&ctx, chat_id, *chat_type, text).await
+                sender
+                    .send_text_ctx(&CancellationToken::new(), chat_id, *chat_type, text)
+                    .await
             }
             RelayPayload::ChatDone { event } => {
                 handler.handle_chat_done(event.clone().into()).await
@@ -715,25 +775,6 @@ impl OutboundRelay {
                         *chat_type,
                     )
                     .await
-            }
-        };
-        match outcome {
-            Ok(()) => RelayResult {
-                request_id: request.request_id.clone(),
-                status: RelayStatus::Delivered,
-                error: String::new(),
-            },
-            Err(error) => {
-                let status = if is_write_attempted(&error) || is_ack_timeout(&error) {
-                    RelayStatus::Unknown
-                } else {
-                    RelayStatus::Failed
-                };
-                RelayResult {
-                    request_id: request.request_id.clone(),
-                    status,
-                    error: format!("{error:#}"),
-                }
             }
         }
     }
@@ -782,14 +823,18 @@ impl OutboundRelay {
     }
 
     async fn clear_owner(&self, installation_id: Uuid, generation: &str) {
-        let key = self.owner_key(installation_id);
         let value = format!("{generation}|{}", self.node_id);
+        self.clear_owner_route(installation_id, &value).await;
+    }
+
+    async fn clear_owner_route(&self, installation_id: Uuid, route: &str) {
+        let key = self.owner_key(installation_id);
         let script = redis::Script::new(
             "if redis.call('GET',KEYS[1]) == ARGV[1] then return redis.call('DEL',KEYS[1]) end return 0",
         );
         let operation = async {
             let mut conn = self.connection().await?;
-            let _: i64 = script.key(key).arg(value).invoke_async(&mut conn).await?;
+            let _: i64 = script.key(key).arg(route).invoke_async(&mut conn).await?;
             Ok::<(), anyhow::Error>(())
         };
         let _ = redis_op(operation).await;
@@ -822,11 +867,11 @@ impl OutboundRelay {
         Ok(Some((value, node)))
     }
 
-    async fn claim(&self, request_id: &str) -> anyhow::Result<bool> {
+    async fn claim(&self, request_id: &str, route: &str) -> anyhow::Result<bool> {
         let mut conn = self.connection().await?;
         let reply: Option<String> = redis::cmd("SET")
             .arg(self.claim_key(request_id))
-            .arg(&self.node_id)
+            .arg(route)
             .arg("NX")
             .arg("PX")
             .arg(CLAIM_TTL.as_millis() as u64)
@@ -835,9 +880,57 @@ impl OutboundRelay {
         Ok(reply.is_some())
     }
 
+    async fn release_claim(&self, request_id: &str, route: &str) -> anyhow::Result<bool> {
+        let script = redis::Script::new(
+            "if redis.call('GET',KEYS[1]) == ARGV[1] then redis.call('DEL',KEYS[1]); return 1 end return 0",
+        );
+        let mut conn = self.connection().await?;
+        let released: i64 = script
+            .key(self.claim_key(request_id))
+            .arg(route)
+            .invoke_async(&mut conn)
+            .await?;
+        Ok(released == 1)
+    }
+
+    async fn release_unwritten_claim(&self, request_id: &str, route: &str) -> bool {
+        match redis_op(self.release_claim(request_id, route)).await {
+            Ok(true) => {
+                self.metrics.claim_handoffs.fetch_add(1, Ordering::Relaxed);
+                true
+            }
+            Ok(false) => {
+                tracing::warn!(
+                    request_id,
+                    route,
+                    "wecom outbound relay: unwritten claim changed before release"
+                );
+                false
+            }
+            Err(error) => {
+                self.record_transport_error("release unwritten claim", &error);
+                false
+            }
+        }
+    }
+
     async fn claim_exists(&self, request_id: &str) -> anyhow::Result<bool> {
         let mut conn = self.connection().await?;
         Ok(conn.exists(self.claim_key(request_id)).await?)
+    }
+
+    fn local_sender_route(
+        &self,
+        installation_id: Uuid,
+    ) -> Option<(Arc<crate::ws_sender::WsSender>, String)> {
+        self.senders
+            .get_routed(installation_id)
+            .map(|(sender, generation)| (sender, format!("{generation}|{}", self.node_id)))
+    }
+
+    fn route_is_current(&self, installation_id: Uuid, route: &str) -> bool {
+        self.local_sender_route(installation_id)
+            .is_some_and(|(_, current)| current == route)
     }
 
     async fn store_result(&self, result: &RelayResult) -> anyhow::Result<()> {
@@ -936,6 +1029,30 @@ async fn redis_op<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+
+    fn sender() -> Arc<crate::ws_sender::WsSender> {
+        struct NoConn;
+
+        #[async_trait]
+        impl crate::ws_sender::WsConn for NoConn {
+            async fn read_message(&self, _: Option<std::time::Instant>) -> anyhow::Result<Vec<u8>> {
+                anyhow::bail!("no reads")
+            }
+
+            async fn write_message(
+                &self,
+                _: String,
+                _: Option<std::time::Instant>,
+            ) -> anyhow::Result<()> {
+                anyhow::bail!("no writes")
+            }
+
+            async fn close(&self) {}
+        }
+
+        Arc::new(crate::ws_sender::WsSender::new(Arc::new(NoConn)))
+    }
 
     #[test]
     fn event_envelope_round_trips_without_losing_routing_fields() {
@@ -990,5 +1107,22 @@ mod tests {
             .unwrap_err();
         assert!(error.downcast_ref::<RelayAmbiguous>().is_some());
         assert_eq!(relay.metrics().ambiguous, 1);
+    }
+
+    #[test]
+    fn local_routes_are_bound_to_the_exact_sender_generation() {
+        let senders = Arc::new(SendersRegistry::new());
+        let relay = OutboundRelay::new("redis://127.0.0.1/", "", senders.clone()).unwrap();
+        let installation = Uuid::now_v7();
+        let old = cordy_channel::LeaseGeneration::standalone();
+        senders.set(installation, sender(), old.clone());
+        let old_route = format!("{}|{}", old.epoch(), relay.node_id());
+        assert!(relay.route_is_current(installation, &old_route));
+
+        let new = cordy_channel::LeaseGeneration::standalone();
+        senders.set(installation, sender(), new.clone());
+        let new_route = format!("{}|{}", new.epoch(), relay.node_id());
+        assert!(!relay.route_is_current(installation, &old_route));
+        assert!(relay.route_is_current(installation, &new_route));
     }
 }
