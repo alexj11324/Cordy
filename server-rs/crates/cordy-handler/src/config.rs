@@ -84,7 +84,6 @@ async fn get_config(State(state): State<HandlerState>) -> Json<AppConfig> {
     // These frontend surfaces must stay hidden until their complete Rust route
     // families land in later stack layers.
     for key in [
-        feature_flags::PLUGINS_V1,
         feature_flags::COMPOSIO_MCP_APPS,
         feature_flags::BILLING_WORKSPACE_SUBSCRIPTIONS,
     ] {

@@ -1,4 +1,4 @@
-//! Workspace-admin plugin installation routes.
+//! Workspace plugin listing and administration routes.
 
 use axum::body::Bytes;
 use axum::extract::{Extension, Path, State};
@@ -9,9 +9,10 @@ use axum::{Json, Router};
 use chrono::SecondsFormat;
 use cordy_db::models::PluginInstallation;
 use cordy_middleware::workspace::WorkspaceContext;
+use cordy_plugincontract::ConfigField;
 use cordy_service::plugin::{
     config_fields_for_manifest, decode_scopes, hook_signing_secret, parse_installation_manifest,
-    PluginError, PluginErrorKind,
+    PluginError, PluginErrorKind, PluginPreview,
 };
 use cordy_service::plugin_mcp_transport::{
     approve_mcp_hook_tools, approved_mcp_tools, discover_mcp_hook_tools,
@@ -25,12 +26,13 @@ use crate::error::error_response;
 use crate::plugin_action::{plugin_error, plugins_enabled};
 use crate::state::HandlerState;
 
-pub fn router() -> Router<HandlerState> {
+pub fn member_router() -> Router<HandlerState> {
+    Router::new().route("/api/workspaces/{id}/plugins", get(list_plugins))
+}
+
+pub fn admin_router() -> Router<HandlerState> {
     Router::new()
-        .route(
-            "/api/workspaces/{id}/plugins",
-            get(list_plugins).post(install_plugin),
-        )
+        .route("/api/workspaces/{id}/plugins", post(install_plugin))
         .route("/api/workspaces/{id}/plugins/preview", post(preview_plugin))
         .route(
             "/api/workspaces/{id}/plugins/{installation_id}",
@@ -89,6 +91,69 @@ struct HookResponse {
     transport: String,
 }
 
+#[derive(Serialize)]
+struct ConfigFieldResponse {
+    key: String,
+    #[serde(rename = "type")]
+    field_type: String,
+    label: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    description: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    required: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    options: Vec<String>,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    placeholder: String,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    multiline: bool,
+}
+
+impl From<ConfigField> for ConfigFieldResponse {
+    fn from(field: ConfigField) -> Self {
+        Self {
+            key: field.key,
+            field_type: field.field_type,
+            label: field.label,
+            description: field.description,
+            required: field.required,
+            options: field.options,
+            placeholder: field.placeholder,
+            multiline: field.multiline,
+        }
+    }
+}
+
+#[derive(Serialize)]
+struct PluginPreviewResponse {
+    manifest: cordy_plugincontract::Manifest,
+    scopes: Vec<String>,
+    config_schema: Vec<ConfigFieldResponse>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    installed: bool,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    installed_version: String,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    added_scopes: Vec<String>,
+}
+
+impl From<PluginPreview> for PluginPreviewResponse {
+    fn from(preview: PluginPreview) -> Self {
+        Self {
+            manifest: preview.manifest,
+            scopes: preview.scopes,
+            config_schema: preview
+                .config_schema
+                .into_iter()
+                .map(ConfigFieldResponse::from)
+                .collect(),
+            installed: preview.installed,
+            installed_version: preview.installed_version,
+            added_scopes: preview.added_scopes,
+        }
+    }
+}
+
 async fn installation_payload(
     state: &HandlerState,
     installation: &PluginInstallation,
@@ -125,6 +190,10 @@ async fn installation_payload(
         })
         .collect::<Vec<_>>();
     let description_is_empty = manifest.description.is_empty();
+    let config_schema = config_fields_for_manifest(&manifest)
+        .into_iter()
+        .map(ConfigFieldResponse::from)
+        .collect::<Vec<_>>();
     let mut payload = json!({
         "id": installation.id,
         "plugin_key": installation.plugin_key,
@@ -134,7 +203,7 @@ async fn installation_payload(
         "source_url": installation.source_url,
         "enabled": installation.enabled,
         "granted_scopes": granted_scopes,
-        "config_schema": config_fields_for_manifest(&manifest),
+        "config_schema": config_schema,
         "config": config,
         "configured_secrets": configured_secrets,
         "surfaces": manifest.contributes.surfaces,
@@ -227,7 +296,7 @@ async fn preview_plugin(
         .preview_plugin(workspace_id, &request.source_url)
         .await
     {
-        Ok(preview) => Json(preview).into_response(),
+        Ok(preview) => Json(PluginPreviewResponse::from(preview)).into_response(),
         Err(error) => plugin_error(&error, "failed to read the Plugin manifest"),
     }
 }
