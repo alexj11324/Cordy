@@ -20,6 +20,7 @@ use std::fmt::Write;
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
+use std::time::Duration;
 use url::{form_urlencoded, Url};
 
 pub const CLIENT_VERSION: &str = env!("CORDY_BUILD_VERSION");
@@ -150,6 +151,19 @@ enum AgentCommand {
         #[arg(value_name = "ID")]
         id: String,
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
+    #[command(about = "Upload an avatar image for an agent")]
+    Avatar {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(
+            long,
+            value_name = "PATH",
+            help = "Path to the avatar image file (required)"
+        )]
+        file: Option<PathBuf>,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
         output: OutputFormat,
     },
 }
@@ -1843,6 +1857,9 @@ async fn run_with_input<R: Read>(
         Command::Agent(AgentArgs {
             command: AgentCommand::Tasks { id, output },
         }) => run_agent_tasks(cli, environment, id, *output).await,
+        Command::Agent(AgentArgs {
+            command: AgentCommand::Avatar { id, file, output },
+        }) => run_agent_avatar(cli, environment, id, file.as_deref(), *output).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -2560,6 +2577,81 @@ async fn run_agent_tasks(
             }));
             format_table(&rows)
         }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+async fn run_agent_avatar(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    file: Option<&Path>,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let timeout = http_timeout(environment.raw("CORDY_HTTP_TIMEOUT")).max(Duration::from_secs(60));
+    let client = new_api_client(cli, environment)?.with_request_timeout(timeout);
+    let file = file.context("--file is required")?;
+    let file = if file.is_absolute() {
+        file.to_path_buf()
+    } else {
+        environment.current_dir().join(file)
+    };
+    let metadata = fs::metadata(&file).context("file not found")?;
+    let extension = file
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| format!(".{}", extension.to_ascii_lowercase()))
+        .unwrap_or_default();
+    if !matches!(
+        extension.as_str(),
+        ".png" | ".jpg" | ".jpeg" | ".gif" | ".webp"
+    ) {
+        bail!(
+            "unsupported file format {:?}: must be .png, .jpg, .jpeg, .gif, or .webp",
+            extension
+        );
+    }
+    const MAX_AVATAR_SIZE: u64 = 5 << 20;
+    if metadata.len() > MAX_AVATAR_SIZE {
+        bail!("file too large: {} bytes (max 5MB)", metadata.len());
+    }
+    let file_data = fs::read(&file).context("read file")?;
+    if file_data.len() as u64 > MAX_AVATAR_SIZE {
+        bail!("file too large: {} bytes (max 5MB)", file_data.len());
+    }
+
+    let _: Value = client
+        .get_json(&format!("/api/agents/{id}"))
+        .await
+        .context("get agent")?;
+    let filename = file.to_string_lossy();
+    let upload = client
+        .upload_file_with_url(file_data, &filename)
+        .await
+        .context("upload avatar")?;
+    let attachment_id = upload.id;
+    let avatar_url = upload.url;
+    let _: Value = client
+        .put_json(
+            &format!("/api/agents/{id}"),
+            &serde_json::json!({"avatar_url":&avatar_url}),
+        )
+        .await
+        .context("update agent avatar")?;
+    let result = serde_json::json!({
+        "id":&attachment_id,
+        "agent_id":id,
+        "avatar_url":&avatar_url,
+    });
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+        OutputFormat::Table => format_table(&[
+            vec!["ID".into(), "AGENT_ID".into(), "AVATAR_URL".into()],
+            vec![attachment_id, id.into(), avatar_url],
+        ]),
     };
     Ok(RunOutput {
         stdout,
@@ -10779,6 +10871,106 @@ mod tests {
             "preserved"
         );
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn agent_avatar_prechecks_uploads_and_updates_agent() {
+        let app = Router::new()
+            .route(
+                "/api/agents/agent-1",
+                get(|| async { Json(serde_json::json!({"id":"agent-1","name":"Builder"})) }).put(
+                    |Json(body): Json<Value>| async move {
+                        assert_eq!(body["avatar_url"], "https://cdn.example/avatar.png");
+                        Json(serde_json::json!({"id":"agent-1","avatar_url":body["avatar_url"]}))
+                    },
+                ),
+            )
+            .route(
+                "/api/upload-file",
+                post(|request: Request| async move {
+                    assert!(request
+                        .headers()
+                        .get("content-type")
+                        .and_then(|value| value.to_str().ok())
+                        .is_some_and(|value| value.starts_with("multipart/form-data; boundary=")));
+                    let bytes = axum::body::to_bytes(request.into_body(), usize::MAX)
+                        .await
+                        .expect("multipart body");
+                    let body = String::from_utf8_lossy(&bytes);
+                    assert!(body.contains("filename=\"avatar.PNG\""));
+                    assert!(body.contains("fake-png-data"));
+                    Json(serde_json::json!({
+                        "id":"attachment-1",
+                        "url":"https://cdn.example/avatar.png"
+                    }))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        fs::write(cwd.path().join("avatar.PNG"), b"fake-png-data").expect("avatar");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "agent",
+            "avatar",
+            "agent-1",
+            "--file",
+            "avatar.PNG",
+            "--output",
+            "table",
+        ])
+        .expect("agent avatar CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("upload avatar");
+        assert!(output.stdout.starts_with("ID"));
+        assert!(output.stdout.contains("attachment-1"));
+        assert!(output.stdout.contains("agent-1"));
+        assert!(output.stdout.contains("https://cdn.example/avatar.png"));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn agent_avatar_rejects_missing_bad_and_oversized_files_before_api_calls() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        fs::write(cwd.path().join("avatar.txt"), b"not an image").expect("bad avatar");
+        fs::write(cwd.path().join("large.png"), vec![0; (5 << 20) + 1]).expect("large avatar");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "http://127.0.0.1:9");
+        environment.set("CORDY_TOKEN", "token-1");
+        for (args, message) in [
+            (
+                vec!["cordy", "agent", "avatar", "agent-1"],
+                "--file is required",
+            ),
+            (
+                vec![
+                    "cordy",
+                    "agent",
+                    "avatar",
+                    "agent-1",
+                    "--file",
+                    "avatar.txt",
+                ],
+                "unsupported file format",
+            ),
+            (
+                vec!["cordy", "agent", "avatar", "agent-1", "--file", "large.png"],
+                "file too large",
+            ),
+        ] {
+            let cli = Cli::try_parse_from(args).expect("agent avatar CLI");
+            let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .await
+                .expect_err("avatar validation");
+            assert!(error.to_string().contains(message), "{error:#}");
+        }
     }
 
     #[test]
