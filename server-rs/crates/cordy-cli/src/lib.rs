@@ -2292,6 +2292,8 @@ enum SquadCommand {
     },
     #[command(about = "Work with squad members")]
     Member(SquadMemberArgs),
+    #[command(about = "Record a squad leader evaluation on an issue")]
+    Activity(SquadActivityArgs),
 }
 
 #[derive(Debug, Args)]
@@ -2396,6 +2398,18 @@ struct SquadMemberRemoveArgs {
     )]
     member_type: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct SquadActivityArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(value_name = "OUTCOME")]
+    outcome: String,
+    #[arg(long, default_value = "", help = "Short explanation of the decision")]
+    reason: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
     output: OutputFormat,
 }
 
@@ -3134,6 +3148,9 @@ async fn run_with_input<R: Read>(
                     command: SquadMemberCommand::Remove(args),
                 }),
         }) => run_squad_member_remove(cli, environment, args).await,
+        Command::Squad(SquadArgs {
+            command: SquadCommand::Activity(args),
+        }) => run_squad_activity(cli, environment, args).await,
         Command::Label(LabelArgs {
             command: LabelCommand::List { output, full_id },
         }) => run_label_list(cli, environment, *output, *full_id).await,
@@ -14221,6 +14238,39 @@ async fn run_squad_member_remove(
             stdout: String::new(),
             stderr: format!("Member {member_id} removed from squad.\n"),
         },
+    })
+}
+
+async fn run_squad_activity(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SquadActivityArgs,
+) -> Result<RunOutput> {
+    let outcome = args.outcome.as_str();
+    if !matches!(outcome, "action" | "no_action" | "failed") {
+        bail!("invalid outcome {outcome:?}; valid values: action, no_action, failed");
+    }
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let result: Value = client
+        .post_json(
+            &format!("/api/issues/{issue_id}/squad-evaluated"),
+            &serde_json::json!({
+                "outcome": outcome,
+                "reason": args.reason.as_str(),
+            }),
+        )
+        .await
+        .context("record evaluation")?;
+    let issue_display = args.issue_id.trim();
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+            OutputFormat::Table => String::new(),
+        },
+        stderr: format!("Squad evaluation recorded: {outcome} (issue {issue_display})\n"),
     })
 }
 
@@ -25587,6 +25637,132 @@ mod tests {
             .await
             .expect_err("empty squad id");
         assert_eq!(error.to_string(), "squad ID must not be empty");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn squad_activity_resolves_issue_and_posts_outcome() {
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|headers: HeaderMap| async move {
+                    assert_eq!(headers["authorization"], "Bearer token-1");
+                    assert_eq!(headers["x-workspace-id"], "workspace-1");
+                    Json(serde_json::json!({
+                        "id": "issue-uuid-18",
+                        "identifier": "CORD-18"
+                    }))
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid-18/squad-evaluated",
+                post(|headers: HeaderMap, Json(body): Json<Value>| async move {
+                    assert_eq!(headers["authorization"], "Bearer token-1");
+                    assert_eq!(headers["x-workspace-id"], "workspace-1");
+                    match body["outcome"].as_str() {
+                        Some("action") => assert_eq!(
+                            body,
+                            serde_json::json!({
+                                "outcome": "action",
+                                "reason": "delegated"
+                            })
+                        ),
+                        Some("no_action") => assert_eq!(
+                            body,
+                            serde_json::json!({
+                                "outcome": "no_action",
+                                "reason": ""
+                            })
+                        ),
+                        other => panic!("unexpected outcome: {other:?}"),
+                    }
+                    Json(body)
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let table_cli = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "activity",
+            "CORD-18",
+            "action",
+            "--reason",
+            "delegated",
+        ])
+        .expect("squad activity table CLI");
+        let Command::Squad(SquadArgs {
+            command: SquadCommand::Activity(args),
+        }) = &table_cli.command
+        else {
+            panic!("expected squad activity");
+        };
+        assert_eq!(args.reason, "delegated");
+        assert_eq!(args.output, OutputFormat::Table);
+        let table = run_with_input(&table_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("record squad activity table");
+        assert!(table.stdout.is_empty());
+        assert_eq!(
+            table.stderr,
+            "Squad evaluation recorded: action (issue CORD-18)\n"
+        );
+
+        let json_cli = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "activity",
+            "CORD-18",
+            "no_action",
+            "--output",
+            "json",
+        ])
+        .expect("squad activity JSON CLI");
+        let Command::Squad(SquadArgs {
+            command: SquadCommand::Activity(args),
+        }) = &json_cli.command
+        else {
+            panic!("expected squad activity JSON");
+        };
+        assert_eq!(args.reason, "");
+        assert_eq!(args.output, OutputFormat::Json);
+        let json = run_with_input(&json_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("record squad activity JSON");
+        let result: Value = serde_json::from_str(&json.stdout).expect("activity JSON");
+        assert_eq!(
+            result,
+            serde_json::json!({
+                "outcome": "no_action",
+                "reason": ""
+            })
+        );
+        assert_eq!(
+            json.stderr,
+            "Squad evaluation recorded: no_action (issue CORD-18)\n"
+        );
+
+        let invalid = SquadActivityArgs {
+            issue_id: "CORD-18".into(),
+            outcome: "retry".into(),
+            reason: String::new(),
+            output: OutputFormat::Table,
+        };
+        let error = run_squad_activity(&table_cli, &environment, &invalid)
+            .await
+            .expect_err("invalid outcome");
+        assert_eq!(
+            error.to_string(),
+            "invalid outcome \"retry\"; valid values: action, no_action, failed"
+        );
         server.abort();
     }
 
