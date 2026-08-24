@@ -206,9 +206,10 @@
       redacted. Scoped rustfmt/diff-check pass; Cargo/review/gate/merge remain
       delegated to the pro model.
 - [x] Real provider execution adapter implemented on top of
-      `ProviderExecutionPlan` and pushed to PR #129 as `f7e72057dcacce6bd1a8580d4a5850830269d136`
-      (parent `f1f12ab5c7cf3da6cccbc861b58dd101e6dd0c65`, tree
-      `12855df7ecd79a1e29e076b0a6428a3ec85364f6`). The adapter owns ordered
+      `ProviderExecutionPlan`; the slice was first pushed as `f7e72057` and
+      the current PR head is `a06019544c9cd12254c9f95c39a3690e96f3ef36`
+      (parent `f7e72057dcacce6bd1a8580d4a5850830269d136`, tree
+      `349d130b503d725b259c90f0fe774f216d48ac7b`). The adapter owns ordered
       prepare/reuse, local-path locking, worktree finalization, accepted launch
       resolution, real `cordy-agent` backend execution, bounded/redacted
       transcript delivery, session pinning, usage/result mapping, cancellation,
@@ -220,12 +221,21 @@
       repository's existing `auto_update.rs` formatting difference still makes
       a module-wide rustfmt check noisy. Cargo/review/gate/merge remain with the
       pro model.
-- [ ] Next substantive daemon slice: wire `ProductionProviderAdapter` into
-      the CLI/server production assembly and add the typed registration-source
-      construction that the current generic `run_production_daemon` boundary
-      still requires. Keep unsupported provider families fail-closed; do not
-      claim the foreground daemon is complete until a real adapter, registration
-      source, and checkout registry are assembled from one profile snapshot.
+- [x] Added the typed production factory in the same PR: `DaemonProductionInputs`
+      now keeps one `Arc<Config>` and `into_production_assembly<C>()` constructs
+      the concrete adapter plus `ProviderRegistrationSource<C>` while sharing
+      the authenticated client, accepted launch registry, and checkout registry.
+      `DaemonStartAssembly::production_assembly` exposes that boundary to the
+      CLI without introducing a no-op provider fallback. The latest PR
+      candidate is `3f35ccf027217b360b06bef71bde5ab09e0420a3` (parents
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c` +
+      `a06019544c9cd12254c9f95c39a3690e96f3ef36`, same tree as head).
+- [ ] Next substantive daemon slice: provide the real `ProviderCatalog` and
+      wire `DaemonStartAssembly::production_assembly` into the CLI/server
+      foreground command. Keep unsupported provider families fail-closed; do
+      not claim the foreground daemon is complete until a real catalog,
+      registration source, adapter, and checkout registry are assembled from
+      one profile snapshot.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
