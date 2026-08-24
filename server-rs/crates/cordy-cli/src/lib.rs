@@ -136,6 +136,8 @@ enum IssueCommand {
     Create(IssueCreateArgs),
     #[command(about = "Update an issue")]
     Update(IssueUpdateArgs),
+    #[command(about = "Assign an issue to a member, agent, or squad")]
+    Assign(IssueAssignArgs),
 }
 
 #[derive(Debug, Args)]
@@ -252,6 +254,22 @@ struct IssueUpdateArgs {
     #[arg(long, help = "Ordering position within the board column")]
     position: Option<f64>,
     #[arg(long, help = "Apply the update without starting an agent run")]
+    no_start: bool,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssueAssignArgs {
+    #[arg(value_name = "ID")]
+    id: String,
+    #[arg(long, help = "Assignee name (member, agent, or squad; fuzzy match)")]
+    to: Option<String>,
+    #[arg(long, help = "Assignee UUID — member, agent, or squad")]
+    to_id: Option<String>,
+    #[arg(long, help = "Remove current assignee")]
+    unassign: bool,
+    #[arg(long, help = "Assign ownership without starting an agent run")]
     no_start: bool,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
@@ -620,6 +638,9 @@ async fn run_with_input<R: Read>(
         Command::Issue(IssueArgs {
             command: IssueCommand::Update(args),
         }) => run_issue_update(cli, environment, args, input).await,
+        Command::Issue(IssueArgs {
+            command: IssueCommand::Assign(args),
+        }) => run_issue_assign(cli, environment, args).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -1377,6 +1398,7 @@ struct IssueActor {
 struct ResolvedIssueAssignee {
     actor_type: String,
     id: String,
+    name: String,
 }
 
 async fn fetch_issue_actors(
@@ -1478,6 +1500,7 @@ async fn resolve_issue_assignee_id(
         return Ok(ResolvedIssueAssignee {
             actor_type: actor.actor_type.into(),
             id: actor.id.clone(),
+            name: actor.name.clone(),
         });
     }
     bail!("no member, agent, or squad found with ID {input:?}")
@@ -1536,6 +1559,7 @@ async fn resolve_issue_assignee_name(
                 return Ok(ResolvedIssueAssignee {
                     actor_type: actor.actor_type.into(),
                     id: actor.id.clone(),
+                    name: actor.name.clone(),
                 });
             }
             actors => {
@@ -2393,6 +2417,83 @@ async fn run_issue_update<R: Read>(
         stdout,
         stderr: String::new(),
     })
+}
+
+async fn run_issue_assign(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueAssignArgs,
+) -> Result<RunOutput> {
+    if args.to.is_none() && args.to_id.is_none() && !args.unassign {
+        bail!("provide --to <name>, --to-id <uuid>, or --unassign");
+    }
+    if (args.to.is_some() || args.to_id.is_some()) && args.unassign {
+        bail!("--to/--to-id and --unassign are mutually exclusive");
+    }
+    if args.to.is_some() && args.to_id.is_some() {
+        bail!("--to and --to-id are mutually exclusive");
+    }
+    if args.no_start && args.unassign {
+        bail!("--no-start cannot be used with --unassign");
+    }
+
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.id)
+        .await
+        .context("resolve issue")?;
+    let mut body = serde_json::Map::new();
+    let display_target = if args.unassign {
+        body.insert("assignee_type".into(), Value::Null);
+        body.insert("assignee_id".into(), Value::Null);
+        None
+    } else {
+        let workspace_id = resolve_current_workspace_id(cli, environment);
+        let assignee = if let Some(id) = &args.to_id {
+            resolve_issue_assignee_id(&client, &workspace_id, id)
+                .await
+                .context("resolve assignee")?
+        } else {
+            resolve_issue_assignee_name(
+                &client,
+                &workspace_id,
+                args.to.as_deref().unwrap_or_default(),
+            )
+            .await
+            .context("resolve assignee")?
+        };
+        let display = args.to.clone().unwrap_or_else(|| {
+            if assignee.name.is_empty() {
+                format!("{}:{}", assignee.actor_type, assignee.id)
+            } else {
+                format!("{}:{}", assignee.actor_type, assignee.name)
+            }
+        });
+        body.insert("assignee_type".into(), Value::String(assignee.actor_type));
+        body.insert("assignee_id".into(), Value::String(assignee.id));
+        if args.no_start {
+            body.insert("suppress_run".into(), Value::Bool(true));
+        }
+        Some(display)
+    };
+
+    let issue: Value = client
+        .put_json(&format!("/api/issues/{issue_id}"), &body)
+        .await
+        .context("assign issue")?;
+    let issue_key = match value_string(&issue, "identifier") {
+        value if value.is_empty() => value_string(&issue, "id"),
+        value => value,
+    };
+    let stderr = if let Some(target) = display_target {
+        format!("Issue {issue_key} assigned to {target}.\n")
+    } else {
+        format!("Issue {issue_key} unassigned.\n")
+    };
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&issue)?),
+        OutputFormat::Table => String::new(),
+    };
+    Ok(RunOutput { stdout, stderr })
 }
 
 fn validate_issue_status(status: &str) -> Result<()> {
@@ -3859,6 +3960,15 @@ mod tests {
         }
     }
 
+    fn issue_assign_args(cli: &Cli) -> &IssueAssignArgs {
+        match &cli.command {
+            Command::Issue(IssueArgs {
+                command: IssueCommand::Assign(args),
+            }) => args,
+            _ => panic!("expected issue assign"),
+        }
+    }
+
     #[test]
     fn issue_list_parser_matches_go_registry_flags() {
         let cli = Cli::try_parse_from([
@@ -5301,6 +5411,141 @@ mod tests {
         .expect_err("no fields");
         assert!(error.to_string().contains("no fields to update"));
         task.abort();
+    }
+
+    #[tokio::test]
+    async fn issue_assign_parser_and_local_validation_match_go() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "assign",
+            "CORD-18",
+            "--to-id",
+            "11111111-1111-1111-1111-111111111111",
+            "--no-start",
+            "--output",
+            "table",
+        ])
+        .expect("assign CLI");
+        let args = issue_assign_args(&cli);
+        assert_eq!(args.id, "CORD-18");
+        assert_eq!(
+            args.to_id.as_deref(),
+            Some("11111111-1111-1111-1111-111111111111")
+        );
+        assert!(args.no_start);
+        assert_eq!(args.output, OutputFormat::Table);
+
+        let missing = Cli::try_parse_from(["cordy", "issue", "assign", "CORD-18"])
+            .expect("validation is at runtime");
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let error = run_with_input(&missing, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("missing target");
+        assert!(error.to_string().contains("provide --to"));
+    }
+
+    #[tokio::test]
+    async fn issue_assign_puts_resolved_actor_and_supports_unassign() {
+        let bodies = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let bodies_by_update = Arc::clone(&bodies);
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async { Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"})) }),
+            )
+            .route(
+                "/api/workspaces/workspace-1/members",
+                get(|| async { Json(serde_json::json!([])) }),
+            )
+            .route(
+                "/api/agents",
+                get(|| async { Json(serde_json::json!([{"id":"11111111-1111-1111-1111-111111111111","name":"CodeBot"}])) }),
+            )
+            .route("/api/squads", get(|| async { Json(serde_json::json!([])) }))
+            .route(
+                "/api/issues/issue-uuid",
+                put(move |Json(body): Json<Value>| {
+                    let bodies = Arc::clone(&bodies_by_update);
+                    async move {
+                        bodies.lock().expect("bodies").push(body);
+                        Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let assign = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "assign",
+            "CORD-18",
+            "--to-id",
+            "11111111-1111-1111-1111-111111111111",
+            "--no-start",
+        ])
+        .expect("assign CLI");
+        let output = run_with_input(&assign, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("assign");
+        assert!(output.stderr.contains("assigned to agent:CodeBot"));
+        let assign_body = bodies.lock().expect("bodies")[0].clone();
+        assert_eq!(assign_body["assignee_type"], "agent");
+        assert_eq!(
+            assign_body["assignee_id"],
+            "11111111-1111-1111-1111-111111111111"
+        );
+        assert_eq!(assign_body["suppress_run"], true);
+
+        let unassign = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "assign",
+            "CORD-18",
+            "--unassign",
+            "--output",
+            "table",
+        ])
+        .expect("unassign CLI");
+        let output = run_with_input(&unassign, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("unassign");
+        assert!(output.stdout.is_empty());
+        assert_eq!(output.stderr, "Issue CORD-18 unassigned.\n");
+        let unassign_body = bodies.lock().expect("bodies")[1].clone();
+        assert_eq!(unassign_body["assignee_type"], Value::Null);
+        assert_eq!(unassign_body["assignee_id"], Value::Null);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn issue_assign_rejects_no_start_with_unassign_before_network() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "assign",
+            "CORD-18",
+            "--unassign",
+            "--no-start",
+        ])
+        .expect("assign CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("invalid no-start unassign");
+        assert!(error.to_string().contains("--no-start"));
     }
 
     #[test]
