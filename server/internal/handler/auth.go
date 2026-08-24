@@ -17,13 +17,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/cordy-ai/cordy/server/internal/analytics"
 	"github.com/cordy-ai/cordy/server/internal/auth"
 	"github.com/cordy-ai/cordy/server/internal/logger"
 	obsmetrics "github.com/cordy-ai/cordy/server/internal/metrics"
 	db "github.com/cordy-ai/cordy/server/pkg/db/generated"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // SignupError represents signup restriction errors
@@ -392,13 +392,18 @@ func (h *Handler) VerifyCode(w http.ResponseWriter, r *http.Request) {
 
 	isDevCode := isDevVerificationCode(code)
 	if !isDevCode && subtle.ConstantTimeCompare([]byte(code), []byte(dbCode.Code)) != 1 {
-		_ = h.Queries.IncrementVerificationCodeAttempts(r.Context(), dbCode.ID)
+		rows, err := h.Queries.IncrementVerificationCodeAttempts(r.Context(), dbCode.ID)
+		if err != nil || rows != 1 {
+			writeError(w, http.StatusBadRequest, "invalid or expired code")
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid or expired code")
 		return
 	}
 
-	if err := h.Queries.MarkVerificationCodeUsed(r.Context(), dbCode.ID); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to verify code")
+	rows, err := h.Queries.MarkVerificationCodeUsed(r.Context(), dbCode.ID)
+	if err != nil || rows != 1 {
+		writeError(w, http.StatusBadRequest, "invalid or expired code")
 		return
 	}
 

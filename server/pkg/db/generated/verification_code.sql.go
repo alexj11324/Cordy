@@ -95,24 +95,36 @@ func (q *Queries) GetLatestVerificationCode(ctx context.Context, email string) (
 	return i, err
 }
 
-const incrementVerificationCodeAttempts = `-- name: IncrementVerificationCodeAttempts :exec
+const incrementVerificationCodeAttempts = `-- name: IncrementVerificationCodeAttempts :execrows
 UPDATE verification_code
 SET attempts = attempts + 1
 WHERE id = $1
+  AND used = FALSE
+  AND expires_at > now()
+  AND attempts < 5
 `
 
-func (q *Queries) IncrementVerificationCodeAttempts(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, incrementVerificationCodeAttempts, id)
-	return err
+func (q *Queries) IncrementVerificationCodeAttempts(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, incrementVerificationCodeAttempts, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
-const markVerificationCodeUsed = `-- name: MarkVerificationCodeUsed :exec
+const markVerificationCodeUsed = `-- name: MarkVerificationCodeUsed :execrows
 UPDATE verification_code
 SET used = TRUE
 WHERE id = $1
+  AND used = FALSE
+  AND expires_at > now()
+  AND attempts < 5
 `
 
-func (q *Queries) MarkVerificationCodeUsed(ctx context.Context, id pgtype.UUID) error {
-	_, err := q.db.Exec(ctx, markVerificationCodeUsed, id)
-	return err
+func (q *Queries) MarkVerificationCodeUsed(ctx context.Context, id pgtype.UUID) (int64, error) {
+	result, err := q.db.Exec(ctx, markVerificationCodeUsed, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
