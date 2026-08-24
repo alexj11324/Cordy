@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::FutureExt;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -52,6 +53,7 @@ use crate::plugin_token::HookActor;
 const DISPATCH_QUEUE_DEPTH: usize = 512;
 const DISPATCH_WORKERS: usize = 4;
 const DISPATCH_JOB_TIMEOUT: Duration = Duration::from_secs(2 * 60);
+pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How long a hook call stays on record. This table is operational telemetry,
 /// not history: it answers "why is this endpoint failing right now", and the
@@ -102,19 +104,53 @@ impl PluginEventDispatcher {
         }
     }
 
-    /// Spawns the workers and the retention sweep. Call once after
-    /// construction. Repeated calls are harmless and do not duplicate event
-    /// deliveries.
-    pub fn start(self: &Arc<Self>) {
+    /// Starts one owned supervisor for the workers and retention sweep.
+    /// Repeated calls are harmless and do not duplicate event deliveries.
+    pub fn start(
+        self: &Arc<Self>,
+        cancel: CancellationToken,
+    ) -> Option<PluginEventDispatcherRuntime> {
         if self.started.swap(true, Ordering::AcqRel) {
-            return;
-        }
-        for _ in 0..DISPATCH_WORKERS {
-            let dispatcher = Arc::clone(self);
-            tokio::spawn(async move { dispatcher.work().await });
+            return None;
         }
         let dispatcher = Arc::clone(self);
-        tokio::spawn(async move { dispatcher.sweep_invocations().await });
+        let task_cancel = cancel.clone();
+        let task = tokio::spawn(async move { dispatcher.run_workers(task_cancel).await });
+        Some(PluginEventDispatcherRuntime {
+            cancel,
+            task: Some(task),
+        })
+    }
+
+    async fn run_workers(self: Arc<Self>, cancel: CancellationToken) {
+        let mut tasks = tokio::task::JoinSet::new();
+        for _ in 0..DISPATCH_WORKERS {
+            let dispatcher = Arc::clone(&self);
+            tasks.spawn(async move { dispatcher.work().await });
+        }
+        let dispatcher = Arc::clone(&self);
+        tasks.spawn(async move { dispatcher.sweep_invocations().await });
+
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => {
+                    self.stop.cancel();
+                    break;
+                }
+                result = tasks.join_next() => match result {
+                    Some(Ok(())) => {}
+                    Some(Err(error)) => {
+                        tracing::error!(%error, "plugins: event dispatcher task stopped unexpectedly");
+                    }
+                    None => return,
+                },
+            }
+        }
+        while let Some(result) = tasks.join_next().await {
+            if let Err(error) = result {
+                tracing::error!(%error, "plugins: event dispatcher task stopped during shutdown");
+            }
+        }
     }
 
     /// Makes the table's "TTL-swept" description true.
@@ -361,6 +397,48 @@ impl PluginEventDispatcher {
     /// Stops the workers. Safe to call more than once.
     pub fn close(&self) {
         self.stop.cancel();
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PluginEventShutdownOutcome {
+    Stopped,
+    Panicked,
+    TimedOut,
+}
+
+/// Production-owned root for every plugin hook worker and its retention sweep.
+/// Normal shutdown is cooperative and bounded; Drop is the fail-safe abort.
+pub struct PluginEventDispatcherRuntime {
+    cancel: CancellationToken,
+    task: Option<JoinHandle<()>>,
+}
+
+impl PluginEventDispatcherRuntime {
+    pub async fn shutdown(mut self, timeout: Duration) -> PluginEventShutdownOutcome {
+        self.cancel.cancel();
+        let mut task = self
+            .task
+            .take()
+            .expect("plugin event dispatcher runtime always owns a supervisor");
+        match tokio::time::timeout(timeout, &mut task).await {
+            Ok(Ok(())) => PluginEventShutdownOutcome::Stopped,
+            Ok(Err(_)) => PluginEventShutdownOutcome::Panicked,
+            Err(_) => {
+                task.abort();
+                let _ = task.await;
+                PluginEventShutdownOutcome::TimedOut
+            }
+        }
+    }
+}
+
+impl Drop for PluginEventDispatcherRuntime {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
     }
 }
 

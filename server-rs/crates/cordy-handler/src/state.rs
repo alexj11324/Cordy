@@ -340,13 +340,19 @@ impl HandlerState {
     /// and feature flags have both been installed. This is deliberately a
     /// production-startup step: constructing lightweight handler state must
     /// not spawn database or network workers.
-    pub fn start_plugin_event_dispatcher(mut self) -> Self {
+    pub fn start_plugin_event_dispatcher(
+        mut self,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> (
+        Self,
+        Option<cordy_service::plugin_event_dispatch::PluginEventDispatcherRuntime>,
+    ) {
         if self.plugin_events.is_some() {
-            return self;
+            return (self, None);
         }
         let Some(callbacks) = self.callbacks.clone() else {
             tracing::warn!("plugins: event hooks disabled because callback tokens are unavailable");
-            return self;
+            return (self, None);
         };
         let dispatcher = Arc::new(PluginEventDispatcher::new(
             self.plugins.clone(),
@@ -358,9 +364,9 @@ impl HandlerState {
             self.bus.as_ref(),
             dispatcher.clone(),
         );
-        dispatcher.start();
+        let runtime = dispatcher.start(cancel);
         self.plugin_events = Some(dispatcher);
-        self
+        (self, runtime)
     }
 
     /// Wires the issue/task terminal events that settle linked Autopilot runs.
@@ -590,18 +596,24 @@ mod tests {
 
     #[tokio::test]
     async fn plugin_event_dispatcher_start_is_idempotent() {
-        let state = test_state().start_plugin_event_dispatcher();
+        let (state, runtime) =
+            test_state().start_plugin_event_dispatcher(tokio_util::sync::CancellationToken::new());
         let first = state
             .plugin_events
             .as_ref()
             .expect("dispatcher started")
             .clone();
 
-        let state = state.start_plugin_event_dispatcher();
+        let (state, duplicate_runtime) =
+            state.start_plugin_event_dispatcher(tokio_util::sync::CancellationToken::new());
         let second = state.plugin_events.as_ref().expect("dispatcher retained");
         assert!(Arc::ptr_eq(&first, second));
+        assert!(duplicate_runtime.is_none());
 
-        first.close();
+        runtime
+            .expect("first start owns runtime")
+            .shutdown(cordy_service::plugin_event_dispatch::DEFAULT_SHUTDOWN_TIMEOUT)
+            .await;
     }
 
     #[tokio::test]
@@ -609,8 +621,10 @@ mod tests {
         let mut state = test_state();
         state.callbacks = None;
 
-        let state = state.start_plugin_event_dispatcher();
+        let (state, runtime) =
+            state.start_plugin_event_dispatcher(tokio_util::sync::CancellationToken::new());
 
         assert!(state.plugin_events.is_none());
+        assert!(runtime.is_none());
     }
 }

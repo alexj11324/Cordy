@@ -22,6 +22,7 @@ struct ProductionApp {
     channel_media: Option<cordy_service::channel_media_reconciler::ChannelMediaReconcilerRuntime>,
     heartbeat_scheduler: cordy_handler::heartbeat_scheduler::HeartbeatSchedulerRuntime,
     runtime_sweeper: cordy_handler::runtime_sweeper::RuntimeSweeperRuntime,
+    plugin_events: Option<cordy_service::plugin_event_dispatch::PluginEventDispatcherRuntime>,
 }
 
 struct VcsWebhookConfig {
@@ -254,12 +255,13 @@ async fn build_production_router(
     } else {
         tracing::warn!("public-route rate limiting disabled: REDIS_URL not configured");
     }
+    let root_cancel = CancellationToken::new();
     let state = install_pending_stores(state, redis_url)
         .await
         .start_subscriber_activity_listeners()
         .start_notification_event_listeners()
-        .start_autopilot_event_listeners()
-        .start_plugin_event_dispatcher();
+        .start_autopilot_event_listeners();
+    let (state, plugin_events) = state.start_plugin_event_dispatcher(root_cancel.child_token());
     let heartbeat_scheduler = Arc::new(
         cordy_handler::heartbeat_scheduler::BatchedHeartbeatScheduler::new(
             state.pool.clone(),
@@ -268,7 +270,6 @@ async fn build_production_router(
     );
     let state = state.with_heartbeat_scheduler(heartbeat_scheduler.clone());
     let (state, webhook_worker) = state.prepare_webhook_delivery_worker();
-    let root_cancel = CancellationToken::new();
     let heartbeat_scheduler = heartbeat_scheduler.start(root_cancel.child_token());
     let runtime_sweeper = Arc::new(cordy_handler::runtime_sweeper::RuntimeTaskSweeper::new(
         state.pool.clone(),
@@ -338,6 +339,7 @@ async fn build_production_router(
         channel_media,
         heartbeat_scheduler,
         runtime_sweeper,
+        plugin_events,
     })
 }
 
@@ -368,6 +370,19 @@ async fn shutdown_channel_media(
 ) -> Option<cordy_service::channel_media_reconciler::ChannelMediaShutdownOutcome> {
     match runtime {
         Some(runtime) => Some(runtime.shutdown().await),
+        None => None,
+    }
+}
+
+async fn shutdown_plugin_events(
+    runtime: Option<cordy_service::plugin_event_dispatch::PluginEventDispatcherRuntime>,
+) -> Option<cordy_service::plugin_event_dispatch::PluginEventShutdownOutcome> {
+    match runtime {
+        Some(runtime) => Some(
+            runtime
+                .shutdown(cordy_service::plugin_event_dispatch::DEFAULT_SHUTDOWN_TIMEOUT)
+                .await,
+        ),
         None => None,
     }
 }
@@ -477,6 +492,7 @@ async fn main() -> anyhow::Result<()> {
         channel_media,
         heartbeat_scheduler,
         runtime_sweeper,
+        plugin_events,
     } = app;
     let serve_result = axum::serve(
         listener,
@@ -493,6 +509,7 @@ async fn main() -> anyhow::Result<()> {
         channel_media_shutdown,
         heartbeat_shutdown,
         runtime_sweeper_shutdown,
+        plugin_events_shutdown,
     ) = tokio::join!(
         failure_monitor
             .shutdown(cordy_service::autopilot_failure_monitor::DEFAULT_SHUTDOWN_TIMEOUT),
@@ -503,6 +520,7 @@ async fn main() -> anyhow::Result<()> {
         shutdown_channel_media(channel_media),
         heartbeat_scheduler.shutdown(),
         runtime_sweeper.shutdown(),
+        shutdown_plugin_events(plugin_events),
     );
     match failure_shutdown {
         cordy_service::autopilot_failure_monitor::ShutdownOutcome::TimedOut => {
@@ -567,6 +585,15 @@ async fn main() -> anyhow::Result<()> {
             tracing::error!("runtime sweeper task panicked during shutdown");
         }
         cordy_handler::runtime_sweeper::RuntimeSweeperShutdownOutcome::Stopped => {}
+    }
+    match plugin_events_shutdown {
+        Some(cordy_service::plugin_event_dispatch::PluginEventShutdownOutcome::TimedOut) => {
+            tracing::warn!("plugin event dispatcher exceeded shutdown deadline and was aborted");
+        }
+        Some(cordy_service::plugin_event_dispatch::PluginEventShutdownOutcome::Panicked) => {
+            tracing::error!("plugin event dispatcher supervisor panicked during shutdown");
+        }
+        Some(cordy_service::plugin_event_dispatch::PluginEventShutdownOutcome::Stopped) | None => {}
     }
     serve_result?;
     Ok(())
