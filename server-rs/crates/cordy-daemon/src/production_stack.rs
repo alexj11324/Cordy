@@ -277,6 +277,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
                 root_ctx.cancel_with(CancelCause::Shutdown);
                 bridge.abort();
                 stop_health_task(&mut health_task).await;
+                self.deregister_runtimes(control.runtime_ids()).await;
                 return Err(error).context("daemon preflight failed");
             }
         }
