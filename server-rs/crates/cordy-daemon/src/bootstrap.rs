@@ -267,6 +267,7 @@ impl PidOwner {
     fn try_acquire(paths: &ProfileStatePaths) -> anyhow::Result<Self> {
         let lock = OpenOptions::new()
             .create(true)
+            .truncate(false)
             .read(true)
             .write(true)
             .open(&paths.pid_lock)
