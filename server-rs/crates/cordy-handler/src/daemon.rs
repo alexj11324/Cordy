@@ -10,19 +10,27 @@
 //!   `{status, updated_at|completed_at}`.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
+use anyhow::Context as _;
 use axum::extract::{Path, Query as AxumQuery, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+use cordy_daemon::hub::{ClientIdentity, HeartbeatHandler};
 use cordy_db::models::AgentRuntime;
 use cordy_db::queries::{
     agent, autopilot, chat, comment as comment_q, issue, member, runtime, runtime_profile,
     task_message, task_token, workspace,
 };
 use cordy_middleware::daemon_auth::DaemonContext;
-use cordy_protocol::EVENT_DAEMON_REGISTER;
+use cordy_protocol::{
+    DaemonHeartbeatAckPayload, DaemonHeartbeatPendingLocalSkillImport,
+    DaemonHeartbeatPendingLocalSkills, DaemonHeartbeatPendingModelList,
+    DaemonHeartbeatPendingUpdate, DAEMON_CAPABILITY_RPC_V1, EVENT_DAEMON_REGISTER,
+    HEARTBEAT_STATUS_RUNTIME_GONE,
+};
 use cordy_service::issue_status as issue_status_svc;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
@@ -504,6 +512,221 @@ struct HeartbeatRequest {
     supports_batch_import: bool,
 }
 
+/// Production implementation of the daemon WebSocket heartbeat seam. It owns
+/// only the dependencies used by `processHeartbeat`, deliberately excluding
+/// `DaemonHub` so installing it on the hub cannot create a strong-reference
+/// cycle through `HandlerState`.
+pub(crate) struct DaemonHeartbeatProcessor {
+    pool: sqlx::PgPool,
+    update_store: Option<Arc<crate::pending_store::UpdateStore>>,
+    model_list_store: Option<Arc<crate::pending_store::ModelListStore>>,
+    local_skill_list_store: Option<Arc<crate::pending_store::LocalSkillListStore>>,
+    local_skill_import_store: Option<Arc<crate::pending_store::LocalSkillImportStore>>,
+}
+
+impl DaemonHeartbeatProcessor {
+    pub(crate) fn from_state(state: &HandlerState) -> Self {
+        Self {
+            pool: state.pool.clone(),
+            update_store: state.update_store.clone(),
+            model_list_store: state.model_list_store.clone(),
+            local_skill_list_store: state.local_skill_list_store.clone(),
+            local_skill_import_store: state.local_skill_import_store.clone(),
+        }
+    }
+
+    async fn process(
+        &self,
+        rt: &AgentRuntime,
+        supports_batch_import: bool,
+    ) -> anyhow::Result<DaemonHeartbeatAckPayload> {
+        record_heartbeat(&self.pool, rt).await?;
+
+        let runtime_id = rt.id.to_string();
+        let mut ack = DaemonHeartbeatAckPayload {
+            runtime_id: runtime_id.clone(),
+            status: "ok".to_string(),
+            server_capabilities: vec![DAEMON_CAPABILITY_RPC_V1.to_string()],
+            runtime_gone: false,
+            pending_update: None,
+            pending_model_list: None,
+            pending_local_skills: None,
+            pending_local_skill_import: None,
+            pending_local_skill_imports: Vec::new(),
+        };
+
+        if let Some(store) = &self.update_store {
+            match tokio::time::timeout(
+                crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
+                store.has_pending(&runtime_id),
+            )
+            .await
+            {
+                Ok(Ok(true)) => match store.pop_pending(&runtime_id).await {
+                    Ok(Some(pending)) => {
+                        ack.pending_update = Some(DaemonHeartbeatPendingUpdate {
+                            id: pending.id,
+                            target_version: pending.target_version,
+                        });
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, %runtime_id, "update PopPending failed")
+                    }
+                },
+                Ok(Ok(false)) => {}
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, %runtime_id, "update HasPending failed")
+                }
+                Err(_) => tracing::warn!(%runtime_id, "update HasPending timed out"),
+            }
+        }
+
+        if let Some(store) = &self.model_list_store {
+            match tokio::time::timeout(
+                crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
+                store.has_pending(&runtime_id),
+            )
+            .await
+            {
+                Ok(Ok(true)) => match store.pop_pending(&runtime_id).await {
+                    Ok(Some(pending)) => {
+                        ack.pending_model_list =
+                            Some(DaemonHeartbeatPendingModelList { id: pending.id });
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, %runtime_id, "model list PopPending failed")
+                    }
+                },
+                Ok(Ok(false)) => {}
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, %runtime_id, "model list HasPending failed")
+                }
+                Err(_) => tracing::warn!(%runtime_id, "model list HasPending timed out"),
+            }
+        }
+
+        if let Some(store) = &self.local_skill_list_store {
+            match tokio::time::timeout(
+                crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
+                store.has_pending(&runtime_id),
+            )
+            .await
+            {
+                Ok(Ok(true)) => match store.pop_pending(&runtime_id).await {
+                    Ok(Some(pending)) => {
+                        ack.pending_local_skills =
+                            Some(DaemonHeartbeatPendingLocalSkills { id: pending.id });
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, %runtime_id, "local skill list PopPending failed")
+                    }
+                },
+                Ok(Ok(false)) => {}
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, %runtime_id, "local skill list HasPending failed")
+                }
+                Err(_) => tracing::warn!(%runtime_id, "local skill list HasPending timed out"),
+            }
+        }
+
+        if let Some(store) = &self.local_skill_import_store {
+            match tokio::time::timeout(
+                crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
+                store.has_pending(&runtime_id),
+            )
+            .await
+            {
+                Ok(Ok(true)) if supports_batch_import => match store
+                    .pop_pending_batch(
+                        &runtime_id,
+                        crate::claim_response::MAX_LOCAL_SKILL_IMPORT_BATCH,
+                    )
+                    .await
+                {
+                    Ok(pending) if !pending.is_empty() => {
+                        ack.pending_local_skill_import =
+                            Some(DaemonHeartbeatPendingLocalSkillImport {
+                                id: pending[0].id.clone(),
+                                skill_key: pending[0].skill_key.clone(),
+                            });
+                        ack.pending_local_skill_imports = pending
+                            .into_iter()
+                            .map(|pending| DaemonHeartbeatPendingLocalSkillImport {
+                                id: pending.id,
+                                skill_key: pending.skill_key,
+                            })
+                            .collect();
+                    }
+                    Ok(_) => {}
+                    Err(error) => tracing::warn!(
+                        %error,
+                        %runtime_id,
+                        "local skill import PopPendingBatch failed"
+                    ),
+                },
+                Ok(Ok(true)) => match store.pop_pending(&runtime_id).await {
+                    Ok(Some(pending)) => {
+                        ack.pending_local_skill_import =
+                            Some(DaemonHeartbeatPendingLocalSkillImport {
+                                id: pending.id,
+                                skill_key: pending.skill_key,
+                            });
+                    }
+                    Ok(None) => {}
+                    Err(error) => tracing::warn!(
+                        %error,
+                        %runtime_id,
+                        "local skill import PopPending failed"
+                    ),
+                },
+                Ok(Ok(false)) => {}
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, %runtime_id, "local skill import HasPending failed")
+                }
+                Err(_) => tracing::warn!(%runtime_id, "local skill import HasPending timed out"),
+            }
+        }
+
+        Ok(ack)
+    }
+}
+
+#[async_trait::async_trait]
+impl HeartbeatHandler for DaemonHeartbeatProcessor {
+    async fn handle_heartbeat(
+        &self,
+        identity: &ClientIdentity,
+        runtime_id: &str,
+        supports_batch_import: bool,
+    ) -> anyhow::Result<Option<DaemonHeartbeatAckPayload>> {
+        let runtime_uuid = Uuid::parse_str(runtime_id).context("invalid runtime_id")?;
+        let Some(rt) = runtime::get_agent_runtime(&self.pool, runtime_uuid)
+            .await
+            .context("get agent runtime")?
+        else {
+            return Ok(Some(DaemonHeartbeatAckPayload {
+                runtime_id: runtime_id.to_string(),
+                status: HEARTBEAT_STATUS_RUNTIME_GONE.to_string(),
+                server_capabilities: Vec::new(),
+                runtime_gone: true,
+                pending_update: None,
+                pending_model_list: None,
+                pending_local_skills: None,
+                pending_local_skill_import: None,
+                pending_local_skill_imports: Vec::new(),
+            }));
+        };
+        anyhow::ensure!(
+            identity.allows_workspace(&rt.workspace_id.to_string()),
+            "runtime not in connection workspace"
+        );
+        Ok(Some(self.process(&rt, supports_batch_import).await?))
+    }
+}
+
 /// POST /api/daemon/heartbeat. Records liveness and pops any pending update /
 /// model-list / local-skill requests queued for the runtime. The Redis-backed
 /// pending queues land with the redis wiring slice; today every probe is empty,
@@ -546,166 +769,50 @@ async fn heartbeat(
         }
     }
 
-    record_heartbeat(&state, &rt).await;
+    let processor = DaemonHeartbeatProcessor::from_state(&state);
+    let ack = match processor.process(&rt, req.supports_batch_import).await {
+        Ok(ack) => ack,
+        Err(error) => {
+            tracing::warn!(%error, runtime_id = %req.runtime_id, "heartbeat failed");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "heartbeat failed");
+        }
+    };
 
-    // Probe-then-claim each pending queue (Go processHeartbeat): a slow shared
-    // store cannot stall the heartbeat on empty ticks; the claim runs unbounded
-    // because its Lua side effects cannot be safely aborted mid-script. With no
-    // store wired the ack carries only the base fields — old daemons already
-    // tolerate absent optional fields.
-    let mut resp = json!({ "status": "ok", "runtime_id": rt.id.to_string() });
-    let runtime_id_str = rt.id.to_string();
-    if let Some(store) = &state.update_store {
-        match tokio::time::timeout(
-            crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
-            store.has_pending(&runtime_id_str),
-        )
-        .await
-        {
-            Ok(Ok(true)) => match store.pop_pending(&runtime_id_str).await {
-                Ok(Some(pending)) => {
-                    resp["pending_update"] = json!({
-                        "id": pending.id,
-                        "target_version": pending.target_version,
-                    });
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::warn!(error = %e, runtime_id = %runtime_id_str, "update PopPending failed")
-                }
-            },
-            Ok(Ok(false)) => {}
-            Ok(Err(e)) => {
-                tracing::warn!(error = %e, runtime_id = %runtime_id_str, "update HasPending failed")
-            }
-            Err(_) => tracing::warn!(runtime_id = %runtime_id_str, "update HasPending timed out"),
-        }
+    // Preserve the existing HTTP shape while the WebSocket response also
+    // advertises its transport capabilities.
+    let mut resp = json!({ "status": ack.status, "runtime_id": ack.runtime_id });
+    if let Some(pending) = ack.pending_update {
+        resp["pending_update"] = json!(pending);
     }
-    if let Some(store) = &state.model_list_store {
-        match tokio::time::timeout(
-            crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
-            store.has_pending(&runtime_id_str),
-        )
-        .await
-        {
-            Ok(Ok(true)) => match store.pop_pending(&runtime_id_str).await {
-                Ok(Some(pending)) => {
-                    resp["pending_model_list"] = json!({ "id": pending.id });
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::warn!(error = %e, runtime_id = %runtime_id_str, "model list PopPending failed")
-                }
-            },
-            Ok(Ok(false)) => {}
-            Ok(Err(e)) => {
-                tracing::warn!(error = %e, runtime_id = %runtime_id_str, "model list HasPending failed")
-            }
-            Err(_) => {
-                tracing::warn!(runtime_id = %runtime_id_str, "model list HasPending timed out")
-            }
-        }
+    if let Some(pending) = ack.pending_model_list {
+        resp["pending_model_list"] = json!(pending);
     }
-    if let Some(store) = &state.local_skill_list_store {
-        match tokio::time::timeout(
-            crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
-            store.has_pending(&runtime_id_str),
-        )
-        .await
-        {
-            Ok(Ok(true)) => match store.pop_pending(&runtime_id_str).await {
-                Ok(Some(pending)) => {
-                    resp["pending_local_skills"] = json!({ "id": pending.id });
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::warn!(error = %e, runtime_id = %runtime_id_str, "local skill list PopPending failed")
-                }
-            },
-            Ok(Ok(false)) => {}
-            Ok(Err(e)) => {
-                tracing::warn!(error = %e, runtime_id = %runtime_id_str, "local skill list HasPending failed")
-            }
-            Err(_) => {
-                tracing::warn!(runtime_id = %runtime_id_str, "local skill list HasPending timed out")
-            }
-        }
+    if let Some(pending) = ack.pending_local_skills {
+        resp["pending_local_skills"] = json!(pending);
     }
-    if let Some(store) = &state.local_skill_import_store {
-        match tokio::time::timeout(
-            crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
-            store.has_pending(&runtime_id_str),
-        )
-        .await
-        {
-            Ok(Ok(true)) => {
-                if req.supports_batch_import {
-                    match store
-                        .pop_pending_batch(
-                            &runtime_id_str,
-                            crate::claim_response::MAX_LOCAL_SKILL_IMPORT_BATCH,
-                        )
-                        .await
-                    {
-                        Ok(pending) if !pending.is_empty() => {
-                            // Backwards compat: singular field carries the first
-                            // item so older daemons still get one.
-                            resp["pending_local_skill_import"] = json!({
-                                "id": pending[0].id,
-                                "skill_key": pending[0].skill_key,
-                            });
-                            let batch: Vec<Value> = pending
-                                .iter()
-                                .map(|p| json!({ "id": p.id, "skill_key": p.skill_key }))
-                                .collect();
-                            resp["pending_local_skill_imports"] = Value::Array(batch);
-                        }
-                        Ok(_) => {}
-                        Err(e) => {
-                            tracing::warn!(error = %e, runtime_id = %runtime_id_str, "local skill import PopPendingBatch failed")
-                        }
-                    }
-                } else {
-                    match store.pop_pending(&runtime_id_str).await {
-                        Ok(Some(pending)) => {
-                            resp["pending_local_skill_import"] = json!({
-                                "id": pending.id,
-                                "skill_key": pending.skill_key,
-                            });
-                        }
-                        Ok(None) => {}
-                        Err(e) => {
-                            tracing::warn!(error = %e, runtime_id = %runtime_id_str, "local skill import PopPending failed")
-                        }
-                    }
-                }
-            }
-            Ok(Ok(false)) => {}
-            Ok(Err(e)) => {
-                tracing::warn!(error = %e, runtime_id = %runtime_id_str, "local skill import HasPending failed")
-            }
-            Err(_) => {
-                tracing::warn!(runtime_id = %runtime_id_str, "local skill import HasPending timed out")
-            }
-        }
+    if let Some(pending) = ack.pending_local_skill_import {
+        resp["pending_local_skill_import"] = json!(pending);
     }
-
+    if !ack.pending_local_skill_imports.is_empty() {
+        resp["pending_local_skill_imports"] = json!(ack.pending_local_skill_imports);
+    }
     Json(resp).into_response()
 }
 
 /// Passthrough liveness write (Go PassthroughHeartbeatScheduler.Schedule):
 /// touch last_seen_at on online rows, flip offline→online otherwise. The
 /// Redis TTL layer and batched coalescing land with the redis slice.
-async fn record_heartbeat(state: &HandlerState, rt: &AgentRuntime) {
+async fn record_heartbeat(pool: &sqlx::PgPool, rt: &AgentRuntime) -> anyhow::Result<()> {
     if rt.status == "online" && rt.last_seen_at.is_some() {
-        match runtime::touch_agent_runtime_last_seen(&state.pool, rt.id).await {
-            Ok(n) if n > 0 => return,
+        match runtime::touch_agent_runtime_last_seen(pool, rt.id).await {
+            Ok(n) if n > 0 => return Ok(()),
             _ => {}
         }
     }
-    if let Err(e) = runtime::mark_agent_runtime_online(&state.pool, rt.id).await {
-        tracing::warn!(error = %e, runtime_id = %rt.id, "heartbeat db update failed");
-    }
+    runtime::mark_agent_runtime_online(pool, rt.id)
+        .await
+        .map(|_| ())
+        .context("heartbeat db update failed")
 }
 
 // ---------------------------------------------------------------------------
@@ -4031,6 +4138,25 @@ fn plugin_error_response(err: &cordy_service::plugin::PluginError, fallback: &st
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn websocket_heartbeat_rejects_malformed_runtime_before_database_access() {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://cordy:cordy@127.0.0.1/cordy")
+            .expect("test database URL is valid");
+        let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None);
+        let processor = DaemonHeartbeatProcessor::from_state(&state);
+
+        let error = processor
+            .handle_heartbeat(&ClientIdentity::default(), "not-a-uuid", false)
+            .await
+            .expect_err("malformed runtime IDs must fail the heartbeat");
+
+        assert!(
+            error.to_string().contains("invalid runtime_id"),
+            "{error:#}"
+        );
+    }
 
     #[test]
     fn model_list_report_rejects_malformed_typed_fields_before_mutation() {

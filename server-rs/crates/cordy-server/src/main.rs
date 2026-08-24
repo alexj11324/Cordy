@@ -241,6 +241,7 @@ async fn build_production_router(
     }
     let state = install_pending_stores(state, redis_url)
         .await
+        .with_daemon_heartbeat_handler()
         .start_autopilot_quota_reconciler()
         .start_webhook_delivery_worker();
     Ok(cordy_handler::build_router_from_state(state))
