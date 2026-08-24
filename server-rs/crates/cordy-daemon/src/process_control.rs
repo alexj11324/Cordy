@@ -41,6 +41,20 @@ pub struct BackgroundDaemon {
     logs: StartupLogCursor,
 }
 
+pub trait ProcessTerminator: Send + Sync {
+    fn force_kill(&self, pid: u32) -> anyhow::Result<()>;
+}
+
+#[derive(Debug, Default)]
+pub struct SystemProcessTerminator;
+
+impl ProcessTerminator for SystemProcessTerminator {
+    fn force_kill(&self, pid: u32) -> anyhow::Result<()> {
+        anyhow::ensure!(pid > 0, "daemon PID is zero");
+        force_kill_pid(pid).with_context(|| format!("kill daemon process {pid}"))
+    }
+}
+
 const STARTUP_POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 #[async_trait::async_trait]
@@ -205,6 +219,44 @@ fn file_length(path: &std::path::Path) -> u64 {
     fs::metadata(path).map_or(0, |metadata| metadata.len())
 }
 
+#[cfg(unix)]
+fn force_kill_pid(pid: u32) -> std::io::Result<()> {
+    let pid = i32::try_from(pid)
+        .map_err(|_| std::io::Error::new(std::io::ErrorKind::InvalidInput, "PID exceeds i32"))?;
+    // SAFETY: `pid` is range-checked and `kill` does not retain pointers.
+    if unsafe { libc::kill(pid, libc::SIGKILL) } == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
+
+#[cfg(windows)]
+fn force_kill_pid(pid: u32) -> std::io::Result<()> {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{OpenProcess, TerminateProcess, PROCESS_TERMINATE};
+
+    // SAFETY: the numeric PID is supplied by the identity-checked health
+    // response; the returned owned handle is closed on every success path.
+    let handle = unsafe { OpenProcess(PROCESS_TERMINATE, 0, pid) };
+    if handle.is_null() {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: `handle` is non-null and was opened with PROCESS_TERMINATE.
+    let terminated = unsafe { TerminateProcess(handle, 1) };
+    let error = if terminated == 0 {
+        Some(std::io::Error::last_os_error())
+    } else {
+        None
+    };
+    // SAFETY: this is the single close of the owned handle above.
+    unsafe { CloseHandle(handle) };
+    match error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,5 +278,11 @@ mod tests {
         assert!(error
             .downcast_ref::<crate::control_client::ProfileMismatch>()
             .is_some());
+    }
+
+    #[test]
+    fn refuses_to_kill_zero_pid() {
+        let error = SystemProcessTerminator.force_kill(0).unwrap_err();
+        assert!(error.to_string().contains("PID is zero"));
     }
 }
