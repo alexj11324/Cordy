@@ -25,9 +25,11 @@ const RECONNECT_RETRY_BATCH_SIZE: i32 = 500;
 const STALE_TASK_BATCH_SIZE: i32 = 500;
 const QUEUED_TASK_BATCH_SIZE: i32 = 500;
 const DELEGATED_RECOVERY_BATCH_SIZE: i32 = 100;
+const CHAT_FINALIZE_BATCH_SIZE: i32 = 100;
 const DISPATCH_TIMEOUT: Duration = Duration::from_secs(300);
 const RUNNING_TIMEOUT: Duration = Duration::from_secs(9_000);
 const QUEUED_TTL: Duration = Duration::from_secs(2 * 60 * 60);
+const CHAT_FINALIZE_GRACE: Duration = Duration::from_secs(60);
 
 pub trait Clock: Send + Sync {
     fn now(&self) -> DateTime<Utc>;
@@ -132,6 +134,13 @@ impl RuntimeSweeper {
         )
         .await?
         .unwrap_or_default();
+        let deferred_chat_finalizations = isolate_stage(
+            cancel,
+            "deferred chat finalizations",
+            self.sweep_deferred_chat_finalizations(cancel, now),
+        )
+        .await?
+        .unwrap_or_default();
         Ok(SweepResult {
             candidates,
             offlined,
@@ -141,6 +150,7 @@ impl RuntimeSweeper {
             expired_queued_tasks,
             delegated_recoveries_replayed: delegated_recovery.0,
             delegated_recoveries_exhausted: delegated_recovery.1,
+            deferred_chat_finalizations,
         })
     }
 
@@ -397,6 +407,42 @@ impl RuntimeSweeper {
         Ok((result.replayed, result.exhausted))
     }
 
+    async fn sweep_deferred_chat_finalizations(
+        &self,
+        cancel: &CancellationToken,
+        now: DateTime<Utc>,
+    ) -> anyhow::Result<usize> {
+        let deferred_before = now
+            - chrono::Duration::from_std(CHAT_FINALIZE_GRACE)
+                .expect("chat finalize grace fits chrono");
+        let tasks = cancellable(
+            cancel,
+            cordy_db::queries::agent::list_chat_finalize_deferred_expired(
+                &self.state.pool,
+                deferred_before,
+                CHAT_FINALIZE_BATCH_SIZE,
+            ),
+        )
+        .await?;
+        for task in &tasks {
+            cancellable(cancel, async {
+                self.state
+                    .tasks
+                    .finalize_deferred_cancelled_chat(task.id)
+                    .await;
+                Ok(())
+            })
+            .await?;
+        }
+        if !tasks.is_empty() {
+            tracing::info!(
+                count = tasks.len(),
+                "runtime sweeper settled deferred chat cancellations"
+            );
+        }
+        Ok(tasks.len())
+    }
+
     async fn filter_alive(
         &self,
         cancel: &CancellationToken,
@@ -429,6 +475,7 @@ pub struct SweepResult {
     pub expired_queued_tasks: usize,
     pub delegated_recoveries_replayed: i32,
     pub delegated_recoveries_exhausted: i32,
+    pub deferred_chat_finalizations: usize,
 }
 
 async fn isolate_stage<T>(
@@ -521,9 +568,11 @@ mod tests {
         assert_eq!(STALE_TASK_BATCH_SIZE, 500);
         assert_eq!(QUEUED_TASK_BATCH_SIZE, 500);
         assert_eq!(DELEGATED_RECOVERY_BATCH_SIZE, 100);
+        assert_eq!(CHAT_FINALIZE_BATCH_SIZE, 100);
         assert_eq!(DISPATCH_TIMEOUT, Duration::from_secs(300));
         assert_eq!(RUNNING_TIMEOUT, Duration::from_secs(9_000));
         assert_eq!(QUEUED_TTL, Duration::from_secs(7_200));
+        assert_eq!(CHAT_FINALIZE_GRACE, Duration::from_secs(60));
     }
 
     #[test]
