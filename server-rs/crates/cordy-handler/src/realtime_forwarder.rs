@@ -6,6 +6,7 @@
 
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::time::Duration;
 
 use cordy_events::{Bus, Event};
 use cordy_protocol::events::{
@@ -18,6 +19,7 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
 const FANOUT_QUEUE_CAPACITY: usize = 4096;
+const FORWARDER_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 const PERSONAL_EVENTS: &[&str] = &[
     EVENT_INBOX_NEW,
@@ -96,8 +98,24 @@ impl RealtimeForwarder {
     }
 
     pub async fn shutdown(self) {
-        let _ = self.sender.send(Command::Shutdown).await;
-        let _ = self.worker.await;
+        if !self.shutdown_with_timeout(FORWARDER_SHUTDOWN_TIMEOUT).await {
+            tracing::warn!("realtime forwarder did not drain within shutdown timeout");
+        }
+    }
+
+    async fn shutdown_with_timeout(self, timeout: Duration) -> bool {
+        let Self { sender, mut worker } = self;
+        let completed = tokio::time::timeout(timeout, async {
+            let _ = sender.send(Command::Shutdown).await;
+            let _ = (&mut worker).await;
+        })
+        .await
+        .is_ok();
+        if !completed {
+            worker.abort();
+            let _ = worker.await;
+        }
+        completed
     }
 }
 
@@ -217,8 +235,10 @@ fn project_outbound(event_type: &str, payload: &Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
     use cordy_realtime::hub::Hub;
     use serde_json::json;
+    use tokio::sync::Notify;
 
     fn event(event_type: &str, workspace_id: &str, payload: Value) -> Event {
         Event {
@@ -229,6 +249,44 @@ mod tests {
             payload,
             ..Default::default()
         }
+    }
+
+    struct BlockingBroadcaster {
+        entered: Arc<Notify>,
+    }
+
+    #[async_trait]
+    impl Broadcaster for BlockingBroadcaster {
+        async fn broadcast_to_scope(&self, _: &str, _: &str, _: &[u8]) {
+            self.entered.notify_one();
+            std::future::pending().await
+        }
+
+        async fn send_to_user(&self, _: &str, _: &[u8], _: Option<&str>) {
+            self.entered.notify_one();
+            std::future::pending().await
+        }
+
+        async fn broadcast(&self, _: &[u8]) {
+            self.entered.notify_one();
+            std::future::pending().await
+        }
+    }
+
+    #[tokio::test]
+    async fn shutdown_aborts_a_stuck_publish_after_deadline() {
+        let bus = Bus::new();
+        let entered = Arc::new(Notify::new());
+        let forwarder = RealtimeForwarder::start(
+            &bus,
+            Arc::new(BlockingBroadcaster {
+                entered: entered.clone(),
+            }),
+        );
+        bus.publish(&event("issue:created", "ws-1", json!({"id": "i-1"})));
+        entered.notified().await;
+
+        assert!(!forwarder.shutdown_with_timeout(Duration::ZERO).await);
     }
 
     #[tokio::test]
