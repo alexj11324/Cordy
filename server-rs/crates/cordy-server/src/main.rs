@@ -267,8 +267,11 @@ async fn build_production_router(
     }
     let root_cancel = CancellationToken::new();
     let state = install_pending_stores(state, redis_url).await;
+    // This consumer drains after every root-owned producer has joined. Give
+    // it a dedicated cancellation root so the process root cannot close its
+    // FIFO while a producer is publishing a final event during shutdown.
     let (state, ordered_event_side_effects) =
-        state.start_ordered_event_side_effects(root_cancel.child_token());
+        state.start_ordered_event_side_effects(CancellationToken::new());
     let (state, autopilot_event_listeners) =
         state.start_autopilot_event_listeners(root_cancel.child_token());
     // Event-hook delivery is a consumer lifecycle. It is stopped explicitly
