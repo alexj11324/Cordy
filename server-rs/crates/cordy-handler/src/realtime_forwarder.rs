@@ -4,6 +4,7 @@
 //! order is also wire order. Rust broadcasters are async; a single worker
 //! preserves that contract without spawning a reorderable task per event.
 
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use cordy_events::{Bus, Event};
@@ -15,6 +16,8 @@ use cordy_protocol::events::{
 use cordy_realtime::{Broadcaster, M};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
+
+const FANOUT_QUEUE_CAPACITY: usize = 4096;
 
 const PERSONAL_EVENTS: &[&str] = &[
     EVENT_INBOX_NEW,
@@ -40,19 +43,19 @@ enum Command {
 /// Owns the ordered fanout worker. `shutdown` drains every event already
 /// published by the synchronous bus before joining the worker.
 pub struct RealtimeForwarder {
-    sender: mpsc::UnboundedSender<Command>,
+    sender: mpsc::Sender<Command>,
     worker: tokio::task::JoinHandle<()>,
 }
 
 impl RealtimeForwarder {
     pub fn start(bus: &Bus, broadcaster: Arc<dyn Broadcaster>) -> Self {
-        let (sender, mut receiver) = mpsc::unbounded_channel();
+        let (sender, mut receiver) = mpsc::channel(FANOUT_QUEUE_CAPACITY);
         register_personal_listeners(bus, &sender);
 
         let global_sender = sender.clone();
         bus.subscribe_all(move |event| {
             if !PERSONAL_EVENTS.contains(&event.event_type.as_str()) {
-                let _ = global_sender.send(Command::Global(event.clone()));
+                try_enqueue(&global_sender, Command::Global(event.clone()));
             }
         });
 
@@ -93,12 +96,12 @@ impl RealtimeForwarder {
     }
 
     pub async fn shutdown(self) {
-        let _ = self.sender.send(Command::Shutdown);
+        let _ = self.sender.send(Command::Shutdown).await;
         let _ = self.worker.await;
     }
 }
 
-fn register_personal_listeners(bus: &Bus, sender: &mpsc::UnboundedSender<Command>) {
+fn register_personal_listeners(bus: &Bus, sender: &mpsc::Sender<Command>) {
     let tx = sender.clone();
     bus.subscribe(EVENT_INBOX_NEW, move |event| {
         if let Some(user_id) = event
@@ -159,7 +162,7 @@ fn register_personal_listeners(bus: &Bus, sender: &mpsc::UnboundedSender<Command
 }
 
 fn enqueue_user(
-    sender: &mpsc::UnboundedSender<Command>,
+    sender: &mpsc::Sender<Command>,
     event: &Event,
     user_id: &str,
     exclude_workspace: Option<String>,
@@ -167,11 +170,23 @@ fn enqueue_user(
     if user_id.is_empty() {
         return;
     }
-    let _ = sender.send(Command::User {
-        event: event.clone(),
-        user_id: user_id.to_string(),
-        exclude_workspace,
-    });
+    try_enqueue(
+        sender,
+        Command::User {
+            event: event.clone(),
+            user_id: user_id.to_string(),
+            exclude_workspace,
+        },
+    );
+}
+
+fn try_enqueue(sender: &mpsc::Sender<Command>, command: Command) {
+    if sender.try_send(command).is_err() {
+        // The event bus is synchronous and cannot await backpressure. Bound
+        // memory during a slow Redis incident; clients recover canonical state
+        // through their normal API refetch/reconnect path.
+        M.messages_dropped_total.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 fn event_frame(event: &Event) -> Option<Vec<u8>> {

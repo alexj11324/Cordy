@@ -23,5 +23,5 @@ pub use broadcaster::{
 };
 pub use metrics::{Metrics, M};
 pub use redis_relay::{DualWriteBroadcaster, RedisRelay};
-pub use relay_lifecycle::{ManagedRelay, MirroredRelay};
+pub use relay_lifecycle::{ManagedRelay, MirroredRelay, SwitchableRelayBroadcaster};
 pub use sharded_stream_relay::{ShardedStreamRelay, ShardedStreamRelayConfig};

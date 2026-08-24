@@ -262,7 +262,7 @@ async fn build_production_router(
         .await
         .start_autopilot_quota_reconciler()
         .start_webhook_delivery_worker();
-    let mut realtime = realtime_runtime::RealtimeRuntime::from_env(hub).await;
+    let mut realtime = realtime_runtime::RealtimeRuntime::from_config(hub, &cfg.redis).await;
     realtime.attach(
         &state.bus,
         state.daemon_hub.clone(),
