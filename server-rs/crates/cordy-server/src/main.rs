@@ -26,13 +26,20 @@ struct MetricsRuntime {
 
 impl MetricsRuntime {
     async fn shutdown(self) {
-        self.shutdown.cancel();
-        if tokio::time::timeout(Duration::from_secs(3), self.task)
-            .await
-            .is_err()
-        {
+        if !self.shutdown_with_timeout(Duration::from_secs(3)).await {
             tracing::warn!("metrics server did not exit within shutdown timeout");
         }
+    }
+
+    async fn shutdown_with_timeout(self, timeout: Duration) -> bool {
+        self.shutdown.cancel();
+        let mut task = self.task;
+        if tokio::time::timeout(timeout, &mut task).await.is_ok() {
+            return true;
+        }
+        task.abort();
+        let _ = task.await;
+        false
     }
 }
 
@@ -464,7 +471,17 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::{Request, StatusCode};
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use tokio::sync::Notify;
     use tower::ServiceExt;
+
+    struct DropSignal(Arc<AtomicBool>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::Relaxed);
+        }
+    }
 
     fn test_attachment_storage() -> Arc<dyn cordy_handler::attachment_storage::AttachmentStorage> {
         Arc::new(
@@ -494,6 +511,27 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(res.status(), StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[tokio::test]
+    async fn metrics_shutdown_aborts_a_stalled_server_task() {
+        let shutdown = tokio_util::sync::CancellationToken::new();
+        let entered = Arc::new(Notify::new());
+        let dropped = Arc::new(AtomicBool::new(false));
+        let task = tokio::spawn({
+            let entered = entered.clone();
+            let dropped = dropped.clone();
+            async move {
+                let _drop_signal = DropSignal(dropped);
+                entered.notify_one();
+                std::future::pending::<()>().await;
+            }
+        });
+        entered.notified().await;
+
+        let runtime = MetricsRuntime { shutdown, task };
+        assert!(!runtime.shutdown_with_timeout(Duration::ZERO).await);
+        assert!(dropped.load(Ordering::Relaxed));
     }
 
     #[tokio::test]
