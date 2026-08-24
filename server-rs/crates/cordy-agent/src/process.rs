@@ -89,6 +89,25 @@ impl OwnedProcessTree {
     pub async fn wait_tree_gone(&self, timeout: Duration) -> bool {
         self.platform.wait_gone(timeout).await
     }
+
+    /// Requests graceful whole-tree termination, escalates after the supplied
+    /// bound, and confirms the ownership boundary is empty. Drop remains the
+    /// final synchronous kill backstop if either bounded wait fails.
+    pub async fn shutdown(&mut self, terminate_grace: Duration, kill_grace: Duration) -> bool {
+        let _ = self.terminate();
+        if tokio::time::timeout(terminate_grace, self.wait())
+            .await
+            .is_err()
+        {
+            let _ = self.kill();
+            let _ = tokio::time::timeout(kill_grace, self.wait()).await;
+        }
+        if self.wait_tree_gone(kill_grace).await {
+            return true;
+        }
+        let _ = self.kill();
+        self.wait_tree_gone(kill_grace).await
+    }
 }
 
 #[cfg(all(test, unix))]

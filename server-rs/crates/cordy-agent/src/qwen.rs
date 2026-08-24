@@ -1,7 +1,7 @@
 //! Qwen Code's native non-interactive stream-JSON adapter.
 
 use std::collections::BTreeMap;
-use std::io::{self, Write};
+use std::io;
 use std::process::{ExitStatus, Stdio};
 use std::sync::LazyLock;
 use std::time::{Duration, Instant};
@@ -9,7 +9,6 @@ use std::time::{Duration, Instant};
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::Value;
-use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot};
@@ -19,10 +18,12 @@ use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, R
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
-use crate::mcp::managed_object;
+use crate::mcp::{managed_object, write_managed_temp};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
-use crate::stream::{finalize_stream, AgentLineReader, AssistantTurn, RunEnd, TerminalState};
+use crate::stream::{
+    finalize_stream, resume_was_rejected, AgentLineReader, AssistantTurn, RunEnd, TerminalState,
+};
 
 const MESSAGE_BUFFER: usize = 256;
 const TERMINATION_GRACE: Duration = Duration::from_secs(2);
@@ -107,7 +108,7 @@ impl Backend for QwenBackend {
         log_blocked_args(&options);
         argv.extend(provider_args);
 
-        let mut mcp_file = write_managed_mcp(options.mcp_config.as_ref())?;
+        let mut mcp_file = write_managed_temp(options.mcp_config.as_ref(), "cordy-qwen-mcp-")?;
         if let Some(file) = mcp_file.as_ref() {
             let path = file.path().to_str().ok_or_else(|| {
                 AgentError::InvalidConfig("Qwen MCP path is not valid UTF-8".to_string())
@@ -184,7 +185,7 @@ impl Backend for QwenBackend {
             let (run_end, exit, stream) = match end {
                 RunOutcome::Completed((exit, stream)) => (RunEnd::Completed, exit, stream),
                 RunOutcome::Cancelled => {
-                    stop_process_tree(&mut tree).await;
+                    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
                     (
                         RunEnd::Cancelled,
                         Ok(success_exit_status()),
@@ -192,7 +193,7 @@ impl Backend for QwenBackend {
                     )
                 }
                 RunOutcome::TimedOut => {
-                    stop_process_tree(&mut tree).await;
+                    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
                     (
                         RunEnd::DeadlineExceeded,
                         Ok(success_exit_status()),
@@ -229,7 +230,7 @@ impl Backend for QwenBackend {
                 &requested_resume,
                 &state.session_id,
                 failed,
-                [&finalized.error, &stderr],
+                [finalized.error.as_str(), stderr.as_str()],
             );
             if resume_rejected {
                 state.session_id.clear();
@@ -270,32 +271,6 @@ fn log_blocked(source: &str, flags: &[String]) {
     }
 }
 
-fn write_managed_mcp(config: Option<&Value>) -> Result<Option<NamedTempFile>, AgentError> {
-    if managed_object(config)
-        .map_err(AgentError::InvalidConfig)?
-        .is_none()
-    {
-        return Ok(None);
-    }
-    let mut file = tempfile::Builder::new()
-        .prefix("cordy-qwen-mcp-")
-        .suffix(".json")
-        .tempfile()
-        .map_err(AgentError::Process)?;
-    serde_json::to_writer(file.as_file_mut(), config.unwrap_or(&Value::Null)).map_err(|error| {
-        AgentError::InvalidConfig(format!("serialize Qwen MCP config: {error}"))
-    })?;
-    file.flush().map_err(AgentError::Process)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        file.as_file()
-            .set_permissions(std::fs::Permissions::from_mode(0o600))
-            .map_err(AgentError::Process)?;
-    }
-    Ok(Some(file))
-}
-
 async fn pump_stderr(mut stderr: tokio::process::ChildStderr, tail: SharedDiagnosticBuffer) {
     let mut buffer = [0_u8; 8192];
     loop {
@@ -334,21 +309,6 @@ async fn read_stream(
                 return state;
             }
         }
-    }
-}
-
-async fn stop_process_tree(tree: &mut OwnedProcessTree) {
-    let _ = tree.terminate();
-    if tokio::time::timeout(TERMINATION_GRACE, tree.wait())
-        .await
-        .is_err()
-    {
-        let _ = tree.kill();
-        let _ = tokio::time::timeout(KILL_GRACE, tree.wait()).await;
-    }
-    if !tree.wait_tree_gone(KILL_GRACE).await {
-        let _ = tree.kill();
-        let _ = tree.wait_tree_gone(KILL_GRACE).await;
     }
 }
 
@@ -634,34 +594,6 @@ fn send_message(messages: &mpsc::Sender<Message>, message: Message) {
     let _ = messages.try_send(message);
 }
 
-fn resume_was_rejected<'a>(
-    requested: &str,
-    emitted: &str,
-    failed: bool,
-    texts: impl IntoIterator<Item = &'a String>,
-) -> bool {
-    if !failed || requested.is_empty() {
-        return false;
-    }
-    const PHRASES: &[&str] = &[
-        "invalid conversation id",
-        "conversation not found",
-        "session not found",
-        "no conversation found",
-        "no saved session found",
-        "已绑定另外",
-        "bound to another account",
-        "bound to a different account",
-    ];
-    if texts.into_iter().any(|text| {
-        let text = text.to_lowercase();
-        PHRASES.iter().any(|phrase| text.contains(phrase))
-    }) {
-        return true;
-    }
-    !emitted.is_empty() && emitted != requested
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeSet;
@@ -745,14 +677,14 @@ mod tests {
             "requested",
             &state.session_id,
             true,
-            [&state.terminal.final_result_text]
+            [state.terminal.final_result_text.as_str()]
         ));
     }
 
     #[test]
     fn managed_mcp_file_is_private_and_exact() {
         let config = serde_json::json!({"mcpServers":{"demo":{"command":"echo"}}});
-        let file = write_managed_mcp(Some(&config));
+        let file = write_managed_temp(Some(&config), "cordy-qwen-test-");
         assert!(file.is_ok());
         let file = file.ok().flatten().unwrap_or_else(|| unreachable!());
         let data = std::fs::read(file.path());
