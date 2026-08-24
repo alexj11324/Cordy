@@ -258,10 +258,7 @@ async fn build_production_router(
     } else {
         tracing::warn!("public-route rate limiting disabled: REDIS_URL not configured");
     }
-    let state = install_pending_stores(state, redis_url)
-        .await
-        .start_autopilot_quota_reconciler()
-        .start_webhook_delivery_worker();
+    let state = install_pending_stores(state, redis_url).await;
     let mut realtime = realtime_runtime::RealtimeRuntime::from_config(hub, &cfg.redis).await;
     realtime.attach(
         &state.bus,
@@ -269,6 +266,9 @@ async fn build_production_router(
         state.daemon_notifier.clone(),
         state.background_runtime.clone(),
     );
+    let state = state
+        .start_autopilot_quota_reconciler()
+        .start_webhook_delivery_worker();
     Ok((cordy_handler::build_router_from_state(state), realtime))
 }
 

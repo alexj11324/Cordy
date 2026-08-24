@@ -52,13 +52,57 @@ impl BackgroundRuntime {
             .unwrap_or_else(|e| e.into_inner())
             .drain(..)
             .collect();
-        tokio::time::timeout(timeout, async move {
+        let abort_handles: Vec<_> = tasks
+            .iter()
+            .map(tokio::task::JoinHandle::abort_handle)
+            .collect();
+        let stopped = tokio::time::timeout(timeout, async move {
             for task in tasks {
                 let _ = task.await;
             }
         })
         .await
-        .is_ok()
+        .is_ok();
+        if !stopped {
+            for task in abort_handles {
+                task.abort();
+            }
+        }
+        stopped
+    }
+}
+
+#[cfg(test)]
+mod background_runtime_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct DropSignal(Arc<AtomicBool>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn shutdown_aborts_tasks_after_the_deadline() {
+        let runtime = BackgroundRuntime::default();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let signal = DropSignal(dropped.clone());
+        runtime.track(tokio::spawn(async move {
+            let _signal = signal;
+            std::future::pending::<()>().await;
+        }));
+
+        assert!(!runtime.shutdown(Duration::ZERO).await);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !dropped.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("aborted task should be dropped");
     }
 }
 
