@@ -212,7 +212,7 @@ async fn build_production_router(
     let mut state = cordy_handler::HandlerState::new(
         db,
         cordy_auth::pat_cache::PatCache::disabled(),
-        Some(hub),
+        Some(hub.clone()),
     )
     .with_observability(business_metrics, http_metrics)
     .with_autopilot_entitlements(entitlements)
