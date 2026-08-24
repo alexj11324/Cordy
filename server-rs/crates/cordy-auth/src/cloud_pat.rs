@@ -75,6 +75,10 @@ impl CloudPatVerifier {
         }
         let http = reqwest::Client::builder()
             .timeout(HTTP_TIMEOUT)
+            // The request body contains the plaintext PAT. A 307/308 would
+            // replay that body to the Location host, so Fleet verification
+            // must never follow redirects across this trust boundary.
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .ok()?;
         Some(Self {
@@ -380,5 +384,42 @@ mod tests {
             verifier.verify("mcn_cancelled", &cancel).await,
             Err(CloudPatError::Unavailable)
         ));
+    }
+
+    #[tokio::test]
+    async fn fleet_redirect_does_not_replay_plaintext_pat() {
+        let target = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target_url = format!("http://{}/stolen", target.local_addr().unwrap());
+        let redirect = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}", redirect.local_addr().unwrap());
+        let response = tokio::spawn(async move {
+            let (mut stream, _) = redirect.accept().await.unwrap();
+            let mut request = [0u8; 2048];
+            let _ = stream.read(&mut request).await.unwrap();
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 307 Temporary Redirect\r\nLocation: {target_url}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+        });
+
+        let error = CloudPatVerifier::new(&base_url)
+            .unwrap()
+            .verify("mcn_must_not_leak", &CancellationToken::new())
+            .await
+            .unwrap_err();
+
+        response.await.unwrap();
+        assert!(matches!(error, CloudPatError::Unavailable));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), target.accept())
+                .await
+                .is_err(),
+            "Fleet verifier replayed the plaintext PAT to a redirect target"
+        );
     }
 }
