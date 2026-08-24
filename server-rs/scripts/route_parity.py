@@ -147,7 +147,10 @@ def extract_routes(source: str) -> set[tuple[str, str]]:
         if not match:
             continue
         route, methods = match.groups()
-        for method in top_level_routing_methods(methods):
+        route_methods = list(top_level_routing_methods(methods))
+        if not route_methods:
+            raise ValueError(f"unsupported MethodRouter for route {route!r}")
+        for method in route_methods:
             routes.add((method.upper(), normalize_route(route)))
     return routes
 
@@ -369,7 +372,10 @@ def extract_mounted_routes(expression: str) -> set[tuple[str, str]]:
         if not match:
             continue
         route, methods = match.groups()
-        for method in top_level_routing_methods(methods):
+        route_methods = list(top_level_routing_methods(methods))
+        if not route_methods:
+            raise ValueError(f"unsupported MethodRouter for mounted route {route!r}")
+        for method in route_methods:
             routes.add((method.upper(), normalize_route(route)))
     return routes
 
@@ -453,6 +459,8 @@ def module_source(
 def router_function_body(body: str) -> tuple[dict[str, str], str]:
     """Return top-level `let` bindings and the function's tail expression."""
     masked = rust_code_mask(body)
+    if re.search(r"\breturn\b", masked):
+        raise ValueError("early return in router function is unsupported")
     bindings: dict[str, str] = {}
     depth_at = [0] * (len(masked) + 1)
     round_depth = 0

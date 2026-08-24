@@ -53,6 +53,11 @@ class RouteParityTest(unittest.TestCase):
             },
         )
 
+    def test_rejects_unparsed_method_router_expressions(self):
+        source = 'Router::new().route("/items", methods);'
+        with self.assertRaisesRegex(ValueError, "unsupported MethodRouter"):
+            route_parity.extract_mounted_routes(source)
+
     def test_rejects_compound_test_cfg_predicates(self):
         for predicate in (
             "all(test, unix)",
@@ -245,6 +250,26 @@ class RouteParityTest(unittest.TestCase):
             )
 
             with self.assertRaisesRegex(ValueError, "runtime-dependent Router match"):
+                route_parity.extract_rust_routes(root)
+
+    def test_rejects_early_returns_before_the_router_tail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "lib.rs").write_text(
+                """
+                pub fn build_router() -> Router {
+                    let app = Router::new().route("/mounted", get(handler));
+                    if disabled {
+                        return Router::new();
+                    }
+                    trace!("router enabled");
+                    app
+                }
+                """,
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "early return"):
                 route_parity.extract_rust_routes(root)
 
     def test_rejects_duplicate_contract_entries_after_normalization(self):
