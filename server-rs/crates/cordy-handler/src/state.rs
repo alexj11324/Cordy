@@ -346,7 +346,7 @@ impl HandlerState {
 
     /// Wires the internal OpenAI-compatible assist layer. Invalid retry
     /// budgets fail startup rather than silently selecting another policy.
-    pub fn with_llm_from_env(mut self) -> anyhow::Result<Self> {
+    pub fn with_llm_from_env(self) -> anyhow::Result<Self> {
         const MAX_RETRIES: u32 = 5;
         let raw_retries = std::env::var("CORDY_LLM_MAX_RETRIES").unwrap_or_default();
         let max_retries = if raw_retries.trim().is_empty() {
