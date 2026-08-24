@@ -105,6 +105,11 @@ pub struct DaemonControlClient {
     client: reqwest::Client,
 }
 
+#[async_trait::async_trait]
+pub trait LocalDaemonProbe: Send + Sync {
+    async fn health(&self, port: u16) -> LocalDaemonHealth;
+}
+
 impl DaemonControlClient {
     pub fn try_new() -> anyhow::Result<Self> {
         let client = reqwest::Client::builder()
@@ -147,6 +152,13 @@ impl DaemonControlClient {
             response.status()
         );
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl LocalDaemonProbe for DaemonControlClient {
+    async fn health(&self, port: u16) -> LocalDaemonHealth {
+        DaemonControlClient::health(self, port).await
     }
 }
 

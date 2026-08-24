@@ -8,10 +8,12 @@ use std::ffi::OsString;
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Child, ExitStatus, Stdio};
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 
 use crate::bootstrap::{open_bounded_crash_log, ProfileStatePaths};
+use crate::control_client::{DaemonHealthSnapshot, LocalDaemonHealth, LocalDaemonProbe};
 use crate::update_executor::{
     is_access_denied_spawn_error, restart_command, restart_command_after_access_denied,
 };
@@ -37,6 +39,46 @@ pub struct StartupLogCursor {
 pub struct BackgroundDaemon {
     child: Child,
     logs: StartupLogCursor,
+}
+
+const STARTUP_POLL_INTERVAL: Duration = Duration::from_millis(500);
+
+#[async_trait::async_trait]
+pub trait StartupClock: Send + Sync {
+    fn now(&self) -> Instant;
+    async fn sleep(&self, duration: Duration);
+}
+
+#[derive(Debug, Default)]
+pub struct SystemStartupClock;
+
+#[async_trait::async_trait]
+impl StartupClock for SystemStartupClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+
+    async fn sleep(&self, duration: Duration) {
+        tokio::time::sleep(duration).await;
+    }
+}
+
+#[derive(Debug)]
+pub enum BackgroundStartupOutcome {
+    Ready {
+        pid: u32,
+        health: DaemonHealthSnapshot,
+    },
+    Exited {
+        pid: u32,
+        status: ExitStatus,
+        logs: StartupLogCursor,
+    },
+    TimedOut {
+        pid: u32,
+        last_status: Option<String>,
+        logs: StartupLogCursor,
+    },
 }
 
 impl BackgroundDaemon {
@@ -90,6 +132,57 @@ impl BackgroundDaemon {
         self.child.try_wait().context("observe daemon startup")
     }
 
+    /// Waits for production readiness while retaining the child handle for
+    /// early-exit observation. Timeout releases ownership without killing the
+    /// still-starting daemon, matching the Go CLI's cold-preflight behavior.
+    pub async fn wait_until_ready<P: LocalDaemonProbe, C: StartupClock>(
+        mut self,
+        probe: &P,
+        clock: &C,
+        profile: &str,
+        port: u16,
+        timeout: Duration,
+    ) -> anyhow::Result<BackgroundStartupOutcome> {
+        anyhow::ensure!(!timeout.is_zero(), "daemon startup timeout is zero");
+        let deadline = clock
+            .now()
+            .checked_add(timeout)
+            .context("daemon startup deadline overflow")?;
+        let mut last_status = None;
+        loop {
+            if let Some(status) = self.try_wait()? {
+                return Ok(BackgroundStartupOutcome::Exited {
+                    pid: self.pid(),
+                    status,
+                    logs: self.logs.clone(),
+                });
+            }
+            let now = clock.now();
+            if now >= deadline {
+                return Ok(BackgroundStartupOutcome::TimedOut {
+                    pid: self.pid(),
+                    last_status,
+                    logs: self.logs.clone(),
+                });
+            }
+            clock.sleep(STARTUP_POLL_INTERVAL.min(deadline - now)).await;
+            match probe.health(port).await {
+                LocalDaemonHealth::Stopped => {}
+                LocalDaemonHealth::Live(snapshot) => {
+                    snapshot.confirm_profile(profile, port)?;
+                    last_status = Some(snapshot.response.status.clone());
+                    if snapshot.response.status == "running" {
+                        let pid = self.detach();
+                        return Ok(BackgroundStartupOutcome::Ready {
+                            pid,
+                            health: snapshot,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
     /// Releases launcher ownership after health reports `running`. Dropping a
     /// `std::process::Child` handle does not terminate the detached process.
     pub fn detach(self) -> u32 {
@@ -120,5 +213,18 @@ mod tests {
     fn missing_logs_start_at_zero() {
         let directory = tempfile::tempdir().unwrap();
         assert_eq!(file_length(&directory.path().join("missing.log")), 0);
+    }
+
+    #[test]
+    fn profile_mismatch_remains_a_typed_startup_error() {
+        let error: anyhow::Error = crate::control_client::ProfileMismatch {
+            expected: "ab".to_string(),
+            actual: Some("ba".to_string()),
+            port: 19710,
+        }
+        .into();
+        assert!(error
+            .downcast_ref::<crate::control_client::ProfileMismatch>()
+            .is_some());
     }
 }
