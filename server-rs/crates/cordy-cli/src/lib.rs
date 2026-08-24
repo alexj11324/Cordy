@@ -145,6 +145,79 @@ enum SquadCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
+    #[command(about = "Work with squad members")]
+    Member(SquadMemberArgs),
+}
+
+#[derive(Debug, Args)]
+struct SquadMemberArgs {
+    #[command(subcommand)]
+    command: SquadMemberCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum SquadMemberCommand {
+    #[command(about = "List members of a squad")]
+    List {
+        #[arg(value_name = "SQUAD-ID")]
+        squad_id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
+    #[command(about = "Add a member to a squad")]
+    Add(SquadMemberAddArgs),
+    #[command(about = "Change a squad member's role")]
+    SetRole(SquadMemberSetRoleArgs),
+    #[command(about = "Remove a member from a squad")]
+    Remove(SquadMemberRemoveArgs),
+}
+
+#[derive(Debug, Args)]
+struct SquadMemberAddArgs {
+    #[arg(value_name = "SQUAD-ID")]
+    squad_id: String,
+    #[arg(long, help = "Member or agent ID (required)")]
+    member_id: Option<String>,
+    #[arg(
+        long = "type",
+        default_value = "agent",
+        help = "Member type: agent or member"
+    )]
+    member_type: String,
+    #[arg(long, default_value = "member", help = "Role in the squad")]
+    role: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct SquadMemberSetRoleArgs {
+    #[arg(value_name = "SQUAD-ID")]
+    squad_id: String,
+    #[arg(long, help = "Member or agent ID (required)")]
+    member_id: Option<String>,
+    #[arg(long, default_value = "agent", help = "Member type: agent or member")]
+    member_type: String,
+    #[arg(long, help = "New role in the squad (required)")]
+    role: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct SquadMemberRemoveArgs {
+    #[arg(value_name = "SQUAD-ID")]
+    squad_id: String,
+    #[arg(long, help = "Member or agent ID (required)")]
+    member_id: Option<String>,
+    #[arg(
+        long = "type",
+        default_value = "agent",
+        help = "Member type: agent or member"
+    )]
+    member_type: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -2761,6 +2834,30 @@ async fn run_with_input<R: Read>(
         Command::Squad(SquadArgs {
             command: SquadCommand::Delete { id, output },
         }) => run_squad_delete(cli, environment, id, *output).await,
+        Command::Squad(SquadArgs {
+            command:
+                SquadCommand::Member(SquadMemberArgs {
+                    command: SquadMemberCommand::List { squad_id, output },
+                }),
+        }) => run_squad_member_list(cli, environment, squad_id, *output).await,
+        Command::Squad(SquadArgs {
+            command:
+                SquadCommand::Member(SquadMemberArgs {
+                    command: SquadMemberCommand::Add(args),
+                }),
+        }) => run_squad_member_add(cli, environment, args).await,
+        Command::Squad(SquadArgs {
+            command:
+                SquadCommand::Member(SquadMemberArgs {
+                    command: SquadMemberCommand::SetRole(args),
+                }),
+        }) => run_squad_member_set_role(cli, environment, args).await,
+        Command::Squad(SquadArgs {
+            command:
+                SquadCommand::Member(SquadMemberArgs {
+                    command: SquadMemberCommand::Remove(args),
+                }),
+        }) => run_squad_member_remove(cli, environment, args).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -5013,6 +5110,158 @@ async fn run_squad_delete(
         OutputFormat::Table => RunOutput {
             stdout: String::new(),
             stderr: format!("Squad {id} deleted.\n"),
+        },
+    })
+}
+
+async fn run_squad_member_list(
+    cli: &Cli,
+    environment: &Environment,
+    squad_id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let members: Vec<Value> = client
+        .get_json(&format!("/api/squads/{squad_id}/members"))
+        .await
+        .context("list members")?;
+    if output == OutputFormat::Json {
+        return Ok(RunOutput {
+            stdout: format!("{}\n", serde_json::to_string_pretty(&members)?),
+            stderr: String::new(),
+        });
+    }
+    if members.is_empty() {
+        return Ok(RunOutput {
+            stdout: String::new(),
+            stderr: "No members found.\n".into(),
+        });
+    }
+    let mut rows = vec![vec!["MEMBER ID".into(), "TYPE".into(), "ROLE".into()]];
+    rows.extend(members.iter().map(|member| {
+        vec![
+            value_string(member, "member_id"),
+            value_string(member, "member_type"),
+            value_string(member, "role"),
+        ]
+    }));
+    Ok(RunOutput {
+        stdout: format_table(&rows),
+        stderr: String::new(),
+    })
+}
+
+fn required_squad_member_id(member_id: Option<&str>) -> Result<&str> {
+    member_id
+        .filter(|member_id| !member_id.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("--member-id is required"))
+}
+
+fn validate_squad_member_type(member_type: &str, flag: &str) -> Result<()> {
+    if matches!(member_type, "agent" | "member") {
+        Ok(())
+    } else {
+        bail!("{flag} must be 'agent' or 'member'")
+    }
+}
+
+async fn run_squad_member_add(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SquadMemberAddArgs,
+) -> Result<RunOutput> {
+    let member_id = required_squad_member_id(args.member_id.as_deref())?;
+    validate_squad_member_type(&args.member_type, "--type")?;
+    let client = new_api_client(cli, environment)?;
+    let result: Value = client
+        .post_json(
+            &format!("/api/squads/{}/members", args.squad_id),
+            &serde_json::json!({
+                "member_type":args.member_type,
+                "member_id":member_id,
+                "role":args.role
+            }),
+        )
+        .await
+        .context("add member")?;
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+            OutputFormat::Table => format!("Member {member_id} added to squad.\n"),
+        },
+        stderr: String::new(),
+    })
+}
+
+async fn run_squad_member_set_role(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SquadMemberSetRoleArgs,
+) -> Result<RunOutput> {
+    let member_id = required_squad_member_id(args.member_id.as_deref())?;
+    validate_squad_member_type(&args.member_type, "--member-type")?;
+    let role = args
+        .role
+        .as_deref()
+        .filter(|role| !role.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("--role is required"))?;
+    let client = new_api_client(cli, environment)?;
+    let result: Value = client
+        .patch_json(
+            &format!("/api/squads/{}/members/role", args.squad_id),
+            &serde_json::json!({
+                "member_type":args.member_type,
+                "member_id":member_id,
+                "role":role
+            }),
+        )
+        .await
+        .context("set member role")?;
+    Ok(match args.output {
+        OutputFormat::Json => RunOutput {
+            stdout: format!("{}\n", serde_json::to_string_pretty(&result)?),
+            stderr: String::new(),
+        },
+        OutputFormat::Table => RunOutput {
+            stdout: String::new(),
+            stderr: format!("Member {member_id} role updated to {role}.\n"),
+        },
+    })
+}
+
+async fn run_squad_member_remove(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SquadMemberRemoveArgs,
+) -> Result<RunOutput> {
+    let member_id = required_squad_member_id(args.member_id.as_deref())?;
+    validate_squad_member_type(&args.member_type, "--type")?;
+    let client = new_api_client(cli, environment)?;
+    client
+        .delete_with_body(
+            &format!("/api/squads/{}/members", args.squad_id),
+            &serde_json::json!({
+                "member_type":args.member_type,
+                "member_id":member_id
+            }),
+        )
+        .await
+        .context("remove member")?;
+    Ok(match args.output {
+        OutputFormat::Json => RunOutput {
+            stdout: format!(
+                "{}\n",
+                serde_json::to_string_pretty(&serde_json::json!({
+                    "squad_id":args.squad_id,
+                    "member_id":member_id,
+                    "removed":true
+                }))?
+            ),
+            stderr: String::new(),
+        },
+        OutputFormat::Table => RunOutput {
+            stdout: String::new(),
+            stderr: format!("Member {member_id} removed from squad.\n"),
         },
     })
 }
@@ -14121,6 +14370,50 @@ mod tests {
                 }
             }) if id == "squad-1"
         ));
+        let member_add = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "member",
+            "add",
+            "squad-1",
+            "--member-id",
+            "agent-1",
+            "--type",
+            "agent",
+            "--role",
+            "reviewer",
+        ])
+        .expect("squad member add CLI");
+        assert!(matches!(
+            member_add.command,
+            Command::Squad(SquadArgs {
+                command: SquadCommand::Member(SquadMemberArgs {
+                    command: SquadMemberCommand::Add(SquadMemberAddArgs { .. })
+                })
+            })
+        ));
+        let set_role = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "member",
+            "set-role",
+            "squad-1",
+            "--member-id",
+            "user-1",
+            "--member-type",
+            "member",
+            "--role",
+            "observer",
+        ])
+        .expect("squad member set-role CLI");
+        assert!(matches!(
+            set_role.command,
+            Command::Squad(SquadArgs {
+                command: SquadCommand::Member(SquadMemberArgs {
+                    command: SquadMemberCommand::SetRole(SquadMemberSetRoleArgs { .. })
+                })
+            })
+        ));
     }
 
     #[tokio::test]
@@ -14392,6 +14685,217 @@ mod tests {
         assert_eq!(value, serde_json::json!({"id":"squad-1","deleted":true}));
         assert_eq!(*calls.lock().expect("delete calls"), 2);
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn squad_member_lifecycle_preserves_requests_and_output_channels() {
+        let bodies = Arc::new(Mutex::new(Vec::<(String, Value)>::new()));
+        let add_bodies = Arc::clone(&bodies);
+        let remove_bodies = Arc::clone(&bodies);
+        let role_bodies = Arc::clone(&bodies);
+        let members_route = get(|| async {
+            Json(vec![serde_json::json!({
+                "member_id":"agent-1",
+                "member_type":"agent",
+                "role":"reviewer",
+                "server_only":"preserved"
+            })])
+        })
+        .post(move |Json(body): Json<Value>| {
+            let bodies = Arc::clone(&add_bodies);
+            async move {
+                bodies
+                    .lock()
+                    .expect("member bodies")
+                    .push(("add".into(), body));
+                Json(serde_json::json!({
+                    "member_id":"agent-2",
+                    "member_type":"agent",
+                    "role":"member",
+                    "server_only":"preserved"
+                }))
+            }
+        })
+        .delete(move |request: Request| {
+            let bodies = Arc::clone(&remove_bodies);
+            async move {
+                let body = axum::body::to_bytes(request.into_body(), 16 * 1024)
+                    .await
+                    .expect("remove body");
+                let body: Value = serde_json::from_slice(&body).expect("remove JSON");
+                bodies
+                    .lock()
+                    .expect("member bodies")
+                    .push(("remove".into(), body));
+                axum::http::StatusCode::NO_CONTENT
+            }
+        });
+        let app = Router::new()
+            .route("/api/squads/squad-1/members", members_route)
+            .route(
+                "/api/squads/squad-1/members/role",
+                patch(move |Json(body): Json<Value>| {
+                    let bodies = Arc::clone(&role_bodies);
+                    async move {
+                        bodies
+                            .lock()
+                            .expect("member bodies")
+                            .push(("role".into(), body));
+                        Json(serde_json::json!({
+                            "member_id":"agent-2",
+                            "role":"reviewer"
+                        }))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+
+        let list = Cli::try_parse_from(["cordy", "squad", "member", "list", "squad-1"])
+            .expect("member list CLI");
+        let output = run_with_input(&list, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list squad members");
+        assert!(output.stdout.starts_with("MEMBER ID"));
+        assert!(output.stdout.contains("agent-1"));
+        assert!(output.stdout.contains("reviewer"));
+
+        let add = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "member",
+            "add",
+            "squad-1",
+            "--member-id",
+            "agent-2",
+        ])
+        .expect("member add CLI");
+        let output = run_with_input(&add, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("add squad member");
+        let value: Value = serde_json::from_str(&output.stdout).expect("add JSON output");
+        assert_eq!(value["server_only"], "preserved");
+
+        let set_role = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "member",
+            "set-role",
+            "squad-1",
+            "--member-id",
+            "agent-2",
+            "--role",
+            "reviewer",
+            "--output",
+            "table",
+        ])
+        .expect("member set-role CLI");
+        let output = run_with_input(&set_role, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("set squad member role");
+        assert!(output.stdout.is_empty());
+        assert_eq!(output.stderr, "Member agent-2 role updated to reviewer.\n");
+
+        let remove = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "member",
+            "remove",
+            "squad-1",
+            "--member-id",
+            "agent-2",
+            "--output",
+            "json",
+        ])
+        .expect("member remove CLI");
+        let output = run_with_input(&remove, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("remove squad member");
+        let value: Value = serde_json::from_str(&output.stdout).expect("remove JSON output");
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "squad_id":"squad-1",
+                "member_id":"agent-2",
+                "removed":true
+            })
+        );
+
+        let bodies = bodies.lock().expect("member bodies");
+        assert_eq!(
+            bodies.as_slice(),
+            [
+                (
+                    "add".into(),
+                    serde_json::json!({
+                        "member_type":"agent",
+                        "member_id":"agent-2",
+                        "role":"member"
+                    })
+                ),
+                (
+                    "role".into(),
+                    serde_json::json!({
+                        "member_type":"agent",
+                        "member_id":"agent-2",
+                        "role":"reviewer"
+                    })
+                ),
+                (
+                    "remove".into(),
+                    serde_json::json!({
+                        "member_type":"agent",
+                        "member_id":"agent-2"
+                    })
+                )
+            ]
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn squad_member_lifecycle_validates_go_flags_before_requests() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "http://127.0.0.1:9");
+
+        let add = Cli::try_parse_from([
+            "cordy", "squad", "member", "add", "squad-1", "--type", "bot",
+        ])
+        .expect("member add CLI");
+        let error = run_with_input(&add, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("missing member id rejected");
+        assert_eq!(error.to_string(), "--member-id is required");
+
+        let set_role = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "member",
+            "set-role",
+            "squad-1",
+            "--member-id",
+            "agent-1",
+            "--member-type",
+            "bot",
+            "--role",
+            "reviewer",
+        ])
+        .expect("member set-role CLI");
+        let error = run_with_input(&set_role, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("invalid member type rejected");
+        assert_eq!(
+            error.to_string(),
+            "--member-type must be 'agent' or 'member'"
+        );
     }
 
     #[test]
