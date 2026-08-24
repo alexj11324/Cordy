@@ -132,6 +132,48 @@ enum SkillCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
         output: OutputFormat,
     },
+    #[command(about = "Create a new skill")]
+    Create(SkillCreateArgs),
+    #[command(about = "Update a skill")]
+    Update(SkillUpdateArgs),
+}
+
+#[derive(Debug, Args)]
+struct SkillCreateArgs {
+    #[arg(long, help = "Skill name (required)")]
+    name: Option<String>,
+    #[arg(long, default_value = "")]
+    description: String,
+    #[arg(long, help = "Skill content (SKILL.md body)")]
+    content: Option<String>,
+    #[arg(long, help = "Read skill content from stdin")]
+    content_stdin: bool,
+    #[arg(long, default_value = "", value_name = "PATH")]
+    content_file: String,
+    #[arg(long, help = "Skill config as JSON string")]
+    config: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct SkillUpdateArgs {
+    #[arg(value_name = "ID")]
+    id: String,
+    #[arg(long)]
+    name: Option<String>,
+    #[arg(long)]
+    description: Option<String>,
+    #[arg(long)]
+    content: Option<String>,
+    #[arg(long, help = "Read new content from stdin")]
+    content_stdin: bool,
+    #[arg(long, default_value = "", value_name = "PATH")]
+    content_file: String,
+    #[arg(long, help = "New config as JSON string")]
+    config: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -2499,6 +2541,12 @@ async fn run_with_input<R: Read>(
         Command::Skill(SkillArgs {
             command: SkillCommand::Get { id, output },
         }) => run_skill_get(cli, environment, id, *output).await,
+        Command::Skill(SkillArgs {
+            command: SkillCommand::Create(args),
+        }) => run_skill_create(cli, environment, args, input).await,
+        Command::Skill(SkillArgs {
+            command: SkillCommand::Update(args),
+        }) => run_skill_update(cli, environment, args, input).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -4257,6 +4305,145 @@ async fn run_skill_get(
         stdout: match output {
             OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&skill)?),
             OutputFormat::Table => format_skill_table(std::slice::from_ref(&skill)),
+        },
+        stderr: String::new(),
+    })
+}
+
+async fn run_skill_create<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SkillCreateArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let name = args.name.as_deref().unwrap_or_default();
+    if name.is_empty() {
+        bail!("--name is required");
+    }
+    let mut body = serde_json::Map::from_iter([("name".into(), Value::String(name.into()))]);
+    if !args.description.is_empty() {
+        body.insert(
+            "description".into(),
+            Value::String(args.description.clone()),
+        );
+    }
+    if let Some(content) = resolve_skill_content(
+        args.content.as_deref(),
+        args.content_stdin,
+        &args.content_file,
+        environment,
+        input,
+    )? {
+        if !content.is_empty() {
+            body.insert("content".into(), Value::String(content));
+        }
+    }
+    if let Some(config) = &args.config {
+        body.insert("config".into(), parse_skill_config(config)?);
+    }
+    let result: Value = client
+        .post_json("/api/skills", &body)
+        .await
+        .context("create skill")?;
+    format_skill_mutation_result(&result, args.output, "created")
+}
+
+async fn run_skill_update<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SkillUpdateArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let mut body = serde_json::Map::new();
+    if let Some(name) = &args.name {
+        body.insert("name".into(), Value::String(name.clone()));
+    }
+    if let Some(description) = &args.description {
+        body.insert("description".into(), Value::String(description.clone()));
+    }
+    if let Some(content) = resolve_skill_content(
+        args.content.as_deref(),
+        args.content_stdin,
+        &args.content_file,
+        environment,
+        input,
+    )? {
+        body.insert("content".into(), Value::String(content));
+    }
+    if let Some(config) = &args.config {
+        body.insert("config".into(), parse_skill_config(config)?);
+    }
+    if body.is_empty() {
+        bail!("no fields to update; use --name, --description, --content, or --config");
+    }
+    let result: Value = client
+        .put_json(&format!("/api/skills/{}", args.id), &body)
+        .await
+        .context("update skill")?;
+    format_skill_mutation_result(&result, args.output, "updated")
+}
+
+fn resolve_skill_content<R: Read>(
+    inline: Option<&str>,
+    from_stdin: bool,
+    file: &str,
+    environment: &Environment,
+    input: &mut R,
+) -> Result<Option<String>> {
+    let sources = [inline.is_some(), from_stdin, !file.is_empty()]
+        .into_iter()
+        .filter(|source| *source)
+        .count();
+    if sources > 1 {
+        bail!("--content, --content-stdin, and --content-file are mutually exclusive");
+    }
+    if from_stdin {
+        let mut bytes = Vec::new();
+        input
+            .read_to_end(&mut bytes)
+            .context("read stdin for --content-stdin")?;
+        return parse_skill_content_bytes(bytes, "stdin content for --content-stdin").map(Some);
+    }
+    if !file.is_empty() {
+        let path = Path::new(file);
+        let path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            environment.current_dir().join(path)
+        };
+        let bytes = fs::read(path).context("read file for --content-file")?;
+        return parse_skill_content_bytes(bytes, "file content for --content-file").map(Some);
+    }
+    Ok(inline.map(str::to_string))
+}
+
+fn parse_skill_content_bytes(bytes: Vec<u8>, label: &str) -> Result<String> {
+    if bytes.is_empty() {
+        bail!("{label} is empty");
+    }
+    String::from_utf8(bytes).map_err(|_| anyhow::anyhow!("{label} must be valid UTF-8"))
+}
+
+fn parse_skill_config(raw: &str) -> Result<Value> {
+    serde_json::from_str(raw)
+        .map_err(|error| anyhow::anyhow!("--config must be valid JSON: {error}"))
+}
+
+fn format_skill_mutation_result(
+    skill: &Value,
+    output: OutputFormat,
+    action: &str,
+) -> Result<RunOutput> {
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(skill)?),
+            OutputFormat::Table => format!(
+                "Skill {action}: {} ({})\n",
+                value_string(skill, "name"),
+                value_string(skill, "id")
+            ),
         },
         stderr: String::new(),
     })
@@ -13088,6 +13275,46 @@ mod tests {
         assert_eq!(output, OutputFormat::Json);
         assert!(Cli::try_parse_from(["cordy", "skill", "get"]).is_err());
         assert!(Cli::try_parse_from(["cordy", "skill", "list", "extra"]).is_err());
+
+        let create = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "create",
+            "--name",
+            "review",
+            "--content=",
+            "--config",
+            "{}",
+        ])
+        .expect("skill create CLI");
+        let Command::Skill(SkillArgs {
+            command: SkillCommand::Create(args),
+        }) = create.command
+        else {
+            panic!("expected skill create");
+        };
+        assert_eq!(args.name.as_deref(), Some("review"));
+        assert_eq!(args.content.as_deref(), Some(""));
+        assert_eq!(args.config.as_deref(), Some("{}"));
+
+        let update = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "update",
+            "skill-1",
+            "--content-stdin",
+            "--description=",
+        ])
+        .expect("skill update CLI");
+        let Command::Skill(SkillArgs {
+            command: SkillCommand::Update(args),
+        }) = update.command
+        else {
+            panic!("expected skill update");
+        };
+        assert_eq!(args.id, "skill-1");
+        assert!(args.content_stdin);
+        assert_eq!(args.description.as_deref(), Some(""));
     }
 
     #[tokio::test]
@@ -13145,6 +13372,185 @@ mod tests {
         assert_eq!(value["files"][0]["path"], "SKILL.md");
         assert_eq!(value["server_only"], "preserved");
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn skill_create_and_update_preserve_content_bytes_and_changed_fields() {
+        let bodies = Arc::new(Mutex::new(Vec::new()));
+        let create_bodies = Arc::clone(&bodies);
+        let update_bodies = Arc::clone(&bodies);
+        let app = Router::new()
+            .route(
+                "/api/skills",
+                post(move |Json(body): Json<Value>| {
+                    let bodies = Arc::clone(&create_bodies);
+                    async move {
+                        bodies.lock().expect("skill bodies").push(body);
+                        Json(serde_json::json!({"id":"skill-1","name":"review"}))
+                    }
+                }),
+            )
+            .route(
+                "/api/skills/skill-1",
+                put(move |Json(body): Json<Value>| {
+                    let bodies = Arc::clone(&update_bodies);
+                    async move {
+                        bodies.lock().expect("skill bodies").push(body);
+                        Json(serde_json::json!({"id":"skill-1","name":"review"}))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let file_content = "标题 / Заголовок\n\nBody with literal \\n and trailing newline.\n";
+        fs::write(cwd.path().join("SKILL.md"), file_content).expect("write skill content");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+
+        let create = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "create",
+            "--name",
+            "review",
+            "--description",
+            "Reviews code",
+            "--content-file",
+            "SKILL.md",
+            "--config",
+            r#"{"model":"fast"}"#,
+            "--output",
+            "table",
+        ])
+        .expect("skill create CLI");
+        let output = run_with_input(&create, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("create skill");
+        assert_eq!(output.stdout, "Skill created: review (skill-1)\n");
+
+        let update_content = "first line\nsecond line with literal \\n\n";
+        let update = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "update",
+            "skill-1",
+            "--description=",
+            "--content-stdin",
+            "--config",
+            "null",
+        ])
+        .expect("skill update CLI");
+        run_with_input(
+            &update,
+            &environment,
+            &mut Cursor::new(update_content.as_bytes().to_vec()),
+        )
+        .await
+        .expect("update skill");
+        let bodies = bodies.lock().expect("skill bodies");
+        assert_eq!(bodies[0]["content"], file_content);
+        assert_eq!(bodies[0]["description"], "Reviews code");
+        assert_eq!(bodies[0]["config"]["model"], "fast");
+        assert_eq!(bodies[1]["description"], "");
+        assert_eq!(bodies[1]["content"], update_content);
+        assert!(bodies[1]["config"].is_null());
+        server.abort();
+    }
+
+    #[test]
+    fn skill_content_input_validation_matches_go_contract() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        fs::write(cwd.path().join("empty.md"), []).expect("write empty file");
+        fs::write(cwd.path().join("invalid.md"), [0xff, 0xfe]).expect("write invalid UTF-8");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+
+        let error = resolve_skill_content(
+            Some("inline"),
+            true,
+            "",
+            &environment,
+            &mut Cursor::new(b"stdin".to_vec()),
+        )
+        .expect_err("content sources conflict");
+        assert_eq!(
+            error.to_string(),
+            "--content, --content-stdin, and --content-file are mutually exclusive"
+        );
+        let error = resolve_skill_content(
+            None,
+            false,
+            "empty.md",
+            &environment,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .expect_err("empty file rejected");
+        assert_eq!(
+            error.to_string(),
+            "file content for --content-file is empty"
+        );
+        let error = resolve_skill_content(
+            None,
+            false,
+            "invalid.md",
+            &environment,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .expect_err("invalid UTF-8 rejected");
+        assert_eq!(
+            error.to_string(),
+            "file content for --content-file must be valid UTF-8"
+        );
+        assert_eq!(
+            parse_skill_config("null").expect("null config"),
+            Value::Null
+        );
+        assert!(parse_skill_config("{").is_err());
+        let literal = r"regex \d and path C:\\new and literal \n done";
+        assert_eq!(
+            resolve_skill_content(
+                Some(literal),
+                false,
+                "",
+                &environment,
+                &mut Cursor::new(Vec::<u8>::new()),
+            )
+            .expect("inline content"),
+            Some(literal.into())
+        );
+        let error = resolve_skill_content(
+            None,
+            true,
+            "",
+            &environment,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .expect_err("empty stdin rejected");
+        assert_eq!(
+            error.to_string(),
+            "stdin content for --content-stdin is empty"
+        );
+    }
+
+    #[tokio::test]
+    async fn skill_update_rejects_no_changes_before_request() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "http://127.0.0.1:9");
+        let cli =
+            Cli::try_parse_from(["cordy", "skill", "update", "skill-1"]).expect("skill update CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("no-change update rejected");
+        assert_eq!(
+            error.to_string(),
+            "no fields to update; use --name, --description, --content, or --config"
+        );
     }
 
     #[test]
