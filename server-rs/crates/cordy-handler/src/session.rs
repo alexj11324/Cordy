@@ -12,11 +12,8 @@ pub fn public_router() -> Router<HandlerState> {
     Router::new().route("/auth/logout", post(logout))
 }
 
-async fn logout() -> Response {
-    let domain_raw = std::env::var("COOKIE_DOMAIN").ok();
-    let domain = cordy_auth::cookie::cookie_domain(domain_raw.as_deref());
-    let frontend_origin = std::env::var("FRONTEND_ORIGIN").ok();
-    let secure = cordy_auth::cookie::is_secure_cookie(frontend_origin.as_deref());
+async fn logout(axum::extract::State(state): axum::extract::State<HandlerState>) -> Response {
+    let (domain, secure) = state.auth_settings.cookie_attributes();
     let mut headers = HeaderMap::new();
 
     for value in cordy_auth::cookie::clear_auth_cookie_values(domain.as_deref(), secure) {
@@ -44,7 +41,11 @@ mod tests {
     #[tokio::test]
     async fn logout_clears_both_cookies_and_returns_go_body() {
         let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
-        let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None);
+        let mut config = cordy_config::Config::default();
+        config.auth.cookie_domain = Some(" .example.com ".into());
+        config.urls.frontend_origin = Some(" https://app.example.com ".into());
+        let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None)
+            .with_auth_settings(crate::auth::AuthSettings::from_config(&config));
         let response = public_router()
             .with_state(state)
             .oneshot(Request::post("/auth/logout").body(Body::empty()).unwrap())
@@ -61,8 +62,12 @@ mod tests {
         assert_eq!(cookies.len(), 2);
         assert!(cookies[0].starts_with("cordy_auth=;"));
         assert!(cookies[0].contains("; HttpOnly"));
+        assert!(cookies[0].contains("; Domain=.example.com"));
+        assert!(cookies[0].contains("; Secure"));
         assert!(cookies[1].starts_with("cordy_csrf=;"));
         assert!(!cookies[1].contains("; HttpOnly"));
+        assert!(cookies[1].contains("; Domain=.example.com"));
+        assert!(cookies[1].contains("; Secure"));
 
         let body = response.into_body().collect().await.unwrap().to_bytes();
         assert_eq!(body, r#"{"message":"logged out"}"#.as_bytes());
