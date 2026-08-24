@@ -36,6 +36,9 @@ pub enum BuiltinRefreshReason {
 
 #[async_trait::async_trait]
 pub trait RuntimeRegistrationRound: Send + Sync + 'static {
+    /// A successful empty payload is authoritative for refresh rounds: the
+    /// workspace currently has no runnable providers. Transient probe/fetch
+    /// failures must be returned as `Err` rather than disguised as empty.
     async fn payload_for_workspace(
         &self,
         ctx: Ctx,
@@ -126,6 +129,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                         workspace,
                         Arc::clone(&round),
                         recover_orphans,
+                        reconcile_profiles && tracked.contains(&workspace.id),
                     )
                     .await
                 {
@@ -180,6 +184,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             },
             round,
             true,
+            false,
         )
         .await
     }
@@ -207,6 +212,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             },
             round,
             false,
+            true,
         )
         .await
     }
@@ -245,17 +251,37 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         workspace: &WorkspaceInfo,
         round: Arc<dyn RuntimeRegistrationRound>,
         recover_orphans: bool,
+        allow_empty_refresh: bool,
     ) -> anyhow::Result<()> {
         let serial = self.workspace_lock(&workspace.id);
         let _guard = serial.lock().await;
         let payload = round
             .payload_for_workspace(ctx.child(), &workspace.id)
             .await?;
-        anyhow::ensure!(
-            !payload.runtimes.is_empty() || !payload.failed_profiles.is_empty(),
-            "no runtimes to register for workspace {}",
-            workspace.id
-        );
+        if payload.runtimes.is_empty() && payload.failed_profiles.is_empty() {
+            anyhow::ensure!(
+                allow_empty_refresh,
+                "no runtimes to register for workspace {}",
+                workspace.id
+            );
+            // The register endpoint rejects an empty request, but a successful
+            // profile refresh returning no providers is still authoritative.
+            // Publish zero locally first so WebSocket/heartbeat/claim stop
+            // using stale IDs, then take those rows offline server-side while
+            // the workspace registration serial remains held.
+            let delta = registry.apply_registration(
+                workspace.id.clone(),
+                workspace.name.clone(),
+                Vec::new(),
+            )?;
+            self.deregister_dropped(&ctx, &delta.dropped).await?;
+            tracing::info!(
+                workspace_id = %workspace.id,
+                dropped = delta.dropped.len(),
+                "workspace runtime profiles converged to zero"
+            );
+            return Ok(());
+        }
         let response = self
             .client
             .register(
@@ -291,11 +317,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         )?;
         self.repo_state
             .replace_workspace(&workspace.id, &repos, settings);
-        if !delta.dropped.is_empty() {
-            self.client
-                .deregister(&ctx, &delta.dropped, HashMap::new())
-                .await?;
-        }
+        self.deregister_dropped(&ctx, &delta.dropped).await?;
         if recover_orphans {
             for runtime_id in runtime_ids {
                 if let Err(error) = self.client.recover_orphans(&ctx, &runtime_id).await {
@@ -325,6 +347,12 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             workspace.id
         );
         if payload.runtimes.is_empty() {
+            // `Some(round)` means the provider completed an authoritative
+            // changed probe. Applying an empty built-in set removes the last
+            // vanished executable while preserving custom-profile runtimes.
+            let delta =
+                registry.apply_builtin_registration(&workspace.id, &workspace.name, Vec::new())?;
+            self.deregister_dropped(&ctx, &delta.dropped).await?;
             return Ok(());
         }
         let response = self
@@ -353,12 +381,17 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             &workspace.name,
             response.runtimes,
         )?;
-        if !delta.dropped.is_empty() {
-            self.client
-                .deregister(&ctx, &delta.dropped, HashMap::new())
-                .await?;
-        }
+        self.deregister_dropped(&ctx, &delta.dropped).await?;
         Ok(())
+    }
+
+    async fn deregister_dropped(&self, ctx: &Ctx, runtime_ids: &[String]) -> anyhow::Result<()> {
+        if runtime_ids.is_empty() {
+            return Ok(());
+        }
+        self.client
+            .deregister(ctx, runtime_ids, HashMap::new())
+            .await
     }
 
     fn workspace_lock(&self, workspace_id: &str) -> Arc<AsyncMutex<()>> {

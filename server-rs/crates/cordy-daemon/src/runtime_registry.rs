@@ -351,4 +351,46 @@ mod tests {
             Some("codex")
         );
     }
+
+    #[test]
+    fn empty_profile_refresh_converges_workspace_to_zero() {
+        let published = Arc::new(RuntimeSet::new());
+        let registry = RuntimeRegistry::new(Arc::clone(&published));
+        let mut profile = runtime("profile-runtime", "codex");
+        profile.profile_id = "profile-1".to_string();
+        registry
+            .apply_registration("ws-1", "One", vec![profile])
+            .unwrap();
+
+        let delta = registry
+            .apply_registration("ws-1", "One", Vec::new())
+            .unwrap();
+
+        assert!(delta.added.is_empty());
+        assert_eq!(delta.dropped, vec!["profile-runtime".to_string()]);
+        assert!(published.snapshot().is_empty());
+        assert!(registry.workspace("ws-1").is_some());
+    }
+
+    #[test]
+    fn empty_builtin_refresh_preserves_custom_profiles() {
+        let published = Arc::new(RuntimeSet::new());
+        let registry = RuntimeRegistry::new(Arc::clone(&published));
+        let mut profile = runtime("profile-runtime", "codex");
+        profile.profile_id = "profile-1".to_string();
+        registry
+            .apply_registration(
+                "ws-1",
+                "One",
+                vec![runtime("builtin-runtime", "claude"), profile],
+            )
+            .unwrap();
+
+        let delta = registry
+            .apply_builtin_registration("ws-1", "One", Vec::new())
+            .unwrap();
+
+        assert_eq!(delta.dropped, vec!["builtin-runtime".to_string()]);
+        assert_eq!(published.snapshot(), vec!["profile-runtime".to_string()]);
+    }
 }
