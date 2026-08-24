@@ -230,12 +230,23 @@
       candidate is `3f35ccf027217b360b06bef71bde5ab09e0420a3` (parents
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c` +
       `a06019544c9cd12254c9f95c39a3690e96f3ef36`, same tree as head).
-- [ ] Next substantive daemon slice: provide the real `ProviderCatalog` and
-      wire `DaemonStartAssembly::production_assembly` into the CLI/server
-      foreground command. Keep unsupported provider families fail-closed; do
-      not claim the foreground daemon is complete until a real catalog,
-      registration source, adapter, and checkout registry are assembled from
-      one profile snapshot.
+- [x] Added `LocalProviderCatalog` and the CLI-facing
+      `production_assembly_with_local_catalog` factory. It reuses daemon
+      discovery and the `cordy-agent` capability/version registries, probes
+      real `--version` commands with bounded process-tree cancellation,
+      withholds unsupported built-ins, and reports custom-profile probe or
+      minimum-version failures instead of registering an empty/unknown
+      launch. Current PR #129 head is
+      `3017241ddc732d75314bf2309ede3e7e05f07305` (parent
+      `a06019544c9cd12254c9f95c39a3690e96f3ef36`, tree
+      `ec7a02c000a76358eac9f2ab7cc10a21f27c5681`), candidate
+      `e208fe4105b8520b861912c3e589bb9ba7b55858`, Ready/mergeable. Scoped
+      rustfmt and diff-check pass; Cargo/review/gate/merge remain with pro.
+- [ ] Next substantive daemon slice: wire
+      `DaemonStartAssembly::production_assembly_with_local_catalog` into the
+      actual CLI/server foreground command. Do not claim the foreground
+      daemon is complete until that command owns bootstrap/PID/shutdown,
+      supplies a real shared checkout registry, and runs the assembled stack.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
