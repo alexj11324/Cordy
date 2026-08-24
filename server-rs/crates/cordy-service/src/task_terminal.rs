@@ -1058,7 +1058,7 @@ impl TaskService {
         for agent_id in affected_agents.keys() {
             self.reconcile_agent_status(*agent_id).await;
         }
-        self.notify_tasks_finished(tasks);
+        self.notify_tasks_finished(tasks).await;
         retried_count
     }
 }

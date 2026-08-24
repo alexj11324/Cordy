@@ -2,6 +2,7 @@
 //! DB/redis wiring. Domain services are added per-slice as routes land.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use cordy_auth::daemon_token_cache::DaemonTokenCache;
 use cordy_auth::pat_cache::PatCache;
@@ -12,9 +13,101 @@ use cordy_service::issue_service::IssueService;
 use cordy_service::plugin::PluginService;
 use cordy_service::plugin_token::CallbackTokens;
 use cordy_service::task_service::TaskService;
+use tokio_util::sync::CancellationToken;
+
+/// Cancellation and join ownership for handler background maintenance loops.
+#[derive(Clone)]
+pub struct BackgroundRuntime {
+    shutdown: CancellationToken,
+    tasks: Arc<std::sync::Mutex<Vec<tokio::task::JoinHandle<()>>>>,
+}
+
+impl Default for BackgroundRuntime {
+    fn default() -> Self {
+        Self {
+            shutdown: CancellationToken::new(),
+            tasks: Arc::new(std::sync::Mutex::new(Vec::new())),
+        }
+    }
+}
+
+impl BackgroundRuntime {
+    fn token(&self) -> CancellationToken {
+        self.shutdown.clone()
+    }
+
+    fn track(&self, task: tokio::task::JoinHandle<()>) {
+        self.tasks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(task);
+    }
+
+    /// Cancels every loop and waits up to `timeout` for the owned tasks.
+    pub async fn shutdown(&self, timeout: Duration) -> bool {
+        self.shutdown.cancel();
+        let tasks: Vec<_> = self
+            .tasks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .drain(..)
+            .collect();
+        let abort_handles: Vec<_> = tasks
+            .iter()
+            .map(tokio::task::JoinHandle::abort_handle)
+            .collect();
+        let stopped = tokio::time::timeout(timeout, async move {
+            for task in tasks {
+                let _ = task.await;
+            }
+        })
+        .await
+        .is_ok();
+        if !stopped {
+            for task in abort_handles {
+                task.abort();
+            }
+        }
+        stopped
+    }
+}
+
+#[cfg(test)]
+mod background_runtime_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct DropSignal(Arc<AtomicBool>);
+
+    impl Drop for DropSignal {
+        fn drop(&mut self) {
+            self.0.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn shutdown_aborts_tasks_after_the_deadline() {
+        let runtime = BackgroundRuntime::default();
+        let dropped = Arc::new(AtomicBool::new(false));
+        let signal = DropSignal(dropped.clone());
+        runtime.track(tokio::spawn(async move {
+            let _signal = signal;
+            std::future::pending::<()>().await;
+        }));
+
+        assert!(!runtime.shutdown(Duration::ZERO).await);
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !dropped.load(Ordering::SeqCst) {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("aborted task should be dropped");
+    }
+}
 
 struct DaemonTaskWakeup {
-    hub: Arc<cordy_daemon::hub::DaemonHub>,
+    notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
 }
 
 struct DaemonMessageMetrics {
@@ -27,9 +120,12 @@ impl cordy_daemon::hub::MessageKindRecorder for DaemonMessageMetrics {
     }
 }
 
+#[async_trait::async_trait]
 impl cordy_service::task_service::TaskWakeupNotifier for DaemonTaskWakeup {
-    fn notify_task_available(&self, runtime_id: &str, task_id: &str) {
-        self.hub.notify_task_available(runtime_id, task_id);
+    async fn notify_task_available(&self, runtime_id: &str, task_id: &str) {
+        self.notifier
+            .notify_task_available(runtime_id, task_id)
+            .await;
     }
 }
 
@@ -43,6 +139,11 @@ pub struct HandlerState {
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
     pub bus: Arc<cordy_events::Bus>,
+    /// Owned background work started by channel HTTP/event surfaces. The
+    /// production ChannelRuntime closes admission and joins/aborts this group
+    /// during shutdown.
+    pub channel_tasks: Arc<cordy_channel::RuntimeTasks>,
+    pub channel_cancel: tokio_util::sync::CancellationToken,
     /// Prometheus business counters. None when METRICS_ADDR is disabled.
     pub business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     /// HTTP request metrics. None when METRICS_ADDR is disabled.
@@ -53,9 +154,14 @@ pub struct HandlerState {
     pub analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
     pub auth_rate_limit: cordy_middleware::ratelimit::RateLimitState,
     pub auth_verify_rate_limit: cordy_middleware::ratelimit::RateLimitState,
+    pub(crate) webhook_rate_limits: crate::autopilot_webhook::WebhookRateLimits,
     pub invitation_admission: crate::invitation::InvitationAdmission,
     /// Anonymous frontend capability/configuration response.
     pub public_config: crate::config::PublicConfigSettings,
+    /// Immutable integration endpoint configuration loaded once at boot.
+    /// Channel install flows use this same snapshot as the runtime connectors
+    /// instead of re-reading process environment mid-session.
+    pub integrations: cordy_config::IntegrationsConfig,
     /// GitHub GraphQL snapshot refresh pipeline. Disabled in lightweight tests.
     pub github_snapshots: Arc<cordy_ghsnapshot::Manager>,
     /// Feature flag source. `None` fails closed for rollout-gated writes.
@@ -96,6 +202,12 @@ pub struct HandlerState {
     /// Daemon WebSocket hub (cordy-daemon). `None` only in tests — the WS
     /// endpoint reports 503 and daemons fall back to HTTP polling.
     pub daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
+    /// Local-first daemon wakeup publisher. Production runtime installs the
+    /// shared Redis relay for sharded/dual modes before the router is served.
+    pub daemon_notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
+    /// Owns cancellable workers that must stop after HTTP drain and before
+    /// realtime fanout is torn down.
+    pub background_runtime: BackgroundRuntime,
     /// Attachment object store. None is the explicit unconfigured test path.
     pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
     pub attachment_frame_ancestors: Vec<String>,
@@ -116,9 +228,14 @@ impl HandlerState {
     pub fn new(pool: sqlx::PgPool, pat_cache: PatCache, hub: Option<Arc<Hub>>) -> Self {
         let bus = Arc::new(cordy_events::Bus::new());
         let daemon_hub = Arc::new(cordy_daemon::hub::DaemonHub::new());
+        let daemon_notifier = Arc::new(cordy_daemon::notifier::RelayNotifier::new(
+            Some(daemon_hub.clone()),
+            None,
+        ));
+        let background_runtime = BackgroundRuntime::default();
         let task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier> =
             Arc::new(DaemonTaskWakeup {
-                hub: daemon_hub.clone(),
+                notifier: daemon_notifier.clone(),
             });
         let mut task_service = TaskService::new(pool.clone(), bus.clone());
         task_service.wakeup = Some(Arc::downgrade(&task_wakeup));
@@ -142,7 +259,8 @@ impl HandlerState {
             positive_env_i64("RATE_LIMIT_AUTH_VERIFY", 20),
             60,
         );
-        auth_verify_rate_limit.trusted_proxies = trusted_proxies;
+        auth_verify_rate_limit.trusted_proxies = trusted_proxies.clone();
+        let webhook_rate_limits = crate::autopilot_webhook::WebhookRateLimits::new(trusted_proxies);
         let llm = cordy_llm::Client::new(cordy_llm::Config::default());
         Self {
             pool,
@@ -150,6 +268,8 @@ impl HandlerState {
             daemon_token_cache: DaemonTokenCache::disabled(),
             hub,
             bus,
+            channel_tasks: Arc::new(cordy_channel::RuntimeTasks::new()),
+            channel_cancel: tokio_util::sync::CancellationToken::new(),
             business_metrics: None,
             http_metrics: None,
             auth_settings: crate::auth::AuthSettings::from_env(),
@@ -157,8 +277,10 @@ impl HandlerState {
             analytics: Arc::new(cordy_analytics::NoopClient),
             auth_rate_limit,
             auth_verify_rate_limit,
+            webhook_rate_limits,
             invitation_admission: crate::invitation::InvitationAdmission::default(),
             public_config: crate::config::PublicConfigSettings::default(),
+            integrations: cordy_config::IntegrationsConfig::default(),
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
             feature_flags: None,
             tasks,
@@ -180,6 +302,8 @@ impl HandlerState {
             vcs_integration_enabled: false,
             vcs_secret_box: None,
             daemon_hub: Some(daemon_hub),
+            daemon_notifier,
+            background_runtime,
             attachment_storage: None,
             attachment_frame_ancestors: Vec::new(),
             slack_history: None,
@@ -258,6 +382,11 @@ impl HandlerState {
         self
     }
 
+    pub fn with_integrations(mut self, integrations: cordy_config::IntegrationsConfig) -> Self {
+        self.integrations = integrations;
+        self
+    }
+
     pub fn with_feature_flags(
         mut self,
         flags: Arc<dyn cordy_service::feature_flags::FlagSource>,
@@ -322,12 +451,13 @@ impl HandlerState {
     /// from production startup after all Autopilot service wiring is complete.
     pub fn start_webhook_delivery_worker(mut self) -> Self {
         let notify = Arc::new(tokio::sync::Notify::new());
-        crate::webhook_delivery_worker::WebhookDeliveryWorker::new(
+        let task = crate::webhook_delivery_worker::WebhookDeliveryWorker::new(
             self.pool.clone(),
             self.autopilots.clone(),
             notify.clone(),
         )
-        .start();
+        .start(self.background_runtime.token());
+        self.background_runtime.track(task);
         self.webhook_delivery_notify = Some(notify);
         self
     }
@@ -337,7 +467,8 @@ impl HandlerState {
             return self;
         }
         let service = self.autopilots.clone();
-        tokio::spawn(async move {
+        let shutdown = self.background_runtime.token();
+        let task = tokio::spawn(async move {
             loop {
                 let now = chrono::Utc::now();
                 match service
@@ -356,9 +487,13 @@ impl HandlerState {
                         tracing::warn!(%error, "autopilot quota reconciler failed");
                     }
                 }
-                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                tokio::select! {
+                    () = shutdown.cancelled() => return,
+                    () = tokio::time::sleep(std::time::Duration::from_secs(60)) => {}
+                }
             }
         });
+        self.background_runtime.track(task);
         self
     }
 
@@ -386,7 +521,8 @@ impl HandlerState {
     pub fn with_rate_limit_trusted_proxies(mut self, raw: Option<&str>) -> Self {
         let trusted = cordy_middleware::ratelimit::parse_trusted_proxies(raw.unwrap_or_default());
         self.auth_rate_limit.trusted_proxies = trusted.clone();
-        self.auth_verify_rate_limit.trusted_proxies = trusted;
+        self.auth_verify_rate_limit.trusted_proxies = trusted.clone();
+        self.webhook_rate_limits.trusted_proxies = trusted;
         self
     }
 

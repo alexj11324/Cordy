@@ -11,6 +11,7 @@ use cordy_service::autopilot::{AutopilotQuotaExceededError, AutopilotService};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
@@ -38,29 +39,42 @@ impl WebhookDeliveryWorker {
         })
     }
 
-    pub fn start(self: Arc<Self>) {
+    pub fn start(self: Arc<Self>, shutdown: CancellationToken) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             let mut workers = tokio::task::JoinSet::new();
             for _ in 0..CONCURRENCY {
                 let worker = self.clone();
-                workers.spawn(async move { worker.run_loop().await });
+                let worker_shutdown = shutdown.clone();
+                workers.spawn(async move { worker.run_loop(worker_shutdown).await });
             }
-            while let Some(result) = workers.join_next().await {
-                if let Err(error) = result {
-                    tracing::error!(%error, "webhook delivery worker stopped unexpectedly");
+            loop {
+                tokio::select! {
+                    () = shutdown.cancelled() => break,
+                    result = workers.join_next() => match result {
+                        Some(Err(error)) => {
+                            tracing::error!(%error, "webhook delivery worker stopped unexpectedly");
+                        }
+                        Some(Ok(())) => {}
+                        None => break,
+                    }
                 }
             }
-        });
+            while workers.join_next().await.is_some() {}
+        })
     }
 
-    async fn run_loop(&self) {
+    async fn run_loop(&self, shutdown: CancellationToken) {
         loop {
+            if shutdown.is_cancelled() {
+                return;
+            }
             match self.process_next().await {
                 Ok(true) => continue,
                 Ok(false) => {}
                 Err(error) => tracing::error!(%error, "webhook worker failed to process delivery"),
             }
             tokio::select! {
+                () = shutdown.cancelled() => return,
                 () = self.notify.notified() => {},
                 () = tokio::time::sleep(POLL_INTERVAL) => {},
             }
@@ -75,6 +89,28 @@ impl WebhookDeliveryWorker {
         let Some(lease_token) = delivery.lease_token else {
             anyhow::bail!("claimed webhook delivery has no lease token");
         };
+
+        // The ingress persists before returning its authentication response.
+        // If that terminal update failed after the insert, the durable row may
+        // still be queued. Never let the recovery worker dispatch a payload
+        // whose signature was already classified as missing or invalid.
+        if matches!(delivery.signature_status.as_str(), "missing" | "invalid") {
+            let reason = if delivery.signature_status == "missing" {
+                "missing_signature"
+            } else {
+                "invalid_signature"
+            };
+            self.complete(
+                &delivery,
+                lease_token,
+                "rejected",
+                None,
+                Some(reason),
+                Some(reason),
+            )
+            .await?;
+            return Ok(true);
+        }
 
         let trigger = match autopilot::get_autopilot_trigger(&self.pool, delivery.trigger_id).await
         {
@@ -293,13 +329,11 @@ fn normalize_stored_payload(delivery: &WebhookDelivery) -> Result<Value, &'stati
     if !matches!(body, Value::Object(_) | Value::Array(_)) {
         return Err("body must be a JSON object or array");
     }
-    let event = body
-        .as_object()
-        .and_then(|object| object.get("event"))
-        .and_then(Value::as_str)
-        .filter(|event| !event.is_empty())
-        .unwrap_or(&delivery.event)
-        .to_string();
+    // `delivery.event` is the normalized provider-aware value computed by
+    // ingress (for example `github.pull_request.opened`). It is authoritative
+    // during recovery; rebuilding from the raw body alone loses header-derived
+    // identity after a crash.
+    let event = delivery.event.clone();
     let payload = body
         .as_object()
         .and_then(|object| object.get("eventPayload"))

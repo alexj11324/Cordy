@@ -180,6 +180,24 @@ impl ChannelStore {
         )
     }
 
+    pub async fn list_lark_installations_missing_bot_union_id_after(
+        &self,
+        after: Option<(DateTime<Utc>, Uuid)>,
+        limit: i64,
+    ) -> anyhow::Result<Vec<Installation>> {
+        let (created_at, id) = after.unzip();
+        installations_from_rows(
+            cordy_db::queries::channel::list_active_channel_installations_missing_bot_union_id_after(
+                &self.pool,
+                CHANNEL_TYPE_FEISHU,
+                created_at,
+                id,
+                limit,
+            )
+            .await?,
+        )
+    }
+
     pub async fn upsert_lark_installation(
         &self,
         arg: UpsertInstallationParams,
@@ -248,6 +266,20 @@ impl ChannelStore {
         let cfg = encode_install_config(&inst)?;
         set_channel_installation_config(&self.pool, arg.id, &cfg).await?;
         Ok(())
+    }
+
+    pub async fn stamp_lark_installation_bot_union_id_if_missing(
+        &self,
+        id: Uuid,
+        bot_union_id: &str,
+    ) -> anyhow::Result<bool> {
+        cordy_db::queries::channel::set_channel_installation_bot_union_id_if_missing(
+            &self.pool,
+            id,
+            CHANNEL_TYPE_FEISHU,
+            bot_union_id,
+        )
+        .await
     }
 
     pub async fn backfill_lark_installation_region_to_lark(&self) -> anyhow::Result<u64> {

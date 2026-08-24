@@ -10,7 +10,7 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
 use cordy_db::models::{GithubInstallation, GithubPullRequest};
-use cordy_db::queries::github;
+use cordy_db::queries::{github, member};
 use cordy_middleware::workspace::WorkspaceContext;
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
@@ -212,6 +212,18 @@ async fn setup(State(state): State<HandlerState>, Query(query): Query<SetupQuery
         .unwrap_or_else(|| ("unknown".into(), "User".into(), None));
     let workspace_id = verified.workspace_id;
     let connected_by = verified.connected_by;
+    if let Some(user_id) = connected_by {
+        let still_authorized =
+            member::get_member_by_user_and_workspace(&state.pool, user_id, workspace_id)
+                .await
+                .ok()
+                .flatten()
+                .is_some_and(|membership| matches!(membership.role.as_str(), "owner" | "admin"));
+        if !still_authorized {
+            return Redirect::temporary(&format!("{target}&github_error=authorization_changed"))
+                .into_response();
+        }
+    }
     let mut installation = match github::create_git_hub_installation(
         &state.pool,
         workspace_id,

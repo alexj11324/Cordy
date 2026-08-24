@@ -18,7 +18,7 @@
 
 use std::collections::HashMap;
 use std::future::Future;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -87,53 +87,127 @@ struct MediaQueueEntry {
 
 #[derive(Default)]
 struct TrackedJobs {
-    active: AtomicUsize,
-    zero: tokio::sync::Notify,
+    closed: AtomicBool,
+    handles: Mutex<Vec<tokio::task::JoinHandle<()>>>,
 }
 
-struct TrackedJobGuard(Arc<TrackedJobs>);
+struct AbortJobsOnDrop {
+    handles: Vec<tokio::task::AbortHandle>,
+    armed: bool,
+}
 
-impl Drop for TrackedJobGuard {
+struct AbortTrackedJobsOnDrop {
+    jobs: Arc<TrackedJobs>,
+    armed: bool,
+}
+
+impl Drop for AbortJobsOnDrop {
     fn drop(&mut self) {
-        if self.0.active.fetch_sub(1, Ordering::SeqCst) == 1 {
-            self.0.zero.notify_waiters();
+        if self.armed {
+            for handle in &self.handles {
+                handle.abort();
+            }
+        }
+    }
+}
+
+impl Drop for AbortTrackedJobsOnDrop {
+    fn drop(&mut self) {
+        if self.armed {
+            self.jobs.abort_now();
         }
     }
 }
 
 impl TrackedJobs {
-    fn spawn(self: &Arc<Self>, future: impl Future<Output = ()> + Send + 'static) {
-        self.active.fetch_add(1, Ordering::SeqCst);
-        let tracker = Arc::clone(self);
-        tokio::spawn(async move {
-            let _guard = TrackedJobGuard(tracker);
-            future.await;
-        });
+    fn spawn(&self, future: impl Future<Output = ()> + Send + 'static) -> bool {
+        if self.closed.load(Ordering::SeqCst) {
+            return false;
+        }
+        let mut handles = self
+            .handles
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        if self.closed.load(Ordering::SeqCst) {
+            return false;
+        }
+        handles.retain(|handle| !handle.is_finished());
+        handles.push(tokio::spawn(future));
+        true
     }
 
-    async fn wait(&self) {
-        loop {
-            let notified = self.zero.notified();
-            if self.active.load(Ordering::SeqCst) == 0 {
-                return;
+    async fn shutdown(&self, timeout: Duration) -> bool {
+        self.closed.store(true, Ordering::SeqCst);
+        let mut handles = {
+            let mut handles = self
+                .handles
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            std::mem::take(&mut *handles)
+        };
+        let mut abort_on_drop = AbortJobsOnDrop {
+            handles: handles.iter().map(|handle| handle.abort_handle()).collect(),
+            armed: true,
+        };
+        let deadline = tokio::time::Instant::now() + timeout;
+        while let Some(mut handle) = handles.pop() {
+            if tokio::time::timeout_at(deadline, &mut handle)
+                .await
+                .is_err()
+            {
+                handle.abort();
+                for handle in &abort_on_drop.handles {
+                    handle.abort();
+                }
+                let _ = handle.await;
+                for handle in handles {
+                    let _ = handle.await;
+                }
+                abort_on_drop.armed = false;
+                return false;
             }
-            notified.await;
+        }
+        abort_on_drop.armed = false;
+        true
+    }
+
+    fn abort_now(&self) {
+        self.closed.store(true, Ordering::SeqCst);
+        let handles = self
+            .handles
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        for handle in handles.iter() {
+            handle.abort();
         }
     }
 }
 
-/// Builds a resolver-facing token that cancels at the media deadline.
-fn deadline_token(parent: &CancellationToken, deadline: std::time::Instant) -> CancellationToken {
-    let token = parent.child_token();
-    let cancel_token = token.clone();
-    tokio::spawn(async move {
-        let now = std::time::Instant::now();
-        if deadline > now {
-            tokio::time::sleep(deadline - now).await;
+/// Polls resolver work inside its owning media job. Cancellation and deadline
+/// drop the future in-place; no detached timer or resolver task survives the
+/// tracked job.
+async fn run_media_until<F, T>(
+    parent: &CancellationToken,
+    child: &CancellationToken,
+    deadline: std::time::Instant,
+    future: F,
+) -> Option<T>
+where
+    F: Future<Output = T>,
+{
+    tokio::pin!(future);
+    tokio::select! {
+        biased;
+        _ = parent.cancelled() => {
+            child.cancel();
+            None
         }
-        cancel_token.cancel();
-    });
-    token
+        _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {
+            child.cancel();
+            None
+        }
+        value = &mut future => Some(value),
+    }
 }
 
 /// The inbound pipeline driver. Construct with [`Router::new`], register
@@ -232,34 +306,43 @@ impl Router {
     }
 
     /// Cancels detached media processing, flushes debounced run triggers,
-    /// and joins media/reply work until ctx ends. Returns whether
+    /// and joins media/reply work under one shared deadline. Returns whether
     /// everything completed. Call on shutdown AFTER the Supervisor has
     /// stopped delivering events; timed-out media retains its durable
-    /// placeholder fallback.
+    /// placeholder fallback and every unfinished task is aborted.
     ///
     /// Port note: Go tracks goroutines via WaitGroups; Rust awaits the
     /// batcher flush here — detached media jobs are cancellation-driven
     /// via `media_ctx`, so their DB finalize either ran or was skipped by
     /// design (placeholder fallback).
-    pub async fn drain(&self, ctx: &CancellationToken) -> bool {
+    pub async fn drain(&self, timeout: Duration) -> bool {
         *self.stopping.lock().unwrap_or_else(|e| e.into_inner()) = true;
         self.media_ctx.cancel();
+        let mut abort_on_drop = AbortTrackedJobsOnDrop {
+            jobs: self.jobs.clone(),
+            armed: true,
+        };
+        let deadline = tokio::time::Instant::now() + timeout;
 
         let batcher = self
             .batcher
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
-        let flush = async {
-            if let Some(b) = batcher {
-                b.flush_all().await;
+        if let Some(batcher) = batcher {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            if tokio::time::timeout(remaining, batcher.flush_all())
+                .await
+                .is_err()
+            {
+                let _ = self.jobs.shutdown(Duration::ZERO).await;
+                return false;
             }
-            self.jobs.wait().await;
-        };
-        tokio::select! {
-            _ = flush => true,
-            _ = ctx.cancelled() => false,
         }
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let completed = self.jobs.shutdown(remaining).await;
+        abort_on_drop.armed = false;
+        completed
     }
 
     /// The shared inbound handler. Runs the pipeline and then drives the
@@ -995,19 +1078,21 @@ impl Router {
                     if !router_media_ctx.is_cancelled() {
                         if let (Some(media), Some(chat_message_id)) = (&set.media, chat_message_id)
                         {
-                            let media_deadline_ctx = deadline_token(&router_media_ctx, deadline);
-                            resolved = media
-                                .resolve_media(
-                                    media_deadline_ctx.clone(),
-                                    &inst,
-                                    &identity,
-                                    session_id,
-                                    chat_message_id,
-                                    resolved,
-                                )
-                                .await;
-                            expired = media_deadline_ctx.is_cancelled()
-                                || std::time::Instant::now() >= deadline;
+                            let media_ctx = router_media_ctx.child_token();
+                            let resolve = media.resolve_media(
+                                media_ctx.clone(),
+                                &inst,
+                                &identity,
+                                session_id,
+                                chat_message_id,
+                                resolved.clone(),
+                            );
+                            match run_media_until(&router_media_ctx, &media_ctx, deadline, resolve)
+                                .await
+                            {
+                                Some(value) => resolved = value,
+                                None => expired = true,
+                            }
                         }
                     }
                 }
@@ -1392,4 +1477,58 @@ async fn emit_flush_reply(
             },
         )
         .await;
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn tracked_jobs_abort_overdue_work_and_close_admission() {
+        let jobs = TrackedJobs::default();
+        assert!(jobs.spawn(std::future::pending()));
+
+        assert!(!jobs.shutdown(Duration::from_millis(1)).await);
+        assert!(!jobs.spawn(async {}));
+        assert!(jobs
+            .handles
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn media_work_is_dropped_when_owner_is_cancelled() {
+        let parent = CancellationToken::new();
+        let child = parent.child_token();
+        parent.cancel();
+
+        let result = run_media_until(
+            &parent,
+            &child,
+            std::time::Instant::now() + Duration::from_secs(30),
+            std::future::pending::<()>(),
+        )
+        .await;
+
+        assert!(result.is_none());
+        assert!(child.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn media_work_is_dropped_at_its_deadline() {
+        let parent = CancellationToken::new();
+        let child = parent.child_token();
+
+        let result = run_media_until(
+            &parent,
+            &child,
+            std::time::Instant::now(),
+            std::future::pending::<()>(),
+        )
+        .await;
+
+        assert!(result.is_none());
+        assert!(child.is_cancelled());
+    }
 }
