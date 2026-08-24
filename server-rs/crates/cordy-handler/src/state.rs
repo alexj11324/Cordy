@@ -1,7 +1,8 @@
 //! Shared handler state — the Rust analogue of the Go `Handler` struct's
 //! DB/redis wiring. Domain services are added per-slice as routes land.
 
-use std::sync::Arc;
+use std::collections::HashSet;
+use std::sync::{Arc, RwLock};
 
 use cordy_auth::daemon_token_cache::DaemonTokenCache;
 use cordy_auth::pat_cache::PatCache;
@@ -19,6 +20,32 @@ struct DaemonTaskWakeup {
 
 struct DaemonMessageMetrics {
     metrics: Arc<cordy_metrics::BusinessMetrics>,
+}
+
+#[derive(Clone, Default)]
+struct ChannelFileDelivery {
+    channel_types: Arc<RwLock<HashSet<String>>>,
+}
+
+impl ChannelFileDelivery {
+    fn declare(&self, channel_type: &str) {
+        if channel_type.is_empty() {
+            return;
+        }
+        self.channel_types
+            .write()
+            .unwrap_or_else(|error| error.into_inner())
+            .insert(channel_type.to_string());
+    }
+
+    fn delivers(&self, channel_type: &str) -> bool {
+        !channel_type.is_empty()
+            && self
+                .channel_types
+                .read()
+                .unwrap_or_else(|error| error.into_inner())
+                .contains(channel_type)
+    }
 }
 
 impl cordy_daemon::hub::MessageKindRecorder for DaemonMessageMetrics {
@@ -109,6 +136,10 @@ pub struct HandlerState {
     /// Attachment object store. None is the explicit unconfigured test path.
     pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
     pub attachment_frame_ancestors: Vec<String>,
+    /// Deployment-scoped last-hop file delivery declarations. A channel is
+    /// present only when runtime wiring installed both the outbound adapter
+    /// and object storage it reads attachments from.
+    channel_file_delivery: ChannelFileDelivery,
     /// On-demand Slack channel history reader. `None` means Slack history is
     /// not configured; chat history then falls back to the persisted transcript.
     pub slack_history: Option<Arc<cordy_slack::history::History>>,
@@ -197,6 +228,7 @@ impl HandlerState {
             daemon_hub: Some(daemon_hub),
             attachment_storage: None,
             attachment_frame_ancestors: Vec::new(),
+            channel_file_delivery: ChannelFileDelivery::default(),
             slack_history: None,
             llm: Arc::new(llm),
             webhook_delivery_notify: None,
@@ -516,6 +548,19 @@ impl HandlerState {
         self.vcs_secret_box = secret_box;
         self
     }
+
+    /// Declares a real, deployment-configured channel file delivery hop.
+    /// Runtime wiring calls this from the same branch that injects attachment
+    /// storage into the outbound adapter.
+    pub fn declare_channel_file_delivery(&self, channel_type: &str) {
+        self.channel_file_delivery.declare(channel_type);
+    }
+
+    /// Answers the daemon claim capability without inferring from channel
+    /// type alone. Undeclared and web-chat types fail closed.
+    pub fn channel_delivers_files(&self, channel_type: &str) -> bool {
+        self.channel_file_delivery.delivers(channel_type)
+    }
 }
 
 fn positive_env_i64(name: &str, default: i64) -> i64 {
@@ -524,4 +569,24 @@ fn positive_env_i64(name: &str, default: i64) -> i64 {
         .and_then(|value| value.trim().parse::<i64>().ok())
         .filter(|value| *value > 0)
         .unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ChannelFileDelivery;
+
+    #[test]
+    fn channel_file_delivery_requires_exact_declaration() {
+        let delivery = ChannelFileDelivery::default();
+        assert!(!delivery.delivers("wecom"));
+        assert!(!delivery.delivers(""));
+
+        delivery.declare("");
+        delivery.declare("wecom");
+        assert!(delivery.delivers("wecom"));
+        assert!(!delivery.delivers("telegram"));
+
+        let cloned = delivery.clone();
+        assert!(cloned.delivers("wecom"));
+    }
 }

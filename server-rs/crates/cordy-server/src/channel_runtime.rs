@@ -623,6 +623,7 @@ fn configure_wecom(
         );
     if let Some(storage) = storage {
         outbound = outbound.with_attachments(storage.clone());
+        state.declare_channel_file_delivery(cordy_wecom::CHANNEL_TYPE_WECOM);
     }
     if let Some(relay) = &relay {
         outbound = outbound.with_relay(relay.clone());

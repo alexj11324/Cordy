@@ -86,6 +86,12 @@ fn set_if_not_empty(m: &mut Map<String, Value>, key: &str, v: &str) {
     }
 }
 
+fn set_chat_channel_delivers_files(m: &mut Map<String, Value>, delivers: bool) {
+    if delivers {
+        m.insert("chat_channel_delivers_files".into(), Value::Bool(true));
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Worktree gate (Go worktreeClaimBlockReason)
 // ---------------------------------------------------------------------------
@@ -982,8 +988,13 @@ pub async fn build_claimed_task_response(
                     Value::String(binding.channel_type.clone()),
                 );
                 obj.insert("chat_type".into(), Value::String(binding.chat_type.clone()));
-                // File delivery is a deployment fact; the Rust lane carries the
-                // same conservative default (false) until adapters declare it.
+                // File delivery is a deployment fact: only runtime wiring that
+                // installed both the outbound hop and object storage declares
+                // it. False stays absent for Go's omitempty wire semantics.
+                set_chat_channel_delivers_files(
+                    obj,
+                    state.channel_delivers_files(&binding.channel_type),
+                );
                 if binding.channel_type == cordy_slack::TYPE_SLACK {
                     obj.insert(
                         "chat_in_thread".into(),
@@ -1473,6 +1484,23 @@ pub async fn build_claimed_task_response(
 
 fn chat_session_resume_fallback_needed(prior_session_id: &str, prior_work_dir: &str) -> bool {
     prior_session_id.is_empty() || prior_work_dir.is_empty()
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{Map, Value};
+
+    use super::set_chat_channel_delivers_files;
+
+    #[test]
+    fn file_delivery_claim_field_is_true_or_omitted() {
+        let mut payload = Map::new();
+        set_chat_channel_delivers_files(&mut payload, false);
+        assert!(!payload.contains_key("chat_channel_delivers_files"));
+
+        set_chat_channel_delivers_files(&mut payload, true);
+        assert_eq!(payload["chat_channel_delivers_files"], Value::Bool(true));
+    }
 }
 
 /// Go failClaimedTaskBeforeLaunch: settles a durable claim-time rejection before
