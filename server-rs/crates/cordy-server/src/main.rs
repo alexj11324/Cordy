@@ -106,6 +106,7 @@ fn duration_env(name: &str, default: Duration, allow_zero: bool) -> Duration {
 
 fn autopilot_entitlements(
     cfg: &cordy_config::Config,
+    metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
 ) -> Option<Arc<dyn cordy_service::autopilot::EntitlementProvider>> {
     let enabled = parse_go_bool(
         std::env::var("CORDY_ENTITLEMENT_POLICY_ENABLED")
@@ -139,9 +140,15 @@ fn autopilot_entitlements(
         ),
         emergency_disabled,
     };
-    match cordy_service::entitlement::HttpEntitlementProvider::new(config) {
+    match cordy_service::entitlement::HttpEntitlementProvider::new_with_metrics(
+        config,
+        metrics.clone(),
+    ) {
         Ok(provider) => provider.map(|provider| provider as Arc<_>),
         Err(error) => {
+            if let Some(metrics) = metrics.as_deref() {
+                metrics.record_entitlement_config_error();
+            }
             tracing::error!(%error, "entitlement policy client disabled by invalid configuration");
             None
         }
@@ -194,7 +201,7 @@ async fn build_production_router(
     vcs: VcsWebhookConfig,
 ) -> anyhow::Result<ProductionApp> {
     let feature_flags = Arc::new(cordy_service::feature_flags::ConfiguredFlags::from_env()?);
-    let entitlements = autopilot_entitlements(cfg);
+    let entitlements = autopilot_entitlements(cfg, business_metrics.clone());
     let attachment_download =
         cordy_handler::state::AttachmentDownloadSettings::from_config(cfg).await?;
     let cdn_signed = attachment_download.cloudfront_signer.is_some();

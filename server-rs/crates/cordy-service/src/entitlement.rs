@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Datelike, Timelike, Utc};
@@ -113,11 +113,39 @@ pub struct HttpEntitlementProvider {
     emergency_disabled: AtomicBool,
     client: reqwest::Client,
     cache: Mutex<CacheState>,
+    metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PolicyRegression {
+    Policy,
+    Subscription,
+}
+
+enum StorePolicyError {
+    Version(PolicyRegression),
+    InvalidStaleGrace,
+}
+
+impl PolicyRegression {
+    fn source(self) -> &'static str {
+        match self {
+            Self::Policy => "policy",
+            Self::Subscription => "subscription",
+        }
+    }
 }
 
 impl HttpEntitlementProvider {
     pub fn new(
         config: EntitlementClientConfig,
+    ) -> Result<Option<Arc<Self>>, EntitlementClientError> {
+        Self::new_with_metrics(config, None)
+    }
+
+    pub fn new_with_metrics(
+        config: EntitlementClientConfig,
+        metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     ) -> Result<Option<Arc<Self>>, EntitlementClientError> {
         if !config.enabled {
             return Ok(None);
@@ -154,6 +182,7 @@ impl HttpEntitlementProvider {
             emergency_disabled: AtomicBool::new(config.emergency_disabled),
             client,
             cache: Mutex::new(CacheState::default()),
+            metrics,
         })))
     }
 
@@ -184,22 +213,37 @@ impl HttpEntitlementProvider {
         &self,
         workspace_id: Uuid,
         now: DateTime<Utc>,
+        record_outcome: bool,
     ) -> Option<EntitlementGateDecision> {
         let mut cache = self.cache.lock().await;
         cache.touch(workspace_id);
-        let entry = cache.entries.get(&workspace_id)?;
+        let Some(entry) = cache.entries.get(&workspace_id) else {
+            if record_outcome {
+                self.record_cache("miss");
+            }
+            return None;
+        };
         if now < entry.fresh_until {
+            if record_outcome {
+                self.record_cache("hit");
+            }
             return Some(entry.decision.clone());
         }
         if entry
             .retry_after
             .is_some_and(|retry_after| now < retry_after)
         {
+            if record_outcome {
+                self.record_cache("retry_suppressed");
+            }
             return Some(if now < entry.stale_until {
                 Self::stale(entry.decision.clone())
             } else {
                 Self::off()
             });
+        }
+        if record_outcome {
+            self.record_cache("expired");
         }
         None
     }
@@ -251,18 +295,20 @@ impl HttpEntitlementProvider {
         &self,
         workspace_id: Uuid,
         fetched: FetchedPolicy,
-    ) -> Result<EntitlementGateDecision, ()> {
+    ) -> Result<EntitlementGateDecision, StorePolicyError> {
         let now = Utc::now();
         let ttl = chrono::Duration::seconds(fetched.valid_for_seconds);
-        let stale_grace = chrono::Duration::from_std(self.stale_grace).map_err(|_| ())?;
+        let stale_grace = chrono::Duration::from_std(self.stale_grace)
+            .map_err(|_| StorePolicyError::InvalidStaleGrace)?;
         let mut cache = self.cache.lock().await;
         if let Some(current) = cache.entries.get(&workspace_id) {
-            if now < current.stale_until
-                && (fetched.decision.policy_revision < current.decision.policy_revision
-                    || fetched.decision.subscription_version
-                        < current.decision.subscription_version)
-            {
-                return Err(());
+            if now < current.stale_until {
+                if fetched.decision.policy_revision < current.decision.policy_revision {
+                    return Err(StorePolicyError::Version(PolicyRegression::Policy));
+                }
+                if fetched.decision.subscription_version < current.decision.subscription_version {
+                    return Err(StorePolicyError::Version(PolicyRegression::Subscription));
+                }
             }
         }
         cache.evict_lru_if_full(workspace_id, MAX_CACHE_ENTRIES);
@@ -279,6 +325,18 @@ impl HttpEntitlementProvider {
             },
         );
         Ok(decision)
+    }
+
+    fn record_cache(&self, outcome: &str) {
+        if let Some(metrics) = self.metrics.as_deref() {
+            metrics.record_entitlement_cache(outcome);
+        }
+    }
+
+    fn record_refresh(&self, outcome: &str, started: Instant) {
+        if let Some(metrics) = self.metrics.as_deref() {
+            metrics.record_entitlement_refresh(outcome, started.elapsed().as_secs_f64());
+        }
     }
 
     async fn fetch(&self, workspace_id: Uuid) -> Result<FetchedPolicy, ()> {
@@ -331,24 +389,38 @@ impl EntitlementProvider for HttpEntitlementProvider {
             return Self::off();
         }
         let now = Utc::now();
-        if let Some(decision) = self.cached_decision(workspace_id, now).await {
+        if let Some(decision) = self.cached_decision(workspace_id, now, true).await {
             return decision;
         }
 
         let refresh_lock = self.refresh_lock(workspace_id).await;
         let _guard = refresh_lock.lock().await;
-        if let Some(decision) = self.cached_decision(workspace_id, Utc::now()).await {
+        if let Some(decision) = self.cached_decision(workspace_id, Utc::now(), false).await {
             return decision;
         }
+        let started = Instant::now();
         match self.fetch(workspace_id).await {
             Ok(policy) => match self.store_policy(workspace_id, policy).await {
-                Ok(decision) => decision,
-                Err(()) => {
+                Ok(decision) => {
+                    self.record_refresh("ok", started);
+                    decision
+                }
+                Err(error) => {
+                    let outcome = if let StorePolicyError::Version(regression) = error {
+                        if let Some(metrics) = self.metrics.as_deref() {
+                            metrics.record_entitlement_version_regression(regression.source());
+                        }
+                        "version_regression"
+                    } else {
+                        "error"
+                    };
+                    self.record_refresh(outcome, started);
                     self.mark_failure(workspace_id).await;
                     self.failure_decision(workspace_id).await
                 }
             },
             Err(()) => {
+                self.record_refresh("error", started);
                 self.mark_failure(workspace_id).await;
                 self.failure_decision(workspace_id).await
             }
