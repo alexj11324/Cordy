@@ -35,6 +35,7 @@ pub mod manager;
 pub mod poisoned;
 pub mod production_stack;
 pub mod reconcile;
+pub mod runtime_registry;
 pub mod runtime_set;
 pub mod task_execution;
 pub mod thread_name;
