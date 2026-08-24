@@ -166,6 +166,39 @@ enum AgentCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
         output: OutputFormat,
     },
+    #[command(about = "Manage agent skill assignments")]
+    Skills(AgentSkillsArgs),
+}
+
+#[derive(Debug, Args)]
+struct AgentSkillsArgs {
+    #[command(subcommand)]
+    command: AgentSkillsCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum AgentSkillsCommand {
+    #[command(about = "List skills assigned to an agent")]
+    List {
+        #[arg(value_name = "AGENT-ID")]
+        agent_id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
+    #[command(about = "Set skills for an agent (replaces all current assignments)")]
+    Set(AgentSkillsMutationArgs),
+    #[command(about = "Add skills to an agent without replacing existing assignments")]
+    Add(AgentSkillsMutationArgs),
+}
+
+#[derive(Debug, Args)]
+struct AgentSkillsMutationArgs {
+    #[arg(value_name = "AGENT-ID")]
+    agent_id: String,
+    #[arg(long, action = clap::ArgAction::Append, value_delimiter = ',', help = "Skill IDs to assign (comma-separated)")]
+    skill_ids: Option<Vec<String>>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -1860,6 +1893,24 @@ async fn run_with_input<R: Read>(
         Command::Agent(AgentArgs {
             command: AgentCommand::Avatar { id, file, output },
         }) => run_agent_avatar(cli, environment, id, file.as_deref(), *output).await,
+        Command::Agent(AgentArgs {
+            command:
+                AgentCommand::Skills(AgentSkillsArgs {
+                    command: AgentSkillsCommand::List { agent_id, output },
+                }),
+        }) => run_agent_skills_list(cli, environment, agent_id, *output).await,
+        Command::Agent(AgentArgs {
+            command:
+                AgentCommand::Skills(AgentSkillsArgs {
+                    command: AgentSkillsCommand::Set(args),
+                }),
+        }) => run_agent_skills_mutation(cli, environment, args, false).await,
+        Command::Agent(AgentArgs {
+            command:
+                AgentCommand::Skills(AgentSkillsArgs {
+                    command: AgentSkillsCommand::Add(args),
+                }),
+        }) => run_agent_skills_mutation(cli, environment, args, true).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -2657,6 +2708,92 @@ async fn run_agent_avatar(
         stdout,
         stderr: String::new(),
     })
+}
+
+async fn run_agent_skills_list(
+    cli: &Cli,
+    environment: &Environment,
+    agent_id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let skills: Vec<Value> = client
+        .get_json(&format!("/api/agents/{agent_id}/skills"))
+        .await
+        .context("list agent skills")?;
+    Ok(RunOutput {
+        stdout: format_agent_skills(&skills, output, None)?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_agent_skills_mutation(
+    cli: &Cli,
+    environment: &Environment,
+    args: &AgentSkillsMutationArgs,
+    additive: bool,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let supplied = args.skill_ids.as_ref().with_context(|| {
+        if additive {
+            "--skill-ids is required (comma-separated skill IDs)"
+        } else {
+            "--skill-ids is required (comma-separated skill IDs; use --skill-ids '' to clear all)"
+        }
+    })?;
+    let skill_ids = supplied
+        .iter()
+        .map(|id| id.trim())
+        .filter(|id| !id.is_empty())
+        .collect::<Vec<_>>();
+    if additive && skill_ids.is_empty() {
+        bail!("--skill-ids must include at least one skill ID");
+    }
+    let path = if additive {
+        format!("/api/agents/{}/skills/add", args.agent_id)
+    } else {
+        format!("/api/agents/{}/skills", args.agent_id)
+    };
+    let body = serde_json::json!({"skill_ids":skill_ids});
+    let skills: Vec<Value> = if additive {
+        client
+            .post_json(&path, &body)
+            .await
+            .context("add agent skills")?
+    } else {
+        client
+            .put_json(&path, &body)
+            .await
+            .context("set agent skills")?
+    };
+    Ok(RunOutput {
+        stdout: format_agent_skills(&skills, args.output, Some(&args.agent_id))?,
+        stderr: String::new(),
+    })
+}
+
+fn format_agent_skills(
+    skills: &[Value],
+    output: OutputFormat,
+    empty_agent_id: Option<&str>,
+) -> Result<String> {
+    if output == OutputFormat::Json {
+        return Ok(format!("{}\n", serde_json::to_string_pretty(skills)?));
+    }
+    if skills.is_empty() {
+        if let Some(agent_id) = empty_agent_id {
+            return Ok(format!("No skills assigned to agent {agent_id}\n"));
+        }
+    }
+    let mut rows = vec![vec!["ID".into(), "NAME".into(), "DESCRIPTION".into()]];
+    rows.extend(skills.iter().map(|skill| {
+        vec![
+            value_string(skill, "id"),
+            value_string(skill, "name"),
+            value_string(skill, "description"),
+        ]
+    }));
+    Ok(format_table(&rows))
 }
 
 fn apply_agent_permission_args(
@@ -10970,6 +11107,113 @@ mod tests {
                 .await
                 .expect_err("avatar validation");
             assert!(error.to_string().contains(message), "{error:#}");
+        }
+    }
+
+    #[tokio::test]
+    async fn agent_skills_list_set_and_add_match_go_contract() {
+        let app = Router::new()
+            .route(
+                "/api/agents/agent-1/skills",
+                get(|| async {
+                    Json(vec![serde_json::json!({
+                        "id":"skill-1","name":"Review","description":"Reviews code"
+                    })])
+                })
+                .put(|Json(body): Json<Value>| async move {
+                    assert_eq!(body, serde_json::json!({"skill_ids":[]}));
+                    Json(Vec::<Value>::new())
+                }),
+            )
+            .route(
+                "/api/agents/agent-1/skills/add",
+                post(|Json(body): Json<Value>| async move {
+                    assert_eq!(body, serde_json::json!({"skill_ids":["skill-1","skill-2"]}));
+                    Json(vec![serde_json::json!({
+                        "id":"skill-1","name":"Review","description":"Reviews code",
+                        "server_only":"preserved"
+                    })])
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let list = Cli::try_parse_from(["cordy", "agent", "skills", "list", "agent-1"])
+            .expect("agent skills list CLI");
+        let listed = run_with_input(&list, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list skills");
+        assert!(listed.stdout.starts_with("ID"));
+        assert!(listed.stdout.contains("Reviews code"));
+
+        let set = Cli::try_parse_from([
+            "cordy",
+            "agent",
+            "skills",
+            "set",
+            "agent-1",
+            "--skill-ids",
+            "",
+            "--output",
+            "table",
+        ])
+        .expect("agent skills clear CLI");
+        let cleared = run_with_input(&set, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("clear skills");
+        assert_eq!(cleared.stdout, "No skills assigned to agent agent-1\n");
+
+        let add = Cli::try_parse_from([
+            "cordy",
+            "agent",
+            "skills",
+            "add",
+            "agent-1",
+            "--skill-ids",
+            " skill-1,skill-2 ",
+        ])
+        .expect("agent skills add CLI");
+        let added = run_with_input(&add, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("add skills");
+        assert_eq!(
+            serde_json::from_str::<Value>(&added.stdout).expect("JSON")[0]["server_only"],
+            "preserved"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn agent_skills_mutations_enforce_go_skill_id_requirements() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "http://127.0.0.1:9");
+        environment.set("CORDY_TOKEN", "token-1");
+        for (command, skill_ids, expected) in [
+            ("set", None, "--skill-ids is required"),
+            ("add", None, "--skill-ids is required"),
+            (
+                "add",
+                Some(" , "),
+                "--skill-ids must include at least one skill ID",
+            ),
+        ] {
+            let mut argv = vec!["cordy", "agent", "skills", command, "agent-1"];
+            if let Some(skill_ids) = skill_ids {
+                argv.extend(["--skill-ids", skill_ids]);
+            }
+            let cli = Cli::try_parse_from(argv).expect("agent skills mutation CLI");
+            let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .await
+                .expect_err("skill IDs required");
+            assert!(error.to_string().contains(expected), "{error:#}");
         }
     }
 
