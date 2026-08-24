@@ -28,6 +28,7 @@ struct ProductionApp {
         Option<cordy_handler::ordered_event_side_effects::OrderedEventSideEffectsRuntime>,
     autopilot_event_listeners:
         Option<cordy_handler::autopilot_listeners::AutopilotEventListenersRuntime>,
+    task_side_effects: Option<cordy_service::task_service::TaskSideEffectRuntime>,
 }
 
 struct VcsWebhookConfig {
@@ -279,6 +280,9 @@ async fn build_production_router(
     );
     let state = state.with_heartbeat_scheduler(heartbeat_scheduler.clone());
     let (state, webhook_worker) = state.prepare_webhook_delivery_worker();
+    let task_side_effects = state
+        .tasks
+        .start_side_effect_runtime(root_cancel.child_token());
     let heartbeat_scheduler = heartbeat_scheduler.start(root_cancel.child_token());
     let configured_reconnect_grace = duration_env(
         "CORDY_RUNTIME_RECONNECT_GRACE",
@@ -366,6 +370,7 @@ async fn build_production_router(
         github_snapshots,
         ordered_event_side_effects,
         autopilot_event_listeners,
+        task_side_effects,
     })
 }
 
@@ -560,6 +565,7 @@ async fn main() -> anyhow::Result<()> {
         github_snapshots,
         ordered_event_side_effects,
         autopilot_event_listeners,
+        task_side_effects,
     } = app;
     let serve_result = axum::serve(
         listener,
@@ -592,6 +598,14 @@ async fn main() -> anyhow::Result<()> {
         runtime_sweeper.shutdown(),
         shutdown_github_snapshots(github_snapshots),
     );
+    let task_side_effects_shutdown = match task_side_effects {
+        Some(runtime) => Some(
+            runtime
+                .shutdown(cordy_service::task_service::DEFAULT_SIDE_EFFECT_SHUTDOWN_TIMEOUT)
+                .await,
+        ),
+        None => None,
+    };
     let autopilot_event_listeners_shutdown =
         shutdown_autopilot_event_listeners(autopilot_event_listeners).await;
     // Subscriber/activity/notification work consumes events from every
@@ -704,6 +718,15 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(cordy_handler::autopilot_listeners::AutopilotEventShutdownOutcome::Stopped) | None => {
         }
+    }
+    match task_side_effects_shutdown {
+        Some(cordy_service::task_service::TaskSideEffectShutdownOutcome::TimedOut) => {
+            tracing::warn!("task side effects exceeded shutdown deadline and were aborted");
+        }
+        Some(cordy_service::task_service::TaskSideEffectShutdownOutcome::Panicked) => {
+            tracing::error!("task side-effect worker panicked during shutdown");
+        }
+        Some(cordy_service::task_service::TaskSideEffectShutdownOutcome::Stopped) | None => {}
     }
     serve_result?;
     Ok(())

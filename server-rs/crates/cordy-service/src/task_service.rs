@@ -6,7 +6,8 @@
 //! (Slice4).
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::future::Future;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -274,6 +275,7 @@ pub struct TaskService {
     /// process-wide ceiling. Zero values are usable.
     pub(crate) quick_actions_in_flight: Mutex<HashMap<Uuid, ()>>,
     pub(crate) quick_actions_running: AtomicI64,
+    side_effect_tasks: Arc<TaskSideEffectTasks>,
 
     /// LRU-ish analytics context cache keyed by task identity columns.
     analytics_context: Mutex<AnalyticsContextCache>,
@@ -315,8 +317,20 @@ impl TaskService {
             quick_actions: None,
             quick_actions_in_flight: Mutex::new(HashMap::new()),
             quick_actions_running: AtomicI64::new(0),
+            side_effect_tasks: Arc::new(TaskSideEffectTasks::new()),
             analytics_context: Mutex::new(AnalyticsContextCache::default()),
         }
+    }
+
+    pub fn start_side_effect_runtime(
+        self: &Arc<Self>,
+        parent: tokio_util::sync::CancellationToken,
+    ) -> Option<TaskSideEffectRuntime> {
+        self.side_effect_tasks.start(parent)
+    }
+
+    pub(crate) fn spawn_side_effect(&self, task: impl Future<Output = ()> + Send + 'static) {
+        self.side_effect_tasks.spawn(task);
     }
 
     // --- Trigger summary ---------------------------------------------------
@@ -994,6 +1008,115 @@ impl TaskService {
         if in_flight.remove(&session_id).is_some() {
             self.quick_actions_running.fetch_sub(1, Ordering::SeqCst);
         }
+    }
+}
+
+pub const DEFAULT_SIDE_EFFECT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
+
+struct TaskSideEffectTasks {
+    cancel: tokio_util::sync::CancellationToken,
+    started: AtomicBool,
+    accepting_tasks: AtomicBool,
+    tasks: Mutex<tokio::task::JoinSet<()>>,
+}
+
+impl TaskSideEffectTasks {
+    fn new() -> Self {
+        Self {
+            cancel: tokio_util::sync::CancellationToken::new(),
+            started: AtomicBool::new(false),
+            accepting_tasks: AtomicBool::new(true),
+            tasks: Mutex::new(tokio::task::JoinSet::new()),
+        }
+    }
+
+    fn start(
+        self: &Arc<Self>,
+        parent: tokio_util::sync::CancellationToken,
+    ) -> Option<TaskSideEffectRuntime> {
+        if self.started.swap(true, Ordering::AcqRel) {
+            return None;
+        }
+        let tasks = self.clone();
+        self.spawn(async move {
+            tokio::select! {
+                _ = parent.cancelled() => {}
+                _ = tasks.cancel.cancelled() => {}
+            }
+            tasks.cancel.cancel();
+        });
+        Some(TaskSideEffectRuntime {
+            tasks: self.clone(),
+        })
+    }
+
+    fn spawn(&self, task: impl Future<Output = ()> + Send + 'static) {
+        let mut tasks = self
+            .tasks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        while let Some(result) = tasks.try_join_next() {
+            if let Err(error) = result {
+                tracing::error!(%error, "task side-effect worker panicked");
+            }
+        }
+        if self.accepting_tasks.load(Ordering::Acquire) {
+            tasks.spawn(task);
+        }
+    }
+
+    fn stop_accepting(&self) -> tokio::task::JoinSet<()> {
+        let mut tasks = self
+            .tasks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.accepting_tasks.store(false, Ordering::Release);
+        std::mem::take(&mut *tasks)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskSideEffectShutdownOutcome {
+    Stopped,
+    Panicked,
+    TimedOut,
+}
+
+pub struct TaskSideEffectRuntime {
+    tasks: Arc<TaskSideEffectTasks>,
+}
+
+impl TaskSideEffectRuntime {
+    pub async fn shutdown(self, timeout: Duration) -> TaskSideEffectShutdownOutcome {
+        self.tasks.cancel.cancel();
+        let mut tasks = self.tasks.stop_accepting();
+        let mut panicked = false;
+        let joined = tokio::time::timeout(timeout, async {
+            while let Some(result) = tasks.join_next().await {
+                if result.is_err() {
+                    panicked = true;
+                }
+            }
+        })
+        .await;
+        if joined.is_err() {
+            tasks.abort_all();
+            while tasks.join_next().await.is_some() {}
+            return TaskSideEffectShutdownOutcome::TimedOut;
+        }
+        if panicked {
+            TaskSideEffectShutdownOutcome::Panicked
+        } else {
+            TaskSideEffectShutdownOutcome::Stopped
+        }
+    }
+}
+
+impl Drop for TaskSideEffectRuntime {
+    fn drop(&mut self) {
+        self.tasks.cancel.cancel();
+        let mut tasks = self.tasks.stop_accepting();
+        tasks.abort_all();
     }
 }
 
@@ -4474,5 +4597,29 @@ mod tests {
 
         svc.release_quick_actions_pass(session);
         assert!(svc.try_admit_quick_actions_pass(third, 2));
+    }
+
+    #[tokio::test]
+    async fn task_side_effect_runtime_is_owned_and_idempotent() {
+        let pool =
+            sqlx::PgPool::connect_lazy("postgres://invalid.invalid/nope").expect("lazy pool");
+        let svc = Arc::new(TaskService::new(pool, Arc::new(cordy_events::Bus::new())));
+        let root = tokio_util::sync::CancellationToken::new();
+        let runtime = svc
+            .start_side_effect_runtime(root.child_token())
+            .expect("first start owns runtime");
+        assert!(svc.start_side_effect_runtime(root.child_token()).is_none());
+        let completed = Arc::new(AtomicBool::new(false));
+        let task_completed = completed.clone();
+        svc.spawn_side_effect(async move {
+            task_completed.store(true, Ordering::Release);
+        });
+
+        root.cancel();
+        assert_eq!(
+            runtime.shutdown(Duration::from_secs(1)).await,
+            TaskSideEffectShutdownOutcome::Stopped
+        );
+        assert!(completed.load(Ordering::Acquire));
     }
 }
