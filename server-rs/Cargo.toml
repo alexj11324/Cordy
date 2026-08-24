@@ -18,6 +18,7 @@ members = [
     "crates/cordy-metrics",
     "crates/cordy-protocol",
     "crates/cordy-realtime",
+    "crates/cordy-redis",
     "crates/cordy-scheduler",
     "crates/cordy-service",
     "crates/cordy-slack",
@@ -55,7 +56,7 @@ sqlx = { version = "0.8", features = [
     "migrate",
     "ipnetwork",
 ] }
-redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
+redis = { version = "0.27", features = ["tokio-rustls-comp", "connection-manager"] }
 # serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -74,12 +75,17 @@ chrono = { version = "0.4", features = ["serde"] }
 # crypto & tokens
 rand = "0.8"
 sha2 = "0.10"
+sha1 = { version = "0.10", features = ["oid"] }
 hex = "0.4"
 hmac = "0.12"
+crc32fast = "1"
+rsa = { version = "0.9", features = ["pem"] }
 jsonwebtoken = "9"
 # async traits & lifecycle
 async-trait = "0.1"
 tokio-util = "0.7"
+aws-config = { version = "1", default-features = false, features = ["legacy-client", "rt-tokio"] }
+aws-credential-types = "1"
 ulid = "1"
 chrono-tz = "0.9"
 regex = "1"

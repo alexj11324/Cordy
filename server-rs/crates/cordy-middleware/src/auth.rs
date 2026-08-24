@@ -26,18 +26,57 @@ use cordy_auth::cookie::{verify_csrf_signature, AUTH_COOKIE_NAME};
 use cordy_auth::disabled_users::{is_temporarily_disabled_user, TEMPORARILY_DISABLED_USER_ERROR};
 use cordy_auth::jwt::{hash_token, jwt_secret};
 use cordy_auth::pat_cache::{ttl_for_expiry, PatCache};
+use cordy_db::queries::user;
 use cordy_db::queries::{personal_access_token, task_token};
-
-/// Cloud node PAT prefix (`auth.CloudPATPrefix`). The full Cloud Fleet
-/// verifier lands with the integrations port; until then mcn_ tokens fail
-/// closed exactly as Go does when CORDY_CLOUD_FLEET_URL is unset.
-const CLOUD_PAT_PREFIX: &str = "mcn_";
+use tokio_util::sync::CancellationToken;
+use uuid::Uuid;
 
 #[derive(Clone)]
 pub struct AuthState {
     pub pool: sqlx::PgPool,
     pub pat_cache: PatCache,
+    pub cloud_pat_verifier: Option<cordy_auth::cloud_pat::CloudPatVerifier>,
     pub side_effects: Arc<dyn AuthSideEffectSpawner>,
+}
+
+pub(crate) enum CloudAuthError {
+    Invalid,
+    Unavailable,
+}
+
+pub(crate) async fn verify_cloud_pat(
+    pool: &sqlx::PgPool,
+    verifier: Option<&cordy_auth::cloud_pat::CloudPatVerifier>,
+    token: &str,
+) -> Result<String, CloudAuthError> {
+    let Some(verifier) = verifier else {
+        return Err(CloudAuthError::Invalid);
+    };
+    let cancel = CancellationToken::new();
+    let verified = verifier
+        .verify(token, &cancel)
+        .await
+        .map_err(|error| match error {
+            cordy_auth::cloud_pat::CloudPatError::Invalid => CloudAuthError::Invalid,
+            cordy_auth::cloud_pat::CloudPatError::Unavailable => CloudAuthError::Unavailable,
+        })?;
+    if !verified.owner_already_validated {
+        let owner_id =
+            Uuid::parse_str(&verified.identity.owner_id).map_err(|_| CloudAuthError::Invalid)?;
+        match user::get_user(pool, owner_id).await {
+            Ok(Some(_)) => {
+                verifier
+                    .cache_validated(token, &verified.identity, &cancel)
+                    .await
+            }
+            Ok(None) => return Err(CloudAuthError::Invalid),
+            Err(error) => {
+                tracing::warn!(%error, "cloud PAT owner lookup failed");
+                return Err(CloudAuthError::Unavailable);
+            }
+        }
+    }
+    Ok(verified.identity.owner_id)
 }
 
 pub type AuthSideEffect = Pin<Box<dyn Future<Output = ()> + Send + 'static>>;
@@ -205,12 +244,36 @@ pub async fn auth_middleware(
     // the verifier is unconfigured we reject at this branch rather than
     // treating the token as a JWT/PAT — failing closed avoids a
     // misconfigured prod silently downgrading auth.
-    if token.starts_with(CLOUD_PAT_PREFIX) {
-        tracing::warn!(
-            path = ?req.uri().path(),
-            "auth: mcn_ token presented but cloud verifier not configured"
-        );
-        return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+    if token.starts_with(cordy_auth::cloud_pat::CLOUD_PAT_PREFIX) {
+        let owner_id = match verify_cloud_pat(
+            &state.pool,
+            state.cloud_pat_verifier.as_ref(),
+            &token,
+        )
+        .await
+        {
+            Ok(owner_id) => owner_id,
+            Err(CloudAuthError::Invalid) => {
+                tracing::warn!(path = ?req.uri().path(), "auth: cloud PAT rejected");
+                return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+            }
+            Err(CloudAuthError::Unavailable) => {
+                tracing::warn!(path = ?req.uri().path(), "auth: cloud PAT verifier unavailable");
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    r#"{"error":"cloud pat verifier unavailable"}"#,
+                ));
+            }
+        };
+        if reject_disabled(&owner_id, "", "cloud_pat") {
+            return Err(err_response(
+                StatusCode::FORBIDDEN,
+                TEMPORARILY_DISABLED_USER_ERROR,
+            ));
+        }
+        set_header(&mut req, "x-user-id", &owner_id);
+        set_header(&mut req, "x-actor-source", "cloud_pat");
+        return Ok(next.run(req).await);
     }
 
     // PAT: tokens starting with "mul_".
