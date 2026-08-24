@@ -22,7 +22,7 @@ async fn install_pending_stores(
     redis_url: Option<&str>,
 ) -> cordy_handler::HandlerState {
     let Some(redis_url) = redis_url.map(str::trim).filter(|url| !url.is_empty()) else {
-        return state;
+        return state.with_in_memory_pending_stores();
     };
     let client = match redis::Client::open(redis_url) {
         Ok(client) => client,
@@ -308,6 +308,21 @@ mod tests {
         assert!(state.model_list_store.is_none());
         assert!(state.local_skill_list_store.is_none());
         assert!(state.local_skill_import_store.is_none());
+    }
+
+    #[tokio::test]
+    async fn redis_free_configuration_installs_in_memory_pending_stores() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = cordy_handler::HandlerState::new(
+            pool,
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let state = install_pending_stores(state, None).await;
+        assert!(state.update_store.is_some());
+        assert!(state.model_list_store.is_some());
+        assert!(state.local_skill_list_store.is_some());
+        assert!(state.local_skill_import_store.is_some());
     }
 
     #[tokio::test]

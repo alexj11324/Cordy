@@ -251,15 +251,15 @@ pub struct HandlerState {
     /// Boot-time bearer token for `/health/realtime`. Empty enables the
     /// direct-loopback-only development policy.
     pub realtime_metrics_token: String,
-    /// Redis-backed pending request stores (update / model list / local
-    /// skills). `None` matches Go's nil-store path: every probe reports an
-    /// empty queue and report endpoints answer 404, which daemons treat as a
-    /// dropped one-shot report.
-    pub update_store: Option<Arc<crate::pending_store::UpdateStore>>,
-    pub model_list_store: Option<Arc<crate::pending_store::ModelListStore>>,
+    /// Pending request stores (update / model list / local skills). Production
+    /// uses Redis when configured and process-local stores for single-node
+    /// deployments that intentionally omit Redis.
+    pub update_store: Option<Arc<dyn crate::pending_store::UpdateStoreBackend>>,
+    pub model_list_store: Option<Arc<dyn crate::pending_store::ModelListStoreBackend>>,
     pub model_catalog_cache: Option<Arc<crate::pending_store::ModelCatalogCache>>,
-    pub local_skill_list_store: Option<Arc<crate::pending_store::LocalSkillListStore>>,
-    pub local_skill_import_store: Option<Arc<crate::pending_store::LocalSkillImportStore>>,
+    pub local_skill_list_store: Option<Arc<dyn crate::pending_store::LocalSkillListStoreBackend>>,
+    pub local_skill_import_store:
+        Option<Arc<dyn crate::pending_store::LocalSkillImportStoreBackend>>,
     /// Shared Redis connection for per-IP public-route rate limiting. None is
     /// the Go nil-client path and deliberately fails open.
     pub rate_limit_client: Option<redis::Client>,
@@ -418,9 +418,7 @@ impl HandlerState {
     }
 
     /// Builds the pending-request stores from a Redis client (Go
-    /// NewRedis{Update,ModelList,LocalSkill*}Store wiring). Callers without
-    /// Redis keep `None` fields — the disabled path degrades exactly like Go's
-    /// nil-store behavior.
+    /// NewRedis{Update,ModelList,LocalSkill*}Store wiring).
     pub async fn with_redis(mut self, client: redis::Client) -> Result<Self, redis::RedisError> {
         let conn = client.get_connection_manager().await?;
         self.update_store = Some(Arc::new(crate::pending_store::UpdateStore::new(
@@ -439,6 +437,21 @@ impl HandlerState {
             crate::pending_store::LocalSkillImportStore::new(conn.clone()),
         ));
         Ok(self)
+    }
+
+    /// Installs the Go-compatible single-node pending-request lifecycle when
+    /// Redis is intentionally absent. These stores are process-local by
+    /// design; configured Redis failures still fail closed at startup.
+    pub fn with_in_memory_pending_stores(mut self) -> Self {
+        self.update_store = Some(Arc::new(crate::pending_store::InMemoryUpdateStore::new()));
+        self.model_list_store = Some(Arc::new(crate::pending_store::InMemoryModelListStore::new()));
+        self.local_skill_list_store = Some(Arc::new(
+            crate::pending_store::InMemoryLocalSkillListStore::new(),
+        ));
+        self.local_skill_import_store = Some(Arc::new(
+            crate::pending_store::InMemoryLocalSkillImportStore::new(),
+        ));
+        self
     }
 
     /// Wires only public-route rate limiting. Kept separate from `with_redis`

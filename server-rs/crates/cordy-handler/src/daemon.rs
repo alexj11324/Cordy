@@ -3605,7 +3605,7 @@ async fn report_local_skill_import_result(
     let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("");
 
     async fn fail_import(
-        store: &crate::pending_store::LocalSkillImportStore,
+        store: &dyn crate::pending_store::LocalSkillImportStoreBackend,
         request_id: &str,
         fail_msg: &str,
     ) -> Response {
