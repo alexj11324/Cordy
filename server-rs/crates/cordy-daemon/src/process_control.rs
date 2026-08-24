@@ -9,14 +9,17 @@ use std::fs;
 use std::io::{Read, Seek};
 use std::path::PathBuf;
 use std::process::{Child, ExitStatus, Stdio};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
 
 use crate::bootstrap::{open_bounded_crash_log, ProfileStatePaths};
+use crate::client::{request_status_code, Client};
 use crate::control_client::{
     DaemonHealthSnapshot, LocalDaemonControl, LocalDaemonHealth, LocalDaemonProbe,
 };
+use crate::repocache::Ctx;
 use crate::update_executor::{
     is_access_denied_spawn_error, restart_command, restart_command_after_access_denied,
 };
@@ -156,6 +159,41 @@ pub trait DaemonStartPreflight: Send + Sync {
     async fn check(&self) -> anyhow::Result<()>;
 }
 
+/// Real profile authentication checks shared by CLI start and restart. It
+/// owns no token copy: the secret remains inside [`Client`]'s guarded state.
+pub struct AuthenticatedLaunchPreflight {
+    client: Arc<Client>,
+    profile: String,
+}
+
+impl AuthenticatedLaunchPreflight {
+    pub fn new(client: Arc<Client>, profile: impl Into<String>) -> Self {
+        Self {
+            client,
+            profile: profile.into(),
+        }
+    }
+
+    fn require_token(&self) -> anyhow::Result<()> {
+        if self.client.token().is_empty() {
+            let hint = if self.profile.is_empty() {
+                "cordy login".to_string()
+            } else {
+                format!("cordy login --profile {}", self.profile)
+            };
+            anyhow::bail!("you are not logged in; run '{hint}' first")
+        }
+        Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl DaemonStartPreflight for AuthenticatedLaunchPreflight {
+    async fn check(&self) -> anyhow::Result<()> {
+        self.require_token()
+    }
+}
+
 pub struct DaemonStartRequest {
     pub launch: BackgroundLaunchOptions,
     pub port: u16,
@@ -212,6 +250,23 @@ where
 #[async_trait::async_trait]
 pub trait DaemonRestartPreflight: Send + Sync {
     async fn check(&self) -> anyhow::Result<()>;
+}
+
+#[async_trait::async_trait]
+impl DaemonRestartPreflight for AuthenticatedLaunchPreflight {
+    async fn check(&self) -> anyhow::Result<()> {
+        self.require_token()?;
+        let ctx = Ctx::new();
+        self.client.preflight_identity(&ctx).await.map_err(|error| {
+            match request_status_code(&error) {
+                Some(401) => error.context(
+                    "the server rejected the stored login token; sign in again before restarting",
+                ),
+                Some(_) => error.context("authenticated daemon restart preflight failed"),
+                None => error.context("cannot reach the server for daemon restart preflight"),
+            }
+        })
+    }
 }
 
 pub struct DaemonRestartRequest {
@@ -834,5 +889,19 @@ mod tests {
             }
             DaemonStartOutcome::Launch(_) => panic!("existing daemon unexpectedly spawned child"),
         }
+    }
+
+    #[tokio::test]
+    async fn authenticated_preflight_rejects_missing_token_before_network() {
+        let client = Arc::new(Client::new("http://127.0.0.1:1"));
+        let preflight = AuthenticatedLaunchPreflight::new(client, "staging");
+        let start_error = DaemonStartPreflight::check(&preflight).await.unwrap_err();
+        assert!(start_error
+            .to_string()
+            .contains("cordy login --profile staging"));
+        let restart_error = DaemonRestartPreflight::check(&preflight).await.unwrap_err();
+        assert!(restart_error
+            .to_string()
+            .contains("cordy login --profile staging"));
     }
 }

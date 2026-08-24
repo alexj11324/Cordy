@@ -1066,6 +1066,17 @@ impl Client {
             .await
     }
 
+    /// Authenticated identity probe used by CLI restart preflight before a
+    /// healthy daemon is stopped. The response body is intentionally ignored;
+    /// a successful authenticated decode is the only required evidence.
+    pub(crate) async fn preflight_identity(
+        &self,
+        ctx: &crate::repocache::Ctx,
+    ) -> anyhow::Result<()> {
+        let _: Value = self.get_json(ctx, "/api/me").await?;
+        Ok(())
+    }
+
     /// `ListWorkspaces` (client.go:611): minimal workspace membership set.
     /// First 404 permanently switches this client process to the legacy full-
     /// workspace endpoint for compatibility with older servers.
