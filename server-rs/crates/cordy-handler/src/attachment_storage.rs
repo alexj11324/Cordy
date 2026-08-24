@@ -538,6 +538,19 @@ fn s3_http_client() -> anyhow::Result<reqwest::Client> {
     Ok(builder.build()?)
 }
 
+fn validate_s3_endpoint(endpoint: &Url) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        matches!(endpoint.scheme(), "http" | "https")
+            && endpoint.host_str().is_some()
+            && endpoint.username().is_empty()
+            && endpoint.password().is_none()
+            && endpoint.query().is_none()
+            && endpoint.fragment().is_none(),
+        "AWS_ENDPOINT_URL must be an HTTP(S) URL without credentials, a query, or a fragment"
+    );
+    Ok(())
+}
+
 impl S3Storage {
     pub async fn from_env() -> anyhow::Result<Option<Self>> {
         let Some(bucket) = env("S3_BUCKET") else {
@@ -556,14 +569,7 @@ impl S3Storage {
                 .as_deref()
                 .unwrap_or(&format!("https://s3.{region}.amazonaws.com")),
         )?;
-        anyhow::ensure!(
-            matches!(endpoint.scheme(), "http" | "https")
-                && endpoint.host_str().is_some()
-                && endpoint.username().is_empty()
-                && endpoint.password().is_none()
-                && endpoint.fragment().is_none(),
-            "AWS_ENDPOINT_URL must be an HTTP(S) origin without credentials or a fragment"
-        );
+        validate_s3_endpoint(&endpoint)?;
         let path_style = s3_use_path_style(
             std::env::var("S3_USE_PATH_STYLE").ok().as_deref(),
             custom.is_some(),
@@ -1960,6 +1966,27 @@ mod tests {
         assert!(s3_use_path_style(None, true));
         assert!(s3_use_path_style(Some("invalid"), true));
         assert!(!s3_use_path_style(Some("invalid"), false));
+    }
+
+    #[test]
+    fn s3_endpoint_allows_base_paths_but_rejects_url_credentials_and_queries() {
+        for allowed in [
+            "https://objects.example.test/base/path",
+            "http://127.0.0.1:9000/minio",
+        ] {
+            validate_s3_endpoint(&Url::parse(allowed).unwrap()).unwrap();
+        }
+        for rejected in [
+            "ftp://objects.example.test",
+            "https://user:password@objects.example.test",
+            "https://objects.example.test/base?token=secret",
+            "https://objects.example.test/base#fragment",
+        ] {
+            assert!(
+                validate_s3_endpoint(&Url::parse(rejected).unwrap()).is_err(),
+                "{rejected}"
+            );
+        }
     }
 
     #[test]
