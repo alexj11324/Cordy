@@ -1,7 +1,9 @@
 # Cordy Go→Rust Refactor — Serial Execution TODO
 
-> Owner: the current coordination thread only. No new Codex threads, no delegated
-> PR fixes, and no parallel implementation or Cargo execution.
+> Owner: the current coordination thread only. No new Codex threads or parallel
+> implementation/Cargo execution. Serial subagents may implement or review one
+> bounded fix when explicitly assigned; the coordinator owns ordering, exact-head
+> evidence, gates, TODO transitions, version management, and merges.
 
 ## Operating contract
 
@@ -22,7 +24,7 @@
 
 ## Current baseline (2026-08-24)
 
-- Integration remote: `ef7e3ba9da342ca4deb4bd12d21a3c60a170c713` (after #89 merge).
+- Integration remote: `7ac42ed089895a88b165ca1e83734d37429e9286` (after #114 merge).
 - Current local integration head: `8438d39bc1b28a561f846e83590ef1771a20dc61`.
 - Local-only commits requiring audit/version decision: `cbb0d3aa` through `8438d39b`
   (nine commits, common ancestor `881da969`; local is `9` ahead / `212` behind remote).
@@ -120,7 +122,27 @@
       `.worktrees/cord-22-daemon-production-assembly` has unrelated uncommitted CLI
       edits and must not be reset or used for the gate. Restacked tree has passed
       `git diff --check` and changed-Rust `rustfmt --check`.
-- [ ] #114: restack only after #113 merge; review, gate, expected-head merge.
+- [x] #114 restacked non-rewriting after #113 merge. Final branch head
+      `bcad0a6f335d74dea03c67ce446bfbdc6745e367`, base
+      `0415dd6a2fd62ae6521b7a5fe2a132e7a8ddefbf`, tree
+      `b6e95dea2ee63840e5dc0f6b75e112c9ec48f4ce`, candidate
+      `617d8b9d552a85f4b5bb0b10f49df90aafe6df26`; PR was Ready/CLEAN/MERGEABLE.
+      Serial internal subagent review passed with no P0/P1. Changed-code fixes
+      were delegated serially and preserved as non-rewriting commits:
+      `0b335a66`, `87566011`, `9b9f7f6d`, `03463099`, `3f59666d`, `bcad0a6f`.
+- [x] #114 exact-head gate passed on `bcad0a6f`: daemon/server all-target checks
+      passed; daemon tests `409 passed / 10 failed / 0 ignored`, with all ten
+      failures reproducing pre-existing sandbox/filesystem or socket EPERM
+      conditions; server tests `15 passed / 1 failed / 0 ignored`, with the sole
+      failure being the unchanged black-hole Redis bind blocked by sandbox EPERM.
+      Strict Clippy for `cordy-daemon` and `cordy-server` all targets passed with
+      `-D warnings`; no changed-code lint. Lock was released after confirming no
+      Cargo/rustc process and the worktree was clean.
+- [x] #114 merged with GraphQL `expectedHeadOid=bcad0a6f335d74dea03c67ce446bfbdc6745e367`.
+      Merge `7ac42ed089895a88b165ca1e83734d37429e9286`, parents
+      `0415dd6a2fd62ae6521b7a5fe2a132e7a8ddefbf + bcad0a6f335d74dea03c67ce446bfbdc6745e367`,
+      tree `b6e95dea2ee63840e5dc0f6b75e112c9ec48f4ce`; remote
+      `codex/cord-22-daemon-production-assembly` ref verified at the merge.
 - [ ] #126 → #127 → #128 → #129: process strictly in that order after daemon base moves.
 
 ## Phase 2 — channel/runtime chains
