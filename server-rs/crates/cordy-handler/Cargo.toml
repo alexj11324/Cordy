@@ -14,12 +14,14 @@ chrono = { workspace = true }
 chrono-tz = { workspace = true }
 cordy-analytics = { path = "../cordy-analytics" }
 cordy-auth = { path = "../cordy-auth" }
+cordy-channel = { path = "../cordy-channel" }
 cordy-config = { path = "../cordy-config" }
 cordy-composio = { path = "../cordy-composio" }
 cordy-db = { path = "../cordy-db" }
 cordy-daemon = { path = "../cordy-daemon" }
 cordy-events = { path = "../cordy-events" }
 cordy-ghsnapshot = { path = "../cordy-ghsnapshot" }
+cordy-llm = { path = "../cordy-llm" }
 cordy-middleware = { path = "../cordy-middleware" }
 cordy-metrics = { path = "../cordy-metrics" }
 cordy-plugincontract = { path = "../cordy-plugincontract" }
