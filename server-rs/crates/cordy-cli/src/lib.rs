@@ -1270,6 +1270,64 @@ enum WorkspaceMcpCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
         output: OutputFormat,
     },
+    #[command(about = "Add an MCP server to the workspace library (admin/owner only)")]
+    Add(WorkspaceMcpAddArgs),
+    #[command(about = "Rename or replace a workspace MCP server (admin/owner only)")]
+    Update(WorkspaceMcpUpdateArgs),
+    #[command(about = "Remove an MCP server from the workspace library (admin/owner only)")]
+    Remove {
+        #[arg(value_name = "SERVER-ID")]
+        server_id: String,
+        #[arg(value_name = "WORKSPACE-ID|SLUG|PREFIX")]
+        workspace: Option<String>,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
+}
+
+#[derive(Debug, Args)]
+struct WorkspaceMcpAddArgs {
+    #[arg(value_name = "SERVER-NAME")]
+    server_name: String,
+    #[arg(value_name = "WORKSPACE-ID|SLUG|PREFIX")]
+    workspace: Option<String>,
+    #[arg(long, help = "Server entry as JSON (avoid: lands in shell history)")]
+    server_config: Option<String>,
+    #[arg(long, help = "Read the server entry JSON from stdin")]
+    server_config_stdin: bool,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Read the server entry JSON from a file"
+    )]
+    server_config_file: Option<PathBuf>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct WorkspaceMcpUpdateArgs {
+    #[arg(value_name = "SERVER-ID")]
+    server_id: String,
+    #[arg(value_name = "WORKSPACE-ID|SLUG|PREFIX")]
+    workspace: Option<String>,
+    #[arg(long, help = "New server name")]
+    name: Option<String>,
+    #[arg(
+        long,
+        help = "Replacement server entry as JSON (avoid: lands in shell history)"
+    )]
+    server_config: Option<String>,
+    #[arg(long, help = "Read the replacement server entry JSON from stdin")]
+    server_config_stdin: bool,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Read the replacement server entry JSON from a file"
+    )]
+    server_config_file: Option<PathBuf>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -1697,6 +1755,32 @@ async fn run_with_input<R: Read>(
                     command: WorkspaceMcpCommand::List { workspace, output },
                 }),
         }) => run_workspace_mcp_list(cli, environment, workspace.as_deref(), *output).await,
+        Command::Workspace(WorkspaceArgs {
+            command:
+                WorkspaceCommand::Mcp(WorkspaceMcpArgs {
+                    command: WorkspaceMcpCommand::Add(args),
+                }),
+        }) => run_workspace_mcp_add(cli, environment, args, input).await,
+        Command::Workspace(WorkspaceArgs {
+            command:
+                WorkspaceCommand::Mcp(WorkspaceMcpArgs {
+                    command: WorkspaceMcpCommand::Update(args),
+                }),
+        }) => run_workspace_mcp_update(cli, environment, args, input).await,
+        Command::Workspace(WorkspaceArgs {
+            command:
+                WorkspaceCommand::Mcp(WorkspaceMcpArgs {
+                    command:
+                        WorkspaceMcpCommand::Remove {
+                            server_id,
+                            workspace,
+                            output,
+                        },
+                }),
+        }) => {
+            run_workspace_mcp_remove(cli, environment, server_id, workspace.as_deref(), *output)
+                .await
+        }
         Command::Label(LabelArgs {
             command: LabelCommand::List { output, full_id },
         }) => run_label_list(cli, environment, *output, *full_id).await,
@@ -7996,6 +8080,198 @@ async fn run_workspace_mcp_list(
         .context("list workspace mcp servers")?;
     Ok(RunOutput {
         stdout: format_workspace_mcp_servers(&servers, output)?,
+        stderr: String::new(),
+    })
+}
+
+fn parse_workspace_mcp_server_config(raw: &str) -> Result<Value> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        bail!("--server-config: empty input; pass a JSON object");
+    }
+    let value: Value = serde_json::from_str(raw)
+        .map_err(|_| anyhow::anyhow!("--server-config must be a valid JSON object"))?;
+    match &value {
+        Value::Null => bail!("--server-config must be a JSON object, not null"),
+        Value::Object(_) => Ok(value),
+        _ => bail!("--server-config must be a JSON object"),
+    }
+}
+
+fn resolve_workspace_mcp_server_config<R: Read>(
+    inline: Option<&str>,
+    from_stdin: bool,
+    file: Option<&Path>,
+    environment: &Environment,
+    input: &mut R,
+) -> Result<Option<Value>> {
+    let count = [inline.is_some(), from_stdin, file.is_some()]
+        .into_iter()
+        .filter(|source| *source)
+        .count();
+    if count > 1 {
+        bail!(
+            "--server-config, --server-config-stdin, and --server-config-file are mutually exclusive; pick one"
+        );
+    }
+    let raw = if let Some(inline) = inline {
+        inline.into()
+    } else if from_stdin {
+        let mut bytes = Vec::new();
+        input
+            .read_to_end(&mut bytes)
+            .context("read --server-config-stdin")?;
+        let raw = String::from_utf8_lossy(&bytes).into_owned();
+        if raw.trim().is_empty() {
+            bail!("--server-config-stdin: empty input");
+        }
+        raw
+    } else if let Some(file) = file {
+        if file.as_os_str().is_empty() {
+            bail!("--server-config-file: path must not be empty");
+        }
+        let path = if file.is_absolute() {
+            file.to_path_buf()
+        } else {
+            environment.current_dir().join(file)
+        };
+        let bytes = fs::read(&path).context("read --server-config-file")?;
+        let raw = String::from_utf8_lossy(&bytes).into_owned();
+        if raw.trim().is_empty() {
+            bail!(
+                "--server-config-file {:?}: empty contents",
+                file.to_string_lossy()
+            );
+        }
+        raw
+    } else {
+        return Ok(None);
+    };
+    parse_workspace_mcp_server_config(&raw).map(Some)
+}
+
+async fn run_workspace_mcp_add<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &WorkspaceMcpAddArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let server_name = args.server_name.trim();
+    if server_name.is_empty() {
+        bail!("server name must not be empty");
+    }
+    let workspace_id = resolve_workspace_arg(cli, environment, args.workspace.as_deref()).await?;
+    if workspace_id.is_empty() {
+        bail!(
+            "workspace ID is required: pass an id/slug/prefix as argument or set CORDY_WORKSPACE_ID"
+        );
+    }
+    let config = resolve_workspace_mcp_server_config(
+        args.server_config.as_deref(),
+        args.server_config_stdin,
+        args.server_config_file.as_deref(),
+        environment,
+        input,
+    )?
+    .context(
+        "one of --server-config, --server-config-stdin, or --server-config-file is required",
+    )?;
+    let client = new_api_client(cli, environment)?;
+    let server: WorkspaceMcpServer = client
+        .post_json(
+            &format!("/api/workspaces/{workspace_id}/mcp-servers"),
+            &serde_json::json!({"name":server_name,"config":config}),
+        )
+        .await
+        .context("add workspace mcp server")?;
+    Ok(RunOutput {
+        stdout: format_workspace_mcp_servers(std::slice::from_ref(&server), args.output)?,
+        stderr: String::new(),
+    })
+}
+
+fn encoded_path_segment(value: &str) -> String {
+    form_urlencoded::byte_serialize(value.as_bytes()).collect()
+}
+
+async fn run_workspace_mcp_update<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &WorkspaceMcpUpdateArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let server_id = args.server_id.trim();
+    if server_id.is_empty() {
+        bail!("server ID must not be empty");
+    }
+    let workspace_id = resolve_workspace_arg(cli, environment, args.workspace.as_deref()).await?;
+    if workspace_id.is_empty() {
+        bail!(
+            "workspace ID is required: pass an id/slug/prefix as argument or set CORDY_WORKSPACE_ID"
+        );
+    }
+    let mut body = serde_json::Map::new();
+    if let Some(name) = &args.name {
+        body.insert("name".into(), Value::String(name.trim().into()));
+    }
+    if let Some(config) = resolve_workspace_mcp_server_config(
+        args.server_config.as_deref(),
+        args.server_config_stdin,
+        args.server_config_file.as_deref(),
+        environment,
+        input,
+    )? {
+        body.insert("config".into(), config);
+    }
+    if body.is_empty() {
+        bail!(
+            "nothing to update; pass --name and/or one of --server-config, --server-config-stdin, --server-config-file"
+        );
+    }
+    let client = new_api_client(cli, environment)?;
+    let server: WorkspaceMcpServer = client
+        .put_json(
+            &format!(
+                "/api/workspaces/{workspace_id}/mcp-servers/{}",
+                encoded_path_segment(server_id)
+            ),
+            &body,
+        )
+        .await
+        .context("update workspace mcp server")?;
+    Ok(RunOutput {
+        stdout: format_workspace_mcp_servers(std::slice::from_ref(&server), args.output)?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_workspace_mcp_remove(
+    cli: &Cli,
+    environment: &Environment,
+    server_id: &str,
+    workspace: Option<&str>,
+    _output: OutputFormat,
+) -> Result<RunOutput> {
+    let server_id = server_id.trim();
+    if server_id.is_empty() {
+        bail!("server ID must not be empty");
+    }
+    let workspace_id = resolve_workspace_arg(cli, environment, workspace).await?;
+    if workspace_id.is_empty() {
+        bail!(
+            "workspace ID is required: pass an id/slug/prefix as argument or set CORDY_WORKSPACE_ID"
+        );
+    }
+    let client = new_api_client(cli, environment)?;
+    client
+        .delete(&format!(
+            "/api/workspaces/{workspace_id}/mcp-servers/{}",
+            encoded_path_segment(server_id)
+        ))
+        .await
+        .context("remove workspace mcp server")?;
+    Ok(RunOutput {
+        stdout: format!("removed MCP server {server_id}\n"),
         stderr: String::new(),
     })
 }
@@ -14454,6 +14730,124 @@ mod tests {
             assert!(!listed.stdout.contains("Authorization"));
             assert!(!listed.stdout.contains("API_KEY"));
         }
+        server.abort();
+    }
+
+    #[test]
+    fn workspace_mcp_config_validation_is_secret_safe_and_rejects_non_objects() {
+        let secret = r#"{"token":"sk-do-not-echo""#;
+        let error = parse_workspace_mcp_server_config(secret).expect_err("invalid JSON");
+        assert_eq!(
+            error.to_string(),
+            "--server-config must be a valid JSON object"
+        );
+        assert!(!error.to_string().contains("sk-do-not-echo"));
+        assert_eq!(
+            parse_workspace_mcp_server_config("null")
+                .expect_err("null")
+                .to_string(),
+            "--server-config must be a JSON object, not null"
+        );
+        assert!(parse_workspace_mcp_server_config("[]")
+            .expect_err("array")
+            .to_string()
+            .contains("must be a JSON object"));
+    }
+
+    #[tokio::test]
+    async fn workspace_mcp_mutations_use_safe_inputs_and_never_echo_config() {
+        let workspace_id = "55555555-5555-5555-5555-555555555555";
+        let endpoint = "/api/workspaces/55555555-5555-5555-5555-555555555555/mcp-servers";
+        let resource = "/api/workspaces/55555555-5555-5555-5555-555555555555/mcp-servers/server-1";
+        let app = Router::new()
+            .route(
+                endpoint,
+                post(|Json(body): Json<Value>| async move {
+                    assert_eq!(body["name"], "linear");
+                    assert_eq!(body["config"]["url"], "https://linear.example");
+                    Json(serde_json::json!({
+                        "id":"server-1","name":"linear","transport":"http",
+                        "config":{"url":"https://secret.example","headers":{"Authorization":"secret"}}
+                    }))
+                }),
+            )
+            .route(
+                resource,
+                put(|Json(body): Json<Value>| async move {
+                    assert_eq!(body["name"], "linear-v2");
+                    assert!(body.get("config").is_none());
+                    Json(serde_json::json!({
+                        "id":"server-1","name":"linear-v2","transport":"stdio",
+                        "url":"https://secret.example"
+                    }))
+                })
+                .delete(|| async { axum::http::StatusCode::NO_CONTENT }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        fs::write(
+            cwd.path().join("linear.json"),
+            r#"{"url":"https://linear.example"}"#,
+        )
+        .expect("MCP config file");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", workspace_id);
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let add = Cli::try_parse_from([
+            "cordy",
+            "workspace",
+            "mcp",
+            "add",
+            "linear",
+            workspace_id,
+            "--server-config-file",
+            "linear.json",
+        ])
+        .expect("workspace MCP add CLI");
+        let added = run_with_input(&add, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("add workspace MCP server");
+        assert!(added.stdout.contains("linear"));
+        assert!(!added.stdout.contains("secret"));
+        assert!(!added.stdout.contains("config"));
+
+        let update = Cli::try_parse_from([
+            "cordy",
+            "workspace",
+            "mcp",
+            "update",
+            "server-1",
+            workspace_id,
+            "--name",
+            " linear-v2 ",
+            "--output",
+            "table",
+        ])
+        .expect("workspace MCP update CLI");
+        let updated = run_with_input(&update, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("update workspace MCP server");
+        assert!(updated.stdout.contains("linear-v2"));
+        assert!(!updated.stdout.contains("secret"));
+
+        let remove = Cli::try_parse_from([
+            "cordy",
+            "workspace",
+            "mcp",
+            "remove",
+            "server-1",
+            workspace_id,
+        ])
+        .expect("workspace MCP remove CLI");
+        let removed = run_with_input(&remove, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("remove workspace MCP server");
+        assert_eq!(removed.stdout, "removed MCP server server-1\n");
         server.abort();
     }
 
