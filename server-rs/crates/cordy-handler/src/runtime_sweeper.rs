@@ -20,6 +20,11 @@ const RUNNING_TIMEOUT_SECONDS: f64 = 9000.0;
 const RECOVERY_BATCH: i32 = 100;
 const CHAT_FINALIZE_GRACE_SECONDS: f64 = 60.0;
 const CHAT_FINALIZE_BATCH: i32 = 100;
+const OFFLINE_RUNTIME_TTL_SECONDS: f64 = 7.0 * 24.0 * 3600.0;
+const GC_BATCH: i32 = 100;
+const GC_BLOCKED_LIMIT: i32 = 1000;
+const GC_TICK_TIMEOUT: Duration = Duration::from_secs(15);
+const GC_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RuntimeTaskSweepReport {
@@ -36,6 +41,7 @@ pub struct RuntimeTaskSweeper {
     liveness: Arc<dyn LivenessStore>,
     tasks: Arc<TaskService>,
     bus: Arc<Bus>,
+    metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     reconnect_grace: Duration,
 }
 
@@ -45,6 +51,7 @@ impl RuntimeTaskSweeper {
         liveness: Arc<dyn LivenessStore>,
         tasks: Arc<TaskService>,
         bus: Arc<Bus>,
+        metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
         reconnect_grace: Duration,
     ) -> Self {
         Self {
@@ -52,8 +59,155 @@ impl RuntimeTaskSweeper {
             liveness,
             tasks,
             bus,
+            metrics,
             reconnect_grace: reconnect_grace.max(Duration::from_secs(150)),
         }
+    }
+
+    pub async fn gc_once(&self) -> usize {
+        match tokio::time::timeout(GC_TICK_TIMEOUT, self.gc_with_budget()).await {
+            Ok(deleted) => deleted,
+            Err(_) => {
+                tracing::info!("runtime GC: tick budget exhausted");
+                0
+            }
+        }
+    }
+
+    async fn gc_with_budget(&self) -> usize {
+        match tokio::time::timeout(
+            GC_OPERATION_TIMEOUT,
+            runtime::count_stale_offline_runtimes_blocked_by_tasks(
+                &self.pool,
+                OFFLINE_RUNTIME_TTL_SECONDS,
+                GC_BLOCKED_LIMIT,
+            ),
+        )
+        .await
+        {
+            Ok(Ok(Some(count))) => {
+                if let Some(metrics) = &self.metrics {
+                    metrics.set_runtime_gc_blocked(count);
+                }
+            }
+            Ok(Ok(None)) => {}
+            Ok(Err(error)) => {
+                tracing::warn!(%error, "runtime GC: count blocked runtimes failed");
+                if let Some(metrics) = &self.metrics {
+                    metrics.record_runtime_gc_blocked_observation_failed();
+                }
+            }
+            Err(_) => {
+                tracing::warn!("runtime GC: count blocked runtimes timed out");
+                if let Some(metrics) = &self.metrics {
+                    metrics.record_runtime_gc_blocked_observation_failed();
+                }
+            }
+        }
+        let candidates = match tokio::time::timeout(
+            GC_OPERATION_TIMEOUT,
+            runtime::list_stale_offline_runtime_gc_candidates(
+                &self.pool,
+                OFFLINE_RUNTIME_TTL_SECONDS,
+                GC_BATCH,
+            ),
+        )
+        .await
+        {
+            Ok(Ok(rows)) => rows.into_iter().flatten().collect::<Vec<_>>(),
+            Ok(Err(error)) => {
+                tracing::warn!(%error, "runtime GC: list candidates failed");
+                if let Some(metrics) = &self.metrics {
+                    metrics.record_runtime_gc_failed();
+                }
+                return 0;
+            }
+            Err(_) => {
+                tracing::warn!("runtime GC: list candidates timed out");
+                if let Some(metrics) = &self.metrics {
+                    metrics.record_runtime_gc_failed();
+                }
+                return 0;
+            }
+        };
+        let mut deleted = 0;
+        let mut workspaces = HashSet::new();
+        for runtime_id in candidates {
+            match tokio::time::timeout(GC_OPERATION_TIMEOUT, self.gc_runtime(runtime_id)).await {
+                Ok(Ok(Some(workspace_id))) => {
+                    deleted += 1;
+                    workspaces.insert(workspace_id);
+                    if let Some(metrics) = &self.metrics {
+                        metrics.record_runtime_gc_deleted();
+                    }
+                }
+                Ok(Ok(None)) => {}
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, %runtime_id, "runtime GC: delete candidate failed");
+                    if let Some(metrics) = &self.metrics {
+                        metrics.record_runtime_gc_failed();
+                    }
+                }
+                Err(_) => {
+                    tracing::warn!(%runtime_id, "runtime GC: candidate timed out");
+                    if let Some(metrics) = &self.metrics {
+                        metrics.record_runtime_gc_failed();
+                    }
+                }
+            }
+        }
+        for workspace_id in workspaces {
+            self.bus.publish(&Event {
+                event_type: cordy_protocol::EVENT_DAEMON_REGISTER.into(),
+                workspace_id: workspace_id.to_string(),
+                actor_type: "system".into(),
+                payload: json!({"action": "runtime_gc"}),
+                ..Default::default()
+            });
+        }
+        deleted
+    }
+
+    async fn gc_runtime(&self, runtime_id: uuid::Uuid) -> anyhow::Result<Option<uuid::Uuid>> {
+        let mut tx = self.pool.begin().await?;
+        let Some(agent_runtime) = runtime::lock_agent_runtime(&mut *tx, runtime_id).await? else {
+            return Ok(None);
+        };
+        let eligible = runtime::is_agent_runtime_eligible_for_gc(
+            &mut *tx,
+            runtime_id,
+            OFFLINE_RUNTIME_TTL_SECONDS,
+        )
+        .await?;
+        if !matches!(eligible, Some(true)) {
+            return Ok(None);
+        }
+        let undrained = runtime::count_undrained_tasks_by_runtime_or_agent(
+            &mut *tx,
+            vec![runtime_id],
+            Vec::new(),
+        )
+        .await?;
+        let undrained = match undrained {
+            Some(value) => value,
+            None => 0,
+        };
+        if undrained > 0 {
+            return Ok(None);
+        }
+        runtime::unbind_tasks_from_runtime(&mut *tx, runtime_id).await?;
+        let remaining = runtime::count_tasks_by_runtime(&mut *tx, runtime_id).await?;
+        let remaining = match remaining {
+            Some(value) => value,
+            None => 0,
+        };
+        anyhow::ensure!(
+            remaining == 0,
+            "task history still references runtime after detach: {remaining}"
+        );
+        runtime::delete_agent_runtime(&mut *tx, runtime_id).await?;
+        tx.commit().await?;
+        Ok(Some(agent_runtime.workspace_id))
     }
 
     /// Runs the ordered non-GC stages from Go's runtime sweeper. Each stage is
