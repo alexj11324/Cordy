@@ -784,6 +784,11 @@
       membership validation, advisory-lock writes, post-commit events, status
       feature gates, archive/reorder locks, and status race handling match Go.
       No new P0/P1 or changed-code blocker; no implementation change justified.
+- [x] Chat/session route audit completed: workspace/creator and invoke fences,
+      transactional session/project binding, ordered cleanup, queued-task
+      coalescing/cancel, late-response/archive handling, message/attachment
+      persistence, post-commit notifications, and shutdown reconciliation match
+      Go. No new P0/P1 or changed-code blocker; no implementation change.
 
 ## Phase 4 — S8 route and API parity
 
