@@ -709,6 +709,18 @@ impl EmailService {
             .unwrap_or_default()
             .trim()
             .to_string();
+        Self::from_values(api_key, smtp_host)
+    }
+
+    /// Builds from the server's final TOML+environment configuration.
+    pub fn from_config_values(resend_api_key: Option<&str>, smtp_host: Option<&str>) -> Self {
+        Self::from_values(
+            resend_api_key.unwrap_or_default().trim().to_string(),
+            smtp_host.unwrap_or_default().trim().to_string(),
+        )
+    }
+
+    fn from_values(api_key: String, smtp_host: String) -> Self {
         let mut smtp_port = std::env::var("SMTP_PORT")
             .unwrap_or_default()
             .trim()
@@ -804,6 +816,10 @@ impl EmailService {
             smtp_tls_implicit,
             smtp_ehlo_name,
         }
+    }
+
+    pub fn is_dev_mode(&self) -> bool {
+        self.smtp_host.is_empty() && self.resend_api_key.is_none()
     }
 
     /// Opens the SMTP session: dial (implicit TLS optional) → greeting →
@@ -1010,6 +1026,13 @@ impl Default for EmailService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn final_config_values_select_non_dev_delivery() {
+        assert!(EmailService::from_config_values(None, None).is_dev_mode());
+        assert!(!EmailService::from_config_values(Some("resend-key"), None).is_dev_mode());
+        assert!(!EmailService::from_config_values(None, Some("smtp.example.com")).is_dev_mode());
+    }
 
     #[test]
     fn is_localhost_matches_the_three_shapes() {

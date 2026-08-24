@@ -4,48 +4,259 @@
 //! pg pool, and health endpoints. Routes are ported domain-by-domain in
 //! later steps (475 routes total, see tasks/go-to-rust-migration.md).
 
-#[cfg(test)]
 use axum::Router;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
+
+const PENDING_STORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
+
+struct VcsWebhookConfig {
+    enabled: bool,
+    secret_box: Option<cordy_util::secretbox::SecretBox>,
+}
+
+impl VcsWebhookConfig {
+    #[cfg(test)]
+    fn disabled() -> Self {
+        Self {
+            enabled: false,
+            secret_box: None,
+        }
+    }
+}
+
+fn parse_go_bool(raw: Option<&str>, default: bool) -> bool {
+    match raw.map(str::trim).filter(|value| !value.is_empty()) {
+        None => default,
+        Some("1" | "t" | "T" | "true" | "TRUE" | "True") => true,
+        Some("0" | "f" | "F" | "false" | "FALSE" | "False") => false,
+        Some(value) => {
+            tracing::warn!(
+                value,
+                default,
+                "invalid boolean environment value; using default"
+            );
+            default
+        }
+    }
+}
+
+fn parse_go_duration(raw: &str) -> Option<Duration> {
+    let raw = raw.trim();
+    if raw.is_empty() || raw.starts_with('-') {
+        return None;
+    }
+    if raw == "0" {
+        return Some(Duration::ZERO);
+    }
+    let bytes = raw.as_bytes();
+    let mut cursor = 0;
+    let mut seconds = 0.0_f64;
+    while cursor < bytes.len() {
+        let number_start = cursor;
+        while cursor < bytes.len() && (bytes[cursor].is_ascii_digit() || bytes[cursor] == b'.') {
+            cursor += 1;
+        }
+        if cursor == number_start {
+            return None;
+        }
+        let value = raw[number_start..cursor].parse::<f64>().ok()?;
+        let units = [
+            ("ns", 1e-9),
+            ("us", 1e-6),
+            ("µs", 1e-6),
+            ("ms", 1e-3),
+            ("s", 1.0),
+            ("m", 60.0),
+            ("h", 3600.0),
+        ];
+        let (unit, multiplier) = units
+            .into_iter()
+            .find(|(unit, _)| raw[cursor..].starts_with(unit))?;
+        cursor += unit.len();
+        seconds += value * multiplier;
+    }
+    (seconds.is_finite() && seconds >= 0.0 && seconds < Duration::MAX.as_secs_f64())
+        .then(|| Duration::from_secs_f64(seconds))
+}
+
+fn duration_env(name: &str, default: Duration, allow_zero: bool) -> Duration {
+    let Ok(raw) = std::env::var(name) else {
+        return default;
+    };
+    match parse_go_duration(&raw).filter(|duration| allow_zero || !duration.is_zero()) {
+        Some(duration) => duration,
+        None => {
+            tracing::warn!(
+                name,
+                value = raw,
+                ?default,
+                "invalid duration environment value; using default"
+            );
+            default
+        }
+    }
+}
+
+fn autopilot_entitlements(
+    cfg: &cordy_config::Config,
+) -> Option<Arc<dyn cordy_service::autopilot::EntitlementProvider>> {
+    let enabled = parse_go_bool(
+        std::env::var("CORDY_ENTITLEMENT_POLICY_ENABLED")
+            .ok()
+            .as_deref(),
+        false,
+    );
+    let emergency_disabled = parse_go_bool(
+        std::env::var("CORDY_ENTITLEMENT_EMERGENCY_DISABLED")
+            .ok()
+            .as_deref(),
+        false,
+    );
+    let service_token = std::env::var("CORDY_ENTITLEMENT_SERVICE_TOKEN")
+        .ok()
+        .or_else(|| cfg.entitlement.service_token.clone())
+        .unwrap_or_default();
+    let config = cordy_service::entitlement::EntitlementClientConfig {
+        enabled,
+        base_url: cfg.entitlement.policy_url.clone().unwrap_or_default(),
+        service_token,
+        timeout: duration_env(
+            "CORDY_ENTITLEMENT_POLICY_TIMEOUT",
+            Duration::from_secs(3),
+            false,
+        ),
+        stale_grace: duration_env(
+            "CORDY_ENTITLEMENT_STALE_GRACE",
+            Duration::from_secs(15 * 60),
+            true,
+        ),
+        emergency_disabled,
+    };
+    match cordy_service::entitlement::HttpEntitlementProvider::new(config) {
+        Ok(provider) => provider.map(|provider| provider as Arc<_>),
+        Err(error) => {
+            tracing::error!(%error, "entitlement policy client disabled by invalid configuration");
+            None
+        }
+    }
+}
 
 #[cfg(test)]
 fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<cordy_realtime::hub::Hub>>) -> Router {
     cordy_handler::build_router(db, hub)
 }
 
-fn build_production_router(
+async fn install_pending_stores(
+    state: cordy_handler::HandlerState,
+    redis_url: Option<&str>,
+) -> cordy_handler::HandlerState {
+    let Some(redis_url) = redis_url.map(str::trim).filter(|url| !url.is_empty()) else {
+        return state.with_in_memory_pending_stores();
+    };
+    let client = match redis::Client::open(redis_url) {
+        Ok(client) => client,
+        Err(_) => {
+            tracing::warn!("REDIS_URL is invalid; runtime pending requests are disabled");
+            return state;
+        }
+    };
+    match tokio::time::timeout(
+        PENDING_STORE_CONNECT_TIMEOUT,
+        state.clone().with_redis(client),
+    )
+    .await
+    {
+        Ok(Ok(wired)) => wired,
+        Ok(Err(_)) | Err(_) => {
+            tracing::warn!("Redis is unavailable; runtime pending requests are disabled");
+            state
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn build_production_router(
     db: sqlx::PgPool,
     hub: Arc<cordy_realtime::hub::Hub>,
     business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
-    storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
-    download: cordy_handler::state::AttachmentDownloadSettings,
-    realtime_metrics_token: Option<&str>,
     github_client: Option<cordy_ghsnapshot::Client>,
-    redis_url: Option<&str>,
-) -> Router {
-    let analytics: Arc<dyn cordy_analytics::AnalyticsClient> =
-        Arc::from(cordy_analytics::new_from_env());
-    let mut state = cordy_handler::HandlerState::new(
+    cfg: &cordy_config::Config,
+    attachment_storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
+    attachment_frame_ancestors: Vec<String>,
+    vcs: VcsWebhookConfig,
+) -> anyhow::Result<Router> {
+    let feature_flags = Arc::new(cordy_service::feature_flags::ConfiguredFlags::from_env()?);
+    let entitlements = autopilot_entitlements(cfg);
+    let composio_service =
+        if cordy_service::feature_flags::composio_mcp_apps_enabled(feature_flags.as_ref()) {
+            match cordy_handler::composio::build_service_from_config(db.clone(), cfg) {
+                Ok(service) => Some(Arc::new(service)),
+                Err(error) => {
+                    tracing::warn!(%error, "Composio integration disabled");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+    let mut state = cordy_handler::HandlerState::new_with_runtime_integrations(
         db,
         cordy_auth::pat_cache::PatCache::disabled(),
         Some(hub),
+        Some(feature_flags),
+        composio_service,
     )
-    .with_attachment_storage(storage, download)
-    .with_realtime_metrics_token(realtime_metrics_token)
     .with_observability(business_metrics, http_metrics)
-    .with_analytics(analytics)
-    .with_github_snapshots(github_client);
-    if let Some(redis_url) = redis_url.filter(|value| !value.trim().is_empty()) {
+    .with_autopilot_entitlements(entitlements)
+    .with_github_snapshots(github_client)
+    .with_analytics(Arc::from(cordy_analytics::new_from_env()))
+    .with_auth_settings(cordy_handler::auth::AuthSettings::from_config(cfg))
+    .with_email_service(Arc::new(
+        cordy_service::email::EmailService::from_config_values(
+            cfg.email.resend_api_key.as_deref(),
+            cfg.email.smtp_host.as_deref(),
+        ),
+    ))
+    .with_rate_limit_trusted_proxies(cfg.urls.rate_limit_trusted_proxies.as_deref())
+    .with_attachment_storage(attachment_storage, attachment_frame_ancestors)
+    .with_plugins_from_env()
+    .with_slack_history_from_env()
+    .with_llm_from_env()?
+    .with_public_config(cordy_handler::config::PublicConfigSettings {
+        cdn_domain: cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
+        cdn_signed: cfg.storage.cloudfront_key_pair_id.is_some()
+            && (cfg.storage.cloudfront_private_key.is_some()
+                || cfg.storage.cloudfront_private_key_secret.is_some()),
+        server_version: env!("CARGO_PKG_VERSION").to_string(),
+    })
+    .with_vcs_webhooks(vcs.enabled, vcs.secret_box);
+    let redis_url = cfg
+        .redis
+        .url
+        .as_deref()
+        .filter(|value| !value.trim().is_empty());
+    if let Some(redis_url) = redis_url {
         match redis::Client::open(redis_url) {
-            Ok(client) => state = state.with_rate_limit_redis(client),
+            Ok(client) => {
+                state = state
+                    .with_rate_limit_redis(client.clone())
+                    .with_auth_redis(client);
+            }
             Err(error) => {
-                tracing::warn!(%error, "contact-sales rate limiter configuration invalid; allowing requests");
+                tracing::warn!(%error, "invalid REDIS_URL; public-route rate limiting disabled");
             }
         }
+    } else {
+        tracing::warn!("public-route rate limiting disabled: REDIS_URL not configured");
     }
-    cordy_handler::build_router_from_state(state)
+    let state = install_pending_stores(state, redis_url)
+        .await
+        .start_autopilot_quota_reconciler()
+        .start_webhook_delivery_worker();
+    Ok(cordy_handler::build_router_from_state(state))
 }
 
 fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
@@ -69,16 +280,10 @@ async fn main() -> anyhow::Result<()> {
     cfg.validate()?;
     validate_auth_config(&cfg)?;
     cordy_auth::jwt::configure_jwt_secret(cfg.auth.jwt_secret.as_deref())?;
+    cordy_auth::cookie::configure_auth_token_ttl(cfg.auth.auth_token_ttl.as_deref())?;
     tracing::info!(port = cfg.server.port, "starting cordy-server");
 
     let db = cordy_db::connect(&cfg.database).await?;
-    let storage = cordy_handler::attachment_storage::from_env(
-        cfg.storage.local_upload_dir.as_deref(),
-        cfg.storage.local_upload_base_url.as_deref(),
-        cfg.storage.cloudfront_domain.as_deref(),
-    )
-    .await?;
-    let download = cordy_handler::state::AttachmentDownloadSettings::from_config(&cfg).await?;
     let hub = Arc::new(cordy_realtime::hub::Hub::new());
     let metrics_config = cordy_metrics::Config::from_env();
     let (business_metrics, http_metrics) = if metrics_config.enabled() {
@@ -108,24 +313,41 @@ async fn main() -> anyhow::Result<()> {
     } else {
         (None, None)
     };
-    let github_client = match cordy_ghsnapshot::Client::new_from_env() {
-        Ok(client) => client,
-        Err(error) => {
-            tracing::warn!(%error, "invalid GitHub App configuration; snapshot pipeline disabled");
-            None
-        }
-    };
+    let github_client = cordy_ghsnapshot::Client::new_from_env()?;
+    let attachment_storage = cordy_handler::attachment_storage::from_env(
+        cfg.storage.local_upload_dir.as_deref(),
+        cfg.storage.local_upload_base_url.as_deref(),
+    )?;
+    let attachment_frame_ancestors = cfg
+        .urls
+        .cors_allowed_origins
+        .as_deref()
+        .unwrap_or_default()
+        .split(',')
+        .chain(cfg.urls.frontend_origin.as_deref())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect();
+    let vcs_enabled = cfg.integrations.vcs_integration_enabled.as_deref() == Some("true");
+    let vcs_secret_box = cordy_util::secretbox::load_key("CORDY_VCS_SECRET_KEY")
+        .ok()
+        .and_then(|key| cordy_util::secretbox::SecretBox::new(&key).ok());
     let app = build_production_router(
         db,
         hub,
         business_metrics,
         http_metrics,
-        storage,
-        download,
-        cfg.redis.realtime_metrics_token.as_deref(),
         github_client,
-        cfg.redis.url.as_deref(),
-    );
+        &cfg,
+        attachment_storage,
+        attachment_frame_ancestors,
+        VcsWebhookConfig {
+            enabled: vcs_enabled,
+            secret_box: vcs_secret_box,
+        },
+    )
+    .await?;
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
@@ -145,13 +367,13 @@ mod tests {
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
 
-    fn test_storage() -> Arc<dyn cordy_handler::attachment_storage::AttachmentStorage> {
+    fn test_attachment_storage() -> Arc<dyn cordy_handler::attachment_storage::AttachmentStorage> {
         Arc::new(
             cordy_handler::attachment_storage::LocalStorage::new(
-                std::env::temp_dir(),
-                "/uploads".into(),
+                std::env::temp_dir().join("cordy-server-route-tests"),
+                String::new(),
             )
-            .expect("test storage"),
+            .expect("test local storage"),
         )
     }
 
@@ -179,17 +401,21 @@ mod tests {
     async fn unavailable_rate_limit_redis_fails_open() {
         let db = sqlx::PgPool::connect_lazy("postgres://invalid/invalid")
             .unwrap_or_else(|_| unreachable!("static test URL is valid"));
+        let mut cfg = cordy_config::Config::default();
+        cfg.redis.url = Some("redis://127.0.0.1:1/".into());
         let router = build_production_router(
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
             None,
             None,
-            test_storage(),
-            cordy_handler::state::AttachmentDownloadSettings::default(),
             None,
-            None,
-            Some("redis://127.0.0.1:1/"),
-        );
+            &cfg,
+            test_attachment_storage(),
+            Vec::new(),
+            VcsWebhookConfig::disabled(),
+        )
+        .await
+        .unwrap();
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(1),
             router.oneshot(
@@ -219,17 +445,21 @@ mod tests {
         let db = sqlx::PgPool::connect_lazy("postgres://invalid/invalid")
             .unwrap_or_else(|_| unreachable!("static test URL is valid"));
         let redis_url = format!("redis://{address}/");
+        let mut cfg = cordy_config::Config::default();
+        cfg.redis.url = Some(redis_url);
         let router = build_production_router(
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
             None,
             None,
-            test_storage(),
-            cordy_handler::state::AttachmentDownloadSettings::default(),
             None,
-            None,
-            Some(&redis_url),
-        );
+            &cfg,
+            test_attachment_storage(),
+            Vec::new(),
+            VcsWebhookConfig::disabled(),
+        )
+        .await
+        .unwrap();
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(1),
             router.oneshot(
@@ -258,5 +488,73 @@ mod tests {
 
         cfg.auth.jwt_secret = Some("a-long-random-production-secret".into());
         assert!(validate_auth_config(&cfg).is_ok());
+    }
+
+    #[tokio::test]
+    async fn invalid_redis_config_keeps_pending_stores_fail_closed() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = cordy_handler::HandlerState::new(
+            pool,
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let state = install_pending_stores(state, Some("not-a-redis-url")).await;
+        assert!(state.update_store.is_none());
+        assert!(state.model_list_store.is_none());
+        assert!(state.local_skill_list_store.is_none());
+        assert!(state.local_skill_import_store.is_none());
+    }
+
+    #[tokio::test]
+    async fn redis_free_configuration_installs_in_memory_pending_stores() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = cordy_handler::HandlerState::new(
+            pool,
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let state = install_pending_stores(state, None).await;
+        assert!(state.update_store.is_some());
+        assert!(state.model_list_store.is_some());
+        assert!(state.local_skill_list_store.is_some());
+        assert!(state.local_skill_import_store.is_some());
+    }
+
+    #[tokio::test]
+    async fn unreachable_redis_does_not_block_server_startup() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = cordy_handler::HandlerState::new(
+            pool,
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let started = tokio::time::Instant::now();
+        let state = install_pending_stores(state, Some("redis://192.0.2.1:6379/")).await;
+        assert!(started.elapsed() <= PENDING_STORE_CONNECT_TIMEOUT + Duration::from_secs(1));
+        assert!(state.update_store.is_none());
+        assert!(state.model_list_store.is_none());
+        assert!(state.local_skill_list_store.is_none());
+        assert!(state.local_skill_import_store.is_none());
+    }
+
+    #[tokio::test]
+    async fn malformed_redis_url_disables_auth_limiting_without_blocking_router_build() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let mut cfg = cordy_config::Config::default();
+        cfg.redis.url = Some("not a redis URL".into());
+        cfg.urls.rate_limit_trusted_proxies = Some("10.0.0.0/8".into());
+        let _router = build_production_router(
+            pool,
+            Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
+            None,
+            None,
+            &cfg,
+            test_attachment_storage(),
+            Vec::new(),
+            VcsWebhookConfig::disabled(),
+        )
+        .await
+        .unwrap();
     }
 }

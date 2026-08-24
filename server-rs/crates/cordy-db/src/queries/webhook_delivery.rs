@@ -169,7 +169,7 @@ pub async fn complete_claimed_webhook_delivery(
     id: Uuid,
     lease_token: Uuid,
     status: &str,
-    autopilot_run_id: Uuid,
+    autopilot_run_id: Option<Uuid>,
     error: Option<&str>,
     reason_code: Option<&str>,
 ) -> anyhow::Result<Option<WebhookDelivery>> {
