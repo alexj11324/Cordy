@@ -316,4 +316,3 @@ mod tests {
         assert!(model_selection_supported("unknown"));
     }
 }
-

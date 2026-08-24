@@ -7,6 +7,7 @@
 
 pub mod claude;
 pub mod codebuddy;
+pub mod codebuddy_discovery;
 pub mod command;
 pub mod contract;
 pub mod deveco;
