@@ -108,42 +108,54 @@ impl ChannelRuntime {
         }
 
         let channel_types = registry.types();
-        if channel_types.is_empty() {
-            tracing::info!("channel runtime disabled: no adapter secret keys configured");
+        let has_adapters = !channel_types.is_empty();
+        let has_media_storage = storage.is_some();
+        if !channel_runtime_required(has_adapters, has_media_storage) {
+            tracing::info!(
+                "channel runtime disabled: no adapter secret keys or media storage configured"
+            );
             return Ok(None);
         }
 
-        let store = Arc::new(PostgresChannelStore::new(state.pool.clone()));
-        let lease_store = match RuntimeLeaseStore::from_config(store.clone(), cfg).await {
-            Ok(store) => Some(Arc::new(store)),
-            Err(error) => {
-                tracing::error!(%error, "channel supervisor disabled: lease backend unavailable");
+        let supervisor = if has_adapters {
+            let store = Arc::new(PostgresChannelStore::new(state.pool.clone()));
+            let lease_store = match RuntimeLeaseStore::from_config(store.clone(), cfg).await {
+                Ok(store) => Some(Arc::new(store)),
+                Err(error) => {
+                    tracing::error!(%error, "channel supervisor disabled: lease backend unavailable");
+                    None
+                }
+            };
+            if let Some(lease_store) = lease_store {
+                let inbound_router = router.clone();
+                let handler = cordy_channel::InboundHandler::new(move |ctx, message| {
+                    let router = inbound_router.clone();
+                    Box::pin(async move {
+                        tokio::select! {
+                            result = router.handle(message) => result,
+                            _ = ctx.cancelled() => Ok(()),
+                        }
+                    })
+                });
+                let supervisor = ChannelSupervisor::new(
+                    store,
+                    lease_store,
+                    registry,
+                    handler,
+                    supervisor_config_from_env(),
+                    lease_metrics.map(|metrics| {
+                        Arc::new(RuntimeLeaseMetrics(metrics)) as Arc<dyn LeaseMetrics>
+                    }),
+                )?;
+                let run_cancel = cancel.clone();
+                Some(tokio::spawn(supervisor.run_owned(run_cancel)))
+            } else {
                 None
             }
-        };
-        let supervisor = if let Some(lease_store) = lease_store {
-            let inbound_router = router.clone();
-            let handler = cordy_channel::InboundHandler::new(move |ctx, message| {
-                let router = inbound_router.clone();
-                Box::pin(async move {
-                    tokio::select! {
-                        result = router.handle(message) => result,
-                        _ = ctx.cancelled() => Ok(()),
-                    }
-                })
-            });
-            let supervisor = ChannelSupervisor::new(
-                store,
-                lease_store,
-                registry,
-                handler,
-                supervisor_config_from_env(),
-                lease_metrics
-                    .map(|metrics| Arc::new(RuntimeLeaseMetrics(metrics)) as Arc<dyn LeaseMetrics>),
-            )?;
-            let run_cancel = cancel.clone();
-            Some(tokio::spawn(supervisor.run_owned(run_cancel)))
         } else {
+            tracing::info!(
+                "channel supervisor disabled: no adapter secret keys configured; media reconciliation remains enabled"
+            );
             None
         };
 
@@ -221,6 +233,13 @@ impl ChannelRuntime {
             ),
         }
     }
+}
+
+/// Media cleanup is deployment-owned rather than adapter-owned. A pending
+/// object can outlive the channel credentials that created it, so configured
+/// storage alone is enough reason to keep the runtime and reconciler alive.
+fn channel_runtime_required(has_adapters: bool, has_media_storage: bool) -> bool {
+    has_adapters || has_media_storage
 }
 
 /// Keeps one malformed channel adapter from taking the entire server down.
@@ -1359,9 +1378,17 @@ impl cordy_slack::slash_command::QuickCreateEnqueuer for ChannelServices {
 #[cfg(test)]
 mod tests {
     use super::{
-        app_url, configure_wecom_security, isolate_channel_setup, lease_backend_settings,
-        LeaseBackendSettings,
+        app_url, channel_runtime_required, configure_wecom_security, isolate_channel_setup,
+        lease_backend_settings, LeaseBackendSettings,
     };
+
+    #[test]
+    fn media_storage_keeps_runtime_alive_without_channel_adapters() {
+        assert!(channel_runtime_required(false, true));
+        assert!(channel_runtime_required(true, false));
+        assert!(channel_runtime_required(true, true));
+        assert!(!channel_runtime_required(false, false));
+    }
 
     #[test]
     fn adapter_init_failure_isolated_from_other_channels() {
