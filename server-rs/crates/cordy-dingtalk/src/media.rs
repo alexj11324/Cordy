@@ -19,6 +19,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures_util::StreamExt;
 use sha2::{Digest, Sha256};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -30,7 +31,7 @@ use cordy_channel_engine::resolvers::{
 };
 
 use crate::client::{is_unauthorized, Client};
-use crate::config::{decode_credentials, Decrypter};
+use crate::config::{decode_credentials, Credentials, Decrypter};
 use crate::resolvers::decode_dingtalk_raw;
 
 pub const MAX_IMAGES_PER_MESSAGE: usize = 4;
@@ -509,57 +510,48 @@ impl MediaResolver for MediaResolverImpl {
         // publicDownloadDialer).
         let http = new_download_http_client().ok();
 
-        // Bounded-concurrency fan-out over the resources. Each slot resolves,
-        // records the intent, downloads, uploads, and reports its ref; a
-        // failed slot logs and yields None without stopping the others.
-        let sem = Arc::new(tokio::sync::Semaphore::new(MEDIA_FETCH_CONCURRENCY));
-        let mut handles = Vec::with_capacity(raw.media.len());
-        for (index, resource) in raw.media.iter().enumerate() {
-            let sem = sem.clone();
-            let ctx = ctx.clone();
-            let client = self.client.clone();
-            let storage = self.storage.clone();
-            let ledger = self.ledger.clone();
-            let creds = creds.clone();
-            let http = http.clone();
-            let reference = resource.reference.clone();
-            let alt = resource.alt.clone();
-            let inline_index = resource.inline_index;
-            let inst = inst.clone();
-            handles.push(tokio::spawn(async move {
-                let _permit = sem.acquire_owned().await.ok()?;
-                ingest_one(
-                    ctx,
-                    client.as_ref(),
-                    http.as_ref(),
-                    storage.as_ref(),
-                    ledger.as_ref(),
-                    &inst,
-                    chat_message_id,
-                    index,
-                    inline_index,
-                    app_key_secret_robot(&creds.app_key, &creds.app_secret, &creds.robot_code)
-                        .as_slice(),
-                    &reference,
-                    &alt,
-                )
-                .await
-            }));
-        }
-
-        let results: Vec<Option<MediaRef>> = futures_util::future::join_all(handles)
-            .await
-            .into_iter()
-            .map(|joined| match joined {
-                Ok(inner) => inner,
-                Err(e) => {
-                    log_warn(&msg, &anyhow::anyhow!("media task failed: {e}"));
-                    None
-                }
-            })
-            .collect();
+        // Scope every image future to this resolver call. `buffer_unordered`
+        // provides the same bounded concurrency as Go's errgroup, but does
+        // not detach work: dropping this resolver at the Router deadline
+        // drops every in-flight download/upload future as well.
+        let mut results: Vec<(usize, Option<MediaRef>)> =
+            futures_util::stream::iter(raw.media.into_iter().enumerate())
+                .map(|(index, resource)| {
+                    let ctx = ctx.clone();
+                    let client = self.client.clone();
+                    let storage = self.storage.clone();
+                    let ledger = self.ledger.clone();
+                    let creds = creds.clone();
+                    let http = http.clone();
+                    let reference = resource.reference;
+                    let alt = resource.alt;
+                    let inline_index = resource.inline_index;
+                    let inst = inst.clone();
+                    async move {
+                        let resolved = ingest_one(
+                            ctx,
+                            client.as_ref(),
+                            http.as_ref(),
+                            storage.as_ref(),
+                            ledger.as_ref(),
+                            &inst,
+                            chat_message_id,
+                            index,
+                            inline_index,
+                            &creds,
+                            &reference,
+                            &alt,
+                        )
+                        .await;
+                        (index, resolved)
+                    }
+                })
+                .buffer_unordered(MEDIA_FETCH_CONCURRENCY)
+                .collect()
+                .await;
         // Preserve send order regardless of completion order.
-        for (i, r) in results.into_iter().enumerate() {
+        results.sort_unstable_by_key(|(index, _)| *index);
+        for (i, r) in results {
             match r {
                 Some(r) => msg.media_refs.push(r),
                 None => log_warn(&msg, &anyhow::anyhow!("image {i} did not resolve")),
@@ -569,23 +561,13 @@ impl MediaResolver for MediaResolverImpl {
     }
 }
 
-/// Packs the three credential strings for the spawned task boundary without a
-/// dedicated struct (order: app_key, app_secret, robot_code).
-fn app_key_secret_robot(app_key: &str, app_secret: &str, robot_code: &str) -> Vec<String> {
-    vec![
-        app_key.to_string(),
-        app_secret.to_string(),
-        robot_code.to_string(),
-    ]
-}
-
-/// Carries one resource from downloadCode to a stored object + MediaRef. The
-/// ledger row goes first: from that point on every failure — download,
-/// upload, a crash — leaves an intent the reconciler settles, and nothing
-/// here deletes anything.
+/// Carries one resource from downloadCode to a stored object + MediaRef. No
+/// object upload starts until the ledger row is durable; from that point on an
+/// upload failure or crash leaves an intent the reconciler settles, and
+/// nothing here deletes anything.
 #[allow(clippy::too_many_arguments)]
 async fn ingest_one(
-    _ctx: CancellationToken,
+    ctx: CancellationToken,
     client: &Client,
     http: Option<&reqwest::Client>,
     storage: &dyn MediaStorage,
@@ -594,21 +576,29 @@ async fn ingest_one(
     chat_message_id: Uuid,
     index: usize,
     inline_index: usize,
-    cred_triple: &[String],
+    credentials: &Credentials,
     reference: &str,
     alt: &str,
 ) -> Option<MediaRef> {
     let http = http?;
-    let [app_key, app_secret, robot_code] = cred_triple else {
+    if ctx.is_cancelled() {
         return None;
-    };
+    }
 
     // Resolve primary → fallback code like Go's fetchResource.
-    let fetched = fetch_resource(
-        client, http, app_key, app_secret, robot_code, reference, alt,
-    )
-    .await
-    .ok()?;
+    let fetched = tokio::select! {
+        biased;
+        _ = ctx.cancelled() => return None,
+        fetched = fetch_resource(
+            client,
+            http,
+            &credentials.app_key,
+            &credentials.app_secret,
+            &credentials.robot_code,
+            reference,
+            alt,
+        ) => fetched.ok()?,
+    };
     let (data, content_type) = fetched;
     let ext = allowed_image_ext(&content_type)?;
     let filename = format!("dingtalk-image-{}{ext}", index + 1);
@@ -617,16 +607,17 @@ async fn ingest_one(
     let link = storage.object_url(&key);
     // No durable intent, no upload — the fail-safe direction. A false return
     // means the reconciler owns this key; never resurrect it.
-    let owned = ledger
-        .record_pending_media_object(RecordPendingMediaObjectParams {
+    let owned = tokio::select! {
+        biased;
+        _ = ctx.cancelled() => return None,
+        owned = ledger.record_pending_media_object(RecordPendingMediaObjectParams {
             storage_key: key.clone(),
             workspace_id: inst.workspace_id,
             chat_message_id,
             storage_url: link.clone(),
             installation_id: inst.id,
-        })
-        .await
-        .ok()?;
+        }) => owned.ok()?,
+    };
     if !owned {
         tracing::warn!(storage_key = %key, "media key owned by reconciler");
         return None;
@@ -634,17 +625,21 @@ async fn ingest_one(
 
     // The store may still be processing the PUT; the intent row covers the
     // object either way.
-    storage
-        .upload(&key, data.clone(), &content_type, &filename)
-        .await
-        .ok()?;
+    let size_bytes = data.len() as i64;
+    tokio::select! {
+        biased;
+        _ = ctx.cancelled() => return None,
+        uploaded = storage.upload(&key, data, &content_type, &filename) => {
+            uploaded.ok()?;
+        }
+    }
     Some(MediaRef {
         r#type: cordy_channel::MsgType::image(),
         storage_key: key,
         storage_url: link,
         filename,
         mime_type: content_type,
-        size_bytes: data.len() as i64,
+        size_bytes,
         inline_placeholder: crate::inbound::DINGTALK_IMAGE_PLACEHOLDER.to_string(),
         inline_index,
     })
