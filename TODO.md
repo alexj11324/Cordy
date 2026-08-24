@@ -657,6 +657,15 @@
       `780aa3d0` validates HTTP(S) app URLs. Scoped rustfmt and
       `git diff --check` pass; Cargo/review/gate/merge are intentionally owned
       by pro. Branch was pushed; no PR/candidate is created or reused here.
+- [x] Completed the adjacent login workspace contract in
+      `a39be40d6034decaa7c96396f8c76de395dd5fff` (parent `780aa3d0`, tree
+      `ee5a655a9de55a5795dc6c39778dc18c24271e9c`). When the authenticated user
+      has no workspace, Rust now opens a safe `/workspaces/new` URL, polls the
+      authenticated API for at most five minutes, writes the discovered default
+      workspace atomically, and reports timeout/discovery failures without
+      credentials. Scoped rustfmt and `git diff --check` pass; pushed on the
+      same cumulative branch for pro's Ready PR handling; Cargo/review/gate/
+      merge remain with pro.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
