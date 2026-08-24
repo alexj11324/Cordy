@@ -949,6 +949,7 @@ dependencies = [
  "cordy-util",
  "futures-util",
  "hex",
+ "hmac 0.12.1",
  "http-body-util",
  "rand 0.8.7",
  "redis",
