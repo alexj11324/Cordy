@@ -80,6 +80,16 @@ async fn get_config(State(state): State<HandlerState>) -> Json<AppConfig> {
     };
     let disabled_flags = DisabledFlags;
     let flags: &dyn FlagSource = state.feature_flags.as_deref().unwrap_or(&disabled_flags);
+    let mut public_flags = feature_flags::evaluate_frontend_public_flags(flags);
+    // These frontend surfaces must stay hidden until their complete Rust route
+    // families land in later stack layers.
+    for key in [
+        feature_flags::PLUGINS_V1,
+        feature_flags::COMPOSIO_MCP_APPS,
+        feature_flags::BILLING_WORKSPACE_SUBSCRIPTIONS,
+    ] {
+        public_flags.insert(key.to_string(), false);
+    }
 
     Json(AppConfig {
         cdn_domain: state.public_config.cdn_domain.clone(),
@@ -94,7 +104,7 @@ async fn get_config(State(state): State<HandlerState>) -> Json<AppConfig> {
         posthog_key,
         posthog_host,
         analytics_environment,
-        feature_flags: feature_flags::evaluate_frontend_public_flags(flags),
+        feature_flags: public_flags,
         local_worktree_supported: true,
         server_version: if is_official_cloud_deployment() {
             String::new()

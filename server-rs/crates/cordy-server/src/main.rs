@@ -60,6 +60,23 @@ async fn install_pending_stores(
     }
 }
 
+fn start_plugin_event_dispatcher(state: &cordy_handler::HandlerState) {
+    let Some(callbacks) = state.callbacks.clone() else {
+        tracing::warn!("plugin event dispatcher disabled: callback tokens are unavailable");
+        return;
+    };
+    let dispatcher = Arc::new(
+        cordy_service::plugin_event_dispatch::PluginEventDispatcher::new(
+            state.plugins.clone(),
+            callbacks,
+            state.callback_base_url.clone(),
+            state.feature_flags.clone(),
+        ),
+    );
+    cordy_service::plugin_event_dispatch::subscribe_plugin_events(&state.bus, dispatcher.clone());
+    dispatcher.start();
+}
+
 async fn build_production_router(
     db: sqlx::PgPool,
     hub: Arc<cordy_realtime::hub::Hub>,
@@ -140,7 +157,8 @@ async fn build_production_router(
         tracing::warn!("public-route rate limiting disabled: REDIS_URL not configured");
     }
     let state = install_pending_stores(state, redis_url).await;
-    Ok(cordy_handler::build_router_from_state(state))
+    start_plugin_event_dispatcher(&state);
+    cordy_handler::build_router_from_state(state)
 }
 
 fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {

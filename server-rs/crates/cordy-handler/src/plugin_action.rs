@@ -476,6 +476,32 @@ impl From<&Comment> for CommentResponse {
     }
 }
 
+fn inserted_comment(row: comment::CreateCommentRow) -> Option<(Comment, i64)> {
+    let issue_revision = row.issue_revision;
+    Some((
+        Comment {
+            id: row.id?,
+            issue_id: row.issue_id?,
+            author_type: row.author_type,
+            author_id: row.author_id?,
+            content: row.content,
+            type_: row.type_,
+            created_at: row.created_at?,
+            updated_at: row.updated_at?,
+            parent_id: row.parent_id,
+            workspace_id: row.workspace_id?,
+            resolved_at: row.resolved_at,
+            resolved_by_type: row.resolved_by_type,
+            resolved_by_id: row.resolved_by_id,
+            source_task_id: row.source_task_id,
+            quick_action_id: row.quick_action_id,
+            via_plugin_id: row.via_plugin_id,
+            revision: row.revision,
+        },
+        issue_revision,
+    ))
+}
+
 async fn list_comments(
     State(state): State<HandlerState>,
     headers: HeaderMap,
@@ -576,8 +602,17 @@ async fn create_comment(
         cordy_db::dbid::new_v7(),
     )
     .await;
-    let created = match created {
-        Ok(Some(created)) => created,
+    let (created, issue_revision) = match created {
+        Ok(Some(created)) => match inserted_comment(created) {
+            Some(created) => created,
+            None => {
+                tracing::error!("plugin comment insert returned an incomplete row");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to create the comment",
+                );
+            }
+        },
         _ => {
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -585,27 +620,23 @@ async fn create_comment(
             )
         }
     };
-    let payload = json!({
-        "id": created.id.map(|id| id.to_string()).unwrap_or_default(),
-        "author_type": created.author_type,
-        "author_id": created.author_id.map(|id| id.to_string()).unwrap_or_default(),
-        "content": created.content,
-        "type": created.type_,
-        "parent_id": created.parent_id.map(|id| id.to_string()),
-        "created_at": created.created_at.map(|time| time.to_rfc3339_opts(SecondsFormat::Secs, true)).unwrap_or_default(),
-    });
+    let mut event_comment =
+        crate::comment::comment_json_with_related(&created, json!([]), json!([]));
+    if let Some(object) = event_comment.as_object_mut() {
+        object.insert("issue_revision".into(), json!(issue_revision));
+    }
     state.bus.publish(&cordy_events::Event {
         event_type: cordy_protocol::EVENT_COMMENT_CREATED.to_string(),
         workspace_id: caller.workspace_id.to_string(),
         actor_type: author_type.to_string(),
         actor_id: author_id.to_string(),
         payload: json!({
-            "comment": payload.clone(),
+            "comment": event_comment,
             "issue_title": issue.title,
             "issue_assignee_type": issue.assignee_type,
             "issue_assignee_id": issue.assignee_id.map(|id| id.to_string()),
             "issue_status": issue.status,
-            "issue_revision": created.issue_revision,
+            "issue_revision": issue_revision,
         }),
         ..Default::default()
     });
@@ -618,7 +649,7 @@ async fn create_comment(
             &author_id.to_string(),
         )
         .await;
-    (StatusCode::CREATED, Json(payload)).into_response()
+    (StatusCode::CREATED, Json(CommentResponse::from(&created))).into_response()
 }
 
 fn storage_scope(
