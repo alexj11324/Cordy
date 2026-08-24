@@ -16,7 +16,7 @@ use cordy_db::queries::{agent, channel, dingtalk};
 use cordy_lark::client::ApiClient as _;
 use cordy_middleware::workspace::WorkspaceContext;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -274,6 +274,35 @@ struct LarkRegistrationRuntime {
     bus: Arc<cordy_events::Bus>,
     http_base_url: String,
     cancel: CancellationToken,
+}
+
+fn can_manage_lark_agent(role: &str, owner_id: Option<Uuid>, actor: Uuid) -> bool {
+    matches!(role, "owner" | "admin") || owner_id == Some(actor)
+}
+
+/// Revalidates the authority captured when the device flow began. The member
+/// and agent rows are locked together until the installation transaction
+/// commits, so a concurrent membership removal, role downgrade, ownership
+/// transfer, or agent deletion cannot race the secret-bearing write.
+async fn lark_finalize_authorized(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    workspace_id: Uuid,
+    agent_id: Uuid,
+    actor: Uuid,
+) -> anyhow::Result<bool> {
+    let current = sqlx::query_as::<_, (String, Option<Uuid>)>(
+        r#"SELECT m.role, a.owner_id
+FROM member m
+JOIN agent a ON a.id = $3 AND a.workspace_id = m.workspace_id AND a.kind = 'user'
+WHERE m.workspace_id = $1 AND m.user_id = $2
+FOR SHARE OF m, a"#,
+    )
+    .bind(workspace_id)
+    .bind(actor)
+    .bind(agent_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(current.is_some_and(|(role, owner_id)| can_manage_lark_agent(&role, owner_id, actor)))
 }
 
 fn lark_sessions() -> &'static Mutex<HashMap<String, LarkSession>> {
@@ -541,6 +570,30 @@ async fn run_lark_registration(
                 return;
             }
         };
+        let authorized =
+            match lark_finalize_authorized(&mut tx, workspace_id, agent_id, actor).await {
+                Ok(authorized) => authorized,
+                Err(error) => {
+                    let _ = tx.rollback().await;
+                    finish_lark_session(
+                        &session_id,
+                        None,
+                        Some("persist_failed"),
+                        Some(&error.to_string()),
+                    );
+                    return;
+                }
+            };
+        if !authorized {
+            let _ = tx.rollback().await;
+            finish_lark_session(
+                &session_id,
+                None,
+                Some("authorization_revoked"),
+                Some("workspace membership or agent-management permission changed"),
+            );
+            return;
+        }
         let persisted = async {
             cordy_lark::channel_store::reclaim_dead_installation_with(
                 &mut *tx,
@@ -1488,6 +1541,18 @@ mod tests {
                 .unwrap();
         assert_eq!(legacy.client_id, "old-key");
         assert_eq!(legacy.client_secret, "old-secret");
+    }
+
+    #[test]
+    fn lark_finalize_uses_current_management_authority() {
+        let actor = Uuid::now_v7();
+        let other = Uuid::now_v7();
+
+        assert!(can_manage_lark_agent("owner", Some(other), actor));
+        assert!(can_manage_lark_agent("admin", Some(other), actor));
+        assert!(can_manage_lark_agent("member", Some(actor), actor));
+        assert!(!can_manage_lark_agent("member", Some(other), actor));
+        assert!(!can_manage_lark_agent("member", None, actor));
     }
 
     #[test]
