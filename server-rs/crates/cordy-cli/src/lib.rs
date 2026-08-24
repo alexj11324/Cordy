@@ -128,6 +128,8 @@ enum Command {
     Setup(SetupArgs),
     #[command(about = "Manage autopilots (scheduled/triggered agent automations)")]
     Autopilot(AutopilotArgs),
+    #[command(about = "Update cordy to the latest version")]
+    Update(UpdateArgs),
     #[command(about = "Print version information")]
     Version {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
@@ -185,6 +187,16 @@ struct DaemonDiskUsageArgs {
     workspaces_root: Option<String>,
     #[arg(long, help = "Scan the default root and every named profile root")]
     all_profiles: bool,
+}
+
+#[derive(Debug, Args)]
+struct UpdateArgs {
+    #[arg(
+        long,
+        value_parser = parse_cli_duration,
+        help = "Maximum time to wait for the release archive download"
+    )]
+    download_timeout: Option<Duration>,
 }
 
 #[derive(Debug, Args)]
@@ -3151,6 +3163,7 @@ async fn run_with_input<R: Read>(
             command: DaemonCommand::DiskUsage(args),
         }) => run_daemon_disk_usage(cli, environment, args).await,
         Command::Setup(args) => run_setup(cli, environment, args, input).await,
+        Command::Update(args) => run_update(cli, environment, args).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -4100,6 +4113,99 @@ fn run_version(output: VersionOutput) -> Result<RunOutput> {
         stdout,
         stderr: String::new(),
     })
+}
+
+async fn run_update(_cli: &Cli, environment: &Environment, args: &UpdateArgs) -> Result<RunOutput> {
+    require_human_local_command(environment, "update")?;
+    let download_timeout = resolve_update_download_timeout(args);
+    validate_update_timeout(download_timeout)?;
+
+    let executor = cordy_daemon::update_executor::UpdateExecutor::detect()
+        .await
+        .map_err(|error| sanitize_update_error(error.into()))?;
+    let outcome = executor
+        .update_request(
+            cordy_daemon::update_executor::UpdateRequest::latest()
+                .with_current_version(CLIENT_VERSION)
+                .with_download_timeout(download_timeout),
+        )
+        .await
+        .map_err(sanitize_update_error)?;
+
+    let mut output = render_update_outcome(outcome);
+    output.stderr = format!(
+        "Current version: {CLIENT_VERSION} (commit: {BUILD_COMMIT}, built: {BUILD_DATE})\n{}",
+        output.stderr
+    );
+    Ok(output)
+}
+
+fn resolve_update_download_timeout(args: &UpdateArgs) -> Duration {
+    args.download_timeout
+        .unwrap_or(cordy_daemon::update_executor::DEFAULT_UPDATE_DOWNLOAD_TIMEOUT)
+}
+
+fn validate_update_timeout(timeout: Duration) -> Result<()> {
+    anyhow::ensure!(
+        !timeout.is_zero(),
+        "download timeout must be greater than zero"
+    );
+    Ok(())
+}
+
+fn sanitize_update_error(error: anyhow::Error) -> anyhow::Error {
+    let code = error
+        .downcast_ref::<cordy_daemon::update_executor::UpdateExecutorError>()
+        .map(|error| error.kind.code())
+        .unwrap_or("unknown");
+    anyhow::anyhow!("update failed ({code})")
+}
+
+fn render_update_outcome(outcome: cordy_daemon::update_executor::UpdateOutcome) -> RunOutput {
+    let mut stderr = String::new();
+    if outcome.latest_query_failed {
+        // The daemon facade deliberately drops the underlying HTTP/command
+        // detail. Keep the CLI warning equally generic so URLs, local paths,
+        // and credentials can never reach terminal output.
+        let _ = writeln!(
+            stderr,
+            "Warning: could not check latest version; continuing."
+        );
+    }
+    if outcome.already_current {
+        let _ = writeln!(stderr, "Already up to date.");
+        return RunOutput {
+            stdout: String::new(),
+            stderr,
+        };
+    }
+
+    let latest = outcome
+        .resolved_version
+        .as_deref()
+        .map(str::trim)
+        .filter(|version| cordy_daemon::auto_update::is_release_version(version));
+    if let Some(version) = latest {
+        let _ = writeln!(stderr, "Latest version:  {version}\n");
+    }
+
+    match outcome.method {
+        cordy_daemon::update_executor::UpdateInstallMethod::Homebrew => {
+            let _ = writeln!(stderr, "Updating via Homebrew...");
+        }
+        cordy_daemon::update_executor::UpdateInstallMethod::Direct => {
+            let label = latest.unwrap_or("latest release");
+            let _ = writeln!(stderr, "Downloading {label} from GitHub Releases...");
+        }
+    }
+    if !outcome.message.trim().is_empty() {
+        let _ = writeln!(stderr, "{}", outcome.message.trim());
+    }
+    let _ = writeln!(stderr, "Update complete.");
+    RunOutput {
+        stdout: String::new(),
+        stderr,
+    }
 }
 
 async fn run_runtime_list(
@@ -16249,6 +16355,97 @@ mod tests {
         assert!(Cli::try_parse_from(["cordy", "version", "--output", "text"]).is_ok());
         assert!(Cli::try_parse_from(["cordy", "version", "--output", "json"]).is_ok());
         assert!(Cli::try_parse_from(["cordy", "version", "--output", "table"]).is_err());
+    }
+
+    #[test]
+    fn update_command_parses_go_timeout_and_uses_daemon_default() {
+        let default = Cli::try_parse_from(["cordy", "update"]).expect("update CLI");
+        let Command::Update(args) = default.command else {
+            panic!("expected update command");
+        };
+        assert_eq!(args.download_timeout, None);
+        assert_eq!(
+            resolve_update_download_timeout(&args),
+            cordy_daemon::update_executor::DEFAULT_UPDATE_DOWNLOAD_TIMEOUT
+        );
+
+        let custom = Cli::try_parse_from(["cordy", "update", "--download-timeout", "7s"])
+            .expect("custom update timeout");
+        let Command::Update(args) = custom.command else {
+            panic!("expected update command");
+        };
+        assert_eq!(args.download_timeout, Some(Duration::from_secs(7)));
+        assert!(Cli::try_parse_from(["cordy", "update", "--download-timeout", "0s"]).is_ok());
+    }
+
+    #[test]
+    fn update_output_matches_go_states_without_sensitive_details() {
+        let output = render_update_outcome(cordy_daemon::update_executor::UpdateOutcome {
+            method: cordy_daemon::update_executor::UpdateInstallMethod::Direct,
+            resolved_version: Some("v1.2.4".into()),
+            already_current: false,
+            latest_query_failed: false,
+            message: "Downloaded cordy-cli-linux-amd64.tar.gz and replaced the current executable"
+                .into(),
+        });
+        assert!(output.stdout.is_empty());
+        assert!(output.stderr.contains("Latest version:  v1.2.4"));
+        assert!(output
+            .stderr
+            .contains("Downloading v1.2.4 from GitHub Releases..."));
+        assert!(output.stderr.contains("Update complete."));
+        for forbidden in ["https://", "/home/", "token", "Authorization"] {
+            assert!(!output.stderr.contains(forbidden), "leaked {forbidden}");
+        }
+
+        let current = render_update_outcome(cordy_daemon::update_executor::UpdateOutcome {
+            method: cordy_daemon::update_executor::UpdateInstallMethod::Direct,
+            resolved_version: Some("v1.2.3".into()),
+            already_current: true,
+            latest_query_failed: false,
+            message: "Already up to date.".into(),
+        });
+        assert_eq!(current.stderr, "Already up to date.\n");
+    }
+
+    #[test]
+    fn update_homebrew_warning_continues_without_latest_details() {
+        let output = render_update_outcome(cordy_daemon::update_executor::UpdateOutcome {
+            method: cordy_daemon::update_executor::UpdateInstallMethod::Homebrew,
+            resolved_version: None,
+            already_current: false,
+            latest_query_failed: true,
+            message: "Homebrew upgraded cordy-ai/tap/cordy".into(),
+        });
+        assert!(output
+            .stderr
+            .contains("Warning: could not check latest version; continuing."));
+        assert!(output.stderr.contains("Updating via Homebrew..."));
+        assert!(output.stderr.contains("Update complete."));
+        assert!(!output.stderr.contains("https://"));
+    }
+
+    #[test]
+    fn update_rejects_zero_timeout_before_executor_detection() {
+        let error = validate_update_timeout(Duration::ZERO).expect_err("zero timeout");
+        assert!(error
+            .to_string()
+            .contains("download timeout must be greater than zero"));
+    }
+
+    #[tokio::test]
+    async fn update_is_unavailable_in_daemon_task_context() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_TASK_ID", "task-1");
+        let cli = Cli::try_parse_from(["cordy", "update"]).expect("update CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("task context must be rejected");
+        assert!(error
+            .to_string()
+            .contains("update is not available inside a daemon-managed task"));
     }
 
     #[tokio::test]
