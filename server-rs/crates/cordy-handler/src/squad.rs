@@ -746,22 +746,38 @@ async fn remove(
     if existing.archived_at.is_some() {
         return error_response(StatusCode::BAD_REQUEST, "squad is already archived");
     }
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, squad_id = %existing.id, "failed to start squad archive transaction");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
+        }
+    };
     if let Err(error) =
-        squad::transfer_squad_assignees(&state.pool, existing.id, existing.leader_id).await
+        squad::transfer_squad_assignees(&mut *transaction, existing.id, existing.leader_id).await
     {
         tracing::warn!(%error, squad_id = %existing.id, "transfer squad assignees failed");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
     }
-    if let Err(error) =
-        squad::transfer_squad_autopilots_to_leader(&state.pool, existing.id, existing.leader_id)
-            .await
+    if let Err(error) = squad::transfer_squad_autopilots_to_leader(
+        &mut *transaction,
+        existing.id,
+        existing.leader_id,
+    )
+    .await
     {
         tracing::warn!(%error, squad_id = %existing.id, "transfer squad autopilots failed");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
     }
-    match squad::archive_squad(&state.pool, existing.id, context.member.user_id).await {
+    match squad::archive_squad(&mut *transaction, existing.id, context.member.user_id).await {
         Ok(Some(_)) => {}
         Ok(None) | Err(_) => {
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad")
         }
+    }
+    if let Err(error) = transaction.commit().await {
+        tracing::warn!(%error, squad_id = %existing.id, "failed to commit squad archive");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
     }
     publish_squad_event(
         &state,
