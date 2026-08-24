@@ -20,7 +20,7 @@ use std::fmt::Write;
 use std::fs;
 use std::io::Read;
 use std::path::{Component, Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use url::{form_urlencoded, Url};
 
 pub const CLIENT_VERSION: &str = env!("CORDY_BUILD_VERSION");
@@ -160,6 +160,17 @@ enum RuntimeCommand {
         cascade: bool,
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
+    },
+    #[command(about = "Initiate a CLI update on a runtime")]
+    Update {
+        #[arg(value_name = "RUNTIME-ID")]
+        runtime_id: String,
+        #[arg(long, help = "Target version to update to (required)")]
+        target_version: Option<String>,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+        #[arg(long, help = "Wait for update to complete")]
+        wait: bool,
     },
 }
 
@@ -2560,6 +2571,25 @@ async fn run_with_input<R: Read>(
                     output,
                 },
         }) => run_runtime_delete(cli, environment, runtime_id, *cascade, *output).await,
+        Command::Runtime(RuntimeArgs {
+            command:
+                RuntimeCommand::Update {
+                    runtime_id,
+                    target_version,
+                    output,
+                    wait,
+                },
+        }) => {
+            run_runtime_update(
+                cli,
+                environment,
+                runtime_id,
+                target_version.as_deref(),
+                *output,
+                *wait,
+            )
+            .await
+        }
         Command::Version { output } => run_version(*output),
     }
 }
@@ -2827,6 +2857,108 @@ fn format_runtime_delete_result(result: &Value, output: OutputFormat) -> Result<
     Ok(RunOutput {
         stdout: String::new(),
         stderr,
+    })
+}
+
+async fn run_runtime_update(
+    cli: &Cli,
+    environment: &Environment,
+    runtime_id: &str,
+    target_version: Option<&str>,
+    output: OutputFormat,
+    wait: bool,
+) -> Result<RunOutput> {
+    run_runtime_update_with_policy(
+        cli,
+        environment,
+        runtime_id,
+        target_version,
+        output,
+        wait,
+        Duration::from_secs(2),
+        Duration::from_secs(150),
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_runtime_update_with_policy(
+    cli: &Cli,
+    environment: &Environment,
+    runtime_id: &str,
+    target_version: Option<&str>,
+    output: OutputFormat,
+    wait: bool,
+    poll_interval: Duration,
+    max_wait: Duration,
+) -> Result<RunOutput> {
+    let request_timeout = http_timeout(environment.raw("CORDY_HTTP_TIMEOUT")).max(max_wait);
+    let client = new_api_client(cli, environment)?.with_request_timeout(request_timeout);
+    let target_version = target_version
+        .filter(|version| !version.is_empty())
+        .context("--target-version is required")?;
+    let started = Instant::now();
+    let mut update: Value = client
+        .post_json(
+            &format!("/api/runtimes/{runtime_id}/update"),
+            &serde_json::json!({"target_version":target_version}),
+        )
+        .await
+        .context("initiate update")?;
+    if !wait {
+        return format_runtime_update_result(&update, output, false);
+    }
+    let update_id = value_string(&update, "id");
+    let remaining = max_wait.saturating_sub(started.elapsed());
+    let poll = async {
+        loop {
+            tokio::time::sleep(poll_interval).await;
+            update = client
+                .get_json(&format!("/api/runtimes/{runtime_id}/update/{update_id}"))
+                .await
+                .context("get update status")?;
+            if matches!(
+                value_string(&update, "status").as_str(),
+                "completed" | "failed" | "timeout"
+            ) {
+                return Ok::<Value, anyhow::Error>(update.clone());
+            }
+        }
+    };
+    match tokio::time::timeout(remaining, poll).await {
+        Ok(Ok(final_update)) => format_runtime_update_result(&final_update, output, true),
+        Ok(Err(error)) => Err(error),
+        Err(_) => bail!(
+            "timed out waiting for update (last status: {})",
+            value_string(&update, "status")
+        ),
+    }
+}
+
+fn format_runtime_update_result(
+    update: &Value,
+    output: OutputFormat,
+    waited: bool,
+) -> Result<RunOutput> {
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(update)?),
+        OutputFormat::Table if !waited => format!(
+            "Update initiated: {} (status: {})\n",
+            value_string(update, "id"),
+            value_string(update, "status")
+        ),
+        OutputFormat::Table if value_string(update, "status") == "completed" => {
+            format!("Update completed: {}\n", value_string(update, "output"))
+        }
+        OutputFormat::Table => format!(
+            "Update {}: {}\n",
+            value_string(update, "status"),
+            value_string(update, "error")
+        ),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
     })
 }
 
@@ -12649,6 +12781,155 @@ mod tests {
             serde_json::json!({"id":"runtime-1","deleted":true})
         );
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn runtime_update_initiates_and_waits_with_injected_poll_policy() {
+        let polls = Arc::new(Mutex::new(0usize));
+        let polls_handler = Arc::clone(&polls);
+        let app = Router::new()
+            .route(
+                "/api/runtimes/runtime-1/update",
+                post(|Json(body): Json<Value>| async move {
+                    assert_eq!(body, serde_json::json!({"target_version":"v2.0.0"}));
+                    Json(serde_json::json!({"id":"update-1","status":"pending"}))
+                }),
+            )
+            .route(
+                "/api/runtimes/runtime-1/update/update-1",
+                get(move || {
+                    let polls = Arc::clone(&polls_handler);
+                    async move {
+                        let mut count = polls.lock().expect("poll count");
+                        *count += 1;
+                        if *count == 1 {
+                            Json(serde_json::json!({"id":"update-1","status":"running"}))
+                        } else {
+                            Json(serde_json::json!({
+                                "id":"update-1","status":"completed","output":"updated"
+                            }))
+                        }
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "runtime",
+            "update",
+            "runtime-1",
+            "--target-version",
+            "v2.0.0",
+            "--wait",
+            "--output",
+            "table",
+        ])
+        .expect("runtime update CLI");
+        let Command::Runtime(RuntimeArgs {
+            command:
+                RuntimeCommand::Update {
+                    runtime_id,
+                    target_version,
+                    output,
+                    wait,
+                },
+        }) = &cli.command
+        else {
+            panic!("expected runtime update");
+        };
+        let updated = run_runtime_update_with_policy(
+            &cli,
+            &environment,
+            runtime_id,
+            target_version.as_deref(),
+            *output,
+            *wait,
+            Duration::from_millis(1),
+            Duration::from_secs(1),
+        )
+        .await
+        .expect("wait for runtime update");
+        assert_eq!(updated.stdout, "Update completed: updated\n");
+        assert_eq!(*polls.lock().expect("poll count"), 2);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn runtime_update_timeout_reports_last_status() {
+        let app = Router::new()
+            .route(
+                "/api/runtimes/runtime-1/update",
+                post(|| async { Json(serde_json::json!({"id":"update-1","status":"pending"})) }),
+            )
+            .route(
+                "/api/runtimes/runtime-1/update/update-1",
+                get(|| async { Json(serde_json::json!({"id":"update-1","status":"running"})) }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "runtime",
+            "update",
+            "runtime-1",
+            "--target-version",
+            "v2",
+            "--wait",
+        ])
+        .expect("runtime update CLI");
+        let error = run_runtime_update_with_policy(
+            &cli,
+            &environment,
+            "runtime-1",
+            Some("v2"),
+            OutputFormat::Json,
+            true,
+            Duration::from_millis(1),
+            Duration::from_millis(10),
+        )
+        .await
+        .expect_err("runtime update timeout");
+        assert!(error
+            .to_string()
+            .starts_with("timed out waiting for update (last status:"));
+        server.abort();
+    }
+
+    #[test]
+    fn runtime_update_terminal_table_outputs_match_go() {
+        assert_eq!(
+            format_runtime_update_result(
+                &serde_json::json!({"status":"failed","error":"boom"}),
+                OutputFormat::Table,
+                true,
+            )
+            .expect("failed update output")
+            .stdout,
+            "Update failed: boom\n"
+        );
+        assert_eq!(
+            format_runtime_update_result(
+                &serde_json::json!({"status":"timeout","error":"daemon timeout"}),
+                OutputFormat::Table,
+                true,
+            )
+            .expect("timeout update output")
+            .stdout,
+            "Update timeout: daemon timeout\n"
+        );
     }
 
     async fn test_server() -> (String, tokio::task::JoinHandle<()>) {
