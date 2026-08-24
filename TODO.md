@@ -510,6 +510,16 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy skill get <id>` to PR #129. It fetches an encoded skill ID,
+      preserves the complete JSON object, and provides Go-compatible table
+      output for ID/name/description/created time. Exact head is
+      `16f407b4954e048e1695a44b8fd56c7d745f38e1`, parent
+      `6fbeb9effe3636af206ec654ea04f3cc2f608284`, tree
+      `90759c0faeaca50f526d9d57bc013fe33ec8cd21`, candidate
+      `7854b53b16bc4c91eaa69f5ee5c6586ad846b480`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
