@@ -392,6 +392,17 @@ impl ReasonixBackend {
             }),
         }
     }
+
+    pub async fn discover_models(
+        &self,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        self.inner
+            .discover_models(cache, cancellation, timeout)
+            .await
+    }
 }
 
 #[async_trait]
@@ -504,9 +515,15 @@ async fn discover_models(
     }
     let catalog = discover_acp_session(config, cancellation, timeout)
         .await
-        .map_or_else(Catalog::default, |(_, session)| Catalog {
-            models: parse_acp_session_models(&session, &config.provider),
-            fallback: false,
+        .map_or_else(Catalog::default, |(_, session)| {
+            let mut models = parse_acp_session_models(&session, &config.provider);
+            if config.provider == "reasonix" {
+                annotate_reasonix_effort(&mut models, &session);
+            }
+            Catalog {
+                models,
+                fallback: false,
+            }
         });
     let _ = cache.insert(key, catalog.clone());
     catalog
@@ -526,6 +543,20 @@ async fn discover_acp_session(
     let prefix = filter_launch_prefix(&config.command.prefix, blocked);
     let mut argv = prefix.args;
     argv.extend(config.discovery_args.clone());
+    let isolated_state = if config.provider == "reasonix" {
+        match tempfile::Builder::new()
+            .prefix("cordy-reasonix-discovery-state-")
+            .tempdir()
+        {
+            Ok(directory) => Some(directory),
+            Err(error) => {
+                tracing::debug!(provider = "reasonix", error = %error, "ACP model discovery state isolation failed");
+                return None;
+            }
+        }
+    } else {
+        None
+    };
     let mut command = Command::new(command_path);
     command
         .args(argv)
@@ -534,6 +565,9 @@ async fn discover_acp_session(
         .stderr(Stdio::null())
         .envs(&config.env)
         .kill_on_drop(false);
+    if let Some(directory) = isolated_state.as_ref() {
+        command.env("REASONIX_STATE_HOME", directory.path());
+    }
     let mut tree = match OwnedProcessTree::spawn(&mut command).await {
         Ok(tree) => tree,
         Err(error) => {
@@ -1877,7 +1911,7 @@ fn extract_config_value(value: &Value, config_id: &str) -> Option<String> {
 struct AcpEffortOption {
     config_id: String,
     current: String,
-    choices: Vec<String>,
+    choices: Vec<crate::model::ThinkingLevel>,
 }
 
 fn parse_acp_effort_option(value: &Value) -> Option<AcpEffortOption> {
@@ -1919,8 +1953,21 @@ fn parse_acp_effort_option(value: &Value) -> Option<AcpEffortOption> {
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .trim();
-            if !value.is_empty() && !choices.iter().any(|choice| choice == value) {
-                choices.push(value.to_string());
+            if !value.is_empty() && !choices.iter().any(|choice| choice.value == value) {
+                let label = choice
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .trim();
+                choices.push(crate::model::ThinkingLevel {
+                    value: value.to_string(),
+                    label: if label.is_empty() {
+                        thinking_label(value)
+                    } else {
+                        label.to_string()
+                    },
+                    description: String::new(),
+                });
             }
         }
         let current = option
@@ -1933,7 +1980,7 @@ fn parse_acp_effort_option(value: &Value) -> Option<AcpEffortOption> {
             config_id: config_id.to_string(),
             current: choices
                 .iter()
-                .any(|choice| choice == current)
+                .any(|choice| choice.value == current)
                 .then(|| current.to_string())
                 .unwrap_or_default(),
             choices,
@@ -1962,12 +2009,23 @@ async fn apply_reasonix_effort<R, W>(
         );
         return;
     };
-    if state_is_current && !option.choices.iter().any(|choice| choice == requested) {
+    if state_is_current
+        && !option
+            .choices
+            .iter()
+            .any(|choice| choice.value == requested)
+    {
+        let advertised = option
+            .choices
+            .iter()
+            .map(|choice| choice.value.as_str())
+            .collect::<Vec<_>>()
+            .join(",");
         tracing::warn!(
             provider = "reasonix",
             config_id = option.config_id,
             requested_level = requested,
-            advertised_levels = %option.choices.join(","),
+            advertised_levels = %advertised,
             "session does not advertise the requested reasoning effort; sending the prompt without it"
         );
         return;
@@ -2011,6 +2069,19 @@ async fn apply_reasonix_effort<R, W>(
             error = %error,
             "runtime rejected the reasoning effort request; sending the prompt anyway"
         ),
+    }
+}
+
+fn annotate_reasonix_effort(models: &mut [crate::model::Model], session: &Value) {
+    let Some(option) = parse_acp_effort_option(session).filter(|option| !option.choices.is_empty())
+    else {
+        return;
+    };
+    if let Some(model) = models.iter_mut().find(|model| model.default) {
+        model.thinking = Some(crate::model::ModelThinking {
+            supported_levels: option.choices,
+            default_level: option.current,
+        });
     }
 }
 
@@ -2419,7 +2490,47 @@ mod tests {
         .unwrap_or_else(|| panic!("Reasonix effort option"));
         assert_eq!(option.config_id, "effort");
         assert_eq!(option.current, "high");
-        assert_eq!(option.choices, ["auto", "high"]);
+        assert_eq!(
+            option
+                .choices
+                .iter()
+                .map(|choice| choice.value.as_str())
+                .collect::<Vec<_>>(),
+            ["auto", "high"]
+        );
+        assert_eq!(option.choices[1].label, "High");
+    }
+
+    #[test]
+    fn reasonix_discovery_annotates_only_the_current_model() {
+        let session = serde_json::json!({
+            "models":{
+                "currentModelId":"deepseek-v4-flash",
+                "availableModels":[
+                    {"modelId":"deepseek-v4-flash","name":"Flash"},
+                    {"modelId":"deepseek-v4-pro","name":"Pro"}
+                ]
+            },
+            "configOptions":[{
+                "id":"effort",
+                "category":"thought_level",
+                "currentValue":"max",
+                "options":[
+                    {"value":"auto","name":"Auto"},
+                    {"value":"disabled","name":"Disabled"},
+                    {"value":"max","name":"Max"}
+                ]
+            }]
+        });
+        let mut models = parse_acp_session_models(&session, "reasonix");
+        annotate_reasonix_effort(&mut models, &session);
+        let thinking = models[0]
+            .thinking
+            .as_ref()
+            .unwrap_or_else(|| panic!("current Reasonix model thinking catalog"));
+        assert_eq!(thinking.default_level, "max");
+        assert_eq!(thinking.supported_levels[1].value, "disabled");
+        assert!(models[1].thinking.is_none());
     }
 
     #[test]
@@ -3081,6 +3192,39 @@ done
         assert_eq!(result.session_id, "reasonix-1");
         assert_eq!(result.usage["deepseek-v4"].input_tokens, 10);
         assert_eq!(result.usage["deepseek-v4"].cost_usd_ticks, 100_000_000);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn reasonix_discovers_current_model_effort_in_isolated_state() {
+        let (_directory, backend) = fake_reasonix_backend(
+            r#"#!/bin/sh
+test -n "$REASONIX_STATE_HOME" && test -d "$REASONIX_STATE_HOME" || exit 30
+test "$1 $2 $3 $4 $5 $6 $7 $8 $9 ${10}" = "acp --profile balanced --planner auto --sandbox-network auto --sandbox-bash auto --workspace-only" || exit 31
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"discovery","models":{"currentModelId":"flash","availableModels":[{"modelId":"flash","name":"Flash"},{"modelId":"pro","name":"Pro"}]},"configOptions":[{"id":"effort","category":"thought_level","currentValue":"high","options":[{"value":"low","name":"Low"},{"value":"high","name":"High"}]}]}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let catalog = backend
+            .discover_models(
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(catalog.models.len(), 2);
+        let thinking = catalog.models[0]
+            .thinking
+            .as_ref()
+            .unwrap_or_else(|| panic!("Reasonix current model effort"));
+        assert_eq!(thinking.default_level, "high");
+        assert_eq!(thinking.supported_levels.len(), 2);
+        assert!(catalog.models[1].thinking.is_none());
     }
 
     #[cfg(unix)]
