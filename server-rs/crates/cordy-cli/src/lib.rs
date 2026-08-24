@@ -134,6 +134,40 @@ enum SquadCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
+    #[command(about = "Create a new squad")]
+    Create(SquadCreateArgs),
+    #[command(about = "Update a squad")]
+    Update(SquadUpdateArgs),
+}
+
+#[derive(Debug, Args)]
+struct SquadCreateArgs {
+    #[arg(long, help = "Squad name (required)")]
+    name: Option<String>,
+    #[arg(long, default_value = "", help = "Squad description")]
+    description: String,
+    #[arg(long, help = "Leader agent (name or ID) — required")]
+    leader: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct SquadUpdateArgs {
+    #[arg(value_name = "SQUAD-ID")]
+    id: String,
+    #[arg(long, help = "New name")]
+    name: Option<String>,
+    #[arg(long, help = "New description")]
+    description: Option<String>,
+    #[arg(long, help = "New instructions")]
+    instructions: Option<String>,
+    #[arg(long, help = "New leader agent (name or ID)")]
+    leader: Option<String>,
+    #[arg(long, help = "New avatar URL")]
+    avatar_url: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -2711,6 +2745,12 @@ async fn run_with_input<R: Read>(
         Command::Squad(SquadArgs {
             command: SquadCommand::Get { id, output },
         }) => run_squad_get(cli, environment, id, *output).await,
+        Command::Squad(SquadArgs {
+            command: SquadCommand::Create(args),
+        }) => run_squad_create(cli, environment, args).await,
+        Command::Squad(SquadArgs {
+            command: SquadCommand::Update(args),
+        }) => run_squad_update(cli, environment, args).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -4846,6 +4886,94 @@ async fn run_squad_get(
     }
     Ok(RunOutput {
         stdout,
+        stderr: String::new(),
+    })
+}
+
+async fn run_squad_create(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SquadCreateArgs,
+) -> Result<RunOutput> {
+    let name = args.name.as_deref().filter(|name| !name.is_empty());
+    let Some(name) = name else {
+        bail!("--name is required")
+    };
+    let leader = args.leader.as_deref().filter(|leader| !leader.is_empty());
+    let Some(leader) = leader else {
+        bail!("--leader is required (agent name or ID)")
+    };
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let leader_id = resolve_autopilot_agent(&client, &workspace_id, leader)
+        .await
+        .context("resolve leader")?;
+    let mut body = serde_json::Map::new();
+    body.insert("name".into(), Value::String(name.into()));
+    body.insert("leader_id".into(), Value::String(leader_id));
+    if !args.description.is_empty() {
+        body.insert(
+            "description".into(),
+            Value::String(args.description.clone()),
+        );
+    }
+    let squad: Value = client
+        .post_json("/api/squads", &Value::Object(body))
+        .await
+        .context("create squad")?;
+    format_squad_mutation_result(&squad, args.output, "created")
+}
+
+async fn run_squad_update(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SquadUpdateArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let mut body = serde_json::Map::new();
+    if let Some(name) = &args.name {
+        body.insert("name".into(), Value::String(name.clone()));
+    }
+    if let Some(description) = &args.description {
+        body.insert("description".into(), Value::String(description.clone()));
+    }
+    if let Some(instructions) = &args.instructions {
+        body.insert("instructions".into(), Value::String(instructions.clone()));
+    }
+    if let Some(leader) = &args.leader {
+        let workspace_id = resolve_current_workspace_id(cli, environment);
+        let leader_id = resolve_autopilot_agent(&client, &workspace_id, leader)
+            .await
+            .context("resolve leader")?;
+        body.insert("leader_id".into(), Value::String(leader_id));
+    }
+    if let Some(avatar_url) = &args.avatar_url {
+        body.insert("avatar_url".into(), Value::String(avatar_url.clone()));
+    }
+    if body.is_empty() {
+        bail!("no fields to update; use flags like --name, --description, --instructions, --leader")
+    }
+    let squad: Value = client
+        .put_json(&format!("/api/squads/{}", args.id), &Value::Object(body))
+        .await
+        .context("update squad")?;
+    format_squad_mutation_result(&squad, args.output, "updated")
+}
+
+fn format_squad_mutation_result(
+    squad: &Value,
+    output: OutputFormat,
+    action: &str,
+) -> Result<RunOutput> {
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(squad)?),
+            OutputFormat::Table => format!(
+                "Squad {action}: {} ({})\n",
+                value_string(squad, "name"),
+                value_string(squad, "id")
+            ),
+        },
         stderr: String::new(),
     })
 }
@@ -13903,6 +14031,45 @@ mod tests {
         ));
         assert!(Cli::try_parse_from(["cordy", "squad", "get"]).is_err());
         assert!(Cli::try_parse_from(["cordy", "squad", "list", "extra"]).is_err());
+
+        let create = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "create",
+            "--name",
+            "Reviewers",
+            "--leader",
+            "review",
+            "--output",
+            "table",
+        ])
+        .expect("squad create CLI");
+        assert!(matches!(
+            create.command,
+            Command::Squad(SquadArgs {
+                command: SquadCommand::Create(SquadCreateArgs {
+                    output: OutputFormat::Table,
+                    ..
+                })
+            })
+        ));
+        let update = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "update",
+            "squad-1",
+            "--description=",
+            "--avatar-url=",
+        ])
+        .expect("squad update CLI");
+        let Command::Squad(SquadArgs {
+            command: SquadCommand::Update(args),
+        }) = update.command
+        else {
+            panic!("expected squad update");
+        };
+        assert_eq!(args.description.as_deref(), Some(""));
+        assert_eq!(args.avatar_url.as_deref(), Some(""));
     }
 
     #[tokio::test]
@@ -14006,6 +14173,132 @@ mod tests {
         assert!(output.stdout.is_empty());
         assert_eq!(output.stderr, "No squads found.\n");
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn squad_create_and_update_resolve_leaders_and_preserve_changed_fields() {
+        let bodies = Arc::new(Mutex::new(Vec::new()));
+        let create_bodies = Arc::clone(&bodies);
+        let update_bodies = Arc::clone(&bodies);
+        let app = Router::new()
+            .route(
+                "/api/agents",
+                get(|request: Request| async move {
+                    assert_eq!(request.uri().query(), Some("workspace_id=workspace-1"));
+                    Json(vec![serde_json::json!({
+                        "id":"11111111-1111-1111-1111-111111111111",
+                        "name":"Review Agent"
+                    })])
+                }),
+            )
+            .route(
+                "/api/squads",
+                post(move |Json(body): Json<Value>| {
+                    let bodies = Arc::clone(&create_bodies);
+                    async move {
+                        bodies.lock().expect("squad bodies").push(body);
+                        Json(serde_json::json!({"id":"squad-1","name":"Reviewers"}))
+                    }
+                }),
+            )
+            .route(
+                "/api/squads/squad-1",
+                put(move |Json(body): Json<Value>| {
+                    let bodies = Arc::clone(&update_bodies);
+                    async move {
+                        bodies.lock().expect("squad bodies").push(body);
+                        Json(serde_json::json!({"id":"squad-1","name":"Reviewers"}))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+
+        let create = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "create",
+            "--name",
+            "Reviewers",
+            "--leader",
+            "review",
+            "--output",
+            "table",
+        ])
+        .expect("squad create CLI");
+        let output = run_with_input(&create, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("create squad");
+        assert_eq!(output.stdout, "Squad created: Reviewers (squad-1)\n");
+
+        let update = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "update",
+            "squad-1",
+            "--description=",
+            "--instructions",
+            "Delegate carefully",
+            "--leader",
+            "11111111-1111-1111-1111-111111111111",
+            "--avatar-url=",
+        ])
+        .expect("squad update CLI");
+        let output = run_with_input(&update, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("update squad");
+        let value: Value = serde_json::from_str(&output.stdout).expect("JSON output");
+        assert_eq!(value["id"], "squad-1");
+
+        let bodies = bodies.lock().expect("squad bodies");
+        assert_eq!(
+            bodies[0],
+            serde_json::json!({
+                "name":"Reviewers",
+                "leader_id":"11111111-1111-1111-1111-111111111111"
+            })
+        );
+        assert_eq!(
+            bodies[1],
+            serde_json::json!({
+                "description":"",
+                "instructions":"Delegate carefully",
+                "leader_id":"11111111-1111-1111-1111-111111111111",
+                "avatar_url":""
+            })
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn squad_mutations_validate_required_and_changed_fields() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "http://127.0.0.1:9");
+
+        let create = Cli::try_parse_from(["cordy", "squad", "create", "--leader", "agent"])
+            .expect("squad create CLI");
+        let error = run_with_input(&create, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("missing name rejected");
+        assert_eq!(error.to_string(), "--name is required");
+
+        let update =
+            Cli::try_parse_from(["cordy", "squad", "update", "squad-1"]).expect("squad update CLI");
+        let error = run_with_input(&update, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("no-change update rejected");
+        assert_eq!(
+            error.to_string(),
+            "no fields to update; use flags like --name, --description, --instructions, --leader"
+        );
     }
 
     #[test]
