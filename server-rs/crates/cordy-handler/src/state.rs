@@ -476,7 +476,7 @@ impl HandlerState {
         let on_applied: cordy_ghsnapshot::OnApplied = Arc::new(move |pull_request_id| {
             let pool = event_pool.clone();
             let bus = bus.clone();
-            tokio::spawn(async move {
+            Box::pin(async move {
                 let Ok(Some(pull_request)) =
                     cordy_db::queries::github_snapshot::get_git_hub_pull_request_by_id(
                         &pool,
@@ -506,7 +506,7 @@ impl HandlerState {
                     }),
                     ..Default::default()
                 });
-            });
+            })
         });
         let manager = Arc::new(cordy_ghsnapshot::Manager::new(
             client,

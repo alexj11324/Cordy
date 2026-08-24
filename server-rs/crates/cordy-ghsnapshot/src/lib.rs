@@ -13,7 +13,8 @@ pub mod snapshot;
 
 pub use client::{Client, PullRequestMetadata, RateLimitError, DEFAULT_API_BASE};
 pub use manager::{
-    Address, Manager, ManagerRuntime, ManagerShutdownOutcome, OnApplied, DEFAULT_SHUTDOWN_TIMEOUT,
+    Address, Manager, ManagerRuntime, ManagerShutdownOutcome, OnApplied, OnAppliedFuture,
+    DEFAULT_SHUTDOWN_TIMEOUT,
 };
 pub use snapshot::{
     fetch_pr_snapshot, normalize_node, normalize_run_status, normalize_status_state, CheckContext,

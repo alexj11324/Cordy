@@ -78,9 +78,11 @@ type FetchFuture = Pin<Box<dyn Future<Output = anyhow::Result<PrSnapshot>> + Sen
 /// without a live GitHub. Defaults to [`fetch_pr_snapshot`].
 type FetchFn = Arc<dyn Fn(Arc<Client>, Address) -> FetchFuture + Send + Sync>;
 /// Called once per PR row whose snapshot was actually written (guard passed),
-/// so the handler can broadcast a realtime PR update. Long-running work can
-/// be spawned inside; do not block the worker.
-pub type OnApplied = Arc<dyn Fn(Uuid) + Send + Sync>;
+/// so the handler can broadcast a realtime PR update. The worker awaits this
+/// future, matching Go's callback ordering and keeping it inside the manager's
+/// cancellation and bounded-shutdown boundary.
+pub type OnAppliedFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+pub type OnApplied = Arc<dyn Fn(Uuid) -> OnAppliedFuture + Send + Sync>;
 
 fn default_fetch() -> FetchFn {
     Arc::new(|client, addr| {
@@ -427,7 +429,7 @@ impl Manager {
                         any_open_applied = true;
                     }
                     if let Some(on_applied) = &self.on_applied {
-                        on_applied(pr_id);
+                        on_applied(pr_id).await;
                     }
                 }
             }
@@ -1382,7 +1384,10 @@ mod tests {
             Some(enabled_client()),
             Some(pool.clone()),
             Some(Arc::new(move |id| {
-                let _ = applied_tx.try_send(id);
+                let applied_tx = applied_tx.clone();
+                Box::pin(async move {
+                    let _ = applied_tx.try_send(id);
+                })
             })),
         );
         m.concurrency = 2;
