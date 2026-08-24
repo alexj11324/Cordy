@@ -185,12 +185,13 @@ impl CloudPatVerifier {
         };
         let mut cache = cache.clone();
         let key = format!("{CACHE_PREFIX}{}", crate::jwt::hash_token(token));
-        let operation = redis::cmd("SET")
+        let mut command = redis::cmd("SET");
+        command
             .arg(key)
             .arg(raw)
             .arg("PX")
-            .arg(CACHE_TTL.as_millis() as u64)
-            .query_async::<()>(&mut cache);
+            .arg(CACHE_TTL.as_millis() as u64);
+        let operation = command.query_async::<()>(&mut cache);
         let result = tokio::select! {
             _ = cancel.cancelled() => return,
             result = tokio::time::timeout(REDIS_TIMEOUT, operation) => result,
@@ -203,11 +204,11 @@ impl CloudPatVerifier {
     async fn cache_get(&self, hash: &str, cancel: &CancellationToken) -> Option<CloudPatIdentity> {
         let cache = self.cache.as_ref()?;
         let mut cache = cache.clone();
+        let mut command = redis::cmd("GET");
+        command.arg(format!("{CACHE_PREFIX}{hash}"));
         let operation = tokio::time::timeout(
             REDIS_TIMEOUT,
-            redis::cmd("GET")
-                .arg(format!("{CACHE_PREFIX}{hash}"))
-                .query_async::<Option<Vec<u8>>>(&mut cache),
+            command.query_async::<Option<Vec<u8>>>(&mut cache),
         );
         let raw = tokio::select! {
             _ = cancel.cancelled() => return None,
