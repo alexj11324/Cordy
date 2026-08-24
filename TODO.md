@@ -992,6 +992,16 @@
       live in `cordy-cli/src/squad_commands.rs`; dispatch and parent tests keep
       their existing contract. Scoped rustfmt and diff-check pass; Cargo was
       not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI workspace MCP command structural refactor is committed at
+      `53bd13f7879eb9188c18ba69137579dadc8e3115` (parent
+      `06d85e22384389403003ba75caf11b5954c8f967`, tree
+      `985006c482c3878910f773e285fcd61af00748a9`): MCP DTOs, config input
+      parsing, list/add/update/remove operations, and table/JSON rendering now
+      live in `cordy-cli/src/workspace_mcp_commands.rs`; agent MCP shared
+      references and parent dispatch remain unchanged. Scoped rustfmt and
+      diff-check pass; Cargo was not run. The serial subagent reviewed exact
+      head `53bd13f7` and found no issue; pro owns push/Ready PR, gate, and
+      merge.
 
 ## Phase 4 — S8 route and API parity
 
