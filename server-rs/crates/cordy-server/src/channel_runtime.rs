@@ -109,15 +109,28 @@ impl ChannelRuntime {
             return Ok(None);
         }
 
-        let store = Arc::new(PostgresChannelStore::new(state.pool.clone()));
-        let lease_store = match RuntimeLeaseStore::from_config(store.clone(), cfg).await {
-            Ok(store) => Some(Arc::new(store)),
+        let supervisor_config = match supervisor_config_from_env() {
+            Ok(config) => Some(config),
             Err(error) => {
-                tracing::error!(%error, "channel supervisor disabled: lease backend unavailable");
+                tracing::error!(%error, "channel supervisor disabled: invalid lease configuration");
                 None
             }
         };
-        let supervisor = if let Some(lease_store) = lease_store {
+        let store = Arc::new(PostgresChannelStore::new(state.pool.clone()));
+        let lease_store = if supervisor_config.is_some() {
+            match RuntimeLeaseStore::from_config(store.clone(), cfg).await {
+                Ok(store) => Some(Arc::new(store)),
+                Err(error) => {
+                    tracing::error!(%error, "channel supervisor disabled: lease backend unavailable");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+        let supervisor = if let (Some(lease_store), Some(supervisor_config)) =
+            (lease_store, supervisor_config)
+        {
             let inbound_router = router.clone();
             let handler = cordy_channel::InboundHandler::new(move |ctx, message| {
                 let router = inbound_router.clone();
@@ -128,17 +141,24 @@ impl ChannelRuntime {
                     }
                 })
             });
-            let supervisor = ChannelSupervisor::new(
+            match ChannelSupervisor::new(
                 store,
                 lease_store,
                 registry,
                 handler,
-                supervisor_config_from_env(),
+                supervisor_config,
                 lease_metrics
                     .map(|metrics| Arc::new(RuntimeLeaseMetrics(metrics)) as Arc<dyn LeaseMetrics>),
-            )?;
-            let run_cancel = cancel.clone();
-            Some(tokio::spawn(supervisor.run_owned(run_cancel)))
+            ) {
+                Ok(supervisor) => {
+                    let run_cancel = cancel.clone();
+                    Some(tokio::spawn(supervisor.run_owned(run_cancel)))
+                }
+                Err(error) => {
+                    tracing::error!(%error, "channel supervisor disabled: invalid configuration");
+                    None
+                }
+            }
         } else {
             None
         };
@@ -914,31 +934,56 @@ fn app_url(cfg: &cordy_config::Config) -> String {
         .to_string()
 }
 
-fn supervisor_config_from_env() -> SupervisorConfig {
-    SupervisorConfig {
-        lease_ttl: super::duration_env("CHANNEL_WS_LEASE_TTL", Duration::from_secs(180), false),
-        lease_renew_interval: super::duration_env(
+fn supervisor_config_from_env() -> anyhow::Result<SupervisorConfig> {
+    supervisor_config_from_values(|name| std::env::var(name).ok())
+}
+
+fn supervisor_config_from_values(
+    mut value: impl FnMut(&str) -> Option<String>,
+) -> anyhow::Result<SupervisorConfig> {
+    fn positive_duration(
+        name: &str,
+        fallback: Duration,
+        raw: Option<String>,
+    ) -> anyhow::Result<Duration> {
+        let Some(raw) = raw.filter(|raw| !raw.trim().is_empty()) else {
+            return Ok(fallback);
+        };
+        super::parse_go_duration(&raw)
+            .filter(|duration| !duration.is_zero())
+            .ok_or_else(|| anyhow::anyhow!("{name} must be a positive duration (got {raw:?})"))
+    }
+
+    let config = SupervisorConfig {
+        lease_ttl: positive_duration(
+            "CHANNEL_WS_LEASE_TTL",
+            Duration::from_secs(180),
+            value("CHANNEL_WS_LEASE_TTL"),
+        )?,
+        lease_renew_interval: positive_duration(
             "CHANNEL_WS_LEASE_RENEW_INTERVAL",
             Duration::from_secs(60),
-            false,
-        ),
-        poll_interval: super::duration_env(
+            value("CHANNEL_WS_LEASE_RENEW_INTERVAL"),
+        )?,
+        poll_interval: positive_duration(
             "CHANNEL_WS_LEASE_POLL_INTERVAL",
             Duration::from_secs(30),
-            false,
-        ),
-        lease_error_retry_interval: super::duration_env(
+            value("CHANNEL_WS_LEASE_POLL_INTERVAL"),
+        )?,
+        lease_error_retry_interval: positive_duration(
             "CHANNEL_WS_LEASE_ERROR_RETRY_INTERVAL",
             Duration::from_secs(5),
-            false,
-        ),
-        lease_expiry_safety_margin: super::duration_env(
+            value("CHANNEL_WS_LEASE_ERROR_RETRY_INTERVAL"),
+        )?,
+        lease_expiry_safety_margin: positive_duration(
             "CHANNEL_WS_LEASE_EXPIRY_SAFETY_MARGIN",
             Duration::from_secs(5),
-            false,
-        ),
+            value("CHANNEL_WS_LEASE_EXPIRY_SAFETY_MARGIN"),
+        )?,
         ..Default::default()
-    }
+    };
+    config.validate()?;
+    Ok(config)
 }
 
 enum RuntimeLeaseStore {
@@ -1338,7 +1383,66 @@ impl cordy_slack::slash_command::QuickCreateEnqueuer for ChannelServices {
 
 #[cfg(test)]
 mod tests {
-    use super::{app_url, configure_wecom_security, lease_backend_settings, LeaseBackendSettings};
+    use std::collections::HashMap;
+    use std::time::Duration;
+
+    use cordy_channel_engine::supervisor::SupervisorConfig;
+
+    use super::{
+        app_url, configure_wecom_security, lease_backend_settings, supervisor_config_from_values,
+        LeaseBackendSettings,
+    };
+
+    fn supervisor_config(values: &[(&str, &str)]) -> anyhow::Result<SupervisorConfig> {
+        let values = values
+            .iter()
+            .map(|(name, value)| ((*name).to_string(), (*value).to_string()))
+            .collect::<HashMap<_, _>>();
+        supervisor_config_from_values(|name| values.get(name).cloned())
+    }
+
+    #[test]
+    fn supervisor_lease_config_uses_go_defaults() {
+        let config = supervisor_config(&[]).unwrap();
+
+        assert_eq!(config.lease_ttl, Duration::from_secs(180));
+        assert_eq!(config.lease_renew_interval, Duration::from_secs(60));
+        assert_eq!(config.poll_interval, Duration::from_secs(30));
+        assert_eq!(config.lease_error_retry_interval, Duration::from_secs(5));
+        assert_eq!(config.lease_expiry_safety_margin, Duration::from_secs(5));
+    }
+
+    #[test]
+    fn supervisor_lease_config_accepts_composed_go_durations() {
+        let config = supervisor_config(&[
+            ("CHANNEL_WS_LEASE_TTL", "3m30s"),
+            ("CHANNEL_WS_LEASE_RENEW_INTERVAL", "1m"),
+        ])
+        .unwrap();
+
+        assert_eq!(config.lease_ttl, Duration::from_secs(210));
+        assert_eq!(config.lease_renew_interval, Duration::from_secs(60));
+    }
+
+    #[test]
+    fn supervisor_lease_config_rejects_invalid_or_zero_values() {
+        for raw in ["wat", "0", "-1s"] {
+            let error = supervisor_config(&[("CHANNEL_WS_LEASE_TTL", raw)]).unwrap_err();
+            assert!(error.to_string().contains("CHANNEL_WS_LEASE_TTL"));
+            assert!(error.to_string().contains(raw));
+        }
+    }
+
+    #[test]
+    fn supervisor_lease_config_rejects_unsafe_interval_relationships() {
+        let error = supervisor_config(&[
+            ("CHANNEL_WS_LEASE_RENEW_INTERVAL", "60s"),
+            ("CHANNEL_WS_LEASE_POLL_INTERVAL", "90s"),
+        ])
+        .unwrap_err();
+
+        assert!(error.to_string().contains("poll <= renew < ttl"));
+    }
 
     #[test]
     fn app_url_prefers_explicit_app_host_and_trims_slash() {
