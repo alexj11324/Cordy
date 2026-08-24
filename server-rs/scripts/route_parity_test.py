@@ -9,10 +9,7 @@ import route_parity
 
 class RouteParityTest(unittest.TestCase):
     def test_extracts_chained_methods_and_normalizes_routes(self):
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            (root / "routes.rs").write_text(
-                """
+        source = """
                 // .route("/ignored/comment", get(fake))
                 const EXAMPLE: &str = ".route(\"/ignored/string\", get(fake))";
                 Router::new()
@@ -21,18 +18,82 @@ class RouteParityTest(unittest.TestCase):
                         "/api/issues/{id}/comments",
                         axum::routing::post(create).delete(remove),
                     );
+                """
+
+        self.assertEqual(
+            route_parity.extract_routes(source),
+            {
+                ("GET", "/api/issues/{}"),
+                ("PUT", "/api/issues/{}"),
+                ("POST", "/api/issues/{}/comments"),
+                ("DELETE", "/api/issues/{}/comments"),
+            },
+        )
+
+    def test_extracts_only_routes_reachable_from_build_router(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "lib.rs").write_text(
+                """
+                mod mounted;
+                mod unmounted;
+
+                pub fn build_router() -> Router {
+                    build_router_from_state()
+                }
+
+                fn build_router_from_state() -> Router {
+                    let discarded = unmounted::router();
+                    let state = make_state(unmounted::router());
+                    let mounted_routes = mounted::router().route_layer(layer());
+                    #[cfg(test)] {
+                        let _test = Router::new().route("/body-test-only", get(handler));
+                    }
+                    Router::new()
+                        .merge(mounted_routes)
+                        .route("/direct", get(direct))
+                        .with_state(state)
+                }
+
+                #[cfg(test)]
+                mod tests {
+                    fn router() -> Router {
+                        Router::new().route("/test-only", get(handler))
+                    }
+                }
+                """,
+                encoding="utf-8",
+            )
+            (root / "mounted.rs").write_text(
+                """
+                #[cfg(not(test))]
+                pub fn router() -> Router {
+                    Router::new().route("/mounted", get(handler))
+                }
+
+                #[cfg(test)]
+                pub fn router() -> Router {
+                    Router::new().route("/module-test-only", get(handler))
+                }
+
+                fn unused_router() -> Router {
+                    Router::new().route("/unused-helper", get(handler))
+                }
+                """,
+                encoding="utf-8",
+            )
+            (root / "unmounted.rs").write_text(
+                """
+                pub fn router() -> Router {
+                    Router::new().route("/unmounted", get(handler))
+                }
                 """,
                 encoding="utf-8",
             )
 
             self.assertEqual(
                 route_parity.extract_rust_routes(root),
-                {
-                    ("GET", "/api/issues/{}"),
-                    ("PUT", "/api/issues/{}"),
-                    ("POST", "/api/issues/{}/comments"),
-                    ("DELETE", "/api/issues/{}/comments"),
-                },
+                {("GET", "/direct"), ("GET", "/mounted")},
             )
 
     def test_rejects_duplicate_contract_entries_after_normalization(self):
