@@ -779,6 +779,11 @@
       comment, quick-action, squad, and autopilot run/enqueue paths use the
       member invoke gate; remaining broader access calls are inspect/cancel/
       pin/list or wiring paths matching Go. No further code change justified.
+- [x] Project/property/issue-status audit completed: workspace and role
+      fences, transactional/locked project deletion, property type/config and
+      membership validation, advisory-lock writes, post-commit events, status
+      feature gates, archive/reorder locks, and status race handling match Go.
+      No new P0/P1 or changed-code blocker; no implementation change justified.
 
 ## Phase 4 — S8 route and API parity
 
