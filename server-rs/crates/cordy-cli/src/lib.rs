@@ -74,6 +74,8 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Command {
+    #[command(about = "Work with agents")]
+    Agent(AgentArgs),
     #[command(about = "Work with issues")]
     Issue(IssueArgs),
     #[command(about = "Authenticate cordy with Cordy")]
@@ -100,6 +102,30 @@ enum Command {
     Version {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
         output: VersionOutput,
+    },
+}
+
+#[derive(Debug, Args)]
+struct AgentArgs {
+    #[command(subcommand)]
+    command: AgentCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum AgentCommand {
+    #[command(about = "List agents in the workspace")]
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+        #[arg(long, help = "Include archived agents")]
+        include_archived: bool,
+    },
+    #[command(about = "Get agent details")]
+    Get {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
     },
 }
 
@@ -1656,6 +1682,16 @@ async fn run_with_input<R: Read>(
     input: &mut R,
 ) -> Result<RunOutput> {
     match &cli.command {
+        Command::Agent(AgentArgs {
+            command:
+                AgentCommand::List {
+                    output,
+                    include_archived,
+                },
+        }) => run_agent_list(cli, environment, *output, *include_archived).await,
+        Command::Agent(AgentArgs {
+            command: AgentCommand::Get { id, output },
+        }) => run_agent_get(cli, environment, id, *output).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -2077,6 +2113,101 @@ fn chat_reply_count(message: &Value) -> String {
         .unwrap_or_default()
 }
 
+async fn run_agent_list(
+    cli: &Cli,
+    environment: &Environment,
+    output: OutputFormat,
+    include_archived: bool,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = required_workspace_id(cli, environment)?;
+    let mut query = form_urlencoded::Serializer::new(String::new());
+    query.append_pair("workspace_id", &workspace_id);
+    if include_archived {
+        query.append_pair("include_archived", "true");
+    }
+    let agents: Vec<Value> = client
+        .get_json(&format!("/api/agents?{}", query.finish()))
+        .await
+        .context("list agents")?;
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&agents)?),
+        OutputFormat::Table => format_agent_list_table(&agents),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+async fn run_agent_get(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let agent: Value = client
+        .get_json(&format!("/api/agents/{id}"))
+        .await
+        .context("get agent")?;
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&agent)?),
+        OutputFormat::Table => format_agent_details_table(&agent),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn format_agent_list_table(agents: &[Value]) -> String {
+    let mut rows = vec![vec![
+        "ID".into(),
+        "NAME".into(),
+        "STATUS".into(),
+        "RUNTIME".into(),
+        "ARCHIVED".into(),
+    ]];
+    rows.extend(agents.iter().map(|agent| {
+        vec![
+            value_string(agent, "id"),
+            value_string(agent, "name"),
+            value_string(agent, "status"),
+            value_string(agent, "runtime_mode"),
+            if value_string(agent, "archived_at").is_empty() {
+                String::new()
+            } else {
+                "yes".into()
+            },
+        ]
+    }));
+    format_table(&rows)
+}
+
+fn format_agent_details_table(agent: &Value) -> String {
+    format_table(&[
+        vec![
+            "ID".into(),
+            "NAME".into(),
+            "STATUS".into(),
+            "RUNTIME".into(),
+            "VISIBILITY".into(),
+            "AVATAR_URL".into(),
+            "DESCRIPTION".into(),
+        ],
+        vec![
+            value_string(agent, "id"),
+            value_string(agent, "name"),
+            value_string(agent, "status"),
+            value_string(agent, "runtime_mode"),
+            value_string(agent, "visibility"),
+            value_string(agent, "avatar_url"),
+            value_string(agent, "description"),
+        ],
+    ])
+}
+
 fn format_chat_read(response: &Value, output: OutputFormat, overview: bool) -> Result<String> {
     if output == OutputFormat::Json {
         return Ok(format!("{}\n", serde_json::to_string_pretty(response)?));
@@ -2321,7 +2452,7 @@ fn repo_urls(flag_urls: &[String], positional: &[String]) -> Result<Vec<String>>
     Ok(urls)
 }
 
-fn repo_workspace_id(cli: &Cli, environment: &Environment) -> Result<String> {
+fn required_workspace_id(cli: &Cli, environment: &Environment) -> Result<String> {
     let workspace_id = resolve_current_workspace_id(cli, environment);
     if workspace_id.is_empty() {
         if environment.in_daemon_managed_execution_context() {
@@ -2372,7 +2503,7 @@ async fn run_repo_list(
     environment: &Environment,
     output: OutputFormat,
 ) -> Result<RunOutput> {
-    let workspace_id = repo_workspace_id(cli, environment)?;
+    let workspace_id = required_workspace_id(cli, environment)?;
     let client = new_api_client(cli, environment)?;
     let workspace = fetch_repo_workspace(&client, &workspace_id).await?;
     Ok(match output {
@@ -2400,7 +2531,7 @@ async fn run_repo_add(
     if args.description.is_some() && urls.len() > 1 {
         bail!("--description can only be used when adding one repository URL");
     }
-    let workspace_id = repo_workspace_id(cli, environment)?;
+    let workspace_id = required_workspace_id(cli, environment)?;
     let client = new_api_client(cli, environment)?;
     let mut workspace = fetch_repo_workspace(&client, &workspace_id).await?;
     let mut index_by_url = workspace
@@ -2470,7 +2601,7 @@ async fn run_repo_remove(
     args: &RepoRemoveArgs,
 ) -> Result<RunOutput> {
     let urls = repo_urls(&args.flag_urls, &args.urls)?;
-    let workspace_id = repo_workspace_id(cli, environment)?;
+    let workspace_id = required_workspace_id(cli, environment)?;
     let client = new_api_client(cli, environment)?;
     let workspace = fetch_repo_workspace(&client, &workspace_id).await?;
     let remove_set = urls.iter().cloned().collect::<HashSet<_>>();
@@ -9622,6 +9753,146 @@ mod tests {
     use std::io::Cursor;
     use std::sync::{Arc, Mutex};
     use tokio::net::TcpListener;
+
+    #[test]
+    fn agent_read_parser_matches_go_registry() {
+        let list = Cli::try_parse_from([
+            "cordy",
+            "agent",
+            "list",
+            "--include-archived",
+            "--output",
+            "json",
+        ])
+        .expect("agent list CLI");
+        let Command::Agent(AgentArgs {
+            command:
+                AgentCommand::List {
+                    output,
+                    include_archived,
+                },
+        }) = list.command
+        else {
+            panic!("expected agent list");
+        };
+        assert_eq!(output, OutputFormat::Json);
+        assert!(include_archived);
+
+        let get =
+            Cli::try_parse_from(["cordy", "agent", "get", "agent-123"]).expect("agent get CLI");
+        let Command::Agent(AgentArgs {
+            command: AgentCommand::Get { id, output },
+        }) = get.command
+        else {
+            panic!("expected agent get");
+        };
+        assert_eq!(id, "agent-123");
+        assert_eq!(output, OutputFormat::Json);
+        assert!(Cli::try_parse_from(["cordy", "agent", "list", "--full-id"]).is_err());
+    }
+
+    #[tokio::test]
+    async fn agent_list_and_get_match_go_requests_and_outputs() {
+        let app = Router::new()
+            .route(
+                "/api/agents",
+                get(|request: Request| async move {
+                    assert_eq!(
+                        request.uri().query(),
+                        Some("workspace_id=workspace-1&include_archived=true")
+                    );
+                    Json(vec![serde_json::json!({
+                        "id":"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                        "name":"Builder",
+                        "status":"active",
+                        "runtime_mode":"cloud",
+                        "archived_at":"2026-08-24T00:00:00Z",
+                        "server_only":"preserved"
+                    })])
+                }),
+            )
+            .route(
+                "/api/agents/agent-123",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "id":"agent-123",
+                        "name":"Reviewer",
+                        "status":"idle",
+                        "runtime_mode":"local",
+                        "visibility":"workspace",
+                        "avatar_url":"https://cdn.example/avatar.png",
+                        "description":"Reviews changes",
+                        "server_only":"preserved"
+                    }))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let list = Cli::try_parse_from([
+            "cordy",
+            "agent",
+            "list",
+            "--include-archived",
+            "--output",
+            "table",
+        ])
+        .expect("agent list CLI");
+        let listed = run_with_input(&list, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list agents");
+        assert!(listed.stdout.starts_with("ID"));
+        assert!(listed
+            .stdout
+            .contains("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
+        assert!(listed.stdout.contains("Builder"));
+        assert!(listed.stdout.contains("cloud"));
+        assert!(listed.stdout.contains("yes"));
+
+        let get = Cli::try_parse_from(["cordy", "agent", "get", "agent-123", "--output", "table"])
+            .expect("agent get CLI");
+        let details = run_with_input(&get, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("get agent");
+        assert!(details.stdout.contains("AVATAR_URL"));
+        assert!(details.stdout.contains("https://cdn.example/avatar.png"));
+        assert!(details.stdout.contains("Reviews changes"));
+
+        let get_json = Cli::try_parse_from(["cordy", "agent", "get", "agent-123"])
+            .expect("agent get JSON CLI");
+        let json = run_with_input(&get_json, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("get agent JSON");
+        assert_eq!(
+            serde_json::from_str::<Value>(&json.stdout).expect("JSON")["server_only"],
+            "preserved"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn agent_list_requires_workspace_before_request() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "http://127.0.0.1:9");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from(["cordy", "agent", "list"]).expect("agent list CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("workspace required");
+        assert_eq!(
+            error.to_string(),
+            "workspace_id is required: use --workspace-id flag, set CORDY_WORKSPACE_ID env, or run 'cordy config set workspace_id <id>'"
+        );
+    }
 
     #[test]
     fn version_text_json_and_root_flag_match_go_contract() {
