@@ -27,6 +27,8 @@ use cordy_channel::{BuiltChannel, Config as ChannelConfig, LeaseGeneration, Regi
 use crate::ids::new_node_id;
 use crate::lease::{AcquireLeaseParams, LeaseError, LeaseStore, ReleaseLeaseParams};
 
+type SharedAbortHandle = Arc<Mutex<Option<tokio::task::AbortHandle>>>;
+
 /// One active installation row the supervisor may lease and drive.
 /// Mirrors Go `engine.Installation`.
 #[derive(Debug, Clone)]
@@ -224,8 +226,35 @@ impl SupervisorConfig {
 struct SupervisorEntry {
     cancel: CancellationToken,
     done: tokio::sync::oneshot::Receiver<()>,
+    abort: SharedAbortHandle,
     fingerprint: String,
     gen: u64,
+}
+
+struct SupervisorWait {
+    done: tokio::sync::oneshot::Receiver<()>,
+    abort: SharedAbortHandle,
+}
+
+impl SupervisorEntry {
+    fn into_wait(self) -> SupervisorWait {
+        SupervisorWait {
+            done: self.done,
+            abort: self.abort,
+        }
+    }
+}
+
+fn abort_waits(waits: &[SharedAbortHandle]) {
+    for abort in waits {
+        if let Some(abort) = abort
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_ref()
+        {
+            abort.abort();
+        }
+    }
 }
 
 struct Inner {
@@ -370,7 +399,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
         let mut active: HashSet<String> = HashSet::with_capacity(rows.len());
         let mut candidates: Vec<(Installation, bool)> = Vec::with_capacity(rows.len());
         let mut candidate_ids: Vec<uuid::Uuid> = Vec::with_capacity(rows.len());
-        let mut rotation_waits: Vec<(String, tokio::sync::oneshot::Receiver<()>)> = Vec::new();
+        let mut rotation_waits: Vec<(String, SupervisorWait)> = Vec::new();
         for row in rows {
             // Skip channel types with no registered per-installation
             // Factory. Such rows are driven outside the Supervisor (e.g.
@@ -443,11 +472,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
     /// bounded deadline before checking held keys. A promptly-cancelled
     /// predecessor releases its key in time for its replacement to start
     /// in the same sweep.
-    fn cancel_on_rotation(
-        &self,
-        id: &str,
-        row: &Installation,
-    ) -> (Option<tokio::sync::oneshot::Receiver<()>>, bool) {
+    fn cancel_on_rotation(&self, id: &str, row: &Installation) -> (Option<SupervisorWait>, bool) {
         let want = row.fingerprint.clone();
         let mut inner = self.lock();
         let matches_fingerprint = inner
@@ -465,30 +490,39 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
         );
         let entry = inner.supervisors.remove(id).unwrap();
         entry.cancel.cancel();
-        (Some(entry.done), true)
+        (Some(entry.into_wait()), true)
     }
 
     async fn wait_for_rotations(
         &self,
         ctx: &CancellationToken,
-        waits: Vec<(String, tokio::sync::oneshot::Receiver<()>)>,
+        waits: Vec<(String, SupervisorWait)>,
     ) {
         if waits.is_empty() {
             return;
         }
+        let aborts = waits
+            .iter()
+            .map(|(_, wait)| wait.abort.clone())
+            .collect::<Vec<_>>();
         let deadline = std::time::Instant::now() + self.cfg.rotation_wait_timeout;
-        for (installation_id, mut done) in waits {
+        for (installation_id, mut wait) in waits {
             let remaining = deadline.saturating_duration_since(std::time::Instant::now());
             if remaining.is_zero() {
                 tracing::warn!(
                     timeout = ?self.cfg.rotation_wait_timeout,
                     "channel engine: timed out waiting for credential rotations to stop"
                 );
+                abort_waits(&aborts);
+                self.record_lease_operation("rotation", "forced_abort");
                 return;
             }
             tokio::select! {
-                _ = ctx.cancelled() => return,
-                r = &mut done => {
+                _ = ctx.cancelled() => {
+                    abort_waits(&aborts);
+                    return;
+                },
+                r = &mut wait.done => {
                     let _ = r; // predecessor finished or dropped
                 }
                 _ = tokio::time::sleep(remaining) => {
@@ -497,6 +531,8 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                         timeout = ?self.cfg.rotation_wait_timeout,
                         "channel engine: timed out waiting for rotated supervisor to stop"
                     );
+                    abort_waits(&aborts);
+                    self.record_lease_operation("rotation", "forced_abort");
                     return;
                 }
             }
@@ -508,6 +544,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
         let gen;
         let cancel;
         let done_tx;
+        let abort = Arc::new(Mutex::new(None));
         {
             let mut inner = self.lock();
             if inner.stopped || inner.supervisors.contains_key(&id) {
@@ -522,6 +559,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                 SupervisorEntry {
                     cancel: cancel.clone(),
                     done: done_rx,
+                    abort: abort.clone(),
                     fingerprint: inst.fingerprint.clone(),
                     gen,
                 },
@@ -530,7 +568,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
         let this = Arc::clone(self);
         let lease_tok = lease_token(&self.node_id, gen);
         let inst_id = inst.id;
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             // A supervisor can exit without an explicit cancellation when
             // lease acquisition is contended or fails. Always detach its
             // child token when the task returns (Go: defer cancel()).
@@ -550,6 +588,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
             let _ = done_tx.send(());
             let _ = inst_id;
         });
+        *abort.lock().unwrap_or_else(|error| error.into_inner()) = Some(task.abort_handle());
     }
 
     /// Owns one installation's connection lifecycle. Loops: acquire lease
@@ -940,22 +979,28 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                 .drain()
                 .map(|(_, entry)| {
                     entry.cancel.cancel();
-                    entry.done
+                    entry.into_wait()
                 })
                 .collect::<Vec<_>>()
         };
+        let aborts = waits
+            .iter()
+            .map(|wait| wait.abort.clone())
+            .collect::<Vec<_>>();
         let join = async {
             for wait in waits {
-                let _ = wait.await;
+                let _ = wait.done.await;
             }
         };
         if tokio::time::timeout(self.cfg.shutdown_timeout, join)
             .await
             .is_err()
         {
+            abort_waits(&aborts);
+            self.record_lease_operation("shutdown", "forced_abort");
             tracing::warn!(
                 timeout = ?self.cfg.shutdown_timeout,
-                "channel supervisor: connections did not exit before shutdown deadline"
+                "channel supervisor: connections did not exit before shutdown deadline; aborted"
             );
         }
     }
@@ -1038,6 +1083,16 @@ async fn sleep(ctx: &CancellationToken, d: Duration) -> bool {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn abort_waits_terminates_a_tracked_supervisor_task() {
+        let task = tokio::spawn(std::future::pending::<()>());
+        let abort = Arc::new(Mutex::new(Some(task.abort_handle())));
+
+        abort_waits(&[abort]);
+
+        assert!(task.await.unwrap_err().is_cancelled());
+    }
+
     #[test]
     fn revoked_supervisor_remains_owned_until_task_completion() {
         let cancel = CancellationToken::new();
@@ -1048,6 +1103,7 @@ mod tests {
                 SupervisorEntry {
                     cancel: cancel.clone(),
                     done,
+                    abort: Arc::new(Mutex::new(None)),
                     fingerprint: "old".to_owned(),
                     gen: 1,
                 },
