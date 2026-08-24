@@ -24,7 +24,7 @@
 
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use cordy_realtime::{RelayPublisher, SCOPE_DAEMON_RUNTIME};
 
@@ -33,12 +33,15 @@ use crate::hub::{
     workspaces_changed_frame, DaemonHub, M,
 };
 
+const DEFAULT_RELAY_PUBLISH_TIMEOUT: Duration = Duration::from_secs(2);
+
 /// Sends daemon wakeup hints to the local daemon hub and, when Redis is
 /// configured, publishes the same hint through the shared realtime relay so
 /// every API node can attempt local delivery.
 pub struct RelayNotifier {
     local: Option<Arc<DaemonHub>>,
     relay: RwLock<Option<Arc<dyn RelayPublisher>>>,
+    publish_timeout: Duration,
 }
 
 impl RelayNotifier {
@@ -47,7 +50,14 @@ impl RelayNotifier {
         Self {
             local,
             relay: RwLock::new(relay),
+            publish_timeout: DEFAULT_RELAY_PUBLISH_TIMEOUT,
         }
+    }
+
+    #[cfg(test)]
+    fn with_publish_timeout(mut self, timeout: Duration) -> Self {
+        self.publish_timeout = timeout;
+        self
     }
 
     /// Installs or removes the cross-node publisher without replacing the
@@ -80,8 +90,8 @@ impl RelayNotifier {
         } else {
             task_id
         };
-        if let Err(err) = relay
-            .publish_with_id(SCOPE_DAEMON_RUNTIME, shard_key, "", &frame, &event_id)
+        if let Err(err) = self
+            .publish_relay(&relay, shard_key, &frame, &event_id)
             .await
         {
             M.wakeup_publish_errors.fetch_add(1, Ordering::Relaxed);
@@ -111,8 +121,8 @@ impl RelayNotifier {
             M.wakeup_publish_errors.fetch_add(1, Ordering::Relaxed);
             return;
         };
-        if let Err(err) = relay
-            .publish_with_id(SCOPE_DAEMON_RUNTIME, workspace_id, "", &frame, &event_id)
+        if let Err(err) = self
+            .publish_relay(&relay, workspace_id, &frame, &event_id)
             .await
         {
             M.wakeup_publish_errors.fetch_add(1, Ordering::Relaxed);
@@ -147,10 +157,7 @@ impl RelayNotifier {
         // runtime, workspace, or user key. Keeping one transport scope
         // preserves compatibility with existing relay consumers while the hub
         // enforces user-scoped delivery.
-        if let Err(err) = relay
-            .publish_with_id(SCOPE_DAEMON_RUNTIME, user_id, "", &frame, &event_id)
-            .await
-        {
+        if let Err(err) = self.publish_relay(&relay, user_id, &frame, &event_id).await {
             M.wakeup_publish_errors.fetch_add(1, Ordering::Relaxed);
             tracing::warn!(
                 error = %err,
@@ -183,8 +190,8 @@ impl RelayNotifier {
             M.wakeup_publish_errors.fetch_add(1, Ordering::Relaxed);
             return;
         };
-        if let Err(err) = relay
-            .publish_with_id(SCOPE_DAEMON_RUNTIME, runtime_id, "", &frame, &event_id)
+        if let Err(err) = self
+            .publish_relay(&relay, runtime_id, &frame, &event_id)
             .await
         {
             M.wakeup_publish_errors.fetch_add(1, Ordering::Relaxed);
@@ -197,6 +204,26 @@ impl RelayNotifier {
             return;
         }
         M.wakeup_published_total.fetch_add(1, Ordering::Relaxed);
+    }
+
+    async fn publish_relay(
+        &self,
+        relay: &Arc<dyn RelayPublisher>,
+        shard_key: &str,
+        frame: &[u8],
+        event_id: &str,
+    ) -> anyhow::Result<()> {
+        tokio::time::timeout(
+            self.publish_timeout,
+            relay.publish_with_id(SCOPE_DAEMON_RUNTIME, shard_key, "", frame, event_id),
+        )
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!(
+                "relay publish timed out after {} ms",
+                self.publish_timeout.as_millis()
+            )
+        })?
     }
 }
 
@@ -301,6 +328,22 @@ mod tests {
         }
     }
 
+    struct PendingRelayPublisher;
+
+    #[async_trait]
+    impl RelayPublisher for PendingRelayPublisher {
+        async fn publish_with_id(
+            &self,
+            _scope_type: &str,
+            _scope_id: &str,
+            _exclude: &str,
+            _frame: &[u8],
+            _event_id: &str,
+        ) -> anyhow::Result<()> {
+            std::future::pending().await
+        }
+    }
+
     /// Port of localFirstDaemonRelayPublisher: asserts the local hub fanout
     /// happened BEFORE the relay publish by draining the client's queue here,
     /// then records the call.
@@ -394,6 +437,20 @@ mod tests {
         let payload: TaskAvailablePayload = serde_json::from_value(payload).expect("payload");
         assert_eq!(payload.runtime_id, "runtime-1");
         assert_eq!(payload.task_id, "task-1");
+    }
+
+    #[tokio::test]
+    async fn unresponsive_relay_is_bounded_and_counted() {
+        let _guard = lock_metrics().await;
+        reset_metrics();
+        let hub = Arc::new(DaemonHub::new());
+        let notifier = RelayNotifier::new(Some(hub), Some(Arc::new(PendingRelayPublisher)))
+            .with_publish_timeout(Duration::ZERO);
+
+        notifier.notify_task_available("runtime-1", "task-1").await;
+
+        assert_eq!(M.wakeup_publish_errors.load(Ordering::Relaxed), 1);
+        assert_eq!(M.wakeup_published_total.load(Ordering::Relaxed), 0);
     }
 
     #[tokio::test]
