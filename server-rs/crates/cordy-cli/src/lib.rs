@@ -9,12 +9,12 @@ pub mod config;
 pub mod error;
 
 use anyhow::{bail, Context, Result};
-use api::{http_timeout, ApiClient, NetworkError};
+use api::{http_timeout, ApiClient, HttpError, NetworkError};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use config::Environment;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Write;
 use std::fs;
 use std::io::Read;
@@ -132,6 +132,74 @@ enum IssueCommand {
         #[arg(long, help = "Show full UUIDs in table output")]
         full_id: bool,
     },
+    #[command(about = "Create a new issue")]
+    Create(IssueCreateArgs),
+}
+
+#[derive(Debug, Args)]
+struct IssueCreateArgs {
+    #[arg(long, help = "Issue title (required)")]
+    title: Option<String>,
+    #[arg(
+        long,
+        help = "Issue description (decodes \\n, \\r, \\t, \\\\; pipe via --description-stdin to preserve literal backslashes)"
+    )]
+    description: Option<String>,
+    #[arg(
+        long,
+        help = "Read issue description from stdin (preserves multi-line content verbatim)"
+    )]
+    description_stdin: bool,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Read issue description from a UTF-8 file"
+    )]
+    description_file: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "Allow --description-file / --attachment outside the current working directory"
+    )]
+    allow_external_file: bool,
+    #[arg(long, help = "Issue status")]
+    status: Option<String>,
+    #[arg(long, help = "Issue priority")]
+    priority: Option<String>,
+    #[arg(long, help = "Assignee name (member, agent, or squad; fuzzy match)")]
+    assignee: Option<String>,
+    #[arg(
+        long,
+        help = "Assignee UUID — member, agent, or squad (mutually exclusive with --assignee)"
+    )]
+    assignee_id: Option<String>,
+    #[arg(long, help = "Parent issue ID")]
+    parent: Option<String>,
+    #[arg(
+        long,
+        help = "Stage ordinal (>=1) grouping this sub-issue into an ordered barrier group under its parent"
+    )]
+    stage: Option<i64>,
+    #[arg(long, help = "Project ID")]
+    project: Option<String>,
+    #[arg(long, help = "Start date (calendar day, YYYY-MM-DD)")]
+    start_date: Option<String>,
+    #[arg(long, help = "Due date (calendar day, YYYY-MM-DD)")]
+    due_date: Option<String>,
+    #[arg(
+        long,
+        help = "Allow creating an issue even when an active duplicate exists"
+    )]
+    allow_duplicate: bool,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+    #[arg(long, value_delimiter = ',', help = "File path(s) to attach")]
+    attachment: Vec<String>,
+    #[arg(
+        long,
+        value_delimiter = ',',
+        help = "Existing attachment UUID(s) to bind"
+    )]
+    attachment_id: Vec<String>,
 }
 
 #[derive(Debug, Args)]
@@ -491,6 +559,9 @@ async fn run_with_input<R: Read>(
                     full_id,
                 },
         }) => run_issue_children(cli, environment, id, *output, *full_id).await,
+        Command::Issue(IssueArgs {
+            command: IssueCommand::Create(args),
+        }) => run_issue_create(cli, environment, args, input).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -1161,15 +1232,15 @@ async fn build_issue_list_query(
         bail!("--assignee and --assignee-id are mutually exclusive");
     }
     if let Some(id) = &args.assignee_id {
-        let id = resolve_issue_assignee_id(client, workspace_id, id)
+        let assignee = resolve_issue_assignee_id(client, workspace_id, id)
             .await
             .context("resolve assignee")?;
-        params.insert("assignee_id".into(), id);
+        params.insert("assignee_id".into(), assignee.id);
     } else if let Some(name) = &args.assignee {
-        let id = resolve_issue_assignee_name(client, workspace_id, name)
+        let assignee = resolve_issue_assignee_name(client, workspace_id, name)
             .await
             .context("resolve assignee")?;
-        params.insert("assignee_id".into(), id);
+        params.insert("assignee_id".into(), assignee.id);
     }
 
     if let Some(project) = args.project.as_deref().filter(|value| !value.is_empty()) {
@@ -1242,6 +1313,12 @@ struct IssueActor {
     name: String,
     email: String,
     archived: bool,
+}
+
+#[derive(Debug)]
+struct ResolvedIssueAssignee {
+    actor_type: String,
+    id: String,
 }
 
 async fn fetch_issue_actors(
@@ -1320,7 +1397,7 @@ async fn resolve_issue_assignee_id(
     client: &ApiClient,
     workspace_id: &str,
     raw: &str,
-) -> Result<String> {
+) -> Result<ResolvedIssueAssignee> {
     let input = raw.trim();
     if !is_canonical_uuid(input) {
         bail!("expected a canonical UUID, got {raw:?}");
@@ -1340,7 +1417,10 @@ async fn resolve_issue_assignee_id(
         .flatten()
         .find(|actor| actor.id.eq_ignore_ascii_case(input))
     {
-        return Ok(actor.id.clone());
+        return Ok(ResolvedIssueAssignee {
+            actor_type: actor.actor_type.into(),
+            id: actor.id.clone(),
+        });
     }
     bail!("no member, agent, or squad found with ID {input:?}")
 }
@@ -1349,7 +1429,7 @@ async fn resolve_issue_assignee_name(
     client: &ApiClient,
     workspace_id: &str,
     raw: &str,
-) -> Result<String> {
+) -> Result<ResolvedIssueAssignee> {
     let input = normalize_assignee_input(raw);
     if input.is_empty() {
         bail!("no member, agent, or squad found matching {raw:?}");
@@ -1394,7 +1474,12 @@ async fn resolve_issue_assignee_name(
     for bucket in buckets {
         match bucket.as_slice() {
             [] => {}
-            [actor] => return Ok(actor.id.clone()),
+            [actor] => {
+                return Ok(ResolvedIssueAssignee {
+                    actor_type: actor.actor_type.into(),
+                    id: actor.id.clone(),
+                });
+            }
             actors => {
                 let matches = actors
                     .iter()
@@ -1938,6 +2023,536 @@ fn format_issue_children_table(children: &[Value], actors: &IssueActorNames) -> 
         ]
     }));
     format_table(&rows)
+}
+
+const BUILT_IN_ISSUE_STATUSES: &[&str] = &[
+    "backlog",
+    "todo",
+    "in_progress",
+    "in_review",
+    "done",
+    "blocked",
+    "cancelled",
+];
+const ISSUE_PRIORITIES: &[&str] = &["urgent", "high", "medium", "low", "none"];
+
+#[derive(Debug)]
+struct PendingAttachment {
+    path: String,
+    data: Vec<u8>,
+}
+
+async fn run_issue_create<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueCreateArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let title = args.title.as_deref().unwrap_or_default();
+    if title.is_empty() {
+        bail!("--title is required");
+    }
+    if let Some(status) = args.status.as_deref().filter(|value| !value.is_empty()) {
+        validate_issue_status(status)?;
+    }
+    if let Some(priority) = args.priority.as_deref().filter(|value| !value.is_empty()) {
+        validate_issue_priority(priority)?;
+    }
+
+    let mut client = new_api_client(cli, environment)?;
+    if !args.attachment.is_empty() {
+        let timeout = http_timeout(environment.raw("CORDY_HTTP_TIMEOUT"))
+            .max(std::time::Duration::from_secs(60));
+        client = client.with_request_timeout(timeout);
+    }
+
+    let mut body = serde_json::Map::new();
+    body.insert("title".into(), Value::String(title.into()));
+    if let Some(description) = resolve_issue_create_description(args, environment, input)? {
+        guard_issue_description_local_links(&description, environment)?;
+        body.insert("description".into(), Value::String(description));
+    }
+    if let Some(status) = args.status.as_deref().filter(|value| !value.is_empty()) {
+        body.insert("status".into(), Value::String(status.into()));
+    }
+    if let Some(priority) = args.priority.as_deref().filter(|value| !value.is_empty()) {
+        body.insert("priority".into(), Value::String(priority.into()));
+    }
+    if let Some(parent) = args.parent.as_deref().filter(|value| !value.is_empty()) {
+        let parent_id = resolve_issue_ref(&client, parent)
+            .await
+            .context("resolve parent issue")?;
+        body.insert("parent_issue_id".into(), Value::String(parent_id));
+    }
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    if let Some(project) = args.project.as_deref().filter(|value| !value.is_empty()) {
+        let project_id = resolve_issue_project_id(&client, &workspace_id, project)
+            .await
+            .context("resolve project")?;
+        body.insert("project_id".into(), Value::String(project_id));
+    }
+    if let Some(stage) = args.stage {
+        if stage < 1 {
+            bail!("--stage must be >= 1");
+        }
+        body.insert("stage".into(), Value::Number(stage.into()));
+    }
+    if let Some(start_date) = args.start_date.as_deref().filter(|value| !value.is_empty()) {
+        body.insert("start_date".into(), Value::String(start_date.into()));
+    }
+    if let Some(due_date) = args.due_date.as_deref().filter(|value| !value.is_empty()) {
+        body.insert("due_date".into(), Value::String(due_date.into()));
+    }
+    if args.allow_duplicate {
+        body.insert("allow_duplicate".into(), Value::Bool(true));
+    }
+    if args.assignee.is_some() && args.assignee_id.is_some() {
+        bail!("--assignee and --assignee-id are mutually exclusive");
+    }
+    let assignee = if let Some(id) = &args.assignee_id {
+        Some(
+            resolve_issue_assignee_id(&client, &workspace_id, id)
+                .await
+                .context("resolve assignee")?,
+        )
+    } else if let Some(name) = &args.assignee {
+        Some(
+            resolve_issue_assignee_name(&client, &workspace_id, name)
+                .await
+                .context("resolve assignee")?,
+        )
+    } else {
+        None
+    };
+    if let Some(assignee) = assignee {
+        body.insert("assignee_type".into(), Value::String(assignee.actor_type));
+        body.insert("assignee_id".into(), Value::String(assignee.id));
+    }
+    if let Some(task_id) = environment
+        .raw("CORDY_QUICK_CREATE_TASK_ID")
+        .filter(|value| !value.is_empty())
+    {
+        body.insert("origin_type".into(), Value::String("quick_create".into()));
+        body.insert("origin_id".into(), Value::String(task_id.into()));
+    }
+    let mut attachment_ids = append_unique_strings(args.attachment_id.iter().cloned());
+    let env_attachment_ids = quick_create_attachment_ids(environment)?;
+    attachment_ids = append_unique_strings(attachment_ids.into_iter().chain(env_attachment_ids));
+    if !attachment_ids.is_empty() {
+        body.insert(
+            "attachment_ids".into(),
+            Value::Array(attachment_ids.into_iter().map(Value::String).collect()),
+        );
+    }
+
+    let (pending, mut stderr) = collect_issue_attachments(args, environment)?;
+    let issue: Value = match client.post_json("/api/issues", &body).await {
+        Ok(issue) => issue,
+        Err(error) => {
+            if let Some(message) = active_duplicate_issue_message(&error) {
+                bail!("{message}");
+            }
+            return Err(error).context("create issue");
+        }
+    };
+    let issue_id = value_string(&issue, "id");
+    let issue_key = match value_string(&issue, "identifier") {
+        value if value.is_empty() => issue_id.clone(),
+        value => value,
+    };
+    for attachment in pending {
+        match client
+            .upload_file(attachment.data, &attachment.path, &issue_id)
+            .await
+        {
+            Ok(_) => {
+                let _ = writeln!(stderr, "Uploaded {}", attachment.path);
+            }
+            Err(error) => {
+                let _ = writeln!(
+                    stderr,
+                    "warning: upload attachment {} failed (issue already created, {}): {}",
+                    attachment.path, issue_key, error
+                );
+            }
+        }
+    }
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&issue)?),
+        OutputFormat::Table => format_table(&[
+            vec![
+                "KEY".into(),
+                "TITLE".into(),
+                "STATUS".into(),
+                "PRIORITY".into(),
+            ],
+            vec![
+                issue_key,
+                value_string(&issue, "title"),
+                value_string(&issue, "status"),
+                value_string(&issue, "priority"),
+            ],
+        ]),
+    };
+    Ok(RunOutput { stdout, stderr })
+}
+
+fn validate_issue_status(status: &str) -> Result<()> {
+    let normalized = status.trim().to_ascii_lowercase();
+    let bytes = normalized.as_bytes();
+    let valid = (1..=32).contains(&bytes.len())
+        && (bytes[0].is_ascii_lowercase() || bytes[0].is_ascii_digit())
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'_');
+    if !valid {
+        if normalized.is_empty() {
+            bail!(
+                "invalid status {status:?}; valid values: {}",
+                BUILT_IN_ISSUE_STATUSES.join(", ")
+            );
+        }
+        bail!(
+            "invalid status {status:?}; a status key is 1-32 characters of lowercase letters, digits or underscore. Built-in values: {}",
+            BUILT_IN_ISSUE_STATUSES.join(", ")
+        );
+    }
+    Ok(())
+}
+
+fn validate_issue_priority(priority: &str) -> Result<()> {
+    if !ISSUE_PRIORITIES.contains(&priority) {
+        bail!(
+            "invalid priority {priority:?}; valid values: {}",
+            ISSUE_PRIORITIES.join(", ")
+        );
+    }
+    Ok(())
+}
+
+fn resolve_issue_create_description<R: Read>(
+    args: &IssueCreateArgs,
+    environment: &Environment,
+    input: &mut R,
+) -> Result<Option<String>> {
+    let inline = args.description.as_deref().unwrap_or_default();
+    let description_file = args
+        .description_file
+        .as_ref()
+        .filter(|path| !path.as_os_str().is_empty());
+    let sources = [
+        args.description_stdin,
+        !inline.is_empty(),
+        description_file.is_some(),
+    ]
+    .into_iter()
+    .filter(|source| *source)
+    .count();
+    if sources > 1 {
+        bail!("--description, --description-stdin, and --description-file are mutually exclusive");
+    }
+    if args.description_stdin {
+        let mut bytes = Vec::new();
+        input
+            .read_to_end(&mut bytes)
+            .context("read stdin for --description-stdin")?;
+        let body = trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned());
+        if body.is_empty() {
+            bail!("stdin content for --description-stdin is empty");
+        }
+        return Ok(Some(body));
+    }
+    if let Some(path) = description_file {
+        ensure_file_within_workdir(
+            path,
+            environment.current_dir(),
+            args.allow_external_file,
+            "description",
+        )?;
+        let path = if path.is_absolute() {
+            path.clone()
+        } else {
+            environment.current_dir().join(path)
+        };
+        let bytes = fs::read(path).context("read file for --description-file")?;
+        let body = trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned());
+        if body.is_empty() {
+            bail!("file content for --description-file is empty");
+        }
+        return Ok(Some(body));
+    }
+    Ok((!inline.is_empty()).then(|| unescape_backslash_escapes(inline)))
+}
+
+fn append_unique_strings(values: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut seen = HashSet::new();
+    let mut output = Vec::new();
+    for value in values {
+        let value = value.trim();
+        if !value.is_empty() && seen.insert(value.to_string()) {
+            output.push(value.into());
+        }
+    }
+    output
+}
+
+fn quick_create_attachment_ids(environment: &Environment) -> Result<Vec<String>> {
+    let Some(raw) = environment
+        .raw("CORDY_QUICK_CREATE_ATTACHMENT_IDS")
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(Vec::new());
+    };
+    let ids: Vec<String> =
+        serde_json::from_str(raw).context("parse CORDY_QUICK_CREATE_ATTACHMENT_IDS")?;
+    Ok(append_unique_strings(ids))
+}
+
+fn collect_issue_attachments(
+    args: &IssueCreateArgs,
+    environment: &Environment,
+) -> Result<(Vec<PendingAttachment>, String)> {
+    let mut pending = Vec::with_capacity(args.attachment.len());
+    let mut stderr = String::new();
+    for file_path in &args.attachment {
+        let trimmed = file_path.trim();
+        if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            let _ = writeln!(
+                stderr,
+                "Skipping --attachment {file_path:?}: URLs are not supported here, only local file paths."
+            );
+            continue;
+        }
+        let path = Path::new(file_path);
+        if !args.allow_external_file {
+            let base = fs::canonicalize(environment.current_dir())
+                .unwrap_or_else(|_| lexical_normalize(environment.current_dir()));
+            let absolute = if path.is_absolute() {
+                path.to_path_buf()
+            } else {
+                environment.current_dir().join(path)
+            };
+            let candidate =
+                fs::canonicalize(&absolute).unwrap_or_else(|_| lexical_normalize(&absolute));
+            if !candidate.starts_with(&base) {
+                bail!(
+                    "--attachment path {file_path:?} resolves outside the current working directory; attach files generated inside the task workdir rather than machine-shared paths like /tmp, where another run's stale file can be attached by mistake. Pass --allow-external-file to override."
+                );
+            }
+        }
+        let read_path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            environment.current_dir().join(path)
+        };
+        let data = fs::read(read_path).with_context(|| format!("read attachment {file_path}"))?;
+        pending.push(PendingAttachment {
+            path: file_path.clone(),
+            data,
+        });
+    }
+    Ok((pending, stderr))
+}
+
+fn active_duplicate_issue_message(error: &anyhow::Error) -> Option<String> {
+    let error = error.downcast_ref::<HttpError>()?;
+    if error.status_code != 409 {
+        return None;
+    }
+    let payload: Value = serde_json::from_str(&error.body).ok()?;
+    (payload.get("code").and_then(Value::as_str) == Some("active_duplicate_issue"))
+        .then(|| {
+            payload
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string()
+        })
+        .filter(|message| !message.is_empty())
+}
+
+fn guard_issue_description_local_links(description: &str, environment: &Environment) -> Result<()> {
+    if !environment.in_agent_execution_context() {
+        return Ok(());
+    }
+    let findings = find_runtime_local_markdown_links(description, environment.current_dir());
+    if findings.is_empty() {
+        return Ok(());
+    }
+    let mut message = format!(
+        "issue description links {} runtime-local path(s), which no reader can open:\n",
+        findings.len()
+    );
+    for (target, reason) in findings {
+        let _ = writeln!(message, "  - {target:?} — {reason}");
+    }
+    message.push_str(
+        "\nThe path exists only on the machine running you; for everyone else the link is dead. Deliver the file itself with `cordy issue create --attachment <path>` (repeatable) and drop the link.\nTo merely reference a code location, use inline code instead of a link (`path/to/file.ts:42`) — code spans and fenced blocks are not checked.",
+    );
+    bail!("{message}")
+}
+
+fn find_runtime_local_markdown_links(
+    markdown: &str,
+    current_dir: &Path,
+) -> Vec<(String, &'static str)> {
+    let mut candidates = Vec::new();
+    let mut in_fence: Option<char> = None;
+    for line in markdown.lines() {
+        let trimmed = line.trim_start();
+        let fence = trimmed
+            .chars()
+            .next()
+            .filter(|character| matches!(character, '`' | '~'))
+            .filter(|character| {
+                trimmed
+                    .chars()
+                    .take_while(|value| value == character)
+                    .count()
+                    >= 3
+            });
+        if let Some(character) = fence {
+            match in_fence {
+                Some(open) if open == character => in_fence = None,
+                None => in_fence = Some(character),
+                _ => {}
+            }
+            continue;
+        }
+        if in_fence.is_some() || line.starts_with("    ") || line.starts_with('\t') {
+            continue;
+        }
+        collect_inline_markdown_destinations(line, &mut candidates);
+        if let Some((_, destination)) = trimmed
+            .strip_prefix('[')
+            .and_then(|rest| rest.split_once("]:"))
+        {
+            if let Some(destination) = markdown_destination(destination.trim_start()) {
+                candidates.push(destination);
+            }
+        }
+    }
+    let mut seen = HashSet::new();
+    let mut findings = Vec::new();
+    for candidate in candidates {
+        let target = candidate.trim().to_string();
+        if target.is_empty() || !seen.insert(target.clone()) {
+            continue;
+        }
+        if let Some(reason) = classify_runtime_local_target(&target, current_dir) {
+            findings.push((target, reason));
+        }
+    }
+    findings
+}
+
+fn collect_inline_markdown_destinations(line: &str, destinations: &mut Vec<String>) {
+    let bytes = line.as_bytes();
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'`' {
+            let run = bytes[index..]
+                .iter()
+                .take_while(|byte| **byte == b'`')
+                .count();
+            index += run;
+            while index < bytes.len() {
+                let closing_run = bytes[index..]
+                    .iter()
+                    .take_while(|byte| **byte == b'`')
+                    .count();
+                if closing_run == run {
+                    index += run;
+                    break;
+                }
+                index += closing_run.max(1);
+            }
+            continue;
+        }
+        if bytes[index] == b'<' {
+            if let Some(end) = line[index + 1..].find('>') {
+                let target = &line[index + 1..index + 1 + end];
+                if target.to_ascii_lowercase().starts_with("file://") {
+                    destinations.push(target.into());
+                }
+                index += end + 2;
+                continue;
+            }
+        }
+        if bytes[index] == b']'
+            && bytes.get(index + 1) == Some(&b'(')
+            && !is_markdown_escaped(bytes, index)
+        {
+            let start = index + 2;
+            if let Some(target) = markdown_destination(&line[start..]) {
+                destinations.push(target);
+            }
+        }
+        index += 1;
+    }
+}
+
+fn is_markdown_escaped(bytes: &[u8], index: usize) -> bool {
+    bytes[..index]
+        .iter()
+        .rev()
+        .take_while(|byte| **byte == b'\\')
+        .count()
+        % 2
+        == 1
+}
+
+fn markdown_destination(input: &str) -> Option<String> {
+    let input = input.trim_start();
+    if let Some(input) = input.strip_prefix('<') {
+        return input.find('>').map(|end| input[..end].into());
+    }
+    let mut output = String::new();
+    let mut depth = 0_usize;
+    let mut escaped = false;
+    for character in input.chars() {
+        if escaped {
+            output.push(character);
+            escaped = false;
+            continue;
+        }
+        match character {
+            '\\' => escaped = true,
+            '(' => {
+                depth += 1;
+                output.push(character);
+            }
+            ')' if depth == 0 => break,
+            ')' => {
+                depth -= 1;
+                output.push(character);
+            }
+            character if character.is_whitespace() && depth == 0 => break,
+            _ => output.push(character),
+        }
+    }
+    (!output.is_empty()).then_some(output)
+}
+
+fn classify_runtime_local_target(target: &str, current_dir: &Path) -> Option<&'static str> {
+    let target = target.trim();
+    let path = Path::new(target);
+    if path.is_absolute() {
+        let base = fs::canonicalize(current_dir).unwrap_or_else(|_| lexical_normalize(current_dir));
+        let resolved = fs::canonicalize(path).unwrap_or_else(|_| lexical_normalize(path));
+        if resolved.starts_with(base) {
+            return Some("it is inside this task's working directory");
+        }
+        if fs::metadata(path).is_ok_and(|metadata| metadata.is_file()) {
+            return Some("it names a file that exists only on this machine");
+        }
+        return None;
+    }
+    Url::parse(target)
+        .ok()
+        .filter(|url| url.scheme().eq_ignore_ascii_case("file"))
+        .map(|_| "it is a file:// URL")
 }
 
 async fn run_user_profile_get(
@@ -2966,6 +3581,15 @@ mod tests {
         }
     }
 
+    fn issue_create_args(cli: &Cli) -> &IssueCreateArgs {
+        match &cli.command {
+            Command::Issue(IssueArgs {
+                command: IssueCommand::Create(args),
+            }) => args,
+            _ => panic!("expected issue create"),
+        }
+    }
+
     #[test]
     fn issue_list_parser_matches_go_registry_flags() {
         let cli = Cli::try_parse_from([
@@ -3791,6 +4415,388 @@ mod tests {
         assert!(table.contains("CORD-19"));
         assert!(table.contains("First barrier"));
         assert!(table.contains("agent:CordyBot"));
+    }
+
+    #[test]
+    fn issue_create_parser_matches_go_registry_flags() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "create",
+            "--title",
+            "New issue",
+            "--description",
+            "Line 1\\nLine 2",
+            "--status",
+            "custom_status",
+            "--priority",
+            "high",
+            "--assignee-id",
+            "11111111-1111-1111-1111-111111111111",
+            "--parent",
+            "CORD-1",
+            "--stage",
+            "2",
+            "--project",
+            "abcd",
+            "--start-date",
+            "2026-08-24",
+            "--due-date",
+            "2026-08-31",
+            "--allow-duplicate",
+            "--attachment",
+            "one.png",
+            "--attachment",
+            "two.png",
+            "--attachment-id",
+            "attachment-1",
+            "--output",
+            "table",
+        ])
+        .expect("issue create CLI");
+        let args = issue_create_args(&cli);
+        assert_eq!(args.title.as_deref(), Some("New issue"));
+        assert_eq!(args.description.as_deref(), Some("Line 1\\nLine 2"));
+        assert_eq!(args.status.as_deref(), Some("custom_status"));
+        assert_eq!(args.priority.as_deref(), Some("high"));
+        assert_eq!(args.stage, Some(2));
+        assert_eq!(args.start_date.as_deref(), Some("2026-08-24"));
+        assert_eq!(args.due_date.as_deref(), Some("2026-08-31"));
+        assert!(args.allow_duplicate);
+        assert_eq!(args.attachment.len(), 2);
+        assert_eq!(args.attachment_id, vec![String::from("attachment-1")]);
+        assert_eq!(args.output, OutputFormat::Table);
+    }
+
+    #[test]
+    fn issue_create_description_modes_preserve_go_input_semantics() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let inline = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "create",
+            "--title",
+            "T",
+            "--description",
+            "one\\ntwo",
+        ])
+        .expect("inline CLI");
+        assert_eq!(
+            resolve_issue_create_description(
+                issue_create_args(&inline),
+                &environment,
+                &mut Cursor::new(Vec::<u8>::new())
+            )
+            .expect("inline description"),
+            Some("one\ntwo".into())
+        );
+
+        let stdin = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "create",
+            "--title",
+            "T",
+            "--description-stdin",
+        ])
+        .expect("stdin CLI");
+        assert_eq!(
+            resolve_issue_create_description(
+                issue_create_args(&stdin),
+                &environment,
+                &mut Cursor::new(b"literal\\nvalue\n".to_vec())
+            )
+            .expect("stdin description"),
+            Some("literal\\nvalue".into())
+        );
+
+        let conflict = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "create",
+            "--title",
+            "T",
+            "--description",
+            "text",
+            "--description-stdin",
+        ])
+        .expect("conflict reaches runtime");
+        let error = resolve_issue_create_description(
+            issue_create_args(&conflict),
+            &environment,
+            &mut Cursor::new(b"stdin".to_vec()),
+        )
+        .expect_err("mutually exclusive sources");
+        assert!(error.to_string().contains("mutually exclusive"));
+
+        let empty_file = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "create",
+            "--title",
+            "T",
+            "--description",
+            "text",
+            "--description-file",
+            "",
+        ])
+        .expect("empty file flag reaches runtime");
+        assert_eq!(
+            resolve_issue_create_description(
+                issue_create_args(&empty_file),
+                &environment,
+                &mut Cursor::new(Vec::<u8>::new())
+            )
+            .expect("empty file value is unset"),
+            Some("text".into())
+        );
+    }
+
+    #[test]
+    fn issue_create_local_link_guard_is_agent_only_and_ignores_code() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let artifact = cwd.path().join("artifact.png");
+        fs::write(&artifact, b"image").expect("artifact");
+        let markdown = format!("[result]({})", artifact.display());
+
+        let human = Environment::for_test(home.path().into(), cwd.path().into());
+        guard_issue_description_local_links(&markdown, &human).expect("human links are allowed");
+
+        let mut agent = Environment::for_test(home.path().into(), cwd.path().into());
+        agent.set("CORDY_AGENT_ID", "agent-1");
+        let error =
+            guard_issue_description_local_links(&markdown, &agent).expect_err("agent local link");
+        assert!(error.to_string().contains("runtime-local path"));
+        assert!(error.to_string().contains("--attachment"));
+        guard_issue_description_local_links(
+            &format!(
+                "`[result]({})`\n```md\n[result]({})\n```",
+                artifact.display(),
+                artifact.display()
+            ),
+            &agent,
+        )
+        .expect("code spans and fences are ignored");
+    }
+
+    #[tokio::test]
+    async fn issue_create_resolves_references_and_sends_complete_body() {
+        let captured = Arc::new(Mutex::new(None::<Value>));
+        let captured_by_issue = Arc::clone(&captured);
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-10",
+                get(|| async { Json(serde_json::json!({"id":"parent-uuid","identifier":"CORD-10"})) }),
+            )
+            .route(
+                "/api/projects",
+                get(|| async { Json(serde_json::json!({"projects":[{"id":"abcd0000-0000-0000-0000-000000000000","title":"Migration","status":"active"}]})) }),
+            )
+            .route(
+                "/api/workspaces/workspace-1/members",
+                get(|| async { Json(serde_json::json!([{"user_id":"11111111-1111-1111-1111-111111111111","name":"Ada","email":"ada@example.com"}])) }),
+            )
+            .route("/api/agents", get(|| async { Json(serde_json::json!([])) }))
+            .route("/api/squads", get(|| async { Json(serde_json::json!([])) }))
+            .route(
+                "/api/issues",
+                post(move |headers: HeaderMap, Json(body): Json<Value>| {
+                    let captured = Arc::clone(&captured_by_issue);
+                    async move {
+                        assert_eq!(headers["authorization"], "Bearer token-1");
+                        *captured.lock().expect("capture issue") = Some(body.clone());
+                        Json(serde_json::json!({
+                            "id":"issue-uuid","identifier":"CORD-18","title":body["title"],
+                            "status":body["status"],"priority":body["priority"]
+                        }))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        environment.set("CORDY_QUICK_CREATE_TASK_ID", "task-quick");
+        environment.set(
+            "CORDY_QUICK_CREATE_ATTACHMENT_IDS",
+            r#"["attachment-env","attachment-shared"]"#,
+        );
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "create",
+            "--title",
+            "New issue",
+            "--description",
+            "Line 1\\nLine 2",
+            "--status",
+            "custom_status",
+            "--priority",
+            "high",
+            "--parent",
+            "CORD-10",
+            "--stage",
+            "2",
+            "--project",
+            "abcd",
+            "--assignee",
+            "Ada",
+            "--start-date",
+            "2026-08-24",
+            "--due-date",
+            "2026-08-31",
+            "--allow-duplicate",
+            "--attachment-id",
+            "attachment-flag",
+            "--attachment-id",
+            "attachment-shared",
+        ])
+        .expect("create CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("create issue");
+        let issue: Value = serde_json::from_str(&output.stdout).expect("issue JSON");
+        assert_eq!(issue["identifier"], "CORD-18");
+        let body = captured
+            .lock()
+            .expect("body")
+            .clone()
+            .expect("captured body");
+        assert_eq!(body["title"], "New issue");
+        assert_eq!(body["description"], "Line 1\nLine 2");
+        assert_eq!(body["status"], "custom_status");
+        assert_eq!(body["priority"], "high");
+        assert_eq!(body["parent_issue_id"], "parent-uuid");
+        assert_eq!(body["stage"], 2);
+        assert_eq!(body["project_id"], "abcd0000-0000-0000-0000-000000000000");
+        assert_eq!(body["assignee_type"], "member");
+        assert_eq!(body["assignee_id"], "11111111-1111-1111-1111-111111111111");
+        assert_eq!(body["start_date"], "2026-08-24");
+        assert_eq!(body["due_date"], "2026-08-31");
+        assert_eq!(body["allow_duplicate"], Value::Bool(true));
+        assert_eq!(body["origin_type"], "quick_create");
+        assert_eq!(body["origin_id"], "task-quick");
+        assert_eq!(
+            body["attachment_ids"],
+            serde_json::json!(["attachment-flag", "attachment-shared", "attachment-env"])
+        );
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn issue_create_surfaces_active_duplicate_message_verbatim() {
+        let expected = "Active duplicate issue exists: CORD-1 Existing (status: in_progress).";
+        let app = Router::new().route(
+            "/api/issues",
+            post(move || async move {
+                (
+                    axum::http::StatusCode::CONFLICT,
+                    Json(serde_json::json!({"code":"active_duplicate_issue","error":expected})),
+                )
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from(["cordy", "issue", "create", "--title", "Duplicate"])
+            .expect("create CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("duplicate");
+        assert_eq!(error.to_string(), expected);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn issue_create_prevalidates_attachments_and_treats_upload_failure_as_partial_success() {
+        let issue_posts = Arc::new(Mutex::new(0_usize));
+        let uploads = Arc::new(Mutex::new(0_usize));
+        let issue_posts_by_handler = Arc::clone(&issue_posts);
+        let uploads_by_handler = Arc::clone(&uploads);
+        let app = Router::new()
+            .route(
+                "/api/issues",
+                post(move || {
+                    let posts = Arc::clone(&issue_posts_by_handler);
+                    async move {
+                        *posts.lock().expect("posts") += 1;
+                        Json(serde_json::json!({"id":"issue-1","identifier":"CORD-1","title":"With file","status":"todo","priority":"none"}))
+                    }
+                }),
+            )
+            .route(
+                "/api/upload-file",
+                post(move |headers: HeaderMap, _body: axum::body::Bytes| {
+                    let uploads = Arc::clone(&uploads_by_handler);
+                    async move {
+                        *uploads.lock().expect("uploads") += 1;
+                        assert!(headers["content-type"].to_str().expect("content type").starts_with("multipart/form-data; boundary="));
+                        (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "upload failed")
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        fs::write(cwd.path().join("good.png"), b"image").expect("attachment");
+        let external = tempfile::tempdir().expect("external");
+        let external_file = external.path().join("bad.png");
+        fs::write(&external_file, b"bad").expect("external attachment");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let invalid = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "create",
+            "--title",
+            "Invalid",
+            "--attachment",
+            external_file.to_str().expect("external path"),
+        ])
+        .expect("invalid attachment CLI");
+        let error = run_with_input(&invalid, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("external attachment");
+        assert!(error.to_string().contains("--allow-external-file"));
+        assert_eq!(*issue_posts.lock().expect("posts"), 0);
+        assert_eq!(*uploads.lock().expect("uploads"), 0);
+
+        let valid = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "create",
+            "--title",
+            "With file",
+            "--attachment",
+            "good.png",
+        ])
+        .expect("attachment CLI");
+        let output = run_with_input(&valid, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("partial success");
+        assert_eq!(*issue_posts.lock().expect("posts"), 1);
+        assert_eq!(*uploads.lock().expect("uploads"), 1);
+        assert!(output.stderr.contains("issue already created, CORD-1"));
+        task.abort();
     }
 
     #[test]

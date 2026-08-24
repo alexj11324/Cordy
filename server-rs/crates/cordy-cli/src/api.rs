@@ -69,6 +69,7 @@ pub struct ApiClient {
     agent_id: String,
     task_id: String,
     version: &'static str,
+    request_timeout: Option<Duration>,
     client: Client,
 }
 
@@ -89,11 +90,17 @@ impl ApiClient {
             agent_id,
             task_id,
             version,
+            request_timeout: None,
             client: Client::builder()
                 .timeout(timeout)
                 .build()
                 .context("build HTTP client")?,
         })
+    }
+
+    pub fn with_request_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = Some(timeout);
+        self
     }
 
     pub async fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
@@ -127,6 +134,40 @@ impl ApiClient {
         .await
     }
 
+    pub async fn upload_file(
+        &self,
+        file_data: Vec<u8>,
+        filename: &str,
+        issue_id: &str,
+    ) -> Result<String> {
+        let filename = std::path::Path::new(filename)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(filename)
+            .to_string();
+        let part = reqwest::multipart::Part::bytes(file_data).file_name(filename);
+        let mut form = reqwest::multipart::Form::new().part("file", part);
+        if !issue_id.is_empty() {
+            form = form.text("issue_id", issue_id.to_string());
+        }
+        let result: serde_json::Value = self
+            .send_json(
+                Method::POST,
+                "/api/upload-file",
+                self.request(Method::POST, "/api/upload-file")
+                    .multipart(form),
+            )
+            .await?;
+        let id = result
+            .get("id")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default();
+        if id.is_empty() {
+            anyhow::bail!("upload response missing attachment id");
+        }
+        Ok(id.into())
+    }
+
     fn request(&self, method: Method, path: &str) -> RequestBuilder {
         let mut request = self
             .client
@@ -148,6 +189,9 @@ impl ApiClient {
             request = request.header("X-Task-ID", &self.task_id);
         }
 
+        if let Some(timeout) = self.request_timeout {
+            request = request.timeout(timeout);
+        }
         request
     }
 
