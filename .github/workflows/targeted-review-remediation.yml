@@ -1,0 +1,135 @@
+name: Targeted review remediation
+
+on:
+  push:
+    branches: [remediation/review-debt-20260824]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: targeted-review-remediation
+  cancel-in-progress: false
+
+jobs:
+  remediate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: remediation/review-debt-20260824
+          fetch-depth: 0
+
+      - name: Apply validated review fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git log -1 --pretty=%s | grep -q '^\[targeted-remediation\]'; then
+            echo 'targeted remediation already applied'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --all --prune
+          commits=(
+            640f0363ca6de387a695171189325cccc9444a18
+            d5356dc2f1890a8c02917169f37862ad340d37c5
+            207644752780713f5ca136f00e6bae6dbdffd6ba
+            ff5ecd55a8aa27d249bf6203dd4e913bfb0031d2
+            905efd5e6228bc652251e0b07fa808d2ddafefbf
+            e2928b13549ba77f5f6ddc58932db6a5318070d6
+            076aeaffb4381a72758a5e418e7870fbab3a8589
+          )
+          : > /tmp/targeted-remediation.txt
+          for commit in "${commits[@]}"; do
+            subject=$(git show -s --format=%s "$commit")
+            if git cherry-pick -x "$commit"; then
+              echo "APPLIED $commit $subject" | tee -a /tmp/targeted-remediation.txt
+            else
+              conflicts=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
+              git cherry-pick --abort || true
+              echo "CONFLICT $commit $subject :: $conflicts" | tee -a /tmp/targeted-remediation.txt
+            fi
+          done
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new, *, required=True):
+              p = Path(path)
+              text = p.read_text()
+              if old not in text:
+                  if required:
+                      raise SystemExit(f"expected snippet not found in {path}: {old[:100]!r}")
+                  return False
+              p.write_text(text.replace(old, new, 1))
+              return True
+
+          # Preserve the established 403 authorization contract for avatar publication.
+          me = Path('server-rs/crates/cordy-handler/src/me.rs')
+          text = me.read_text()
+          text = text.replace(
+              'Err(message) => return error_response(StatusCode::BAD_REQUEST, message),\n        },\n        None => None,\n    };\n    let language = match request.language',
+              'Err(message) => return error_response(StatusCode::FORBIDDEN, message),\n        },\n        None => None,\n    };\n    let language = match request.language',
+              1,
+          )
+          # Go JSON decoding treats nullable waitlist strings as zero values.
+          if 'struct JoinCloudWaitlistRequest {' in text and 'deserialize_null_string' not in text:
+              text = text.replace(
+                  '#[derive(Debug, Default, Deserialize)]\nstruct JoinCloudWaitlistRequest {\n    #[serde(default)]\n    email: String,\n    #[serde(default)]\n    reason: String,\n}',
+                  '#[derive(Debug, Default, Deserialize)]\nstruct JoinCloudWaitlistRequest {\n    #[serde(default, deserialize_with = "deserialize_null_string")]\n    email: String,\n    #[serde(default, deserialize_with = "deserialize_null_string")]\n    reason: String,\n}',
+                  1,
+              )
+              marker = 'fn deserialize_string_or_slice<'
+              helper = '''fn deserialize_null_string<'de, D>(deserializer: D) -> Result<String, D::Error>\nwhere\n    D: serde::Deserializer<'de>,\n{\n    Option::<String>::deserialize(deserializer).map(Option::unwrap_or_default)\n}\n\n'''
+              text = text.replace(marker, helper + marker, 1)
+          me.write_text(text)
+
+          # Build avatar capability URLs from loaded public config, not process env only.
+          avatar = Path('server-rs/crates/cordy-handler/src/avatar.rs')
+          text = avatar.read_text()
+          old = '''fn served_url(key: &str) -> String {\n    let path = format!("/api/avatars/{}/{key}", sign_key(key));\n    let base = std::env::var("CORDY_PUBLIC_URL")\n        .unwrap_or_default()\n        .trim()\n        .trim_end_matches('/')\n        .to_string();\n    if base.is_empty() {\n        path\n    } else {\n        format!("{base}{path}")\n    }\n}'''
+          new = '''fn served_url(state: &HandlerState, key: &str) -> String {\n    let path = format!("/api/avatars/{}/{key}", sign_key(key));\n    let configured = state.attachment_download.public_url.trim().trim_end_matches('/');\n    let env_base = std::env::var("CORDY_PUBLIC_URL").unwrap_or_default();\n    let base = if configured.is_empty() {\n        env_base.trim().trim_end_matches('/')\n    } else {\n        configured\n    };\n    if base.is_empty() {\n        path\n    } else {\n        format!("{base}{path}")\n    }\n}'''
+          if old in text:
+              text = text.replace(old, new, 1)
+              text = text.replace('return served_url(&key);', 'return served_url(state, &key);')
+              text = text.replace('served_url(&key)\n}', 'served_url(state, &key)\n}')
+          avatar.write_text(text)
+
+          # Use the row locked inside the transaction as the unchanged leader source.
+          squad = Path('server-rs/crates/cordy-handler/src/squad.rs')
+          text = squad.read_text()
+          old = '''    match squad::lock_squad_for_update(&mut *transaction, existing.id, context.member.workspace_id)\n        .await\n    {\n        Ok(Some(_)) => {}\n        Ok(None) | Err(_) => {\n            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update squad")\n        }\n    }\n    let mut leader_id = existing.leader_id;'''
+          new = '''    let locked = match squad::lock_squad_for_update(\n        &mut *transaction,\n        existing.id,\n        context.member.workspace_id,\n    )\n    .await\n    {\n        Ok(Some(locked)) => locked,\n        Ok(None) | Err(_) => {\n            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update squad")\n        }\n    };\n    let mut leader_id = locked.leader_id;'''
+          if old in text:
+              text = text.replace(old, new, 1)
+          squad.write_text(text)
+
+          # Squad deletion transfers assignees; invalidate Autopilot caches too.
+          rt = Path('packages/core/realtime/use-realtime-sync.ts')
+          text = rt.read_text()
+          old = '''          // squad:deleted triggers assignee transfer — refresh issues too.\n          qc.invalidateQueries({ queryKey: issueKeys.all(wsId) });'''
+          new = '''          // squad:deleted triggers assignee transfer — refresh issues and autopilots too.\n          qc.invalidateQueries({ queryKey: issueKeys.all(wsId) });\n          qc.invalidateQueries({ queryKey: autopilotKeys.all(wsId) });'''
+          if old in text:
+              text = text.replace(old, new, 1)
+          rt.write_text(text)
+          PY
+
+          cargo fmt --manifest-path server-rs/Cargo.toml --all
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m '[targeted-remediation] apply validated review fixes'
+            git push origin HEAD:remediation/review-debt-20260824
+          fi
+          cat /tmp/targeted-remediation.txt
+
+      - name: Validate Rust remediation
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd server-rs
+          cargo fmt --all -- --check
+          cargo check --workspace --all-targets --locked
+          cargo test -p cordy-handler -p cordy-service -p cordy-server --locked
+          cargo clippy -p cordy-handler -p cordy-service -p cordy-server -p cordy-cli --all-targets --locked -- -D warnings
