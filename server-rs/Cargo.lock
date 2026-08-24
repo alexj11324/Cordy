@@ -906,6 +906,7 @@ dependencies = [
  "axum",
  "chrono",
  "clap",
+ "cordy-daemon",
  "dirs",
  "reqwest",
  "serde",

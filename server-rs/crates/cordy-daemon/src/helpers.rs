@@ -95,7 +95,7 @@ pub(crate) fn parse_flex_duration(value: &str) -> anyhow::Result<Duration> {
 /// Deviation vs Go: a negative total yields an error instead of a negative
 /// duration (Rust `Duration` is unsigned); all daemon call sites require
 /// positive values.
-pub(crate) fn parse_go_duration(s: &str) -> anyhow::Result<Duration> {
+pub fn parse_go_duration(s: &str) -> anyhow::Result<Duration> {
     const NANOSECOND: f64 = 1.0;
     const MICROSECOND: f64 = 1000.0 * NANOSECOND;
     const MILLISECOND: f64 = 1000.0 * MICROSECOND;
