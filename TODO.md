@@ -645,10 +645,18 @@
       #129 was already merged at head `62b28e4a`; this post-merge checkpoint
       is pushed on the cumulative branch and awaits pro's new Ready PR
       candidate (no stale candidate is reused).
-- [ ] Next setup slice: port the real interactive login flow; until that lands,
-      setup without `CORDY_TOKEN` returns a typed “interactive login
-      unavailable” error after the verified profile replacement, and must not
-      claim completion.
+- [x] Ported the real interactive/browser `cordy login` flow and removed the
+      setup-only “interactive login unavailable” gap on the cumulative branch
+      `codex/cord-50-daemon-command-assembly`. Feature commit
+      `ef75d3080367ca9d7f56a9d1719662f5ba70d463` (parent
+      `b74502316670a99925fc24b3e27617d31a4516b8`, tree
+      `4f01427e7bef0c266a11d86dfbabf80b28e3aae9`) adds the bounded local
+      callback server, random state validation, browser fallback, JWT→PAT
+      exchange and verification, authenticated workspace discovery, human/
+      daemon guard, and atomic profile credential/workspace reset. Follow-up
+      `780aa3d0` validates HTTP(S) app URLs. Scoped rustfmt and
+      `git diff --check` pass; Cargo/review/gate/merge are intentionally owned
+      by pro. Branch was pushed; no PR/candidate is created or reused here.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
