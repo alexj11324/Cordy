@@ -119,7 +119,7 @@ impl ChannelRuntime {
         }
 
         let store = Arc::new(PostgresChannelStore::new(state.pool.clone()));
-        let lease_store = match RuntimeLeaseStore::from_env(store.clone(), cfg).await {
+        let lease_store = match RuntimeLeaseStore::from_config(store.clone(), cfg).await {
             Ok(store) => Some(Arc::new(store)),
             Err(error) => {
                 tracing::error!(%error, "channel supervisor disabled: lease backend unavailable");
@@ -551,8 +551,9 @@ fn configure_wecom(
         .ok()
         .filter(|value| !value.trim().is_empty())
         .or_else(|| {
-            std::env::var("CHANNEL_WS_LEASE_REDIS_URL")
-                .ok()
+            cfg.redis
+                .channel_ws_lease_url
+                .clone()
                 .filter(|value| !value.trim().is_empty())
         })
         .or_else(|| {
@@ -934,38 +935,69 @@ enum RuntimeLeaseStore {
     Redis(Box<cordy_channel_engine::redis_lease_store::RedisLeaseStore>),
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum LeaseBackendSettings {
+    Postgres,
+    Redis { url: String, namespace: String },
+}
+
+fn lease_backend_settings(cfg: &cordy_config::Config) -> anyhow::Result<LeaseBackendSettings> {
+    match cfg
+        .redis
+        .channel_ws_lease_backend
+        .as_deref()
+        .unwrap_or("postgres")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "" | "postgres" => Ok(LeaseBackendSettings::Postgres),
+        "redis" => {
+            let url = cfg
+                .redis
+                .channel_ws_lease_url
+                .clone()
+                .filter(|value| !value.trim().is_empty())
+                .or_else(|| {
+                    cfg.redis
+                        .url
+                        .clone()
+                        .filter(|value| !value.trim().is_empty())
+                })
+                .ok_or_else(|| anyhow::anyhow!("Redis lease URL is not configured"))?;
+            Ok(LeaseBackendSettings::Redis {
+                url,
+                namespace: cfg
+                    .redis
+                    .channel_ws_lease_namespace
+                    .as_deref()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_string(),
+            })
+        }
+        backend => anyhow::bail!("unsupported CHANNEL_WS_LEASE_BACKEND {backend:?}"),
+    }
+}
+
 impl RuntimeLeaseStore {
-    async fn from_env(
+    async fn from_config(
         postgres: Arc<PostgresChannelStore>,
         cfg: &cordy_config::Config,
     ) -> anyhow::Result<Self> {
-        match std::env::var("CHANNEL_WS_LEASE_BACKEND")
-            .unwrap_or_else(|_| "postgres".to_string())
-            .trim()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "" | "postgres" => Ok(Self::Postgres(postgres)),
-            "redis" => {
-                let redis_url = std::env::var("CHANNEL_WS_LEASE_REDIS_URL")
-                    .ok()
-                    .filter(|value| !value.trim().is_empty())
-                    .or_else(|| cfg.redis.url.clone())
-                    .ok_or_else(|| anyhow::anyhow!("Redis lease URL is not configured"))?;
-                let client = redis::Client::open(redis_url)?;
+        match lease_backend_settings(cfg)? {
+            LeaseBackendSettings::Postgres => Ok(Self::Postgres(postgres)),
+            LeaseBackendSettings::Redis { url, namespace } => {
+                let client = redis::Client::open(url)?;
                 let conn = client.get_connection_manager().await?;
-                let namespace = std::env::var("CHANNEL_WS_LEASE_NAMESPACE").unwrap_or_default();
-                let store = cordy_channel_engine::redis_lease_store::RedisLeaseStore::new(
-                    conn,
-                    namespace.trim(),
-                )
-                .map_err(anyhow::Error::from)?;
+                let store =
+                    cordy_channel_engine::redis_lease_store::RedisLeaseStore::new(conn, &namespace)
+                        .map_err(anyhow::Error::from)?;
                 tokio::time::timeout(Duration::from_secs(5), store.ready())
                     .await
                     .map_err(|_| anyhow::anyhow!("Redis lease readiness timed out"))??;
                 Ok(Self::Redis(Box::new(store)))
             }
-            backend => anyhow::bail!("unsupported CHANNEL_WS_LEASE_BACKEND {backend:?}"),
         }
     }
 }
@@ -1295,7 +1327,7 @@ impl cordy_slack::slash_command::QuickCreateEnqueuer for ChannelServices {
 
 #[cfg(test)]
 mod tests {
-    use super::{app_url, configure_wecom_security};
+    use super::{app_url, configure_wecom_security, lease_backend_settings, LeaseBackendSettings};
 
     #[test]
     fn app_url_prefers_explicit_app_host_and_trims_slash() {
@@ -1326,5 +1358,37 @@ mod tests {
         // production defaults regardless of execution order.
         configure_wecom_security(&cordy_config::Config::default());
         assert!(!cordy_wecom::trace::tracing_on());
+    }
+
+    #[test]
+    fn lease_backend_uses_loaded_config_values() {
+        let mut cfg = cordy_config::Config::default();
+        cfg.redis.url = Some("redis://fallback.example/".into());
+        cfg.redis.channel_ws_lease_backend = Some(" Redis ".into());
+        cfg.redis.channel_ws_lease_url = Some("redis://lease.example/".into());
+        cfg.redis.channel_ws_lease_namespace = Some(" tenant-a ".into());
+
+        assert_eq!(
+            lease_backend_settings(&cfg).unwrap(),
+            LeaseBackendSettings::Redis {
+                url: "redis://lease.example/".into(),
+                namespace: "tenant-a".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn lease_backend_falls_back_to_shared_redis_url() {
+        let mut cfg = cordy_config::Config::default();
+        cfg.redis.url = Some("redis://shared.example/".into());
+        cfg.redis.channel_ws_lease_backend = Some("redis".into());
+
+        assert_eq!(
+            lease_backend_settings(&cfg).unwrap(),
+            LeaseBackendSettings::Redis {
+                url: "redis://shared.example/".into(),
+                namespace: String::new(),
+            }
+        );
     }
 }
