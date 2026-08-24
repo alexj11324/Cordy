@@ -443,7 +443,7 @@ async fn create(
             .map(|user| user.name)
             .unwrap_or_else(|| email.clone());
         let target = email.clone();
-        tokio::spawn(async move {
+        state.tasks.spawn_side_effect(async move {
             if let Err(error) = email_service
                 .send_invitation_email(&target, &inviter_name, &workspace_name, &invitation_id)
                 .await

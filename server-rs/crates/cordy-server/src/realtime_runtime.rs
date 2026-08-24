@@ -82,7 +82,6 @@ pub struct RealtimeRuntime {
     retry_task: Option<JoinHandle<()>>,
     forwarder: Option<RealtimeForwarder>,
     daemon_notifier: Option<Arc<cordy_daemon::notifier::RelayNotifier>>,
-    background: Option<cordy_handler::state::BackgroundRuntime>,
 }
 
 impl RealtimeRuntime {
@@ -100,7 +99,6 @@ impl RealtimeRuntime {
                 retry_task: None,
                 forwarder: None,
                 daemon_notifier: None,
-                background: None,
             };
         };
 
@@ -134,7 +132,6 @@ impl RealtimeRuntime {
             retry_task: None,
             forwarder: None,
             daemon_notifier: None,
-            background: None,
         }
     }
 
@@ -143,7 +140,6 @@ impl RealtimeRuntime {
         bus: &cordy_events::Bus,
         daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
         daemon_notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
-        background: cordy_handler::state::BackgroundRuntime,
     ) {
         let relay_mode = self.relay_settings.as_ref().map(|settings| settings.mode);
         if relay_mode != Some(RelayMode::Legacy) && relay_mode.is_some() {
@@ -201,16 +197,10 @@ impl RealtimeRuntime {
                 }
             }));
         }
-        self.background = Some(background);
         self.forwarder = Some(RealtimeForwarder::start(bus, self.broadcaster.clone()));
     }
 
     pub async fn shutdown(mut self) {
-        if let Some(background) = self.background.take() {
-            if !background.shutdown(Duration::from_secs(5)).await {
-                tracing::warn!("handler background workers did not exit within shutdown timeout");
-            }
-        }
         if let Some(forwarder) = self.forwarder.take() {
             forwarder.shutdown().await;
         }

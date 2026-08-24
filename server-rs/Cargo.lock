@@ -806,6 +806,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "cordy-scheduler"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "cordy-db",
+ "cordy-service",
+ "futures-util",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.20",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "cordy-server"
 version = "0.1.0"
 dependencies = [
@@ -827,6 +846,7 @@ dependencies = [
  "cordy-lark",
  "cordy-metrics",
  "cordy-realtime",
+ "cordy-scheduler",
  "cordy-service",
  "cordy-slack",
  "cordy-telegram",

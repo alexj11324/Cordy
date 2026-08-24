@@ -11,6 +11,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context as _;
 use axum::extract::{Path, Query as AxumQuery, State};
@@ -523,6 +524,8 @@ struct HeartbeatRequest {
 /// cycle through `HandlerState`.
 pub(crate) struct DaemonHeartbeatProcessor {
     pool: sqlx::PgPool,
+    heartbeat_scheduler: Arc<dyn crate::heartbeat_scheduler::HeartbeatScheduler>,
+    liveness_store: Arc<dyn crate::runtime_liveness::LivenessStore>,
     update_store: Option<Arc<crate::pending_store::UpdateStore>>,
     model_list_store: Option<Arc<crate::pending_store::ModelListStore>>,
     local_skill_list_store: Option<Arc<crate::pending_store::LocalSkillListStore>>,
@@ -533,6 +536,8 @@ impl DaemonHeartbeatProcessor {
     pub(crate) fn from_state(state: &HandlerState) -> Self {
         Self {
             pool: state.pool.clone(),
+            heartbeat_scheduler: state.heartbeat_scheduler.clone(),
+            liveness_store: state.liveness_store.clone(),
             update_store: state.update_store.clone(),
             model_list_store: state.model_list_store.clone(),
             local_skill_list_store: state.local_skill_list_store.clone(),
@@ -545,7 +550,12 @@ impl DaemonHeartbeatProcessor {
         rt: &AgentRuntime,
         supports_batch_import: bool,
     ) -> anyhow::Result<DaemonHeartbeatAckPayload> {
-        record_heartbeat(&self.pool, rt).await?;
+        record_heartbeat(
+            self.liveness_store.as_ref(),
+            self.heartbeat_scheduler.as_ref(),
+            rt,
+        )
+        .await?;
 
         let runtime_id = rt.id.to_string();
         let mut ack = DaemonHeartbeatAckPayload {
@@ -804,20 +814,34 @@ async fn heartbeat(
     Json(resp).into_response()
 }
 
-/// Passthrough liveness write (Go PassthroughHeartbeatScheduler.Schedule):
-/// touch last_seen_at on online rows, flip offline→online otherwise. The
-/// Redis TTL layer and batched coalescing land with the redis slice.
-async fn record_heartbeat(pool: &sqlx::PgPool, rt: &AgentRuntime) -> anyhow::Result<()> {
-    if rt.status == "online" && rt.last_seen_at.is_some() {
-        match runtime::touch_agent_runtime_last_seen(pool, rt.id).await {
-            Ok(n) if n > 0 => return Ok(()),
-            _ => {}
+const RUNTIME_LIVENESS_TTL: Duration = Duration::from_secs(90);
+const RUNTIME_HEARTBEAT_DB_FLUSH_INTERVAL: Duration = Duration::from_secs(60);
+
+async fn record_heartbeat(
+    liveness_store: &dyn crate::runtime_liveness::LivenessStore,
+    heartbeat_scheduler: &dyn crate::heartbeat_scheduler::HeartbeatScheduler,
+    rt: &AgentRuntime,
+) -> anyhow::Result<()> {
+    let stale_in_db = rt.last_seen_at.is_none_or(|last_seen| {
+        chrono::Utc::now().signed_duration_since(last_seen)
+            >= chrono::Duration::from_std(RUNTIME_HEARTBEAT_DB_FLUSH_INTERVAL)
+                .unwrap_or_else(|_| chrono::Duration::seconds(60))
+    });
+    let mut needs_db_write = !liveness_store.available() || rt.status != "online" || stale_in_db;
+
+    if liveness_store.available() {
+        if let Err(error) = liveness_store
+            .touch(&rt.id.to_string(), RUNTIME_LIVENESS_TTL)
+            .await
+        {
+            tracing::warn!(%error, runtime_id = %rt.id, "liveness touch failed; falling back to DB heartbeat");
+            needs_db_write = true;
         }
     }
-    runtime::mark_agent_runtime_online(pool, rt.id)
-        .await
-        .map(|_| ())
-        .context("heartbeat db update failed")
+    if needs_db_write {
+        heartbeat_scheduler.schedule(rt).await?;
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
