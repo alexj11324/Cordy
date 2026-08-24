@@ -20,7 +20,10 @@ use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::{error::error_response, state::HandlerState};
+use crate::{
+    error::{error_code_response, error_response},
+    state::HandlerState,
+};
 
 const BODY_LIMIT: usize = 16 * 1024;
 
@@ -1087,22 +1090,99 @@ async fn install_wecom(
             Json(installation_response(Provider::WeCom, row)).into_response()
         }
         Err(error) => {
-            let status = if error
+            let failure = classify_wecom_install_error(&error);
+            match failure.log {
+                WecomInstallLog::None => {}
+                WecomInstallLog::Warn => tracing::warn!(
+                    %error,
+                    %workspace_id,
+                    %agent_id,
+                    "WeCom installation could not verify the bot"
+                ),
+                WecomInstallLog::Error => tracing::error!(
+                    %error,
+                    %workspace_id,
+                    %agent_id,
+                    "WeCom installation failed"
+                ),
+            }
+            error_code_response(failure.status, failure.code, failure.message)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WecomInstallLog {
+    None,
+    Warn,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WecomInstallFailure {
+    status: StatusCode,
+    code: &'static str,
+    message: &'static str,
+    log: WecomInstallLog,
+}
+
+fn classify_wecom_install_error(error: &anyhow::Error) -> WecomInstallFailure {
+    use cordy_wecom::installation::BotOwnershipError;
+
+    let (status, code, message, log) = match cordy_wecom::installation::as_bot_ownership_error(error)
+    {
+        Some(BotOwnershipError::SameWorkspace) => (
+            StatusCode::CONFLICT,
+            "wecom_bot_owned_by_same_workspace",
+            "this bot is already connected to another agent in this workspace — disconnect it there first, then connect it here",
+            WecomInstallLog::None,
+        ),
+        Some(BotOwnershipError::ArchivedAgent) => (
+            StatusCode::CONFLICT,
+            "wecom_bot_owned_by_archived_agent",
+            "this bot is connected to an archived agent in this workspace — restore that agent, or disconnect its bot, before connecting it here",
+            WecomInstallLog::None,
+        ),
+        Some(BotOwnershipError::AnotherWorkspace) => (
+            StatusCode::CONFLICT,
+            "wecom_bot_owned_by_another_workspace",
+            "this bot is already connected to a different Cordy workspace — disconnect it there before connecting it here",
+            WecomInstallLog::None,
+        ),
+        None if error.chain().any(|cause| {
+            cause
                 .downcast_ref::<cordy_wecom::installation::InvalidInstallationParams>()
                 .is_some()
-                || cordy_wecom::credential_probe::is_credentials_rejected(&error)
-            {
-                StatusCode::BAD_REQUEST
-            } else if cordy_wecom::credential_probe::is_credentials_unverifiable(&error) {
-                StatusCode::SERVICE_UNAVAILABLE
-            } else if cordy_wecom::installation::as_bot_ownership_error(&error).is_some() {
-                StatusCode::CONFLICT
-            } else {
-                StatusCode::INTERNAL_SERVER_ERROR
-            };
-            tracing::warn!(error = %error, "WeCom installation failed");
-            error_response(status, "could not connect the WeCom bot")
-        }
+        }) => (
+            StatusCode::BAD_REQUEST,
+            "wecom_install_rejected",
+            "could not connect the WeCom bot — check the Bot ID and secret from the WeCom admin console, and that the bot is a smart bot with the long connection enabled",
+            WecomInstallLog::None,
+        ),
+        None if cordy_wecom::credential_probe::is_credentials_rejected(error) => (
+            StatusCode::BAD_REQUEST,
+            "wecom_credentials_rejected",
+            "WeCom rejected this Bot ID and secret — check both on the WeCom admin console, and that the bot is a smart bot with the long connection enabled",
+            WecomInstallLog::None,
+        ),
+        None if cordy_wecom::credential_probe::is_credentials_unverifiable(error) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "wecom_credentials_unverifiable",
+            "could not reach WeCom to verify this bot — the credentials were not changed; try again in a moment",
+            WecomInstallLog::Warn,
+        ),
+        None => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "wecom_install_failed",
+            "could not save this bot — something went wrong on our side. Your credentials were not changed; please try again, and contact support if it keeps failing",
+            WecomInstallLog::Error,
+        ),
+    };
+    WecomInstallFailure {
+        status,
+        code,
+        message,
+        log,
     }
 }
 
@@ -1510,6 +1590,68 @@ mod tests {
             dingtalk_install_error(&internal).0,
             StatusCode::INTERNAL_SERVER_ERROR
         );
+    }
+
+    #[test]
+    fn wecom_install_errors_preserve_recovery_semantics() {
+        use cordy_wecom::credential_probe::CredentialError;
+        use cordy_wecom::installation::{BotOwnershipError, InvalidInstallationParams};
+
+        let cases = [
+            (
+                anyhow::Error::new(BotOwnershipError::SameWorkspace),
+                StatusCode::CONFLICT,
+                "wecom_bot_owned_by_same_workspace",
+                WecomInstallLog::None,
+            ),
+            (
+                anyhow::Error::new(BotOwnershipError::ArchivedAgent),
+                StatusCode::CONFLICT,
+                "wecom_bot_owned_by_archived_agent",
+                WecomInstallLog::None,
+            ),
+            (
+                anyhow::Error::new(BotOwnershipError::AnotherWorkspace),
+                StatusCode::CONFLICT,
+                "wecom_bot_owned_by_another_workspace",
+                WecomInstallLog::None,
+            ),
+            (
+                anyhow::Error::new(InvalidInstallationParams("secret")),
+                StatusCode::BAD_REQUEST,
+                "wecom_install_rejected",
+                WecomInstallLog::None,
+            ),
+            (
+                anyhow::Error::new(CredentialError::Rejected {
+                    code: 40_001,
+                    msg: "invalid secret".into(),
+                }),
+                StatusCode::BAD_REQUEST,
+                "wecom_credentials_rejected",
+                WecomInstallLog::None,
+            ),
+            (
+                anyhow::Error::new(CredentialError::Unverifiable("timeout".into())),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "wecom_credentials_unverifiable",
+                WecomInstallLog::Warn,
+            ),
+            (
+                anyhow::anyhow!("database unavailable"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "wecom_install_failed",
+                WecomInstallLog::Error,
+            ),
+        ];
+
+        for (error, status, code, log) in cases {
+            let failure = classify_wecom_install_error(&error);
+            assert_eq!(failure.status, status);
+            assert_eq!(failure.code, code);
+            assert_eq!(failure.log, log);
+            assert!(!failure.message.is_empty());
+        }
     }
 
     #[test]
