@@ -120,6 +120,18 @@ enum IssueCommand {
     },
     #[command(about = "Manage pull requests linked to an issue")]
     PullRequest(IssuePullRequestArgs),
+    #[command(
+        alias = "subissues",
+        about = "List an issue's sub-issues grouped by stage"
+    )]
+    Children {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+        #[arg(long, help = "Show full UUIDs in table output")]
+        full_id: bool,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -471,6 +483,14 @@ async fn run_with_input<R: Read>(
                     command: IssuePullRequestCommand::Attach(args),
                 }),
         }) => run_issue_pull_request_attach(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Children {
+                    id,
+                    output,
+                    full_id,
+                },
+        }) => run_issue_children(cli, environment, id, *output, *full_id).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -1775,6 +1795,149 @@ async fn run_issue_pull_request_attach(
         stdout,
         stderr: String::new(),
     })
+}
+
+#[derive(Debug, Serialize)]
+struct IssueChildStageGroup {
+    stage: i64,
+    total: usize,
+    done: usize,
+    issues: Vec<Value>,
+}
+
+#[derive(Debug, Serialize)]
+struct IssueChildrenEnvelope {
+    stages: Vec<IssueChildStageGroup>,
+    total: usize,
+    unstaged: Vec<Value>,
+}
+
+async fn run_issue_children(
+    cli: &Cli,
+    environment: &Environment,
+    input: &str,
+    output: OutputFormat,
+    _full_id: bool,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, input)
+        .await
+        .context("resolve issue")?;
+    let response: Value = client
+        .get_json(&format!("/api/issues/{issue_id}/children"))
+        .await
+        .context("list child issues")?;
+    let mut children = response
+        .get("issues")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    children.sort_by_key(|child| child_stage(child).map_or((true, 0), |stage| (false, stage)));
+    let stdout = match output {
+        OutputFormat::Json => format!(
+            "{}\n",
+            serde_json::to_string_pretty(&group_issue_children(&children))?
+        ),
+        OutputFormat::Table => {
+            let workspace_id = resolve_current_workspace_id(cli, environment);
+            let actors = load_issue_actor_names(&client, &workspace_id, &children).await;
+            format_issue_children_table(&children, &actors)
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn child_stage(issue: &Value) -> Option<i64> {
+    let value = issue.get("stage")?;
+    value
+        .as_i64()
+        .or_else(|| value.as_f64().map(|number| number as i64))
+}
+
+fn terminal_child_issue(issue: &Value) -> bool {
+    let category = match value_string(issue, "status_category") {
+        value if value.is_empty() => value_string(issue, "status"),
+        value => value,
+    };
+    matches!(category.as_str(), "done" | "cancelled")
+}
+
+fn group_issue_children(children: &[Value]) -> IssueChildrenEnvelope {
+    let mut stages = Vec::<IssueChildStageGroup>::new();
+    let mut index_by_stage = BTreeMap::<i64, usize>::new();
+    let mut unstaged = Vec::new();
+    for child in children {
+        let Some(stage) = child_stage(child) else {
+            unstaged.push(child.clone());
+            continue;
+        };
+        let index = if let Some(index) = index_by_stage.get(&stage) {
+            *index
+        } else {
+            stages.push(IssueChildStageGroup {
+                stage,
+                total: 0,
+                done: 0,
+                issues: Vec::new(),
+            });
+            let index = stages.len() - 1;
+            index_by_stage.insert(stage, index);
+            index
+        };
+        let group = &mut stages[index];
+        group.total += 1;
+        if terminal_child_issue(child) {
+            group.done += 1;
+        }
+        group.issues.push(child.clone());
+    }
+    IssueChildrenEnvelope {
+        stages,
+        total: children.len(),
+        unstaged,
+    }
+}
+
+fn format_issue_children_table(children: &[Value], actors: &IssueActorNames) -> String {
+    let mut rows = Vec::with_capacity(children.len() + 1);
+    rows.push(vec![
+        "STAGE".into(),
+        "KEY".into(),
+        "TITLE".into(),
+        "STATUS".into(),
+        "PRIORITY".into(),
+        "ASSIGNEE".into(),
+    ]);
+    rows.extend(children.iter().map(|child| {
+        let id = value_string(child, "id");
+        let key = match value_string(child, "identifier") {
+            value if value.is_empty() => id,
+            value => value,
+        };
+        let actor_type = value_string(child, "assignee_type");
+        let actor_id = value_string(child, "assignee_id");
+        let assignee = if actor_type.is_empty() || actor_id.is_empty() {
+            String::new()
+        } else {
+            let actor_key = format!("{actor_type}:{actor_id}");
+            actors
+                .0
+                .get(&actor_key)
+                .map_or_else(|| actor_key.clone(), |name| format!("{actor_type}:{name}"))
+        };
+        vec![
+            child_stage(child).map_or_else(|| "-".into(), |stage| stage.to_string()),
+            key,
+            value_string(child, "title"),
+            value_string(child, "status"),
+            value_string(child, "priority"),
+            assignee,
+        ]
+    }));
+    format_table(&rows)
 }
 
 async fn run_user_profile_get(
@@ -3470,6 +3633,140 @@ mod tests {
         assert!(body.get("state").is_none());
         assert!(body.get("head_sha").is_none());
         task.abort();
+    }
+
+    #[test]
+    fn issue_children_parser_supports_alias_output_and_full_id_flag() {
+        for name in ["children", "subissues"] {
+            let cli = Cli::try_parse_from([
+                "cordy",
+                "issue",
+                name,
+                "CORD-18",
+                "--output",
+                "json",
+                "--full-id",
+            ])
+            .expect("children CLI");
+            match cli.command {
+                Command::Issue(IssueArgs {
+                    command:
+                        IssueCommand::Children {
+                            id,
+                            output,
+                            full_id,
+                        },
+                }) => {
+                    assert_eq!(id, "CORD-18");
+                    assert_eq!(output, OutputFormat::Json);
+                    assert!(full_id);
+                }
+                _ => panic!("expected issue children"),
+            }
+        }
+    }
+
+    #[test]
+    fn issue_children_sort_group_and_terminal_count_match_go() {
+        let mut children = vec![
+            serde_json::json!({"id":"u1","identifier":"CORD-4","stage":null,"status":"todo"}),
+            serde_json::json!({"id":"s2a","identifier":"CORD-2","stage":2,"status":"cancelled","status_category":"cancelled"}),
+            serde_json::json!({"id":"s1a","identifier":"CORD-1","stage":1,"status":"gate_approved","status_category":"done"}),
+            serde_json::json!({"id":"s2b","identifier":"CORD-3","stage":2,"status":"in_progress","status_category":"in_progress"}),
+            serde_json::json!({"id":"u2","identifier":"CORD-5","status":"done"}),
+        ];
+        children.sort_by_key(|child| child_stage(child).map_or((true, 0), |stage| (false, stage)));
+        let identifiers = children
+            .iter()
+            .map(|child| value_string(child, "identifier"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            identifiers,
+            vec![
+                String::from("CORD-1"),
+                String::from("CORD-2"),
+                String::from("CORD-3"),
+                String::from("CORD-4"),
+                String::from("CORD-5"),
+            ]
+        );
+        let grouped = serde_json::to_value(group_issue_children(&children)).expect("group JSON");
+        assert_eq!(grouped["total"], 5);
+        assert_eq!(grouped["stages"][0]["stage"], 1);
+        assert_eq!(grouped["stages"][0]["total"], 1);
+        assert_eq!(grouped["stages"][0]["done"], 1);
+        assert_eq!(grouped["stages"][1]["stage"], 2);
+        assert_eq!(grouped["stages"][1]["total"], 2);
+        assert_eq!(grouped["stages"][1]["done"], 1);
+        assert_eq!(grouped["unstaged"].as_array().map(Vec::len), Some(2));
+    }
+
+    #[tokio::test]
+    async fn issue_children_resolves_parent_and_fetches_children_endpoint() {
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "id": "11111111-1111-1111-1111-111111111111",
+                        "identifier": "CORD-18"
+                    }))
+                }),
+            )
+            .route(
+                "/api/issues/11111111-1111-1111-1111-111111111111/children",
+                get(|request: Request| async move {
+                    assert_eq!(request.headers()["authorization"], "Bearer token-1");
+                    Json(serde_json::json!({
+                        "issues": [
+                            {"id":"child-2","identifier":"CORD-20","stage":2,"status":"todo"},
+                            {"id":"child-1","identifier":"CORD-19","stage":1,"status":"done"}
+                        ]
+                    }))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli =
+            Cli::try_parse_from(["cordy", "issue", "children", "CORD-18", "--output", "json"])
+                .expect("children CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("children");
+        let grouped: Value = serde_json::from_str(&output.stdout).expect("children JSON");
+        assert_eq!(grouped["stages"][0]["stage"], 1);
+        assert_eq!(grouped["stages"][1]["stage"], 2);
+        assert_eq!(grouped["stages"][0]["done"], 1);
+        task.abort();
+    }
+
+    #[test]
+    fn issue_children_table_renders_stage_key_and_actor() {
+        let children = vec![serde_json::json!({
+            "id": "child-1",
+            "identifier": "CORD-19",
+            "stage": 1,
+            "title": "First barrier",
+            "status": "in_progress",
+            "priority": "high",
+            "assignee_type": "agent",
+            "assignee_id": "agent-1"
+        })];
+        let actors = IssueActorNames(HashMap::from([("agent:agent-1".into(), "CordyBot".into())]));
+        let table = format_issue_children_table(&children, &actors);
+        assert!(table.starts_with("STAGE"));
+        assert!(table.contains("CORD-19"));
+        assert!(table.contains("First barrier"));
+        assert!(table.contains("agent:CordyBot"));
     }
 
     #[test]
