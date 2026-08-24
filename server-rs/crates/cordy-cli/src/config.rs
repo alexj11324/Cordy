@@ -250,6 +250,66 @@ impl Environment {
         Ok(true)
     }
 
+    /// Replace a profile with the minimal configuration produced by `setup`,
+    /// but only after the caller's health preflight succeeds.
+    ///
+    /// Setup is intentionally a whole-profile replacement: an old token,
+    /// workspace, or daemon override must not silently survive a switch to a
+    /// different deployment. The probe is injected so the command layer can
+    /// enforce its two-second `/health` contract without coupling persistence
+    /// to an HTTP client (and tests can exercise the no-mutation failure
+    /// path). The config lock is acquired only for the eventual write, so an
+    /// unreachable target cannot truncate or otherwise alter the existing
+    /// profile.
+    pub fn replace_profile_for_setup_if_reachable<F>(
+        &self,
+        profile: &str,
+        input: &SetupProfileInput,
+        probe: F,
+    ) -> Result<bool>
+    where
+        F: FnOnce(&str) -> bool,
+    {
+        if !probe(&input.server_url) {
+            return Ok(false);
+        }
+        self.replace_profile_for_setup(profile, input)?;
+        Ok(true)
+    }
+
+    /// Atomically persist the minimal profile emitted by `setup`.
+    ///
+    /// This deliberately does not merge with the previous JSON document:
+    /// setup is a deployment switch, not a `config set` operation. Unknown
+    /// fields and credentials from the old deployment are discarded, while
+    /// the existing lock file is preserved and the replacement file is
+    /// written with the normal restricted permissions.
+    pub fn replace_profile_for_setup(
+        &self,
+        profile: &str,
+        input: &SetupProfileInput,
+    ) -> Result<()> {
+        let path = self.config_path(profile)?;
+        let directory = path.parent().context("resolve CLI config directory")?;
+        ensure_config_directory(directory, self.trimmed(TASK_CONFIG_ROOT_ENV))?;
+        let lock_path = directory.join(".config.lock");
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .context("open CLI config lock")?;
+        restrict_file_permissions(&lock_path)?;
+        lock.lock().context("lock CLI config")?;
+
+        let document = serde_json::json!({
+            "server_url": input.server_url,
+            "app_url": input.app_url,
+        });
+        write_json_atomically(&path, &document)
+    }
+
     pub fn in_agent_execution_context(&self) -> bool {
         self.raw("CORDY_AGENT_ID")
             .is_some_and(|value| !value.is_empty())
@@ -309,6 +369,34 @@ impl Environment {
             let data = fs::read(&path).ok()?;
             let marker: TaskContextMarker = serde_json::from_slice(&data).ok()?;
             (marker.managed_by == TASK_CONTEXT_MARKER_MANAGED_BY).then_some(path)
+        })
+    }
+}
+
+/// The only values setup is allowed to write before authentication. Keeping
+/// this separate from [`CliConfig`] makes it impossible for a setup caller to
+/// accidentally persist an old token, workspace, or daemon execution state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SetupProfileInput {
+    pub server_url: String,
+    pub app_url: String,
+}
+
+impl SetupProfileInput {
+    pub fn new(server_url: impl Into<String>, app_url: impl Into<String>) -> Result<Self> {
+        let server_url = server_url.into();
+        let app_url = app_url.into();
+        anyhow::ensure!(
+            !server_url.trim().is_empty(),
+            "setup server URL must not be empty"
+        );
+        anyhow::ensure!(
+            !app_url.trim().is_empty(),
+            "setup app URL must not be empty"
+        );
+        Ok(Self {
+            server_url,
+            app_url,
         })
     }
 }
@@ -1188,5 +1276,81 @@ mod tests {
             fs::read(profile_dir.join(".config.lock")).expect("lock file"),
             b"lock-sentinel"
         );
+    }
+
+    #[test]
+    fn setup_health_failure_does_not_mutate_existing_profile() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let profile_dir = home.path().join(".cordy/profiles/dev");
+        fs::create_dir_all(&profile_dir).expect("profile dir");
+        let config_path = profile_dir.join("config.json");
+        let old_config = br#"{
+            "server_url":"https://old.example",
+            "app_url":"https://old-app.example",
+            "token":"mul_old",
+            "workspace_id":"workspace-old",
+            "future":{"kept":true}
+        }
+        "#;
+        fs::write(&config_path, old_config).expect("old config");
+        fs::write(profile_dir.join(".config.lock"), b"lock-sentinel").expect("lock sentinel");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let input = SetupProfileInput::new("https://new.example", "https://new-app.example")
+            .expect("setup input");
+
+        let persisted = environment
+            .replace_profile_for_setup_if_reachable("dev", &input, |_| false)
+            .expect("probe failure is not an I/O error");
+
+        assert!(!persisted);
+        assert_eq!(fs::read(&config_path).expect("config remains"), old_config);
+        assert_eq!(
+            fs::read(profile_dir.join(".config.lock")).expect("lock remains"),
+            b"lock-sentinel"
+        );
+    }
+
+    #[test]
+    fn setup_success_replaces_whole_profile_atomically() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let profile_dir = home.path().join(".cordy/profiles/dev");
+        fs::create_dir_all(&profile_dir).expect("profile dir");
+        fs::write(
+            profile_dir.join("config.json"),
+            br#"{"server_url":"https://old.example","token":"mul_old","workspace_id":"old","future":{"kept":true}}"#,
+        )
+        .expect("old config");
+        fs::write(profile_dir.join(".config.lock"), b"lock-sentinel").expect("lock sentinel");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let input = SetupProfileInput::new("https://new.example", "https://new-app.example")
+            .expect("setup input");
+
+        assert!(environment
+            .replace_profile_for_setup_if_reachable("dev", &input, |url| {
+                assert_eq!(url, "https://new.example");
+                true
+            })
+            .expect("persist setup profile"));
+
+        let saved = environment
+            .load_profile_document("dev")
+            .expect("saved config");
+        assert_eq!(saved["server_url"], "https://new.example");
+        assert_eq!(saved["app_url"], "https://new-app.example");
+        assert!(saved.get("token").is_none());
+        assert!(saved.get("workspace_id").is_none());
+        assert!(saved.get("future").is_none());
+        assert_eq!(
+            fs::read(profile_dir.join(".config.lock")).expect("lock remains"),
+            b"lock-sentinel"
+        );
+    }
+
+    #[test]
+    fn setup_input_rejects_empty_urls() {
+        assert!(SetupProfileInput::new("", "https://app.example").is_err());
+        assert!(SetupProfileInput::new("https://api.example", " ").is_err());
     }
 }
