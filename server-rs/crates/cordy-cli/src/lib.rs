@@ -31,8 +31,9 @@ use url::{form_urlencoded, Url};
 use daemon_commands::{
     format_daemon_status_table, known_daemon_profiles, parse_log_lines, read_daemon_log_tail,
     render_daemon_status, require_known_daemon_profile, resolve_daemon_log_path,
-    resolve_daemon_status_port, run_daemon_after_setup, run_daemon_logs, run_daemon_restart,
-    run_daemon_start, run_daemon_status, run_daemon_stop,
+    resolve_daemon_status_port, run_daemon_after_setup, run_daemon_disk_usage, run_daemon_logs,
+    run_daemon_probe_runtimes, run_daemon_restart, run_daemon_start, run_daemon_status,
+    run_daemon_stop,
 };
 use login::{
     build_login_url, build_workspace_creation_url, constant_time_equal, run_browser_login,
@@ -3956,79 +3957,6 @@ fn setup_server_is_local(server_url: &str) -> bool {
         || host
             .parse::<std::net::IpAddr>()
             .is_ok_and(|ip| ip.is_loopback())
-}
-
-fn run_daemon_probe_runtimes(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
-    require_human_local_command(environment, "daemon probe-runtimes")?;
-    let profile = environment
-        .load_config(&cli.profile)
-        .context("load daemon probe profile")?;
-    let options = profile.daemon_runtime_probe_options(&cli.profile);
-    let report =
-        cordy_daemon::runtime_probe::probe_runtimes(options).context("probe local runtimes")?;
-    Ok(RunOutput {
-        stdout: serde_json::to_string(&report)? + "\n",
-        stderr: String::new(),
-    })
-}
-
-/// The CLI owns argument validation and presentation only.  Filesystem
-/// traversal and parent-status HTTP semantics remain in the daemon facade;
-/// this keeps single-root and multi-profile reports on one implementation.
-async fn run_daemon_disk_usage(
-    cli: &Cli,
-    environment: &Environment,
-    args: &DaemonDiskUsageArgs,
-) -> Result<RunOutput> {
-    let task_context = disk_usage_task_context(environment);
-    validate_disk_usage_args(cli, environment, args, task_context)?;
-
-    let mut stderr = String::new();
-    if args.all_profiles {
-        let roots = enumerate_disk_usage_roots(environment)?;
-        let mut aggregate = cordy_daemon::diskusage::scan_disk_usage_roots(
-            &roots,
-            &cordy_daemon::diskusage::artifact_patterns_from_env(),
-        )?;
-        if !task_context && disk_usage_needs_parent_status(args) {
-            for root in &mut aggregate.roots {
-                if fill_disk_usage_parent_statuses(
-                    cli,
-                    environment,
-                    &root.profile,
-                    &mut root.report,
-                )
-                .await
-                {
-                    append_disk_usage_warning(&mut stderr);
-                }
-            }
-        }
-        limit_disk_usage_aggregate(&mut aggregate, args);
-        let stdout = match args.output {
-            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&aggregate)?),
-            OutputFormat::Table => format_disk_usage_aggregate_table(&aggregate, args.by_workspace),
-        };
-        return Ok(RunOutput { stdout, stderr });
-    }
-
-    let root = resolve_disk_usage_root(cli, environment, args, task_context)?;
-    let mut report = cordy_daemon::diskusage::scan_disk_usage(
-        &root,
-        &cordy_daemon::diskusage::artifact_patterns_from_env(),
-    )?;
-    if !task_context
-        && disk_usage_needs_parent_status(args)
-        && fill_disk_usage_parent_statuses(cli, environment, &cli.profile, &mut report).await
-    {
-        append_disk_usage_warning(&mut stderr);
-    }
-    limit_disk_usage_report(&mut report, args);
-    let stdout = match args.output {
-        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&report)?),
-        OutputFormat::Table => format_disk_usage_report_table(&report, args.by_workspace),
-    };
-    Ok(RunOutput { stdout, stderr })
 }
 
 fn disk_usage_task_context(environment: &Environment) -> bool {
