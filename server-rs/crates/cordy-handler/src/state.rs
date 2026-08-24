@@ -31,12 +31,18 @@ impl cordy_service::chat_quick_actions::ChatQuickActionsLlm for ChatQuickActions
         model: &str,
         system_prompt: &str,
         user_prompt: &str,
-        _temperature: f64,
-        _max_completion_tokens: i64,
+        temperature: f64,
+        max_completion_tokens: i64,
     ) -> anyhow::Result<String> {
         Ok(self
             .llm
-            .generate_text(model, system_prompt, user_prompt)
+            .generate_json(
+                model,
+                system_prompt,
+                user_prompt,
+                temperature,
+                max_completion_tokens,
+            )
             .await?)
     }
 }
