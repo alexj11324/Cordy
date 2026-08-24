@@ -10,8 +10,8 @@
 //! mirroring the Go contract exactly:
 //! - `X-User-ID` (all paths), `X-User-Email` (JWT only)
 //! - `X-Agent-ID` / `X-Task-ID` / `X-Workspace-ID` (mat_ task tokens)
-//! - `X-Actor-Source` — server-set only; any client-supplied value is
-//!   stripped before the auth branches run.
+//! - `X-Actor-Source` / `X-Agent-ID` / `X-Task-ID` — server-set only; any
+//!   client-supplied values are stripped before the auth branches run.
 
 use std::collections::HashSet;
 use std::future::Future;
@@ -281,6 +281,26 @@ fn set_header(req: &mut Request, name: &'static str, value: &str) {
     }
 }
 
+fn clear_untrusted_task_identity(req: &mut Request) {
+    for name in ["x-actor-source", "x-agent-id", "x-task-id"] {
+        req.headers_mut().remove(name);
+    }
+}
+
+fn stamp_task_identity(
+    req: &mut Request,
+    user_id: Uuid,
+    agent_id: Uuid,
+    task_id: Uuid,
+    workspace_id: Uuid,
+) {
+    set_header(req, "x-user-id", &user_id.to_string());
+    set_header(req, "x-agent-id", &agent_id.to_string());
+    set_header(req, "x-task-id", &task_id.to_string());
+    set_header(req, "x-workspace-id", &workspace_id.to_string());
+    set_header(req, "x-actor-source", "task_token");
+}
+
 /// Auth middleware entrypoint — use via
 /// `axum::middleware::from_fn_with_state(state, auth_middleware)`.
 pub async fn auth_middleware(
@@ -288,12 +308,12 @@ pub async fn auth_middleware(
     mut req: Request,
     next: Next,
 ) -> Result<Response, (StatusCode, &'static str)> {
-    // X-Actor-Source is server-set only — any client-supplied value is
-    // untrusted and discarded before the auth branches run. Only the mat_
-    // branch below re-sets it. This prevents a client from sending a normal
-    // mul_ PAT plus a forged `X-Actor-Source: member` to convince downstream
-    // handlers that its request came from a non-task-token path.
-    req.headers_mut().remove("x-actor-source");
+    // Task identity is server-owned as one atomic tuple. Strip every
+    // client-supplied component before choosing an auth branch; only a
+    // validated mat_ token may restore it below. Keeping X-Agent-ID or
+    // X-Task-ID from a JWT/PAT/proxy request would let a downstream handler
+    // reconstruct an agent actor from attacker-controlled headers.
+    clear_untrusted_task_identity(&mut req);
 
     // A managed identity proxy may authenticate upstream, but only an
     // explicitly configured peer carrying the private marker can cross this
@@ -351,13 +371,13 @@ pub async fn auth_middleware(
                 TEMPORARILY_DISABLED_USER_ERROR,
             ));
         }
-        set_header(&mut req, "x-user-id", &user_id);
-        set_header(&mut req, "x-agent-id", &tt.agent_id.to_string());
-        set_header(&mut req, "x-task-id", &tt.task_id.to_string());
-        set_header(&mut req, "x-workspace-id", &tt.workspace_id.to_string());
-        // The only value this header may carry — strip anything else a
-        // client tried to send (done above).
-        set_header(&mut req, "x-actor-source", "task_token");
+        stamp_task_identity(
+            &mut req,
+            tt.user_id,
+            tt.agent_id,
+            tt.task_id,
+            tt.workspace_id,
+        );
         return Ok(next.run(req).await);
     }
 
@@ -586,6 +606,16 @@ mod tests {
     #[test]
     fn trusted_peer_and_private_marker_preserve_managed_identity() {
         let mut request = request(Some("10.2.3.4:8443"), "unused", MARKER);
+        request
+            .headers_mut()
+            .insert("x-agent-id", Uuid::new_v4().to_string().parse().unwrap());
+        request
+            .headers_mut()
+            .insert("x-task-id", Uuid::new_v4().to_string().parse().unwrap());
+        request
+            .headers_mut()
+            .insert("x-actor-source", "task_token".parse().unwrap());
+        clear_untrusted_task_identity(&mut request);
         let identity = policy()
             .take_identity(&mut request)
             .expect("trusted identity");
@@ -598,10 +628,88 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some(VICTIM)
         );
+        assert!(request.headers().get("x-agent-id").is_none());
+        assert!(request.headers().get("x-task-id").is_none());
+        assert!(request.headers().get("x-actor-source").is_none());
         assert!(request
             .headers()
             .get(IDENTITY_PROXY_MARKER_HEADER)
             .is_none());
+    }
+
+    #[test]
+    fn jwt_and_pat_paths_cannot_retain_forged_task_identity() {
+        for bearer in ["header.payload.signature", "mul_secret"] {
+            let mut request = request(Some("203.0.113.9:443"), bearer, MARKER);
+            request
+                .headers_mut()
+                .insert("x-agent-id", Uuid::new_v4().to_string().parse().unwrap());
+            request
+                .headers_mut()
+                .insert("x-task-id", Uuid::new_v4().to_string().parse().unwrap());
+            request
+                .headers_mut()
+                .insert("x-actor-source", "task_token".parse().unwrap());
+
+            clear_untrusted_task_identity(&mut request);
+
+            assert!(request.headers().get("x-agent-id").is_none(), "{bearer}");
+            assert!(request.headers().get("x-task-id").is_none(), "{bearer}");
+            assert!(
+                request.headers().get("x-actor-source").is_none(),
+                "{bearer}"
+            );
+            let expected_authorization = format!("Bearer {bearer}");
+            assert_eq!(
+                request
+                    .headers()
+                    .get(header::AUTHORIZATION)
+                    .and_then(|value| value.to_str().ok()),
+                Some(expected_authorization.as_str())
+            );
+        }
+    }
+
+    #[test]
+    fn authoritative_task_token_replaces_the_complete_actor_tuple() {
+        let user_id = Uuid::new_v4();
+        let agent_id = Uuid::new_v4();
+        let task_id = Uuid::new_v4();
+        let workspace_id = Uuid::new_v4();
+        let mut request = request(Some("203.0.113.9:443"), "mat_secret", MARKER);
+        request
+            .headers_mut()
+            .insert("x-agent-id", Uuid::new_v4().to_string().parse().unwrap());
+        request
+            .headers_mut()
+            .insert("x-task-id", Uuid::new_v4().to_string().parse().unwrap());
+
+        clear_untrusted_task_identity(&mut request);
+        stamp_task_identity(&mut request, user_id, agent_id, task_id, workspace_id);
+
+        for (name, expected) in [
+            ("x-user-id", user_id),
+            ("x-agent-id", agent_id),
+            ("x-task-id", task_id),
+            ("x-workspace-id", workspace_id),
+        ] {
+            let expected = expected.to_string();
+            assert_eq!(
+                request
+                    .headers()
+                    .get(name)
+                    .and_then(|value| value.to_str().ok()),
+                Some(expected.as_str()),
+                "{name}"
+            );
+        }
+        assert_eq!(
+            request
+                .headers()
+                .get("x-actor-source")
+                .and_then(|value| value.to_str().ok()),
+            Some("task_token")
+        );
     }
 
     #[test]
