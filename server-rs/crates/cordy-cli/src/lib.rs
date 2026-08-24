@@ -2534,6 +2534,8 @@ enum SkillFilesCommand {
     List(SkillFilesListArgs),
     #[command(about = "Create or update a skill file")]
     Upsert(SkillFilesUpsertArgs),
+    #[command(about = "Delete a skill file")]
+    Delete(SkillFilesDeleteArgs),
 }
 
 #[derive(Debug, Args)]
@@ -2562,6 +2564,14 @@ struct SkillFilesUpsertArgs {
     content_file: Option<PathBuf>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct SkillFilesDeleteArgs {
+    #[arg(value_name = "SKILL-ID")]
+    skill_id: String,
+    #[arg(value_name = "FILE-ID")]
+    file_id: String,
 }
 
 #[derive(Debug, Subcommand)]
@@ -2995,6 +3005,12 @@ async fn run_with_input<R: Read>(
                     command: SkillFilesCommand::Upsert(args),
                 }),
         }) => run_skill_files_upsert(cli, environment, args, input).await,
+        Command::Skill(SkillArgs {
+            command:
+                SkillCommand::Files(SkillFilesArgs {
+                    command: SkillFilesCommand::Delete(args),
+                }),
+        }) => run_skill_files_delete(cli, environment, args).await,
         Command::Autopilot(AutopilotArgs {
             command:
                 AutopilotCommand::List {
@@ -6844,6 +6860,34 @@ async fn run_skill_files_upsert<R: Read>(
             ),
             stderr: String::new(),
         },
+    })
+}
+
+async fn run_skill_files_delete(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SkillFilesDeleteArgs,
+) -> Result<RunOutput> {
+    let skill_id = args.skill_id.trim();
+    if skill_id.is_empty() {
+        bail!("skill ID must not be empty");
+    }
+    let file_id = args.file_id.trim();
+    if file_id.is_empty() {
+        bail!("file ID must not be empty");
+    }
+    let client = new_api_client(cli, environment)?;
+    client
+        .delete(&format!(
+            "/api/skills/{}/files/{}",
+            encoded_path_segment(skill_id),
+            encoded_path_segment(file_id)
+        ))
+        .await
+        .context("delete skill file")?;
+    Ok(RunOutput {
+        stdout: format!("Skill file deleted: {file_id}\n"),
+        stderr: String::new(),
     })
 }
 
@@ -18011,6 +18055,64 @@ mod tests {
             error.to_string(),
             "--content, --content-stdin, and --content-file are mutually exclusive"
         );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn skill_files_delete_matches_go_path_headers_and_output_contracts() {
+        let app = Router::new().route(
+            "/api/skills/skill-1/files/file-1",
+            delete_route(|headers: HeaderMap| async move {
+                assert_eq!(headers["authorization"], "Bearer token-1");
+                assert_eq!(headers["x-workspace-id"], "workspace-1");
+                axum::http::StatusCode::NO_CONTENT
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let cli = Cli::try_parse_from(["cordy", "skill", "files", "delete", "skill-1", "file-1"])
+            .expect("skill file delete CLI");
+        let Command::Skill(SkillArgs {
+            command:
+                SkillCommand::Files(SkillFilesArgs {
+                    command: SkillFilesCommand::Delete(args),
+                }),
+        }) = &cli.command
+        else {
+            panic!("expected skill file delete");
+        };
+        assert_eq!(args.skill_id, "skill-1");
+        assert_eq!(args.file_id, "file-1");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("delete skill file");
+        assert_eq!(output.stdout, "Skill file deleted: file-1\n");
+        assert!(output.stderr.is_empty());
+
+        let empty_skill = SkillFilesDeleteArgs {
+            skill_id: " ".into(),
+            file_id: "file-1".into(),
+        };
+        let error = run_skill_files_delete(&cli, &environment, &empty_skill)
+            .await
+            .expect_err("empty skill id");
+        assert_eq!(error.to_string(), "skill ID must not be empty");
+        let empty_file = SkillFilesDeleteArgs {
+            skill_id: "skill-1".into(),
+            file_id: " ".into(),
+        };
+        let error = run_skill_files_delete(&cli, &environment, &empty_file)
+            .await
+            .expect_err("empty file id");
+        assert_eq!(error.to_string(), "file ID must not be empty");
         server.abort();
     }
 
