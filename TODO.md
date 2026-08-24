@@ -295,10 +295,10 @@
       server/app URLs; health preflight must succeed before mutation; success
       atomically replaces the whole profile (clearing stale token/workspace and
       unknown fields) while preserving lock/permission/fsync semantics. Current
-      head is now `c0e3d8dd227111c11618c3793410cb2ae3a207ea` (parent
-      `33d5df4560abe803fd193668e91ab8104b071bff`, tree
-      `08c91422dc6db1edd7f53cab1dd92d75e98533ed`), candidate
-      `25b074290da886e9c2a4022102dbef95d30da74e`; the remote branch and PR
+      head is now `e817370fe8ad3f2482a7235bc6cf2d17db664543` (parent
+      `c0e3d8dd227111c11618c3793410cb2ae3a207ea`, tree
+      `0036a576c978ac4e9810dcb78014e01982d1d810`), candidate
+      `5b33beb510aadf02de0422502e4da89da996b80e`; the remote branch and PR
       candidate were verified at these exact SHAs. PR #129 remains
       Ready/CLEAN/MERGEABLE on base `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`.
       The slice adds the bounded unauthenticated `/health` probe (HTTP(S), no
@@ -349,6 +349,15 @@
       `25b074290da886e9c2a4022102dbef95d30da74e`, parent
       `33d5df4560abe803fd193668e91ab8104b071bff`; PR remains Ready/CLEAN.
       Scoped rustfmt/diff-check pass; Cargo/review/gate/merge remain with pro.
+- [x] Closed the update facade's already-current behavior gap on PR #129:
+      explicit/latest targets are normalized against an optional current
+      version and return a typed no-op before download or Homebrew execution;
+      Homebrew still upgrades when latest lookup fails. Exact head is
+      `e817370fe8ad3f2482a7235bc6cf2d17db664543`, tree
+      `0036a576c978ac4e9810dcb78014e01982d1d810`, candidate
+      `5b33beb510aadf02de0422502e4da89da996b80e`, parent
+      `c0e3d8dd227111c11618c3793410cb2ae3a207ea`; scoped rustfmt/diff-check
+      pass, Cargo/review/gate/merge remain with pro.
 - [x] Added the hidden `cordy daemon probe-runtimes` command through a typed
       daemon facade in PR #129. The facade reuses the complete daemon
       `load_config`/agent discovery path with `AllowNoAgents=true`, preserves
