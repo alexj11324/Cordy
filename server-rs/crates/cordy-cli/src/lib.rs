@@ -24926,6 +24926,12 @@ mod tests {
         let cwd = tempfile::tempdir().expect("temp cwd");
         let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
         environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        fs::create_dir_all(home.path().join(".cordy")).expect("config dir");
+        fs::write(
+            home.path().join(".cordy/config.json"),
+            br#"{"workspace_id":"stale-workspace","future":{"keep":true}}"#,
+        )
+        .expect("initial config");
         let cli = Cli::try_parse_from(["cordy", "login", "--token", "mcn_cloud_secret"])
             .expect("login CLI");
 
@@ -24944,7 +24950,9 @@ mod tests {
         )
         .expect("saved JSON");
         assert_eq!(saved["server_url"], format!("http://{address}"));
+        assert_eq!(saved["workspace_id"], "");
         assert_eq!(saved["token"], "mcn_cloud_secret");
+        assert_eq!(saved["future"]["keep"], true);
         server.abort();
     }
 

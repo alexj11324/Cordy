@@ -223,6 +223,7 @@ impl Environment {
             .as_object_mut()
             .context("parse CLI config: expected a JSON object")?;
         object.insert("server_url".into(), Value::String(server_url.into()));
+        object.insert("workspace_id".into(), Value::String(String::new()));
         object.insert("token".into(), Value::String(token.into()));
         write_json_atomically(&path, &document)
     }
