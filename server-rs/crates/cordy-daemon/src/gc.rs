@@ -866,6 +866,10 @@ pub(crate) async fn gc_loop<H: GcHost>(host: &H, ctx: &Ctx) {
     let cfg = host.config();
     if !cfg.gc_enabled {
         tracing::info!("gc: disabled");
+        // This is still an owned production loop. Remain attached to the
+        // daemon root so the supervisor cannot mistake a supported disabled
+        // configuration for an unexpected owner exit.
+        ctx.cancelled().await;
         return;
     }
     tracing::info!(
@@ -2513,6 +2517,106 @@ fn gc_is_bare_repo(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct DisabledGcHost {
+        config: GcConfig,
+        activity: Arc<DaemonActivity>,
+    }
+
+    impl GcHost for DisabledGcHost {
+        fn config(&self) -> &GcConfig {
+            &self.config
+        }
+
+        async fn get_issue_gc_check(
+            &self,
+            _ctx: &Ctx,
+            _issue_id: &str,
+        ) -> anyhow::Result<IssueGCCheckStatus> {
+            panic!("disabled GC must not query issue state")
+        }
+
+        async fn get_issue_gc_checks(
+            &self,
+            _ctx: &Ctx,
+            _workspace_id: &str,
+            _issue_ids: &[String],
+        ) -> anyhow::Result<HashMap<String, IssueGCCheckResult>> {
+            panic!("disabled GC must not query issue state")
+        }
+
+        async fn get_chat_session_gc_check(
+            &self,
+            _ctx: &Ctx,
+            _chat_session_id: &str,
+        ) -> anyhow::Result<IssueGCCheckStatus> {
+            panic!("disabled GC must not query chat state")
+        }
+
+        async fn get_autopilot_run_gc_check(
+            &self,
+            _ctx: &Ctx,
+            _autopilot_run_id: &str,
+        ) -> anyhow::Result<IssueGCCheckStatus> {
+            panic!("disabled GC must not query autopilot state")
+        }
+
+        async fn get_task_gc_check(
+            &self,
+            _ctx: &Ctx,
+            _task_id: &str,
+        ) -> anyhow::Result<IssueGCCheckStatus> {
+            panic!("disabled GC must not query task state")
+        }
+
+        fn activity(&self) -> &Arc<DaemonActivity> {
+            &self.activity
+        }
+
+        fn repo_bare_path_is_live(&self, _bare_path: &Path) -> bool {
+            panic!("disabled GC must not inspect repository liveness")
+        }
+
+        fn repo_cache_for_gc(&self) -> Option<&crate::repocache::Cache> {
+            panic!("disabled GC must not access the repository cache")
+        }
+    }
+
+    #[tokio::test]
+    async fn disabled_loop_remains_owned_until_cancelled() {
+        let host = DisabledGcHost {
+            config: GcConfig {
+                profile: String::new(),
+                workspaces_root: PathBuf::new(),
+                gc_enabled: false,
+                gc_interval: Duration::from_secs(1),
+                gc_ttl: Duration::ZERO,
+                gc_completed_task_ttl: Duration::ZERO,
+                gc_orphan_ttl: Duration::ZERO,
+                gc_artifact_ttl: Duration::ZERO,
+                gc_codex_session_ttl: Duration::ZERO,
+                gc_hermes_memory_ttl: Duration::ZERO,
+                gc_hermes_session_ttl: Duration::ZERO,
+                gc_repo_ttl: Duration::ZERO,
+                gc_repo_maintenance_enabled: false,
+                gc_artifact_patterns: Vec::new(),
+            },
+            activity: DaemonActivity::new(),
+        };
+        let ctx = Ctx::new();
+        let loop_future = gc_loop(&host, &ctx);
+        tokio::pin!(loop_future);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), &mut loop_future)
+                .await
+                .is_err(),
+            "disabled GC owner returned before cancellation"
+        );
+        ctx.cancel_with(CancelCause::Shutdown);
+        tokio::time::timeout(Duration::from_secs(1), &mut loop_future)
+            .await
+            .expect("disabled GC owner ignored cancellation");
+    }
 
     /// safeRelativePath contract (artifact_matcher.go:74–84): rejects empty,
     /// absolute, and upward-escaping paths; cleans the rest.

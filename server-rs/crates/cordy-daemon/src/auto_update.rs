@@ -254,6 +254,7 @@ pub(crate) async fn auto_update_loop(
     let settings = host.settings();
     if settings.launched_by == "desktop" {
         tracing::info!("auto-update: skipped (managed by Desktop)");
+        ctx.cancelled().await;
         return;
     }
 
@@ -272,6 +273,10 @@ pub(crate) async fn auto_update_loop(
         tracing::info!("auto-reload: disabled");
     }
     if !pull_enabled && !reload_enabled {
+        // The production supervisor owns this loop for the full daemon
+        // lifetime. A supported disabled configuration is passive, not an
+        // owner failure, so retain ownership until root shutdown.
+        ctx.cancelled().await;
         return;
     }
 
@@ -798,7 +803,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn loop_early_exits() {
+    async fn disabled_loop_remains_owned_until_cancelled() {
         struct NullHost(AutoUpdateSettings, Arc<DaemonActivity>);
         impl AutoUpdateHost for NullHost {
             fn settings(&self) -> &AutoUpdateSettings {
@@ -833,7 +838,7 @@ mod tests {
             ("managed by desktop", true, "v0.1.13", "desktop"),
             ("dev build", true, "v0.1.13-235-gabcdef0", ""),
         ];
-        for (_, enabled, version, launched_by) in cases {
+        for (name, enabled, version, launched_by) in cases {
             let host = NullHost(
                 AutoUpdateSettings {
                     launched_by: launched_by.to_string(),
@@ -844,7 +849,19 @@ mod tests {
                 },
                 DaemonActivity::new(),
             );
-            auto_update_loop(&host, &Ctx::new(), stub_release(Some("v0.1.14"), None)).await;
+            let ctx = Ctx::new();
+            let loop_future = auto_update_loop(&host, &ctx, stub_release(Some("v0.1.14"), None));
+            tokio::pin!(loop_future);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(10), &mut loop_future)
+                    .await
+                    .is_err(),
+                "{name}: disabled owner returned before cancellation"
+            );
+            ctx.cancel_with(crate::repocache::CancelCause::Shutdown);
+            tokio::time::timeout(Duration::from_secs(1), &mut loop_future)
+                .await
+                .unwrap_or_else(|_| panic!("{name}: disabled owner ignored cancellation"));
         }
     }
 
