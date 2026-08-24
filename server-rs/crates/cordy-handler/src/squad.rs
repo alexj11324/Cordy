@@ -2,16 +2,18 @@
 
 use std::collections::HashMap;
 
+use axum::body::Bytes;
 use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
-use cordy_db::models::{Squad, SquadMember};
-use cordy_db::queries::{squad, workspace};
+use cordy_db::models::{Autopilot, Squad, SquadMember};
+use cordy_db::queries::{agent, autopilot, member, squad, workspace};
 use cordy_middleware::workspace::WorkspaceContext;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use uuid::Uuid;
 
 use crate::error::error_response;
@@ -19,12 +21,26 @@ use crate::state::HandlerState;
 
 pub fn router() -> Router<HandlerState> {
     Router::new()
-        .route("/api/squads", get(list))
-        .route("/api/squads/", get(list))
-        .route("/api/squads/{id}", get(get_one))
-        .route("/api/squads/{id}/", get(get_one))
-        .route("/api/squads/{id}/members", get(list_members))
-        .route("/api/squads/{id}/members/", get(list_members))
+        .route("/api/squads", get(list).post(create))
+        .route("/api/squads/", get(list).post(create))
+        .route("/api/squads/{id}", get(get_one).put(update).delete(remove))
+        .route("/api/squads/{id}/", get(get_one).put(update).delete(remove))
+        .route(
+            "/api/squads/{id}/members",
+            get(list_members).post(add_member).delete(remove_member),
+        )
+        .route(
+            "/api/squads/{id}/members/",
+            get(list_members).post(add_member).delete(remove_member),
+        )
+        .route(
+            "/api/squads/{id}/members/role",
+            axum::routing::patch(update_member_role),
+        )
+        .route(
+            "/api/squads/{id}/members/role/",
+            axum::routing::patch(update_member_role),
+        )
         .route("/api/squads/{id}/members/status", get(list_member_status))
         .route("/api/squads/{id}/members/status/", get(list_member_status))
 }
@@ -106,6 +122,20 @@ fn apply_summary(response: &mut SquadResponse, summary: Option<SquadMemberSummar
     }
 }
 
+async fn response_with_preview(
+    state: &HandlerState,
+    value: Squad,
+) -> Result<SquadResponse, anyhow::Error> {
+    let rows = squad::list_squad_member_preview_rows_by_squad(&state.pool, value.id).await?;
+    let mut summary = SquadMemberSummary::default();
+    for row in rows {
+        add_preview(&mut summary, row.member_type, row.member_id, row.role);
+    }
+    let mut response = SquadResponse::from(value);
+    apply_summary(&mut response, Some(summary));
+    Ok(response)
+}
+
 #[derive(Debug, Serialize)]
 struct SquadMemberResponse {
     id: String,
@@ -149,6 +179,55 @@ struct SquadMemberStatusResponse {
 #[derive(Debug, Serialize)]
 struct SquadMemberStatusListResponse {
     members: Vec<SquadMemberStatusResponse>,
+}
+
+#[derive(Debug, Serialize)]
+struct AutopilotEventResponse {
+    id: String,
+    workspace_id: String,
+    title: String,
+    description: Option<String>,
+    project_id: Option<String>,
+    assignee_type: String,
+    assignee_id: String,
+    status: String,
+    pause_reason: Option<String>,
+    execution_mode: String,
+    issue_title_template: Option<String>,
+    created_by_type: String,
+    created_by_id: String,
+    last_run_at: Option<String>,
+    created_at: String,
+    updated_at: String,
+    subscribers: Vec<serde_json::Value>,
+}
+
+impl From<Autopilot> for AutopilotEventResponse {
+    fn from(value: Autopilot) -> Self {
+        Self {
+            id: value.id.to_string(),
+            workspace_id: value.workspace_id.to_string(),
+            title: value.title,
+            description: value.description,
+            project_id: value.project_id.map(|id| id.to_string()),
+            assignee_type: if value.assignee_type.is_empty() {
+                "agent".into()
+            } else {
+                value.assignee_type
+            },
+            assignee_id: value.assignee_id.to_string(),
+            status: value.status,
+            pause_reason: value.pause_reason,
+            execution_mode: value.execution_mode,
+            issue_title_template: value.issue_title_template,
+            created_by_type: value.created_by_type,
+            created_by_id: value.created_by_id.to_string(),
+            last_run_at: value.last_run_at.map(crate::timefmt::rfc3339),
+            created_at: crate::timefmt::rfc3339(value.created_at),
+            updated_at: crate::timefmt::rfc3339(value.updated_at),
+            subscribers: Vec::new(),
+        }
+    }
 }
 
 fn derive_member_status(
@@ -195,6 +274,125 @@ async fn load_squad(
         .ok()
         .flatten()
         .ok_or_else(|| error_response(StatusCode::NOT_FOUND, "squad not found"))
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct CreateSquadRequest {
+    #[serde(deserialize_with = "null_default")]
+    name: String,
+    #[serde(deserialize_with = "null_default")]
+    description: String,
+    #[serde(deserialize_with = "null_default")]
+    leader_id: String,
+    avatar_url: Option<String>,
+}
+
+async fn accepted_avatar_url(
+    state: &HandlerState,
+    value: Option<String>,
+    current: Option<&str>,
+) -> Result<Option<String>, Response> {
+    match value {
+        None => Ok(None),
+        Some(value) => crate::avatar::accept_url(state, &value, current)
+            .await
+            .map(Some)
+            .map_err(|message| error_response(StatusCode::BAD_REQUEST, message)),
+    }
+}
+
+async fn create(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    body: Bytes,
+) -> Response {
+    let request = match decode_first::<CreateSquadRequest>(&body) {
+        Ok(request) => request,
+        Err(()) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    if request.name.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "name is required");
+    }
+    if request.leader_id.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "leader_id is required");
+    }
+    let leader_id = match Uuid::parse_str(&request.leader_id) {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid leader_id"),
+    };
+    let leader =
+        match agent::get_agent_in_workspace(&state.pool, leader_id, context.member.workspace_id)
+            .await
+        {
+            Ok(Some(agent)) => agent,
+            Ok(None) | Err(_) => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "leader must be a valid agent in this workspace",
+                )
+            }
+        };
+    if !crate::task::can_access_agent(&state, &context, &leader, "member", context.member.user_id)
+        .await
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "you can only use an agent you have access to as leader",
+        );
+    }
+    let avatar_url = match accepted_avatar_url(&state, request.avatar_url, None).await {
+        Ok(avatar_url) => avatar_url,
+        Err(response) => return response,
+    };
+    let created = match squad::create_squad(
+        &state.pool,
+        context.member.workspace_id,
+        &request.name,
+        &request.description,
+        leader_id,
+        context.member.user_id,
+        avatar_url.as_deref(),
+    )
+    .await
+    {
+        Ok(Some(squad)) => squad,
+        Ok(None) | Err(_) => {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to create squad")
+        }
+    };
+    // Go intentionally treats leader seeding as best-effort after squad
+    // creation; preserve that contract until the schema/service slice makes
+    // creation atomic on both implementations.
+    let _ = squad::add_squad_member(&state.pool, created.id, "agent", leader_id, "leader").await;
+    let response = match response_with_preview(&state, created).await {
+        Ok(response) => response,
+        Err(error) => {
+            tracing::warn!(%error, "failed to load squad member preview");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load squad member preview",
+            );
+        }
+    };
+    publish_squad_event(
+        &state,
+        &context,
+        cordy_protocol::EVENT_SQUAD_CREATED,
+        json!({ "squad": &response }),
+    );
+    let analytics = cordy_analytics::events::squad_created(
+        &context.member.user_id.to_string(),
+        &context.member.workspace_id.to_string(),
+        &response.id,
+        1,
+    );
+    cordy_metrics::business_events::record_event(
+        None,
+        state.business_metrics.as_deref(),
+        &analytics,
+    );
+    (StatusCode::CREATED, Json(response)).into_response()
 }
 
 async fn list(
@@ -254,23 +452,16 @@ async fn get_one(
         Ok(squad) => squad,
         Err(response) => return response,
     };
-    let rows = match squad::list_squad_member_preview_rows_by_squad(&state.pool, found.id).await {
-        Ok(rows) => rows,
+    match response_with_preview(&state, found).await {
+        Ok(response) => Json(response).into_response(),
         Err(error) => {
-            tracing::warn!(%error, squad_id = %found.id, "failed to load squad member preview");
-            return error_response(
+            tracing::warn!(%error, "failed to load squad member preview");
+            error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to load squad member preview",
-            );
+            )
         }
-    };
-    let mut summary = SquadMemberSummary::default();
-    for row in rows {
-        add_preview(&mut summary, row.member_type, row.member_id, row.role);
     }
-    let mut response = SquadResponse::from(found);
-    apply_summary(&mut response, Some(summary));
-    Json(response).into_response()
 }
 
 async fn list_members(
@@ -297,6 +488,483 @@ async fn list_members(
                 "failed to list squad members",
             )
         }
+    }
+}
+
+fn can_manage(context: &WorkspaceContext, squad: &Squad) -> bool {
+    matches!(context.member.role.as_str(), "owner" | "admin")
+        || context.member.user_id == squad.creator_id
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct MemberMutationRequest {
+    #[serde(deserialize_with = "null_default")]
+    member_type: String,
+    #[serde(deserialize_with = "null_default")]
+    member_id: String,
+    #[serde(deserialize_with = "null_default")]
+    role: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+struct UpdateSquadRequest {
+    name: Option<String>,
+    description: Option<String>,
+    instructions: Option<String>,
+    leader_id: Option<String>,
+    avatar_url: Option<String>,
+}
+
+fn null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Option::<T>::deserialize(deserializer).map(Option::unwrap_or_default)
+}
+
+fn decode_first<T>(body: &[u8]) -> Result<T, ()>
+where
+    T: for<'de> Deserialize<'de> + Default,
+{
+    let mut values = serde_json::Deserializer::from_slice(body).into_iter::<Option<T>>();
+    values
+        .next()
+        .ok_or(())?
+        .map(|value| value.unwrap_or_default())
+        .map_err(|_| ())
+}
+
+fn publish_squad_event(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    event_type: &str,
+    payload: serde_json::Value,
+) {
+    state.bus.publish(&cordy_events::Event {
+        event_type: event_type.into(),
+        workspace_id: context.member.workspace_id.to_string(),
+        actor_type: "member".into(),
+        actor_id: context.member.user_id.to_string(),
+        payload,
+        ..Default::default()
+    });
+}
+
+fn publish_squad_updated(state: &HandlerState, context: &WorkspaceContext, squad_id: Uuid) {
+    publish_squad_event(
+        state,
+        context,
+        cordy_protocol::EVENT_SQUAD_UPDATED,
+        json!({ "squad_id": squad_id }),
+    );
+}
+
+fn unique_violation(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<sqlx::Error>()
+        .and_then(sqlx::Error::as_database_error)
+        .and_then(|error| error.code())
+        .is_some_and(|code| code == "23505")
+}
+
+async fn update(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(raw_id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let existing = match load_squad(&state, &context, &raw_id).await {
+        Ok(squad) => squad,
+        Err(response) => return response,
+    };
+    if !can_manage(&context, &existing) {
+        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
+    }
+    let request = match decode_first::<UpdateSquadRequest>(&body) {
+        Ok(request) => request,
+        Err(()) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    let avatar_url =
+        match accepted_avatar_url(&state, request.avatar_url, existing.avatar_url.as_deref()).await
+        {
+            Ok(avatar_url) => avatar_url,
+            Err(response) => return response,
+        };
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, "failed to start squad update transaction");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update squad");
+        }
+    };
+    match squad::lock_squad_for_update(&mut *transaction, existing.id, context.member.workspace_id)
+        .await
+    {
+        Ok(Some(_)) => {}
+        Ok(None) | Err(_) => {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update squad")
+        }
+    }
+    let mut leader_id = existing.leader_id;
+    let mut new_leader_runtime_bound = true;
+    if let Some(raw_leader_id) = request.leader_id.as_deref() {
+        leader_id = match Uuid::parse_str(raw_leader_id) {
+            Ok(id) => id,
+            Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid leader_id"),
+        };
+        let new_leader = match agent::lock_agent_for_autopilot_assignment(
+            &mut *transaction,
+            leader_id,
+            context.member.workspace_id,
+        )
+        .await
+        {
+            Ok(Some(agent)) => agent,
+            Ok(None) | Err(_) => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "leader must be a valid agent in this workspace",
+                )
+            }
+        };
+        if !crate::task::can_access_agent(
+            &state,
+            &context,
+            &new_leader,
+            "member",
+            context.member.user_id,
+        )
+        .await
+        {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "you can only use an agent you have access to as leader",
+            );
+        }
+        let is_member = match squad::is_squad_member(
+            &mut *transaction,
+            existing.id,
+            "agent",
+            leader_id,
+        )
+        .await
+        {
+            Ok(Some(is_member)) => is_member,
+            Ok(None) | Err(_) => {
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update squad")
+            }
+        };
+        if !is_member
+            && !matches!(
+                squad::add_squad_member(
+                    &mut *transaction,
+                    existing.id,
+                    "agent",
+                    leader_id,
+                    "leader",
+                )
+                .await,
+                Ok(Some(_))
+            )
+        {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update squad");
+        }
+        new_leader_runtime_bound = new_leader.runtime_id.is_some();
+    }
+    let updated = match squad::update_squad(
+        &mut *transaction,
+        existing.id,
+        request.name.as_deref(),
+        request.description.as_deref(),
+        leader_id,
+        avatar_url.as_deref(),
+        request.instructions.as_deref(),
+    )
+    .await
+    {
+        Ok(Some(squad)) => squad,
+        Ok(None) | Err(_) => {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update squad")
+        }
+    };
+    let paused = if request.leader_id.is_some() && !new_leader_runtime_bound {
+        match autopilot::pause_autopilots_by_unrunnable_squad(&mut *transaction, existing.id).await
+        {
+            Ok(autopilots) => autopilots,
+            Err(_) => {
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update squad")
+            }
+        }
+    } else {
+        Vec::new()
+    };
+    if let Err(error) = transaction.commit().await {
+        tracing::warn!(%error, squad_id = %existing.id, "failed to commit squad update");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update squad");
+    }
+    let response = match response_with_preview(&state, updated).await {
+        Ok(response) => response,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load squad member preview",
+            )
+        }
+    };
+    publish_squad_event(
+        &state,
+        &context,
+        cordy_protocol::EVENT_SQUAD_UPDATED,
+        json!({ "squad": &response }),
+    );
+    for autopilot in paused {
+        publish_squad_event(
+            &state,
+            &context,
+            cordy_protocol::EVENT_AUTOPILOT_UPDATED,
+            json!({ "autopilot": AutopilotEventResponse::from(autopilot) }),
+        );
+    }
+    Json(response).into_response()
+}
+
+async fn remove(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(raw_id): Path<String>,
+) -> Response {
+    let existing = match load_squad(&state, &context, &raw_id).await {
+        Ok(squad) => squad,
+        Err(response) => return response,
+    };
+    if !can_manage(&context, &existing) {
+        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
+    }
+    if existing.archived_at.is_some() {
+        return error_response(StatusCode::BAD_REQUEST, "squad is already archived");
+    }
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, squad_id = %existing.id, "failed to start squad archive transaction");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
+        }
+    };
+    if let Err(error) =
+        squad::transfer_squad_assignees(&mut *transaction, existing.id, existing.leader_id).await
+    {
+        tracing::warn!(%error, squad_id = %existing.id, "transfer squad assignees failed");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
+    }
+    if let Err(error) = squad::transfer_squad_autopilots_to_leader(
+        &mut *transaction,
+        existing.id,
+        existing.leader_id,
+    )
+    .await
+    {
+        tracing::warn!(%error, squad_id = %existing.id, "transfer squad autopilots failed");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
+    }
+    match squad::archive_squad(&mut *transaction, existing.id, context.member.user_id).await {
+        Ok(Some(_)) => {}
+        Ok(None) | Err(_) => {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad")
+        }
+    }
+    if let Err(error) = transaction.commit().await {
+        tracing::warn!(%error, squad_id = %existing.id, "failed to commit squad archive");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
+    }
+    publish_squad_event(
+        &state,
+        &context,
+        cordy_protocol::EVENT_SQUAD_DELETED,
+        json!({ "squad_id": existing.id, "leader_id": existing.leader_id }),
+    );
+    StatusCode::NO_CONTENT.into_response()
+}
+
+async fn add_member(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(raw_id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let found = match load_squad(&state, &context, &raw_id).await {
+        Ok(squad) => squad,
+        Err(response) => return response,
+    };
+    if !can_manage(&context, &found) {
+        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
+    }
+    let request = match decode_first::<MemberMutationRequest>(&body) {
+        Ok(request) => request,
+        Err(()) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    if request.member_type != "agent" && request.member_type != "member" {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "member_type must be 'agent' or 'member'",
+        );
+    }
+    if request.member_id.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "member_id is required");
+    }
+    let member_id = match Uuid::parse_str(&request.member_id) {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid member_id"),
+    };
+    if request.member_type == "agent" {
+        let target = match agent::get_agent_in_workspace(
+            &state.pool,
+            member_id,
+            context.member.workspace_id,
+        )
+        .await
+        {
+            Ok(Some(agent)) => agent,
+            Ok(None) | Err(_) => {
+                return error_response(StatusCode::BAD_REQUEST, "agent not found in this workspace")
+            }
+        };
+        if !crate::task::can_access_agent(
+            &state,
+            &context,
+            &target,
+            "member",
+            context.member.user_id,
+        )
+        .await
+        {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "you can only add an agent you have access to",
+            );
+        }
+    } else if member::get_member_by_user_and_workspace(
+        &state.pool,
+        member_id,
+        context.member.workspace_id,
+    )
+    .await
+    .ok()
+    .flatten()
+    .is_none()
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "member not found in this workspace",
+        );
+    }
+    match squad::add_squad_member(
+        &state.pool,
+        found.id,
+        &request.member_type,
+        member_id,
+        &request.role,
+    )
+    .await
+    {
+        Ok(Some(squad_member)) => {
+            publish_squad_updated(&state, &context, found.id);
+            (
+                StatusCode::CREATED,
+                Json(SquadMemberResponse::from(squad_member)),
+            )
+                .into_response()
+        }
+        Err(error) if unique_violation(&error) => {
+            error_response(StatusCode::CONFLICT, "member already in squad")
+        }
+        Ok(None) | Err(_) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to add squad member",
+        ),
+    }
+}
+
+async fn remove_member(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(raw_id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let found = match load_squad(&state, &context, &raw_id).await {
+        Ok(squad) => squad,
+        Err(response) => return response,
+    };
+    if !can_manage(&context, &found) {
+        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
+    }
+    let request = match decode_first::<MemberMutationRequest>(&body) {
+        Ok(request) => request,
+        Err(()) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    let member_id = match Uuid::parse_str(&request.member_id) {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid member_id"),
+    };
+    if request.member_type == "agent" && found.leader_id == member_id {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "cannot remove the squad leader; change leader first",
+        );
+    }
+    match squad::remove_squad_member(&state.pool, found.id, &request.member_type, member_id).await {
+        Ok(0) => error_response(StatusCode::NOT_FOUND, "squad member not found"),
+        Ok(_) => {
+            publish_squad_updated(&state, &context, found.id);
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Err(error) => {
+            tracing::warn!(%error, squad_id = %found.id, "failed to remove squad member");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to remove squad member",
+            )
+        }
+    }
+}
+
+async fn update_member_role(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(raw_id): Path<String>,
+    body: Bytes,
+) -> Response {
+    let found = match load_squad(&state, &context, &raw_id).await {
+        Ok(squad) => squad,
+        Err(response) => return response,
+    };
+    if !can_manage(&context, &found) {
+        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
+    }
+    let request = match decode_first::<MemberMutationRequest>(&body) {
+        Ok(request) => request,
+        Err(()) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    let member_id = match Uuid::parse_str(&request.member_id) {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid member_id"),
+    };
+    match squad::update_squad_member_role(
+        &state.pool,
+        found.id,
+        &request.member_type,
+        member_id,
+        &request.role,
+    )
+    .await
+    {
+        Ok(Some(member)) => {
+            publish_squad_updated(&state, &context, found.id);
+            Json(SquadMemberResponse::from(member)).into_response()
+        }
+        Ok(None) | Err(_) => error_response(StatusCode::NOT_FOUND, "squad member not found"),
     }
 }
 
@@ -468,5 +1136,56 @@ mod tests {
             derive_member_status(false, None, None, false, now),
             "offline"
         );
+    }
+
+    #[test]
+    fn member_mutation_decoder_matches_go_first_value_and_null_defaults() {
+        let request = decode_first::<MemberMutationRequest>(
+            br#"{"member_type":"agent","member_id":"abc","role":"reviewer"} true"#,
+        )
+        .unwrap();
+        assert_eq!(request.member_type, "agent");
+        assert_eq!(request.member_id, "abc");
+        assert_eq!(request.role, "reviewer");
+
+        let empty = decode_first::<MemberMutationRequest>(b"null").unwrap();
+        assert!(empty.member_type.is_empty());
+        assert!(empty.member_id.is_empty());
+        assert!(decode_first::<MemberMutationRequest>(b"").is_err());
+
+        let null_fields = decode_first::<MemberMutationRequest>(
+            br#"{"member_type":null,"member_id":null,"role":null}"#,
+        )
+        .unwrap();
+        assert!(null_fields.member_type.is_empty());
+        assert!(null_fields.member_id.is_empty());
+        assert!(null_fields.role.is_empty());
+    }
+
+    #[test]
+    fn typed_uuid_comparison_protects_leader_for_noncanonical_input() {
+        let leader = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f12").unwrap();
+        let uppercase = Uuid::parse_str("018F03A0C4D27A37AE4D5AA45DE12F12").unwrap();
+        assert_eq!(leader, uppercase);
+    }
+
+    #[test]
+    fn squad_crud_decoders_preserve_go_null_and_first_value_contract() {
+        let create = decode_first::<CreateSquadRequest>(
+            br#"{"name":null,"description":null,"leader_id":null,"avatar_url":"  emoji:robot  "} false"#,
+        )
+        .unwrap();
+        assert!(create.name.is_empty());
+        assert!(create.description.is_empty());
+        assert!(create.leader_id.is_empty());
+        assert_eq!(create.avatar_url.as_deref(), Some("  emoji:robot  "));
+
+        let update = decode_first::<UpdateSquadRequest>(
+            br#"{"name":null,"leader_id":null,"avatar_url":null} true"#,
+        )
+        .unwrap();
+        assert!(update.name.is_none());
+        assert!(update.leader_id.is_none());
+        assert!(update.avatar_url.is_none());
     }
 }
