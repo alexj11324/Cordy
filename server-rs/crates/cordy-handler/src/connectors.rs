@@ -23,6 +23,7 @@ use uuid::Uuid;
 use crate::{error::error_response, state::HandlerState};
 
 const BODY_LIMIT: usize = 16 * 1024;
+const TELEGRAM_INSTALL_VERIFICATION_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Clone, Copy)]
 enum Provider {
@@ -1143,7 +1144,8 @@ async fn install_telegram(
             )
         }
     };
-    let api = cordy_telegram::BotApi::new("", token);
+    let api =
+        cordy_telegram::BotApi::with_timeout("", token, TELEGRAM_INSTALL_VERIFICATION_TIMEOUT);
     let me = match api.get_me().await {
         Ok(value) if value.is_bot && !value.username.is_empty() => value,
         Ok(_) => {

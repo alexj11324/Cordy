@@ -12,6 +12,7 @@ use thiserror::Error as ThisError;
 pub const DEFAULT_API_BASE: &str = "https://api.telegram.org";
 
 pub const LONG_POLL_TIMEOUT_SECS: u64 = 50;
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(65);
 
 /// The bot is already being polled by another instance (409 conflict).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ThisError)]
@@ -54,10 +55,20 @@ pub struct BotApi {
     base: String,
     token: String,
     http: reqwest::Client,
+    #[cfg(test)]
+    request_timeout: Duration,
 }
 
 impl BotApi {
     pub fn new(base: &str, token: &str) -> Self {
+        Self::with_timeout(base, token, DEFAULT_REQUEST_TIMEOUT)
+    }
+
+    /// Builds a client with an operation-specific whole-request timeout.
+    /// Long polling uses [`DEFAULT_REQUEST_TIMEOUT`]; short control-plane
+    /// operations such as credential verification must supply their tighter
+    /// lifecycle bound instead of inheriting the poll budget.
+    pub fn with_timeout(base: &str, token: &str, request_timeout: Duration) -> Self {
         let base = if base.is_empty() {
             DEFAULT_API_BASE.to_string()
         } else {
@@ -66,11 +77,12 @@ impl BotApi {
         Self {
             base,
             token: token.to_string(),
-            // 65s covers the 50s long poll plus latency.
             http: reqwest::Client::builder()
-                .timeout(Duration::from_secs(65))
+                .timeout(request_timeout)
                 .build()
                 .expect("static client configuration"),
+            #[cfg(test)]
+            request_timeout,
         }
     }
 
@@ -525,6 +537,15 @@ mod tests {
                 })
                 .is_err());
         }
+    }
+
+    #[test]
+    fn operation_specific_timeout_does_not_change_long_poll_default() {
+        let default = BotApi::new("", "token");
+        let verification = BotApi::with_timeout("", "token", Duration::from_secs(15));
+
+        assert_eq!(default.request_timeout, DEFAULT_REQUEST_TIMEOUT);
+        assert_eq!(verification.request_timeout, Duration::from_secs(15));
     }
 
     #[tokio::test]
