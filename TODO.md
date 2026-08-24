@@ -673,6 +673,12 @@
       matching Go and preventing task/daemon-managed contexts from reaching
       stop logic. Added a regression test; scoped rustfmt and diff-check pass.
       Pushed on the cumulative branch; Cargo/review/PR/merge remain with pro.
+- [x] Fixed the matching restart boundary in
+      `d4e935b7aeefaf4e5a40a544c7bc91719f61ec5d` (parent `8512f587`, tree
+      `cdc9235e9004cf5174f4de457a61bc0c62fd7fa9`): Rust `daemon restart` now
+      rejects daemon/task-managed contexts before host lifecycle control, with
+      a regression test. Scoped rustfmt and diff-check pass; pushed on the
+      cumulative branch; Cargo/review/PR/merge remain with pro.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
