@@ -708,7 +708,10 @@ fn configure_lark(
             tracing::info!("lark channel runtime disabled: CORDY_LARK_SECRET_KEY not set");
             return Ok(None);
         }
-        Err(error) => return Err(error.context("lark channel runtime: invalid secret key")),
+        Err(error) => {
+            tracing::error!(%error, "lark channel runtime disabled: invalid secret key");
+            return Ok(None);
+        }
     };
     let store = Arc::new(cordy_lark::channel_store::ChannelStore::new(
         state.pool.clone(),
