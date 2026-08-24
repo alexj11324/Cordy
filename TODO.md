@@ -962,6 +962,16 @@
       rustfmt and diff-check pass; Cargo was not run. The serial subagent
       reviewed exact head `89f26842` and found no issue; pro owns push/Ready
       PR, gate, and merge.
+- [ ] CLI skill command structural refactor is committed at
+      `1684d444e6d7569e821a444c901145d13414d232` (parent
+      `89f26842427ad24df568bbbe5a91d71ad2b2f8d2`, tree
+      `394528df29f32343c963866db2108b736d5d434a`): skill CRUD,
+      content-source validation, import/refresh/search, archive handling,
+      skill-file mutations, and JSON/table renderers now live in
+      `cordy-cli/src/skill_commands.rs`; dispatch and parent test references
+      retain the existing contract. Scoped rustfmt and diff-check pass; Cargo
+      was not run. The serial subagent reviewed exact head `1684d444` and
+      found no issue; pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
