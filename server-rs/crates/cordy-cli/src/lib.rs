@@ -19847,11 +19847,9 @@ mod tests {
         let error = run_with_input(&rejected, &environment, &mut Cursor::new(Vec::<u8>::new()))
             .await
             .expect_err("task attachment outside workdir must fail closed");
-        assert!(
-            error
-                .to_string()
-                .contains("resolves outside the current working directory")
-        );
+        assert!(error
+            .to_string()
+            .contains("resolves outside the current working directory"));
 
         let download = Cli::try_parse_from([
             "cordy",
