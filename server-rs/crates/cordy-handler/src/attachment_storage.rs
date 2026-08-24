@@ -1121,6 +1121,11 @@ impl AttachmentStorage for S3Storage {
         {
             return None;
         }
+        if !self.custom_endpoint {
+            if let Some(key) = aws_bucket_key_from_url(&url, &self.bucket) {
+                return Some(key);
+            }
+        }
         const MARKER: &str = "__cordy_object_scope__";
         let mut expected = Vec::new();
         if let Ok(url) = Url::parse(&self.object_url(MARKER)) {
@@ -1447,6 +1452,27 @@ fn valid_aws_region(region: &str) -> bool {
             .last()
             .is_some_and(u8::is_ascii_alphanumeric)
         && region.contains('-')
+}
+
+fn aws_bucket_key_from_url(url: &Url, bucket: &str) -> Option<String> {
+    if url.scheme() != "https" || url.port().is_some() {
+        return None;
+    }
+    let host = url.host_str()?;
+    let aws_host = host.strip_suffix(".amazonaws.com")?;
+    let virtual_prefix = format!("{bucket}.s3.");
+    if let Some(region) = aws_host.strip_prefix(&virtual_prefix) {
+        if valid_aws_region(region) {
+            return decode_storage_key(url.path().strip_prefix('/')?);
+        }
+        return None;
+    }
+    let region = aws_host.strip_prefix("s3.")?;
+    if !valid_aws_region(region) {
+        return None;
+    }
+    let prefix = format!("/{bucket}/");
+    decode_storage_key(url.path().strip_prefix(&prefix)?)
 }
 
 fn parse_http_date(value: &str) -> Option<chrono::DateTime<chrono::Utc>> {
@@ -2380,6 +2406,29 @@ mod tests {
                 .key_from_url("https://objects.example.test/base/bucket/workspaces%2Fw/file.txt")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn s3_key_scope_accepts_bounded_aws_region_redirect_urls() {
+        let store = test_s3("https://s3.us-west-2.amazonaws.com", false, false);
+        assert_eq!(
+            store
+                .key_from_url(
+                    "https://test-bucket.s3.eu-central-1.amazonaws.com/workspaces/w/file%2B.txt"
+                )
+                .as_deref(),
+            Some("workspaces/w/file+.txt")
+        );
+        assert!(store
+            .key_from_url(
+                "https://test-bucket.s3.evil.amazonaws.com.attacker.test/workspaces/w/file.txt"
+            )
+            .is_none());
+        assert!(store
+            .key_from_url(
+                "https://other-bucket.s3.eu-central-1.amazonaws.com/workspaces/w/file.txt"
+            )
+            .is_none());
     }
 
     #[test]
