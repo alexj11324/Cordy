@@ -499,6 +499,17 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy skill list` to PR #129. It introduces the missing top-level
+      workspace skill listing, preserves the Go JSON array and table columns
+      (`ID`, `NAME`, `DESCRIPTION`, `CREATED_AT`), and reuses the authenticated
+      workspace client. Exact head is
+      `6fbeb9effe3636af206ec654ea04f3cc2f608284`, parent
+      `6b4620b43b2eea88e36a244ee1e5a7dcea662441`, tree
+      `9b28107f1a7f0475c75cac24fd675bb08a56b06d`, candidate
+      `e2fbf99c1b1aa25bc7d11cfbddd13628ab3d05e2`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
