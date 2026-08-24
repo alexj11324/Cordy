@@ -25,6 +25,26 @@ pub struct TelegramRawEvent {
         skip_serializing_if = "String::is_empty"
     )]
     pub sender_name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub media: Vec<TelegramMediaRef>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TelegramMediaRef {
+    pub kind: String,
+    pub file_id: String,
+    #[serde(default)]
+    pub file_size: i64,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub filename: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub mime_type: String,
+    #[serde(default)]
+    pub width: i64,
+    #[serde(default)]
+    pub height: i64,
+    #[serde(default)]
+    pub duration: i64,
 }
 
 /// Translates one poll update into the normalized envelope; `false` when
@@ -87,6 +107,7 @@ pub fn inbound_from_update(u: &Update, bot_id: i64, bot_username: &str) -> Optio
         bot_id: bot_id.to_string(),
         event_type: "message".to_string(),
         sender_name: sender_display_name(from),
+        media: media_from_message(m),
     })
     .unwrap_or(serde_json::Value::Null);
 
@@ -115,6 +136,61 @@ pub fn inbound_from_update(u: &Update, bot_id: i64, bot_username: &str) -> Optio
         raw,
         ..Default::default()
     })
+}
+
+fn media_from_message(message: &TelegramMessage) -> Vec<TelegramMediaRef> {
+    if let Some(photo) = message
+        .photo
+        .iter()
+        .max_by_key(|photo| (photo.file_size, photo.width.saturating_mul(photo.height)))
+    {
+        return vec![TelegramMediaRef {
+            kind: MsgType::image().0,
+            file_id: photo.file_id.clone(),
+            file_size: photo.file_size,
+            filename: "photo.jpg".to_string(),
+            mime_type: "image/jpeg".to_string(),
+            width: photo.width,
+            height: photo.height,
+            duration: 0,
+        }];
+    }
+    if let Some(voice) = &message.voice {
+        return vec![TelegramMediaRef {
+            kind: MsgType::audio().0,
+            file_id: voice.file_id.clone(),
+            file_size: voice.file_size,
+            filename: "voice.ogg".to_string(),
+            mime_type: voice.mime_type.clone(),
+            duration: voice.duration,
+            ..Default::default()
+        }];
+    }
+    if let Some(video) = &message.video {
+        return vec![TelegramMediaRef {
+            kind: MsgType::video().0,
+            file_id: video.file_id.clone(),
+            file_size: video.file_size,
+            filename: video.file_name.clone(),
+            mime_type: video.mime_type.clone(),
+            width: video.width,
+            height: video.height,
+            duration: video.duration,
+        }];
+    }
+    message
+        .document
+        .as_ref()
+        .map(|document| TelegramMediaRef {
+            kind: MsgType::file().0,
+            file_id: document.file_id.clone(),
+            file_size: document.file_size,
+            filename: document.file_name.clone(),
+            mime_type: document.mime_type.clone(),
+            ..Default::default()
+        })
+        .into_iter()
+        .collect()
 }
 
 /// The platform message reference: "<chat_id>:<message_id>".
@@ -419,13 +495,13 @@ mod tests {
     #[test]
     fn media_classification_table() {
         let mut m = msg("private", "");
-        m.photo = vec![serde_json::json!({})];
+        m.photo = vec![crate::api::PhotoSize::default()];
         assert_eq!(classify_message(&m), MsgType::image());
         m.photo.clear();
-        m.voice = Some(serde_json::json!({}));
+        m.voice = Some(crate::api::VoiceRef::default());
         assert_eq!(classify_message(&m), MsgType::audio());
         m.voice = None;
-        m.video = Some(serde_json::json!({}));
+        m.video = Some(crate::api::VideoRef::default());
         assert_eq!(classify_message(&m), MsgType::video());
         m.video = None;
         m.document = Some(crate::api::DocumentRef::default());
@@ -436,7 +512,11 @@ mod tests {
         // Caption-carrying media still classifies by attachment but keeps
         // caption as text fallback.
         m.document = Some(crate::api::DocumentRef {
+            file_id: "telegram-file-1".into(),
+            file_size: 1_024,
             file_name: "f.pdf".into(),
+            mime_type: "application/pdf".into(),
+            ..Default::default()
         });
         m.caption = "see attached".into();
         let classified = inbound_from_update(
@@ -450,6 +530,12 @@ mod tests {
         .unwrap();
         assert_eq!(classified.r#type, MsgType::file());
         assert_eq!(classified.text, "see attached");
+        let raw: TelegramRawEvent = serde_json::from_value(classified.raw).unwrap();
+        assert_eq!(raw.media.len(), 1);
+        assert_eq!(raw.media[0].file_id, "telegram-file-1");
+        assert_eq!(raw.media[0].filename, "f.pdf");
+        assert_eq!(raw.media[0].mime_type, "application/pdf");
+        assert_eq!(raw.media[0].file_size, 1_024);
     }
 
     #[test]

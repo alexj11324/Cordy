@@ -2,24 +2,137 @@
 //! signature-checked before dispatch and persisted before acknowledgement so
 //! provider retries are idempotent and recoverable.
 
+use std::collections::HashMap;
+use std::net::{IpAddr, SocketAddr};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::{ConnectInfo, Path, Request, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use chrono::Utc;
 use cordy_db::queries::{autopilot, webhook_delivery};
+use cordy_service::autopilot::AutopilotQuotaExceededError;
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
+use ipnetwork::IpNetwork;
 use serde_json::{json, Value};
 use sha2::Sha256;
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::{error::error_response, state::HandlerState};
 
 const MAX_BODY: usize = 256 * 1024;
 type HmacSha256 = Hmac<Sha256>;
+
+#[derive(Clone)]
+struct SlidingIpLimit {
+    hits: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
+    limit: usize,
+    window: Duration,
+}
+
+impl SlidingIpLimit {
+    fn new(limit: usize, window: Duration) -> Self {
+        Self {
+            hits: Arc::new(Mutex::new(HashMap::new())),
+            limit,
+            window,
+        }
+    }
+
+    async fn evaluate(&self, ip: &str, consume: bool) -> bool {
+        if self.limit == 0 || ip.is_empty() {
+            return true;
+        }
+        let cutoff = Instant::now() - self.window;
+        let mut hits = self.hits.lock().await;
+        hits.retain(|_, entries| {
+            entries.retain(|seen| *seen > cutoff);
+            !entries.is_empty()
+        });
+        let count = hits.get(ip).map_or(0, Vec::len);
+        if count >= self.limit {
+            return false;
+        }
+        if consume {
+            hits.entry(ip.to_string()).or_default().push(Instant::now());
+        }
+        true
+    }
+}
+
+/// Two independent webhook safety budgets. The high absolute ceiling is
+/// charged by every request; the lower budget is checked before token lookup
+/// but charged only after an unknown token or bad signature is identified.
+#[derive(Clone)]
+pub(crate) struct WebhookRateLimits {
+    absolute: SlidingIpLimit,
+    bad_credentials: SlidingIpLimit,
+    pub(crate) trusted_proxies: Vec<IpNetwork>,
+}
+
+impl WebhookRateLimits {
+    pub(crate) fn new(trusted_proxies: Vec<IpNetwork>) -> Self {
+        Self {
+            absolute: SlidingIpLimit::new(600, Duration::from_secs(60)),
+            bad_credentials: SlidingIpLimit::new(30, Duration::from_secs(60)),
+            trusted_proxies,
+        }
+    }
+
+    #[cfg(test)]
+    fn test(absolute: usize, bad_credentials: usize) -> Self {
+        Self {
+            absolute: SlidingIpLimit::new(absolute, Duration::from_secs(60)),
+            bad_credentials: SlidingIpLimit::new(bad_credentials, Duration::from_secs(60)),
+            trusted_proxies: Vec::new(),
+        }
+    }
+
+    fn client_ip(&self, request: &Request) -> String {
+        let remote = request
+            .extensions()
+            .get::<ConnectInfo<SocketAddr>>()
+            .map(|info| info.0.ip());
+        if remote.is_some_and(|ip| {
+            self.trusted_proxies
+                .iter()
+                .any(|network| network.contains(ip))
+        }) {
+            if let Some(forwarded) = request
+                .headers()
+                .get("x-forwarded-for")
+                .and_then(|value| value.to_str().ok())
+            {
+                for candidate in forwarded.rsplit(',').map(str::trim) {
+                    if let Ok(ip) = candidate.parse::<IpAddr>() {
+                        if !self
+                            .trusted_proxies
+                            .iter()
+                            .any(|network| network.contains(ip))
+                        {
+                            return ip.to_string();
+                        }
+                    }
+                }
+            }
+        }
+        remote.map(|ip| ip.to_string()).unwrap_or_default()
+    }
+
+    async fn admit(&self, ip: &str) -> bool {
+        self.absolute.evaluate(ip, true).await && self.bad_credentials.evaluate(ip, false).await
+    }
+
+    async fn charge_bad_credential(&self, ip: &str) {
+        let _ = self.bad_credentials.evaluate(ip, true).await;
+    }
+}
 
 pub fn router() -> Router<HandlerState> {
     Router::new().route("/api/webhooks/autopilots/{token}", post(webhook))
@@ -220,19 +333,25 @@ async fn terminal(
     status: &str,
     code: StatusCode,
     response: &Value,
-    reason: &str,
-) {
+    error: Option<&str>,
+    reason_code: Option<&str>,
+) -> anyhow::Result<()> {
     let encoded = response.to_string();
-    let _ = webhook_delivery::update_webhook_delivery_terminal(
+    let updated = webhook_delivery::update_webhook_delivery_terminal(
         &state.pool,
         id,
         status,
-        Some(reason),
-        Some(reason),
+        error,
+        reason_code,
         Some(code.as_u16().into()),
         Some(&encoded),
     )
-    .await;
+    .await?;
+    anyhow::ensure!(
+        updated.is_some(),
+        "webhook delivery disappeared during terminal update"
+    );
+    Ok(())
 }
 
 async fn duplicate_response(
@@ -255,15 +374,30 @@ async fn duplicate_response(
 async fn webhook(
     State(state): State<HandlerState>,
     Path(token): Path<String>,
-    headers: HeaderMap,
-    body: Body,
+    request: Request,
 ) -> Response {
+    let client_ip = state.webhook_rate_limits.client_ip(&request);
+    if !state.webhook_rate_limits.admit(&client_ip).await {
+        return error_response(StatusCode::TOO_MANY_REQUESTS, "rate limit exceeded");
+    }
     if token.is_empty() {
+        state
+            .webhook_rate_limits
+            .charge_bad_credential(&client_ip)
+            .await;
         return error_response(StatusCode::NOT_FOUND, "webhook not found");
     }
+    let (parts, body) = request.into_parts();
+    let headers = parts.headers;
     let trigger = match autopilot::get_webhook_trigger_by_token(&state.pool, Some(&token)).await {
         Ok(Some(value)) => value,
-        Ok(None) => return error_response(StatusCode::NOT_FOUND, "webhook not found"),
+        Ok(None) => {
+            state
+                .webhook_rate_limits
+                .charge_bad_credential(&client_ip)
+                .await;
+            return error_response(StatusCode::NOT_FOUND, "webhook not found");
+        }
         Err(error) => {
             tracing::error!(%error, "autopilot webhook token lookup failed");
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
@@ -359,21 +493,31 @@ async fn webhook(
         }
     };
     if matches!(sig, "missing" | "invalid") {
+        state
+            .webhook_rate_limits
+            .charge_bad_credential(&client_ip)
+            .await;
         let reason = if sig == "missing" {
             "missing_signature"
         } else {
             "invalid_signature"
         };
         let response = json!({"status": "rejected", "delivery_id": delivery.id, "reason": reason});
-        terminal(
+        if let Err(error) = terminal(
             &state,
             delivery.id,
             "rejected",
             StatusCode::UNAUTHORIZED,
             &response,
-            reason,
+            Some(reason),
+            Some(reason),
         )
-        .await;
+        .await
+        {
+            tracing::error!(%error, delivery_id = %delivery.id, "failed to reject webhook delivery");
+            state.notify_webhook_delivery();
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+        }
         return (StatusCode::UNAUTHORIZED, Json(response)).into_response();
     }
     let ignored = if !trigger.enabled {
@@ -389,15 +533,21 @@ async fn webhook(
     };
     if let Some(reason) = ignored {
         let response = json!({"status": "ignored", "delivery_id": delivery.id, "reason": reason});
-        terminal(
+        if let Err(error) = terminal(
             &state,
             delivery.id,
             "ignored",
             StatusCode::OK,
             &response,
-            reason,
+            Some(reason),
+            Some(reason),
         )
-        .await;
+        .await
+        {
+            tracing::error!(%error, delivery_id = %delivery.id, "failed to ignore webhook delivery");
+            state.notify_webhook_delivery();
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+        }
         return Json(response).into_response();
     }
     let service = cordy_service::autopilot::AutopilotService::new(
@@ -411,6 +561,34 @@ async fn webhook(
     {
         Ok(value) => value,
         Err(error) => {
+            if let Some(quota) = error.downcast_ref::<AutopilotQuotaExceededError>() {
+                let quota_error = quota.to_string();
+                let response = json!({
+                    "status": "ignored",
+                    "delivery_id": delivery.id,
+                    "reason_code": "quota_exceeded",
+                });
+                if let Err(update_error) = terminal(
+                    &state,
+                    delivery.id,
+                    "ignored",
+                    StatusCode::OK,
+                    &response,
+                    Some(&quota_error),
+                    Some("quota_exceeded"),
+                )
+                .await
+                {
+                    tracing::error!(
+                        %update_error,
+                        delivery_id = %delivery.id,
+                        "failed to persist quota-exceeded webhook delivery"
+                    );
+                    state.notify_webhook_delivery();
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+                }
+                return Json(response).into_response();
+            }
             tracing::warn!(%error, delivery_id = %delivery.id, "autopilot webhook admission failed");
             state.notify_webhook_delivery();
             return error_response(
@@ -467,5 +645,18 @@ mod tests {
         let value = normalize(br#"{"action":"opened","number":1}"#, &headers).unwrap();
         assert_eq!(value["event"], "github.pull_request.opened");
         assert!(normalize(b"true", &HeaderMap::new()).is_err());
+    }
+
+    #[tokio::test]
+    async fn webhook_ip_limits_separate_absolute_traffic_from_bad_credentials() {
+        let absolute = WebhookRateLimits::test(1, 10);
+        assert!(absolute.admit("203.0.113.1").await);
+        assert!(!absolute.admit("203.0.113.1").await);
+
+        let debt = WebhookRateLimits::test(10, 1);
+        assert!(debt.admit("203.0.113.2").await);
+        assert!(debt.admit("203.0.113.2").await);
+        debt.charge_bad_credential("203.0.113.2").await;
+        assert!(!debt.admit("203.0.113.2").await);
     }
 }

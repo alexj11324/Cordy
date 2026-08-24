@@ -9,8 +9,12 @@ license.workspace = true
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 base64 = "0.22"
+chrono = { workspace = true }
+hex = { workspace = true }
+rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 sqlx = { workspace = true }
 thiserror = "2"
 tracing = { workspace = true }
@@ -18,6 +22,9 @@ tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tokio-util = { workspace = true }
 uuid = { workspace = true }
 reqwest = { workspace = true }
+url = { workspace = true }
+cordy-events = { path = "../cordy-events" }
+cordy-protocol = { path = "../cordy-protocol" }
 cordy-channel = { path = "../cordy-channel" }
 cordy-channel-engine = { path = "../cordy-channel-engine" }
 cordy-db = { path = "../cordy-db" }

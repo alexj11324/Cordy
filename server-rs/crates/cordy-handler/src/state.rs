@@ -139,6 +139,11 @@ pub struct HandlerState {
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
     pub bus: Arc<cordy_events::Bus>,
+    /// Owned background work started by channel HTTP/event surfaces. The
+    /// production ChannelRuntime closes admission and joins/aborts this group
+    /// during shutdown.
+    pub channel_tasks: Arc<cordy_channel::RuntimeTasks>,
+    pub channel_cancel: tokio_util::sync::CancellationToken,
     /// Prometheus business counters. None when METRICS_ADDR is disabled.
     pub business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     /// HTTP request metrics. None when METRICS_ADDR is disabled.
@@ -149,9 +154,14 @@ pub struct HandlerState {
     pub analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
     pub auth_rate_limit: cordy_middleware::ratelimit::RateLimitState,
     pub auth_verify_rate_limit: cordy_middleware::ratelimit::RateLimitState,
+    pub(crate) webhook_rate_limits: crate::autopilot_webhook::WebhookRateLimits,
     pub invitation_admission: crate::invitation::InvitationAdmission,
     /// Anonymous frontend capability/configuration response.
     pub public_config: crate::config::PublicConfigSettings,
+    /// Immutable integration endpoint configuration loaded once at boot.
+    /// Channel install flows use this same snapshot as the runtime connectors
+    /// instead of re-reading process environment mid-session.
+    pub integrations: cordy_config::IntegrationsConfig,
     /// GitHub GraphQL snapshot refresh pipeline. Disabled in lightweight tests.
     pub github_snapshots: Arc<cordy_ghsnapshot::Manager>,
     /// Feature flag source. `None` fails closed for rollout-gated writes.
@@ -249,7 +259,8 @@ impl HandlerState {
             positive_env_i64("RATE_LIMIT_AUTH_VERIFY", 20),
             60,
         );
-        auth_verify_rate_limit.trusted_proxies = trusted_proxies;
+        auth_verify_rate_limit.trusted_proxies = trusted_proxies.clone();
+        let webhook_rate_limits = crate::autopilot_webhook::WebhookRateLimits::new(trusted_proxies);
         let llm = cordy_llm::Client::new(cordy_llm::Config::default());
         Self {
             pool,
@@ -257,6 +268,8 @@ impl HandlerState {
             daemon_token_cache: DaemonTokenCache::disabled(),
             hub,
             bus,
+            channel_tasks: Arc::new(cordy_channel::RuntimeTasks::new()),
+            channel_cancel: tokio_util::sync::CancellationToken::new(),
             business_metrics: None,
             http_metrics: None,
             auth_settings: crate::auth::AuthSettings::from_env(),
@@ -264,8 +277,10 @@ impl HandlerState {
             analytics: Arc::new(cordy_analytics::NoopClient),
             auth_rate_limit,
             auth_verify_rate_limit,
+            webhook_rate_limits,
             invitation_admission: crate::invitation::InvitationAdmission::default(),
             public_config: crate::config::PublicConfigSettings::default(),
+            integrations: cordy_config::IntegrationsConfig::default(),
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
             feature_flags: None,
             tasks,
@@ -364,6 +379,11 @@ impl HandlerState {
 
     pub fn with_public_config(mut self, settings: crate::config::PublicConfigSettings) -> Self {
         self.public_config = settings;
+        self
+    }
+
+    pub fn with_integrations(mut self, integrations: cordy_config::IntegrationsConfig) -> Self {
+        self.integrations = integrations;
         self
     }
 
@@ -501,7 +521,8 @@ impl HandlerState {
     pub fn with_rate_limit_trusted_proxies(mut self, raw: Option<&str>) -> Self {
         let trusted = cordy_middleware::ratelimit::parse_trusted_proxies(raw.unwrap_or_default());
         self.auth_rate_limit.trusted_proxies = trusted.clone();
-        self.auth_verify_rate_limit.trusted_proxies = trusted;
+        self.auth_verify_rate_limit.trusted_proxies = trusted.clone();
+        self.webhook_rate_limits.trusted_proxies = trusted;
         self
     }
 

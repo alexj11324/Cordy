@@ -103,8 +103,11 @@ impl StripeIpLimiter {
         let now = Instant::now();
         let cutoff = now - self.window;
         let mut hits = self.hits.lock().await;
+        hits.retain(|_, entries| {
+            entries.retain(|seen| *seen > cutoff);
+            !entries.is_empty()
+        });
         let entries = hits.entry(ip.to_string()).or_default();
-        entries.retain(|seen| *seen > cutoff);
         if entries.len() >= self.limit {
             return false;
         }
@@ -899,6 +902,21 @@ mod tests {
             let response = app.clone().oneshot(request).await.unwrap();
             assert_eq!(response.status(), expected);
         }
+    }
+
+    #[tokio::test]
+    async fn stripe_limiter_evicts_expired_client_entries() {
+        let limiter = StripeIpLimiter::test(2);
+        limiter.hits.lock().await.insert(
+            "198.51.100.9".into(),
+            vec![Instant::now() - Duration::from_secs(120)],
+        );
+
+        assert!(limiter.allow("203.0.113.7").await);
+
+        let hits = limiter.hits.lock().await;
+        assert!(!hits.contains_key("198.51.100.9"));
+        assert_eq!(hits.len(), 1);
     }
 
     #[tokio::test]

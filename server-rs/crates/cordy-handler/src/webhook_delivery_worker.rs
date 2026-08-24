@@ -90,6 +90,28 @@ impl WebhookDeliveryWorker {
             anyhow::bail!("claimed webhook delivery has no lease token");
         };
 
+        // The ingress persists before returning its authentication response.
+        // If that terminal update failed after the insert, the durable row may
+        // still be queued. Never let the recovery worker dispatch a payload
+        // whose signature was already classified as missing or invalid.
+        if matches!(delivery.signature_status.as_str(), "missing" | "invalid") {
+            let reason = if delivery.signature_status == "missing" {
+                "missing_signature"
+            } else {
+                "invalid_signature"
+            };
+            self.complete(
+                &delivery,
+                lease_token,
+                "rejected",
+                None,
+                Some(reason),
+                Some(reason),
+            )
+            .await?;
+            return Ok(true);
+        }
+
         let trigger = match autopilot::get_autopilot_trigger(&self.pool, delivery.trigger_id).await
         {
             Ok(Some(trigger)) => trigger,
@@ -307,13 +329,11 @@ fn normalize_stored_payload(delivery: &WebhookDelivery) -> Result<Value, &'stati
     if !matches!(body, Value::Object(_) | Value::Array(_)) {
         return Err("body must be a JSON object or array");
     }
-    let event = body
-        .as_object()
-        .and_then(|object| object.get("event"))
-        .and_then(Value::as_str)
-        .filter(|event| !event.is_empty())
-        .unwrap_or(&delivery.event)
-        .to_string();
+    // `delivery.event` is the normalized provider-aware value computed by
+    // ingress (for example `github.pull_request.opened`). It is authoritative
+    // during recovery; rebuilding from the raw body alone loses header-derived
+    // identity after a crash.
+    let event = delivery.event.clone();
     let payload = body
         .as_object()
         .and_then(|object| object.get("eventPayload"))

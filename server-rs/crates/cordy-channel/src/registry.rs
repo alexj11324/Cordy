@@ -5,11 +5,12 @@
 //! Registry is safe for concurrent use.
 
 use std::collections::HashMap;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use thiserror::Error;
 
-use crate::channel::{BuiltChannel, Config, Factory, Type};
+use crate::channel::{BuiltChannel, Channel, Config, Factory, Type};
+use crate::{Capability, LeaseGeneration, OutboundMessage, SendResult};
 
 /// Returned by [`Registry::build`] when no Factory is registered for the
 /// requested Type. Callers can match on it.
@@ -68,7 +69,15 @@ impl Registry {
         let factory = self
             .lookup(&cfg.r#type)
             .ok_or_else(|| UnknownTypeError(cfg.r#type.clone()))?;
-        factory(cfg).await
+        let generation = cfg.generation.clone();
+        let channel = factory(cfg).await?;
+        Ok(match generation {
+            Some(generation) => Arc::new(FencedChannel {
+                channel,
+                generation,
+            }) as BuiltChannel,
+            None => channel,
+        })
     }
 
     /// Returns the registered types sorted lexicographically, so the
@@ -79,6 +88,43 @@ impl Registry {
         let mut out: Vec<Type> = self.factories.read().unwrap().keys().cloned().collect();
         out.sort();
         out
+    }
+}
+
+struct FencedChannel {
+    channel: BuiltChannel,
+    generation: Arc<LeaseGeneration>,
+}
+
+#[async_trait::async_trait]
+impl Channel for FencedChannel {
+    fn r#type(&self) -> Type {
+        self.channel.r#type()
+    }
+
+    async fn connect(&self, ctx: tokio_util::sync::CancellationToken) -> anyhow::Result<()> {
+        self.generation.ensure_active()?;
+        // The supervisor backs generation with this same run token. Await the
+        // adapter so its cancellation cleanup runs instead of dropping the
+        // connect future midway through sender/media teardown.
+        self.channel.connect(ctx).await
+    }
+
+    async fn disconnect(&self) -> anyhow::Result<()> {
+        self.channel.disconnect().await
+    }
+
+    async fn send(&self, out: OutboundMessage) -> anyhow::Result<SendResult> {
+        self.generation.ensure_active()?;
+        tokio::select! {
+            biased;
+            _ = self.generation.cancelled() => Err(crate::GenerationExpired.into()),
+            result = self.channel.send(out) => result,
+        }
+    }
+
+    fn capabilities(&self) -> Capability {
+        self.channel.capabilities()
     }
 }
 
@@ -154,6 +200,7 @@ mod tests {
                 raw: json!({"app_id": "cli_a"}),
                 id: Some(uuid::Uuid::nil()),
                 handler: None,
+                generation: None,
             })
             .await
             .unwrap();

@@ -1,20 +1,17 @@
-//! The Telegram ResolverSet: DB-backed installation/identity/dedup/
-//! session seams the shared Router consumes.
-//!
-//! Port of `server/internal/integrations/telegram/resolvers.go`.
+//! Production resolver adapters between normalized channel messages and the
+//! WeCom smart-bot runtime.
 
 use std::sync::Arc;
 
-use serde_json::json;
+use async_trait::async_trait;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use cordy_channel::InboundMessage;
 use cordy_channel_engine::resolvers::{
-    AppendParams as EngineAppendParams, AppendResult, BindMediaParams as EngineBindMediaParams,
-    Deduper, DropReason, EnsureSessionParams, IdentityResolver, InstallationResolver,
-    ResolvedIdentity, ResolvedInstallation, ResolverError, ResolverSet, SessionBinder,
-    TypingNotifier,
+    AppendParams, AppendResult, Auditor, BindMediaParams, Deduper, DropReason, EnsureSessionParams,
+    IdentityResolver, InstallationResolver, MediaResolver, OutboundReplier, ResolvedIdentity,
+    ResolvedInstallation, ResolverError, ResolverSet, SessionBinder,
 };
 use cordy_channel_engine::session::{
     AppendInput, BindMediaInput, ChatSession, EnsureSessionInput, SessionTitles,
@@ -26,56 +23,40 @@ use cordy_db::queries::channel::{
 };
 use cordy_db::queries::member::get_member_by_user_and_workspace;
 
-/// Origin type stamped on issues created from a Telegram chat.
-pub const ORIGIN_TELEGRAM_CHAT: &str = "telegram_chat";
+pub const ORIGIN_WECOM_CHAT: &str = "wecom_chat";
 
-#[derive(Debug, Clone, serde::Serialize)]
-pub struct TelegramBindingConfig {
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct WecomBindingConfig {
     pub chat_id: String,
+    pub chat_type: i64,
 }
 
-/// Session-isolation key + reply-thread routing for Telegram. A group
-/// topic (thread) splits one chat into distinct sessions.
-pub fn telegram_session_routing(msg: &InboundMessage) -> (String, serde_json::Value, String) {
+pub fn wecom_session_routing(msg: &InboundMessage) -> (String, serde_json::Value) {
     let chat_id = msg.source.chat_id.clone();
-    let cfg = serde_json::to_value(TelegramBindingConfig {
+    let config = serde_json::to_value(WecomBindingConfig {
         chat_id: chat_id.clone(),
+        chat_type: crate::ws_frame::aibot_chat_type_from_channel(&msg.source.chat_type),
     })
-    .unwrap_or_else(|_| json!({}));
-    if msg.source.chat_type == cordy_channel::ChatType::group() && !msg.source.thread_id.is_empty()
-    {
-        (
-            format!("{chat_id}:{}", msg.source.thread_id),
-            cfg,
-            msg.source.thread_id.clone(),
-        )
-    } else {
-        (chat_id, cfg, msg.source.thread_id.clone())
-    }
-}
-
-fn decode_telegram_raw(msg: &InboundMessage) -> anyhow::Result<crate::TelegramRawEvent> {
-    if msg.raw.is_null() {
-        anyhow::bail!("telegram: inbound message Raw is empty");
-    }
-    serde_json::from_value(msg.raw.clone())
-        .map_err(|e| anyhow::anyhow!("decode telegram inbound raw: {e}"))
+    .unwrap_or_else(|_| serde_json::json!({}));
+    (chat_id, config)
 }
 
 struct InstallationResolverImpl {
     pool: PgPool,
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl InstallationResolver for InstallationResolverImpl {
     async fn resolve_installation(
         &self,
         msg: &InboundMessage,
     ) -> anyhow::Result<ResolvedInstallation> {
-        let raw = decode_telegram_raw(msg)?;
+        let raw = crate::ws_frame::wecom_msg_from_raw(msg)?;
+        if raw.bot_id.is_empty() {
+            return Err(ResolverError::InstallationNotFound.into());
+        }
         let Some(inst) =
-            get_channel_installation_by_app_id(&self.pool, crate::TYPE_TELEGRAM, &raw.bot_id)
-                .await?
+            get_channel_installation_by_app_id(&self.pool, crate::TYPE_WECOM, &raw.bot_id).await?
         else {
             return Err(ResolverError::InstallationNotFound.into());
         };
@@ -85,7 +66,7 @@ impl InstallationResolver for InstallationResolverImpl {
             agent_id: inst.agent_id,
             route_revision: 0,
             installer_user_id: inst.installer_user_id,
-            active: inst.status == "active",
+            active: inst.status == crate::types::INSTALLATION_ACTIVE,
             platform: Arc::new(inst),
         })
     }
@@ -95,13 +76,16 @@ struct IdentityResolverImpl {
     pool: PgPool,
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl IdentityResolver for IdentityResolverImpl {
     async fn resolve_sender(
         &self,
         inst: &ResolvedInstallation,
         msg: &InboundMessage,
     ) -> anyhow::Result<ResolvedIdentity> {
+        if msg.source.sender_id.trim().is_empty() {
+            return Err(ResolverError::SenderUnbound.into());
+        }
         let Some(binding) =
             get_channel_user_binding_by_user_id(&self.pool, inst.id, &msg.source.sender_id).await?
         else {
@@ -123,7 +107,7 @@ struct DeduperImpl {
     pool: PgPool,
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl Deduper for DeduperImpl {
     async fn claim(&self, installation_id: Uuid, message_id: &str) -> anyhow::Result<Uuid> {
         let Some(row) =
@@ -154,10 +138,10 @@ struct SessionBinderImpl {
     session: ChatSession,
 }
 
-#[async_trait::async_trait]
+#[async_trait]
 impl SessionBinder for SessionBinderImpl {
     async fn ensure_session(&self, p: EnsureSessionParams) -> anyhow::Result<Uuid> {
-        let (binding_key, config, _) = telegram_session_routing(&p.message);
+        let (binding_key, config) = wecom_session_routing(&p.message);
         self.session
             .ensure_session(&EnsureSessionInput {
                 workspace_id: p.installation.workspace_id,
@@ -175,26 +159,29 @@ impl SessionBinder for SessionBinderImpl {
         self.session.mark_pending_fresh(session_id).await
     }
 
-    async fn append_message(&self, p: EngineAppendParams) -> anyhow::Result<AppendResult> {
-        // Route-revision fencing is a Lark-side concern; Telegram has no
-        // multi-agent route to invalidate, so ClaimLost can only come from
-        // the dedup token itself.
-        let input = AppendInput {
-            session_id: p.session_id,
-            sender: p.sender,
-            installation_id: p.installation_id,
-            body: p.message.text.clone(),
-            command_text: p.message.command_text.clone(),
-            message_id: p.message.message_id.clone(),
-            thread_id: p.message.source.thread_id.clone(),
-            claim_token: p.claim_token,
-            media_pending_seconds: p.media_pending_seconds,
-            force_fresh: p.message.force_fresh,
+    async fn append_message(&self, p: AppendParams) -> anyhow::Result<AppendResult> {
+        let command_text = if p.message.command_text.is_empty() {
+            p.message.text.clone()
+        } else {
+            p.message.command_text.clone()
         };
-        self.session.append_user_message(&input).await
+        self.session
+            .append_user_message(&AppendInput {
+                session_id: p.session_id,
+                sender: p.sender,
+                installation_id: p.installation_id,
+                body: p.message.text.clone(),
+                command_text,
+                message_id: p.message.message_id.clone(),
+                thread_id: String::new(),
+                claim_token: p.claim_token,
+                media_pending_seconds: p.media_pending_seconds,
+                force_fresh: p.message.force_fresh,
+            })
+            .await
     }
 
-    async fn bind_media(&self, p: EngineBindMediaParams) -> anyhow::Result<()> {
+    async fn bind_media(&self, p: BindMediaParams) -> anyhow::Result<()> {
         self.session
             .bind_media_refs(&BindMediaInput {
                 message_id: p.message_id,
@@ -215,15 +202,15 @@ struct AuditorImpl {
     pool: PgPool,
 }
 
-#[async_trait::async_trait]
-impl cordy_channel_engine::resolvers::Auditor for AuditorImpl {
+#[async_trait]
+impl Auditor for AuditorImpl {
     async fn record_drop(&self, inst_id: Uuid, msg: &InboundMessage, reason: &DropReason) {
-        let event_type = decode_telegram_raw(msg)
-            .map(|raw| raw.event_type)
+        let event_type = crate::ws_frame::wecom_msg_from_raw(msg)
+            .map(|raw| raw.msg_type)
             .unwrap_or_default();
-        let result = record_channel_inbound_drop(
+        if let Err(error) = record_channel_inbound_drop(
             &self.pool,
-            crate::TYPE_TELEGRAM,
+            crate::TYPE_WECOM,
             &event_type,
             &reason.0,
             (!inst_id.is_nil()).then_some(inst_id),
@@ -232,9 +219,9 @@ impl cordy_channel_engine::resolvers::Auditor for AuditorImpl {
             opt_str(&msg.message_id),
             cordy_db::dbid::new_v7(),
         )
-        .await;
-        if let Err(error) = result {
-            tracing::warn!(%error, "telegram audit: record drop failed");
+        .await
+        {
+            tracing::warn!(%error, "wecom audit: record drop failed");
         }
     }
 }
@@ -243,20 +230,18 @@ fn opt_str(value: &str) -> Option<&str> {
     (!value.is_empty()).then_some(value)
 }
 
-/// Builds the full Telegram ResolverSet over a pool and an optional replier.
-pub fn new_telegram_resolver_set(
+pub fn new_wecom_resolver_set(
     pool: PgPool,
-    replier: Option<Arc<dyn cordy_channel_engine::resolvers::OutboundReplier>>,
-    typing: Option<Arc<dyn TypingNotifier>>,
-    media: Option<Arc<dyn cordy_channel_engine::resolvers::MediaResolver>>,
+    replier: Option<Arc<dyn OutboundReplier>>,
+    media: Option<Arc<dyn MediaResolver>>,
 ) -> ResolverSet {
     let session = ChatSession::new(
         pool.clone(),
-        cordy_channel::Type(crate::TYPE_TELEGRAM.to_string()),
+        crate::type_wecom(),
         SessionTitles {
-            group: "Telegram group".into(),
-            direct: "Telegram direct message".into(),
-            fallback: "Telegram chat".into(),
+            group: "WeCom group".into(),
+            direct: "WeCom direct message".into(),
+            fallback: "WeCom chat".into(),
         },
     );
     ResolverSet {
@@ -268,7 +253,7 @@ pub fn new_telegram_resolver_set(
         media,
         audit: Some(Arc::new(AuditorImpl { pool })),
         replier,
-        typing,
-        origin_type: ORIGIN_TELEGRAM_CHAT.to_string(),
+        typing: None,
+        origin_type: ORIGIN_WECOM_CHAT.to_string(),
     }
 }
