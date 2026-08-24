@@ -46,16 +46,16 @@ struct UserResponse {
     updated_at: String,
 }
 
-impl From<&User> for UserResponse {
-    fn from(user: &User) -> Self {
+impl UserResponse {
+    fn from_user(state: &HandlerState, user: &User) -> Self {
         Self {
             id: user.id.to_string(),
             name: user.name.clone(),
             email: user.email.clone(),
-            // Current Rust handler state has no storage signer. This is the
-            // same raw-URL branch the Go handler uses when Storage/CFSigner
-            // are nil; private URL signing lands with the storage slice.
-            avatar_url: user.avatar_url.clone(),
+            avatar_url: user
+                .avatar_url
+                .as_deref()
+                .map(|url| crate::avatar::resolve_url(state, url)),
             language: user.language.clone(),
             timezone: user.timezone.clone(),
             onboarded_at: user.onboarded_at.map(crate::timefmt::rfc3339),
@@ -74,7 +74,7 @@ async fn get_me(State(state): State<HandlerState>, headers: HeaderMap) -> Respon
         None => return error_response(StatusCode::UNAUTHORIZED, "user not authenticated"),
     };
     match user::get_user(&state.pool, user_id).await {
-        Ok(Some(user)) => Json(UserResponse::from(&user)).into_response(),
+        Ok(Some(user)) => Json(UserResponse::from_user(&state, &user)).into_response(),
         Ok(None) | Err(_) => error_response(StatusCode::NOT_FOUND, "user not found"),
     }
 }
@@ -149,7 +149,7 @@ async fn update_me(State(state): State<HandlerState>, headers: HeaderMap, body: 
     )
     .await
     {
-        Ok(Some(user)) => Json(UserResponse::from(&user)).into_response(),
+        Ok(Some(user)) => Json(UserResponse::from_user(&state, &user)).into_response(),
         Ok(None) | Err(_) => {
             error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update user")
         }
@@ -165,10 +165,58 @@ fn authenticated_user_id(headers: &HeaderMap) -> Option<Uuid> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::sync::Arc;
 
-    #[test]
-    fn user_response_matches_go_nullable_and_timestamp_contract() {
+    use async_trait::async_trait;
+
+    use super::*;
+    use crate::attachment_storage::{AttachmentStorage, StoredObject};
+
+    struct PrivateStorage;
+
+    #[async_trait]
+    impl AttachmentStorage for PrivateStorage {
+        async fn upload(
+            &self,
+            _key: &str,
+            _body: Vec<u8>,
+            _content_type: &str,
+            _filename: &str,
+        ) -> anyhow::Result<String> {
+            unreachable!()
+        }
+
+        async fn get(&self, _key: &str, _range: Option<&str>) -> anyhow::Result<StoredObject> {
+            unreachable!()
+        }
+
+        async fn delete(&self, _key: &str) -> anyhow::Result<()> {
+            unreachable!()
+        }
+
+        fn key_from_url(&self, raw: &str) -> Option<String> {
+            raw.strip_prefix("https://objects.example/")
+                .map(str::to_string)
+        }
+
+        fn object_url(&self, key: &str) -> String {
+            format!("https://objects.example/{key}")
+        }
+    }
+
+    fn state() -> HandlerState {
+        let mut download = crate::state::AttachmentDownloadSettings::default();
+        download.public_url = "https://api.example".into();
+        HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        )
+        .with_attachment_storage(Arc::new(PrivateStorage), download)
+    }
+
+    #[tokio::test]
+    async fn user_response_matches_go_nullable_and_timestamp_contract() {
         let user = User {
             avatar_url: None,
             cloud_waitlist_email: None,
@@ -185,12 +233,37 @@ mod tests {
             timezone: None,
             updated_at: "2026-08-23T12:35:00.999Z".parse().unwrap(),
         };
-        let value = serde_json::to_value(UserResponse::from(&user)).unwrap();
+        let value = serde_json::to_value(UserResponse::from_user(&state(), &user)).unwrap();
         assert_eq!(value["avatar_url"], serde_json::Value::Null);
         assert_eq!(value["onboarded_at"], serde_json::Value::Null);
         assert_eq!(value["onboarding_questionnaire"], serde_json::json!({}));
         assert_eq!(value["created_at"], "2026-08-23T12:34:56Z");
         assert_eq!(value["updated_at"], "2026-08-23T12:35:00Z");
+    }
+
+    #[tokio::test]
+    async fn user_response_hides_private_avatar_object_url() {
+        let user = User {
+            avatar_url: Some("https://objects.example/users/u/avatar.png".into()),
+            cloud_waitlist_email: None,
+            cloud_waitlist_reason: None,
+            created_at: "2026-08-23T12:34:56Z".parse().unwrap(),
+            email: "alex@example.com".into(),
+            id: Uuid::nil(),
+            language: None,
+            name: "Alex".into(),
+            onboarded_at: None,
+            onboarding_questionnaire: serde_json::json!({}),
+            profile_description: String::new(),
+            starter_content_state: None,
+            timezone: None,
+            updated_at: "2026-08-23T12:35:00Z".parse().unwrap(),
+        };
+
+        let response = UserResponse::from_user(&state(), &user);
+        let avatar_url = response.avatar_url.unwrap();
+        assert!(avatar_url.starts_with("https://api.example/api/avatars/"));
+        assert!(!avatar_url.contains("objects.example"));
     }
 
     #[test]
