@@ -894,6 +894,15 @@
       `lib.rs`. Scoped rustfmt and diff-check pass; no Cargo was run. The
       serial subagent reviewed exact head `e39dcbaa` and found no issue; pro
       owns push/Ready PR, gate, and merge.
+- [ ] CLI runtime-delete policy structural refactor is committed at
+      `0e5533b33f837cb14e5e0eb7fcd720519946614b` (parent
+      `e39dcbaab46abdeb7c421af63106746b0179c4f8`, tree
+      `6724e3a81985100b1d1dce9cce4a36d699dbfbca`): active-agent 409 conflict
+      decoding, cascade display data, and delete result presentation now live
+      in `cordy-cli/src/runtime_delete.rs`; delete request and cascade API
+      policy remain unchanged. Scoped rustfmt and diff-check pass; no Cargo
+      was run. The serial subagent reviewed exact head `0e5533b3` and found no
+      issue; pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
