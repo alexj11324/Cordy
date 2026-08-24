@@ -679,6 +679,12 @@
       rejects daemon/task-managed contexts before host lifecycle control, with
       a regression test. Scoped rustfmt and diff-check pass; pushed on the
       cumulative branch; Cargo/review/PR/merge remain with pro.
+- [x] Closed the remaining root-form setup flag gap in
+      `3bc22991b0a233d8fa523d29854513d971f22eba` (parent `b44b1dbc`, tree
+      `adb20fc2bbf6386b8440281e87e8065b5185df97`). Plain `cordy setup
+      --callback-host` now matches Go and is propagated to browser login, with
+      parser/precedence tests. Scoped rustfmt and diff-check pass; pushed on
+      the cumulative branch; Cargo/review/PR/merge remain with pro.
 - [x] Completed setup callback-host parity in
       `b44b1dbcc0fd34b2caebd093abc9d1d31f3432b0` (parent `d4e935b7`, tree
       `868114c31af566633937bc79dc7fb7bbca503486`). `setup cloud` and
