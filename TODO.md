@@ -940,6 +940,19 @@
       was run. The serial subagent reviewed exact head `5f5ab933` and found no
       issue; pro owns push/Ready PR, gate, and merge.
 
+- [ ] CLI repository command structural refactor is committed at
+      `b4e6752d7171aea7bc6f784931707fd151246032` (parent
+      `5f5ab9337e0ce5da1c53d4b3b1d7c91d1de00dec`, tree
+      `6f9799933541406e486fe0da55bc258c28c5e4ca`), with the serial subagent's
+      compile-visibility fix at `0471d51056cf94c29a5ee0909d55d608ef2174a9`
+      (tree `cd7176d020ce6d0d5e111f1c5bccdae398b1018f`). Repository list/add/
+      remove/checkout policy, registry DTOs, URL normalization, and daemon
+      checkout retry handling now live in `cordy-cli/src/repo_commands.rs`;
+      dispatch and parent tests retain their existing contract. Scoped rustfmt
+      and diff-check pass; Cargo was not run. The serial subagent found and
+      fixed the moved retry-helper visibility issue; pro owns push/Ready PR,
+      gate, and merge.
+
 ## Phase 4 — S8 route and API parity
 
 - [ ] Audit #66→#87 bottom-up against the live integration tree.
