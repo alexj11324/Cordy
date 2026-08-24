@@ -100,6 +100,13 @@ struct IssueArgs {
 enum IssueCommand {
     #[command(about = "List issues in the workspace")]
     List(IssueListArgs),
+    #[command(about = "Get issue details")]
+    Get {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -403,6 +410,9 @@ async fn run_with_input<R: Read>(
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command: IssueCommand::Get { id, output },
+        }) => run_issue_get(cli, environment, id, *output).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -1399,7 +1409,7 @@ async fn load_issue_actor_names(
         .iter()
         .filter_map(|issue| issue.get("assignee_type").and_then(Value::as_str))
         .collect::<Vec<_>>();
-    if needed.is_empty() {
+    if needed.is_empty() || workspace_id.is_empty() {
         return IssueActorNames::default();
     }
     let mut names = HashMap::new();
@@ -1489,6 +1499,110 @@ fn format_issue_list_table(issues: &[Value], full_id: bool, actors: &IssueActorN
         rows.push(row);
     }
     format_table(&rows)
+}
+
+async fn run_issue_get(
+    cli: &Cli,
+    environment: &Environment,
+    input: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, input)
+        .await
+        .context("resolve issue")?;
+    let issue: Value = client
+        .get_json(&format!("/api/issues/{issue_id}"))
+        .await
+        .context("get issue")?;
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&issue)?),
+        OutputFormat::Table => {
+            let workspace_id = resolve_current_workspace_id(cli, environment);
+            let actors =
+                load_issue_actor_names(&client, &workspace_id, std::slice::from_ref(&issue)).await;
+            format_issue_get_table(&issue, &actors)
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+async fn resolve_issue_ref(client: &ApiClient, input: &str) -> Result<String> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() {
+        bail!("issue id is required");
+    }
+    if looks_like_issue_identifier(trimmed) || is_canonical_uuid(trimmed) {
+        let issue: Value = client.get_json(&format!("/api/issues/{trimmed}")).await?;
+        return Ok(value_string(&issue, "id"));
+    }
+    if normalize_uuid_prefix(trimmed).is_some() {
+        bail!(
+            "issue ref {input:?} looks like a short UUID prefix; short prefixes are no longer supported for issues. Use the issue key (e.g. MUL-123) shown by `cordy issue list`, or pass the full UUID (run a list command with --full-id to copy it)"
+        );
+    }
+    bail!(
+        "issue ref {input:?} is not a recognized issue reference; use the issue key (e.g. MUL-123) shown by `cordy issue list`, or pass the full UUID"
+    )
+}
+
+fn looks_like_issue_identifier(input: &str) -> bool {
+    let Some((prefix, number)) = input.rsplit_once('-') else {
+        return false;
+    };
+    !prefix.is_empty()
+        && prefix.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        && number.trim().parse::<i64>().is_ok_and(|number| number > 0)
+}
+
+fn format_issue_get_table(issue: &Value, actors: &IssueActorNames) -> String {
+    let id = value_string(issue, "id");
+    let key = match value_string(issue, "identifier") {
+        value if value.is_empty() => id,
+        value => value,
+    };
+    let actor_type = value_string(issue, "assignee_type");
+    let actor_id = value_string(issue, "assignee_id");
+    let assignee = if actor_type.is_empty() || actor_id.is_empty() {
+        String::new()
+    } else {
+        let actor_key = format!("{actor_type}:{actor_id}");
+        actors
+            .0
+            .get(&actor_key)
+            .map_or_else(|| actor_key.clone(), |name| format!("{actor_type}:{name}"))
+    };
+    let date = |field| {
+        value_string(issue, field)
+            .chars()
+            .take(10)
+            .collect::<String>()
+    };
+    format_table(&[
+        vec![
+            "KEY".into(),
+            "TITLE".into(),
+            "STATUS".into(),
+            "PRIORITY".into(),
+            "ASSIGNEE".into(),
+            "START DATE".into(),
+            "DUE DATE".into(),
+            "DESCRIPTION".into(),
+        ],
+        vec![
+            key,
+            value_string(issue, "title"),
+            value_string(issue, "status"),
+            value_string(issue, "priority"),
+            assignee,
+            date("start_date"),
+            date("due_date"),
+            value_string(issue, "description"),
+        ],
+    ])
 }
 
 async fn run_user_profile_get(
@@ -2798,6 +2912,143 @@ mod tests {
                 .expect_err("validation error");
             assert!(error.to_string().contains(expected), "{error:#}");
         }
+    }
+
+    #[test]
+    fn issue_get_parser_defaults_to_json_and_accepts_only_one_reference() {
+        let cli = Cli::try_parse_from(["cordy", "issue", "get", "CORD-18"]).expect("issue get CLI");
+        match cli.command {
+            Command::Issue(IssueArgs {
+                command: IssueCommand::Get { id, output },
+            }) => {
+                assert_eq!(id, "CORD-18");
+                assert_eq!(output, OutputFormat::Json);
+            }
+            _ => panic!("expected issue get"),
+        }
+        assert!(Cli::try_parse_from(["cordy", "issue", "get"]).is_err());
+        assert!(Cli::try_parse_from(["cordy", "issue", "get", "A-1", "B-2"]).is_err());
+        assert!(
+            Cli::try_parse_from(["cordy", "issue", "get", "CORD-18", "--output", "table"]).is_ok()
+        );
+    }
+
+    #[tokio::test]
+    async fn issue_ref_rejects_short_uuid_and_invalid_inputs_without_http() {
+        let client = ApiClient::new(
+            "http://127.0.0.1:1".into(),
+            "workspace-1".into(),
+            "token".into(),
+            String::new(),
+            String::new(),
+            std::time::Duration::from_millis(50),
+            CLIENT_VERSION,
+        )
+        .expect("client");
+        for input in ["1881", "1881-a167", "1852"] {
+            let error = resolve_issue_ref(&client, input)
+                .await
+                .expect_err("short prefix");
+            assert!(error.to_string().contains("short UUID prefix"));
+            assert!(error.to_string().contains("MUL-123"));
+        }
+        let error = resolve_issue_ref(&client, "not-an-id")
+            .await
+            .expect_err("invalid ref");
+        assert!(error
+            .to_string()
+            .contains("not a recognized issue reference"));
+        assert!(!error.to_string().contains("short UUID prefix"));
+    }
+
+    #[tokio::test]
+    async fn issue_get_resolves_key_then_fetches_canonical_issue() {
+        let hits = Arc::new(Mutex::new(Vec::<String>::new()));
+        let first_hits = Arc::clone(&hits);
+        let second_hits = Arc::clone(&hits);
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(move || {
+                    let hits = Arc::clone(&first_hits);
+                    async move {
+                        hits.lock().expect("hits").push("CORD-18".into());
+                        Json(serde_json::json!({
+                            "id": "11111111-1111-1111-1111-111111111111",
+                            "identifier": "CORD-18",
+                            "title": "Resolver response"
+                        }))
+                    }
+                }),
+            )
+            .route(
+                "/api/issues/11111111-1111-1111-1111-111111111111",
+                get(move |request: Request| {
+                    let hits = Arc::clone(&second_hits);
+                    async move {
+                        assert_eq!(request.headers()["authorization"], "Bearer token-1");
+                        assert_eq!(request.headers()["x-workspace-id"], "workspace-1");
+                        hits.lock().expect("hits").push("canonical".into());
+                        Json(serde_json::json!({
+                            "id": "11111111-1111-1111-1111-111111111111",
+                            "identifier": "CORD-18",
+                            "title": "Canonical issue",
+                            "description": "Full details"
+                        }))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from(["cordy", "issue", "get", "CORD-18"]).expect("issue get CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("issue get");
+        let issue: Value = serde_json::from_str(&output.stdout).expect("issue JSON");
+        assert_eq!(issue["title"], "Canonical issue");
+        assert_eq!(issue["description"], "Full details");
+        assert_eq!(
+            *hits.lock().expect("hits"),
+            vec![String::from("CORD-18"), String::from("canonical")]
+        );
+        task.abort();
+    }
+
+    #[test]
+    fn issue_get_table_matches_go_detail_columns() {
+        let issue = serde_json::json!({
+            "id": "11111111-1111-1111-1111-111111111111",
+            "identifier": "CORD-18",
+            "title": "Migrate get",
+            "status": "in_progress",
+            "priority": "high",
+            "assignee_type": "member",
+            "assignee_id": "22222222-2222-2222-2222-222222222222",
+            "start_date": "2026-08-24T10:00:00Z",
+            "due_date": "2026-08-31T10:00:00Z",
+            "description": "Preserve the complete description"
+        });
+        let actors = IssueActorNames(HashMap::from([(
+            "member:22222222-2222-2222-2222-222222222222".into(),
+            "Ada".into(),
+        )]));
+        let table = format_issue_get_table(&issue, &actors);
+        assert!(table.starts_with("KEY"));
+        assert!(table.contains("DESCRIPTION"));
+        assert!(table.contains("CORD-18"));
+        assert!(table.contains("member:Ada"));
+        assert!(table.contains("2026-08-24"));
+        assert!(table.contains("2026-08-31"));
+        assert!(table.contains("Preserve the complete description"));
     }
 
     #[test]
