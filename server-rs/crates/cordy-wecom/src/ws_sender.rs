@@ -30,6 +30,7 @@ use crate::ws_frame::{
     CMD_PING, CMD_SEND_MSG, CMD_SUBSCRIBE,
 };
 use cordy_channel::message::ChatType;
+use cordy_channel::LeaseGeneration;
 
 /// Caps the wait for a verdict. WeCom answers in a few hundred milliseconds;
 /// past this we assume the ack was lost rather than the frame refused, which
@@ -322,6 +323,7 @@ struct ReplyResult {
 /// call and dropped when the connection ends.
 pub struct WsSender {
     conn: Arc<dyn WsConn>,
+    generation: Arc<LeaseGeneration>,
     write_mu: tokio::sync::Mutex<()>,
 
     /// Callers waiting on a server verdict, keyed by the req_id they wrote.
@@ -339,8 +341,13 @@ pub struct WsSender {
 
 impl WsSender {
     pub fn new(conn: Arc<dyn WsConn>) -> Self {
+        Self::with_generation(conn, LeaseGeneration::standalone())
+    }
+
+    pub fn with_generation(conn: Arc<dyn WsConn>, generation: Arc<LeaseGeneration>) -> Self {
         Self {
             conn,
+            generation,
             write_mu: tokio::sync::Mutex::new(()),
             replies: Mutex::new(HashMap::new()),
             seq: AtomicU64::new(0),
@@ -432,6 +439,9 @@ impl WsSender {
                     .ok_or_else(|| anyhow::anyhow!("wecom: reply channel closed"))
             };
             tokio::select! {
+                biased;
+                _ = self.generation.cancelled() => Err(anyhow::Error::new(cordy_channel::GenerationExpired)
+                    .context(format!("wecom: lease generation ended waiting for {cmd} verdict"))),
                 res = wait => match res? {
                     r if r.code != 0 => Err(anyhow::Error::new(WecomApiError {
                         cmd: cmd.to_string(),
@@ -460,9 +470,11 @@ impl WsSender {
     /// become ordered — a record taken inside matches the wire by
     /// construction.
     pub async fn write(&self, frame: Value) -> anyhow::Result<()> {
+        self.generation.ensure_active()?;
         let t: Option<OutTrace> = trace_out_fields(&frame);
 
         let _guard = self.write_mu.lock().await;
+        self.generation.ensure_active()?;
         let seq = self.seq.fetch_add(1, Ordering::SeqCst) + 1;
         if let Some(t) = &t {
             trace_out_attempt(seq, t);

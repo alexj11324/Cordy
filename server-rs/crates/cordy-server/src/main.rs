@@ -9,6 +9,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+mod channel_runtime;
+
 const PENDING_STORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 
 struct VcsWebhookConfig {
@@ -19,6 +21,7 @@ struct VcsWebhookConfig {
 struct ProductionApp {
     router: Router,
     runtime_sweeper: cordy_handler::runtime_sweeper::RuntimeSweeperHandle,
+    channel_runtime: Option<channel_runtime::ChannelRuntime>,
 }
 
 impl VcsWebhookConfig {
@@ -194,6 +197,10 @@ async fn build_production_router(
     hub: Arc<cordy_realtime::hub::Hub>,
     business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
+    channel_lease_metrics: Option<Arc<cordy_metrics::ChannelLeaseMetrics>>,
+    channel_media_metrics: Option<Arc<cordy_metrics::ChannelMediaReconcilerMetrics>>,
+    wecom_metrics: Option<Arc<cordy_metrics::WecomMetrics>>,
+    lark_backfill_metrics: Option<Arc<cordy_metrics::LarkBackfillMetrics>>,
     github_client: Option<cordy_ghsnapshot::Client>,
     cfg: &cordy_config::Config,
     attachment_storage: Arc<dyn cordy_handler::attachment_storage::AttachmentStorage>,
@@ -232,6 +239,7 @@ async fn build_production_router(
     .with_slack_history_from_env()
     .with_llm_from_env()?
     .with_feature_flags(feature_flags)
+    .with_integrations(cfg.integrations.clone())
     .with_public_config(cordy_handler::config::PublicConfigSettings {
         cdn_domain: cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
         cdn_signed,
@@ -261,6 +269,15 @@ async fn build_production_router(
         .await
         .start_autopilot_quota_reconciler()
         .start_webhook_delivery_worker();
+    let channel_runtime = channel_runtime::ChannelRuntime::start(
+        &state,
+        cfg,
+        channel_lease_metrics,
+        channel_media_metrics,
+        wecom_metrics,
+        lark_backfill_metrics,
+    )
+    .await?;
     let configured_reconnect_grace = duration_env(
         "CORDY_RUNTIME_RECONNECT_GRACE",
         cordy_handler::runtime_sweeper::DEFAULT_RECONNECT_GRACE,
@@ -282,6 +299,7 @@ async fn build_production_router(
     Ok(ProductionApp {
         router: cordy_handler::build_router_from_state(state),
         runtime_sweeper,
+        channel_runtime,
     })
 }
 
@@ -312,7 +330,14 @@ async fn main() -> anyhow::Result<()> {
     let db = cordy_db::connect(&cfg.database).await?;
     let hub = Arc::new(cordy_realtime::hub::Hub::new());
     let metrics_config = cordy_metrics::Config::from_env();
-    let (business_metrics, http_metrics) = if metrics_config.enabled() {
+    let (
+        business_metrics,
+        http_metrics,
+        channel_lease_metrics,
+        channel_media_metrics,
+        wecom_metrics,
+        lark_backfill_metrics,
+    ) = if metrics_config.enabled() {
         let registry = cordy_metrics::Registry::new(cordy_metrics::registry::RegistryOptions {
             pool: Some(Arc::new(db.clone())),
             realtime: Some(&cordy_realtime::M),
@@ -324,6 +349,10 @@ async fn main() -> anyhow::Result<()> {
         });
         let business = registry.business.clone();
         let http = registry.http.clone();
+        let channel_lease = registry.channel_lease.clone();
+        let channel_media = registry.channel_media.clone();
+        let wecom = registry.wecom.clone();
+        let lark_backfill = registry.lark_backfill.clone();
         let gatherer = Arc::new(registry.gatherer.clone());
         let metrics_addr = metrics_config.addr.clone();
         let effective_metrics_addr = cordy_metrics::server::normalized_bind_addr(&metrics_addr);
@@ -335,9 +364,16 @@ async fn main() -> anyhow::Result<()> {
                 tracing::error!(%error, "metrics server stopped");
             }
         });
-        (Some(business), Some(http))
+        (
+            Some(business),
+            Some(http),
+            Some(channel_lease),
+            Some(channel_media),
+            Some(wecom),
+            Some(lark_backfill),
+        )
     } else {
-        (None, None)
+        (None, None, None, None, None, None)
     };
     let github_client = cordy_ghsnapshot::Client::new_from_env()?;
     let attachment_storage = cordy_handler::attachment_storage::from_env(
@@ -365,6 +401,10 @@ async fn main() -> anyhow::Result<()> {
         hub,
         business_metrics,
         http_metrics,
+        channel_lease_metrics,
+        channel_media_metrics,
+        wecom_metrics,
+        lark_backfill_metrics,
         github_client,
         &cfg,
         attachment_storage,
@@ -379,21 +419,48 @@ async fn main() -> anyhow::Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, "listening");
-    let sweeper_cancel = app.runtime_sweeper.cancellation();
+    let ProductionApp {
+        router,
+        runtime_sweeper,
+        channel_runtime,
+    } = app;
+    let sweeper_cancel = runtime_sweeper.cancellation();
     axum::serve(
         listener,
-        app.router
-            .into_make_service_with_connect_info::<SocketAddr>(),
+        router.into_make_service_with_connect_info::<SocketAddr>(),
     )
     .with_graceful_shutdown(async move {
-        match tokio::signal::ctrl_c().await {
-            Ok(()) => sweeper_cancel.cancel(),
-            Err(error) => tracing::error!(%error, "failed to install shutdown signal"),
-        }
+        shutdown_signal().await;
+        sweeper_cancel.cancel();
     })
     .await?;
-    app.runtime_sweeper.shutdown(Duration::from_secs(5)).await;
+    if let Some(channel_runtime) = channel_runtime {
+        channel_runtime.shutdown().await;
+    }
+    runtime_sweeper.shutdown(Duration::from_secs(5)).await;
     Ok(())
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("install SIGTERM handler");
+        tokio::select! {
+            result = tokio::signal::ctrl_c() => {
+                if let Err(error) = result {
+                    tracing::error!(%error, "failed to listen for shutdown signal");
+                }
+            }
+            _ = terminate.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    if let Err(error) = tokio::signal::ctrl_c().await {
+        tracing::error!(%error, "failed to listen for shutdown signal");
+    }
+    tracing::info!("shutdown signal received; draining HTTP server");
 }
 
 #[cfg(test)]
@@ -439,9 +506,13 @@ mod tests {
             .unwrap_or_else(|_| unreachable!("static test URL is valid"));
         let mut cfg = cordy_config::Config::default();
         cfg.redis.url = Some("redis://127.0.0.1:1/".into());
-        let router = build_production_router(
+        let app = build_production_router(
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -454,7 +525,7 @@ mod tests {
         .unwrap();
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(1),
-            router.router.oneshot(
+            app.router.oneshot(
                 Request::post("/api/contact-sales")
                     .header("content-type", "application/json")
                     .body(Body::from("{}"))
@@ -483,9 +554,13 @@ mod tests {
         let redis_url = format!("redis://{address}/");
         let mut cfg = cordy_config::Config::default();
         cfg.redis.url = Some(redis_url);
-        let router = build_production_router(
+        let app = build_production_router(
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -498,7 +573,7 @@ mod tests {
         .unwrap();
         let response = tokio::time::timeout(
             std::time::Duration::from_secs(1),
-            router.router.oneshot(
+            app.router.oneshot(
                 Request::post("/api/contact-sales")
                     .header("content-type", "application/json")
                     .body(Body::from("{}"))
@@ -564,9 +639,13 @@ mod tests {
         let mut cfg = cordy_config::Config::default();
         cfg.redis.url = Some("not a redis URL".into());
         cfg.urls.rate_limit_trusted_proxies = Some("10.0.0.0/8".into());
-        let _router = build_production_router(
+        let _app = build_production_router(
             pool,
             Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
+            None,
+            None,
+            None,
             None,
             None,
             None,

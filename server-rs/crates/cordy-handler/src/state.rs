@@ -225,6 +225,11 @@ pub struct HandlerState {
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
     pub bus: Arc<cordy_events::Bus>,
+    /// Owned background work started by channel HTTP/event surfaces. The
+    /// production ChannelRuntime closes admission and joins/aborts this group
+    /// during shutdown.
+    pub channel_tasks: Arc<cordy_channel::RuntimeTasks>,
+    pub channel_cancel: tokio_util::sync::CancellationToken,
     /// Prometheus business counters. None when METRICS_ADDR is disabled.
     pub business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     /// HTTP request metrics. None when METRICS_ADDR is disabled.
@@ -238,6 +243,10 @@ pub struct HandlerState {
     pub invitation_admission: crate::invitation::InvitationAdmission,
     /// Anonymous frontend capability/configuration response.
     pub public_config: crate::config::PublicConfigSettings,
+    /// Immutable integration endpoint configuration loaded once at boot.
+    /// Channel install flows use this same snapshot as the runtime connectors
+    /// instead of re-reading process environment mid-session.
+    pub integrations: cordy_config::IntegrationsConfig,
     /// GitHub GraphQL snapshot refresh pipeline. Disabled in lightweight tests.
     pub github_snapshots: Arc<cordy_ghsnapshot::Manager>,
     /// Feature flag source. `None` fails closed for rollout-gated writes.
@@ -339,6 +348,8 @@ impl HandlerState {
             cloud_pat_verifier: None,
             hub,
             bus,
+            channel_tasks: Arc::new(cordy_channel::RuntimeTasks::new()),
+            channel_cancel: tokio_util::sync::CancellationToken::new(),
             business_metrics: None,
             http_metrics: None,
             auth_settings: crate::auth::AuthSettings::from_env(),
@@ -348,6 +359,7 @@ impl HandlerState {
             auth_verify_rate_limit,
             invitation_admission: crate::invitation::InvitationAdmission::default(),
             public_config: crate::config::PublicConfigSettings::default(),
+            integrations: cordy_config::IntegrationsConfig::default(),
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
             feature_flags: None,
             tasks,
@@ -453,6 +465,11 @@ impl HandlerState {
 
     pub fn with_public_config(mut self, settings: crate::config::PublicConfigSettings) -> Self {
         self.public_config = settings;
+        self
+    }
+
+    pub fn with_integrations(mut self, integrations: cordy_config::IntegrationsConfig) -> Self {
+        self.integrations = integrations;
         self
     }
 
