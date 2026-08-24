@@ -34,6 +34,24 @@ pub struct RateLimitError {
     pub retry_after: Duration,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullRequestMetadata {
+    pub title: String,
+    pub state: String,
+    pub html_url: String,
+    pub branch: String,
+    pub head_sha: String,
+    pub author_login: String,
+    pub author_avatar_url: String,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub merged_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub closed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub additions: i32,
+    pub deletions: i32,
+    pub changed_files: i32,
+}
+
 struct CachedToken {
     token: String,
     expiry: SystemTime,
@@ -241,6 +259,42 @@ impl Client {
         Ok(parsed.token)
     }
 
+    /// Fetches the mirrored PR metadata used by explicit issue attachment.
+    /// The caller intentionally treats failures as a metadata-less attach.
+    pub async fn pull_request_metadata(
+        &self,
+        installation_id: i64,
+        owner: &str,
+        repo: &str,
+        number: i32,
+    ) -> Result<PullRequestMetadata> {
+        let token = self.installation_token(installation_id).await?;
+        let endpoint = format!(
+            "{}/repos/{owner}/{repo}/pulls/{number}",
+            self.api_base.trim_end_matches('/')
+        );
+        let response = self
+            .http
+            .get(endpoint)
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", format!("Bearer {token}"))
+            .send()
+            .await
+            .map_err(|error| anyhow!("fetch pull request: {error}"))?;
+        if response.status() != reqwest::StatusCode::OK {
+            return Err(anyhow!(
+                "fetch pull request: github status {}",
+                response.status().as_u16()
+            ));
+        }
+        let body: PullRequestBody = response
+            .json()
+            .await
+            .map_err(|_| anyhow!("decode pull request: malformed response"))?;
+        metadata_from_body(body)
+    }
+
     /// Runs a single GraphQL query as the given installation and returns
     /// the raw `data` object. GitHub returns HTTP 200 even for query-level
     /// errors, so we inspect the `errors` array too, mapping a RATE_LIMITED
@@ -297,6 +351,96 @@ impl Client {
         };
         Ok(data)
     }
+}
+
+fn metadata_from_body(body: PullRequestBody) -> Result<PullRequestMetadata> {
+    let created_at = parse_time(&body.created_at, "created_at")?;
+    let updated_at = parse_time(&body.updated_at, "updated_at")?;
+    let state = if body.merged {
+        "merged"
+    } else if body.draft {
+        "draft"
+    } else if body.state.eq_ignore_ascii_case("closed") {
+        "closed"
+    } else {
+        "open"
+    };
+    Ok(PullRequestMetadata {
+        title: body.title,
+        state: state.into(),
+        html_url: body.html_url,
+        branch: body.head.ref_name,
+        head_sha: body.head.sha,
+        author_login: body.user.login,
+        author_avatar_url: body.user.avatar_url,
+        created_at,
+        updated_at,
+        merged_at: parse_optional_time(&body.merged_at),
+        closed_at: parse_optional_time(&body.closed_at),
+        additions: body.additions,
+        deletions: body.deletions,
+        changed_files: body.changed_files,
+    })
+}
+
+fn parse_time(raw: &str, name: &str) -> Result<chrono::DateTime<chrono::Utc>> {
+    chrono::DateTime::parse_from_rfc3339(raw)
+        .map(|value| value.with_timezone(&chrono::Utc))
+        .map_err(|_| anyhow!("decode pull request: invalid {name}"))
+}
+
+fn parse_optional_time(raw: &Option<String>) -> Option<chrono::DateTime<chrono::Utc>> {
+    raw.as_deref()
+        .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+        .map(|value| value.with_timezone(&chrono::Utc))
+}
+
+#[derive(Debug, Deserialize)]
+struct PullRequestBody {
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    state: String,
+    #[serde(default)]
+    draft: bool,
+    #[serde(default)]
+    merged: bool,
+    #[serde(default)]
+    html_url: String,
+    #[serde(default)]
+    created_at: String,
+    #[serde(default)]
+    updated_at: String,
+    #[serde(default)]
+    merged_at: Option<String>,
+    #[serde(default)]
+    closed_at: Option<String>,
+    #[serde(default)]
+    head: PullRequestHead,
+    #[serde(default)]
+    user: PullRequestUser,
+    #[serde(default)]
+    additions: i32,
+    #[serde(default)]
+    deletions: i32,
+    #[serde(default)]
+    changed_files: i32,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct PullRequestHead {
+    #[serde(default, rename = "ref")]
+    ref_name: String,
+    #[serde(default)]
+    sha: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct PullRequestUser {
+    #[serde(default)]
+    login: String,
+    #[serde(default)]
+    avatar_url: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -441,6 +585,37 @@ mod jwt_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pull_request_metadata_uses_github_state_priority_and_timestamps() {
+        let body: PullRequestBody = serde_json::from_value(serde_json::json!({
+            "title": "Port attach route",
+            "state": "closed",
+            "draft": true,
+            "merged": true,
+            "html_url": "https://github.com/o/r/pull/24",
+            "created_at": "2026-08-22T10:20:30Z",
+            "updated_at": "2026-08-23T11:21:31Z",
+            "merged_at": "2026-08-23T11:21:30Z",
+            "closed_at": "not-a-time",
+            "head": {"ref": "codex/attach", "sha": "abc123"},
+            "user": {"login": "alex", "avatar_url": "https://avatars.example/alex"},
+            "additions": 10,
+            "deletions": 2,
+            "changed_files": 3
+        }))
+        .unwrap();
+        let metadata = metadata_from_body(body).unwrap();
+        assert_eq!(metadata.state, "merged");
+        assert_eq!(metadata.branch, "codex/attach");
+        assert_eq!(metadata.head_sha, "abc123");
+        assert_eq!(
+            metadata.created_at.to_rfc3339(),
+            "2026-08-22T10:20:30+00:00"
+        );
+        assert!(metadata.merged_at.is_some());
+        assert!(metadata.closed_at.is_none());
+    }
 
     #[test]
     fn disabled_when_env_missing() {

@@ -1,7 +1,4 @@
 use async_trait::async_trait;
-use aws_config::default_provider::credentials::DefaultCredentialsChain;
-use aws_credential_types::provider::{ProvideCredentials, SharedCredentialsProvider};
-use aws_types::region::Region;
 use axum::body::Body;
 use hmac::{Hmac, Mac};
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -9,21 +6,11 @@ use sha2::{Digest, Sha256};
 use std::{
     path::{Component, Path, PathBuf},
     sync::Arc,
-    time::Duration,
 };
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-use tokio_util::io::ReaderStream;
+use tokio::io::AsyncWriteExt;
 use url::Url;
 
 type HmacSha256 = Hmac<Sha256>;
-
-#[derive(Debug, thiserror::Error)]
-pub enum StorageGetError {
-    #[error("attachment object was not found")]
-    NotFound,
-    #[error("requested range is not satisfiable")]
-    InvalidRange { total: Option<u64> },
-}
 
 #[async_trait]
 pub trait AttachmentStorage: Send + Sync {
@@ -36,22 +23,8 @@ pub trait AttachmentStorage: Send + Sync {
     ) -> anyhow::Result<String>;
     async fn get(&self, key: &str, range: Option<&str>) -> anyhow::Result<StoredObject>;
     async fn delete(&self, key: &str) -> anyhow::Result<()>;
-    async fn presign_get(
-        &self,
-        _key: &str,
-        _ttl: Duration,
-        _content_disposition: Option<&str>,
-    ) -> anyhow::Result<Option<String>> {
-        Ok(None)
-    }
     fn key_from_url(&self, raw: &str) -> Option<String>;
     fn object_url(&self, key: &str) -> String;
-    fn has_public_base_url(&self) -> bool {
-        false
-    }
-    fn supports_presign(&self) -> bool {
-        false
-    }
     fn is_local(&self) -> bool {
         false
     }
@@ -134,16 +107,8 @@ impl AttachmentStorage for LocalStorage {
         Ok(self.object_url(key))
     }
     async fn get(&self, key: &str, range: Option<&str>) -> anyhow::Result<StoredObject> {
-        let path = self.path(key)?;
-        let mut file = tokio::fs::File::open(&path).await.map_err(|error| {
-            if error.kind() == std::io::ErrorKind::NotFound {
-                anyhow::Error::new(StorageGetError::NotFound)
-            } else {
-                anyhow::Error::from(error)
-            }
-        })?;
-        let total = file.metadata().await?.len();
-        let meta = tokio::fs::read(format!("{}.meta.json", path.display()))
+        let data = tokio::fs::read(self.path(key)?).await?;
+        let meta = tokio::fs::read(format!("{}.meta.json", self.path(key)?.display()))
             .await
             .ok()
             .and_then(|v| serde_json::from_slice::<serde_json::Value>(&v).ok());
@@ -157,23 +122,22 @@ impl AttachmentStorage for LocalStorage {
             .and_then(|v| v.get("filename"))
             .and_then(|v| v.as_str())
             .map(str::to_string);
+        let total = data.len() as u64;
         if let Some(raw) = range.filter(|raw| !raw.contains(',') && total > 0) {
-            let (start, end) = parse_range(raw, total).ok_or_else(|| {
-                anyhow::Error::new(StorageGetError::InvalidRange { total: Some(total) })
-            })?;
-            file.seek(std::io::SeekFrom::Start(start)).await?;
-            let length = end - start + 1;
+            let (start, end) =
+                parse_range(raw, total).ok_or_else(|| anyhow::anyhow!("invalid range"))?;
+            let bytes = data[start as usize..=end as usize].to_vec();
             return Ok(StoredObject {
-                content_length: Some(length),
+                content_length: Some(bytes.len() as u64),
                 content_range: Some(format!("bytes {start}-{end}/{total}")),
                 status: reqwest::StatusCode::PARTIAL_CONTENT,
-                body: Body::from_stream(ReaderStream::new(file.take(length))),
+                body: Body::from(bytes),
                 content_type,
                 filename,
             });
         }
         Ok(StoredObject {
-            body: Body::from_stream(ReaderStream::new(file)),
+            body: Body::from(data),
             content_length: Some(total),
             content_range: None,
             status: reqwest::StatusCode::OK,
@@ -191,16 +155,12 @@ impl AttachmentStorage for LocalStorage {
         }
     }
     fn key_from_url(&self, raw: &str) -> Option<String> {
-        let path = Url::parse(raw)
-            .ok()
-            .map(|url| url.path().to_string())
-            .unwrap_or_else(|| raw.split(['?', '#']).next().unwrap_or(raw).to_string());
-        let marker = "/uploads/";
-        let index = path.find(marker)?;
-        let key = percent_encoding::percent_decode_str(&path[index + marker.len()..])
-            .decode_utf8()
-            .ok()?
-            .into_owned();
+        let path = if self.base_url.is_empty() {
+            raw
+        } else {
+            raw.strip_prefix(&self.base_url)?
+        };
+        let key = path.strip_prefix("/uploads/")?.to_string();
         self.path(&key).is_ok().then_some(key)
     }
     fn object_url(&self, key: &str) -> String {
@@ -208,9 +168,6 @@ impl AttachmentStorage for LocalStorage {
     }
     fn is_local(&self) -> bool {
         true
-    }
-    fn has_public_base_url(&self) -> bool {
-        !self.base_url.is_empty()
     }
 }
 
@@ -221,12 +178,14 @@ pub struct S3Storage {
     region: String,
     endpoint: Url,
     path_style: bool,
-    credentials: SharedCredentialsProvider,
+    access_key: String,
+    secret_key: String,
+    session_token: Option<String>,
     cdn_domain: Option<String>,
 }
 
 impl S3Storage {
-    pub async fn from_env(cloudfront_domain: Option<&str>) -> anyhow::Result<Option<Self>> {
+    pub fn from_env() -> anyhow::Result<Option<Self>> {
         let Some(bucket) = env("S3_BUCKET") else {
             return Ok(None);
         };
@@ -237,53 +196,42 @@ impl S3Storage {
                 .as_deref()
                 .unwrap_or(&format!("https://s3.{region}.amazonaws.com")),
         )?;
-        let configured_path_style = env("S3_USE_PATH_STYLE")
-            .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"));
-        let path_style = use_path_style(&bucket, custom.is_some(), configured_path_style);
-        let credentials = SharedCredentialsProvider::new(
-            DefaultCredentialsChain::builder()
-                .region(Region::new(region.clone()))
-                .build()
-                .await,
-        );
+        let path_style = env("S3_USE_PATH_STYLE")
+            .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+            .unwrap_or(custom.is_some());
+        let access_key = env("AWS_ACCESS_KEY_ID").ok_or_else(|| {
+            anyhow::anyhow!("AWS_ACCESS_KEY_ID is required when S3_BUCKET is set")
+        })?;
+        let secret_key = env("AWS_SECRET_ACCESS_KEY").ok_or_else(|| {
+            anyhow::anyhow!("AWS_SECRET_ACCESS_KEY is required when S3_BUCKET is set")
+        })?;
         Ok(Some(Self {
             client: reqwest::Client::new(),
             bucket,
             region,
             endpoint,
             path_style,
-            credentials,
-            // Keep object URLs and the CloudFront signer on the same loaded
-            // configuration source; config-file deployments must not split.
-            cdn_domain: cloudfront_domain
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string),
+            access_key,
+            secret_key,
+            session_token: env("AWS_SESSION_TOKEN"),
+            cdn_domain: env("CLOUDFRONT_DOMAIN"),
         }))
     }
     fn request_url(&self, key: &str) -> anyhow::Result<Url> {
         if key.is_empty() || key.split('/').any(|v| v == "." || v == "..") {
             anyhow::bail!("invalid storage key")
         }
+        let encoded = key.split('/').map(aws_encode).collect::<Vec<_>>().join("/");
         let mut url = self.endpoint.clone();
-        if !self.path_style {
+        if self.path_style {
+            url.set_path(&format!("/{}/{encoded}", aws_encode(&self.bucket)));
+        } else {
             let host = self
                 .endpoint
                 .host_str()
                 .ok_or_else(|| anyhow::anyhow!("S3 endpoint has no host"))?;
             url.set_host(Some(&format!("{}.{host}", self.bucket)))?;
-        }
-        {
-            let mut segments = url
-                .path_segments_mut()
-                .map_err(|_| anyhow::anyhow!("S3 endpoint cannot be a base URL"))?;
-            // Custom S3 gateways may be mounted below a path prefix. Retain
-            // those configured segments and append the bucket/key beneath it.
-            segments.pop_if_empty();
-            if self.path_style {
-                segments.push(&self.bucket);
-            }
-            segments.extend(key.split('/'));
+            url.set_path(&format!("/{encoded}"));
         }
         Ok(url)
     }
@@ -293,7 +241,6 @@ impl S3Storage {
         url: &Url,
         payload_hash: &str,
         now: chrono::DateTime<chrono::Utc>,
-        credentials: &aws_credential_types::Credentials,
     ) -> anyhow::Result<HeaderMap> {
         let date = now.format("%Y%m%d").to_string();
         let timestamp = now.format("%Y%m%dT%H%M%SZ").to_string();
@@ -306,7 +253,7 @@ impl S3Storage {
         let mut canonical_headers =
             format!("host:{host}\nx-amz-content-sha256:{payload_hash}\nx-amz-date:{timestamp}\n");
         let mut signed = "host;x-amz-content-sha256;x-amz-date".to_string();
-        if let Some(token) = credentials.session_token() {
+        if let Some(token) = &self.session_token {
             canonical_headers.push_str(&format!("x-amz-security-token:{}\n", token.trim()));
             signed.push_str(";x-amz-security-token");
         }
@@ -321,7 +268,7 @@ impl S3Storage {
             hex::encode(Sha256::digest(canonical.as_bytes()))
         );
         let k_date = hmac_bytes(
-            format!("AWS4{}", credentials.secret_access_key()).as_bytes(),
+            format!("AWS4{}", self.secret_key).as_bytes(),
             date.as_bytes(),
         )?;
         let k_region = hmac_bytes(&k_date, self.region.as_bytes())?;
@@ -331,13 +278,13 @@ impl S3Storage {
         let mut headers = HeaderMap::new();
         headers.insert("x-amz-content-sha256", HeaderValue::from_str(payload_hash)?);
         headers.insert("x-amz-date", HeaderValue::from_str(&timestamp)?);
-        if let Some(token) = credentials.session_token() {
+        if let Some(token) = &self.session_token {
             headers.insert("x-amz-security-token", HeaderValue::from_str(token)?);
         }
-        headers.insert(reqwest::header::AUTHORIZATION, HeaderValue::from_str(&format!("AWS4-HMAC-SHA256 Credential={}/{scope}, SignedHeaders={signed}, Signature={signature}", credentials.access_key_id()))?);
+        headers.insert(reqwest::header::AUTHORIZATION, HeaderValue::from_str(&format!("AWS4-HMAC-SHA256 Credential={}/{scope}, SignedHeaders={signed}, Signature={signature}", self.access_key))?);
         Ok(headers)
     }
-    async fn send(
+    async fn execute(
         &self,
         method: reqwest::Method,
         key: &str,
@@ -347,31 +294,15 @@ impl S3Storage {
         let url = self.request_url(key)?;
         let bytes = body.unwrap_or_default();
         let hash = hex::encode(Sha256::digest(&bytes));
-        let credentials = self.credentials.provide_credentials().await?;
-        let mut headers = self.signed_headers(
-            method.as_str(),
-            &url,
-            &hash,
-            chrono::Utc::now(),
-            &credentials,
-        )?;
+        let mut headers = self.signed_headers(method.as_str(), &url, &hash, chrono::Utc::now())?;
         headers.extend(extra);
-        self.client
+        let response = self
+            .client
             .request(method, url)
             .headers(headers)
             .body(bytes)
             .send()
-            .await
-            .map_err(Into::into)
-    }
-    async fn execute(
-        &self,
-        method: reqwest::Method,
-        key: &str,
-        body: Option<Vec<u8>>,
-        extra: HeaderMap,
-    ) -> anyhow::Result<reqwest::Response> {
-        let response = self.send(method, key, body, extra).await?;
+            .await?;
         if !response.status().is_success() {
             anyhow::bail!("object storage returned {}", response.status())
         }
@@ -406,22 +337,9 @@ impl AttachmentStorage for S3Storage {
         if let Some(range) = range {
             headers.insert(reqwest::header::RANGE, HeaderValue::from_str(range)?);
         }
-        let response = self.send(reqwest::Method::GET, key, None, headers).await?;
-        if response.status() == reqwest::StatusCode::NOT_FOUND {
-            return Err(StorageGetError::NotFound.into());
-        }
-        if response.status() == reqwest::StatusCode::RANGE_NOT_SATISFIABLE {
-            let total = response
-                .headers()
-                .get(reqwest::header::CONTENT_RANGE)
-                .and_then(|value| value.to_str().ok())
-                .and_then(|value| value.strip_prefix("bytes */"))
-                .and_then(|value| value.parse().ok());
-            return Err(StorageGetError::InvalidRange { total }.into());
-        }
-        if !response.status().is_success() {
-            anyhow::bail!("object storage returned {}", response.status())
-        }
+        let response = self
+            .execute(reqwest::Method::GET, key, None, headers)
+            .await?;
         let status = response.status();
         let content_length = response.content_length();
         let content_range = response
@@ -448,65 +366,9 @@ impl AttachmentStorage for S3Storage {
             .await
             .map(|_| ())
     }
-    async fn presign_get(
-        &self,
-        key: &str,
-        ttl: Duration,
-        content_disposition: Option<&str>,
-    ) -> anyhow::Result<Option<String>> {
-        let credentials = self.credentials.provide_credentials().await?;
-        let mut url = self.request_url(key)?;
-        let now = chrono::Utc::now();
-        let date = now.format("%Y%m%d").to_string();
-        let timestamp = now.format("%Y%m%dT%H%M%SZ").to_string();
-        let scope = format!("{date}/{}/s3/aws4_request", self.region);
-        let expires = ttl.as_secs().clamp(1, 604_800);
-        let hostname = url
-            .host_str()
-            .ok_or_else(|| anyhow::anyhow!("S3 endpoint has no host"))?;
-        let host = url
-            .port()
-            .map_or_else(|| hostname.to_string(), |port| format!("{hostname}:{port}"));
-        let mut query = vec![
-            ("X-Amz-Algorithm", "AWS4-HMAC-SHA256".to_string()),
-            (
-                "X-Amz-Credential",
-                format!("{}/{scope}", credentials.access_key_id()),
-            ),
-            ("X-Amz-Date", timestamp.clone()),
-            ("X-Amz-Expires", expires.to_string()),
-            ("X-Amz-SignedHeaders", "host".to_string()),
-        ];
-        if let Some(token) = credentials.session_token() {
-            query.push(("X-Amz-Security-Token", token.to_string()));
-        }
-        if let Some(value) = content_disposition.filter(|value| !value.is_empty()) {
-            query.push(("response-content-disposition", value.to_string()));
-        }
-        let canonical_query = canonical_query(query);
-        let canonical = format!(
-            "GET\n{}\n{canonical_query}\nhost:{host}\n\nhost\nUNSIGNED-PAYLOAD",
-            url.path()
-        );
-        let to_sign = format!(
-            "AWS4-HMAC-SHA256\n{timestamp}\n{scope}\n{}",
-            hex::encode(Sha256::digest(canonical.as_bytes()))
-        );
-        let signature = aws_signature(
-            credentials.secret_access_key(),
-            &date,
-            &self.region,
-            "s3",
-            &to_sign,
-        )?;
-        url.set_query(Some(&format!(
-            "{canonical_query}&X-Amz-Signature={signature}"
-        )));
-        Ok(Some(url.to_string()))
-    }
     fn key_from_url(&self, raw: &str) -> Option<String> {
         let url = Url::parse(raw).ok()?;
-        let mut segments = url
+        let decoded = url
             .path_segments()?
             .map(|part| {
                 percent_encoding::percent_decode_str(part)
@@ -514,36 +376,14 @@ impl AttachmentStorage for S3Storage {
                     .ok()
                     .map(|v| v.into_owned())
             })
-            .collect::<Option<Vec<_>>>()?;
-        let endpoint_host = self.endpoint.host_str()?;
-        let raw_host = url.host_str()?;
-        let endpoint_origin = raw_host.eq_ignore_ascii_case(endpoint_host);
-        let virtual_origin = raw_host
-            .strip_suffix(endpoint_host)
-            .is_some_and(|prefix| prefix.trim_end_matches('.') == self.bucket);
-        if endpoint_origin || virtual_origin {
-            let endpoint_segments = self
-                .endpoint
-                .path_segments()?
-                .filter(|part| !part.is_empty())
-                .map(|part| {
-                    percent_encoding::percent_decode_str(part)
-                        .decode_utf8()
-                        .ok()
-                        .map(|value| value.into_owned())
-                })
-                .collect::<Option<Vec<_>>>()?;
-            if segments.starts_with(&endpoint_segments) {
-                segments.drain(..endpoint_segments.len());
-            }
+            .collect::<Option<Vec<_>>>()?
+            .join("/");
+        let mut path = decoded.trim_start_matches('/');
+        if self.path_style && path.starts_with(&format!("{}/", self.bucket)) {
+            path = &path[self.bucket.len() + 1..];
         }
-        // A persisted path-style URL remains readable after switching the
-        // current client to virtual-hosted addressing.
-        if endpoint_origin && segments.first().is_some_and(|part| part == &self.bucket) {
-            segments.remove(0);
-        }
-        let path = segments.join("/");
-        (!path.is_empty() && !path.split('/').any(|p| p == "." || p == "..")).then_some(path)
+        (!path.is_empty() && !path.split('/').any(|p| p == "." || p == ".."))
+            .then(|| path.to_string())
     }
     fn object_url(&self, key: &str) -> String {
         if let Some(domain) = &self.cdn_domain {
@@ -554,20 +394,13 @@ impl AttachmentStorage for S3Storage {
                 .unwrap_or_default()
         }
     }
-    fn has_public_base_url(&self) -> bool {
-        self.cdn_domain.is_some()
-    }
-    fn supports_presign(&self) -> bool {
-        true
-    }
 }
 
-pub async fn from_env(
+pub fn from_env(
     local_dir: Option<&str>,
     local_base: Option<&str>,
-    cloudfront_domain: Option<&str>,
 ) -> anyhow::Result<Arc<dyn AttachmentStorage>> {
-    if let Some(s3) = S3Storage::from_env(cloudfront_domain).await? {
+    if let Some(s3) = S3Storage::from_env()? {
         return Ok(Arc::new(s3));
     }
     Ok(Arc::new(LocalStorage::new(
@@ -581,43 +414,11 @@ fn env(name: &str) -> Option<String> {
         .map(|v| v.trim().to_string())
         .filter(|v| !v.is_empty())
 }
-fn use_path_style(bucket: &str, custom_endpoint: bool, configured: Option<bool>) -> bool {
-    if !custom_endpoint && bucket.contains('.') {
-        true
-    } else {
-        configured.unwrap_or(custom_endpoint)
-    }
-}
 fn hmac_bytes(key: &[u8], body: &[u8]) -> anyhow::Result<Vec<u8>> {
     let mut mac =
         HmacSha256::new_from_slice(key).map_err(|_| anyhow::anyhow!("invalid HMAC key"))?;
     mac.update(body);
     Ok(mac.finalize().into_bytes().to_vec())
-}
-fn aws_signature(
-    secret: &str,
-    date: &str,
-    region: &str,
-    service: &str,
-    to_sign: &str,
-) -> anyhow::Result<String> {
-    let k_date = hmac_bytes(format!("AWS4{secret}").as_bytes(), date.as_bytes())?;
-    let k_region = hmac_bytes(&k_date, region.as_bytes())?;
-    let k_service = hmac_bytes(&k_region, service.as_bytes())?;
-    let k_signing = hmac_bytes(&k_service, b"aws4_request")?;
-    Ok(hex::encode(hmac_bytes(&k_signing, to_sign.as_bytes())?))
-}
-fn canonical_query(values: Vec<(&str, String)>) -> String {
-    let mut encoded = values
-        .into_iter()
-        .map(|(key, value)| (aws_encode(key), aws_encode(&value)))
-        .collect::<Vec<_>>();
-    encoded.sort();
-    encoded
-        .into_iter()
-        .map(|(key, value)| format!("{key}={value}"))
-        .collect::<Vec<_>>()
-        .join("&")
 }
 fn aws_encode(value: &str) -> String {
     value
@@ -736,13 +537,9 @@ mod tests {
             region: "us-west-2".into(),
             endpoint: Url::parse("https://s3.us-west-2.amazonaws.com").unwrap(),
             path_style: false,
-            credentials: SharedCredentialsProvider::new(aws_credential_types::Credentials::new(
-                "key",
-                "secret",
-                None,
-                None,
-                "attachment-test",
-            )),
+            access_key: "key".into(),
+            secret_key: "secret".into(),
+            session_token: None,
             cdn_domain: None,
         };
         let key = "workspaces/w/file.微信";
@@ -753,68 +550,6 @@ mod tests {
             .unwrap()
             .as_str()
             .contains("%25"));
-    }
-
-    #[test]
-    fn custom_endpoint_path_is_preserved_for_requests_and_key_recovery() {
-        let store = test_s3_store("https://gateway.example/s3/", true);
-        let key = "workspaces/w/file.txt";
-        let url = store.request_url(key).unwrap();
-        assert_eq!(
-            url.as_str(),
-            "https://gateway.example/s3/bucket/workspaces/w/file.txt"
-        );
-        assert_eq!(store.key_from_url(url.as_str()).as_deref(), Some(key));
-    }
-
-    #[test]
-    fn persisted_path_style_url_survives_virtual_hosted_switch() {
-        let store = test_s3_store("https://s3.us-west-2.amazonaws.com", false);
-        assert_eq!(
-            store
-                .key_from_url("https://s3.us-west-2.amazonaws.com/bucket/workspaces/w/file.txt")
-                .as_deref(),
-            Some("workspaces/w/file.txt")
-        );
-    }
-
-    #[test]
-    fn local_key_recovery_does_not_depend_on_current_public_origin() {
-        let dir = tempfile::tempdir().unwrap();
-        let store =
-            LocalStorage::new(dir.path().to_path_buf(), "https://new.example".to_string()).unwrap();
-        assert_eq!(
-            store
-                .key_from_url("https://old.example/uploads/workspaces/w/file.txt")
-                .as_deref(),
-            Some("workspaces/w/file.txt")
-        );
-    }
-
-    #[test]
-    fn dotted_aws_buckets_force_path_style_for_tls() {
-        assert!(use_path_style("my.bucket", false, None));
-        assert!(use_path_style("my.bucket", false, Some(false)));
-        assert!(!use_path_style("my-bucket", false, None));
-        assert!(!use_path_style("my.bucket", true, Some(false)));
-    }
-
-    fn test_s3_store(endpoint: &str, path_style: bool) -> S3Storage {
-        S3Storage {
-            client: reqwest::Client::new(),
-            bucket: "bucket".into(),
-            region: "us-west-2".into(),
-            endpoint: Url::parse(endpoint).unwrap(),
-            path_style,
-            credentials: SharedCredentialsProvider::new(aws_credential_types::Credentials::new(
-                "key",
-                "secret",
-                None,
-                None,
-                "attachment-test",
-            )),
-            cdn_domain: None,
-        }
     }
 
     #[test]

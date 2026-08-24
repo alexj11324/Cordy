@@ -109,7 +109,7 @@ pub async fn link_issue_to_vcs_pull_request(
     pull_request_id: Uuid,
     close_intent: bool,
     linked_by_type: Option<&str>,
-    linked_by_id: Uuid,
+    linked_by_id: Option<Uuid>,
     reference_only: bool,
     preserve_close_intent: bool,
 ) -> anyhow::Result<u64> {
