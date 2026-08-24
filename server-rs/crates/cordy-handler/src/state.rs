@@ -3,8 +3,10 @@
 
 use std::sync::Arc;
 
+use cordy_auth::daemon_token_cache::DaemonTokenCache;
 use cordy_auth::pat_cache::PatCache;
 use cordy_realtime::hub::Hub;
+use cordy_service::autopilot::{AutopilotService, EntitlementProvider};
 use cordy_service::email::EmailService;
 use cordy_service::issue_service::IssueService;
 use cordy_service::plugin::PluginService;
@@ -13,6 +15,37 @@ use cordy_service::task_service::TaskService;
 
 struct DaemonTaskWakeup {
     hub: Arc<cordy_daemon::hub::DaemonHub>,
+}
+
+struct ChatQuickActionsClient {
+    llm: Arc<cordy_llm::Client>,
+}
+
+#[async_trait::async_trait]
+impl cordy_service::chat_quick_actions::ChatQuickActionsLlm for ChatQuickActionsClient {
+    fn enabled(&self) -> bool {
+        self.llm.enabled()
+    }
+
+    async fn generate_json(
+        &self,
+        model: &str,
+        system_prompt: &str,
+        user_prompt: &str,
+        temperature: f64,
+        max_completion_tokens: i64,
+    ) -> anyhow::Result<String> {
+        Ok(self
+            .llm
+            .generate_json(
+                model,
+                system_prompt,
+                user_prompt,
+                temperature,
+                max_completion_tokens,
+            )
+            .await?)
+    }
 }
 
 struct DaemonMessageMetrics {
@@ -44,6 +77,7 @@ impl cordy_service::feature_flags::FlagSource for SharedFlagSource {
 pub struct HandlerState {
     pub pool: sqlx::PgPool,
     pub pat_cache: PatCache,
+    pub daemon_token_cache: DaemonTokenCache,
     /// Realtime WS hub (cordy-realtime). `None` only in tests.
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
@@ -58,6 +92,7 @@ pub struct HandlerState {
     pub analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
     pub auth_rate_limit: cordy_middleware::ratelimit::RateLimitState,
     pub auth_verify_rate_limit: cordy_middleware::ratelimit::RateLimitState,
+    pub invitation_admission: crate::invitation::InvitationAdmission,
     /// Anonymous frontend capability/configuration response.
     pub public_config: crate::config::PublicConfigSettings,
     /// GitHub GraphQL snapshot refresh pipeline. Disabled in lightweight tests.
@@ -68,6 +103,9 @@ pub struct HandlerState {
     pub composio_service: Option<Arc<cordy_composio::Service>>,
     /// Task domain service (Go h.TaskService).
     pub tasks: Arc<TaskService>,
+    /// Shared Autopilot service. It must be reused by HTTP paths and durable
+    /// workers so entitlement/quota configuration cannot disappear per request.
+    pub autopilots: Arc<AutopilotService>,
     /// Issue domain service (Go h.IssueService).
     pub issues: Arc<IssueService>,
     /// Plugin service (Go h.PluginService).
@@ -102,6 +140,15 @@ pub struct HandlerState {
     /// Attachment object store. None is the explicit unconfigured test path.
     pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
     pub attachment_frame_ancestors: Vec<String>,
+    /// On-demand Slack channel history reader. `None` means Slack history is
+    /// not configured; chat history then falls back to the persisted transcript.
+    pub slack_history: Option<Arc<cordy_slack::history::History>>,
+    /// Server-internal assist LLM. An unconfigured client is deliberately
+    /// inert and guarantees that private chat content produces no egress.
+    pub llm: Arc<cordy_llm::Client>,
+    /// Low-latency hint for the durable webhook worker. PostgreSQL polling is
+    /// authoritative and recovers missed notifications or process restarts.
+    webhook_delivery_notify: Option<Arc<tokio::sync::Notify>>,
     /// Keeps the weak notifier installed in `TaskService` alive.
     _task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier>,
 }
@@ -135,6 +182,11 @@ impl HandlerState {
                 as Arc<dyn cordy_service::task_service::ComposioOverlayBuilder>
         });
         let tasks = Arc::new(task_service);
+        let autopilots = Arc::new(AutopilotService::new(
+            pool.clone(),
+            bus.clone(),
+            tasks.clone(),
+        ));
         let issues = Arc::new(IssueService::new(pool.clone(), bus.clone(), tasks.clone()));
         let plugins = Arc::new(PluginService::with_pool(pool.clone()));
         let trusted_proxies = cordy_middleware::ratelimit::parse_trusted_proxies(
@@ -150,9 +202,11 @@ impl HandlerState {
             60,
         );
         auth_verify_rate_limit.trusted_proxies = trusted_proxies;
+        let llm = cordy_llm::Client::new(cordy_llm::Config::default());
         Self {
             pool,
             pat_cache,
+            daemon_token_cache: DaemonTokenCache::disabled(),
             hub,
             bus,
             business_metrics: None,
@@ -162,11 +216,13 @@ impl HandlerState {
             analytics: Arc::new(cordy_analytics::NoopClient),
             auth_rate_limit,
             auth_verify_rate_limit,
+            invitation_admission: crate::invitation::InvitationAdmission::default(),
             public_config: crate::config::PublicConfigSettings::default(),
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
             feature_flags,
             composio_service,
             tasks,
+            autopilots,
             issues,
             plugins,
             callbacks: Some(Arc::new(CallbackTokens::new())),
@@ -186,8 +242,77 @@ impl HandlerState {
             daemon_hub: Some(daemon_hub),
             attachment_storage: None,
             attachment_frame_ancestors: Vec::new(),
+            slack_history: None,
+            llm: Arc::new(llm),
+            webhook_delivery_notify: None,
             _task_wakeup: task_wakeup,
         }
+    }
+
+    /// Wires the internal OpenAI-compatible assist layer. Invalid retry
+    /// budgets fail startup rather than silently selecting another policy.
+    pub fn with_llm_from_env(self) -> anyhow::Result<Self> {
+        const MAX_RETRIES: u32 = 5;
+        let raw_retries = std::env::var("CORDY_LLM_MAX_RETRIES").unwrap_or_default();
+        let max_retries = if raw_retries.trim().is_empty() {
+            None
+        } else {
+            let parsed = raw_retries.trim().parse::<u32>().map_err(|_| {
+                anyhow::anyhow!(
+                    "CORDY_LLM_MAX_RETRIES must be an integer from 0 to {MAX_RETRIES}, got {:?}",
+                    raw_retries.trim()
+                )
+            })?;
+            anyhow::ensure!(
+                parsed <= MAX_RETRIES,
+                "CORDY_LLM_MAX_RETRIES must be at most {MAX_RETRIES}, got {parsed}"
+            );
+            Some(parsed)
+        };
+        self.with_llm_config(cordy_llm::Config {
+            api_key: std::env::var("CORDY_LLM_API_KEY").unwrap_or_default(),
+            base_url: std::env::var("CORDY_LLM_BASE_URL").unwrap_or_default(),
+            default_model: std::env::var("CORDY_LLM_DEFAULT_MODEL").unwrap_or_default(),
+            max_retries,
+        })
+    }
+
+    fn with_llm_config(mut self, config: cordy_llm::Config) -> anyhow::Result<Self> {
+        let llm = Arc::new(cordy_llm::Client::new(config));
+        if llm.enabled() {
+            anyhow::ensure!(
+                self.tasks
+                    .install_quick_actions(Arc::new(ChatQuickActionsClient { llm: llm.clone() })),
+                "chat quick-actions LLM is already configured"
+            );
+        }
+        self.llm = llm;
+        tracing::info!(
+            enabled = self.llm.enabled(),
+            max_retries = self.llm.max_retries(),
+            default_model = self.llm.default_model(),
+            "llm assist policy"
+        );
+        Ok(self)
+    }
+
+    /// Wires the S7 Slack history service with the same secretbox key used by
+    /// channel installation credentials. Missing or invalid keys leave the
+    /// reader disabled instead of interpreting ciphertext as plaintext.
+    pub fn with_slack_history_from_env(mut self) -> Self {
+        let Ok(key) = cordy_util::secretbox::load_key("CORDY_SLACK_SECRET_KEY") else {
+            return self;
+        };
+        let Ok(secret_box) = cordy_util::secretbox::SecretBox::new(&key) else {
+            return self;
+        };
+        let decrypt: Arc<cordy_slack::config::Decrypter> =
+            Arc::new(move |sealed| secret_box.open(sealed).map_err(anyhow::Error::from));
+        self.slack_history = Some(Arc::new(cordy_slack::history::History::new(
+            self.pool.clone(),
+            Some(decrypt),
+        )));
+        self
     }
 
     pub fn with_attachment_storage(
@@ -245,6 +370,74 @@ impl HandlerState {
         self.business_metrics = business_metrics;
         self.http_metrics = http_metrics;
         self
+    }
+
+    /// Installs the production entitlement provider on the one shared
+    /// Autopilot service. `None` is the self-hosted/off policy and deliberately
+    /// avoids all quota-table reads.
+    pub fn with_autopilot_entitlements(
+        mut self,
+        entitlements: Option<Arc<dyn EntitlementProvider>>,
+    ) -> Self {
+        let mut service =
+            AutopilotService::new(self.pool.clone(), self.bus.clone(), self.tasks.clone());
+        service.entitlements = entitlements;
+        service.quota_metrics = self
+            .business_metrics
+            .clone()
+            .map(|metrics| metrics as Arc<dyn cordy_service::autopilot::AutopilotQuotaMetrics>);
+        self.autopilots = Arc::new(service);
+        self
+    }
+
+    /// Starts the bounded PostgreSQL-leased webhook worker pool. Call only
+    /// from production startup after all Autopilot service wiring is complete.
+    pub fn start_webhook_delivery_worker(mut self) -> Self {
+        let notify = Arc::new(tokio::sync::Notify::new());
+        crate::webhook_delivery_worker::WebhookDeliveryWorker::new(
+            self.pool.clone(),
+            self.autopilots.clone(),
+            notify.clone(),
+        )
+        .start();
+        self.webhook_delivery_notify = Some(notify);
+        self
+    }
+
+    pub fn start_autopilot_quota_reconciler(self) -> Self {
+        if !self.autopilots.quota_enabled() {
+            return self;
+        }
+        let service = self.autopilots.clone();
+        tokio::spawn(async move {
+            loop {
+                let now = chrono::Utc::now();
+                match service
+                    .reconcile_quota_reservations(
+                        now - chrono::Duration::minutes(10),
+                        now - chrono::Duration::hours(6),
+                        100,
+                    )
+                    .await
+                {
+                    Ok(settled) if settled > 0 => {
+                        tracing::info!(settled, "autopilot quota reconciler settled reservations");
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, "autopilot quota reconciler failed");
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            }
+        });
+        self
+    }
+
+    pub fn notify_webhook_delivery(&self) {
+        if let Some(notify) = &self.webhook_delivery_notify {
+            notify.notify_one();
+        }
     }
 
     pub fn with_analytics(mut self, analytics: Arc<dyn cordy_analytics::AnalyticsClient>) -> Self {
@@ -327,6 +520,7 @@ impl HandlerState {
     pub async fn with_redis(mut self, client: redis::Client) -> Result<Self, redis::RedisError> {
         self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
         self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client.clone());
+        self.daemon_token_cache = DaemonTokenCache::new(client.clone()).await?;
         let conn = client.get_connection_manager().await?;
         self.update_store = Some(Arc::new(crate::pending_store::UpdateStore::new(
             conn.clone(),
@@ -381,4 +575,26 @@ fn positive_env_i64(name: &str, default: i64) -> i64 {
         .and_then(|value| value.trim().parse::<i64>().ok())
         .filter(|value| *value > 0)
         .unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn configured_llm_is_shared_with_chat_quick_actions() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = HandlerState::new(pool, PatCache::disabled(), None)
+            .with_llm_config(cordy_llm::Config {
+                base_url: "http://127.0.0.1:9/v1".into(),
+                ..Default::default()
+            })
+            .unwrap();
+
+        assert!(state.llm.enabled());
+        assert!(state
+            .tasks
+            .quick_actions()
+            .is_some_and(|quick_actions| quick_actions.enabled()));
+    }
 }
