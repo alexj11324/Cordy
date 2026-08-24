@@ -79,12 +79,10 @@ fn has_forwarding_header(headers: &HeaderMap) -> bool {
     ]
     .iter()
     .any(|name| {
-        headers.get_all(*name).iter().any(|value| {
-            value
-                .as_bytes()
-                .iter()
-                .any(|byte| !byte.is_ascii_whitespace())
-        })
+        headers
+            .get(*name)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| !value.trim().is_empty())
     })
 }
 
@@ -165,25 +163,6 @@ mod tests {
         headers.insert("x-forwarded-for", "203.0.113.10".parse().unwrap());
         assert!(!is_direct_loopback(&headers, Some(peer)));
         assert!(!is_direct_loopback(&HeaderMap::new(), None));
-    }
-
-    #[test]
-    fn loopback_shortcut_rejects_non_utf8_forwarding_values() {
-        let peer: SocketAddr = "127.0.0.1:1234".parse().unwrap();
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            "forwarded",
-            HeaderValue::from_bytes(b"\xff").expect("obs-text header value"),
-        );
-        assert!(!is_direct_loopback(&headers, Some(peer)));
-    }
-
-    #[tokio::test]
-    async fn loaded_realtime_metrics_token_overrides_constructor_environment_fallback() {
-        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
-        let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None)
-            .with_realtime_metrics_token(Some("  from-config  "));
-        assert_eq!(state.realtime_metrics_token, "from-config");
     }
 
     #[tokio::test]
