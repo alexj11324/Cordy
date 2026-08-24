@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ffi::OsString;
 use std::fmt::Write;
 use std::fs;
-use std::io::{Read, Write as IoWrite};
+use std::io::{Read, Seek, SeekFrom, Write as IoWrite};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -149,6 +149,8 @@ enum DaemonCommand {
     Start(DaemonStartArgs),
     #[command(about = "Show daemon status")]
     Status(DaemonStatusArgs),
+    #[command(about = "Show daemon logs")]
+    Logs(DaemonLogsArgs),
     #[command(about = "Restart the production daemon")]
     Restart(DaemonRestartArgs),
     #[command(about = "Stop the production daemon")]
@@ -173,6 +175,20 @@ struct DaemonStartArgs {
 struct DaemonStatusArgs {
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
     output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct DaemonLogsArgs {
+    #[arg(short = 'f', long, help = "Follow the log file as it grows")]
+    follow: bool,
+    #[arg(
+        short = 'n',
+        long,
+        default_value_t = 50,
+        value_parser = parse_log_lines,
+        help = "Number of recent log lines to show"
+    )]
+    lines: usize,
 }
 
 #[derive(Debug, Args)]
@@ -3162,6 +3178,9 @@ async fn run_with_input<R: Read>(
             command: DaemonCommand::Status(args),
         }) => run_daemon_status(cli, environment, args).await,
         Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Logs(args),
+        }) => run_daemon_logs(cli, environment, args).await,
+        Command::Daemon(DaemonArgs {
             command: DaemonCommand::Restart(args),
         }) => run_daemon_restart(cli, environment, args).await,
         Command::Daemon(DaemonArgs {
@@ -3753,6 +3772,182 @@ fn format_daemon_status_table(
         let _ = writeln!(output, "{key:<width$}  {value}", width = width);
     }
     output
+}
+
+const MAX_LOG_LINES: usize = 100_000;
+const MAX_LOG_OUTPUT_BYTES: u64 = 16 * 1024 * 1024;
+
+fn parse_log_lines(value: &str) -> std::result::Result<usize, String> {
+    let lines = value
+        .parse::<usize>()
+        .map_err(|_| "--lines must be a non-negative integer".to_string())?;
+    if lines > MAX_LOG_LINES {
+        return Err(format!("--lines must be at most {MAX_LOG_LINES}"));
+    }
+    Ok(lines)
+}
+
+async fn run_daemon_logs(
+    cli: &Cli,
+    environment: &Environment,
+    args: &DaemonLogsArgs,
+) -> Result<RunOutput> {
+    require_human_local_command(environment, "daemon logs")?;
+    require_known_daemon_profile(environment, &cli.profile)?;
+    let log_path = resolve_daemon_log_path(environment, &cli.profile)?;
+    match fs::metadata(&log_path) {
+        Ok(metadata) if metadata.is_file() => {}
+        Ok(_) => bail!("daemon log path is not a regular file"),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            bail!(
+                "no log file found at {}\nThe daemon may not have been started in background mode",
+                log_path.display()
+            )
+        }
+        Err(error) => return Err(error).context("inspect daemon log"),
+    }
+
+    let notice = format!(
+        "Reading {} (profile: {})\n",
+        log_path.display(),
+        daemon_profile_label(&cli.profile)
+    );
+    if args.follow {
+        {
+            let mut stderr = std::io::stderr().lock();
+            stderr
+                .write_all(notice.as_bytes())
+                .context("write daemon log notice")?;
+            stderr.flush().context("flush daemon log notice")?;
+        }
+        follow_daemon_log(log_path, args.lines).await?;
+        return Ok(RunOutput {
+            stdout: String::new(),
+            stderr: String::new(),
+        });
+    }
+
+    let bytes = read_daemon_log_tail(&log_path, args.lines)?;
+    Ok(RunOutput {
+        stdout: String::from_utf8_lossy(&bytes).into_owned(),
+        stderr: notice,
+    })
+}
+
+fn resolve_daemon_log_path(environment: &Environment, profile: &str) -> Result<PathBuf> {
+    let config_path = environment.config_path(profile)?;
+    let state_dir = config_path
+        .parent()
+        .context("resolve daemon log directory")?;
+    anyhow::ensure!(
+        state_dir.is_absolute(),
+        "cannot resolve an absolute daemon log path"
+    );
+    Ok(state_dir.join("daemon.log"))
+}
+
+fn daemon_profile_label(profile: &str) -> &str {
+    if profile.is_empty() {
+        "default"
+    } else {
+        profile
+    }
+}
+
+fn read_daemon_log_tail(path: &Path, lines: usize) -> Result<Vec<u8>> {
+    if lines == 0 {
+        return Ok(Vec::new());
+    }
+    let mut file = fs::File::open(path).context("open daemon log")?;
+    let size = file.metadata().context("stat daemon log")?.len();
+    if size == 0 {
+        return Ok(Vec::new());
+    }
+
+    let mut last_byte = [0_u8; 1];
+    file.seek(SeekFrom::Start(size - 1))
+        .context("seek daemon log")?;
+    file.read_exact(&mut last_byte).context("read daemon log")?;
+    let needed_newlines = lines.saturating_add(usize::from(last_byte[0] == b'\n'));
+
+    let mut position = size;
+    let mut newline_count = 0_usize;
+    let mut tail_start = 0_u64;
+    let mut buffer = vec![0_u8; 8192];
+    'scan: while position > 0 {
+        let chunk_len = position.min(buffer.len() as u64) as usize;
+        position -= chunk_len as u64;
+        file.seek(SeekFrom::Start(position))
+            .context("seek daemon log")?;
+        file.read_exact(&mut buffer[..chunk_len])
+            .context("read daemon log")?;
+        for (index, byte) in buffer[..chunk_len].iter().enumerate().rev() {
+            if *byte == b'\n' {
+                newline_count += 1;
+                if newline_count >= needed_newlines {
+                    tail_start = position + index as u64 + 1;
+                    break 'scan;
+                }
+            }
+        }
+    }
+
+    // A malformed or extremely verbose log line must not turn a diagnostic
+    // command into an unbounded allocation. Preserve the newest bytes when
+    // the selected tail exceeds the output cap.
+    let start = tail_start.max(size.saturating_sub(MAX_LOG_OUTPUT_BYTES));
+    file.seek(SeekFrom::Start(start))
+        .context("seek daemon log")?;
+    let mut output = Vec::with_capacity((size - start).min(MAX_LOG_OUTPUT_BYTES) as usize);
+    file.take(MAX_LOG_OUTPUT_BYTES)
+        .read_to_end(&mut output)
+        .context("read daemon log tail")?;
+    Ok(output)
+}
+
+async fn follow_daemon_log(path: PathBuf, lines: usize) -> Result<()> {
+    let initial = read_daemon_log_tail(&path, lines)?;
+    {
+        let mut stdout = std::io::stdout().lock();
+        stdout
+            .write_all(&initial)
+            .context("write daemon log tail")?;
+        stdout.flush().context("flush daemon log tail")?;
+    }
+    let mut offset = fs::metadata(&path).context("stat daemon log")?.len();
+    let mut interrupt = Box::pin(tokio::signal::ctrl_c());
+
+    loop {
+        tokio::select! {
+            result = &mut interrupt => {
+                result.context("wait for daemon log follow cancellation")?;
+                return Ok(());
+            }
+            _ = tokio::time::sleep(Duration::from_millis(500)) => {}
+        }
+
+        let size = match fs::metadata(&path) {
+            Ok(metadata) => metadata.len(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error).context("stat daemon log while following"),
+        };
+        if size < offset {
+            offset = 0;
+        }
+        if size == offset {
+            continue;
+        }
+        let mut file = fs::File::open(&path).context("open daemon log while following")?;
+        file.seek(SeekFrom::Start(offset))
+            .context("seek daemon log while following")?;
+        let mut limited = file.take(size - offset);
+        {
+            let mut stdout = std::io::stdout().lock();
+            std::io::copy(&mut limited, &mut stdout).context("write followed daemon log")?;
+            stdout.flush().context("flush followed daemon log")?;
+        }
+        offset = size;
+    }
 }
 
 fn run_daemon_probe_runtimes(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
@@ -23868,6 +24063,65 @@ mod tests {
         assert_eq!(document["status"], "stopped");
         assert_eq!(document["port_conflict"]["port"], 19710);
         assert_eq!(document["port_conflict"]["profile"], "ba");
+    }
+
+    #[test]
+    fn daemon_logs_parses_follow_and_bounded_line_flags() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            "staging",
+            "daemon",
+            "logs",
+            "--follow",
+            "--lines",
+            "7",
+        ])
+        .expect("daemon logs CLI");
+        let Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Logs(args),
+        }) = cli.command
+        else {
+            panic!("expected daemon logs");
+        };
+        assert!(args.follow);
+        assert_eq!(args.lines, 7);
+        assert!(Cli::try_parse_from(["cordy", "daemon", "logs", "--lines", "-1"]).is_err());
+        assert!(Cli::try_parse_from(["cordy", "daemon", "logs", "--lines", "100001"]).is_err());
+    }
+
+    #[test]
+    fn daemon_logs_tail_matches_recent_lines_with_or_without_final_newline() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let path = resolve_daemon_log_path(&environment, "").expect("default log path");
+        fs::create_dir_all(path.parent().expect("log parent")).expect("log parent");
+
+        fs::write(&path, b"one\ntwo\nthree\n").expect("log with newline");
+        assert_eq!(
+            read_daemon_log_tail(&path, 2).expect("tail"),
+            b"two\nthree\n"
+        );
+        assert_eq!(read_daemon_log_tail(&path, 0).expect("empty tail"), b"");
+
+        fs::write(&path, b"one\ntwo\nthree").expect("log without newline");
+        assert_eq!(read_daemon_log_tail(&path, 2).expect("tail"), b"two\nthree");
+    }
+
+    #[tokio::test]
+    async fn daemon_logs_is_rejected_inside_a_daemon_task() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_TASK_ID", "task-1");
+        let cli = Cli::try_parse_from(["cordy", "daemon", "logs"]).expect("daemon logs CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("task context must be rejected");
+        assert!(error
+            .to_string()
+            .contains("daemon logs is not available inside a daemon-managed task"));
     }
 
     #[test]
