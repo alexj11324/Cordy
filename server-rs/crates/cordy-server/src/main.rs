@@ -29,6 +29,7 @@ struct ProductionApp {
     autopilot_event_listeners:
         Option<cordy_handler::autopilot_listeners::AutopilotEventListenersRuntime>,
     task_side_effects: Option<cordy_service::task_service::TaskSideEffectRuntime>,
+    analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
 }
 
 struct VcsWebhookConfig {
@@ -211,15 +212,17 @@ async fn build_production_router(
 ) -> anyhow::Result<ProductionApp> {
     let feature_flags = Arc::new(cordy_service::feature_flags::ConfiguredFlags::from_env()?);
     let entitlements = autopilot_entitlements(cfg);
-    let mut state = cordy_handler::HandlerState::new(
+    let analytics: Arc<dyn cordy_analytics::AnalyticsClient> =
+        Arc::from(cordy_analytics::new_from_env());
+    let mut state = cordy_handler::HandlerState::new_with_analytics(
         db,
         cordy_auth::pat_cache::PatCache::disabled(),
         Some(hub),
+        analytics.clone(),
     )
     .with_observability(business_metrics, http_metrics)
     .with_autopilot_entitlements(entitlements)
     .with_github_snapshots(github_client)
-    .with_analytics(Arc::from(cordy_analytics::new_from_env()))
     .with_auth_settings(cordy_handler::auth::AuthSettings::from_config(cfg))
     .with_email_service(Arc::new(
         cordy_service::email::EmailService::from_config_values(
@@ -371,6 +374,7 @@ async fn build_production_router(
         ordered_event_side_effects,
         autopilot_event_listeners,
         task_side_effects,
+        analytics,
     })
 }
 
@@ -566,6 +570,7 @@ async fn main() -> anyhow::Result<()> {
         ordered_event_side_effects,
         autopilot_event_listeners,
         task_side_effects,
+        analytics,
     } = app;
     let serve_result = axum::serve(
         listener,
@@ -615,6 +620,9 @@ async fn main() -> anyhow::Result<()> {
     let ordered_event_side_effects_shutdown =
         shutdown_ordered_event_side_effects(ordered_event_side_effects).await;
     let plugin_events_shutdown = shutdown_plugin_events(plugin_events).await;
+    // Every analytics producer above has stopped. Close the shared client last
+    // so its owned worker can flush the final bounded queue before process exit.
+    analytics.close().await;
     match failure_shutdown {
         cordy_service::autopilot_failure_monitor::ShutdownOutcome::TimedOut => {
             tracing::warn!("autopilot failure monitor exceeded shutdown deadline and was aborted");

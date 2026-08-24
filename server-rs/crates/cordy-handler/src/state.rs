@@ -70,6 +70,19 @@ impl cordy_service::task_service::ChatQuickActionsLlm for HandlerAssistLlm {
     }
 }
 
+struct SharedAnalyticsClient(Arc<dyn cordy_analytics::AnalyticsClient>);
+
+#[async_trait::async_trait]
+impl cordy_analytics::AnalyticsClient for SharedAnalyticsClient {
+    fn capture(&self, event: cordy_analytics::Event) {
+        self.0.capture(event);
+    }
+
+    async fn close(&self) {
+        self.0.close().await;
+    }
+}
+
 struct DaemonTaskWakeup {
     hub: Arc<cordy_daemon::hub::DaemonHub>,
 }
@@ -183,6 +196,15 @@ pub struct HandlerState {
 
 impl HandlerState {
     pub fn new(pool: sqlx::PgPool, pat_cache: PatCache, hub: Option<Arc<Hub>>) -> Self {
+        Self::new_with_analytics(pool, pat_cache, hub, Arc::new(cordy_analytics::NoopClient))
+    }
+
+    pub fn new_with_analytics(
+        pool: sqlx::PgPool,
+        pat_cache: PatCache,
+        hub: Option<Arc<Hub>>,
+        analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
+    ) -> Self {
         let bus = Arc::new(cordy_events::Bus::new());
         let daemon_hub = Arc::new(cordy_daemon::hub::DaemonHub::new());
         let task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier> =
@@ -193,6 +215,7 @@ impl HandlerState {
             cordy_llm::Config::default(),
         )));
         let mut task_service = TaskService::new(pool.clone(), bus.clone());
+        task_service.analytics = Some(Box::new(SharedAnalyticsClient(analytics.clone())));
         task_service.wakeup = Some(Arc::downgrade(&task_wakeup));
         task_service.quick_actions = Some(llm.clone());
         let tasks = Arc::new(task_service);
@@ -201,7 +224,9 @@ impl HandlerState {
             bus.clone(),
             tasks.clone(),
         ));
-        let issues = Arc::new(IssueService::new(pool.clone(), bus.clone(), tasks.clone()));
+        let mut issue_service = IssueService::new(pool.clone(), bus.clone(), tasks.clone());
+        issue_service.analytics = Some(Box::new(SharedAnalyticsClient(analytics.clone())));
+        let issues = Arc::new(issue_service);
         let plugins = Arc::new(PluginService::with_pool(pool.clone()));
         let heartbeat_scheduler =
             Arc::new(crate::heartbeat_scheduler::PassthroughHeartbeatScheduler::new(pool.clone()));
@@ -231,7 +256,7 @@ impl HandlerState {
             liveness_store: Arc::new(crate::runtime_liveness::NoopLivenessStore),
             auth_settings: crate::auth::AuthSettings::from_env(),
             email_service: Arc::new(EmailService::new()),
-            analytics: Arc::new(cordy_analytics::NoopClient),
+            analytics,
             auth_rate_limit,
             auth_verify_rate_limit,
             webhook_rate_limits,
@@ -512,11 +537,6 @@ impl HandlerState {
         if let Some(notify) = &self.webhook_delivery_notify {
             notify.notify_one();
         }
-    }
-
-    pub fn with_analytics(mut self, analytics: Arc<dyn cordy_analytics::AnalyticsClient>) -> Self {
-        self.analytics = analytics;
-        self
     }
 
     pub fn with_auth_settings(mut self, settings: crate::auth::AuthSettings) -> Self {
