@@ -481,7 +481,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                         workspace.name.clone(),
                         response.runtimes,
                     )
-                    .map_err(|error| {
+                    .inspect_err(|error| {
                         // The server already accepted these rows. Retain them for
                         // cleanup because the local registry rejected the reply.
                         self.pending_deregistrations.queue(&runtime_ids);
