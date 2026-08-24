@@ -1,7 +1,7 @@
 //! Bounded, sanitized child-process diagnostics.
 
 use std::io::{self, Write};
-use std::sync::{LazyLock, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 
 use regex::Regex;
 
@@ -104,6 +104,48 @@ static HOME_MASK: LazyLock<Option<(String, String)>> = LazyLock::new(|| {
 struct State {
     bytes: Vec<u8>,
     total: u64,
+}
+
+/// Cloneable sink used by async child-process stderr pumps. It retains only a
+/// bounded byte tail; callers sanitize the tail before persistence or logs.
+#[derive(Debug, Clone)]
+pub struct SharedDiagnosticBuffer {
+    max: usize,
+    state: Arc<Mutex<State>>,
+}
+
+impl SharedDiagnosticBuffer {
+    pub fn new(max: usize) -> Self {
+        Self {
+            max: if max == 0 { DEFAULT_TAIL_BYTES } else { max },
+            state: Arc::new(Mutex::new(State {
+                bytes: Vec::new(),
+                total: 0,
+            })),
+        }
+    }
+
+    pub fn push(&self, buffer: &[u8]) {
+        if let Ok(mut state) = self.state.lock() {
+            state.total = state.total.saturating_add(buffer.len() as u64);
+            state.bytes.extend_from_slice(buffer);
+            let excess = state.bytes.len().saturating_sub(self.max);
+            if excess > 0 {
+                state.bytes.drain(..excess);
+            }
+        }
+    }
+
+    pub fn total_bytes(&self) -> u64 {
+        self.state.lock().map_or(0, |state| state.total)
+    }
+
+    pub fn tail(&self) -> String {
+        self.state.lock().map_or_else(
+            |_| String::new(),
+            |state| sanitize_diagnostic(String::from_utf8_lossy(&state.bytes).trim()),
+        )
+    }
 }
 
 /// Forwards stderr while retaining only a bounded tail for a task-visible
@@ -209,5 +251,14 @@ mod tests {
         assert!(!clean.contains("xyz"));
         assert!(!clean.contains("qwerty"));
         assert!(!clean.contains('\u{1b}'));
+    }
+
+    #[test]
+    fn shared_buffer_is_bounded_across_clones() {
+        let buffer = SharedDiagnosticBuffer::new(5);
+        buffer.push(b"abc");
+        buffer.clone().push(b"def");
+        assert_eq!(buffer.total_bytes(), 6);
+        assert_eq!(buffer.tail(), "bcdef");
     }
 }
