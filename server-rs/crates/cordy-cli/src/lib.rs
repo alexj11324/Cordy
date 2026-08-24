@@ -141,6 +141,26 @@ enum RuntimeCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
+    #[command(about = "Set a custom display name for a runtime")]
+    Rename {
+        #[arg(value_name = "RUNTIME-ID")]
+        runtime_id: String,
+        #[arg(value_name = "NAME")]
+        name: String,
+        #[arg(long, help = "Apply the name to every runtime on the same machine")]
+        machine: bool,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
+    #[command(about = "Delete a runtime from the workspace")]
+    Delete {
+        #[arg(value_name = "RUNTIME-ID")]
+        runtime_id: String,
+        #[arg(long, help = "Unbind active agents, cancel their tasks, then delete")]
+        cascade: bool,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -2523,6 +2543,23 @@ async fn run_with_input<R: Read>(
         Command::Runtime(RuntimeArgs {
             command: RuntimeCommand::Activity { runtime_id, output },
         }) => run_runtime_activity(cli, environment, runtime_id, *output).await,
+        Command::Runtime(RuntimeArgs {
+            command:
+                RuntimeCommand::Rename {
+                    runtime_id,
+                    name,
+                    machine,
+                    output,
+                },
+        }) => run_runtime_rename(cli, environment, runtime_id, name, *machine, *output).await,
+        Command::Runtime(RuntimeArgs {
+            command:
+                RuntimeCommand::Delete {
+                    runtime_id,
+                    cascade,
+                    output,
+                },
+        }) => run_runtime_delete(cli, environment, runtime_id, *cascade, *output).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -2634,6 +2671,162 @@ async fn run_runtime_activity(
     Ok(RunOutput {
         stdout: format_runtime_rows(&activity, output, &["HOUR", "COUNT"], &["hour", "count"])?,
         stderr: String::new(),
+    })
+}
+
+async fn run_runtime_rename(
+    cli: &Cli,
+    environment: &Environment,
+    runtime_id: &str,
+    name: &str,
+    machine: bool,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let mut body = serde_json::Map::from_iter([("custom_name".into(), Value::String(name.into()))]);
+    if machine {
+        body.insert("apply_to_machine".into(), Value::Bool(true));
+    }
+    let runtime: Value = client
+        .patch_json(&format!("/api/runtimes/{runtime_id}"), &body)
+        .await
+        .context("rename runtime")?;
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&runtime)?),
+            OutputFormat::Table => String::new(),
+        },
+        stderr: match output {
+            OutputFormat::Json => String::new(),
+            OutputFormat::Table if name.trim().is_empty() => format!(
+                "Custom name cleared; runtime is now {:?}.\n",
+                value_string(&runtime, "name")
+            ),
+            OutputFormat::Table => format!(
+                "Runtime renamed to {:?}.\n",
+                value_string(&runtime, "custom_name")
+            ),
+        },
+    })
+}
+
+#[derive(Debug, Deserialize)]
+struct RuntimeDeleteConflict {
+    code: String,
+    #[serde(default)]
+    active_agents: Vec<RuntimeDeleteAgent>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RuntimeDeleteAgent {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    name: String,
+}
+
+impl RuntimeDeleteConflict {
+    fn ids(&self) -> Vec<&str> {
+        self.active_agents
+            .iter()
+            .map(|agent| agent.id.as_str())
+            .filter(|id| !id.is_empty())
+            .collect()
+    }
+
+    fn displays(&self) -> Vec<String> {
+        self.active_agents
+            .iter()
+            .filter_map(|agent| match (agent.name.is_empty(), agent.id.is_empty()) {
+                (false, false) => Some(format!("{} ({})", agent.name, agent.id)),
+                (false, true) => Some(agent.name.clone()),
+                (true, false) => Some(agent.id.clone()),
+                (true, true) => None,
+            })
+            .collect()
+    }
+}
+
+fn runtime_delete_conflict(error: &anyhow::Error) -> Option<RuntimeDeleteConflict> {
+    let http = error.downcast_ref::<HttpError>()?;
+    if http.status_code != 409 {
+        return None;
+    }
+    let conflict: RuntimeDeleteConflict = serde_json::from_str(&http.body).ok()?;
+    (conflict.code == "runtime_has_active_agents" && !conflict.active_agents.is_empty())
+        .then_some(conflict)
+}
+
+async fn run_runtime_delete(
+    cli: &Cli,
+    environment: &Environment,
+    runtime_id: &str,
+    cascade: bool,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let mut result = match client.delete(&format!("/api/runtimes/{runtime_id}")).await {
+        Ok(()) => serde_json::Map::new(),
+        Err(error) => {
+            let Some(conflict) = runtime_delete_conflict(&error) else {
+                return Err(error).context("delete runtime");
+            };
+            if !cascade {
+                bail!(
+                    "delete runtime: runtime has active agents bound to it ({}); rebind them to another runtime first, or rerun with --cascade to unbind them and delete the runtime (the agents and their history are kept)",
+                    conflict.displays().join(", ")
+                );
+            }
+            let response: Value = client
+                .post_json(
+                    &format!("/api/runtimes/{runtime_id}/unbind-agents-and-delete"),
+                    &serde_json::json!({"expected_active_agent_ids":conflict.ids()}),
+                )
+                .await
+                .context("cascade delete runtime")?;
+            response
+                .as_object()
+                .cloned()
+                .context("cascade delete runtime response must be a JSON object")?
+        }
+    };
+    result.insert("id".into(), Value::String(runtime_id.into()));
+    result.insert("deleted".into(), Value::Bool(true));
+    format_runtime_delete_result(&Value::Object(result), output)
+}
+
+fn format_runtime_delete_result(result: &Value, output: OutputFormat) -> Result<RunOutput> {
+    if output == OutputFormat::Json {
+        return Ok(RunOutput {
+            stdout: format!("{}\n", serde_json::to_string_pretty(result)?),
+            stderr: String::new(),
+        });
+    }
+    let id = value_string(result, "id");
+    let stderr = if result.get("agents_unbound").is_some() {
+        let mut message = format!(
+            "Runtime {id} deleted; unbound {} agent(s)",
+            value_string(result, "agents_unbound")
+        );
+        if result.get("autopilots_paused").is_some() {
+            let _ = write!(
+                message,
+                " and paused {} autopilot(s)",
+                value_string(result, "autopilots_paused")
+            );
+        }
+        message + ".\n"
+    } else if result.get("agents_archived").is_some() {
+        format!(
+            "Runtime {id} deleted; processed {} agent(s).\n",
+            value_string(result, "agents_archived")
+        )
+    } else {
+        format!("Runtime {id} deleted.\n")
+    };
+    Ok(RunOutput {
+        stdout: String::new(),
+        stderr,
     })
 }
 
@@ -12338,6 +12531,124 @@ mod tests {
                 .expect_err("days range");
             assert_eq!(error.to_string(), "--days must be between 1 and 365");
         }
+    }
+
+    #[tokio::test]
+    async fn runtime_rename_and_cascade_delete_match_go_contract() {
+        let app = Router::new()
+            .route(
+                "/api/runtimes/runtime-1",
+                patch(|Json(body): Json<Value>| async move {
+                    assert_eq!(
+                        body,
+                        serde_json::json!({"custom_name":"Build Mac","apply_to_machine":true})
+                    );
+                    Json(serde_json::json!({
+                        "id":"runtime-1","name":"Build Mac","custom_name":"Build Mac"
+                    }))
+                })
+                .delete(|| async {
+                    (
+                        axum::http::StatusCode::CONFLICT,
+                        Json(serde_json::json!({
+                            "code":"runtime_has_active_agents",
+                            "error":"runtime has active agents",
+                            "active_agents":[
+                                {"id":"agent-1","name":"Builder"},
+                                {"id":"agent-2","name":""}
+                            ]
+                        })),
+                    )
+                }),
+            )
+            .route(
+                "/api/runtimes/runtime-1/unbind-agents-and-delete",
+                post(|Json(body): Json<Value>| async move {
+                    assert_eq!(
+                        body,
+                        serde_json::json!({"expected_active_agent_ids":["agent-1","agent-2"]})
+                    );
+                    Json(serde_json::json!({
+                        "agents_unbound":2,"autopilots_paused":1
+                    }))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let rename = Cli::try_parse_from([
+            "cordy",
+            "runtime",
+            "rename",
+            "runtime-1",
+            "Build Mac",
+            "--machine",
+        ])
+        .expect("runtime rename CLI");
+        let renamed = run_with_input(&rename, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("rename runtime");
+        assert!(renamed.stdout.is_empty());
+        assert_eq!(renamed.stderr, "Runtime renamed to \"Build Mac\".\n");
+
+        let delete = Cli::try_parse_from(["cordy", "runtime", "delete", "runtime-1"])
+            .expect("runtime delete CLI");
+        let conflict = run_with_input(&delete, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("active agents conflict");
+        assert!(conflict.to_string().contains("Builder (agent-1), agent-2"));
+        assert!(conflict.to_string().contains("--cascade"));
+
+        let cascade = Cli::try_parse_from(["cordy", "runtime", "delete", "runtime-1", "--cascade"])
+            .expect("runtime cascade delete CLI");
+        let deleted = run_with_input(&cascade, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("cascade delete runtime");
+        assert!(deleted.stdout.is_empty());
+        assert_eq!(
+            deleted.stderr,
+            "Runtime runtime-1 deleted; unbound 2 agent(s) and paused 1 autopilot(s).\n"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn runtime_delete_strict_success_returns_go_json_mirror() {
+        let app = Router::new().route(
+            "/api/runtimes/runtime-1",
+            delete_route(|| async { axum::http::StatusCode::NO_CONTENT }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "runtime",
+            "delete",
+            "runtime-1",
+            "--output",
+            "json",
+        ])
+        .expect("runtime delete JSON CLI");
+        let deleted = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("delete runtime");
+        assert_eq!(
+            serde_json::from_str::<Value>(&deleted.stdout).expect("JSON"),
+            serde_json::json!({"id":"runtime-1","deleted":true})
+        );
+        server.abort();
     }
 
     async fn test_server() -> (String, tokio::task::JoinHandle<()>) {
