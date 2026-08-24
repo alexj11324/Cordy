@@ -1013,6 +1013,16 @@
       renderers that would have blocked compilation. Scoped rustfmt and
       diff-check pass; Cargo was not run. Pro owns push/Ready PR, gate, and
       merge.
+- [ ] CLI user profile command structural refactor is committed at
+      `47c86172b29ffda6cfd954a8c3f76d5cb89e48d5` (parent
+      `e84766ace06d96b04d25ad9fb1f9026fbe0ff62d`, tree
+      `46957236e2d12f4730cb0dc305f98907d9b716a8`): profile get/update,
+      description input resolution, file-boundary handling, clear semantics,
+      and table/JSON rendering now live in `cordy-cli/src/user_commands.rs`;
+      parent dispatch and tests retain their existing contracts. The serial
+      subagent reviewed exact head `47c86172` and found no issue. Scoped
+      rustfmt/diff-check pass; Cargo was not run. Pro owns push/Ready PR, gate,
+      and merge.
 
 ## Phase 4 — S8 route and API parity
 
