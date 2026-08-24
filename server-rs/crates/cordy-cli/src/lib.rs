@@ -138,6 +138,11 @@ enum AutopilotCommand {
     Create(AutopilotCreateArgs),
     #[command(about = "Update an autopilot")]
     Update(AutopilotUpdateArgs),
+    #[command(about = "Delete an autopilot")]
+    Delete {
+        #[arg(value_name = "ID")]
+        id: String,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -2344,6 +2349,9 @@ async fn run_with_input<R: Read>(
         Command::Autopilot(AutopilotArgs {
             command: AutopilotCommand::Update(args),
         }) => run_autopilot_update(cli, environment, args).await,
+        Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::Delete { id },
+        }) => run_autopilot_delete(cli, environment, id).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -3513,7 +3521,7 @@ async fn run_autopilot_get(
 ) -> Result<RunOutput> {
     let client = new_api_client(cli, environment)?;
     let workspace_id = resolve_current_workspace_id(cli, environment);
-    let autopilot_id = resolve_autopilot_id(&client, &workspace_id, id)
+    let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, id)
         .await
         .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
     let response: Value = client
@@ -3622,7 +3630,7 @@ async fn run_autopilot_update(
 ) -> Result<RunOutput> {
     let client = new_api_client(cli, environment)?;
     let workspace_id = resolve_current_workspace_id(cli, environment);
-    let autopilot_id = resolve_autopilot_id(&client, &workspace_id, &args.id)
+    let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, &args.id)
         .await
         .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
 
@@ -3695,6 +3703,22 @@ async fn run_autopilot_update(
                 value_string(&result, "id")
             ),
         },
+        stderr: String::new(),
+    })
+}
+
+async fn run_autopilot_delete(cli: &Cli, environment: &Environment, id: &str) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let (autopilot_id, display) = resolve_autopilot_id(&client, &workspace_id, id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+    client
+        .delete(&format!("/api/autopilots/{autopilot_id}"))
+        .await
+        .context("delete autopilot")?;
+    Ok(RunOutput {
+        stdout: format!("Autopilot {display} deleted.\n"),
         stderr: String::new(),
     })
 }
@@ -3821,13 +3845,13 @@ async fn resolve_autopilot_id(
     client: &ApiClient,
     workspace_id: &str,
     input: &str,
-) -> Result<String> {
+) -> Result<(String, String)> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         bail!("autopilot id is required");
     }
     if is_canonical_uuid(trimmed) {
-        return Ok(trimmed.into());
+        return Ok((trimmed.into(), trimmed.into()));
     }
     let Some(prefix) = normalize_uuid_prefix(trimmed) else {
         let compact = trimmed.replace('-', "");
@@ -3865,7 +3889,8 @@ async fn resolve_autopilot_id(
             let id = value_string(&autopilot, "id");
             if !id.is_empty() && seen.insert(id.clone()) {
                 added += 1;
-                candidates.push(id);
+                let title = value_string(&autopilot, "title");
+                candidates.push((id.clone(), if title.is_empty() { id } else { title }));
             }
         }
         offset += page_len;
@@ -3886,17 +3911,21 @@ async fn resolve_autopilot_id(
 
     let mut matches = candidates
         .into_iter()
-        .filter(|id| compact_uuid(id).starts_with(&prefix))
+        .filter(|(id, _)| compact_uuid(id).starts_with(&prefix))
         .collect::<Vec<_>>();
-    matches.sort();
+    matches.sort_by(|left, right| left.0.cmp(&right.0));
     match matches.as_slice() {
-        [id] => Ok(id.clone()),
+        [resolved] => Ok(resolved.clone()),
         [] => bail!(
             "no autopilot found matching id prefix {input:?}; run the list command with --full-id to copy the full UUID"
         ),
         _ => bail!(
             "ambiguous autopilot id prefix {input:?}; matches:\n  {}\nUse more characters or run the list command with --full-id",
-            matches.join("\n  ")
+            matches
+                .iter()
+                .map(|(id, _)| id.as_str())
+                .collect::<Vec<_>>()
+                .join("\n  ")
         ),
     }
 }
@@ -12572,6 +12601,16 @@ mod tests {
         assert_eq!(args.project.as_deref(), Some(""));
         assert!(args.clear_subscribers);
         assert_eq!(args.output, OutputFormat::Json);
+
+        let delete = Cli::try_parse_from(["cordy", "autopilot", "delete", "abcd"])
+            .expect("autopilot delete CLI");
+        let Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::Delete { id },
+        }) = delete.command
+        else {
+            panic!("expected autopilot delete");
+        };
+        assert_eq!(id, "abcd");
     }
 
     #[tokio::test]
@@ -12904,6 +12943,44 @@ mod tests {
             error.to_string(),
             "--subscriber and --clear-subscribers are mutually exclusive"
         );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn autopilot_delete_resolves_prefix_and_reports_title() {
+        const ID: &str = "abcd0000-1111-2222-3333-444444444444";
+        let app = Router::new()
+            .route(
+                "/api/autopilots",
+                get(|request: Request| async move {
+                    assert_eq!(
+                        request.uri().query(),
+                        Some("limit=50&workspace_id=workspace-1")
+                    );
+                    Json(serde_json::json!({
+                        "autopilots":[{"id":ID,"title":"Daily planner","status":"active"}],
+                        "total":1
+                    }))
+                }),
+            )
+            .route(
+                "/api/autopilots/abcd0000-1111-2222-3333-444444444444",
+                delete_route(|| async { axum::http::StatusCode::NO_CONTENT }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        let cli = Cli::try_parse_from(["cordy", "autopilot", "delete", "abcd"])
+            .expect("autopilot delete CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("delete autopilot");
+        assert_eq!(output.stdout, "Autopilot Daily planner deleted.\n");
         server.abort();
     }
 
