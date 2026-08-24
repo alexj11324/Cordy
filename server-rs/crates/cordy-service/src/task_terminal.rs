@@ -670,7 +670,7 @@ impl TaskService {
         source_task_id: Option<Uuid>,
         trigger_comment_id_in: Option<Uuid>,
         actor_user_id: Option<Uuid>,
-        can_invoke: Option<&dyn Fn(&Agent) -> bool>,
+        can_invoke: Option<&(dyn Fn(&Agent) -> bool + Sync)>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
         let issue = get_issue(&self.pool, issue_id)
             .await
@@ -1231,9 +1231,7 @@ impl TaskService {
 /// (MUL-4899). Lexical only: file:// URLs and the recorded work_dir prefix.
 /// No path, body text, or fragment may reach the metric or the log.
 fn observe_chat_output_local_path(svc: &TaskService, task: &AgentTaskQueue, body: &str) {
-    let Some(metrics) = svc.metrics.get() else {
-        return;
-    };
+    let Some(metrics) = &svc.metrics else { return };
     if body.trim().is_empty() {
         return;
     }

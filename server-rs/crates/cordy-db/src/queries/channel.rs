@@ -234,6 +234,37 @@ RETURNING token_hash, workspace_id, installation_id, channel_type, channel_user_
     }))
 }
 
+/// Atomically consume a legacy Lark binding token. Lark still mints into the
+/// dedicated table even though newer channel adapters share
+/// `channel_binding_token`.
+pub async fn consume_lark_binding_token(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    token_hash: &str,
+) -> anyhow::Result<Option<LarkBindingToken>> {
+    let row = sqlx::query(
+        r#"UPDATE lark_binding_token
+SET consumed_at = now()
+WHERE token_hash = $1
+  AND consumed_at IS NULL
+  AND expires_at > now()
+RETURNING token_hash, workspace_id, installation_id, lark_open_id,
+          expires_at, consumed_at, created_at"#,
+    )
+    .bind(token_hash)
+    .fetch_optional(executor)
+    .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(LarkBindingToken {
+        token_hash: row.try_get(0)?,
+        workspace_id: row.try_get(1)?,
+        installation_id: row.try_get(2)?,
+        lark_open_id: row.try_get(3)?,
+        expires_at: row.try_get(4)?,
+        consumed_at: row.try_get(5)?,
+        created_at: row.try_get(6)?,
+    }))
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct CountChannelMediaPendingObjectsRow {
     pub pending_objects: i64,
