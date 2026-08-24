@@ -252,11 +252,119 @@ macro_rules! list_handler {
         }
     };
 }
-list_handler!(list_dingtalk, Provider::DingTalk);
 list_handler!(list_lark, Provider::Lark);
 list_handler!(list_slack, Provider::Slack);
 list_handler!(list_telegram, Provider::Telegram);
 list_handler!(list_wecom, Provider::WeCom);
+
+async fn list_dingtalk(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    if secret_box(Provider::DingTalk).is_none() {
+        return Json(json!({
+            "installations": [],
+            "configured": false,
+            "install_supported": false,
+            "group_routing_supported": false,
+        }))
+        .into_response();
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let rows = match channel::list_channel_installations_by_workspace(
+        &state.pool,
+        workspace_id,
+        Provider::DingTalk.channel_type(),
+    )
+    .await
+    {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::error!(%error, "list DingTalk installations failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list installations",
+            );
+        }
+    };
+
+    // Account bindings are private management data. Match Go by exposing only
+    // the current member's bindings, and only when that member is an owner or
+    // admin; ordinary members still receive the installation list itself.
+    let bindings = if matches!(context.member.role.as_str(), "owner" | "admin") {
+        match dingtalk::list_ding_talk_user_bindings_for_member(
+            &state.pool,
+            workspace_id,
+            context.member.user_id,
+        )
+        .await
+        {
+            Ok(rows) => {
+                let mut by_installation = HashMap::<Uuid, Vec<String>>::new();
+                for row in rows {
+                    if let Some(installation_id) = row.installation_id {
+                        by_installation
+                            .entry(installation_id)
+                            .or_default()
+                            .push(row.channel_user_id);
+                    }
+                }
+                Some(by_installation)
+            }
+            Err(error) => {
+                tracing::error!(%error, "list DingTalk member bindings failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to list dingtalk user bindings",
+                );
+            }
+        }
+    } else {
+        None
+    };
+    let installations = rows
+        .into_iter()
+        .map(|row| dingtalk_installation_response(row, bindings.as_ref()))
+        .collect::<Vec<_>>();
+    Json(json!({
+        "installations": installations,
+        "configured": true,
+        "install_supported": true,
+        "group_routing_supported": true,
+    }))
+    .into_response()
+}
+
+fn dingtalk_installation_response(
+    row: ChannelInstallation,
+    bindings: Option<&HashMap<Uuid, Vec<String>>>,
+) -> Value {
+    let installation_id = row.id;
+    dingtalk_installation_bindings(
+        installation_response(Provider::DingTalk, row),
+        installation_id,
+        bindings,
+    )
+}
+
+fn dingtalk_installation_bindings(
+    mut value: Value,
+    installation_id: Uuid,
+    bindings: Option<&HashMap<Uuid, Vec<String>>>,
+) -> Value {
+    if let Some(target) = value.as_object_mut() {
+        target.insert(
+            "bound_dingtalk_user_ids".into(),
+            bindings
+                .map(|items| json!(items.get(&installation_id).cloned().unwrap_or_default()))
+                .unwrap_or(Value::Null),
+        );
+    }
+    value
+}
 
 #[derive(Clone)]
 struct LarkSession {
@@ -1467,6 +1575,24 @@ mod tests {
             assert!(!encoded.contains("encrypted"));
             assert!(!encoded.contains("cipher"));
         }
+    }
+
+    #[test]
+    fn dingtalk_list_projection_scopes_member_bindings() {
+        let installation_id = Uuid::new_v4();
+        let mut bindings = HashMap::new();
+        bindings.insert(installation_id, vec!["staff-1001".into()]);
+
+        let admin = dingtalk_installation_bindings(
+            json!({"id": installation_id}),
+            installation_id,
+            Some(&bindings),
+        );
+        assert_eq!(admin["bound_dingtalk_user_ids"], json!(["staff-1001"]));
+
+        let member =
+            dingtalk_installation_bindings(json!({"id": installation_id}), installation_id, None);
+        assert!(member["bound_dingtalk_user_ids"].is_null());
     }
 
     #[test]
