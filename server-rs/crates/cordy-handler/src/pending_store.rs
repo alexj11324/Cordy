@@ -77,6 +77,7 @@ const MODEL_CATALOG_REDIS_TIMEOUT: Duration = Duration::from_millis(250);
 const LOCAL_SKILL_PENDING_TIMEOUT_SECS: i64 = 3 * 60;
 const LOCAL_SKILL_RUNNING_TIMEOUT_SECS: i64 = 60;
 const LOCAL_SKILL_STORE_RETENTION_SECS: i64 = 5 * 60;
+const PENDING_REDIS_TIMEOUT: Duration = Duration::from_secs(1);
 /// Bounds the cheap HasPending probe on the heartbeat hot path.
 pub const HEARTBEAT_HAS_PENDING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 /// Max claims of a single pending queue entry per PopPending call.
@@ -109,6 +110,32 @@ end
 return 0
 "#;
 
+async fn bounded_pending_redis<T, F>(operation: &'static str, future: F) -> anyhow::Result<T>
+where
+    F: Future<Output = redis::RedisResult<T>>,
+{
+    bounded_pending_redis_with_timeout(PENDING_REDIS_TIMEOUT, operation, future).await
+}
+
+async fn bounded_pending_redis_with_timeout<T, F>(
+    timeout: Duration,
+    operation: &'static str,
+    future: F,
+) -> anyhow::Result<T>
+where
+    F: Future<Output = redis::RedisResult<T>>,
+{
+    match tokio::time::timeout(timeout, future).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(anyhow::anyhow!(
+            "runtime pending Redis {operation} failed: {error}"
+        )),
+        Err(_) => Err(anyhow::anyhow!(
+            "runtime pending Redis {operation} timed out"
+        )),
+    }
+}
+
 async fn run_claim_script(
     conn: &mut ConnectionManager,
     pending_key: &str,
@@ -117,32 +144,35 @@ async fn run_claim_script(
     data: &str,
     ttl_secs: i64,
 ) -> anyhow::Result<bool> {
-    let result: i64 = redis::Script::new(CLAIM_PENDING_SCRIPT)
+    let script = redis::Script::new(CLAIM_PENDING_SCRIPT);
+    let mut invocation = script.prepare_invoke();
+    invocation
         .key(pending_key)
         .key(record_key)
         .arg(id)
         .arg(data)
-        .arg(ttl_secs)
-        .invoke_async(conn)
-        .await?;
+        .arg(ttl_secs);
+    let result: i64 = bounded_pending_redis("claim", invocation.invoke_async(conn)).await?;
     Ok(result == 1)
 }
 
 async fn zcard(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<i64> {
-    redis::cmd("ZCARD")
-        .arg(key)
-        .query_async(conn)
-        .await
-        .map_err(|e| anyhow::anyhow!("zcard {key}: {e}"))
+    let mut command = redis::cmd("ZCARD");
+    command.arg(key);
+    bounded_pending_redis("zcard", command.query_async(conn)).await
 }
 
 async fn get_bytes(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Option<Vec<u8>>> {
-    let v: Option<Vec<u8>> = redis::cmd("GET")
-        .arg(key)
-        .query_async(conn)
-        .await
-        .map_err(|e| anyhow::anyhow!("get {key}: {e}"))?;
-    Ok(v)
+    let mut command = redis::cmd("GET");
+    command.arg(key);
+    bounded_pending_redis("get", command.query_async(conn)).await
+}
+
+async fn zrem(conn: &mut ConnectionManager, key: &str, member: &str) -> anyhow::Result<()> {
+    let mut command = redis::cmd("ZREM");
+    command.arg(key).arg(member);
+    let _: i64 = bounded_pending_redis("zrem", command.query_async(conn)).await?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -279,23 +309,26 @@ impl UpdateStore {
             self.persist_request(&req).await?;
             self.clear_active_if_matches(&req.runtime_id, &req.id)
                 .await?;
-            let _: () = redis::cmd("ZREM")
-                .arg(update_pending_key(&req.runtime_id))
-                .arg(&req.id)
-                .query_async(&mut self.conn.clone())
-                .await?;
+            zrem(
+                &mut self.conn.clone(),
+                &update_pending_key(&req.runtime_id),
+                &req.id,
+            )
+            .await?;
         }
         Ok(Some(req))
     }
 
     async fn persist_request(&self, req: &UpdateRequest) -> anyhow::Result<()> {
         let data = marshal_update(req)?;
-        let (): () = redis::cmd("SET")
+        let mut conn = self.conn.clone();
+        let mut command = redis::cmd("SET");
+        command
             .arg(update_key(&req.id))
             .arg(data)
             .arg("EX")
-            .arg(UPDATE_STORE_RETENTION_SECS)
-            .query_async(&mut self.conn.clone())
+            .arg(UPDATE_STORE_RETENTION_SECS);
+        let (): () = bounded_pending_redis("persist update", command.query_async(&mut conn))
             .await
             .map_err(|e| anyhow::anyhow!("persist update request: {e}"))?;
         Ok(())
@@ -305,12 +338,14 @@ impl UpdateStore {
         if runtime_id.is_empty() || id.is_empty() {
             return Ok(());
         }
-        let _: i64 = redis::Script::new(DELETE_IF_VALUE_SCRIPT)
-            .key(update_active_key(runtime_id))
-            .arg(id)
-            .invoke_async(&mut self.conn.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("clear active update: {e}"))?;
+        let script = redis::Script::new(DELETE_IF_VALUE_SCRIPT);
+        let mut invocation = script.prepare_invoke();
+        invocation.key(update_active_key(runtime_id)).arg(id);
+        let mut conn = self.conn.clone();
+        let _: i64 =
+            bounded_pending_redis("clear active update", invocation.invoke_async(&mut conn))
+                .await
+                .map_err(|e| anyhow::anyhow!("clear active update: {e}"))?;
         Ok(())
     }
 
@@ -335,22 +370,24 @@ impl UpdateStore {
         };
         let data = marshal_update(&req)?;
         let active_key = update_active_key(runtime_id);
-        let ok: Option<String> = redis::cmd("SET")
+        let mut conn = self.conn.clone();
+        let mut reserve = redis::cmd("SET");
+        reserve
             .arg(&active_key)
             .arg(&req.id)
             .arg("EX")
             .arg(UPDATE_STORE_RETENTION_SECS)
-            .arg("NX")
-            .query_async(&mut self.conn.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("reserve active update: {e}"))?;
+            .arg("NX");
+        let ok: Option<String> =
+            bounded_pending_redis("reserve active update", reserve.query_async(&mut conn))
+                .await
+                .map_err(|e| anyhow::anyhow!("reserve active update: {e}"))?;
         if ok.is_none() {
             anyhow::bail!("update already in progress");
         }
-        let mut conn = self.conn.clone();
         let pending_key = update_pending_key(runtime_id);
-        let (): () = redis::pipe()
-            .cmd("SET")
+        let mut pipe = redis::pipe();
+        pipe.cmd("SET")
             .arg(update_key(&req.id))
             .arg(&data)
             .arg("EX")
@@ -364,8 +401,8 @@ impl UpdateStore {
             .cmd("EXPIRE")
             .arg(&pending_key)
             .arg(UPDATE_STORE_RETENTION_SECS * 2)
-            .ignore()
-            .query_async(&mut conn)
+            .ignore();
+        let (): () = bounded_pending_redis("persist update", pipe.query_async(&mut conn))
             .await
             .map_err(|e| anyhow::anyhow!("persist update request: {e}"))?;
         Ok(req)
@@ -385,13 +422,13 @@ impl UpdateStore {
     /// Claims the oldest pending update for this runtime (Go PopPending).
     pub async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<UpdateRequest>> {
         let pending_key = update_pending_key(runtime_id);
-        let ids: Vec<String> = redis::cmd("ZRANGE")
-            .arg(&pending_key)
-            .arg(0)
-            .arg(0)
-            .query_async(&mut self.conn.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("zrange pending updates: {e}"))?;
+        let mut conn = self.conn.clone();
+        let mut range = redis::cmd("ZRANGE");
+        range.arg(&pending_key).arg(0).arg(0);
+        let ids: Vec<String> =
+            bounded_pending_redis("list pending updates", range.query_async(&mut conn))
+                .await
+                .map_err(|e| anyhow::anyhow!("zrange pending updates: {e}"))?;
         let Some(id) = ids.into_iter().next() else {
             return Ok(None);
         };
@@ -399,19 +436,11 @@ impl UpdateStore {
         // iteration this collapses to bounded retries over fresh reads.
         for _ in 0..POP_MAX_RETRIES {
             let Some(mut req) = self.load_request(&id).await? else {
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 break;
             };
             if req.status != UpdateStatus::Pending {
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 break;
             }
             let now = Utc::now();
@@ -449,11 +478,12 @@ impl UpdateStore {
         self.persist_request(&req).await?;
         self.clear_active_if_matches(&req.runtime_id, &req.id)
             .await?;
-        let _: () = redis::cmd("ZREM")
-            .arg(update_pending_key(&req.runtime_id))
-            .arg(&req.id)
-            .query_async(&mut self.conn.clone())
-            .await?;
+        zrem(
+            &mut self.conn.clone(),
+            &update_pending_key(&req.runtime_id),
+            &req.id,
+        )
+        .await?;
         Ok(())
     }
 
@@ -470,11 +500,12 @@ impl UpdateStore {
         self.persist_request(&req).await?;
         self.clear_active_if_matches(&req.runtime_id, &req.id)
             .await?;
-        let _: () = redis::cmd("ZREM")
-            .arg(update_pending_key(&req.runtime_id))
-            .arg(&req.id)
-            .query_async(&mut self.conn.clone())
-            .await?;
+        zrem(
+            &mut self.conn.clone(),
+            &update_pending_key(&req.runtime_id),
+            &req.id,
+        )
+        .await?;
         Ok(())
     }
 }
@@ -1642,6 +1673,18 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(error.to_string(), "model catalog Redis operation timed out");
+    }
+
+    #[tokio::test]
+    async fn pending_redis_operation_has_a_hard_deadline() {
+        let error = bounded_pending_redis_with_timeout(
+            Duration::from_millis(1),
+            "update",
+            std::future::pending::<redis::RedisResult<()>>(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.to_string(), "runtime pending Redis update timed out");
     }
 
     #[test]
