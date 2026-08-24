@@ -1,11 +1,11 @@
 use async_trait::async_trait;
-use aws_config::{default_provider::credentials::DefaultCredentialsChain, Region};
+use aws_config::{Region, default_provider::credentials::DefaultCredentialsChain};
 use aws_credential_types::{
-    provider::{ProvideCredentials, SharedCredentialsProvider},
     Credentials,
+    provider::{ProvideCredentials, SharedCredentialsProvider},
 };
 use axum::body::Body;
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -137,11 +137,13 @@ impl AttachmentStorage for LocalStorage {
             .and_then(|v| v.to_str())
             .ok_or_else(|| anyhow::anyhow!("invalid storage key"))?;
         let tmp = parent.join(format!(".{name}.tmp"));
+        let mut tmp_guard = LocalTempGuard::new(tmp.clone());
         let mut file = tokio::fs::File::create(&tmp).await?;
         file.write_all(&body).await?;
         file.flush().await?;
         drop(file);
         tokio::fs::rename(&tmp, &path).await?;
+        tmp_guard.disarm();
         let meta = serde_json::json!({"filename": filename, "content_type": content_type});
         if let Err(error) = tokio::fs::write(
             format!("{}.meta.json", path.display()),
@@ -172,24 +174,18 @@ impl AttachmentStorage for LocalStorage {
             .and_then(|value| value.to_str())
             .ok_or_else(|| anyhow::anyhow!("invalid storage key"))?;
         let tmp = parent.join(format!(".{name}.tmp"));
-        let result = async {
-            let mut file = tokio::fs::File::create(&tmp).await?;
-            let mut limited = body.take(size_bytes as u64 + 1);
-            let copied = tokio::io::copy(&mut limited, &mut file).await?;
-            anyhow::ensure!(
-                copied == size_bytes as u64,
-                "stream length does not match declared size"
-            );
-            file.flush().await?;
-            drop(file);
-            tokio::fs::rename(&tmp, &path).await?;
-            anyhow::Ok(())
-        }
-        .await;
-        if let Err(error) = result {
-            let _ = tokio::fs::remove_file(&tmp).await;
-            return Err(error);
-        }
+        let mut tmp_guard = LocalTempGuard::new(tmp.clone());
+        let mut file = tokio::fs::File::create(&tmp).await?;
+        let mut limited = body.take(size_bytes as u64 + 1);
+        let copied = tokio::io::copy(&mut limited, &mut file).await?;
+        anyhow::ensure!(
+            copied == size_bytes as u64,
+            "stream length does not match declared size"
+        );
+        file.flush().await?;
+        drop(file);
+        tokio::fs::rename(&tmp, &path).await?;
+        tmp_guard.disarm();
         write_local_metadata(&path, key, content_type, filename).await;
         Ok(self.object_url(key))
     }
@@ -299,6 +295,33 @@ fn local_temp_path(path: &Path) -> Option<PathBuf> {
     let parent = path.parent()?;
     let name = path.file_name()?.to_str()?;
     Some(parent.join(format!(".{name}.tmp")))
+}
+
+/// Removes a deterministic staging file on errors and async cancellation.
+/// Async cleanup after an `.await` is insufficient because dropping the
+/// upload future skips that code; unlinking in `Drop` keeps the old object
+/// intact and prevents an abandoned partial body from accumulating.
+struct LocalTempGuard {
+    path: PathBuf,
+    armed: bool,
+}
+
+impl LocalTempGuard {
+    fn new(path: PathBuf) -> Self {
+        Self { path, armed: true }
+    }
+
+    fn disarm(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for LocalTempGuard {
+    fn drop(&mut self) {
+        if self.armed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1712,16 +1735,18 @@ mod tests {
             .upload(key, b"old".to_vec(), "application/octet-stream", "old.bin")
             .await
             .unwrap();
-        assert!(store
-            .upload_stream(
-                key,
-                Box::new(std::io::Cursor::new(b"too-long".to_vec())),
-                3,
-                "application/octet-stream",
-                "new.bin",
-            )
-            .await
-            .is_err());
+        assert!(
+            store
+                .upload_stream(
+                    key,
+                    Box::new(std::io::Cursor::new(b"too-long".to_vec())),
+                    3,
+                    "application/octet-stream",
+                    "new.bin",
+                )
+                .await
+                .is_err()
+        );
         let old = store.get(key, None).await.unwrap();
         assert_eq!(old.body.collect().await.unwrap().to_bytes(), &b"old"[..]);
 
@@ -1741,6 +1766,46 @@ mod tests {
             &b"replacement"[..]
         );
         assert!(!local_temp_path(&store.path(key).unwrap()).unwrap().exists());
+    }
+
+    #[tokio::test]
+    async fn local_stream_upload_cancellation_removes_partial_temp_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = LocalStorage::new(dir.path().to_path_buf(), String::new()).unwrap();
+        let key = "workspaces/w/cancelled.bin";
+        store
+            .upload(key, b"old".to_vec(), "application/octet-stream", "old.bin")
+            .await
+            .unwrap();
+
+        let (mut writer, reader) = tokio::io::duplex(8);
+        writer.write_all(b"partial").await.unwrap();
+        let upload_store = store.clone();
+        let upload = tokio::spawn(async move {
+            upload_store
+                .upload_stream(
+                    key,
+                    Box::new(reader),
+                    10,
+                    "application/octet-stream",
+                    "new.bin",
+                )
+                .await
+        });
+        let tmp = local_temp_path(&store.path(key).unwrap()).unwrap();
+        for _ in 0..100 {
+            if tmp.exists() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+        assert!(tmp.exists());
+        upload.abort();
+        assert!(upload.await.unwrap_err().is_cancelled());
+        assert!(!tmp.exists());
+
+        let old = store.get(key, None).await.unwrap();
+        assert_eq!(old.body.collect().await.unwrap().to_bytes(), &b"old"[..]);
     }
 
     #[tokio::test]
@@ -1810,11 +1875,13 @@ mod tests {
         let key = "workspaces/w/file.微信";
         let url = store.object_url(key);
         assert_eq!(store.key_from_url(&url).as_deref(), Some(key));
-        assert!(!store
-            .request_url(store.key_from_url(&url).as_deref().unwrap())
-            .unwrap()
-            .as_str()
-            .contains("%25"));
+        assert!(
+            !store
+                .request_url(store.key_from_url(&url).as_deref().unwrap())
+                .unwrap()
+                .as_str()
+                .contains("%25")
+        );
     }
 
     fn test_s3(endpoint: &str, custom_endpoint: bool, path_style: bool) -> S3Storage {
@@ -1956,10 +2023,12 @@ mod tests {
         assert_eq!(empty.payload_hash, UNSIGNED_PAYLOAD);
         assert_eq!(empty.headers.get(CRC32_TRAILER).unwrap(), "AAAAAA==");
         assert!(empty.headers.get("x-amz-trailer").is_none());
-        assert!(empty
-            .headers
-            .get(reqwest::header::CONTENT_ENCODING)
-            .is_none());
+        assert!(
+            empty
+                .headers
+                .get(reqwest::header::CONTENT_ENCODING)
+                .is_none()
+        );
 
         let http = prepare_buffered_put(
             b"123456789".to_vec(),
@@ -2123,8 +2192,10 @@ mod tests {
             .unwrap()
             .to_str()
             .unwrap();
-        assert!(authorization
-            .contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-storage-class"));
+        assert!(
+            authorization
+                .contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-storage-class")
+        );
     }
 
     #[test]
@@ -2178,12 +2249,16 @@ mod tests {
             headers.get("x-amz-security-token").unwrap(),
             "temporary-session-token"
         );
-        assert!(headers
-            .get(reqwest::header::AUTHORIZATION)
-            .unwrap()
-            .to_str()
-            .unwrap()
-            .contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token"));
+        assert!(
+            headers
+                .get(reqwest::header::AUTHORIZATION)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .contains(
+                    "SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token"
+                )
+        );
     }
 
     #[tokio::test]
@@ -2258,17 +2333,21 @@ mod tests {
                 .as_deref(),
             Some("workspaces/w/file.txt")
         );
-        assert!(store
-            .key_from_url("https://attacker.example/base/bucket/workspaces/w/file.txt")
-            .is_none());
+        assert!(
+            store
+                .key_from_url("https://attacker.example/base/bucket/workspaces/w/file.txt")
+                .is_none()
+        );
         assert!(store
             .key_from_url(
                 "https://objects.example.test/base/bucket/workspaces/w/file.txt?X-Amz-Signature=x"
             )
             .is_none());
-        assert!(store
-            .key_from_url("https://objects.example.test/base/bucket/workspaces%2Fw/file.txt")
-            .is_none());
+        assert!(
+            store
+                .key_from_url("https://objects.example.test/base/bucket/workspaces%2Fw/file.txt")
+                .is_none()
+        );
     }
 
     #[test]
