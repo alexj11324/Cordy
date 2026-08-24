@@ -1356,22 +1356,68 @@ async fn install_slack(
         }
     };
     let config = json!({"app_id": app_id, "team_id": auth.team_id, "bot_user_id": auth.user_id, "bot_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed_bot), "app_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed_app)});
-    match persist(
-        &state,
-        Provider::Slack,
+    let persist = match cordy_slack::install::InstallPersist::from_config(
         workspace_id,
         agent_id,
         actor,
-        app_id,
-        &config,
-    )
-    .await
+        config,
+    ) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(%error, "failed to compose Slack installation");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to save Slack installation",
+            );
+        }
+    };
+    match cordy_slack::install::InstallService::new(state.pool.clone())
+        .persist_install(&persist)
+        .await
     {
         Ok(row) => {
             publish_created(&state, Provider::Slack, &row, actor);
             Json(installation_response(Provider::Slack, row)).into_response()
         }
-        Err(response) => response,
+        Err(error) => {
+            let failure = classify_slack_install_persist_error(&error);
+            if failure.status == StatusCode::INTERNAL_SERVER_ERROR {
+                tracing::error!(%error, %workspace_id, %agent_id, "Slack installation persist failed");
+            }
+            error_response(failure.status, failure.message)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SlackInstallPersistFailure {
+    status: StatusCode,
+    message: &'static str,
+}
+
+fn classify_slack_install_persist_error(error: &anyhow::Error) -> SlackInstallPersistFailure {
+    use cordy_slack::install::InstallError;
+
+    let ownership = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<InstallError>());
+    match ownership {
+        Some(InstallError::TeamOwnedBySameWorkspace) => SlackInstallPersistFailure {
+            status: StatusCode::CONFLICT,
+            message: "this Slack app is already connected to another agent in this workspace — disconnect it there first, then connect it here",
+        },
+        Some(InstallError::TeamOwnedByArchivedAgent) => SlackInstallPersistFailure {
+            status: StatusCode::CONFLICT,
+            message: "this Slack app is connected to an archived agent in this workspace — restore that agent, or disconnect its bot, before connecting it here",
+        },
+        Some(InstallError::TeamOwnedByAnotherWorkspace) => SlackInstallPersistFailure {
+            status: StatusCode::CONFLICT,
+            message: "this Slack app is already connected to a different Cordy workspace — disconnect it there before connecting it here",
+        },
+        Some(InstallError::InstallationNotFound) | None => SlackInstallPersistFailure {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "failed to save Slack installation",
+        },
     }
 }
 
@@ -1510,6 +1556,34 @@ mod tests {
             dingtalk_install_error(&internal).0,
             StatusCode::INTERNAL_SERVER_ERROR
         );
+    }
+
+    #[test]
+    fn slack_persist_errors_preserve_owner_recovery_path() {
+        use cordy_slack::install::InstallError;
+
+        let cases = [
+            (
+                InstallError::TeamOwnedBySameWorkspace,
+                "another agent in this workspace",
+            ),
+            (
+                InstallError::TeamOwnedByArchivedAgent,
+                "archived agent in this workspace",
+            ),
+            (
+                InstallError::TeamOwnedByAnotherWorkspace,
+                "different Cordy workspace",
+            ),
+        ];
+        for (error, recovery_scope) in cases {
+            let failure = classify_slack_install_persist_error(&anyhow::Error::new(error));
+            assert_eq!(failure.status, StatusCode::CONFLICT);
+            assert!(failure.message.contains(recovery_scope));
+        }
+
+        let internal = classify_slack_install_persist_error(&anyhow::anyhow!("database down"));
+        assert_eq!(internal.status, StatusCode::INTERNAL_SERVER_ERROR);
     }
 
     #[test]
