@@ -208,7 +208,7 @@ impl HandlerState {
         hub: Option<Arc<Hub>>,
         analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
     ) -> Self {
-        Self::new_with_dependencies(pool, pat_cache, hub, analytics, None, None)
+        Self::new_with_dependencies(pool, pat_cache, hub, analytics, None, None, None)
     }
 
     pub fn new_with_production_dependencies(
@@ -217,6 +217,7 @@ impl HandlerState {
         hub: Option<Arc<Hub>>,
         analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
         feature_flags: Arc<dyn cordy_service::feature_flags::FlagSource>,
+        business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     ) -> Self {
         let composio =
             if cordy_service::feature_flags::composio_mcp_apps_enabled(feature_flags.as_ref()) {
@@ -233,6 +234,7 @@ impl HandlerState {
             analytics,
             Some(feature_flags),
             composio,
+            business_metrics,
         )
     }
 
@@ -243,6 +245,7 @@ impl HandlerState {
         analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
         feature_flags: Option<Arc<dyn cordy_service::feature_flags::FlagSource>>,
         composio: Option<Arc<cordy_composio::Service>>,
+        business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     ) -> Self {
         let bus = Arc::new(cordy_events::Bus::new());
         let daemon_hub = Arc::new(cordy_daemon::hub::DaemonHub::new());
@@ -255,6 +258,7 @@ impl HandlerState {
         )));
         let mut task_service = TaskService::new(pool.clone(), bus.clone());
         task_service.analytics = Some(Box::new(SharedAnalyticsClient(analytics.clone())));
+        task_service.metrics = business_metrics.clone();
         task_service.wakeup = Some(Arc::downgrade(&task_wakeup));
         task_service.quick_actions = Some(llm.clone());
         task_service.feature_flags = feature_flags.clone();
@@ -269,6 +273,7 @@ impl HandlerState {
         ));
         let mut issue_service = IssueService::new(pool.clone(), bus.clone(), tasks.clone());
         issue_service.analytics = Some(Box::new(SharedAnalyticsClient(analytics.clone())));
+        issue_service.metrics = business_metrics.clone();
         let issues = Arc::new(issue_service);
         let plugins = Arc::new(PluginService::with_pool(pool.clone()));
         let heartbeat_scheduler =
@@ -293,7 +298,7 @@ impl HandlerState {
             daemon_token_cache: DaemonTokenCache::disabled(),
             hub,
             bus,
-            business_metrics: None,
+            business_metrics,
             http_metrics: None,
             heartbeat_scheduler,
             liveness_store: Arc::new(crate::runtime_liveness::NoopLivenessStore),

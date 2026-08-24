@@ -220,6 +220,7 @@ async fn build_production_router(
         Some(hub),
         analytics.clone(),
         feature_flags,
+        business_metrics.clone(),
     )
     .with_observability(business_metrics, http_metrics)
     .with_autopilot_entitlements(entitlements)
