@@ -182,6 +182,70 @@ enum ProjectCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
         output: OutputFormat,
     },
+    #[command(about = "Create a new project")]
+    Create(ProjectCreateArgs),
+    #[command(about = "Update a project")]
+    Update(ProjectUpdateArgs),
+    #[command(about = "Delete a project")]
+    Delete {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
+    #[command(about = "Change project status")]
+    Status {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(value_name = "STATUS")]
+        status: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
+}
+
+#[derive(Debug, Args)]
+struct ProjectCreateArgs {
+    #[arg(long, help = "Project title (required)")]
+    title: Option<String>,
+    #[arg(long, help = "Project description")]
+    description: Option<String>,
+    #[arg(long, help = "Project status")]
+    status: Option<String>,
+    #[arg(long, help = "Project icon (emoji)")]
+    icon: Option<String>,
+    #[arg(long, help = "Lead name (member or agent)")]
+    lead: Option<String>,
+    #[arg(long, help = "Start date (calendar day, YYYY-MM-DD)")]
+    start_date: Option<String>,
+    #[arg(long, help = "Due date (calendar day, YYYY-MM-DD)")]
+    due_date: Option<String>,
+    #[arg(long, action = clap::ArgAction::Append, help = "Attach a github_repo resource by URL")]
+    repo: Vec<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct ProjectUpdateArgs {
+    #[arg(value_name = "ID")]
+    id: String,
+    #[arg(long, help = "New title")]
+    title: Option<String>,
+    #[arg(long, help = "New description")]
+    description: Option<String>,
+    #[arg(long, help = "New status")]
+    status: Option<String>,
+    #[arg(long, help = "New icon (emoji)")]
+    icon: Option<String>,
+    #[arg(long, help = "New lead name (member or agent)")]
+    lead: Option<String>,
+    #[arg(long, help = "New start date; pass an empty string to clear")]
+    start_date: Option<String>,
+    #[arg(long, help = "New due date; pass an empty string to clear")]
+    due_date: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Subcommand)]
@@ -1369,6 +1433,18 @@ async fn run_with_input<R: Read>(
         Command::Project(ProjectArgs {
             command: ProjectCommand::Get { id, output },
         }) => run_project_get(cli, environment, id, *output).await,
+        Command::Project(ProjectArgs {
+            command: ProjectCommand::Create(args),
+        }) => run_project_create(cli, environment, args).await,
+        Command::Project(ProjectArgs {
+            command: ProjectCommand::Update(args),
+        }) => run_project_update(cli, environment, args).await,
+        Command::Project(ProjectArgs {
+            command: ProjectCommand::Delete { id, output },
+        }) => run_project_delete(cli, environment, id, *output).await,
+        Command::Project(ProjectArgs {
+            command: ProjectCommand::Status { id, status, output },
+        }) => run_project_status(cli, environment, id, status, *output).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -2358,9 +2434,19 @@ async fn resolve_issue_project_id(
     workspace_id: &str,
     raw: &str,
 ) -> Result<String> {
+    resolve_project_reference(client, workspace_id, raw)
+        .await
+        .map(|(id, _)| id)
+}
+
+async fn resolve_project_reference(
+    client: &ApiClient,
+    workspace_id: &str,
+    raw: &str,
+) -> Result<(String, String)> {
     let input = raw.trim();
     if is_canonical_uuid(input) {
-        return Ok(input.into());
+        return Ok((input.into(), input.into()));
     }
     let compact = input.replace('-', "").to_ascii_lowercase();
     if compact.len() < 4 {
@@ -2385,7 +2471,11 @@ async fn resolve_issue_project_id(
         .collect::<Vec<_>>();
     candidates.sort_by_key(|project| value_string(project, "id"));
     match candidates.as_slice() {
-        [project] => Ok(value_string(project, "id")),
+        [project] => {
+            let id = value_string(project, "id");
+            let title = value_string(project, "title");
+            Ok((id.clone(), if title.is_empty() { id } else { title }))
+        }
         [] => bail!(
             "no project found matching id prefix {raw:?}; run the list command with --full-id to copy the full UUID"
         ),
@@ -4816,6 +4906,199 @@ async fn run_project_get(
         }
     };
     Ok(RunOutput { stdout, stderr })
+}
+
+const PROJECT_STATUSES: &[&str] = &["planned", "in_progress", "paused", "completed", "cancelled"];
+
+fn validate_project_status(status: &str) -> Result<()> {
+    if PROJECT_STATUSES.contains(&status) {
+        Ok(())
+    } else {
+        bail!(
+            "invalid status {status:?}; valid values: {}",
+            PROJECT_STATUSES.join(", ")
+        )
+    }
+}
+
+fn format_project_mutation(project: &Value, output: OutputFormat) -> Result<String> {
+    match output {
+        OutputFormat::Json => Ok(format!("{}\n", serde_json::to_string_pretty(project)?)),
+        OutputFormat::Table => Ok(format_table(&[
+            vec!["ID".into(), "TITLE".into(), "STATUS".into()],
+            vec![
+                value_string(project, "id"),
+                value_string(project, "title"),
+                value_string(project, "status"),
+            ],
+        ])),
+    }
+}
+
+async fn resolve_project_lead(
+    client: &ApiClient,
+    workspace_id: &str,
+    lead: &str,
+) -> Result<ResolvedIssueAssignee> {
+    resolve_subscriber_name(client, workspace_id, lead)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve lead: {error}"))
+}
+
+async fn run_project_create(
+    cli: &Cli,
+    environment: &Environment,
+    args: &ProjectCreateArgs,
+) -> Result<RunOutput> {
+    let title = args
+        .title
+        .as_deref()
+        .filter(|title| !title.is_empty())
+        .context("--title is required")?;
+    if let Some(status) = args.status.as_deref().filter(|status| !status.is_empty()) {
+        validate_project_status(status)?;
+    }
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let mut body = serde_json::Map::from_iter([("title".into(), Value::String(title.into()))]);
+    for (key, value) in [
+        ("description", args.description.as_deref()),
+        ("status", args.status.as_deref()),
+        ("icon", args.icon.as_deref()),
+        ("start_date", args.start_date.as_deref()),
+        ("due_date", args.due_date.as_deref()),
+    ] {
+        if let Some(value) = value.filter(|value| !value.is_empty()) {
+            body.insert(key.into(), Value::String(value.into()));
+        }
+    }
+    if let Some(lead) = args.lead.as_deref().filter(|lead| !lead.is_empty()) {
+        let lead = resolve_project_lead(&client, &workspace_id, lead).await?;
+        body.insert("lead_type".into(), Value::String(lead.actor_type));
+        body.insert("lead_id".into(), Value::String(lead.id));
+    }
+    let resources = args
+        .repo
+        .iter()
+        .map(|repo| repo.trim())
+        .filter(|repo| !repo.is_empty())
+        .map(|repo| {
+            serde_json::json!({
+                "resource_type":"github_repo",
+                "resource_ref":{"url":repo}
+            })
+        })
+        .collect::<Vec<_>>();
+    if !resources.is_empty() {
+        body.insert("resources".into(), Value::Array(resources));
+    }
+    let project: Value = client
+        .post_json("/api/projects", &body)
+        .await
+        .context("create project")?;
+    Ok(RunOutput {
+        stdout: format_project_mutation(&project, args.output)?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_project_update(
+    cli: &Cli,
+    environment: &Environment,
+    args: &ProjectUpdateArgs,
+) -> Result<RunOutput> {
+    if let Some(status) = &args.status {
+        validate_project_status(status)?;
+    }
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let project_id = resolve_issue_project_id(&client, &workspace_id, &args.id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve project: {error}"))?;
+    let mut body = serde_json::Map::new();
+    for (key, value) in [
+        ("title", args.title.as_ref()),
+        ("description", args.description.as_ref()),
+        ("status", args.status.as_ref()),
+        ("icon", args.icon.as_ref()),
+        ("start_date", args.start_date.as_ref()),
+        ("due_date", args.due_date.as_ref()),
+    ] {
+        if let Some(value) = value {
+            body.insert(key.into(), Value::String(value.clone()));
+        }
+    }
+    if let Some(lead) = &args.lead {
+        let lead = resolve_project_lead(&client, &workspace_id, lead).await?;
+        body.insert("lead_type".into(), Value::String(lead.actor_type));
+        body.insert("lead_id".into(), Value::String(lead.id));
+    }
+    if body.is_empty() {
+        bail!(
+            "no fields to update; use flags like --title, --status, --description, --icon, --lead, --start-date, --due-date"
+        );
+    }
+    let project: Value = client
+        .put_json(&format!("/api/projects/{project_id}"), &body)
+        .await
+        .context("update project")?;
+    Ok(RunOutput {
+        stdout: format_project_mutation(&project, args.output)?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_project_delete(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    _output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let (project_id, display) = resolve_project_reference(&client, &workspace_id, id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve project: {error}"))?;
+    client
+        .delete(&format!("/api/projects/{project_id}"))
+        .await
+        .context("delete project")?;
+    Ok(RunOutput {
+        stdout: String::new(),
+        stderr: format!("Project {display} deleted.\n"),
+    })
+}
+
+async fn run_project_status(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    status: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    validate_project_status(status)?;
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let project_id = resolve_issue_project_id(&client, &workspace_id, id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve project: {error}"))?;
+    let project: Value = client
+        .put_json(
+            &format!("/api/projects/{project_id}"),
+            &serde_json::json!({"status":status}),
+        )
+        .await
+        .context("update status")?;
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&project)?),
+            OutputFormat::Table => String::new(),
+        },
+        stderr: format!(
+            "Project {} status changed to {status}.\n",
+            value_string(&project, "title")
+        ),
+    })
 }
 
 async fn run_issue_label_list(
@@ -10435,6 +10718,138 @@ mod tests {
         assert!(output.stdout.contains("Migration"));
         assert!(output.stderr.contains("2 resource(s) attached"));
         assert!(output.stderr.contains(project_id));
+        task.abort();
+    }
+
+    #[test]
+    fn project_mutation_parser_and_status_validation_match_go_contract() {
+        let create = Cli::try_parse_from([
+            "cordy",
+            "project",
+            "create",
+            "--title",
+            "Migration",
+            "--status",
+            "planned",
+            "--repo",
+            "https://github.com/acme/one",
+            "--repo",
+            "https://github.com/acme/two",
+        ])
+        .expect("project create CLI");
+        let Command::Project(ProjectArgs {
+            command: ProjectCommand::Create(args),
+        }) = &create.command
+        else {
+            panic!("expected project create");
+        };
+        assert_eq!(args.repo.len(), 2);
+        for status in PROJECT_STATUSES {
+            validate_project_status(status).expect("valid project status");
+        }
+        assert!(validate_project_status("active")
+            .expect_err("invalid status")
+            .to_string()
+            .contains("planned"));
+
+        let update = Cli::try_parse_from([
+            "cordy",
+            "project",
+            "update",
+            "11111111-1111-1111-1111-111111111111",
+            "--start-date=",
+            "--due-date=",
+        ])
+        .expect("project update clears");
+        let Command::Project(ProjectArgs {
+            command: ProjectCommand::Update(args),
+        }) = &update.command
+        else {
+            panic!("expected project update");
+        };
+        assert_eq!(args.start_date.as_deref(), Some(""));
+        assert_eq!(args.due_date.as_deref(), Some(""));
+    }
+
+    #[tokio::test]
+    async fn project_create_bundles_repos_and_status_updates_return_go_outputs() {
+        let project_id = "11111111-1111-1111-1111-111111111111";
+        let app = Router::new()
+            .route(
+                "/api/projects",
+                post(|Json(body): Json<Value>| async move {
+                    assert_eq!(body["title"], "Migration");
+                    assert_eq!(body["status"], "planned");
+                    assert_eq!(body["resources"].as_array().expect("resources").len(), 2);
+                    assert_eq!(
+                        body["resources"][0]["resource_ref"]["url"],
+                        "https://github.com/acme/one"
+                    );
+                    Json(serde_json::json!({
+                        "id":"11111111-1111-1111-1111-111111111111",
+                        "title":"Migration","status":"planned"
+                    }))
+                }),
+            )
+            .route(
+                "/api/projects/11111111-1111-1111-1111-111111111111",
+                put(|Json(body): Json<Value>| async move {
+                    assert_eq!(body, serde_json::json!({"status":"completed"}));
+                    Json(serde_json::json!({
+                        "id":"11111111-1111-1111-1111-111111111111",
+                        "title":"Migration","status":"completed"
+                    }))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let create = Cli::try_parse_from([
+            "cordy",
+            "project",
+            "create",
+            "--title",
+            "Migration",
+            "--status",
+            "planned",
+            "--repo",
+            "https://github.com/acme/one",
+            "--repo",
+            "https://github.com/acme/two",
+        ])
+        .expect("project create CLI");
+        let created = run_with_input(&create, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("create project");
+        assert_eq!(
+            serde_json::from_str::<Value>(&created.stdout).expect("project JSON")["id"],
+            project_id
+        );
+
+        let status = Cli::try_parse_from([
+            "cordy",
+            "project",
+            "status",
+            project_id,
+            "completed",
+            "--output",
+            "table",
+        ])
+        .expect("project status CLI");
+        let updated = run_with_input(&status, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("update project status");
+        assert!(updated.stdout.is_empty());
+        assert_eq!(
+            updated.stderr,
+            "Project Migration status changed to completed.\n"
+        );
         task.abort();
     }
 
