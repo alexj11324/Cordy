@@ -715,6 +715,15 @@
       Redis admission, cache invalidation, events, and runtime/task side
       effects match the Go contract. No P0/P1 or changed-code compile gap;
       no implementation change was justified.
+- [x] Fixed a real P1 in comment task lifecycle at
+      `804a3d11ce47d9c63e871e02e60680b9421d930f` (parent `3bc22991`, tree
+      `7ae60a0a71d21c26ae45fe247ac86c5875770f27`). Comment update/delete now
+      replays surviving coalesced trigger comments after cancellation, grouped
+      by agent/task metadata and ordered by creation time; mutation failures
+      restore the complete batch, while deleted/edited triggers are excluded
+      only after success. Delegated recovery and note comments remain filtered;
+      tests cover exclusion, restoration, deduplication, and note behavior.
+      Scoped rustfmt/diff-check pass; pushed for pro's Ready PR/gate/merge.
 
 ## Phase 4 — S8 route and API parity
 
