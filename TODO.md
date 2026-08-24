@@ -952,6 +952,16 @@
       and diff-check pass; Cargo was not run. The serial subagent found and
       fixed the moved retry-helper visibility issue; pro owns push/Ready PR,
       gate, and merge.
+- [ ] CLI chat/attachment command structural refactor is committed at
+      `89f26842427ad24df568bbbe5a91d71ad2b2f8d2` (parent
+      `0471d51056cf94c29a5ee0909d55d608ef2174a9`, tree
+      `00a9ae650466ef64e8bc3bff85654df9d5ec2ca2`): chat history/thread query
+      and table formatting plus attachment upload/download path, timeout, and
+      output policy now live in `cordy-cli/src/chat_commands.rs`; parent
+      dispatch and shared chat reply formatting remain unchanged. Scoped
+      rustfmt and diff-check pass; Cargo was not run. The serial subagent
+      reviewed exact head `89f26842` and found no issue; pro owns push/Ready
+      PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
