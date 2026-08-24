@@ -102,10 +102,7 @@ impl HttpCloudRuntimeProxy {
     }
 
     pub fn from_env() -> Self {
-        Self::new(
-            std::env::var("CORDY_CLOUD_FLEET_URL").unwrap_or_default(),
-            reqwest::Client::new(),
-        )
+        Self::new(fleet_url_from_env(), reqwest::Client::new())
     }
 
     #[cfg(test)]
@@ -127,6 +124,22 @@ impl HttpCloudRuntimeProxy {
         url.set_query(query.filter(|value| !value.is_empty()));
         Ok(url)
     }
+}
+
+fn fleet_url_from_env() -> String {
+    select_fleet_url(
+        std::env::var("CORDY_CLOUD_FLEET_URL").ok().as_deref(),
+        std::env::var("CORDY_FLEET_URL").ok().as_deref(),
+    )
+}
+
+fn select_fleet_url(primary: Option<&str>, fallback: Option<&str>) -> String {
+    primary
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+        .or_else(|| fallback.map(str::trim))
+        .unwrap_or_default()
+        .to_string()
 }
 
 #[async_trait]
@@ -632,6 +645,26 @@ mod tests {
             url.as_str(),
             "https://fleet.test/base/api/v1/nodes?limit=20&offset=0"
         );
+    }
+
+    #[test]
+    fn fleet_url_selection_matches_go_environment_precedence() {
+        assert_eq!(
+            select_fleet_url(
+                Some(" https://cloud-fleet.test "),
+                Some("https://legacy-fleet.test")
+            ),
+            "https://cloud-fleet.test"
+        );
+        assert_eq!(
+            select_fleet_url(Some("  "), Some(" https://legacy-fleet.test ")),
+            "https://legacy-fleet.test"
+        );
+        assert_eq!(
+            select_fleet_url(None, Some(" https://legacy-fleet.test ")),
+            "https://legacy-fleet.test"
+        );
+        assert_eq!(select_fleet_url(None, Some("  ")), "");
     }
 
     fn test_state() -> HandlerState {
