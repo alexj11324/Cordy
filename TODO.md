@@ -398,6 +398,18 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready/CLEAN/MERGEABLE were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy squad get <squad-id>` to PR #129. JSON returns the full
+      server object; table output matches Go's ID/name/description/leader/
+      created fields and optional instructions. IDs are trimmed, empty IDs
+      fail closed, and path segments are encoded before the authenticated,
+      workspace-scoped request. Exact head is
+      `913f67754e2b17f1881e3a3baead883363e43773`, parent
+      `878852c90a09507a75273b1884cf60bd6b76d1d2`, tree
+      `b1e4f1a2534654f2bc0e67d33f6a41dff72f8d0e`, candidate
+      `e0dfca264d775e1d63214b8a6560b44bccf45ab7`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready/CLEAN/MERGEABLE were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
