@@ -392,9 +392,7 @@ async fn load_private_key_secret(secret_id: &str) -> anyhow::Result<Vec<u8>> {
         "secretsmanager",
         &to_sign,
     )?;
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()?;
+    let client = secrets_manager_http_client()?;
     let mut request = client
         .post(endpoint)
         .header("content-type", "application/x-amz-json-1.1")
@@ -431,6 +429,17 @@ async fn load_private_key_secret(secret_id: &str) -> anyhow::Result<Vec<u8>> {
         .secret_string
         .map(String::into_bytes)
         .ok_or_else(|| anyhow::anyhow!("CloudFront private-key secret has no string value"))
+}
+
+fn secrets_manager_http_client() -> anyhow::Result<reqwest::Client> {
+    Ok(reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        // A 307/308 can replay the signed body and reqwest only strips the
+        // standard Authorization header on a cross-host redirect. The AWS
+        // session token lives in x-amz-security-token, so following a service
+        // redirect could disclose temporary credentials to another host.
+        .redirect(reqwest::redirect::Policy::none())
+        .build()?)
 }
 
 fn secrets_manager_endpoint(region: &str) -> anyhow::Result<Url> {
@@ -495,6 +504,7 @@ fn hmac(key: &[u8], body: &[u8]) -> anyhow::Result<Vec<u8>> {
 mod tests {
     use super::*;
     use rand::rngs::OsRng;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     fn signer() -> CloudFrontSigner {
         CloudFrontSigner {
@@ -584,5 +594,45 @@ mod tests {
             assert!(cookie.contains("Max-Age=0"));
             assert!(cookie.contains("Expires=Thu, 01 Jan 1970 00:00:00 GMT"));
         }
+    }
+
+    #[tokio::test]
+    async fn secrets_manager_client_does_not_follow_redirects() {
+        let target = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target_url = format!("http://{}/secret", target.local_addr().unwrap());
+        let redirect = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let redirect_url = format!("http://{}/", redirect.local_addr().unwrap());
+        let response = tokio::spawn(async move {
+            let (mut stream, _) = redirect.accept().await.unwrap();
+            let mut request = [0u8; 2048];
+            let _ = stream.read(&mut request).await.unwrap();
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 307 Temporary Redirect\r\nLocation: {target_url}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+        });
+
+        let result = secrets_manager_http_client()
+            .unwrap()
+            .post(redirect_url)
+            .header("x-amz-security-token", "temporary-session-token")
+            .body("signed secret request")
+            .send()
+            .await
+            .unwrap();
+
+        response.await.unwrap();
+        assert_eq!(result.status(), reqwest::StatusCode::TEMPORARY_REDIRECT);
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(100), target.accept())
+                .await
+                .is_err(),
+            "Secrets Manager client followed a redirect carrying AWS session credentials"
+        );
     }
 }
