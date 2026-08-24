@@ -310,6 +310,7 @@ impl HandlerState {
     ) -> Self {
         if let Some(metrics) = business_metrics.as_ref() {
             self.tasks.configure_metrics(metrics.clone());
+            self.issues.configure_metrics(metrics.clone());
         }
         if let (Some(hub), Some(metrics)) = (self.daemon_hub.as_ref(), business_metrics.as_ref()) {
             hub.set_message_kind_recorder(Some(Arc::new(DaemonMessageMetrics {
@@ -368,11 +369,12 @@ mod tests {
     }
 
     #[test]
-    fn observability_wires_the_already_shared_task_service() {
+    fn observability_wires_the_already_shared_domain_services() {
         let pool =
             sqlx::PgPool::connect_lazy("postgres://invalid.invalid/nope").expect("lazy test pool");
         let state = HandlerState::new(pool, PatCache::disabled(), None);
         let original_tasks = state.tasks.clone();
+        let original_issues = state.issues.clone();
         let metrics = Arc::new(cordy_metrics::BusinessMetrics::new());
 
         let state = state.with_observability(Some(metrics.clone()), None);
@@ -380,6 +382,15 @@ mod tests {
         assert!(Arc::ptr_eq(&state.tasks, &original_tasks));
         assert!(Arc::ptr_eq(
             state.tasks.metrics.get().expect("task metrics configured"),
+            &metrics
+        ));
+        assert!(Arc::ptr_eq(&state.issues, &original_issues));
+        assert!(Arc::ptr_eq(
+            state
+                .issues
+                .metrics
+                .get()
+                .expect("issue metrics configured"),
             &metrics
         ));
     }

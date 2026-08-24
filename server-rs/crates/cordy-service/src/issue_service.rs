@@ -8,7 +8,7 @@
 //! (HTTP POST /issues, channel /issue, future MCP/API-key callers). The
 //! service stays transport-agnostic — callers pass fully-resolved params.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use chrono::{DateTime, Utc};
 use serde_json::json;
@@ -43,9 +43,9 @@ pub struct IssueService {
     pub bus: Arc<cordy_events::Bus>,
     /// PostHog client; nil-safe everywhere (events degrade to metrics-only).
     pub analytics: Option<Box<dyn analytics::AnalyticsClient>>,
-    /// Shared business-metrics collector. Unset on self-hosted without the
-    /// metrics listener — record_event treats it as "PostHog only".
-    pub metrics: Option<std::sync::Arc<cordy_metrics::BusinessMetrics>>,
+    /// Installed once after the metrics registry is created. The service is
+    /// already shared by `Arc` when observability wiring runs.
+    pub metrics: OnceLock<Arc<cordy_metrics::BusinessMetrics>>,
     pub task_svc: Arc<TaskService>,
 }
 
@@ -55,8 +55,14 @@ impl IssueService {
             pool,
             bus,
             analytics: None,
-            metrics: None,
+            metrics: OnceLock::new(),
             task_svc,
+        }
+    }
+
+    pub fn configure_metrics(&self, metrics: Arc<cordy_metrics::BusinessMetrics>) {
+        if self.metrics.set(metrics).is_err() {
+            tracing::warn!("issue service metrics already configured");
         }
     }
 }
@@ -585,9 +591,6 @@ impl IssueService {
         actor_id: &str,
         opts: &IssueCreateOpts,
     ) {
-        let Some(client) = self.analytics.as_deref() else {
-            return;
-        };
         let (source, task_id, autopilot_run_id) = classify_origin(issue);
         let analytics_actor_id = if creator_type == "agent" {
             format!("agent:{actor_id}")
@@ -604,7 +607,11 @@ impl IssueService {
             source,
             &opts.platform,
         );
-        cordy_metrics::business_events::record_event(Some(client), self.metrics.as_deref(), &ev);
+        cordy_metrics::business_events::record_event(
+            self.analytics.as_deref(),
+            self.metrics.get().map(Arc::as_ref),
+            &ev,
+        );
     }
 
     /// Leaves the refusal on the issue when an assignment cannot be enqueued
