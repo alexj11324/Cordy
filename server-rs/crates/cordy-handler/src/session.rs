@@ -13,13 +13,11 @@ pub fn public_router() -> Router<HandlerState> {
 }
 
 async fn logout() -> Response {
-    let domain_raw = std::env::var("COOKIE_DOMAIN").ok();
-    let domain = cordy_auth::cookie::cookie_domain(domain_raw.as_deref());
-    let frontend_origin = std::env::var("FRONTEND_ORIGIN").ok();
-    let secure = cordy_auth::cookie::is_secure_cookie(frontend_origin.as_deref());
+    let domain = cordy_auth::cookie::configured_cookie_domain();
+    let secure = cordy_auth::cookie::configured_secure_cookie();
     let mut headers = HeaderMap::new();
 
-    for value in cordy_auth::cookie::clear_auth_cookie_values(domain.as_deref(), secure) {
+    for value in cordy_auth::cookie::clear_auth_cookie_values(domain, secure) {
         let Ok(value) = HeaderValue::from_str(&value) else {
             tracing::error!("failed to construct auth cookie clearing header");
             return error_response(
