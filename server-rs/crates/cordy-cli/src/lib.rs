@@ -234,6 +234,11 @@ struct UpdateArgs {
 
 #[derive(Debug, Args)]
 struct SetupArgs {
+    #[arg(
+        long,
+        help = "Host/IP the browser callback URL points at when it can reach this CLI directly"
+    )]
+    callback_host: Option<String>,
     #[command(subcommand)]
     command: Option<SetupCommand>,
 }
@@ -3975,7 +3980,7 @@ fn setup_callback_host(args: &SetupArgs) -> Option<String> {
     match args.command.as_ref() {
         Some(SetupCommand::Cloud(options)) => options.callback_host.clone(),
         Some(SetupCommand::SelfHost(options)) => options.callback_host.clone(),
-        None => None,
+        None => args.callback_host.clone(),
     }
 }
 
@@ -28523,7 +28528,10 @@ mod tests {
             Cli::try_parse_from(["cordy", "setup"])
                 .expect("cloud setup")
                 .command,
-            Command::Setup(SetupArgs { command: None })
+            Command::Setup(SetupArgs {
+                callback_host: None,
+                command: None,
+            })
         ));
 
         let cli = Cli::try_parse_from([
@@ -28544,6 +28552,7 @@ mod tests {
         .expect("self-host setup");
         let Command::Setup(SetupArgs {
             command: Some(SetupCommand::SelfHost(options)),
+            ..
         }) = cli.command
         else {
             panic!("expected self-host setup");
@@ -28570,6 +28579,7 @@ mod tests {
         assert_eq!(options.callback_host.as_deref(), Some("192.168.1.20"));
         assert_eq!(
             setup_callback_host(&SetupArgs {
+                callback_host: None,
                 command: Some(SetupCommand::Cloud(options)),
             }),
             Some("192.168.1.20".into())
@@ -28590,9 +28600,20 @@ mod tests {
         assert_eq!(options.callback_host.as_deref(), Some("10.0.0.7"));
         assert_eq!(
             setup_callback_host(&SetupArgs {
+                callback_host: None,
                 command: Some(SetupCommand::SelfHost(options)),
             }),
             Some("10.0.0.7".into())
+        );
+
+        let root = Cli::try_parse_from(["cordy", "setup", "--callback-host", "localhost"])
+            .expect("root callback host");
+        let Command::Setup(root_args) = root.command else {
+            panic!("expected root setup");
+        };
+        assert_eq!(
+            setup_callback_host(&root_args).as_deref(),
+            Some("localhost")
         );
     }
 
