@@ -551,6 +551,22 @@ fn validate_s3_endpoint(endpoint: &Url) -> anyhow::Result<()> {
     Ok(())
 }
 
+fn aws_dns_suffix(region: &str) -> &'static str {
+    if region.starts_with("cn-") {
+        "amazonaws.com.cn"
+    } else {
+        "amazonaws.com"
+    }
+}
+
+fn default_s3_endpoint(region: &str) -> anyhow::Result<Url> {
+    anyhow::ensure!(valid_aws_region(region), "invalid AWS region");
+    Ok(Url::parse(&format!(
+        "https://s3.{region}.{}",
+        aws_dns_suffix(region)
+    ))?)
+}
+
 impl S3Storage {
     pub async fn from_env() -> anyhow::Result<Option<Self>> {
         let Some(bucket) = env("S3_BUCKET") else {
@@ -564,11 +580,11 @@ impl S3Storage {
         }
         let region = env("S3_REGION").unwrap_or_else(|| "us-west-2".into());
         let custom = env("AWS_ENDPOINT_URL");
-        let endpoint = Url::parse(
-            custom
-                .as_deref()
-                .unwrap_or(&format!("https://s3.{region}.amazonaws.com")),
-        )?;
+        let endpoint = if let Some(custom) = custom.as_deref() {
+            Url::parse(custom)?
+        } else {
+            default_s3_endpoint(&region)?
+        };
         validate_s3_endpoint(&endpoint)?;
         let path_style = s3_use_path_style(
             std::env::var("S3_USE_PATH_STYLE").ok().as_deref(),
@@ -673,7 +689,7 @@ impl S3Storage {
         }
         let encoded_key = key.split('/').map(aws_encode).collect::<Vec<_>>().join("/");
         let mut url = if !self.custom_endpoint && region != self.region {
-            Url::parse(&format!("https://s3.{region}.amazonaws.com"))?
+            default_s3_endpoint(region)?
         } else {
             self.endpoint.clone()
         };
@@ -1162,8 +1178,7 @@ impl AttachmentStorage for S3Storage {
         if let Some(domain) = &self.cdn_domain {
             format!("https://{}/{key}", domain.trim_end_matches('/'))
         } else if !self.custom_endpoint && self.bucket.contains('.') {
-            let Ok(mut url) = Url::parse(&format!("https://s3.{}.amazonaws.com", self.region))
-            else {
+            let Ok(mut url) = default_s3_endpoint(&self.region) else {
                 return String::new();
             };
             url.set_path(&format!("/{}/{key}", self.bucket));
@@ -1474,16 +1489,22 @@ fn aws_bucket_key_from_url(url: &Url, bucket: &str) -> Option<String> {
         return None;
     }
     let host = url.host_str()?;
-    let aws_host = host.strip_suffix(".amazonaws.com")?;
+    let (aws_host, suffix) = host
+        .strip_suffix(".amazonaws.com.cn")
+        .map(|host| (host, "amazonaws.com.cn"))
+        .or_else(|| {
+            host.strip_suffix(".amazonaws.com")
+                .map(|host| (host, "amazonaws.com"))
+        })?;
     let virtual_prefix = format!("{bucket}.s3.");
     if let Some(region) = aws_host.strip_prefix(&virtual_prefix) {
-        if valid_aws_region(region) {
+        if valid_aws_region(region) && aws_dns_suffix(region) == suffix {
             return decode_storage_key(url.path().strip_prefix('/')?);
         }
         return None;
     }
     let region = aws_host.strip_prefix("s3.")?;
-    if !valid_aws_region(region) {
+    if !valid_aws_region(region) || aws_dns_suffix(region) != suffix {
         return None;
     }
     let prefix = format!("/{bucket}/");
@@ -1987,6 +2008,35 @@ mod tests {
                 "{rejected}"
             );
         }
+    }
+
+    #[test]
+    fn default_s3_endpoint_uses_the_region_partition() {
+        assert_eq!(
+            default_s3_endpoint("us-west-2").unwrap().as_str(),
+            "https://s3.us-west-2.amazonaws.com/"
+        );
+        assert_eq!(
+            default_s3_endpoint("us-gov-west-1").unwrap().as_str(),
+            "https://s3.us-gov-west-1.amazonaws.com/"
+        );
+        assert_eq!(
+            default_s3_endpoint("cn-north-1").unwrap().as_str(),
+            "https://s3.cn-north-1.amazonaws.com.cn/"
+        );
+        assert!(default_s3_endpoint("cn-north-1/attacker.test").is_err());
+    }
+
+    #[test]
+    fn region_correction_uses_the_correct_aws_partition() {
+        let store = test_s3("https://s3.us-west-2.amazonaws.com", false, false);
+        assert_eq!(
+            store
+                .request_url_for_region("workspaces/w/file.txt", "cn-northwest-1")
+                .unwrap()
+                .as_str(),
+            "https://bucket.s3.cn-northwest-1.amazonaws.com.cn/workspaces/w/file.txt"
+        );
     }
 
     #[test]
@@ -2518,21 +2568,51 @@ mod tests {
         assert_eq!(
             store
                 .key_from_url(
-                    "https://test-bucket.s3.eu-central-1.amazonaws.com/workspaces/w/file%2B.txt"
+                    "https://bucket.s3.eu-central-1.amazonaws.com/workspaces/w/file%2B.txt"
                 )
                 .as_deref(),
             Some("workspaces/w/file+.txt")
         );
-        assert!(store
-            .key_from_url(
-                "https://test-bucket.s3.evil.amazonaws.com.attacker.test/workspaces/w/file.txt"
-            )
-            .is_none());
-        assert!(store
-            .key_from_url(
-                "https://other-bucket.s3.eu-central-1.amazonaws.com/workspaces/w/file.txt"
-            )
-            .is_none());
+        assert_eq!(
+            store
+                .key_from_url("https://bucket.s3.cn-north-1.amazonaws.com.cn/workspaces/w/file.txt")
+                .as_deref(),
+            Some("workspaces/w/file.txt")
+        );
+        assert_eq!(
+            store
+                .key_from_url(
+                    "https://s3.cn-northwest-1.amazonaws.com.cn/bucket/workspaces/w/file.txt"
+                )
+                .as_deref(),
+            Some("workspaces/w/file.txt")
+        );
+        assert!(
+            store
+                .key_from_url("https://bucket.s3.cn-north-1.amazonaws.com/workspaces/w/file.txt")
+                .is_none()
+        );
+        assert!(
+            store
+                .key_from_url(
+                    "https://bucket.s3.eu-central-1.amazonaws.com.cn/workspaces/w/file.txt"
+                )
+                .is_none()
+        );
+        assert!(
+            store
+                .key_from_url(
+                    "https://test-bucket.s3.evil.amazonaws.com.attacker.test/workspaces/w/file.txt"
+                )
+                .is_none()
+        );
+        assert!(
+            store
+                .key_from_url(
+                    "https://other-bucket.s3.eu-central-1.amazonaws.com/workspaces/w/file.txt"
+                )
+                .is_none()
+        );
     }
 
     #[test]
