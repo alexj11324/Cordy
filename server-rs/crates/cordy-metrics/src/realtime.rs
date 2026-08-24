@@ -161,13 +161,22 @@ impl Collector for RealtimeCollector {
     }
 }
 
-/// Builds one gauge/counter const-metric family. Counters and gauges share
-/// the wire shape here; type metadata rides on the family name convention.
+/// Builds one const-metric family using a real Counter payload for `_total`
+/// series and a Gauge payload for instantaneous values. Prometheus encoders
+/// dispatch on `MetricFamily.type`, so leaving the protobuf default would make
+/// gauge-backed values serialize as zero-valued counters.
 fn const_metric(desc: &Desc, value: f64, labels: Vec<String>) -> MetricFamily {
-    let mut gauge = proto::Gauge::default();
-    gauge.set_value(value);
+    let is_counter = desc.fq_name.ends_with("_total");
     let mut metric = proto::Metric::default();
-    metric.set_gauge(gauge);
+    if is_counter {
+        let mut counter = proto::Counter::default();
+        counter.set_value(value);
+        metric.set_counter(counter);
+    } else {
+        let mut gauge = proto::Gauge::default();
+        gauge.set_value(value);
+        metric.set_gauge(gauge);
+    }
     metric.set_label(
         desc.variable_labels
             .iter()
@@ -183,6 +192,11 @@ fn const_metric(desc: &Desc, value: f64, labels: Vec<String>) -> MetricFamily {
     let mut mf = MetricFamily::default();
     mf.set_name(desc.fq_name.clone());
     mf.set_help(desc.help.clone());
+    mf.set_field_type(if is_counter {
+        proto::MetricType::COUNTER
+    } else {
+        proto::MetricType::GAUGE
+    });
     mf.set_metric(vec![metric]);
     mf
 }
