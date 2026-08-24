@@ -775,6 +775,10 @@
       broader inspect/access gate, so workspace admins cannot run another
       member's private agent. Added owner/private regression coverage; scoped
       rustfmt and diff-check pass; pushed for pro's Ready PR/gate/merge.
+- [x] Global invoke-gate follow-up found no second misuse: chat, issue,
+      comment, quick-action, squad, and autopilot run/enqueue paths use the
+      member invoke gate; remaining broader access calls are inspect/cancel/
+      pin/list or wiring paths matching Go. No further code change justified.
 
 ## Phase 4 — S8 route and API parity
 
