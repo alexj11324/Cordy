@@ -554,6 +554,16 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy skill refresh <id>` to PR #129. It posts the empty JSON
+      refresh body to the encoded source-backed skill endpoint, preserves JSON
+      and table output, and reuses auth/workspace headers. Exact head is
+      `6faf2ef64e0a3757a681d128406745478e0a14f6`, parent
+      `a9b047ff40ccf7365847a4f740f1e5f21d4c86f4`, tree
+      `171366c6b8534d18b5e43404f9848cbb2cfb7c0b`, candidate
+      `10032e0306515e2e8327a8e60841ac0c4c751b3b`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
