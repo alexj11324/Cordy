@@ -19,12 +19,11 @@ struct ProductionApp {
     router: Router,
     root_cancel: CancellationToken,
     realtime: realtime_runtime::RealtimeRuntime,
-    channel_runtime: Option<channel_runtime::ChannelRuntime>,
+    channel_runtime: channel_runtime::ChannelRuntime,
     failure_monitor: cordy_service::autopilot_failure_monitor::FailureMonitorRuntime,
     quota_reconciler: cordy_service::autopilot_quota_reconciler::QuotaReconcilerRuntime,
     webhook_delivery: cordy_handler::webhook_delivery_worker::WebhookDeliveryRuntime,
     scheduler: cordy_scheduler::ManagerRuntime,
-    channel_media: Option<cordy_service::channel_media_reconciler::ChannelMediaReconcilerRuntime>,
     heartbeat_scheduler: cordy_handler::heartbeat_scheduler::HeartbeatSchedulerRuntime,
     runtime_sweeper: cordy_handler::runtime_sweeper::RuntimeSweeperRuntime,
     plugin_events: Option<cordy_service::plugin_event_dispatch::PluginEventDispatcherRuntime>,
@@ -308,7 +307,6 @@ async fn build_production_router(
         &state.bus,
         state.daemon_hub.clone(),
         state.daemon_notifier.clone(),
-        state.background_runtime.clone(),
     );
     // These consumers drain after every root-owned producer has joined. Give
     // them dedicated cancellation roots so the process root cannot close a
@@ -382,30 +380,11 @@ async fn build_production_router(
         &state,
         cfg,
         channel_lease_metrics,
-        channel_media_metrics.clone(),
+        channel_media_metrics,
         wecom_metrics,
         lark_backfill_metrics,
     )
     .await?;
-    // ChannelRuntime owns this reconciler whenever channel adapters are
-    // configured. Keep the standalone worker only for storage-only installs.
-    let channel_media = channel_runtime
-        .is_none()
-        .then(|| state.attachment_storage.as_ref())
-        .flatten()
-        .map(|storage| {
-            let deleter = Arc::new(
-                cordy_handler::attachment_storage::AttachmentMediaDeleter::new(storage.clone()),
-            );
-            Arc::new(
-                cordy_service::channel_media_reconciler::ChannelMediaReconciler::new(
-                    state.pool.clone(),
-                    deleter,
-                    channel_media_metrics,
-                ),
-            )
-            .start(root_cancel.child_token())
-        });
     let scheduler = cordy_scheduler::Manager::new(
         state.pool.clone(),
         cordy_scheduler::ManagerOptions::default(),
@@ -431,7 +410,6 @@ async fn build_production_router(
         quota_reconciler,
         webhook_delivery,
         scheduler,
-        channel_media,
         heartbeat_scheduler,
         runtime_sweeper,
         plugin_events,
@@ -441,15 +419,6 @@ async fn build_production_router(
         task_side_effects,
         analytics,
     })
-}
-
-async fn shutdown_channel_media(
-    runtime: Option<cordy_service::channel_media_reconciler::ChannelMediaReconcilerRuntime>,
-) -> Option<cordy_service::channel_media_reconciler::ChannelMediaShutdownOutcome> {
-    match runtime {
-        Some(runtime) => Some(runtime.shutdown().await),
-        None => None,
-    }
 }
 
 async fn shutdown_plugin_events(
@@ -634,7 +603,6 @@ async fn main() -> anyhow::Result<()> {
         quota_reconciler,
         webhook_delivery,
         scheduler,
-        channel_media,
         heartbeat_scheduler,
         runtime_sweeper,
         plugin_events,
@@ -653,9 +621,7 @@ async fn main() -> anyhow::Result<()> {
     // Match Go's shutdown ordering: drain every in-flight HTTP handler before
     // stopping maintenance workers. Channel adapters are producers and must
     // drain while realtime fanout is still accepting their final events.
-    if let Some(channel_runtime) = channel_runtime {
-        channel_runtime.shutdown().await;
-    }
+    channel_runtime.shutdown().await;
     // In particular, a heartbeat must not queue an ID after the batched
     // scheduler has performed its final flush.
     root_cancel.cancel();
@@ -664,7 +630,6 @@ async fn main() -> anyhow::Result<()> {
         quota_shutdown,
         webhook_shutdown,
         scheduler_shutdown,
-        channel_media_shutdown,
         heartbeat_shutdown,
         runtime_sweeper_shutdown,
         github_snapshots_shutdown,
@@ -675,7 +640,6 @@ async fn main() -> anyhow::Result<()> {
             .shutdown(cordy_service::autopilot_quota_reconciler::DEFAULT_SHUTDOWN_TIMEOUT),
         webhook_delivery.shutdown(cordy_handler::webhook_delivery_worker::DEFAULT_SHUTDOWN_TIMEOUT),
         scheduler.shutdown(),
-        shutdown_channel_media(channel_media),
         heartbeat_scheduler.shutdown(),
         runtime_sweeper.shutdown(),
         shutdown_github_snapshots(github_snapshots),
@@ -738,16 +702,6 @@ async fn main() -> anyhow::Result<()> {
             tracing::error!("scheduler task panicked during shutdown");
         }
         cordy_scheduler::ShutdownOutcome::Stopped => {}
-    }
-    match channel_media_shutdown {
-        Some(cordy_service::channel_media_reconciler::ChannelMediaShutdownOutcome::TimedOut) => {
-            tracing::warn!("channel media reconciler exceeded shutdown deadline and was aborted");
-        }
-        Some(cordy_service::channel_media_reconciler::ChannelMediaShutdownOutcome::Panicked) => {
-            tracing::error!("channel media reconciler task panicked during shutdown");
-        }
-        Some(cordy_service::channel_media_reconciler::ChannelMediaShutdownOutcome::Stopped)
-        | None => {}
     }
     match heartbeat_shutdown {
         cordy_handler::heartbeat_scheduler::HeartbeatShutdownOutcome::TimedOut => {
@@ -958,9 +912,7 @@ mod tests {
         .await
         .expect("unavailable Redis must not block the request")
         .expect("response");
-        if let Some(channel_runtime) = channel_runtime {
-            channel_runtime.shutdown().await;
-        }
+        channel_runtime.shutdown().await;
         root_cancel.cancel();
         realtime.shutdown().await;
 
@@ -1018,9 +970,7 @@ mod tests {
         .expect("unresponsive Redis must not block the request")
         .expect("response");
         black_hole.abort();
-        if let Some(channel_runtime) = channel_runtime {
-            channel_runtime.shutdown().await;
-        }
+        channel_runtime.shutdown().await;
         root_cancel.cancel();
         realtime.shutdown().await;
 
@@ -1100,9 +1050,7 @@ mod tests {
         )
         .await
         .unwrap();
-        if let Some(channel_runtime) = channel_runtime {
-            channel_runtime.shutdown().await;
-        }
+        channel_runtime.shutdown().await;
         root_cancel.cancel();
         realtime.shutdown().await;
     }
