@@ -1172,11 +1172,20 @@ impl TaskService {
             return;
         };
         let runtime_id = runtime_id.to_string();
-        // Preserve the Go ordering contract: invalidate before waking the
-        // daemon, or a wakeup-driven claim could accept a stale empty verdict.
-        self.empty_claim_cache().bump(&runtime_id).await;
-        if let Some(wakeup) = self.wakeup.as_ref().and_then(|w| w.upgrade()) {
-            wakeup.notify_task_available(&runtime_id, task_id.unwrap_or(""));
+        let task_id = task_id.unwrap_or_default().to_string();
+        let empty_claim = self.empty_claim_cache();
+        let wakeup = self.wakeup.clone();
+        // Shield the post-commit tail from request cancellation. Dropping the
+        // JoinHandle does not cancel the bounded Redis bump, and the wakeup
+        // remains strictly ordered after invalidation.
+        let tail = tokio::spawn(async move {
+            empty_claim.bump(&runtime_id).await;
+            if let Some(wakeup) = wakeup.as_ref().and_then(std::sync::Weak::upgrade) {
+                wakeup.notify_task_available(&runtime_id, &task_id);
+            }
+        });
+        if let Err(error) = tail.await {
+            tracing::warn!(%error, "task post-commit wakeup tail failed");
         }
     }
 
