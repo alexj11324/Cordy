@@ -724,6 +724,11 @@
       only after success. Delegated recovery and note comments remain filtered;
       tests cover exclusion, restoration, deduplication, and note behavior.
       Scoped rustfmt/diff-check pass; pushed for pro's Ready PR/gate/merge.
+- [x] Follow-up issue mutation audit found no matching survivor gap: issue
+      status/reassignment updates do not cancel existing tasks in either
+      implementation; issue deletion cancels tasks before deleting all
+      comments, so no live survivors require replay. Transaction, attachment
+      cleanup, event, and fail-closed cancellation boundaries remain intact.
 
 ## Phase 4 — S8 route and API parity
 
