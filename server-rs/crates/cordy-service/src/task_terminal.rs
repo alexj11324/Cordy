@@ -670,7 +670,7 @@ impl TaskService {
         source_task_id: Option<Uuid>,
         trigger_comment_id_in: Option<Uuid>,
         actor_user_id: Option<Uuid>,
-        can_invoke: Option<&dyn Fn(&Agent) -> bool>,
+        can_invoke: Option<&(dyn Fn(&Agent) -> bool + Sync)>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
         let issue = get_issue(&self.pool, issue_id)
             .await
