@@ -24569,10 +24569,7 @@ mod tests {
         let error = run_squad_create(&cli, &environment, &missing_leader)
             .await
             .expect_err("missing leader");
-        assert_eq!(
-            error.to_string(),
-            "--leader is required (name or ID)"
-        );
+        assert_eq!(error.to_string(), "--leader is required (name or ID)");
         server.abort();
     }
 
