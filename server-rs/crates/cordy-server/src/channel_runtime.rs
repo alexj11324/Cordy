@@ -499,6 +499,7 @@ fn configure_telegram(
             }
         }
     });
+    let media_enabled = media.is_some();
     router.register(
         cordy_channel::Type(cordy_telegram::TYPE_TELEGRAM.to_string()),
         cordy_telegram::resolvers::new_telegram_resolver_set(
@@ -521,6 +522,7 @@ fn configure_telegram(
         cordy_telegram::channel::ChannelDeps {
             decrypt: Some(decrypt),
             api_base: String::new(),
+            media_enabled,
         },
     );
 }

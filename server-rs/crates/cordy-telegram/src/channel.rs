@@ -22,6 +22,7 @@ pub struct TelegramChannel {
     bot_username: String,
     api: BotApi,
     handler: Option<InboundHandler>,
+    media_enabled: bool,
 }
 
 #[async_trait]
@@ -132,7 +133,8 @@ impl TelegramChannel {
         let Some(message) = inbound_from_update(&update, self.bot_id, &self.bot_username) else {
             return Ok(());
         };
-        if message.r#type != cordy_channel::MsgType::text() {
+        let is_text = message.r#type == cordy_channel::MsgType::text();
+        if !accepts_inbound_type(&message.r#type, self.media_enabled) {
             if message.source.chat_type == cordy_channel::ChatType::p2p()
                 || message.addressed_to_bot
             {
@@ -140,7 +142,7 @@ impl TelegramChannel {
             }
             return Ok(());
         }
-        if message.text.is_empty() {
+        if is_text && message.text.is_empty() {
             return Ok(());
         }
         if let Err(error) = handler.call(ctx.clone(), message.clone()).await {
@@ -231,6 +233,18 @@ fn is_addressed_issue_command(message: &cordy_channel::InboundMessage) -> bool {
     cordy_channel_engine::parse_issue_command(source).is_some()
 }
 
+fn is_supported_media_type(message_type: &cordy_channel::MsgType) -> bool {
+    *message_type == cordy_channel::MsgType::image()
+        || *message_type == cordy_channel::MsgType::audio()
+        || *message_type == cordy_channel::MsgType::video()
+        || *message_type == cordy_channel::MsgType::file()
+}
+
+fn accepts_inbound_type(message_type: &cordy_channel::MsgType, media_enabled: bool) -> bool {
+    *message_type == cordy_channel::MsgType::text()
+        || (media_enabled && is_supported_media_type(message_type))
+}
+
 async fn sleep_or_cancel(ctx: &CancellationToken, duration: Duration) -> bool {
     tokio::select! {
         _ = ctx.cancelled() => false,
@@ -242,6 +256,7 @@ async fn sleep_or_cancel(ctx: &CancellationToken, duration: Duration) -> bool {
 pub struct ChannelDeps {
     pub decrypt: Option<Arc<DecrypterFn>>,
     pub api_base: String,
+    pub media_enabled: bool,
 }
 
 pub fn register_telegram(registry: &cordy_channel::Registry, deps: ChannelDeps) {
@@ -270,7 +285,31 @@ pub fn new_telegram_factory(deps: ChannelDeps) -> Factory {
                 bot_username: credentials.bot_username,
                 api: BotApi::new(&deps.api_base, &credentials.bot_token),
                 handler: cfg.handler,
+                media_enabled: deps.media_enabled,
             }) as BuiltChannel)
         })
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn media_types_require_the_production_resolver() {
+        for message_type in [
+            cordy_channel::MsgType::image(),
+            cordy_channel::MsgType::audio(),
+            cordy_channel::MsgType::video(),
+            cordy_channel::MsgType::file(),
+        ] {
+            assert!(accepts_inbound_type(&message_type, true));
+            assert!(!accepts_inbound_type(&message_type, false));
+        }
+        assert!(accepts_inbound_type(&cordy_channel::MsgType::text(), false));
+        assert!(!accepts_inbound_type(
+            &cordy_channel::MsgType::unknown(),
+            true
+        ));
+    }
 }
