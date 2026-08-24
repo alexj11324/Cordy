@@ -305,7 +305,11 @@ async fn create(
         &request.source,
         !request.goals.is_empty(),
     );
-    cordy_metrics::business_events::record_event(None, state.business_metrics.as_deref(), &event);
+    cordy_metrics::business_events::record_event(
+        Some(state.analytics.as_ref()),
+        state.business_metrics.as_deref(),
+        &event,
+    );
     (
         StatusCode::CREATED,
         Json(CreateResponse {

@@ -230,6 +230,8 @@ pub struct HandlerState {
     pub bus: Arc<cordy_events::Bus>,
     /// Prometheus business counters. None when METRICS_ADDR is disabled.
     pub business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
+    /// Product analytics sink. A no-op client keeps tests and self-hosting inert.
+    pub analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
     /// HTTP request metrics. None when METRICS_ADDR is disabled.
     pub http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
     /// GitHub GraphQL snapshot refresh pipeline. Disabled in lightweight tests.
@@ -290,6 +292,7 @@ impl HandlerState {
             hub,
             bus,
             business_metrics: None,
+            analytics: Arc::new(cordy_analytics::NoopClient),
             http_metrics: None,
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
             feature_flags: None,
@@ -347,6 +350,11 @@ impl HandlerState {
         }
         self.business_metrics = business_metrics;
         self.http_metrics = http_metrics;
+        self
+    }
+
+    pub fn with_analytics(mut self, analytics: Arc<dyn cordy_analytics::AnalyticsClient>) -> Self {
+        self.analytics = analytics;
         self
     }
 

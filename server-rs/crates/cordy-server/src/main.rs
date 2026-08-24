@@ -25,6 +25,8 @@ fn build_production_router(
     github_client: Option<cordy_ghsnapshot::Client>,
     redis_url: Option<&str>,
 ) -> Router {
+    let analytics: Arc<dyn cordy_analytics::AnalyticsClient> =
+        Arc::from(cordy_analytics::new_from_env());
     let mut state = cordy_handler::HandlerState::new(
         db,
         cordy_auth::pat_cache::PatCache::disabled(),
@@ -33,6 +35,7 @@ fn build_production_router(
     .with_attachment_storage(storage, download)
     .with_realtime_metrics_token(realtime_metrics_token)
     .with_observability(business_metrics, http_metrics)
+    .with_analytics(analytics)
     .with_github_snapshots(github_client);
     if let Some(redis_url) = redis_url.filter(|value| !value.trim().is_empty()) {
         match redis::Client::open(redis_url) {
@@ -142,6 +145,16 @@ mod tests {
     use axum::http::{Request, StatusCode};
     use tower::ServiceExt;
 
+    fn test_storage() -> Arc<dyn cordy_handler::attachment_storage::AttachmentStorage> {
+        Arc::new(
+            cordy_handler::attachment_storage::LocalStorage::new(
+                std::env::temp_dir(),
+                "/uploads".into(),
+            )
+            .expect("test storage"),
+        )
+    }
+
     #[tokio::test]
     async fn health_reports_ok_without_db() {
         let app = build_router(None, None);
@@ -170,6 +183,9 @@ mod tests {
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
             None,
+            None,
+            test_storage(),
+            cordy_handler::state::AttachmentDownloadSettings::default(),
             None,
             None,
             Some("redis://127.0.0.1:1/"),
@@ -207,6 +223,9 @@ mod tests {
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
             None,
+            None,
+            test_storage(),
+            cordy_handler::state::AttachmentDownloadSettings::default(),
             None,
             None,
             Some(&redis_url),

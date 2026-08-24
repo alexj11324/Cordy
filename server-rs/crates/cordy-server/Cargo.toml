@@ -10,6 +10,7 @@ name = "cordy-server"
 path = "src/main.rs"
 
 [dependencies]
+cordy-analytics = { path = "../cordy-analytics" }
 cordy-config = { path = "../cordy-config" }
 cordy-auth = { path = "../cordy-auth" }
 cordy-db = { path = "../cordy-db" }
