@@ -13,6 +13,8 @@ use tokio_util::sync::CancellationToken;
 mod channel_runtime;
 mod realtime_runtime;
 
+const HTTP_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
+
 struct ProductionApp {
     router: Router,
     root_cancel: CancellationToken,
@@ -539,7 +541,13 @@ async fn main() -> anyhow::Result<()> {
     } else {
         (None, None, None, None, None, None, None)
     };
-    let github_client = cordy_ghsnapshot::Client::new_from_env()?;
+    let github_client = match cordy_ghsnapshot::Client::new_from_env() {
+        Ok(client) => client,
+        Err(error) => {
+            tracing::error!(%error, "GitHub snapshot integration disabled by invalid configuration");
+            None
+        }
+    };
     let attachment_storage = cordy_handler::attachment_storage::from_env(
         cfg.storage.local_upload_dir.as_deref(),
         cfg.storage.local_upload_base_url.as_deref(),
@@ -601,12 +609,38 @@ async fn main() -> anyhow::Result<()> {
         task_side_effects,
         analytics,
     } = app;
-    let serve_result = axum::serve(
-        listener,
-        router.into_make_service_with_connect_info::<SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown_signal())
-    .await;
+    let http_shutdown = CancellationToken::new();
+    let server_shutdown = http_shutdown.clone();
+    let mut server = Box::pin(
+        axum::serve(
+            listener,
+            router.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(async move {
+            server_shutdown.cancelled().await;
+        }),
+    );
+    let mut http_drain_timed_out = false;
+    let serve_result = tokio::select! {
+        result = server.as_mut() => result,
+        () = shutdown_signal() => {
+            http_shutdown.cancel();
+            match tokio::time::timeout(HTTP_DRAIN_TIMEOUT, server.as_mut()).await {
+                Ok(result) => result,
+                Err(_) => {
+                    http_drain_timed_out = true;
+                    tracing::warn!(
+                        timeout_seconds = HTTP_DRAIN_TIMEOUT.as_secs(),
+                        "HTTP server did not drain within shutdown timeout; forcing remaining connections closed"
+                    );
+                    Ok(())
+                }
+            }
+        }
+    };
+    if http_drain_timed_out {
+        drop(server);
+    }
     // Match Go's shutdown ordering: drain every in-flight HTTP handler before
     // stopping maintenance workers. Channel adapters are producers and must
     // drain while realtime fanout is still accepting their final events.
