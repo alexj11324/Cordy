@@ -66,12 +66,43 @@ struct CacheEntry {
     fresh_until: DateTime<Utc>,
     stale_until: DateTime<Utc>,
     retry_after: Option<DateTime<Utc>>,
+    last_access_sequence: u64,
 }
 
 #[derive(Debug, Default)]
 struct CacheState {
     entries: HashMap<Uuid, CacheEntry>,
     refresh_locks: HashMap<Uuid, Arc<Mutex<()>>>,
+    access_sequence: u64,
+}
+
+impl CacheState {
+    fn next_access_sequence(&mut self) -> u64 {
+        self.access_sequence = self.access_sequence.saturating_add(1);
+        self.access_sequence
+    }
+
+    fn touch(&mut self, workspace_id: Uuid) {
+        let sequence = self.next_access_sequence();
+        if let Some(entry) = self.entries.get_mut(&workspace_id) {
+            entry.last_access_sequence = sequence;
+        }
+    }
+
+    fn evict_lru_if_full(&mut self, workspace_id: Uuid, max_entries: usize) {
+        if self.entries.contains_key(&workspace_id) || self.entries.len() < max_entries {
+            return;
+        }
+        if let Some(victim) = self
+            .entries
+            .iter()
+            .min_by_key(|(_, entry)| entry.last_access_sequence)
+            .map(|(workspace_id, _)| *workspace_id)
+        {
+            self.entries.remove(&victim);
+            self.refresh_locks.remove(&victim);
+        }
+    }
 }
 
 pub struct HttpEntitlementProvider {
@@ -154,7 +185,8 @@ impl HttpEntitlementProvider {
         workspace_id: Uuid,
         now: DateTime<Utc>,
     ) -> Option<EntitlementGateDecision> {
-        let cache = self.cache.lock().await;
+        let mut cache = self.cache.lock().await;
+        cache.touch(workspace_id);
         let entry = cache.entries.get(&workspace_id)?;
         if now < entry.fresh_until {
             return Some(entry.decision.clone());
@@ -184,12 +216,8 @@ impl HttpEntitlementProvider {
     async fn mark_failure(&self, workspace_id: Uuid) {
         let mut cache = self.cache.lock().await;
         let now = Utc::now();
-        if !cache.entries.contains_key(&workspace_id) && cache.entries.len() >= MAX_CACHE_ENTRIES {
-            if let Some(oldest) = cache.entries.keys().next().copied() {
-                cache.entries.remove(&oldest);
-                cache.refresh_locks.remove(&oldest);
-            }
-        }
+        cache.evict_lru_if_full(workspace_id, MAX_CACHE_ENTRIES);
+        let access_sequence = cache.next_access_sequence();
         let entry = cache
             .entries
             .entry(workspace_id)
@@ -198,16 +226,19 @@ impl HttpEntitlementProvider {
                 fresh_until: now,
                 stale_until: now,
                 retry_after: None,
+                last_access_sequence: access_sequence,
             });
         entry.retry_after = Some(
             now + chrono::Duration::from_std(FAILURE_RETRY)
                 .expect("five seconds fits chrono duration"),
         );
+        entry.last_access_sequence = access_sequence;
     }
 
     async fn failure_decision(&self, workspace_id: Uuid) -> EntitlementGateDecision {
         let now = Utc::now();
-        let cache = self.cache.lock().await;
+        let mut cache = self.cache.lock().await;
+        cache.touch(workspace_id);
         cache
             .entries
             .get(&workspace_id)
@@ -234,12 +265,8 @@ impl HttpEntitlementProvider {
                 return Err(());
             }
         }
-        if !cache.entries.contains_key(&workspace_id) && cache.entries.len() >= MAX_CACHE_ENTRIES {
-            if let Some(oldest) = cache.entries.keys().next().copied() {
-                cache.entries.remove(&oldest);
-                cache.refresh_locks.remove(&oldest);
-            }
-        }
+        cache.evict_lru_if_full(workspace_id, MAX_CACHE_ENTRIES);
+        let last_access_sequence = cache.next_access_sequence();
         let decision = fetched.decision;
         cache.entries.insert(
             workspace_id,
@@ -248,6 +275,7 @@ impl HttpEntitlementProvider {
                 fresh_until: now + ttl,
                 stale_until: now + ttl + stale_grace,
                 retry_after: None,
+                last_access_sequence,
             },
         );
         Ok(decision)
@@ -476,5 +504,30 @@ mod tests {
             HttpEntitlementProvider::new(config),
             Err(EntitlementClientError::InvalidServiceToken)
         ));
+    }
+
+    #[test]
+    fn policy_cache_evicts_the_least_recently_used_workspace() {
+        let mut cache = CacheState::default();
+        let first = Uuid::from_u128(1);
+        let second = Uuid::from_u128(2);
+        let incoming = Uuid::from_u128(3);
+        let now = Utc::now();
+        let entry = |last_access_sequence| CacheEntry {
+            decision: HttpEntitlementProvider::off(),
+            fresh_until: now,
+            stale_until: now,
+            retry_after: None,
+            last_access_sequence,
+        };
+        cache.entries.insert(first, entry(1));
+        cache.entries.insert(second, entry(2));
+        cache.access_sequence = 2;
+
+        cache.touch(first);
+        cache.evict_lru_if_full(incoming, 2);
+
+        assert!(cache.entries.contains_key(&first));
+        assert!(!cache.entries.contains_key(&second));
     }
 }
