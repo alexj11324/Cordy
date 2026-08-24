@@ -4,7 +4,7 @@
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -425,14 +425,87 @@ fn sync_directory(_directory: &Path) -> Result<()> {
     Ok(())
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
 pub struct CliConfig {
     #[serde(default)]
     pub server_url: String,
     #[serde(default)]
+    pub app_url: String,
+    #[serde(default)]
     pub workspace_id: String,
     #[serde(default)]
     pub token: String,
+    #[serde(default)]
+    pub device_name: String,
+    #[serde(default)]
+    pub runtime_name: String,
+    #[serde(default)]
+    pub workspaces_root: String,
+    #[serde(default)]
+    pub max_concurrent_tasks: i64,
+    #[serde(default)]
+    pub poll_interval: String,
+    #[serde(default)]
+    pub heartbeat_interval: String,
+    /// `None` means no persisted override; `Some("0s")` explicitly disables
+    /// the wall-clock task cap and must survive profile loading.
+    #[serde(default)]
+    pub agent_timeout: Option<String>,
+    #[serde(default)]
+    pub codex_semantic_inactivity_timeout: String,
+    #[serde(default)]
+    pub codex_handshake_timeout: String,
+    #[serde(default)]
+    pub disable_auto_update: bool,
+    #[serde(default)]
+    pub auto_update_check_interval: String,
+    #[serde(default)]
+    pub disable_auto_reload: bool,
+    #[serde(default)]
+    pub backends: Option<BackendOverrides>,
+    #[serde(default)]
+    pub profile_command_overrides: BTreeMap<String, String>,
+}
+
+impl CliConfig {
+    /// Extracts the credential and backend/profile settings consumed by the
+    /// production daemon constructor. The returned type deliberately has no
+    /// `Debug` implementation so the bearer token cannot enter diagnostics.
+    pub fn daemon_profile_input(&self) -> cordy_daemon::assembly::DaemonProfileInput {
+        let openclaw = self
+            .backends
+            .as_ref()
+            .and_then(|backends| backends.openclaw.as_ref());
+        cordy_daemon::assembly::DaemonProfileInput {
+            token: self.token.clone(),
+            profile_command_overrides: self.profile_command_overrides.clone(),
+            openclaw_binary_path: openclaw
+                .map(|override_| override_.binary_path.clone())
+                .unwrap_or_default(),
+            openclaw_state_dir: openclaw
+                .map(|override_| override_.state_dir.clone())
+                .unwrap_or_default(),
+            openclaw_cli_timeout: openclaw
+                .map(|override_| override_.cli_timeout.clone())
+                .unwrap_or_default(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct BackendOverrides {
+    #[serde(default)]
+    pub openclaw: Option<OpenClawOverride>,
+}
+
+#[derive(Clone, Debug, Default, Deserialize)]
+pub struct OpenClawOverride {
+    #[serde(default)]
+    pub binary_path: String,
+    #[serde(default)]
+    pub state_dir: String,
+    #[serde(default)]
+    pub cli_timeout: String,
 }
 
 #[derive(Deserialize)]
@@ -463,6 +536,88 @@ fn validate_task_local_profile(profile: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn daemon_profile_schema_preserves_persisted_launch_and_backend_inputs() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let path = environment.config_path("production").expect("config path");
+        fs::create_dir_all(path.parent().expect("profile directory")).expect("create profile");
+        fs::write(
+            &path,
+            r#"{
+                "server_url":"https://cordy.example",
+                "app_url":"https://app.cordy.example",
+                "workspace_id":"workspace-1",
+                "token":"mul_secret",
+                "device_name":"build-host",
+                "runtime_name":"night-shift",
+                "workspaces_root":"/srv/cordy-workspaces",
+                "max_concurrent_tasks":7,
+                "poll_interval":"3s",
+                "heartbeat_interval":"11s",
+                "agent_timeout":"0s",
+                "codex_semantic_inactivity_timeout":"17m",
+                "codex_handshake_timeout":"42s",
+                "disable_auto_update":true,
+                "auto_update_check_interval":"4h",
+                "disable_auto_reload":true,
+                "backends":{"openclaw":{
+                    "binary_path":"/opt/openclaw/bin/openclaw",
+                    "state_dir":"/srv/openclaw-state",
+                    "cli_timeout":"45s"
+                }},
+                "profile_command_overrides":{
+                    "profile-1":"/opt/agents/custom-codex"
+                }
+            }"#,
+        )
+        .expect("write profile");
+
+        let config = environment.load_config("production").expect("load profile");
+        assert_eq!(config.server_url, "https://cordy.example");
+        assert_eq!(config.app_url, "https://app.cordy.example");
+        assert_eq!(config.workspace_id, "workspace-1");
+        assert_eq!(config.device_name, "build-host");
+        assert_eq!(config.runtime_name, "night-shift");
+        assert_eq!(config.workspaces_root, "/srv/cordy-workspaces");
+        assert_eq!(config.max_concurrent_tasks, 7);
+        assert_eq!(config.poll_interval, "3s");
+        assert_eq!(config.heartbeat_interval, "11s");
+        assert_eq!(config.agent_timeout.as_deref(), Some("0s"));
+        assert_eq!(config.codex_semantic_inactivity_timeout, "17m");
+        assert_eq!(config.codex_handshake_timeout, "42s");
+        assert!(config.disable_auto_update);
+        assert_eq!(config.auto_update_check_interval, "4h");
+        assert!(config.disable_auto_reload);
+
+        let daemon = config.daemon_profile_input();
+        assert_eq!(daemon.token, "mul_secret");
+        assert_eq!(
+            daemon
+                .profile_command_overrides
+                .get("profile-1")
+                .map(String::as_str),
+            Some("/opt/agents/custom-codex")
+        );
+        assert_eq!(daemon.openclaw_binary_path, "/opt/openclaw/bin/openclaw");
+        assert_eq!(daemon.openclaw_state_dir, "/srv/openclaw-state");
+        assert_eq!(daemon.openclaw_cli_timeout, "45s");
+    }
+
+    #[test]
+    fn absent_agent_timeout_and_backend_overrides_remain_unset() {
+        let config: CliConfig =
+            serde_json::from_str(r#"{"token":"mul_secret"}"#).expect("minimal profile");
+        assert!(config.agent_timeout.is_none());
+        assert!(config.backends.is_none());
+
+        let daemon = config.daemon_profile_input();
+        assert!(daemon.openclaw_binary_path.is_empty());
+        assert!(daemon.openclaw_state_dir.is_empty());
+        assert!(daemon.openclaw_cli_timeout.is_empty());
+    }
 
     #[test]
     fn profile_paths_match_go_layouts() {
