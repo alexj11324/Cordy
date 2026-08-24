@@ -15,6 +15,31 @@ struct DaemonTaskWakeup {
     hub: Arc<cordy_daemon::hub::DaemonHub>,
 }
 
+struct ChatQuickActionsClient {
+    llm: Arc<cordy_llm::Client>,
+}
+
+#[async_trait::async_trait]
+impl cordy_service::chat_quick_actions::ChatQuickActionsLlm for ChatQuickActionsClient {
+    fn enabled(&self) -> bool {
+        self.llm.enabled()
+    }
+
+    async fn generate_json(
+        &self,
+        model: &str,
+        system_prompt: &str,
+        user_prompt: &str,
+        _temperature: f64,
+        _max_completion_tokens: i64,
+    ) -> anyhow::Result<String> {
+        Ok(self
+            .llm
+            .generate_text(model, system_prompt, user_prompt)
+            .await?)
+    }
+}
+
 struct DaemonMessageMetrics {
     metrics: Arc<cordy_metrics::BusinessMetrics>,
 }
@@ -201,7 +226,7 @@ impl HandlerState {
 
     /// Wires the internal OpenAI-compatible assist layer. Invalid retry
     /// budgets fail startup rather than silently selecting another policy.
-    pub fn with_llm_from_env(mut self) -> anyhow::Result<Self> {
+    pub fn with_llm_from_env(self) -> anyhow::Result<Self> {
         const MAX_RETRIES: u32 = 5;
         let raw_retries = std::env::var("CORDY_LLM_MAX_RETRIES").unwrap_or_default();
         let max_retries = if raw_retries.trim().is_empty() {
@@ -219,12 +244,24 @@ impl HandlerState {
             );
             Some(parsed)
         };
-        self.llm = Arc::new(cordy_llm::Client::new(cordy_llm::Config {
+        self.with_llm_config(cordy_llm::Config {
             api_key: std::env::var("CORDY_LLM_API_KEY").unwrap_or_default(),
             base_url: std::env::var("CORDY_LLM_BASE_URL").unwrap_or_default(),
             default_model: std::env::var("CORDY_LLM_DEFAULT_MODEL").unwrap_or_default(),
             max_retries,
-        }));
+        })
+    }
+
+    fn with_llm_config(mut self, config: cordy_llm::Config) -> anyhow::Result<Self> {
+        let llm = Arc::new(cordy_llm::Client::new(config));
+        if llm.enabled() {
+            anyhow::ensure!(
+                self.tasks
+                    .install_quick_actions(Arc::new(ChatQuickActionsClient { llm: llm.clone() })),
+                "chat quick-actions LLM is already configured"
+            );
+        }
+        self.llm = llm;
         tracing::info!(
             enabled = self.llm.enabled(),
             max_retries = self.llm.max_retries(),
@@ -444,4 +481,26 @@ fn positive_env_i64(name: &str, default: i64) -> i64 {
         .and_then(|value| value.trim().parse::<i64>().ok())
         .filter(|value| *value > 0)
         .unwrap_or(default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn configured_llm_is_shared_with_chat_quick_actions() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = HandlerState::new(pool, PatCache::disabled(), None)
+            .with_llm_config(cordy_llm::Config {
+                base_url: "http://127.0.0.1:9/v1".into(),
+                ..Default::default()
+            })
+            .unwrap();
+
+        assert!(state.llm.enabled());
+        assert!(state
+            .tasks
+            .quick_actions()
+            .is_some_and(|quick_actions| quick_actions.enabled()));
+    }
 }
