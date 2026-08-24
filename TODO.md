@@ -277,10 +277,19 @@
       timeout returns an error instead of Go's warning; and stop still loads
       profile config/server URL instead of being purely local-control-only for
       corrupt profiles. None is an urgent safety or correctness blocker.
-- [ ] Next substantive daemon slice: if parity work continues, add the shared
-      restart flag contract as one bounded feature; otherwise move to the next
-      Go→Rust business domain. Do not create a second lifecycle or provider
-      assembly path.
+- [x] The restart flag contract is now shared with start in PR #129 via
+      `DaemonLaunchArgs::to_launch_flags`; identity, workspace root, timing,
+      concurrency, health-port, auto-update/reload, and global server/profile
+      precedence all flow through one resolver. `restart --foreground` is
+      rejected explicitly. Current head is
+      `a7827a4cb39a9a09ca8f6ad88da0b636427ffe32` (parent
+      `e72c28b51c9139ab19ac4bc6da2e3a19387a8706`, tree
+      `656f7d025353c2af6d8186d5fee25017e0a51509`), candidate
+      `a06dacdf71ff3dd95468ceab6d5f2bbf3b65e248`; scoped rustfmt/diff-check
+      pass, Cargo/review/gate/merge remain with pro.
+- [ ] Next substantive slice: move to the next Go→Rust business domain; keep
+      the daemon lifecycle/provider assembly single-sourced and do not reopen
+      the recorded non-blocking P2 differences without new evidence.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
