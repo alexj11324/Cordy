@@ -80,6 +80,7 @@ pub struct PluginEventDispatcher {
     queue_rx: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<DispatchJob>>,
     stop: CancellationToken,
     started: AtomicBool,
+    accepting: AtomicBool,
     /// Counts events shed under backpressure, surfaced for triage.
     dropped: AtomicI64,
 }
@@ -101,6 +102,7 @@ impl PluginEventDispatcher {
             queue_rx: tokio::sync::Mutex::new(queue_rx),
             stop: CancellationToken::new(),
             started: AtomicBool::new(false),
+            accepting: AtomicBool::new(true),
             dropped: AtomicI64::new(0),
         }
     }
@@ -135,7 +137,7 @@ impl PluginEventDispatcher {
         loop {
             tokio::select! {
                 _ = cancel.cancelled() => {
-                    self.stop.cancel();
+                    self.close();
                     break;
                 }
                 result = tasks.join_next() => match result {
@@ -215,6 +217,9 @@ impl PluginEventDispatcher {
     /// browser got its response, which is exactly when the hook is only just
     /// starting.
     pub fn dispatch(&self, event_type: &str, workspace_id: &str, payload: serde_json::Value) {
+        if !self.accepting.load(Ordering::Acquire) {
+            return;
+        }
         if workspace_id.is_empty() {
             return;
         }
@@ -232,7 +237,7 @@ impl PluginEventDispatcher {
             payload,
         }) {
             Ok(()) => {}
-            Err(_) => {
+            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                 let dropped = self.dropped.fetch_add(1, Ordering::Relaxed) + 1;
                 tracing::warn!(
                     event_type,
@@ -240,6 +245,7 @@ impl PluginEventDispatcher {
                     "plugins: event dispatch queue full, dropping event"
                 );
             }
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {}
         }
     }
 
@@ -256,7 +262,16 @@ impl PluginEventDispatcher {
             let job = {
                 let mut rx = self.queue_rx.lock().await;
                 tokio::select! {
-                    _ = self.stop.cancelled() => return,
+                    _ = self.stop.cancelled() => {
+                        // Stop new senders, then drain everything admitted
+                        // before shutdown. `recv` returns None only after the
+                        // closed channel's buffered jobs are exhausted.
+                        rx.close();
+                        match rx.recv().await {
+                            Some(job) => job,
+                            None => return,
+                        }
+                    },
                     job = rx.recv() => match job {
                         Some(job) => job,
                         None => return,
@@ -397,10 +412,7 @@ impl PluginEventDispatcher {
                         tracing::warn!(hook = %hook.key, event_type = %job.event_type, error = %redact_hook_error(&err), "plugins: event hook failed after retries");
                         return;
                     }
-                    tokio::select! {
-                        _ = self.stop.cancelled() => return,
-                        _ = tokio::time::sleep(HOOK_EVENT_BACKOFF * attempt as u32) => {}
-                    }
+                    tokio::time::sleep(HOOK_EVENT_BACKOFF * attempt as u32).await;
                 }
             }
         }
@@ -408,6 +420,7 @@ impl PluginEventDispatcher {
 
     /// Stops the workers. Safe to call more than once.
     pub fn close(&self) {
+        self.accepting.store(false, Ordering::Release);
         self.stop.cancel();
     }
 }
