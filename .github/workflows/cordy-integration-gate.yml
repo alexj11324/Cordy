@@ -1,0 +1,26 @@
+name: Cordy integration exact-head gate
+
+on:
+  push:
+    branches:
+      - codex/cord-14-s8-integrations
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record exact head
+        run: |
+          git rev-parse HEAD | tee /tmp/head.txt
+          echo ok > /tmp/result.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: integration-smoke
+          path: |
+            /tmp/head.txt
+            /tmp/result.txt
