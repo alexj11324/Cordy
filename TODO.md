@@ -82,6 +82,11 @@
       Minimal fix `ec0d3620de2764b97851ce793da3460fe864f0c8` (parent `ad36bc3a`) adds
       `move`; rustfmt/diff-check pass and it is pushed. Current candidate is
       `ca25863970d6f2e2a8620ed071f56e15d1ef28fd`; prior gate is invalid and must rerun.
+- [ ] Rerunning #113 check found three additional changed-code agent compile blockers:
+      ACP notification callback mutability, Qoder effort-choice type inference, and
+      Kimi reader reborrow. Minimal fix `0a071cba399515977fd0b70e4f9fe844c6a458fb`
+      (parent `ec0d3620`) passes scoped rustfmt/diff-check and is pushed. Current
+      candidate is `c419ab0bb316938877e2e89af0ac9b210c7b7cda`; gate must rerun again.
 - [ ] #113 gate remains pending review; original worktree
       `.worktrees/cord-22-daemon-production-assembly` has unrelated uncommitted CLI
       edits and must not be reset or used for the gate. Restacked tree has passed
