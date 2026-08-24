@@ -8820,6 +8820,8 @@ struct LoginWorkspace {
 
 const LOGIN_CALLBACK_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const LOGIN_CALLBACK_READ_TIMEOUT: Duration = Duration::from_secs(10);
+const WORKSPACE_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const WORKSPACE_DISCOVERY_INTERVAL: Duration = Duration::from_secs(2);
 
 /// Authenticate either with a PAT or with the browser callback flow. The
 /// credential and workspace reset are committed together after the new token
@@ -8890,23 +8892,33 @@ async fn run_login_with_urls(
         .map_err(|_| anyhow::anyhow!("could not verify the new credential"))?;
     let workspaces = client
         .get_json::<Vec<LoginWorkspace>>("/api/workspaces")
-        .await;
+        .await
+        .map_err(|_| anyhow::anyhow!("workspace discovery request failed"));
+    let workspaces = match workspaces {
+        Ok(workspaces) if !workspaces.is_empty() => Ok(workspaces),
+        Ok(_) => {
+            wait_for_workspace_creation(
+                &client,
+                &app_url,
+                WORKSPACE_DISCOVERY_INTERVAL,
+                WORKSPACE_DISCOVERY_TIMEOUT,
+            )
+            .await
+        }
+        Err(error) => Err(error),
+    };
     let (workspace_id, workspace_message) = match workspaces {
         Ok(workspaces) => {
             let selected = workspaces
                 .first()
                 .filter(|workspace| !workspace.id.is_empty());
-            let message = if workspaces.is_empty() {
-                "No workspaces found; create one in the web dashboard, then run 'cordy login' again.\n".into()
-            } else {
-                format!(
-                    "Found {} workspace(s); default workspace reset to {}.\n",
-                    workspaces.len(),
-                    selected
-                        .map(|workspace| workspace.name.as_str())
-                        .unwrap_or("the first workspace")
-                )
-            };
+            let message = format!(
+                "Found {} workspace(s); default workspace reset to {}.\n",
+                workspaces.len(),
+                selected
+                    .map(|workspace| workspace.name.as_str())
+                    .unwrap_or("the first workspace")
+            );
             (
                 selected
                     .map(|workspace| workspace.id.clone())
@@ -8914,13 +8926,13 @@ async fn run_login_with_urls(
                 message,
             )
         }
-        Err(error) => {
+        Err(_) => {
             // Authentication is still valid when discovery is temporarily
             // unavailable. Persist an empty workspace and make the retry
             // actionable without printing any bearer material.
             (
                 String::new(),
-                "Authenticated, but workspace discovery failed; run 'cordy workspace list' to retry.\n".into(),
+                "Authenticated, but workspace discovery did not complete; run 'cordy workspace list' to retry.\n".into(),
             )
         }
     };
@@ -8938,6 +8950,71 @@ async fn run_login_with_urls(
             user.name, user.email, workspace_message
         ),
     })
+}
+
+async fn wait_for_workspace_creation(
+    client: &ApiClient,
+    app_url: &str,
+    poll_interval: Duration,
+    max_wait: Duration,
+) -> Result<Vec<LoginWorkspace>> {
+    wait_for_workspace_creation_with_opener(client, app_url, poll_interval, max_wait, |url| {
+        if !open_login_url(url) {
+            eprintln!("Could not open browser automatically.");
+        }
+    })
+    .await
+}
+
+async fn wait_for_workspace_creation_with_opener<F>(
+    client: &ApiClient,
+    app_url: &str,
+    poll_interval: Duration,
+    max_wait: Duration,
+    open: F,
+) -> Result<Vec<LoginWorkspace>>
+where
+    F: FnOnce(&str),
+{
+    let creation_url = build_workspace_creation_url(app_url)?;
+    eprintln!("No workspaces found. Opening workspace creation in your browser...");
+    open(&creation_url);
+    eprintln!("If the browser did not open, visit:\n  {creation_url}");
+    eprintln!("\nWaiting for workspace creation...");
+
+    let deadline = tokio::time::Instant::now() + max_wait;
+    loop {
+        tokio::time::sleep_until(deadline.min(tokio::time::Instant::now() + poll_interval)).await;
+        if tokio::time::Instant::now() >= deadline {
+            return Err(anyhow::anyhow!("timed out waiting for workspace creation"));
+        }
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let request_timeout = remaining.min(poll_interval.max(Duration::from_secs(10)));
+        let workspaces = tokio::time::timeout(
+            request_timeout,
+            client.get_json::<Vec<LoginWorkspace>>("/api/workspaces"),
+        )
+        .await;
+        if let Ok(Ok(workspaces)) = workspaces {
+            if !workspaces.is_empty() {
+                return Ok(workspaces);
+            }
+        }
+    }
+}
+
+fn build_workspace_creation_url(app_url: &str) -> Result<String> {
+    let mut url = Url::parse(app_url).context("parse app URL")?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        bail!("app URL must use http or https")
+    }
+    url.set_query(None);
+    url.set_fragment(None);
+    url.path_segments_mut()
+        .map_err(|_| anyhow::anyhow!("app URL cannot be used for workspace creation"))?
+        .push("workspaces")
+        .push("new");
+    Ok(url.to_string())
 }
 
 fn validate_login_token(token: &str) -> Result<()> {
@@ -29107,5 +29184,68 @@ mod tests {
             waiter.await.expect("callback task").expect("token"),
             "mul_secret"
         );
+    }
+
+    #[test]
+    fn workspace_creation_url_is_safe_and_discards_untrusted_query() {
+        let url = build_workspace_creation_url(
+            "https://app.example/base?next=https://evil.example#fragment",
+        )
+        .expect("workspace URL");
+        assert_eq!(url, "https://app.example/base/workspaces/new");
+        assert!(build_workspace_creation_url("javascript:alert(1)").is_err());
+    }
+
+    #[tokio::test]
+    async fn workspace_creation_polling_opens_url_and_returns_new_workspace() {
+        let requests = Arc::new(Mutex::new(0_u32));
+        let route_requests = Arc::clone(&requests);
+        let app = Router::new().route(
+            "/api/workspaces",
+            get(move || {
+                let requests = Arc::clone(&route_requests);
+                async move {
+                    let mut count = requests.lock().expect("request count");
+                    *count += 1;
+                    if *count == 1 {
+                        Json(serde_json::json!([]))
+                    } else {
+                        Json(serde_json::json!([{"id":"workspace-new","name":"New workspace"}]))
+                    }
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        let client = ApiClient::new(
+            format!("http://{address}"),
+            String::new(),
+            "mul_test".into(),
+            String::new(),
+            String::new(),
+            Duration::from_secs(1),
+            CLIENT_VERSION,
+        )
+        .expect("client");
+        let opened = Arc::new(Mutex::new(String::new()));
+        let opened_for_test = Arc::clone(&opened);
+        let workspaces = wait_for_workspace_creation_with_opener(
+            &client,
+            "https://app.example/base",
+            Duration::from_millis(1),
+            Duration::from_secs(1),
+            move |url| *opened_for_test.lock().expect("opened URL") = url.to_owned(),
+        )
+        .await
+        .expect("workspace discovery");
+        assert_eq!(workspaces[0].id, "workspace-new");
+        assert_eq!(
+            opened.lock().expect("opened URL").as_str(),
+            "https://app.example/base/workspaces/new"
+        );
+        server.abort();
     }
 }
