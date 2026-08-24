@@ -14,6 +14,7 @@ mod disk_usage_commands;
 mod disk_usage_output;
 pub mod error;
 mod login;
+mod runtime_delete;
 mod runtime_output;
 mod setup_commands;
 mod update_commands;
@@ -62,6 +63,7 @@ use login::{
     wait_for_workspace_creation_with_opener, LoginWorkspace, WORKSPACE_DISCOVERY_INTERVAL,
     WORKSPACE_DISCOVERY_TIMEOUT,
 };
+use runtime_delete::{format_runtime_delete_result, runtime_delete_conflict};
 use runtime_output::{format_runtime_rows, output_runtime_profiles};
 use setup_commands::{
     confirm_setup_overwrite, dispatch_daemon_after_setup, format_setup_value_change,
@@ -3966,53 +3968,6 @@ async fn run_runtime_rename(
     })
 }
 
-#[derive(Debug, Deserialize)]
-struct RuntimeDeleteConflict {
-    code: String,
-    #[serde(default)]
-    active_agents: Vec<RuntimeDeleteAgent>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RuntimeDeleteAgent {
-    #[serde(default)]
-    id: String,
-    #[serde(default)]
-    name: String,
-}
-
-impl RuntimeDeleteConflict {
-    fn ids(&self) -> Vec<&str> {
-        self.active_agents
-            .iter()
-            .map(|agent| agent.id.as_str())
-            .filter(|id| !id.is_empty())
-            .collect()
-    }
-
-    fn displays(&self) -> Vec<String> {
-        self.active_agents
-            .iter()
-            .filter_map(|agent| match (agent.name.is_empty(), agent.id.is_empty()) {
-                (false, false) => Some(format!("{} ({})", agent.name, agent.id)),
-                (false, true) => Some(agent.name.clone()),
-                (true, false) => Some(agent.id.clone()),
-                (true, true) => None,
-            })
-            .collect()
-    }
-}
-
-fn runtime_delete_conflict(error: &anyhow::Error) -> Option<RuntimeDeleteConflict> {
-    let http = error.downcast_ref::<HttpError>()?;
-    if http.status_code != 409 {
-        return None;
-    }
-    let conflict: RuntimeDeleteConflict = serde_json::from_str(&http.body).ok()?;
-    (conflict.code == "runtime_has_active_agents" && !conflict.active_agents.is_empty())
-        .then_some(conflict)
-}
-
 async fn run_runtime_delete(
     cli: &Cli,
     environment: &Environment,
@@ -4049,41 +4004,6 @@ async fn run_runtime_delete(
     result.insert("id".into(), Value::String(runtime_id.into()));
     result.insert("deleted".into(), Value::Bool(true));
     format_runtime_delete_result(&Value::Object(result), output)
-}
-
-fn format_runtime_delete_result(result: &Value, output: OutputFormat) -> Result<RunOutput> {
-    if output == OutputFormat::Json {
-        return Ok(RunOutput {
-            stdout: format!("{}\n", serde_json::to_string_pretty(result)?),
-            stderr: String::new(),
-        });
-    }
-    let id = value_string(result, "id");
-    let stderr = if result.get("agents_unbound").is_some() {
-        let mut message = format!(
-            "Runtime {id} deleted; unbound {} agent(s)",
-            value_string(result, "agents_unbound")
-        );
-        if result.get("autopilots_paused").is_some() {
-            let _ = write!(
-                message,
-                " and paused {} autopilot(s)",
-                value_string(result, "autopilots_paused")
-            );
-        }
-        message + ".\n"
-    } else if result.get("agents_archived").is_some() {
-        format!(
-            "Runtime {id} deleted; processed {} agent(s).\n",
-            value_string(result, "agents_archived")
-        )
-    } else {
-        format!("Runtime {id} deleted.\n")
-    };
-    Ok(RunOutput {
-        stdout: String::new(),
-        stderr,
-    })
 }
 
 async fn run_runtime_update(
