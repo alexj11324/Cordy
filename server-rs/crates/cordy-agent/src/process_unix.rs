@@ -70,3 +70,15 @@ impl ProcessTree {
         }
     }
 }
+
+impl Drop for ProcessTree {
+    fn drop(&mut self) {
+        // Tokio's Child drop does not terminate the process. Preserve the
+        // ownership contract even when the task holding OwnedProcessTree is
+        // aborted or panics by synchronously killing the entire process group.
+        // ESRCH is the normal case after an orderly shutdown.
+        unsafe {
+            libc::kill(-self.process_group_id, libc::SIGKILL);
+        }
+    }
+}
