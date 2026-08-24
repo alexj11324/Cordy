@@ -234,6 +234,7 @@ struct ProviderRegistrationRound<C: ProviderCatalog> {
     launches: Arc<RuntimeLaunchRegistry>,
     builtins: Vec<BTreeMap<String, String>>,
     include_profiles: bool,
+    pending_profiles: Mutex<HashMap<String, Vec<RuntimeLaunchSpec>>>,
 }
 
 #[async_trait::async_trait]
@@ -323,9 +324,19 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
                     .push(profile_failure(&profile, &error.reason)),
             }
         }
-        self.launches
-            .replace_workspace_profiles(workspace_id, launches);
+        self.pending_profiles
+            .lock()
+            .unwrap()
+            .insert(workspace_id.to_string(), launches);
         Ok(payload)
+    }
+
+    fn registration_applied(&self, workspace_id: &str) {
+        let Some(specs) = self.pending_profiles.lock().unwrap().remove(workspace_id) else {
+            return;
+        };
+        self.launches
+            .replace_workspace_profiles(workspace_id, specs);
     }
 }
 
@@ -341,6 +352,7 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
             launches: Arc::clone(&self.launches),
             builtins: snapshot.payload,
             include_profiles: true,
+            pending_profiles: Mutex::new(HashMap::new()),
         }))
     }
 
@@ -369,6 +381,7 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
             launches: Arc::clone(&self.launches),
             builtins: snapshot.payload,
             include_profiles: false,
+            pending_profiles: Mutex::new(HashMap::new()),
         })))
     }
 
