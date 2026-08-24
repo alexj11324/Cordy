@@ -86,6 +86,8 @@ enum Command {
     Workspace(WorkspaceArgs),
     #[command(about = "Work with issue labels")]
     Label(LabelArgs),
+    #[command(about = "Work with projects")]
+    Project(ProjectArgs),
     #[command(about = "Print version information")]
     Version {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
@@ -154,6 +156,32 @@ struct LabelUpdateArgs {
     color: Option<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct ProjectArgs {
+    #[command(subcommand)]
+    command: ProjectCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum ProjectCommand {
+    #[command(about = "List projects in the workspace")]
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+        #[arg(long, help = "Show full UUIDs in table output")]
+        full_id: bool,
+        #[arg(long, help = "Filter by status")]
+        status: Option<String>,
+    },
+    #[command(about = "Get project details")]
+    Get {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -1330,6 +1358,17 @@ async fn run_with_input<R: Read>(
         Command::Label(LabelArgs {
             command: LabelCommand::Delete { id, output },
         }) => run_label_delete(cli, environment, id, *output).await,
+        Command::Project(ProjectArgs {
+            command:
+                ProjectCommand::List {
+                    output,
+                    full_id,
+                    status,
+                },
+        }) => run_project_list(cli, environment, *output, *full_id, status.as_deref()).await,
+        Command::Project(ProjectArgs {
+            command: ProjectCommand::Get { id, output },
+        }) => run_project_get(cli, environment, id, *output).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -4627,6 +4666,156 @@ async fn run_label_delete(
         },
         stderr: String::new(),
     })
+}
+
+fn project_lead(project: &Value, actors: &IssueActorNames) -> String {
+    let actor_type = value_string(project, "lead_type");
+    let actor_id = value_string(project, "lead_id");
+    if actor_type.is_empty() || actor_id.is_empty() {
+        return String::new();
+    }
+    let key = format!("{actor_type}:{actor_id}");
+    actors
+        .0
+        .get(&key)
+        .map_or(key, |name| format!("{actor_type}:{name}"))
+}
+
+fn project_actor_inputs(projects: &[Value]) -> Vec<Value> {
+    projects
+        .iter()
+        .map(|project| {
+            serde_json::json!({
+                "assignee_type":project.get("lead_type").cloned().unwrap_or(Value::Null),
+                "assignee_id":project.get("lead_id").cloned().unwrap_or(Value::Null),
+            })
+        })
+        .collect()
+}
+
+fn format_project_list_table(
+    projects: &[Value],
+    actors: &IssueActorNames,
+    full_id: bool,
+) -> String {
+    let mut rows = vec![vec![
+        "ID".into(),
+        "TITLE".into(),
+        "STATUS".into(),
+        "LEAD".into(),
+        "CREATED".into(),
+    ]];
+    rows.extend(projects.iter().map(|project| {
+        vec![
+            display_id(&value_string(project, "id"), full_id),
+            value_string(project, "title"),
+            value_string(project, "status"),
+            project_lead(project, actors),
+            value_string(project, "created_at")
+                .chars()
+                .take(10)
+                .collect(),
+        ]
+    }));
+    format_table(&rows)
+}
+
+async fn run_project_list(
+    cli: &Cli,
+    environment: &Environment,
+    output: OutputFormat,
+    full_id: bool,
+    status: Option<&str>,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let mut serializer = form_urlencoded::Serializer::new(String::new());
+    if !workspace_id.is_empty() {
+        serializer.append_pair("workspace_id", &workspace_id);
+    }
+    if let Some(status) = status.filter(|status| !status.is_empty()) {
+        serializer.append_pair("status", status);
+    }
+    let query = serializer.finish();
+    let path = if query.is_empty() {
+        "/api/projects".into()
+    } else {
+        format!("/api/projects?{query}")
+    };
+    let result: Value = client.get_json(&path).await.context("list projects")?;
+    let projects = result
+        .get("projects")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(projects)?),
+        OutputFormat::Table => {
+            let inputs = project_actor_inputs(projects);
+            let actors = load_issue_actor_names(&client, &workspace_id, &inputs).await;
+            format_project_list_table(projects, &actors, full_id)
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn format_project_details_table(project: &Value, actors: &IssueActorNames) -> String {
+    format_table(&[
+        vec![
+            "ID".into(),
+            "TITLE".into(),
+            "STATUS".into(),
+            "LEAD".into(),
+            "DESCRIPTION".into(),
+        ],
+        vec![
+            value_string(project, "id"),
+            value_string(project, "title"),
+            value_string(project, "status"),
+            project_lead(project, actors),
+            value_string(project, "description"),
+        ],
+    ])
+}
+
+async fn run_project_get(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let project_id = resolve_issue_project_id(&client, &workspace_id, id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve project: {error}"))?;
+    let project: Value = client
+        .get_json(&format!("/api/projects/{project_id}"))
+        .await
+        .context("get project")?;
+    let resource_count = project
+        .get("resource_count")
+        .and_then(Value::as_f64)
+        .unwrap_or_default() as i64;
+    let stderr = if resource_count > 0 {
+        format!(
+            "{resource_count} resource(s) attached — run `cordy project resource list {project_id}` to view.\n"
+        )
+    } else {
+        String::new()
+    };
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&project)?),
+        OutputFormat::Table => {
+            let inputs = project_actor_inputs(std::slice::from_ref(&project));
+            let actors = load_issue_actor_names(&client, &workspace_id, &inputs).await;
+            format_project_details_table(&project, &actors)
+        }
+    };
+    Ok(RunOutput { stdout, stderr })
 }
 
 async fn run_issue_label_list(
@@ -10120,6 +10309,132 @@ mod tests {
         let deleted: Value = serde_json::from_str(&deleted.stdout).expect("deleted JSON");
         assert_eq!(deleted["id"], label_id);
         assert_eq!(deleted["deleted"], true);
+        task.abort();
+    }
+
+    #[test]
+    fn project_read_parser_and_tables_match_go_registry_contract() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "project",
+            "list",
+            "--status",
+            "in_progress",
+            "--full-id",
+            "--output",
+            "json",
+        ])
+        .expect("project list CLI");
+        let Command::Project(ProjectArgs {
+            command:
+                ProjectCommand::List {
+                    output,
+                    full_id,
+                    status,
+                },
+        }) = &cli.command
+        else {
+            panic!("expected project list");
+        };
+        assert_eq!(*output, OutputFormat::Json);
+        assert!(*full_id);
+        assert_eq!(status.as_deref(), Some("in_progress"));
+
+        let project = serde_json::json!({
+            "id":"11111111-1111-1111-1111-111111111111","title":"Migration",
+            "status":"in_progress","lead_type":"member","lead_id":"member-1",
+            "created_at":"2026-08-24T12:34:56Z","description":"Rust port"
+        });
+        let actors = IssueActorNames(HashMap::from([("member:member-1".into(), "Ada".into())]));
+        let list = format_project_list_table(std::slice::from_ref(&project), &actors, false);
+        assert!(list.starts_with("ID"));
+        assert!(list.contains("11111111"));
+        assert!(list.contains("Migration"));
+        assert!(list.contains("member:Ada"));
+        assert!(list.contains("2026-08-24"));
+        let details = format_project_details_table(&project, &actors);
+        assert!(details.contains("11111111-1111-1111-1111-111111111111"));
+        assert!(details.contains("Rust port"));
+    }
+
+    #[tokio::test]
+    async fn project_list_sends_workspace_status_and_preserves_json_array() {
+        let app = Router::new().route(
+            "/api/projects",
+            get(|request: Request| async move {
+                let query = request.uri().query().unwrap_or_default();
+                assert!(query.contains("workspace_id=workspace-1"));
+                assert!(query.contains("status=in_progress"));
+                Json(serde_json::json!({
+                    "projects":[{"id":"project-1","title":"Migration","status":"in_progress"}]
+                }))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "project",
+            "list",
+            "--status",
+            "in_progress",
+            "--output",
+            "json",
+        ])
+        .expect("project list CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list projects");
+        let projects: Value = serde_json::from_str(&output.stdout).expect("projects JSON");
+        assert_eq!(projects[0]["title"], "Migration");
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn project_get_resolves_prefix_and_reports_attached_resources() {
+        let project_id = "abcd1234-0000-0000-0000-000000000000";
+        let app = Router::new()
+            .route(
+                "/api/projects",
+                get(move || async move {
+                    Json(serde_json::json!({
+                        "projects":[{"id":project_id,"title":"Migration","status":"planned"}]
+                    }))
+                }),
+            )
+            .route(
+                "/api/projects/abcd1234-0000-0000-0000-000000000000",
+                get(move || async move {
+                    Json(serde_json::json!({
+                        "id":project_id,"title":"Migration","status":"planned",
+                        "description":"Rust port","resource_count":2
+                    }))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from(["cordy", "project", "get", "abcd", "--output", "table"])
+            .expect("project get CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("get project");
+        assert!(output.stdout.contains("Migration"));
+        assert!(output.stderr.contains("2 resource(s) attached"));
+        assert!(output.stderr.contains(project_id));
         task.abort();
     }
 
