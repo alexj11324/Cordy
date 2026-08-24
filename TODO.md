@@ -1032,6 +1032,15 @@
       extracted formatter through parent imports. The serial subagent reviewed
       exact head `335954bb` and found no issue. Scoped rustfmt/diff-check pass;
       Cargo was not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI project core command structural refactor is committed at
+      `252dce717766cfc532dc60a84a8fdfaf50299eb0` (parent
+      `335954bb30849b66d24df4c5b4e8b95f0f305652`, tree
+      `483345cd6515b0cdcebfa1ffc034e49616182370`): project list/get/create/
+      update/delete/status, lead resolution, status validation, and output
+      helpers now live in `cordy-cli/src/project_commands.rs`; project resource
+      commands remain isolated for a later slice. The serial subagent reviewed
+      exact head `252dce71` and found no issue. Scoped rustfmt/diff-check pass;
+      Cargo was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
