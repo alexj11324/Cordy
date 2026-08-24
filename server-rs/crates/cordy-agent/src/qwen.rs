@@ -244,7 +244,7 @@ impl Backend for QwenBackend {
                 &requested_resume,
                 &state.session_id,
                 failed,
-                [&finalized.error, &stderr],
+                [finalized.error.as_str(), stderr.as_str()],
             );
             if resume_rejected {
                 state.session_id.clear();
@@ -327,6 +327,21 @@ fn validate_working_directory(cwd: &str) -> Result<(), AgentError> {
     }
 }
 
+async fn stop_process_tree(tree: &mut OwnedProcessTree) {
+    let _ = tree.terminate();
+    if tokio::time::timeout(TERMINATION_GRACE, tree.wait())
+        .await
+        .is_err()
+    {
+        let _ = tree.kill();
+        let _ = tokio::time::timeout(KILL_GRACE, tree.wait()).await;
+    }
+    if !tree.wait_tree_gone(TERMINATION_GRACE).await {
+        let _ = tree.kill();
+        let _ = tree.wait_tree_gone(KILL_GRACE).await;
+    }
+}
+
 async fn pump_stderr(mut stderr: tokio::process::ChildStderr, tail: SharedDiagnosticBuffer) {
     let mut buffer = [0_u8; 8192];
     loop {
@@ -365,21 +380,6 @@ async fn read_stream(
                 return state;
             }
         }
-    }
-}
-
-async fn stop_process_tree(tree: &mut OwnedProcessTree) {
-    let _ = tree.terminate();
-    if tokio::time::timeout(TERMINATION_GRACE, tree.wait())
-        .await
-        .is_err()
-    {
-        let _ = tree.kill();
-        let _ = tokio::time::timeout(KILL_GRACE, tree.wait()).await;
-    }
-    if !tree.wait_tree_gone(KILL_GRACE).await {
-        let _ = tree.kill();
-        let _ = tree.wait_tree_gone(KILL_GRACE).await;
     }
 }
 
@@ -677,7 +677,7 @@ fn resume_was_rejected<'a>(
     requested: &str,
     emitted: &str,
     failed: bool,
-    texts: impl IntoIterator<Item = &'a String>,
+    texts: impl IntoIterator<Item = &'a str>,
 ) -> bool {
     if !failed || requested.is_empty() {
         return false;
@@ -798,14 +798,14 @@ mod tests {
             "requested",
             &state.session_id,
             true,
-            [&state.terminal.final_result_text]
+            [state.terminal.final_result_text.as_str()]
         ));
     }
 
     #[test]
     fn generic_session_errors_do_not_reject_qwen_resume() {
         let unrelated = "MCP tool failed: session not found".to_string();
-        assert!(!resume_was_rejected("requested", "", true, [&unrelated]));
+        assert!(!resume_was_rejected("requested", "", true, [unrelated.as_str()]));
     }
 
     #[test]
