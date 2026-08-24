@@ -59,24 +59,27 @@ pub struct Catalog {
 /// provider-qualified id; authoritative model ids and advertised order remain
 /// unchanged.
 pub fn parse_acp_session_models(result: &Value, fallback_provider: &str) -> Vec<Model> {
-    let Some(models) = result.get("models") else {
-        return Vec::new();
-    };
+    let models = result.get("models");
     let current = models
-        .get("currentModelId")
-        .or_else(|| models.get("current_model_id"))
+        .and_then(|models| {
+            models
+                .get("currentModelId")
+                .or_else(|| models.get("current_model_id"))
+        })
         .and_then(Value::as_str)
         .unwrap_or_default()
         .trim();
-    let Some(available) = models
-        .get("availableModels")
-        .or_else(|| models.get("available_models"))
+    let available = models
+        .and_then(|models| {
+            models
+                .get("availableModels")
+                .or_else(|| models.get("available_models"))
+        })
         .and_then(Value::as_array)
-    else {
-        return Vec::new();
-    };
+        .map(Vec::as_slice)
+        .unwrap_or_default();
     let mut seen = std::collections::BTreeSet::new();
-    available
+    let parsed: Vec<_> = available
         .iter()
         .filter_map(|entry| {
             let id = entry
@@ -98,6 +101,69 @@ pub fn parse_acp_session_models(result: &Value, fallback_provider: &str) -> Vec<
                 .map(|(provider, _)| provider)
                 .filter(|provider| !provider.is_empty())
                 .unwrap_or(fallback_provider);
+            Some(Model {
+                id: id.to_string(),
+                label: label.to_string(),
+                provider: provider.to_string(),
+                default: id == current,
+                ..Model::default()
+            })
+        })
+        .collect();
+    if parsed.is_empty() {
+        parse_acp_config_models(result)
+    } else {
+        parsed
+    }
+}
+
+fn parse_acp_config_models(result: &Value) -> Vec<Model> {
+    let options = result
+        .get("configOptions")
+        .or_else(|| result.get("config_options"))
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let Some(model_option) = options.iter().find(|option| {
+        ["id", "category"].iter().any(|key| {
+            option
+                .get(*key)
+                .and_then(Value::as_str)
+                .is_some_and(|value| value.trim().eq_ignore_ascii_case("model"))
+        })
+    }) else {
+        return Vec::new();
+    };
+    let current = model_option
+        .get("currentValue")
+        .or_else(|| model_option.get("current_value"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    let choices = model_option
+        .get("options")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut seen = std::collections::BTreeSet::new();
+    choices
+        .iter()
+        .filter_map(|choice| {
+            let id = choice.get("value").and_then(Value::as_str)?.trim();
+            if id.is_empty() || !seen.insert(id.to_string()) {
+                return None;
+            }
+            let label = choice
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|label| !label.is_empty() && !label.eq_ignore_ascii_case("unknown"))
+                .unwrap_or(id);
+            let provider = id
+                .split_once(':')
+                .map(|(provider, _)| provider)
+                .filter(|provider| !provider.is_empty())
+                .unwrap_or_default();
             Some(Model {
                 id: id.to_string(),
                 label: label.to_string(),
@@ -252,6 +318,60 @@ mod tests {
             ..catalog
         };
         assert_eq!(qualify_model_id(&fallback, "o3"), ("o3".to_string(), false));
+    }
+
+    #[test]
+    fn acp_config_model_catalog_is_used_without_mixing_thinking_options() {
+        let models = parse_acp_session_models(
+            &serde_json::json!({
+                "configOptions":[
+                    {
+                        "id":"thinking",
+                        "category":"thought_level",
+                        "currentValue":"high",
+                        "options":[{"value":"high","name":"High"}]
+                    },
+                    {
+                        "id":"model",
+                        "category":"model",
+                        "currentValue":"kimi-code/k3",
+                        "options":[
+                            {"value":"kimi-code/k3","name":"K3"},
+                            {"value":"openai:gpt-5","name":"unknown"},
+                            {"value":"kimi-code/k3","name":"duplicate"},
+                            {"value":"","name":"empty"}
+                        ]
+                    }
+                ]
+            }),
+            "kimi",
+        );
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "kimi-code/k3");
+        assert_eq!(models[0].label, "K3");
+        assert!(models[0].default);
+        assert!(models[0].provider.is_empty());
+        assert_eq!(models[1].label, "openai:gpt-5");
+        assert_eq!(models[1].provider, "openai");
+    }
+
+    #[test]
+    fn structured_models_catalog_wins_over_config_option_fallback() {
+        let models = parse_acp_session_models(
+            &serde_json::json!({
+                "models": {
+                    "currentModelId":"direct",
+                    "availableModels":[{"modelId":"direct","name":"Direct"}]
+                },
+                "configOptions":[{
+                    "id":"model",
+                    "options":[{"value":"fallback","name":"Fallback"}]
+                }]
+            }),
+            "provider",
+        );
+        assert_eq!(models.len(), 1);
+        assert_eq!(models[0].id, "direct");
     }
 
     #[test]
