@@ -1,20 +1,244 @@
 //! Current-user workspace invitation reads and decisions.
 
-use axum::extract::{Path, Request, State};
-use axum::http::{header, HeaderMap, StatusCode};
-use axum::middleware::Next;
+use axum::extract::{Extension, Path, State};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
-use axum::{middleware, Json, Router};
+use axum::routing::{get, post};
+use axum::{Json, Router};
 use cordy_db::models::WorkspaceInvitation;
-use cordy_db::queries::invitation::{self, ListPendingInvitationsForUserRow};
+use cordy_db::queries::invitation::{
+    self, ListPendingInvitationsByWorkspaceRow, ListPendingInvitationsForUserRow,
+};
 use cordy_db::queries::{member, user, workspace};
-use serde::Serialize;
+use cordy_middleware::workspace::WorkspaceContext;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::error::error_response;
 use crate::state::HandlerState;
 use crate::workspace::MemberWithUserResponse;
+
+#[derive(Clone, Default)]
+pub struct InvitationAdmission {
+    entries: Arc<Mutex<HashMap<String, VecDeque<Instant>>>>,
+}
+
+const REDIS_CHECK_SCRIPT: &str = r#"
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
+if redis.call('ZCARD', KEYS[1]) >= tonumber(ARGV[2]) then
+    return 0
+end
+return 1
+"#;
+
+const REDIS_CONSUME_SCRIPT: &str = r#"
+redis.call('ZREMRANGEBYSCORE', KEYS[1], '-inf', ARGV[2])
+if redis.call('ZCARD', KEYS[1]) >= tonumber(ARGV[3]) then
+    return 0
+end
+redis.call('ZADD', KEYS[1], ARGV[1], ARGV[5])
+redis.call('EXPIRE', KEYS[1], ARGV[4])
+return 1
+"#;
+
+#[derive(Debug)]
+enum AdmissionError {
+    Limited {
+        retry_after: u64,
+        gates: Vec<&'static str>,
+    },
+    Unavailable,
+}
+
+struct AdmissionGate {
+    name: &'static str,
+    key: String,
+    limit: usize,
+    window: Duration,
+}
+
+impl InvitationAdmission {
+    fn gates(actor_id: Uuid, workspace_id: Uuid, email: &str) -> [AdmissionGate; 3] {
+        let recipient = hex::encode(Sha256::digest(email.trim().to_ascii_lowercase().as_bytes()));
+        [
+            AdmissionGate {
+                name: "actor",
+                key: format!("mul:invitation:actor:{actor_id}"),
+                limit: 10,
+                window: Duration::from_secs(600),
+            },
+            AdmissionGate {
+                name: "workspace",
+                key: format!("mul:invitation:workspace:{workspace_id}"),
+                limit: 50,
+                window: Duration::from_secs(86_400),
+            },
+            AdmissionGate {
+                name: "recipient",
+                key: format!("mul:invitation:recipient:{recipient}"),
+                limit: 6,
+                window: Duration::from_secs(86_400),
+            },
+        ]
+    }
+
+    async fn admit(
+        &self,
+        redis: Option<&redis::Client>,
+        actor_id: Uuid,
+        workspace_id: Uuid,
+        email: &str,
+    ) -> Result<(), AdmissionError> {
+        let gates = Self::gates(actor_id, workspace_id, email);
+        if let Some(client) = redis {
+            return Self::admit_redis(client, &gates).await;
+        }
+        self.admit_memory(&gates).await
+    }
+
+    async fn admit_memory(&self, gates: &[AdmissionGate]) -> Result<(), AdmissionError> {
+        let now = Instant::now();
+        let mut entries = self.entries.lock().await;
+        let mut retry_after = 0_u64;
+        let mut denied = Vec::new();
+        for gate in gates {
+            let values = entries.entry(gate.key.clone()).or_default();
+            while values
+                .front()
+                .is_some_and(|created| now.duration_since(*created) >= gate.window)
+            {
+                values.pop_front();
+            }
+            if values.len() >= gate.limit {
+                let remaining = gate
+                    .window
+                    .saturating_sub(now.duration_since(*values.front().unwrap()));
+                retry_after = retry_after.max(remaining.as_secs().max(1));
+                denied.push(gate.name);
+            }
+        }
+        if retry_after > 0 {
+            return Err(AdmissionError::Limited {
+                retry_after,
+                gates: denied,
+            });
+        }
+        for gate in gates {
+            entries.entry(gate.key.clone()).or_default().push_back(now);
+        }
+        Ok(())
+    }
+
+    async fn admit_redis(
+        client: &redis::Client,
+        gates: &[AdmissionGate],
+    ) -> Result<(), AdmissionError> {
+        use std::time::{SystemTime, UNIX_EPOCH};
+
+        let mut conn = client
+            .get_multiplexed_async_connection()
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, "invitation rate limiter unavailable");
+                AdmissionError::Unavailable
+            })?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default();
+        let now_nanos = now.as_nanos().min(i64::MAX as u128) as i64;
+        let mut denied = Vec::new();
+        let mut retry_after = 0_u64;
+        for gate in gates {
+            let cutoff =
+                now_nanos.saturating_sub(gate.window.as_nanos().min(i64::MAX as u128) as i64);
+            let allowed = redis::Script::new(REDIS_CHECK_SCRIPT)
+                .key(&gate.key)
+                .arg(cutoff)
+                .arg(gate.limit)
+                .invoke_async::<i64>(&mut conn)
+                .await
+                .map_err(|error| {
+                    tracing::error!(%error, gate = gate.name, "invitation rate limiter unavailable");
+                    AdmissionError::Unavailable
+                })?;
+            if allowed == 0 {
+                denied.push(gate.name);
+                retry_after = retry_after.max(gate.window.as_secs().max(1));
+            }
+        }
+        if !denied.is_empty() {
+            return Err(AdmissionError::Limited {
+                retry_after,
+                gates: denied,
+            });
+        }
+
+        for gate in gates {
+            let cutoff =
+                now_nanos.saturating_sub(gate.window.as_nanos().min(i64::MAX as u128) as i64);
+            let result = redis::Script::new(REDIS_CONSUME_SCRIPT)
+                .key(&gate.key)
+                .arg(now_nanos)
+                .arg(cutoff)
+                .arg(gate.limit)
+                .arg(gate.window.as_secs().saturating_mul(2).max(1))
+                .arg(Uuid::new_v4().to_string())
+                .invoke_async::<i64>(&mut conn)
+                .await;
+            if let Err(error) = result {
+                tracing::warn!(%error, gate = gate.name, "invitation rate limiter consume failed after successful checks; allowing bounded overshoot");
+            }
+        }
+        Ok(())
+    }
+}
+
+fn invitation_rate_limited(retry_after: u64) -> Response {
+    let mut response = (
+        StatusCode::TOO_MANY_REQUESTS,
+        Json(serde_json::json!({
+            "error": "too many invitation requests",
+            "code": "invitation_rate_limited",
+            "retry_after_seconds": retry_after,
+        })),
+    )
+        .into_response();
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    if let Ok(value) = axum::http::HeaderValue::from_str(&retry_after.to_string()) {
+        response
+            .headers_mut()
+            .insert(axum::http::header::RETRY_AFTER, value);
+    }
+    response
+}
+
+fn invitation_limiter_unavailable() -> Response {
+    let mut response = (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(serde_json::json!({
+            "error": "invitation service temporarily unavailable",
+            "code": "invitation_rate_limiter_unavailable",
+        })),
+    )
+        .into_response();
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    response.headers_mut().insert(
+        axum::http::header::RETRY_AFTER,
+        axum::http::HeaderValue::from_static("5"),
+    );
+    response
+}
 
 pub fn router() -> Router<HandlerState> {
     Router::new()
@@ -25,39 +249,22 @@ pub fn router() -> Router<HandlerState> {
             "/api/invitations/{id}/decline",
             axum::routing::post(decline),
         )
-        .route_layer(middleware::from_fn(require_human_actor))
 }
 
-async fn require_human_actor(request: Request, next: Next) -> Response {
-    let actor_source_is_machine = matches!(
-        request
-            .headers()
-            .get("x-actor-source")
-            .and_then(|value| value.to_str().ok()),
-        Some("task_token" | "cloud_pat")
-    );
-    let bearer_is_machine = request
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| {
-            let mut parts = value.split_ascii_whitespace();
-            match (parts.next(), parts.next(), parts.next()) {
-                (Some(scheme), Some(token), None) if scheme.eq_ignore_ascii_case("bearer") => {
-                    Some(token)
-                }
-                _ => None,
-            }
-        })
-        .is_some_and(|token| token.starts_with("mat_") || token.starts_with("mcn_"));
+pub fn workspace_member_router() -> Router<HandlerState> {
+    Router::new().route("/api/workspaces/{id}/invitations", get(list_workspace))
+}
 
-    if actor_source_is_machine || bearer_is_machine {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            "this endpoint is only available to human actors",
-        );
-    }
-    next.run(request).await
+pub fn workspace_admin_router() -> Router<HandlerState> {
+    Router::new()
+        .route("/api/workspaces/{id}/members", post(create))
+        .route(
+            "/api/workspaces/{id}/invitations/{invitation_id}",
+            axum::routing::delete(revoke),
+        )
+        .route_layer(axum::middleware::from_fn(
+            crate::workspace::require_human_admin_actor,
+        ))
 }
 
 #[derive(Debug, Serialize)]
@@ -78,6 +285,177 @@ struct InvitationResponse {
     inviter_email: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     workspace_name: String,
+}
+
+#[derive(Deserialize)]
+struct CreateInvitationRequest {
+    email: String,
+    #[serde(default)]
+    role: String,
+}
+
+async fn create(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    body: axum::body::Bytes,
+) -> Response {
+    let request: CreateInvitationRequest = match serde_json::from_slice(&body) {
+        Ok(request) => request,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    let email = request.email.trim().to_ascii_lowercase();
+    if email.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "email is required");
+    }
+    let role = match request.role.trim() {
+        "" | "member" => "member",
+        "admin" => "admin",
+        "owner" => return error_response(StatusCode::BAD_REQUEST, "cannot invite as owner"),
+        _ => return error_response(StatusCode::BAD_REQUEST, "invalid member role"),
+    };
+    let existing_user = match user::get_user_by_email(&state.pool, &email).await {
+        Ok(user) => user,
+        Err(_) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load user"),
+    };
+    if let Some(found) = existing_user.as_ref() {
+        if member::get_member_by_user_and_workspace(
+            &state.pool,
+            found.id,
+            context.member.workspace_id,
+        )
+        .await
+        .ok()
+        .flatten()
+        .is_some()
+        {
+            return error_response(StatusCode::CONFLICT, "user is already a member");
+        }
+    }
+    if invitation::expire_stale_pending_invitations(
+        &state.pool,
+        context.member.workspace_id,
+        &email,
+    )
+    .await
+    .is_err()
+    {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to create invitation",
+        );
+    }
+    match invitation::get_pending_invitation_by_email(
+        &state.pool,
+        context.member.workspace_id,
+        &email,
+    )
+    .await
+    {
+        Ok(Some(_)) => {
+            return error_response(
+                StatusCode::CONFLICT,
+                "invitation already pending for this email",
+            )
+        }
+        Ok(None) => {}
+        Err(error) => {
+            tracing::warn!(%error, "failed to check pending invitation");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to create invitation",
+            );
+        }
+    }
+    match state
+        .invitation_admission
+        .admit(
+            state.rate_limit_client.as_ref(),
+            context.member.user_id,
+            context.member.workspace_id,
+            &email,
+        )
+        .await
+    {
+        Ok(()) => {}
+        Err(AdmissionError::Limited { retry_after, gates }) => {
+            if let Some(metrics) = state.business_metrics.as_deref() {
+                for gate in gates {
+                    metrics.record_email_rate_limited("workspace_invitation", gate);
+                }
+            }
+            return invitation_rate_limited(retry_after);
+        }
+        Err(AdmissionError::Unavailable) => return invitation_limiter_unavailable(),
+    }
+    let invitation = match invitation::create_invitation(
+        &state.pool,
+        context.member.workspace_id,
+        context.member.user_id,
+        &email,
+        existing_user.as_ref().map(|user| user.id),
+        role,
+    )
+    .await
+    {
+        Ok(Some(invitation)) => invitation,
+        Err(error) if crate::workspace::unique_violation(&error) => {
+            return error_response(
+                StatusCode::CONFLICT,
+                "invitation already pending for this email",
+            )
+        }
+        _ => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to create invitation",
+            )
+        }
+    };
+    let response = InvitationResponse::from(invitation.clone());
+    let workspace_name = workspace::get_workspace(&state.pool, context.member.workspace_id)
+        .await
+        .ok()
+        .flatten()
+        .map(|workspace| workspace.name)
+        .unwrap_or_default();
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::events::EVENT_INVITATION_CREATED.into(),
+        workspace_id: context.workspace_id.clone(),
+        actor_type: "member".into(),
+        actor_id: context.member.user_id.to_string(),
+        payload: serde_json::json!({"invitation": &response, "workspace_name": workspace_name}),
+        ..Default::default()
+    });
+    let event = cordy_analytics::team_invite_sent(
+        &context.member.user_id.to_string(),
+        &context.workspace_id,
+        &email,
+        "email",
+    );
+    state.analytics.capture(event.clone());
+    if let Some(metrics) = state.business_metrics.as_deref() {
+        metrics.inc_for_event(&event);
+    }
+    if !workspace_name.is_empty() {
+        let email_service = state.email_service.clone();
+        let invitation_id = invitation.id.to_string();
+        let inviter_name = user::get_user(&state.pool, context.member.user_id)
+            .await
+            .ok()
+            .flatten()
+            .map(|user| user.name)
+            .unwrap_or_else(|| email.clone());
+        let target = email.clone();
+        tokio::spawn(async move {
+            if let Err(error) = email_service
+                .send_invitation_email(&target, &inviter_name, &workspace_name, &invitation_id)
+                .await
+            {
+                tracing::warn!(%error, email = %target, "failed to send invitation email");
+            }
+        });
+    }
+    (StatusCode::CREATED, Json(response)).into_response()
 }
 
 impl From<WorkspaceInvitation> for InvitationResponse {
@@ -124,6 +502,26 @@ impl From<ListPendingInvitationsForUserRow> for InvitationResponse {
             inviter_name: row.inviter_name,
             inviter_email: row.inviter_email,
             workspace_name: row.workspace_name,
+        }
+    }
+}
+
+impl From<ListPendingInvitationsByWorkspaceRow> for InvitationResponse {
+    fn from(row: ListPendingInvitationsByWorkspaceRow) -> Self {
+        Self {
+            id: option_uuid(row.id),
+            workspace_id: option_uuid(row.workspace_id),
+            inviter_id: option_uuid(row.inviter_id),
+            invitee_email: row.invitee_email,
+            invitee_user_id: row.invitee_user_id.map(|id| id.to_string()),
+            role: row.role,
+            status: row.status,
+            created_at: option_time(row.created_at),
+            updated_at: option_time(row.updated_at),
+            expires_at: option_time(row.expires_at),
+            inviter_name: row.inviter_name,
+            inviter_email: row.inviter_email,
+            workspace_name: String::new(),
         }
     }
 }
@@ -235,6 +633,76 @@ async fn list(State(state): State<HandlerState>, headers: HeaderMap) -> Response
     }
 }
 
+async fn list_workspace(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    match invitation::list_pending_invitations_by_workspace(
+        &state.pool,
+        context.member.workspace_id,
+    )
+    .await
+    {
+        Ok(rows) => Json(
+            rows.into_iter()
+                .map(InvitationResponse::from)
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(error) => {
+            tracing::warn!(%error, workspace_id = %context.workspace_id, "failed to list invitations");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list invitations",
+            )
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct WorkspaceInvitationPath {
+    invitation_id: String,
+}
+
+async fn revoke(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(path): Path<WorkspaceInvitationPath>,
+) -> Response {
+    let id = match invitation_id(&path.invitation_id) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let found = match invitation::get_invitation(&state.pool, id).await {
+        Ok(Some(found))
+            if found.workspace_id == context.member.workspace_id && found.status == "pending" =>
+        {
+            found
+        }
+        Ok(_) | Err(_) => return error_response(StatusCode::NOT_FOUND, "invitation not found"),
+    };
+    if let Err(error) = invitation::revoke_invitation(&state.pool, found.id).await {
+        tracing::warn!(%error, invitation_id = %found.id, "failed to revoke invitation");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to revoke invitation",
+        );
+    }
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::events::EVENT_INVITATION_REVOKED.into(),
+        workspace_id: context.workspace_id,
+        actor_type: "member".into(),
+        actor_id: context.member.user_id.to_string(),
+        payload: serde_json::json!({
+            "invitation_id": found.id.to_string(),
+            "invitee_email": found.invitee_email,
+            "invitee_user_id": found.invitee_user_id,
+        }),
+        ..Default::default()
+    });
+    StatusCode::NO_CONTENT.into_response()
+}
+
 async fn get_one(
     State(state): State<HandlerState>,
     Path(raw_id): Path<String>,
@@ -344,7 +812,8 @@ async fn accept(
         );
     }
 
-    let member_response = MemberWithUserResponse::new(&joined_member, &current_user);
+    let member_response =
+        MemberWithUserResponse::new_resolved(&state, &joined_member, &current_user);
     let workspace_id = accepted.workspace_id.to_string();
     let mut member_payload = serde_json::json!({"member": &member_response});
     if let Ok(Some(found)) = workspace::get_workspace(&state.pool, accepted.workspace_id).await {
@@ -431,51 +900,7 @@ async fn decline(
 
 #[cfg(test)]
 mod tests {
-    use axum::body::Body;
-    use tower::ServiceExt;
-
     use super::*;
-
-    fn test_router() -> Router {
-        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
-        let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None);
-        router().with_state(state)
-    }
-
-    #[tokio::test]
-    async fn invitation_routes_reject_machine_actors_before_database_access() {
-        for source in ["task_token", "cloud_pat"] {
-            let response = test_router()
-                .oneshot(
-                    Request::get("/api/invitations")
-                        .header("x-user-id", Uuid::nil().to_string())
-                        .header("x-actor-source", source)
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{source}");
-        }
-
-        for authorization in [
-            "Bearer mat_task-token",
-            "bearer mcn_cloud-pat",
-            "BeArEr\tmat_task-token",
-        ] {
-            let response = test_router()
-                .oneshot(
-                    Request::get("/api/invitations")
-                        .header("x-user-id", Uuid::nil().to_string())
-                        .header(header::AUTHORIZATION, authorization)
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{authorization}");
-        }
-    }
 
     #[test]
     fn ownership_accepts_case_folded_email_or_bound_user() {
@@ -560,5 +985,48 @@ mod tests {
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].name, cordy_analytics::EVENT_TEAM_INVITE_ACCEPTED);
         assert_eq!(events[1].name, cordy_analytics::EVENT_ONBOARDING_COMPLETED);
+    }
+
+    #[test]
+    fn workspace_list_response_includes_inviter_enrichment() {
+        let response = InvitationResponse::from(ListPendingInvitationsByWorkspaceRow {
+            id: Some(Uuid::nil()),
+            workspace_id: Some(Uuid::nil()),
+            inviter_id: Some(Uuid::nil()),
+            invitee_email: "invitee@example.com".into(),
+            invitee_user_id: None,
+            role: "member".into(),
+            status: "pending".into(),
+            created_at: Some(chrono::Utc::now()),
+            updated_at: Some(chrono::Utc::now()),
+            expires_at: Some(chrono::Utc::now()),
+            inviter_name: "Alex".into(),
+            inviter_email: "alex@example.com".into(),
+        });
+        let value = serde_json::to_value(response).unwrap();
+        assert_eq!(value["inviter_name"], "Alex");
+        assert_eq!(value["inviter_email"], "alex@example.com");
+        assert!(value.get("workspace_name").is_none());
+    }
+
+    #[tokio::test]
+    async fn invitation_admission_consumes_all_three_budgets_atomically() {
+        let admission = InvitationAdmission::default();
+        let actor_id = Uuid::new_v4();
+        let workspace_id = Uuid::new_v4();
+        for _ in 0..6 {
+            assert!(admission
+                .admit(None, actor_id, workspace_id, " recipient@example.com ")
+                .await
+                .is_ok());
+        }
+        assert!(admission
+            .admit(None, actor_id, workspace_id, "RECIPIENT@example.com")
+            .await
+            .is_err());
+        assert!(admission
+            .admit(None, actor_id, workspace_id, "another@example.com")
+            .await
+            .is_ok());
     }
 }

@@ -493,7 +493,7 @@ pub async fn update_skill(
     name: Option<&str>,
     description: Option<&str>,
     content: Option<&str>,
-    config: &serde_json::Value,
+    config: Option<&serde_json::Value>,
 ) -> anyhow::Result<Option<Skill>> {
     let row = sqlx::query(
         r#"UPDATE skill SET
