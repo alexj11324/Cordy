@@ -90,7 +90,8 @@ struct ListParams {
 struct UpdateRequest {
     name: Option<String>,
     visibility: Option<String>,
-    scope_variant: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_json_input")]
+    scope_variant: JsonInput,
     #[serde(default, deserialize_with = "deserialize_json_input")]
     query: JsonInput,
     #[serde(default, deserialize_with = "deserialize_json_input")]
@@ -171,6 +172,15 @@ fn validate_variant(scope_type: &str, variant: Option<&str>) -> Result<Option<St
         None | Some("") | Some("all") => Ok(None),
         Some(value) if WORKSPACE_VARIANTS.contains(&value) => Ok(Some(value.to_string())),
         Some(_) => Err(()),
+    }
+}
+
+fn update_variant(input: JsonInput, scope_type: &str, existing: Option<String>) -> Result<Option<String>, ()> {
+    match input {
+        JsonInput::Missing => Ok(existing),
+        JsonInput::Present(Value::Null) => validate_variant(scope_type, None),
+        JsonInput::Present(Value::String(value)) => validate_variant(scope_type, Some(&value)),
+        JsonInput::Present(_) => Err(()),
     }
 }
 
@@ -446,17 +456,14 @@ async fn update(
             }
         },
     };
-    let scope_variant = match request.scope_variant {
-        Some(variant) => match validate_variant(&view.scope_type, Some(&variant)) {
-            Ok(variant) => variant,
-            Err(()) => {
-                return error_response(
-                    StatusCode::BAD_REQUEST,
-                    "invalid scope_variant for this scope_type",
-                )
-            }
-        },
-        None => view.scope_variant.clone(),
+    let scope_variant = match update_variant(request.scope_variant, &view.scope_type, view.scope_variant.clone()) {
+        Ok(variant) => variant,
+        Err(()) => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid scope_variant for this scope_type",
+            )
+        }
     };
     match issue_view::update_issue_view(
         &state.pool,
@@ -515,6 +522,19 @@ mod tests {
         assert!(request.name.is_empty());
         assert_eq!(request.definition_version, 0);
         assert!(matches!(request.query, JsonInput::Present(value) if value.is_object()));
+    }
+
+    #[test]
+    fn update_scope_variant_distinguishes_missing_and_null() {
+        let omitted: UpdateRequest = decode(br#"{"expected_revision":1}"#).unwrap();
+        assert!(matches!(omitted.scope_variant, JsonInput::Missing));
+
+        let cleared: UpdateRequest = decode(br#"{"scope_variant":null,"expected_revision":1}"#).unwrap();
+        assert!(matches!(cleared.scope_variant, JsonInput::Present(Value::Null)));
+        assert_eq!(
+            update_variant(cleared.scope_variant, "workspace", Some("members".into())),
+            Ok(None)
+        );
     }
 
     #[test]
