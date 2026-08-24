@@ -12,14 +12,12 @@
 //! `mul:{runtime_pending}:update:req:{id}` etc. Envelope JSON (`{"r":..}` +
 //! private side fields) matches as well.
 
-use std::collections::HashMap;
-use std::sync::Mutex;
-
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use redis::aio::ConnectionManager;
+use cordy_redis::RecoveringConnection;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::future::Future;
+use std::time::Duration;
 
 // Key namespaces (identical to Go).
 pub const UPDATE_KEY_PREFIX: &str = "mul:{runtime_pending}:update:req:";
@@ -74,9 +72,12 @@ const MODEL_LIST_RUNNING_TIMEOUT_SECS: i64 = 60;
 const MODEL_LIST_STORE_RETENTION_SECS: i64 = 2 * 60;
 pub const MODEL_CATALOG_REVALIDATE_AFTER_SECS: i64 = 60;
 const MODEL_CATALOG_SERVE_WINDOW_SECS: i64 = 24 * 60 * 60;
+/// Bounds cache I/O so a half-open Redis connection cannot stall the model picker.
+const MODEL_CATALOG_REDIS_TIMEOUT: Duration = Duration::from_millis(250);
 const LOCAL_SKILL_PENDING_TIMEOUT_SECS: i64 = 3 * 60;
 const LOCAL_SKILL_RUNNING_TIMEOUT_SECS: i64 = 60;
 const LOCAL_SKILL_STORE_RETENTION_SECS: i64 = 5 * 60;
+const PENDING_REDIS_TIMEOUT: Duration = Duration::from_secs(1);
 /// Bounds the cheap HasPending probe on the heartbeat hot path.
 pub const HEARTBEAT_HAS_PENDING_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 /// Max claims of a single pending queue entry per PopPending call.
@@ -109,40 +110,69 @@ end
 return 0
 "#;
 
+async fn bounded_pending_redis<T, F>(operation: &'static str, future: F) -> anyhow::Result<T>
+where
+    F: Future<Output = redis::RedisResult<T>>,
+{
+    bounded_pending_redis_with_timeout(PENDING_REDIS_TIMEOUT, operation, future).await
+}
+
+async fn bounded_pending_redis_with_timeout<T, F>(
+    timeout: Duration,
+    operation: &'static str,
+    future: F,
+) -> anyhow::Result<T>
+where
+    F: Future<Output = redis::RedisResult<T>>,
+{
+    match tokio::time::timeout(timeout, future).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(anyhow::anyhow!(
+            "runtime pending Redis {operation} failed: {error}"
+        )),
+        Err(_) => Err(anyhow::anyhow!(
+            "runtime pending Redis {operation} timed out"
+        )),
+    }
+}
+
 async fn run_claim_script(
-    conn: &mut ConnectionManager,
+    conn: &mut RecoveringConnection,
     pending_key: &str,
     record_key: &str,
     id: &str,
     data: &str,
     ttl_secs: i64,
 ) -> anyhow::Result<bool> {
-    let result: i64 = redis::Script::new(CLAIM_PENDING_SCRIPT)
+    let script = redis::Script::new(CLAIM_PENDING_SCRIPT);
+    let mut invocation = script.prepare_invoke();
+    invocation
         .key(pending_key)
         .key(record_key)
         .arg(id)
         .arg(data)
-        .arg(ttl_secs)
-        .invoke_async(conn)
-        .await?;
+        .arg(ttl_secs);
+    let result: i64 = bounded_pending_redis("claim", invocation.invoke_async(conn)).await?;
     Ok(result == 1)
 }
 
-async fn zcard(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<i64> {
-    redis::cmd("ZCARD")
-        .arg(key)
-        .query_async(conn)
-        .await
-        .map_err(|e| anyhow::anyhow!("zcard {key}: {e}"))
+async fn zcard(conn: &mut RecoveringConnection, key: &str) -> anyhow::Result<i64> {
+    let mut command = redis::cmd("ZCARD");
+    command.arg(key);
+    bounded_pending_redis("zcard", command.query_async(conn)).await
 }
 
-async fn get_bytes(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Option<Vec<u8>>> {
-    let v: Option<Vec<u8>> = redis::cmd("GET")
-        .arg(key)
-        .query_async(conn)
-        .await
-        .map_err(|e| anyhow::anyhow!("get {key}: {e}"))?;
-    Ok(v)
+async fn get_bytes(conn: &mut RecoveringConnection, key: &str) -> anyhow::Result<Option<Vec<u8>>> {
+    let mut command = redis::cmd("GET");
+    command.arg(key);
+    bounded_pending_redis("get", command.query_async(conn)).await
+}
+
+async fn zrem(conn: &mut RecoveringConnection, key: &str, member: &str) -> anyhow::Result<()> {
+    let mut command = redis::cmd("ZREM");
+    command.arg(key).arg(member);
+    let _: i64 = bounded_pending_redis("zrem", command.query_async(conn)).await?;
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -260,154 +290,14 @@ fn apply_update_timeout(req: &mut UpdateRequest, now: DateTime<Utc>) -> bool {
     false
 }
 
-#[async_trait]
-pub trait UpdateStoreBackend: Send + Sync {
-    async fn create(
-        &self,
-        runtime_id: &str,
-        target_version: &str,
-        initiator_user_id: &str,
-    ) -> anyhow::Result<UpdateRequest>;
-    async fn get(&self, id: &str) -> anyhow::Result<Option<UpdateRequest>>;
-    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool>;
-    async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<UpdateRequest>>;
-    async fn complete(&self, id: &str, output: &str) -> anyhow::Result<()>;
-    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()>;
-}
-
-/// Single-node update lifecycle used when Redis is intentionally unset.
-#[derive(Default)]
-pub struct InMemoryUpdateStore {
-    requests: Mutex<HashMap<String, UpdateRequest>>,
-}
-
-impl InMemoryUpdateStore {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    fn requests(
-        &self,
-    ) -> anyhow::Result<std::sync::MutexGuard<'_, HashMap<String, UpdateRequest>>> {
-        self.requests
-            .lock()
-            .map_err(|_| anyhow::anyhow!("update store lock poisoned"))
-    }
-}
-
-#[async_trait]
-impl UpdateStoreBackend for InMemoryUpdateStore {
-    async fn create(
-        &self,
-        runtime_id: &str,
-        target_version: &str,
-        initiator_user_id: &str,
-    ) -> anyhow::Result<UpdateRequest> {
-        let now = Utc::now();
-        let mut requests = self.requests()?;
-        requests.retain(|_, request| {
-            now.signed_duration_since(request.created_at).num_seconds()
-                <= UPDATE_STORE_RETENTION_SECS
-        });
-        if requests.values().any(|request| {
-            request.runtime_id == runtime_id
-                && matches!(
-                    request.status,
-                    UpdateStatus::Pending | UpdateStatus::Running
-                )
-        }) {
-            anyhow::bail!("update already in progress");
-        }
-        let request = UpdateRequest {
-            id: random_id(),
-            runtime_id: runtime_id.to_string(),
-            initiator_user_id: initiator_user_id.to_string(),
-            status: UpdateStatus::Pending,
-            target_version: target_version.to_string(),
-            created_at: now,
-            updated_at: now,
-            ..Default::default()
-        };
-        requests.insert(request.id.clone(), request.clone());
-        Ok(request)
-    }
-
-    async fn get(&self, id: &str) -> anyhow::Result<Option<UpdateRequest>> {
-        let mut requests = self.requests()?;
-        let Some(request) = requests.get_mut(id) else {
-            return Ok(None);
-        };
-        apply_update_timeout(request, Utc::now());
-        Ok(Some(request.clone()))
-    }
-
-    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
-        let now = Utc::now();
-        let mut requests = self.requests()?;
-        for request in requests.values_mut() {
-            apply_update_timeout(request, now);
-        }
-        Ok(requests.values().any(|request| {
-            request.runtime_id == runtime_id && request.status == UpdateStatus::Pending
-        }))
-    }
-
-    async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<UpdateRequest>> {
-        let now = Utc::now();
-        let mut requests = self.requests()?;
-        for request in requests.values_mut() {
-            apply_update_timeout(request, now);
-        }
-        let oldest_id = requests
-            .values()
-            .filter(|request| {
-                request.runtime_id == runtime_id && request.status == UpdateStatus::Pending
-            })
-            .min_by(|left, right| left.created_at.cmp(&right.created_at))
-            .map(|request| request.id.clone());
-        let Some(oldest_id) = oldest_id else {
-            return Ok(None);
-        };
-        let request = requests
-            .get_mut(&oldest_id)
-            .expect("selected request exists");
-        request.status = UpdateStatus::Running;
-        request.run_started_at = Some(now);
-        request.updated_at = now;
-        Ok(Some(request.clone()))
-    }
-
-    async fn complete(&self, id: &str, output: &str) -> anyhow::Result<()> {
-        if let Some(request) = self.requests()?.get_mut(id) {
-            if !request.status.is_terminal() {
-                request.status = UpdateStatus::Completed;
-                request.output = output.to_string();
-                request.updated_at = Utc::now();
-            }
-        }
-        Ok(())
-    }
-
-    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
-        if let Some(request) = self.requests()?.get_mut(id) {
-            if !request.status.is_terminal() {
-                request.status = UpdateStatus::Failed;
-                request.error = err_msg.to_string();
-                request.updated_at = Utc::now();
-            }
-        }
-        Ok(())
-    }
-}
-
 /// Redis-backed CLI-update store (Go `RedisUpdateStore`). `None` connection is
 /// never constructed in production; tests construct disabled variants.
 pub struct UpdateStore {
-    conn: ConnectionManager,
+    conn: RecoveringConnection,
 }
 
 impl UpdateStore {
-    pub fn new(conn: ConnectionManager) -> Self {
+    pub fn new(conn: RecoveringConnection) -> Self {
         Self { conn }
     }
 
@@ -419,23 +309,26 @@ impl UpdateStore {
             self.persist_request(&req).await?;
             self.clear_active_if_matches(&req.runtime_id, &req.id)
                 .await?;
-            let _: () = redis::cmd("ZREM")
-                .arg(update_pending_key(&req.runtime_id))
-                .arg(&req.id)
-                .query_async(&mut self.conn.clone())
-                .await?;
+            zrem(
+                &mut self.conn.clone(),
+                &update_pending_key(&req.runtime_id),
+                &req.id,
+            )
+            .await?;
         }
         Ok(Some(req))
     }
 
     async fn persist_request(&self, req: &UpdateRequest) -> anyhow::Result<()> {
         let data = marshal_update(req)?;
-        let (): () = redis::cmd("SET")
+        let mut conn = self.conn.clone();
+        let mut command = redis::cmd("SET");
+        command
             .arg(update_key(&req.id))
             .arg(data)
             .arg("EX")
-            .arg(UPDATE_STORE_RETENTION_SECS)
-            .query_async(&mut self.conn.clone())
+            .arg(UPDATE_STORE_RETENTION_SECS);
+        let (): () = bounded_pending_redis("persist update", command.query_async(&mut conn))
             .await
             .map_err(|e| anyhow::anyhow!("persist update request: {e}"))?;
         Ok(())
@@ -445,12 +338,14 @@ impl UpdateStore {
         if runtime_id.is_empty() || id.is_empty() {
             return Ok(());
         }
-        let _: i64 = redis::Script::new(DELETE_IF_VALUE_SCRIPT)
-            .key(update_active_key(runtime_id))
-            .arg(id)
-            .invoke_async(&mut self.conn.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("clear active update: {e}"))?;
+        let script = redis::Script::new(DELETE_IF_VALUE_SCRIPT);
+        let mut invocation = script.prepare_invoke();
+        invocation.key(update_active_key(runtime_id)).arg(id);
+        let mut conn = self.conn.clone();
+        let _: i64 =
+            bounded_pending_redis("clear active update", invocation.invoke_async(&mut conn))
+                .await
+                .map_err(|e| anyhow::anyhow!("clear active update: {e}"))?;
         Ok(())
     }
 
@@ -475,22 +370,24 @@ impl UpdateStore {
         };
         let data = marshal_update(&req)?;
         let active_key = update_active_key(runtime_id);
-        let ok: Option<String> = redis::cmd("SET")
+        let mut conn = self.conn.clone();
+        let mut reserve = redis::cmd("SET");
+        reserve
             .arg(&active_key)
             .arg(&req.id)
             .arg("EX")
             .arg(UPDATE_STORE_RETENTION_SECS)
-            .arg("NX")
-            .query_async(&mut self.conn.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("reserve active update: {e}"))?;
+            .arg("NX");
+        let ok: Option<String> =
+            bounded_pending_redis("reserve active update", reserve.query_async(&mut conn))
+                .await
+                .map_err(|e| anyhow::anyhow!("reserve active update: {e}"))?;
         if ok.is_none() {
             anyhow::bail!("update already in progress");
         }
-        let mut conn = self.conn.clone();
         let pending_key = update_pending_key(runtime_id);
-        let (): () = redis::pipe()
-            .cmd("SET")
+        let mut pipe = redis::pipe();
+        pipe.cmd("SET")
             .arg(update_key(&req.id))
             .arg(&data)
             .arg("EX")
@@ -504,8 +401,8 @@ impl UpdateStore {
             .cmd("EXPIRE")
             .arg(&pending_key)
             .arg(UPDATE_STORE_RETENTION_SECS * 2)
-            .ignore()
-            .query_async(&mut conn)
+            .ignore();
+        let (): () = bounded_pending_redis("persist update", pipe.query_async(&mut conn))
             .await
             .map_err(|e| anyhow::anyhow!("persist update request: {e}"))?;
         Ok(req)
@@ -525,13 +422,13 @@ impl UpdateStore {
     /// Claims the oldest pending update for this runtime (Go PopPending).
     pub async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<UpdateRequest>> {
         let pending_key = update_pending_key(runtime_id);
-        let ids: Vec<String> = redis::cmd("ZRANGE")
-            .arg(&pending_key)
-            .arg(0)
-            .arg(0)
-            .query_async(&mut self.conn.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("zrange pending updates: {e}"))?;
+        let mut conn = self.conn.clone();
+        let mut range = redis::cmd("ZRANGE");
+        range.arg(&pending_key).arg(0).arg(0);
+        let ids: Vec<String> =
+            bounded_pending_redis("list pending updates", range.query_async(&mut conn))
+                .await
+                .map_err(|e| anyhow::anyhow!("zrange pending updates: {e}"))?;
         let Some(id) = ids.into_iter().next() else {
             return Ok(None);
         };
@@ -539,19 +436,11 @@ impl UpdateStore {
         // iteration this collapses to bounded retries over fresh reads.
         for _ in 0..POP_MAX_RETRIES {
             let Some(mut req) = self.load_request(&id).await? else {
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 break;
             };
             if req.status != UpdateStatus::Pending {
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 break;
             }
             let now = Utc::now();
@@ -589,11 +478,12 @@ impl UpdateStore {
         self.persist_request(&req).await?;
         self.clear_active_if_matches(&req.runtime_id, &req.id)
             .await?;
-        let _: () = redis::cmd("ZREM")
-            .arg(update_pending_key(&req.runtime_id))
-            .arg(&req.id)
-            .query_async(&mut self.conn.clone())
-            .await?;
+        zrem(
+            &mut self.conn.clone(),
+            &update_pending_key(&req.runtime_id),
+            &req.id,
+        )
+        .await?;
         Ok(())
     }
 
@@ -610,44 +500,13 @@ impl UpdateStore {
         self.persist_request(&req).await?;
         self.clear_active_if_matches(&req.runtime_id, &req.id)
             .await?;
-        let _: () = redis::cmd("ZREM")
-            .arg(update_pending_key(&req.runtime_id))
-            .arg(&req.id)
-            .query_async(&mut self.conn.clone())
-            .await?;
+        zrem(
+            &mut self.conn.clone(),
+            &update_pending_key(&req.runtime_id),
+            &req.id,
+        )
+        .await?;
         Ok(())
-    }
-}
-
-#[async_trait]
-impl UpdateStoreBackend for UpdateStore {
-    async fn create(
-        &self,
-        runtime_id: &str,
-        target_version: &str,
-        initiator_user_id: &str,
-    ) -> anyhow::Result<UpdateRequest> {
-        UpdateStore::create(self, runtime_id, target_version, initiator_user_id).await
-    }
-
-    async fn get(&self, id: &str) -> anyhow::Result<Option<UpdateRequest>> {
-        UpdateStore::get(self, id).await
-    }
-
-    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
-        UpdateStore::has_pending(self, runtime_id).await
-    }
-
-    async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<UpdateRequest>> {
-        UpdateStore::pop_pending(self, runtime_id).await
-    }
-
-    async fn complete(&self, id: &str, output: &str) -> anyhow::Result<()> {
-        UpdateStore::complete(self, id, output).await
-    }
-
-    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
-        UpdateStore::fail(self, id, err_msg).await
     }
 }
 
@@ -820,11 +679,24 @@ pub(crate) fn model_catalog_cache_action(
 }
 
 pub struct ModelCatalogCache {
-    conn: ConnectionManager,
+    conn: RecoveringConnection,
+}
+
+async fn bounded_model_catalog_redis<T, F>(timeout: Duration, operation: F) -> anyhow::Result<T>
+where
+    F: Future<Output = redis::RedisResult<T>>,
+{
+    match tokio::time::timeout(timeout, operation).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(anyhow::anyhow!(
+            "model catalog Redis operation failed: {error}"
+        )),
+        Err(_) => Err(anyhow::anyhow!("model catalog Redis operation timed out")),
+    }
 }
 
 impl ModelCatalogCache {
-    pub fn new(conn: ConnectionManager) -> Self {
+    pub fn new(conn: RecoveringConnection) -> Self {
         Self { conn }
     }
 
@@ -833,16 +705,27 @@ impl ModelCatalogCache {
             return Ok(None);
         }
         let key = model_catalog_key(runtime_id);
-        let Some(raw) = get_bytes(&mut self.conn.clone(), &key).await? else {
+        let mut conn = self.conn.clone();
+        let mut get = redis::cmd("GET");
+        get.arg(&key);
+        let raw: Option<Vec<u8>> =
+            bounded_model_catalog_redis(MODEL_CATALOG_REDIS_TIMEOUT, get.query_async(&mut conn))
+                .await
+                .map_err(|error| anyhow::anyhow!("get model catalog: {error}"))?;
+        let Some(raw) = raw else {
             return Ok(None);
         };
         let snapshot: ModelCatalogSnapshot = match serde_json::from_slice(&raw) {
             Ok(snapshot) => snapshot,
             Err(error) => {
-                let _: Result<i64, _> = redis::cmd("DEL")
-                    .arg(&key)
-                    .query_async(&mut self.conn.clone())
-                    .await;
+                let mut conn = self.conn.clone();
+                let mut del = redis::cmd("DEL");
+                del.arg(&key);
+                let _: anyhow::Result<i64> = bounded_model_catalog_redis(
+                    MODEL_CATALOG_REDIS_TIMEOUT,
+                    del.query_async(&mut conn),
+                )
+                .await;
                 return Err(anyhow::anyhow!("decode model catalog: {error}"));
             }
         };
@@ -873,14 +756,16 @@ impl ModelCatalogCache {
         };
         let data = serde_json::to_string(&snapshot)
             .map_err(|error| anyhow::anyhow!("marshal model catalog: {error}"))?;
-        let (): () = redis::cmd("SET")
-            .arg(model_catalog_key(runtime_id))
+        let mut conn = self.conn.clone();
+        let mut set = redis::cmd("SET");
+        set.arg(model_catalog_key(runtime_id))
             .arg(data)
             .arg("EX")
-            .arg(MODEL_CATALOG_SERVE_WINDOW_SECS)
-            .query_async(&mut self.conn.clone())
-            .await
-            .map_err(|error| anyhow::anyhow!("persist model catalog: {error}"))?;
+            .arg(MODEL_CATALOG_SERVE_WINDOW_SECS);
+        let (): () =
+            bounded_model_catalog_redis(MODEL_CATALOG_REDIS_TIMEOUT, set.query_async(&mut conn))
+                .await
+                .map_err(|error| anyhow::anyhow!("persist model catalog: {error}"))?;
         Ok(())
     }
 
@@ -888,11 +773,13 @@ impl ModelCatalogCache {
         if runtime_id.is_empty() {
             return Ok(());
         }
-        let _: i64 = redis::cmd("DEL")
-            .arg(model_catalog_key(runtime_id))
-            .query_async(&mut self.conn.clone())
-            .await
-            .map_err(|error| anyhow::anyhow!("invalidate model catalog: {error}"))?;
+        let mut conn = self.conn.clone();
+        let mut del = redis::cmd("DEL");
+        del.arg(model_catalog_key(runtime_id));
+        let _: i64 =
+            bounded_model_catalog_redis(MODEL_CATALOG_REDIS_TIMEOUT, del.query_async(&mut conn))
+                .await
+                .map_err(|error| anyhow::anyhow!("invalidate model catalog: {error}"))?;
         Ok(())
     }
 }
@@ -950,138 +837,12 @@ fn apply_model_list_timeout(req: &mut ModelListRequest, now: DateTime<Utc>) -> b
     }
 }
 
-#[async_trait]
-pub trait ModelListStoreBackend: Send + Sync {
-    async fn create(&self, runtime_id: &str) -> anyhow::Result<ModelListRequest>;
-    async fn get(&self, id: &str) -> anyhow::Result<Option<ModelListRequest>>;
-    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool>;
-    async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<ModelListRequest>>;
-    async fn complete(
-        &self,
-        id: &str,
-        models: &[ModelEntry],
-        supported: bool,
-    ) -> anyhow::Result<()>;
-    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()>;
-}
-
-#[derive(Default)]
-pub struct InMemoryModelListStore {
-    requests: Mutex<HashMap<String, ModelListRequest>>,
-}
-
-impl InMemoryModelListStore {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    fn requests(
-        &self,
-    ) -> anyhow::Result<std::sync::MutexGuard<'_, HashMap<String, ModelListRequest>>> {
-        self.requests
-            .lock()
-            .map_err(|_| anyhow::anyhow!("model list store lock poisoned"))
-    }
-}
-
-#[async_trait]
-impl ModelListStoreBackend for InMemoryModelListStore {
-    async fn create(&self, runtime_id: &str) -> anyhow::Result<ModelListRequest> {
-        let now = Utc::now();
-        let mut requests = self.requests()?;
-        requests.retain(|_, request| {
-            now.signed_duration_since(request.created_at).num_seconds()
-                <= MODEL_LIST_STORE_RETENTION_SECS
-        });
-        let request = ModelListRequest {
-            id: random_id(),
-            runtime_id: runtime_id.to_string(),
-            status: ModelListStatus::Pending,
-            supported: true,
-            created_at: now,
-            updated_at: now,
-            ..Default::default()
-        };
-        requests.insert(request.id.clone(), request.clone());
-        Ok(request)
-    }
-
-    async fn get(&self, id: &str) -> anyhow::Result<Option<ModelListRequest>> {
-        let mut requests = self.requests()?;
-        let Some(request) = requests.get_mut(id) else {
-            return Ok(None);
-        };
-        apply_model_list_timeout(request, Utc::now());
-        Ok(Some(request.clone()))
-    }
-
-    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
-        let now = Utc::now();
-        let mut requests = self.requests()?;
-        for request in requests.values_mut() {
-            apply_model_list_timeout(request, now);
-        }
-        Ok(requests.values().any(|request| {
-            request.runtime_id == runtime_id && request.status == ModelListStatus::Pending
-        }))
-    }
-
-    async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<ModelListRequest>> {
-        let now = Utc::now();
-        let mut requests = self.requests()?;
-        for request in requests.values_mut() {
-            apply_model_list_timeout(request, now);
-        }
-        let oldest_id = requests
-            .values()
-            .filter(|request| {
-                request.runtime_id == runtime_id && request.status == ModelListStatus::Pending
-            })
-            .min_by(|left, right| left.created_at.cmp(&right.created_at))
-            .map(|request| request.id.clone());
-        let Some(oldest_id) = oldest_id else {
-            return Ok(None);
-        };
-        let request = requests
-            .get_mut(&oldest_id)
-            .expect("selected request exists");
-        request.status = ModelListStatus::Running;
-        request.run_started_at = Some(now);
-        request.updated_at = now;
-        Ok(Some(request.clone()))
-    }
-
-    async fn complete(
-        &self,
-        id: &str,
-        models: &[ModelEntry],
-        supported: bool,
-    ) -> anyhow::Result<()> {
-        if let Some(request) = self.requests()?.get_mut(id) {
-            request.status = ModelListStatus::Completed;
-            request.models = models.to_vec();
-            request.supported = supported;
-            request.updated_at = Utc::now();
-        }
-        Ok(())
-    }
-
-    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
-        if let Some(request) = self.requests()?.get_mut(id) {
-            request.status = ModelListStatus::Failed;
-            request.error = err_msg.to_string();
-            request.updated_at = Utc::now();
-        }
-        Ok(())
-    }
-}
-
 pub struct ModelListStore {
-    conn: ConnectionManager,
+    conn: RecoveringConnection,
 }
 
 impl ModelListStore {
-    pub fn new(conn: ConnectionManager) -> Self {
+    pub fn new(conn: RecoveringConnection) -> Self {
         Self { conn }
     }
 
@@ -1091,23 +852,26 @@ impl ModelListStore {
         let mut req = unmarshal_model_list(&raw)?;
         if apply_model_list_timeout(&mut req, Utc::now()) {
             self.persist_request(&req).await?;
-            let _: () = redis::cmd("ZREM")
-                .arg(model_list_pending_key(&req.runtime_id))
-                .arg(&req.id)
-                .query_async(&mut self.conn.clone())
-                .await?;
+            zrem(
+                &mut self.conn.clone(),
+                &model_list_pending_key(&req.runtime_id),
+                &req.id,
+            )
+            .await?;
         }
         Ok(Some(req))
     }
 
     async fn persist_request(&self, req: &ModelListRequest) -> anyhow::Result<()> {
         let data = marshal_model_list(req)?;
-        let (): () = redis::cmd("SET")
+        let mut conn = self.conn.clone();
+        let mut command = redis::cmd("SET");
+        command
             .arg(model_list_key(&req.id))
             .arg(data)
             .arg("EX")
-            .arg(MODEL_LIST_STORE_RETENTION_SECS)
-            .query_async(&mut self.conn.clone())
+            .arg(MODEL_LIST_STORE_RETENTION_SECS);
+        let (): () = bounded_pending_redis("persist model list", command.query_async(&mut conn))
             .await
             .map_err(|e| anyhow::anyhow!("persist model list request: {e}"))?;
         Ok(())
@@ -1127,8 +891,8 @@ impl ModelListStore {
         let data = marshal_model_list(&req)?;
         let mut conn = self.conn.clone();
         let pending_key = model_list_pending_key(runtime_id);
-        let (): () = redis::pipe()
-            .cmd("SET")
+        let mut pipe = redis::pipe();
+        pipe.cmd("SET")
             .arg(model_list_key(&req.id))
             .arg(&data)
             .arg("EX")
@@ -1142,8 +906,8 @@ impl ModelListStore {
             .cmd("EXPIRE")
             .arg(&pending_key)
             .arg(MODEL_LIST_STORE_RETENTION_SECS * 2)
-            .ignore()
-            .query_async(&mut conn)
+            .ignore();
+        let (): () = bounded_pending_redis("persist model list", pipe.query_async(&mut conn))
             .await
             .map_err(|e| anyhow::anyhow!("persist model list request: {e}"))?;
         Ok(req)
@@ -1160,32 +924,24 @@ impl ModelListStore {
     pub async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<ModelListRequest>> {
         let pending_key = model_list_pending_key(runtime_id);
         for _ in 0..POP_MAX_RETRIES {
-            let ids: Vec<String> = redis::cmd("ZRANGE")
-                .arg(&pending_key)
-                .arg(0)
-                .arg(0)
-                .query_async(&mut self.conn.clone())
-                .await
-                .map_err(|e| anyhow::anyhow!("zrange pending: {e}"))?;
+            let mut conn = self.conn.clone();
+            let mut range = redis::cmd("ZRANGE");
+            range.arg(&pending_key).arg(0).arg(0);
+            let ids: Vec<String> =
+                bounded_pending_redis("list pending model requests", range.query_async(&mut conn))
+                    .await
+                    .map_err(|e| anyhow::anyhow!("zrange pending: {e}"))?;
             let Some(id) = ids.into_iter().next() else {
                 return Ok(None);
             };
             let Some(mut req) = self.load_request(&id).await? else {
                 // Record expired but the zset still references it — drop and retry.
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             };
             if req.status != ModelListStatus::Pending {
                 // Timeout fired inside load_request or another node picked it up.
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             }
             let now = Utc::now();
@@ -1234,38 +990,6 @@ impl ModelListStore {
         req.error = err_msg.to_string();
         req.updated_at = Utc::now();
         self.persist_request(&req).await
-    }
-}
-
-#[async_trait]
-impl ModelListStoreBackend for ModelListStore {
-    async fn create(&self, runtime_id: &str) -> anyhow::Result<ModelListRequest> {
-        ModelListStore::create(self, runtime_id).await
-    }
-
-    async fn get(&self, id: &str) -> anyhow::Result<Option<ModelListRequest>> {
-        ModelListStore::get(self, id).await
-    }
-
-    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
-        ModelListStore::has_pending(self, runtime_id).await
-    }
-
-    async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<ModelListRequest>> {
-        ModelListStore::pop_pending(self, runtime_id).await
-    }
-
-    async fn complete(
-        &self,
-        id: &str,
-        models: &[ModelEntry],
-        supported: bool,
-    ) -> anyhow::Result<()> {
-        ModelListStore::complete(self, id, models, supported).await
-    }
-
-    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
-        ModelListStore::fail(self, id, err_msg).await
     }
 }
 
@@ -1472,365 +1196,12 @@ fn skill_timed_out(
     }
 }
 
-#[async_trait]
-pub trait LocalSkillListStoreBackend: Send + Sync {
-    async fn create(&self, runtime_id: &str) -> anyhow::Result<RuntimeLocalSkillListRequest>;
-    async fn get(&self, id: &str) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>>;
-    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool>;
-    async fn pop_pending(
-        &self,
-        runtime_id: &str,
-    ) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>>;
-    async fn complete(
-        &self,
-        id: &str,
-        skills: &[RuntimeLocalSkillSummary],
-        supported: bool,
-        mcp_servers: &[RuntimeLocalMcpServerSummary],
-        mcp_supported: bool,
-    ) -> anyhow::Result<()>;
-    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()>;
-}
-
-#[async_trait]
-pub trait LocalSkillImportStoreBackend: Send + Sync {
-    #[allow(clippy::too_many_arguments)]
-    async fn create_import(
-        &self,
-        runtime_id: &str,
-        creator_id: &str,
-        skill_key: &str,
-        name: Option<String>,
-        description: Option<String>,
-        action: &str,
-        target_skill_id: &str,
-        supports_conflict: bool,
-    ) -> anyhow::Result<RuntimeLocalSkillImportRequest>;
-    async fn get(&self, id: &str) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>>;
-    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool>;
-    async fn pop_pending(
-        &self,
-        runtime_id: &str,
-    ) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>>;
-    async fn pop_pending_batch(
-        &self,
-        runtime_id: &str,
-        limit: usize,
-    ) -> anyhow::Result<Vec<RuntimeLocalSkillImportRequest>>;
-    async fn complete(&self, id: &str, skill: Value) -> anyhow::Result<()>;
-    async fn conflict(&self, id: &str, info: LocalSkillImportConflict) -> anyhow::Result<()>;
-    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()>;
-}
-
-fn apply_skill_list_timeout(request: &mut RuntimeLocalSkillListRequest, now: DateTime<Utc>) {
-    let was_running = request.status == LocalSkillRequestStatus::Running;
-    if skill_timed_out(
-        &request.status,
-        request.created_at,
-        request.run_started_at,
-        now,
-    ) {
-        request.status = LocalSkillRequestStatus::Timeout;
-        request.error = if was_running {
-            "daemon did not finish within 60 seconds".into()
-        } else {
-            "daemon did not respond within 3 minutes".into()
-        };
-        request.updated_at = now;
-    }
-}
-
-fn apply_skill_import_timeout(request: &mut RuntimeLocalSkillImportRequest, now: DateTime<Utc>) {
-    let was_running = request.status == LocalSkillRequestStatus::Running;
-    if skill_timed_out(
-        &request.status,
-        request.created_at,
-        request.run_started_at,
-        now,
-    ) {
-        request.status = LocalSkillRequestStatus::Timeout;
-        request.error = if was_running {
-            "daemon did not finish within 60 seconds".into()
-        } else {
-            "daemon did not respond within 3 minutes".into()
-        };
-        request.updated_at = now;
-    }
-}
-
-#[derive(Default)]
-pub struct InMemoryLocalSkillListStore {
-    requests: Mutex<HashMap<String, RuntimeLocalSkillListRequest>>,
-}
-
-impl InMemoryLocalSkillListStore {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    fn requests(
-        &self,
-    ) -> anyhow::Result<std::sync::MutexGuard<'_, HashMap<String, RuntimeLocalSkillListRequest>>>
-    {
-        self.requests
-            .lock()
-            .map_err(|_| anyhow::anyhow!("local skill list store lock poisoned"))
-    }
-}
-
-#[async_trait]
-impl LocalSkillListStoreBackend for InMemoryLocalSkillListStore {
-    async fn create(&self, runtime_id: &str) -> anyhow::Result<RuntimeLocalSkillListRequest> {
-        let now = Utc::now();
-        let mut requests = self.requests()?;
-        requests.retain(|_, request| {
-            now.signed_duration_since(request.created_at).num_seconds()
-                <= LOCAL_SKILL_STORE_RETENTION_SECS
-        });
-        let request = RuntimeLocalSkillListRequest {
-            id: random_id(),
-            runtime_id: runtime_id.to_string(),
-            status: LocalSkillRequestStatus::Pending,
-            supported: true,
-            created_at: now,
-            updated_at: now,
-            ..Default::default()
-        };
-        requests.insert(request.id.clone(), request.clone());
-        Ok(request)
-    }
-
-    async fn get(&self, id: &str) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>> {
-        let mut requests = self.requests()?;
-        let Some(request) = requests.get_mut(id) else {
-            return Ok(None);
-        };
-        apply_skill_list_timeout(request, Utc::now());
-        Ok(Some(request.clone()))
-    }
-
-    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
-        let now = Utc::now();
-        let mut requests = self.requests()?;
-        for request in requests.values_mut() {
-            apply_skill_list_timeout(request, now);
-        }
-        Ok(requests.values().any(|request| {
-            request.runtime_id == runtime_id && request.status == LocalSkillRequestStatus::Pending
-        }))
-    }
-
-    async fn pop_pending(
-        &self,
-        runtime_id: &str,
-    ) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>> {
-        let now = Utc::now();
-        let mut requests = self.requests()?;
-        for request in requests.values_mut() {
-            apply_skill_list_timeout(request, now);
-        }
-        let oldest_id = requests
-            .values()
-            .filter(|request| {
-                request.runtime_id == runtime_id
-                    && request.status == LocalSkillRequestStatus::Pending
-            })
-            .min_by(|left, right| left.created_at.cmp(&right.created_at))
-            .map(|request| request.id.clone());
-        let Some(oldest_id) = oldest_id else {
-            return Ok(None);
-        };
-        let request = requests
-            .get_mut(&oldest_id)
-            .expect("selected request exists");
-        request.status = LocalSkillRequestStatus::Running;
-        request.run_started_at = Some(now);
-        request.updated_at = now;
-        Ok(Some(request.clone()))
-    }
-
-    async fn complete(
-        &self,
-        id: &str,
-        skills: &[RuntimeLocalSkillSummary],
-        supported: bool,
-        mcp_servers: &[RuntimeLocalMcpServerSummary],
-        mcp_supported: bool,
-    ) -> anyhow::Result<()> {
-        if let Some(request) = self.requests()?.get_mut(id) {
-            request.status = LocalSkillRequestStatus::Completed;
-            request.skills = skills.to_vec();
-            request.supported = supported;
-            request.mcp_servers = mcp_servers.to_vec();
-            request.mcp_supported = mcp_supported;
-            request.updated_at = Utc::now();
-        }
-        Ok(())
-    }
-
-    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
-        if let Some(request) = self.requests()?.get_mut(id) {
-            request.status = LocalSkillRequestStatus::Failed;
-            request.error = err_msg.to_string();
-            request.updated_at = Utc::now();
-        }
-        Ok(())
-    }
-}
-
-#[derive(Default)]
-pub struct InMemoryLocalSkillImportStore {
-    requests: Mutex<HashMap<String, RuntimeLocalSkillImportRequest>>,
-}
-
-impl InMemoryLocalSkillImportStore {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    fn requests(
-        &self,
-    ) -> anyhow::Result<std::sync::MutexGuard<'_, HashMap<String, RuntimeLocalSkillImportRequest>>>
-    {
-        self.requests
-            .lock()
-            .map_err(|_| anyhow::anyhow!("local skill import store lock poisoned"))
-    }
-}
-
-#[async_trait]
-impl LocalSkillImportStoreBackend for InMemoryLocalSkillImportStore {
-    async fn create_import(
-        &self,
-        runtime_id: &str,
-        creator_id: &str,
-        skill_key: &str,
-        name: Option<String>,
-        description: Option<String>,
-        action: &str,
-        target_skill_id: &str,
-        supports_conflict: bool,
-    ) -> anyhow::Result<RuntimeLocalSkillImportRequest> {
-        let now = Utc::now();
-        let mut requests = self.requests()?;
-        requests.retain(|_, request| {
-            now.signed_duration_since(request.created_at).num_seconds()
-                <= LOCAL_SKILL_STORE_RETENTION_SECS
-        });
-        let request = RuntimeLocalSkillImportRequest {
-            id: random_id(),
-            runtime_id: runtime_id.to_string(),
-            skill_key: skill_key.to_string(),
-            name,
-            description,
-            action: action.to_string(),
-            target_skill_id: target_skill_id.to_string(),
-            supports_conflict,
-            status: LocalSkillRequestStatus::Pending,
-            created_at: now,
-            updated_at: now,
-            creator_id: creator_id.to_string(),
-            ..Default::default()
-        };
-        requests.insert(request.id.clone(), request.clone());
-        Ok(request)
-    }
-
-    async fn get(&self, id: &str) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>> {
-        let mut requests = self.requests()?;
-        let Some(request) = requests.get_mut(id) else {
-            return Ok(None);
-        };
-        apply_skill_import_timeout(request, Utc::now());
-        Ok(Some(request.clone()))
-    }
-
-    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
-        let now = Utc::now();
-        let mut requests = self.requests()?;
-        for request in requests.values_mut() {
-            apply_skill_import_timeout(request, now);
-        }
-        Ok(requests.values().any(|request| {
-            request.runtime_id == runtime_id && request.status == LocalSkillRequestStatus::Pending
-        }))
-    }
-
-    async fn pop_pending(
-        &self,
-        runtime_id: &str,
-    ) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>> {
-        Ok(self
-            .pop_pending_batch(runtime_id, 1)
-            .await?
-            .into_iter()
-            .next())
-    }
-
-    async fn pop_pending_batch(
-        &self,
-        runtime_id: &str,
-        limit: usize,
-    ) -> anyhow::Result<Vec<RuntimeLocalSkillImportRequest>> {
-        let now = Utc::now();
-        let mut requests = self.requests()?;
-        for request in requests.values_mut() {
-            apply_skill_import_timeout(request, now);
-        }
-        let mut ids = requests
-            .values()
-            .filter(|request| {
-                request.runtime_id == runtime_id
-                    && request.status == LocalSkillRequestStatus::Pending
-            })
-            .map(|request| (request.created_at, request.id.clone()))
-            .collect::<Vec<_>>();
-        ids.sort_by(|left, right| left.0.cmp(&right.0));
-        let mut claimed = Vec::new();
-        for (_, id) in ids.into_iter().take(limit) {
-            let request = requests.get_mut(&id).expect("selected request exists");
-            request.status = LocalSkillRequestStatus::Running;
-            request.run_started_at = Some(now);
-            request.updated_at = now;
-            claimed.push(request.clone());
-        }
-        Ok(claimed)
-    }
-
-    async fn complete(&self, id: &str, skill: Value) -> anyhow::Result<()> {
-        if let Some(request) = self.requests()?.get_mut(id) {
-            request.status = LocalSkillRequestStatus::Completed;
-            request.skill = Some(skill);
-            request.updated_at = Utc::now();
-        }
-        Ok(())
-    }
-
-    async fn conflict(&self, id: &str, info: LocalSkillImportConflict) -> anyhow::Result<()> {
-        if let Some(request) = self.requests()?.get_mut(id) {
-            request.status = LocalSkillRequestStatus::Conflict;
-            request.conflict = Some(info);
-            request.updated_at = Utc::now();
-        }
-        Ok(())
-    }
-
-    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
-        if let Some(request) = self.requests()?.get_mut(id) {
-            request.status = LocalSkillRequestStatus::Failed;
-            request.error = err_msg.to_string();
-            request.updated_at = Utc::now();
-        }
-        Ok(())
-    }
-}
-
 pub struct LocalSkillListStore {
-    conn: ConnectionManager,
+    conn: RecoveringConnection,
 }
 
 impl LocalSkillListStore {
-    pub fn new(conn: ConnectionManager) -> Self {
+    pub fn new(conn: RecoveringConnection) -> Self {
         Self { conn }
     }
 
@@ -1848,25 +1219,29 @@ impl LocalSkillListStore {
             };
             req.updated_at = Utc::now();
             self.persist_request(&req).await?;
-            let _: () = redis::cmd("ZREM")
-                .arg(local_skill_list_pending_key(&req.runtime_id))
-                .arg(&req.id)
-                .query_async(&mut self.conn.clone())
-                .await?;
+            zrem(
+                &mut self.conn.clone(),
+                &local_skill_list_pending_key(&req.runtime_id),
+                &req.id,
+            )
+            .await?;
         }
         Ok(Some(req))
     }
 
     async fn persist_request(&self, req: &RuntimeLocalSkillListRequest) -> anyhow::Result<()> {
         let data = marshal_skill_list(req)?;
-        let (): () = redis::cmd("SET")
+        let mut conn = self.conn.clone();
+        let mut command = redis::cmd("SET");
+        command
             .arg(local_skill_list_key(&req.id))
             .arg(data)
             .arg("EX")
-            .arg(LOCAL_SKILL_STORE_RETENTION_SECS)
-            .query_async(&mut self.conn.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("persist list request: {e}"))?;
+            .arg(LOCAL_SKILL_STORE_RETENTION_SECS);
+        let (): () =
+            bounded_pending_redis("persist local skill list", command.query_async(&mut conn))
+                .await
+                .map_err(|e| anyhow::anyhow!("persist list request: {e}"))?;
         Ok(())
     }
 
@@ -1884,8 +1259,8 @@ impl LocalSkillListStore {
         let data = marshal_skill_list(&req)?;
         let mut conn = self.conn.clone();
         let pending_key = local_skill_list_pending_key(runtime_id);
-        let (): () = redis::pipe()
-            .cmd("SET")
+        let mut pipe = redis::pipe();
+        pipe.cmd("SET")
             .arg(local_skill_list_key(&req.id))
             .arg(&data)
             .arg("EX")
@@ -1899,8 +1274,8 @@ impl LocalSkillListStore {
             .cmd("EXPIRE")
             .arg(&pending_key)
             .arg(LOCAL_SKILL_STORE_RETENTION_SECS * 2)
-            .ignore()
-            .query_async(&mut conn)
+            .ignore();
+        let (): () = bounded_pending_redis("persist local skill list", pipe.query_async(&mut conn))
             .await
             .map_err(|e| anyhow::anyhow!("persist list request: {e}"))?;
         Ok(req)
@@ -1925,32 +1300,26 @@ impl LocalSkillListStore {
     ) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>> {
         let pending_key = local_skill_list_pending_key(runtime_id);
         for _ in 0..POP_MAX_RETRIES {
-            let ids: Vec<String> = redis::cmd("ZRANGE")
-                .arg(&pending_key)
-                .arg(0)
-                .arg(0)
-                .query_async(&mut self.conn.clone())
-                .await
-                .map_err(|e| anyhow::anyhow!("zrange pending: {e}"))?;
+            let mut conn = self.conn.clone();
+            let mut range = redis::cmd("ZRANGE");
+            range.arg(&pending_key).arg(0).arg(0);
+            let ids: Vec<String> = bounded_pending_redis(
+                "list pending local skill requests",
+                range.query_async(&mut conn),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("zrange pending: {e}"))?;
             let Some(id) = ids.into_iter().next() else {
                 return Ok(None);
             };
             let Some(mut req) = load_local_skill_list(&mut self.conn.clone(), &id).await? else {
                 // Record expired but the zset still references it — drop and retry.
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             };
             if req.status != LocalSkillRequestStatus::Pending {
                 // Timeout fired inside load_request or another node picked it up.
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             }
             let now = Utc::now();
@@ -2006,45 +1375,8 @@ impl LocalSkillListStore {
     }
 }
 
-#[async_trait]
-impl LocalSkillListStoreBackend for LocalSkillListStore {
-    async fn create(&self, runtime_id: &str) -> anyhow::Result<RuntimeLocalSkillListRequest> {
-        LocalSkillListStore::create(self, runtime_id).await
-    }
-
-    async fn get(&self, id: &str) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>> {
-        LocalSkillListStore::get(self, id).await
-    }
-
-    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
-        LocalSkillListStore::has_pending(self, runtime_id).await
-    }
-
-    async fn pop_pending(
-        &self,
-        runtime_id: &str,
-    ) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>> {
-        LocalSkillListStore::pop_pending(self, runtime_id).await
-    }
-
-    async fn complete(
-        &self,
-        id: &str,
-        skills: &[RuntimeLocalSkillSummary],
-        supported: bool,
-        mcp_servers: &[RuntimeLocalMcpServerSummary],
-        mcp_supported: bool,
-    ) -> anyhow::Result<()> {
-        LocalSkillListStore::complete(self, id, skills, supported, mcp_servers, mcp_supported).await
-    }
-
-    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
-        LocalSkillListStore::fail(self, id, err_msg).await
-    }
-}
-
 async fn load_local_skill_list(
-    conn: &mut ConnectionManager,
+    conn: &mut RecoveringConnection,
     id: &str,
 ) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>> {
     match get_bytes(conn, &local_skill_list_key(id)).await? {
@@ -2054,11 +1386,11 @@ async fn load_local_skill_list(
 }
 
 pub struct LocalSkillImportStore {
-    conn: ConnectionManager,
+    conn: RecoveringConnection,
 }
 
 impl LocalSkillImportStore {
-    pub fn new(conn: ConnectionManager) -> Self {
+    pub fn new(conn: RecoveringConnection) -> Self {
         Self { conn }
     }
 
@@ -2079,25 +1411,29 @@ impl LocalSkillImportStore {
             };
             req.updated_at = Utc::now();
             self.persist_request(&req).await?;
-            let _: () = redis::cmd("ZREM")
-                .arg(local_skill_import_pending_key(&req.runtime_id))
-                .arg(&req.id)
-                .query_async(&mut self.conn.clone())
-                .await?;
+            zrem(
+                &mut self.conn.clone(),
+                &local_skill_import_pending_key(&req.runtime_id),
+                &req.id,
+            )
+            .await?;
         }
         Ok(Some(req))
     }
 
     async fn persist_request(&self, req: &RuntimeLocalSkillImportRequest) -> anyhow::Result<()> {
         let data = marshal_skill_import(req)?;
-        let (): () = redis::cmd("SET")
+        let mut conn = self.conn.clone();
+        let mut command = redis::cmd("SET");
+        command
             .arg(local_skill_import_key(&req.id))
             .arg(data)
             .arg("EX")
-            .arg(LOCAL_SKILL_STORE_RETENTION_SECS)
-            .query_async(&mut self.conn.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("persist import request: {e}"))?;
+            .arg(LOCAL_SKILL_STORE_RETENTION_SECS);
+        let (): () =
+            bounded_pending_redis("persist local skill import", command.query_async(&mut conn))
+                .await
+                .map_err(|e| anyhow::anyhow!("persist import request: {e}"))?;
         Ok(())
     }
 
@@ -2133,8 +1469,8 @@ impl LocalSkillImportStore {
         let data = marshal_skill_import(&req)?;
         let mut conn = self.conn.clone();
         let pending_key = local_skill_import_pending_key(runtime_id);
-        let (): () = redis::pipe()
-            .cmd("SET")
+        let mut pipe = redis::pipe();
+        pipe.cmd("SET")
             .arg(local_skill_import_key(&req.id))
             .arg(&data)
             .arg("EX")
@@ -2148,10 +1484,11 @@ impl LocalSkillImportStore {
             .cmd("EXPIRE")
             .arg(&pending_key)
             .arg(LOCAL_SKILL_STORE_RETENTION_SECS * 2)
-            .ignore()
-            .query_async(&mut conn)
-            .await
-            .map_err(|e| anyhow::anyhow!("persist import request: {e}"))?;
+            .ignore();
+        let (): () =
+            bounded_pending_redis("persist local skill import", pipe.query_async(&mut conn))
+                .await
+                .map_err(|e| anyhow::anyhow!("persist import request: {e}"))?;
         Ok(req)
     }
 
@@ -2174,32 +1511,26 @@ impl LocalSkillImportStore {
     ) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>> {
         let pending_key = local_skill_import_pending_key(runtime_id);
         for _ in 0..POP_MAX_RETRIES {
-            let ids: Vec<String> = redis::cmd("ZRANGE")
-                .arg(&pending_key)
-                .arg(0)
-                .arg(0)
-                .query_async(&mut self.conn.clone())
-                .await
-                .map_err(|e| anyhow::anyhow!("zrange pending: {e}"))?;
+            let mut conn = self.conn.clone();
+            let mut range = redis::cmd("ZRANGE");
+            range.arg(&pending_key).arg(0).arg(0);
+            let ids: Vec<String> = bounded_pending_redis(
+                "list pending local skill imports",
+                range.query_async(&mut conn),
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("zrange pending: {e}"))?;
             let Some(id) = ids.into_iter().next() else {
                 return Ok(None);
             };
             let Some(mut req) = load_local_skill_import(&mut self.conn.clone(), &id).await? else {
                 // Record expired but the zset still references it — drop and retry.
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             };
             if req.status != LocalSkillRequestStatus::Pending {
                 // Timeout fired inside load_request or another node picked it up.
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             }
             let now = Utc::now();
@@ -2233,29 +1564,26 @@ impl LocalSkillImportStore {
         limit: usize,
     ) -> anyhow::Result<Vec<RuntimeLocalSkillImportRequest>> {
         let pending_key = local_skill_import_pending_key(runtime_id);
-        let ids: Vec<String> = redis::cmd("ZRANGE")
+        let mut conn = self.conn.clone();
+        let mut range = redis::cmd("ZRANGE");
+        range
             .arg(&pending_key)
             .arg(0)
-            .arg(limit.saturating_sub(1) as i64)
-            .query_async(&mut self.conn.clone())
-            .await
-            .map_err(|e| anyhow::anyhow!("zrange pending batch: {e}"))?;
+            .arg(limit.saturating_sub(1) as i64);
+        let ids: Vec<String> = bounded_pending_redis(
+            "list pending local skill import batch",
+            range.query_async(&mut conn),
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("zrange pending batch: {e}"))?;
         let mut out = Vec::new();
         for id in ids {
             let Some(mut req) = load_local_skill_import(&mut self.conn.clone(), &id).await? else {
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             };
             if req.status != LocalSkillRequestStatus::Pending {
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             }
             let now = Utc::now();
@@ -2311,71 +1639,8 @@ impl LocalSkillImportStore {
     }
 }
 
-#[async_trait]
-impl LocalSkillImportStoreBackend for LocalSkillImportStore {
-    async fn create_import(
-        &self,
-        runtime_id: &str,
-        creator_id: &str,
-        skill_key: &str,
-        name: Option<String>,
-        description: Option<String>,
-        action: &str,
-        target_skill_id: &str,
-        supports_conflict: bool,
-    ) -> anyhow::Result<RuntimeLocalSkillImportRequest> {
-        LocalSkillImportStore::create_import(
-            self,
-            runtime_id,
-            creator_id,
-            skill_key,
-            name,
-            description,
-            action,
-            target_skill_id,
-            supports_conflict,
-        )
-        .await
-    }
-
-    async fn get(&self, id: &str) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>> {
-        LocalSkillImportStore::get(self, id).await
-    }
-
-    async fn has_pending(&self, runtime_id: &str) -> anyhow::Result<bool> {
-        LocalSkillImportStore::has_pending(self, runtime_id).await
-    }
-
-    async fn pop_pending(
-        &self,
-        runtime_id: &str,
-    ) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>> {
-        LocalSkillImportStore::pop_pending(self, runtime_id).await
-    }
-
-    async fn pop_pending_batch(
-        &self,
-        runtime_id: &str,
-        limit: usize,
-    ) -> anyhow::Result<Vec<RuntimeLocalSkillImportRequest>> {
-        LocalSkillImportStore::pop_pending_batch(self, runtime_id, limit).await
-    }
-
-    async fn complete(&self, id: &str, skill: Value) -> anyhow::Result<()> {
-        LocalSkillImportStore::complete(self, id, skill).await
-    }
-
-    async fn conflict(&self, id: &str, info: LocalSkillImportConflict) -> anyhow::Result<()> {
-        LocalSkillImportStore::conflict(self, id, info).await
-    }
-
-    async fn fail(&self, id: &str, err_msg: &str) -> anyhow::Result<()> {
-        LocalSkillImportStore::fail(self, id, err_msg).await
-    }
-}
-
 async fn load_local_skill_import(
-    conn: &mut ConnectionManager,
+    conn: &mut RecoveringConnection,
     id: &str,
 ) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>> {
     match get_bytes(conn, &local_skill_import_key(id)).await? {
@@ -2389,103 +1654,26 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn in_memory_stores_preserve_pending_request_lifecycles() {
-        let updates = InMemoryUpdateStore::new();
-        let update = updates.create("runtime-1", "v2", "user-1").await.unwrap();
-        assert!(updates.has_pending("runtime-1").await.unwrap());
-        assert_eq!(
-            updates
-                .pop_pending("runtime-1")
-                .await
-                .unwrap()
-                .unwrap()
-                .status,
-            UpdateStatus::Running
-        );
-        updates.complete(&update.id, "updated").await.unwrap();
-        let update = updates.get(&update.id).await.unwrap().unwrap();
-        assert_eq!(update.status, UpdateStatus::Completed);
-        assert_eq!(update.output, "updated");
+    async fn model_catalog_redis_operation_has_a_hard_deadline() {
+        let error = bounded_model_catalog_redis(
+            Duration::from_millis(1),
+            std::future::pending::<redis::RedisResult<()>>(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.to_string(), "model catalog Redis operation timed out");
+    }
 
-        let models = InMemoryModelListStore::new();
-        let model_request = models.create("runtime-1").await.unwrap();
-        assert_eq!(
-            models
-                .pop_pending("runtime-1")
-                .await
-                .unwrap()
-                .unwrap()
-                .status,
-            ModelListStatus::Running
-        );
-        let entries = vec![ModelEntry {
-            id: "model-1".into(),
-            label: "Model 1".into(),
-            ..Default::default()
-        }];
-        models
-            .complete(&model_request.id, &entries, true)
-            .await
-            .unwrap();
-        let model_request = models.get(&model_request.id).await.unwrap().unwrap();
-        assert_eq!(model_request.status, ModelListStatus::Completed);
-        assert_eq!(model_request.models.len(), 1);
-
-        let skill_lists = InMemoryLocalSkillListStore::new();
-        let list_request = skill_lists.create("runtime-1").await.unwrap();
-        assert_eq!(
-            skill_lists
-                .pop_pending("runtime-1")
-                .await
-                .unwrap()
-                .unwrap()
-                .status,
-            LocalSkillRequestStatus::Running
-        );
-        skill_lists
-            .complete(&list_request.id, &[], true, &[], true)
-            .await
-            .unwrap();
-        assert_eq!(
-            skill_lists
-                .get(&list_request.id)
-                .await
-                .unwrap()
-                .unwrap()
-                .status,
-            LocalSkillRequestStatus::Completed
-        );
-
-        let imports = InMemoryLocalSkillImportStore::new();
-        let import_request = imports
-            .create_import(
-                "runtime-1",
-                "user-1",
-                "review",
-                Some("Review".into()),
-                None,
-                "create",
-                "",
-                true,
-            )
-            .await
-            .unwrap();
-        assert_eq!(
-            imports
-                .pop_pending("runtime-1")
-                .await
-                .unwrap()
-                .unwrap()
-                .status,
-            LocalSkillRequestStatus::Running
-        );
-        imports
-            .complete(&import_request.id, serde_json::json!({ "id": "skill-1" }))
-            .await
-            .unwrap();
-        let import_request = imports.get(&import_request.id).await.unwrap().unwrap();
-        assert_eq!(import_request.status, LocalSkillRequestStatus::Completed);
-        assert_eq!(import_request.skill.unwrap()["id"], "skill-1");
+    #[tokio::test]
+    async fn pending_redis_operation_has_a_hard_deadline() {
+        let error = bounded_pending_redis_with_timeout(
+            Duration::from_millis(1),
+            "update",
+            std::future::pending::<redis::RedisResult<()>>(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.to_string(), "runtime pending Redis update timed out");
     }
 
     #[test]

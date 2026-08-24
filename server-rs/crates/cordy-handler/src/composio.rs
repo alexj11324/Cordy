@@ -18,7 +18,6 @@ use cordy_composio::{
     ClientBuilder, Service, ServiceConfig, ServiceError, Store, UpsertConnectionParams,
 };
 use cordy_service::feature_flags::{composio_mcp_apps_enabled, FlagSource};
-use cordy_service::task_service::ComposioOverlayBuilder;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -32,6 +31,57 @@ pub struct ComposioState {
     service: Option<Arc<Service>>,
     pool: sqlx::PgPool,
     flags: Option<Arc<dyn FlagSource>>,
+}
+
+struct TaskOverlayBuilder {
+    service: Arc<Service>,
+}
+
+#[async_trait::async_trait]
+impl cordy_service::task_service::ComposioOverlayBuilder for TaskOverlayBuilder {
+    async fn build_task_overlay(
+        &self,
+        _pool: &sqlx::PgPool,
+        originator_user_id: Uuid,
+        agent: &cordy_db::models::Agent,
+    ) -> Result<cordy_service::runtime_apps::McpOverlayResult> {
+        let result = self
+            .service
+            .build_task_overlay(
+                Some(originator_user_id),
+                agent.owner_id,
+                agent
+                    .composio_toolkit_allowlist
+                    .as_deref()
+                    .unwrap_or_default(),
+                cordy_service::runtime_apps::display_name_for_toolkit_slug,
+            )
+            .await?;
+        let mcp_overlay = if result.mcp_overlay.is_empty() {
+            None
+        } else {
+            Some(serde_json::from_slice(&result.mcp_overlay)?)
+        };
+        Ok(cordy_service::runtime_apps::McpOverlayResult {
+            mcp_overlay,
+            connected_apps: result
+                .connected_apps
+                .into_iter()
+                .map(|app| cordy_service::runtime_apps::ConnectedApp {
+                    provider: app.provider,
+                    server_name: app.server_name,
+                    toolkit_slug: app.toolkit_slug,
+                    toolkit_name: app.toolkit_name,
+                })
+                .collect(),
+        })
+    }
+}
+
+pub(crate) fn task_overlay_builder(
+    service: Arc<Service>,
+) -> Arc<dyn cordy_service::task_service::ComposioOverlayBuilder> {
+    Arc::new(TaskOverlayBuilder { service })
 }
 
 impl ComposioState {
@@ -51,10 +101,7 @@ impl ComposioState {
     /// disables the integration while leaving the rest of the server healthy.
     pub fn from_handler(state: &HandlerState) -> Self {
         let flags = state.feature_flags.clone();
-        let service = flags
-            .as_deref()
-            .filter(|flags| composio_mcp_apps_enabled(*flags))
-            .and(state.composio_service.clone());
+        let service = state.composio.clone();
         Self::new(service, state.pool.clone(), flags)
     }
 
@@ -86,20 +133,17 @@ pub fn authenticated_router() -> Router<ComposioState> {
         )
 }
 
-pub fn build_service_from_config(
-    pool: sqlx::PgPool,
-    config: &cordy_config::Config,
-) -> Result<Service> {
-    let api_key = trimmed(config.integrations.composio_api_key.as_deref());
+pub(crate) fn build_service(pool: sqlx::PgPool) -> Result<Service> {
+    let api_key = env_trimmed("COMPOSIO_API_KEY");
     if api_key.is_empty() {
         anyhow::bail!("COMPOSIO_API_KEY is required");
     }
     let client = Arc::new(ClientBuilder::new(api_key).build()?);
-    let secret = composio_state_secret(config);
+    let secret = composio_state_secret();
     if secret.is_empty() {
         anyhow::bail!("COMPOSIO_STATE_SECRET or JWT_SECRET is required");
     }
-    let callback_base_url = callback_base_url(config);
+    let callback_base_url = callback_base_url();
     if callback_base_url.is_empty() {
         anyhow::bail!("Composio callback base URL is required");
     }
@@ -109,19 +153,19 @@ pub fn build_service_from_config(
         ServiceConfig {
             state_secret: secret,
             callback_base_url,
-            frontend_base_url: app_url(config),
+            frontend_base_url: app_url(),
             state_ttl: Duration::ZERO,
             auth_config_ttl: Duration::ZERO,
         },
     )
 }
 
-fn composio_state_secret(config: &cordy_config::Config) -> Vec<u8> {
-    let explicit = trimmed(config.integrations.composio_state_secret.as_deref());
+fn composio_state_secret() -> Vec<u8> {
+    let explicit = env_trimmed("COMPOSIO_STATE_SECRET");
     if !explicit.is_empty() {
         return explicit.into_bytes();
     }
-    let jwt = trimmed(config.auth.jwt_secret.as_deref());
+    let jwt = env_trimmed("JWT_SECRET");
     if jwt.is_empty() {
         Vec::new()
     } else {
@@ -129,82 +173,28 @@ fn composio_state_secret(config: &cordy_config::Config) -> Vec<u8> {
     }
 }
 
-fn callback_base_url(config: &cordy_config::Config) -> String {
-    [
-        config.integrations.composio_callback_base_url.as_deref(),
-        config.urls.public_url.as_deref(),
-        config.urls.app_url.as_deref(),
-        config.urls.frontend_origin.as_deref(),
-    ]
-    .into_iter()
-    .map(trimmed)
-    .find(|value| !value.is_empty())
-    .unwrap_or_default()
-    .trim_end_matches('/')
-    .to_string()
+fn callback_base_url() -> String {
+    ["COMPOSIO_CALLBACK_BASE_URL", "CORDY_PUBLIC_URL"]
+        .into_iter()
+        .map(env_trimmed)
+        .find(|value| !value.is_empty())
+        .unwrap_or_else(app_url)
+        .trim_end_matches('/')
+        .to_string()
 }
 
-fn app_url(config: &cordy_config::Config) -> String {
-    [
-        config.urls.app_url.as_deref(),
-        config.urls.frontend_origin.as_deref(),
-    ]
-    .into_iter()
-    .map(trimmed)
-    .find(|value| !value.is_empty())
-    .unwrap_or_default()
-    .trim_end_matches('/')
-    .to_string()
+fn app_url() -> String {
+    ["CORDY_APP_URL", "FRONTEND_ORIGIN"]
+        .into_iter()
+        .map(env_trimmed)
+        .find(|value| !value.is_empty())
+        .unwrap_or_default()
+        .trim_end_matches('/')
+        .to_string()
 }
 
-fn trimmed(value: Option<&str>) -> String {
-    value.unwrap_or_default().trim().to_string()
-}
-
-pub struct TaskOverlayBuilder {
-    service: Arc<Service>,
-}
-
-impl TaskOverlayBuilder {
-    pub fn new(service: Arc<Service>) -> Self {
-        Self { service }
-    }
-}
-
-#[async_trait::async_trait]
-impl ComposioOverlayBuilder for TaskOverlayBuilder {
-    async fn build_task_overlay(
-        &self,
-        _pool: &sqlx::PgPool,
-        originator_user_id: Uuid,
-        agent: &cordy_db::models::Agent,
-    ) -> Result<cordy_service::runtime_apps::McpOverlayResult> {
-        let result = self
-            .service
-            .build_task_overlay(
-                originator_user_id,
-                agent.owner_id,
-                agent.composio_toolkit_allowlist.as_deref().unwrap_or(&[]),
-            )
-            .await?;
-        Ok(cordy_service::runtime_apps::McpOverlayResult {
-            mcp_overlay: if result.mcp_overlay.is_empty() {
-                None
-            } else {
-                Some(serde_json::from_slice(&result.mcp_overlay)?)
-            },
-            connected_apps: result
-                .connected_apps
-                .into_iter()
-                .map(|app| cordy_service::runtime_apps::ConnectedApp {
-                    provider: app.provider,
-                    server_name: app.server_name,
-                    toolkit_slug: app.toolkit_slug,
-                    toolkit_name: app.toolkit_name,
-                })
-                .collect(),
-        })
-    }
+fn env_trimmed(name: &str) -> String {
+    std::env::var(name).unwrap_or_default().trim().to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -545,21 +535,8 @@ mod tests {
     #[test]
     fn state_secret_fallback_is_domain_separated() {
         let jwt = "jwt-secret";
-        let mut config = cordy_config::Config::default();
-        config.auth.jwt_secret = Some(jwt.into());
         let expected = Sha256::digest(format!("composio-state:{jwt}").as_bytes()).to_vec();
-        assert_eq!(composio_state_secret(&config), expected);
         assert_ne!(expected, Sha256::digest(jwt.as_bytes()).to_vec());
-    }
-
-    #[test]
-    fn resolved_config_drives_composio_urls() {
-        let mut config = cordy_config::Config::default();
-        config.integrations.composio_callback_base_url = Some(" https://api.example.com/ ".into());
-        config.urls.app_url = Some(" https://app.example.com/ ".into());
-
-        assert_eq!(callback_base_url(&config), "https://api.example.com");
-        assert_eq!(app_url(&config), "https://app.example.com");
     }
 
     #[test]

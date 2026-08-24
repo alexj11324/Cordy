@@ -1,7 +1,7 @@
 //! Redis-backed PAT lookup cache — port of `server/internal/auth/pat_cache.go`.
 
 use chrono::{DateTime, Utc};
-use redis::aio::ConnectionManager;
+use cordy_redis::RecoveringConnection;
 
 /// Bounds how long a token-hash lookup stays cached before auth goes back to
 /// Postgres. Short enough that revocation lag from a missed invalidation is
@@ -18,15 +18,18 @@ const PAT_CACHE_PREFIX: &str = "mul:auth:pat:";
 /// DB lookups (mirrors Go's nil `*PATCache`).
 #[derive(Clone)]
 pub struct PatCache {
-    conn: Option<ConnectionManager>,
+    conn: Option<RecoveringConnection>,
 }
 
 impl PatCache {
     /// Builds an active cache backed by `client`'s connection manager
     /// (auto-reconnecting, shared like go-redis's internal pool).
     pub async fn new(client: redis::Client) -> redis::RedisResult<Self> {
-        let conn = client.get_connection_manager().await?;
-        Ok(Self { conn: Some(conn) })
+        Ok(Self::from_connection(RecoveringConnection::new(client)))
+    }
+
+    pub fn from_connection(conn: RecoveringConnection) -> Self {
+        Self { conn: Some(conn) }
     }
 
     /// A cache that never hits — used when REDIS_URL is unset.
@@ -42,15 +45,16 @@ impl PatCache {
     /// error — a dead Redis must not take down auth.
     pub async fn get(&self, hash: &str) -> Option<String> {
         let mut conn = self.conn.clone()?;
-        match redis::cmd("GET")
-            .arg(Self::key(hash))
-            .query_async::<Option<String>>(&mut conn)
-            .await
+        match crate::bounded_redis(
+            redis::cmd("GET")
+                .arg(Self::key(hash))
+                .query_async::<Option<String>>(&mut conn),
+        )
+        .await
         {
             Ok(v) => v,
-            Err(e) => {
-                tracing::warn!("pat_cache: get failed; falling back to DB",);
-                tracing::debug!(error = %e, "pat_cache: get error detail");
+            Err(error) => {
+                tracing::warn!(?error, "pat_cache: get failed; falling back to DB");
                 None
             }
         }
@@ -67,15 +71,17 @@ impl PatCache {
             return;
         }
         let mut conn = conn;
-        let result = redis::cmd("SET")
-            .arg(Self::key(hash))
-            .arg(user_id)
-            .arg("EX")
-            .arg(ttl_secs)
-            .query_async::<()>(&mut conn)
-            .await;
-        if let Err(e) = result {
-            tracing::warn!(error = %e, "pat_cache: set failed");
+        let result = crate::bounded_redis(
+            redis::cmd("SET")
+                .arg(Self::key(hash))
+                .arg(user_id)
+                .arg("EX")
+                .arg(ttl_secs)
+                .query_async::<()>(&mut conn),
+        )
+        .await;
+        if let Err(error) = result {
+            tracing::warn!(?error, "pat_cache: set failed");
         }
     }
 
@@ -86,13 +92,15 @@ impl PatCache {
             return;
         };
         let mut conn = conn;
-        let result = redis::cmd("DEL")
-            .arg(Self::key(hash))
-            .query_async::<i64>(&mut conn)
-            .await;
-        if let Err(e) = result {
+        let result = crate::bounded_redis(
+            redis::cmd("DEL")
+                .arg(Self::key(hash))
+                .query_async::<i64>(&mut conn),
+        )
+        .await;
+        if let Err(error) = result {
             tracing::warn!(
-                error = %e,
+                ?error,
                 "pat_cache: invalidate failed; entry will expire on TTL"
             );
         }

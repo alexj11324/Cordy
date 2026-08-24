@@ -215,12 +215,9 @@ mod tests {
         let mut prev = [0u8; 16];
         prev.copy_from_slice(&key[..16]);
         let mut out = Vec::with_capacity(padded.len());
-        for chunk in padded.chunks_exact(16) {
+        for chunk in padded.as_chunks::<16>().0 {
             let mut block =
-                Array::<u8, <aes::Aes256 as aes::cipher::BlockSizeUser>::BlockSize>::try_from(
-                    chunk,
-                )
-                .unwrap();
+                Array::<u8, <aes::Aes256 as aes::cipher::BlockSizeUser>::BlockSize>::from(*chunk);
             for i in 0..16 {
                 block[i] ^= prev[i];
             }

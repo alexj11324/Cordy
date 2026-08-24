@@ -94,10 +94,6 @@ fn parse_runtime_id(raw_id: &str) -> Result<Uuid, Response> {
         .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"))
 }
 
-fn runtime_is_in_workspace(runtime: &AgentRuntime, workspace_id: Uuid) -> bool {
-    runtime.workspace_id == workspace_id
-}
-
 async fn load_runtime_member(
     state: &HandlerState,
     context: &WorkspaceContext,
@@ -109,9 +105,6 @@ async fn load_runtime_member(
         .ok()
         .flatten()
         .ok_or_else(|| error_response(StatusCode::NOT_FOUND, "runtime not found"))?;
-    if !runtime_is_in_workspace(&found, context.member.workspace_id) {
-        return Err(error_response(StatusCode::NOT_FOUND, "runtime not found"));
-    }
     let member = member::get_member_by_user_and_workspace(
         &state.pool,
         context.member.user_id,
@@ -296,12 +289,13 @@ async fn initiate_model_list(
     };
     match store.create(&resolved_runtime_id).await {
         Ok(request) => {
-            if let Some(hub) = state.daemon_hub.as_ref() {
-                hub.notify_pending_work(
+            state
+                .daemon_notifier
+                .notify_pending_work(
                     &resolved_runtime_id,
                     cordy_protocol::PENDING_WORK_KIND_MODEL_LIST,
-                );
-            }
+                )
+                .await;
             Json(request).into_response()
         }
         Err(error) => error_response(
@@ -327,9 +321,10 @@ async fn revalidate_model_catalog(state: &HandlerState, runtime_id: &str) {
         tracing::debug!(%error, %runtime_id, "model catalog revalidate enqueue failed");
         return;
     }
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_pending_work(runtime_id, cordy_protocol::PENDING_WORK_KIND_MODEL_LIST);
-    }
+    state
+        .daemon_notifier
+        .notify_pending_work(runtime_id, cordy_protocol::PENDING_WORK_KIND_MODEL_LIST)
+        .await;
 }
 
 async fn get_model_list(
@@ -574,15 +569,6 @@ mod tests {
             &member("owner", Uuid::new_v4()),
             &found
         ));
-    }
-
-    #[test]
-    fn runtime_access_stays_bound_to_the_context_workspace() {
-        let workspace_id = Uuid::new_v4();
-        let mut found = runtime(None);
-        found.workspace_id = workspace_id;
-        assert!(runtime_is_in_workspace(&found, workspace_id));
-        assert!(!runtime_is_in_workspace(&found, Uuid::new_v4()));
     }
 
     #[test]

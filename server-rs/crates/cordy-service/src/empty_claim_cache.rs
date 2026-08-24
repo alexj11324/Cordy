@@ -12,7 +12,7 @@
 
 use std::time::Duration;
 
-use redis::aio::ConnectionManager;
+use cordy_redis::RecoveringConnection;
 
 /// Bounds how long a cached "no queued task" verdict stays believable.
 /// Enqueue invalidates by bumping the per-runtime version before waking the
@@ -48,12 +48,17 @@ fn empty_claim_version(runtime_id: &str) -> String {
 /// nil-receiver safety.
 #[derive(Clone)]
 pub struct EmptyClaimCache {
-    rdb: ConnectionManager,
+    rdb: Option<RecoveringConnection>,
 }
 
 impl EmptyClaimCache {
-    pub fn new(rdb: ConnectionManager) -> Self {
-        Self { rdb }
+    pub fn new(rdb: RecoveringConnection) -> Self {
+        Self { rdb: Some(rdb) }
+    }
+
+    /// Disabled cache used when Redis is not configured or unavailable.
+    pub fn disabled() -> Self {
+        Self { rdb: None }
     }
 
     /// Returns the runtime's current invalidation version. Callers MUST read
@@ -66,20 +71,25 @@ impl EmptyClaimCache {
     /// doesn't let the counter expire and reset between an enqueue's bump and
     /// the next claim.
     pub async fn current_version(&self, runtime_id: &str) -> i64 {
+        let Some(rdb) = self.rdb.as_ref() else {
+            return 0;
+        };
         if runtime_id.is_empty() {
             return 0;
         }
         let key = empty_claim_version(runtime_id);
         let outcome = tokio::time::timeout(EMPTY_CLAIM_REDIS_TIMEOUT, async {
-            let mut con = self.rdb.clone();
+            let mut con = rdb.clone();
             let mut get = redis::cmd("GET");
             get.arg(&key);
             let v: Option<i64> = get.query_async(&mut con).await?;
             // Refresh TTL so the counter doesn't expire and reset on a
             // low-traffic runtime. Best-effort: the result is ignored.
-            let mut expire = redis::cmd("EXPIRE");
-            expire.arg(&key).arg(EMPTY_CLAIM_VERSION_TTL.as_secs());
-            expire.query_async::<()>(&mut con).await?;
+            if v.is_some() {
+                let mut expire = redis::cmd("EXPIRE");
+                expire.arg(&key).arg(EMPTY_CLAIM_VERSION_TTL.as_secs());
+                let _: Result<(), redis::RedisError> = expire.query_async(&mut con).await;
+            }
             Ok::<_, redis::RedisError>(v)
         })
         .await;
@@ -105,10 +115,13 @@ impl EmptyClaimCache {
     /// runtime's current version. A stale verdict written before a concurrent
     /// bump reads as false so the caller falls through to the DB.
     pub async fn is_empty(&self, runtime_id: &str) -> bool {
+        let Some(rdb) = self.rdb.as_ref() else {
+            return false;
+        };
         if runtime_id.is_empty() {
             return false;
         }
-        let mut con = self.rdb.clone();
+        let mut con = rdb.clone();
         let mut mget = redis::cmd("MGET");
         mget.arg(empty_claim_key(runtime_id))
             .arg(empty_claim_version(runtime_id));
@@ -145,18 +158,23 @@ impl EmptyClaimCache {
     /// makes the next reader reject this entry. Errors log and swallow — a
     /// cache write failure is not a request failure.
     pub async fn mark_empty(&self, runtime_id: &str, observed_version: i64) {
+        let Some(rdb) = self.rdb.as_ref() else {
+            return;
+        };
         if runtime_id.is_empty() {
             return;
         }
-        let mut con = self.rdb.clone();
+        let mut con = rdb.clone();
         let mut set = redis::cmd("SET");
         set.arg(empty_claim_key(runtime_id))
             .arg(observed_version.to_string())
             .arg("EX")
             .arg(EMPTY_CLAIM_CACHE_TTL.as_secs());
         let fut = set.query_async::<()>(&mut con);
-        if let Err(err) = tokio::time::timeout(EMPTY_CLAIM_REDIS_TIMEOUT, fut).await {
-            tracing::warn!(error = %err, "empty_claim_cache: set failed");
+        match tokio::time::timeout(EMPTY_CLAIM_REDIS_TIMEOUT, fut).await {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => tracing::warn!(error = %err, "empty_claim_cache: set failed"),
+            Err(_) => tracing::warn!("empty_claim_cache: set timed out"),
         }
     }
 
@@ -167,11 +185,14 @@ impl EmptyClaimCache {
     /// stop a legitimate enqueue, and the empty key still expires on its own
     /// TTL so the worst-case stall is bounded.
     pub async fn bump(&self, runtime_id: &str) {
+        let Some(rdb) = self.rdb.as_ref() else {
+            return;
+        };
         if runtime_id.is_empty() {
             return;
         }
         let key = empty_claim_version(runtime_id);
-        let mut con = self.rdb.clone();
+        let mut con = rdb.clone();
         // atomic() borrows the pipe mutably; hold the pipe by value and
         // drive it through reborrows so nothing temporary outlives a
         // statement.

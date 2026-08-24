@@ -147,10 +147,11 @@ fn profile_response(profile: &RuntimeProfile) -> Value {
     crate::profile_json::profile_to_map(profile)
 }
 
-fn notify_profile_changed(state: &HandlerState, workspace_id: Uuid, profile_id: Uuid) {
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_runtime_profiles_changed(&workspace_id.to_string(), &profile_id.to_string());
-    }
+async fn notify_profile_changed(state: &HandlerState, workspace_id: Uuid, profile_id: Uuid) {
+    state
+        .daemon_notifier
+        .notify_runtime_profiles_changed(&workspace_id.to_string(), &profile_id.to_string())
+        .await;
 }
 
 fn publish_daemon_register(
@@ -277,7 +278,7 @@ async fn create(
     .await
     {
         Ok(Some(profile)) => {
-            notify_profile_changed(&state, workspace_id, profile.id);
+            notify_profile_changed(&state, workspace_id, profile.id).await;
             publish_daemon_register(
                 &state,
                 workspace_id,
@@ -381,7 +382,7 @@ RETURNING command_name, created_at, created_by, description, display_name,
 
     match updated {
         Ok(Some(profile)) => {
-            notify_profile_changed(&state, workspace_id, profile.id);
+            notify_profile_changed(&state, workspace_id, profile.id).await;
             publish_daemon_register(
                 &state,
                 workspace_id,
@@ -406,13 +407,13 @@ RETURNING command_name, created_at, created_by, description, display_name,
 }
 
 #[derive(Default)]
-struct Teardown {
-    unbound_agents: Vec<Agent>,
-    cancelled_tasks: Vec<AgentTaskQueue>,
-    paused_autopilots: Vec<Autopilot>,
+pub(crate) struct Teardown {
+    pub(crate) unbound_agents: Vec<Agent>,
+    pub(crate) cancelled_tasks: Vec<AgentTaskQueue>,
+    pub(crate) paused_autopilots: Vec<Autopilot>,
 }
 
-async fn teardown_runtime(
+pub(crate) async fn teardown_runtime(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     runtime_id: Uuid,
 ) -> anyhow::Result<Teardown> {
@@ -469,14 +470,19 @@ async fn teardown_runtime(
     })
 }
 
-fn publish_teardown(state: &HandlerState, workspace_id: Uuid, user_id: Uuid, teardown: &Teardown) {
+pub(crate) fn publish_teardown(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    teardown: &Teardown,
+) {
     for agent in &teardown.unbound_agents {
         state.bus.publish(&cordy_events::Event {
             event_type: EVENT_AGENT_STATUS.to_string(),
             workspace_id: workspace_id.to_string(),
             actor_type: "member".into(),
             actor_id: user_id.to_string(),
-            payload: json!({ "agent": agent }),
+            payload: json!({ "agent": crate::agent_api::agent_event_response(state, agent) }),
             ..Default::default()
         });
     }
@@ -638,7 +644,7 @@ async fn delete_profile(
             .await;
         publish_teardown(&state, workspace_id, context.member.user_id, teardown);
     }
-    notify_profile_changed(&state, workspace_id, profile_id);
+    notify_profile_changed(&state, workspace_id, profile_id).await;
     publish_daemon_register(
         &state,
         workspace_id,

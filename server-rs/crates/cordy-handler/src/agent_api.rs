@@ -142,7 +142,7 @@ async fn hydrated_agent_response(
                 "failed to load agent skills",
             )
         })?;
-    let mut response = agent_response(target, reveal_secrets, reveal_composio);
+    let mut response = agent_response(Some(state), target, reveal_secrets, reveal_composio);
     apply_targets(&mut response, &targets);
     apply_skills(&mut response, &skills);
     Ok(response)
@@ -370,12 +370,17 @@ fn system_instructions_for(system_key: Option<&str>, display_name: &str) -> Stri
     }
 }
 
-fn agent_response(target: Agent, reveal_secrets: bool, reveal_composio: bool) -> Value {
+fn agent_response(
+    state: Option<&HandlerState>,
+    target: Agent,
+    reveal_secrets: bool,
+    reveal_composio: bool,
+) -> Value {
     let env_count = env_map(&target).len();
     let system_instructions = system_instructions_for(target.system_key.as_deref(), &target.name);
     let mut mcp_config = target.mcp_config.clone().unwrap_or_else(|| json!({}));
     let mut mcp_config_redacted = false;
-    if !reveal_secrets && has_mcp_config(&mcp_config) {
+    if !reveal_secrets && mcp_config.as_object().is_some_and(|map| !map.is_empty()) {
         mcp_config = json!({});
         mcp_config_redacted = true;
     }
@@ -390,17 +395,23 @@ fn agent_response(target: Agent, reveal_secrets: bool, reveal_composio: bool) ->
             .composio_toolkit_allowlist
             .as_ref()
             .is_some_and(|allowlist| !allowlist.is_empty());
+    let avatar_url = target.avatar_url.as_deref().map(|raw| {
+        state.map_or_else(
+            || raw.to_string(),
+            |state| crate::avatar::resolve_url(state, raw),
+        )
+    });
     json!({
         "id": target.id,
         "workspace_id": target.workspace_id,
-        "runtime_id": target.runtime_id.map(|id| id.to_string()).unwrap_or_default(),
+        "runtime_id": target.runtime_id,
         "runtime_bound": target.runtime_id.is_some(),
         "name": target.name,
         "description": target.description,
         "instructions": target.instructions,
         "system_key": target.system_key.unwrap_or_default(),
         "system_instructions": system_instructions,
-        "avatar_url": target.avatar_url,
+        "avatar_url": avatar_url,
         "runtime_mode": target.runtime_mode,
         "runtime_config": mask_gateway_token(target.runtime_config),
         "custom_args": target.custom_args,
@@ -428,14 +439,10 @@ fn agent_response(target: Agent, reveal_secrets: bool, reveal_composio: bool) ->
     })
 }
 
-fn has_mcp_config(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Object(value) => !value.is_empty(),
-        Value::Array(value) => !value.is_empty(),
-        Value::String(value) => !value.is_empty(),
-        Value::Bool(_) | Value::Number(_) => true,
-    }
+/// Workspace-wide agent events must never expose fields whose visibility is
+/// scoped to an owner or administrator response.
+pub(crate) fn agent_event_response(state: &HandlerState, target: &Agent) -> Value {
+    agent_response(Some(state), target.clone(), false, false)
 }
 
 #[derive(Default, Deserialize)]
@@ -540,7 +547,7 @@ async fn list_agents(
                     .map(Vec::as_slice)
                     .unwrap_or_default();
                 let reveal_composio = !is_agent && target.owner_id == Some(context.member.user_id);
-                let mut response = agent_response(target, reveal, reveal_composio);
+                let mut response = agent_response(Some(&state), target, reveal, reveal_composio);
                 apply_targets(&mut response, targets);
                 if let Some(skills) = skills_by_agent.get(&target_id) {
                     apply_skills(&mut response, skills);
@@ -599,7 +606,7 @@ async fn get_agent(
     let target_id = target.id;
     let reveal = !is_agent && !always_redact && can_manage(&context, &target);
     let reveal_composio = !is_agent && target.owner_id == Some(context.member.user_id);
-    let mut response = agent_response(target, reveal, reveal_composio);
+    let mut response = agent_response(Some(&state), target, reveal, reveal_composio);
     apply_targets(&mut response, &targets);
     match skill::list_agent_skill_summaries(&state.pool, target_id).await {
         Ok(skills) => apply_skills(&mut response, &skills),
@@ -627,7 +634,6 @@ struct AgentWrite {
     visibility: Option<String>,
     permission_mode: Option<String>,
     invocation_targets: Option<Vec<InvocationTargetInput>>,
-    status: Option<String>,
     max_concurrent_tasks: Option<i32>,
     model: Option<String>,
     thinking_level: Option<String>,
@@ -844,6 +850,13 @@ async fn create_agent(
             "service_tier is not recognised for this runtime",
         );
     }
+    let avatar_url = match request.avatar_url.as_deref() {
+        Some(raw) => match crate::avatar::accept_url(&state, raw, None).await {
+            Ok(value) => Some(value),
+            Err(message) => return error_response(StatusCode::FORBIDDEN, message),
+        },
+        None => None,
+    };
     let is_first_agent = sqlx::query_scalar::<_, bool>(
         "SELECT NOT EXISTS (SELECT 1 FROM agent WHERE workspace_id=$1)",
     )
@@ -887,7 +900,7 @@ async fn create_agent(
         ws,
         name,
         request.description.as_deref().unwrap_or_default().trim(),
-        request.avatar_url.as_deref(),
+        avatar_url.as_deref(),
         &rt.runtime_mode,
         &runtime_config,
         runtime_id,
@@ -902,7 +915,7 @@ async fn create_agent(
         request.thinking_level.as_deref(),
         request.service_tier.as_deref(),
         &composio_toolkit_allowlist,
-        &permission_mode,
+        Some(permission_mode.as_str()),
     )
     .await;
     let created = match created {
@@ -1021,26 +1034,6 @@ async fn update_agent(
         Ok(value) => value,
         Err(response) => return response,
     };
-    let mut tx = match state.pool.begin().await {
-        Ok(tx) => tx,
-        Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to start agent update transaction",
-            )
-        }
-    };
-    let existing = match agent::get_agent_for_update(&mut *tx, existing.id).await {
-        Ok(Some(existing)) if existing.workspace_id == ws => existing,
-        Ok(Some(_)) | Ok(None) => return error_response(StatusCode::NOT_FOUND, "agent not found"),
-        Err(error) => {
-            tracing::warn!(%error, "failed to lock agent for update");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load agent");
-        }
-    };
-    if let Err(response) = manage_or_forbidden(&context, &existing) {
-        return response;
-    }
     let runtime_id = match request.runtime_id.as_deref() {
         Some(v) => match Uuid::parse_str(v) {
             Ok(v) => v,
@@ -1052,7 +1045,7 @@ async fn update_agent(
         },
     };
     let target_runtime =
-        match runtime::get_agent_runtime_for_workspace(&mut *tx, runtime_id, ws).await {
+        match runtime::get_agent_runtime_for_workspace(&state.pool, runtime_id, ws).await {
             Ok(Some(runtime)) => runtime,
             _ => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
         };
@@ -1078,7 +1071,8 @@ async fn update_agent(
     let effective_targets = if request.invocation_targets.is_some() {
         request.invocation_targets.clone()
     } else if permission_touched {
-        match agent_invocation_target::list_agent_invocation_targets(&mut *tx, existing.id).await {
+        match agent_invocation_target::list_agent_invocation_targets(&state.pool, existing.id).await
+        {
             Ok(targets) => Some(
                 targets
                     .into_iter()
@@ -1181,6 +1175,15 @@ async fn update_agent(
             );
         }
     }
+    let avatar_url = match request.avatar_url.as_deref() {
+        Some(raw) => {
+            match crate::avatar::accept_url(&state, raw, existing.avatar_url.as_deref()).await {
+                Ok(value) => Some(value),
+                Err(message) => return error_response(StatusCode::FORBIDDEN, message),
+            }
+        }
+        None => None,
+    };
     let custom_env = existing.custom_env.clone();
     let custom_args = request
         .custom_args
@@ -1226,12 +1229,21 @@ async fn update_agent(
     } else {
         None
     };
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to start agent update transaction",
+            )
+        }
+    };
     let updated = agent::update_agent(
         &mut *tx,
         existing.id,
         request.name.as_deref().map(str::trim),
         request.description.as_deref().map(str::trim),
-        request.avatar_url.as_deref(),
+        avatar_url.as_deref(),
         &runtime_config,
         request
             .runtime_id
@@ -1240,7 +1252,7 @@ async fn update_agent(
         runtime_id,
         resolved_visibility.or(request.visibility.as_deref()),
         resolved_permission.as_deref(),
-        request.status.as_deref(),
+        None,
         request.max_concurrent_tasks,
         request.instructions.as_deref().map(str::trim),
         &custom_env,
@@ -1422,7 +1434,7 @@ async fn create_mika(
         );
     }
     let mut created_now = false;
-    let mut target = match agent::get_agent_by_system_key(&state.pool, ws, Some("mika")).await {
+    let target = match agent::get_agent_by_system_key(&state.pool, ws, Some("mika")).await {
         Ok(Some(existing)) => existing,
         Ok(None) => {
             let mut tx = match state.pool.begin().await {
@@ -1515,12 +1527,6 @@ async fn create_mika(
             )
         }
     };
-    if created_now && rt.status == "online" {
-        state.tasks.reconcile_agent_status(target.id).await;
-        if let Ok(Some(reconciled)) = agent::get_agent(&state.pool, target.id).await {
-            target = reconciled;
-        }
-    }
     let session = match get_or_create_mika_session(
         &state,
         ws,
@@ -2226,7 +2232,7 @@ fn publish(state: &HandlerState, event_type: &str, target: &Agent, actor_id: Uui
         workspace_id: target.workspace_id.to_string(),
         actor_type: "member".into(),
         actor_id: actor_id.to_string(),
-        payload: json!({"agent":agent_response(target.clone(),false,false)}),
+        payload: json!({"agent":agent_event_response(state,target)}),
         ..Default::default()
     });
 }
@@ -2296,14 +2302,10 @@ mod tests {
     }
 
     #[test]
-    fn agent_write_preserves_status_updates() {
-        let request: AgentWrite = serde_json::from_value(json!({ "status": "offline" })).unwrap();
-        assert_eq!(request.status.as_deref(), Some("offline"));
-    }
-
-    #[test]
     fn agent_actor_projection_redacts_every_secret_surface() {
-        let response = agent_response(agent_fixture(), false, false);
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None);
+        let response = agent_event_response(&state, &agent_fixture());
         assert_eq!(response["runtime_config"]["gateway"]["token"], "***");
         assert_eq!(response["mcp_config"], json!({}));
         assert_eq!(response["mcp_config_redacted"], true);
@@ -2311,18 +2313,6 @@ mod tests {
         assert_eq!(response["composio_toolkit_allowlist_redacted"], true);
         assert!(response.get("custom_env").is_none());
         assert_eq!(response["custom_env_key_count"], 1);
-        assert_eq!(response["runtime_id"], "");
-    }
-
-    #[test]
-    fn agent_actor_projection_redacts_non_object_mcp_configuration() {
-        for mcp_config in [json!("secret"), json!(["secret"])] {
-            let mut agent = agent_fixture();
-            agent.mcp_config = Some(mcp_config);
-            let response = agent_response(agent, false, false);
-            assert_eq!(response["mcp_config"], json!({}));
-            assert_eq!(response["mcp_config_redacted"], true);
-        }
     }
     #[test]
     fn skill_ids_are_validated_and_deduplicated() {

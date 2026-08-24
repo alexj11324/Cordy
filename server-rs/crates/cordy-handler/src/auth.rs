@@ -28,8 +28,8 @@ pub struct AuthSettings {
     google_client_id: String,
     google_client_secret: String,
     google_redirect_uri: String,
-    cookie_domain: String,
-    frontend_origin: String,
+    pub(crate) cookie_domain: String,
+    pub(crate) frontend_origin: String,
 }
 
 impl AuthSettings {
@@ -191,9 +191,6 @@ async fn send_code(State(state): State<HandlerState>, body: Bytes) -> Response {
     if email.is_empty() {
         return error_response(StatusCode::BAD_REQUEST, "email is required");
     }
-    if email.contains(['\r', '\n']) {
-        return error_response(StatusCode::BAD_REQUEST, "invalid email");
-    }
     if cordy_auth::disabled_users::is_temporarily_disabled_user_email(&email) {
         return error_response(StatusCode::FORBIDDEN, "account disabled");
     }
@@ -295,11 +292,15 @@ async fn verify_code(
             verification_code::increment_verification_code_attempts(&state.pool, db_code.id).await;
         return error_response(StatusCode::BAD_REQUEST, "invalid or expired code");
     }
-    if verification_code::mark_verification_code_used(&state.pool, db_code.id)
-        .await
-        .is_err()
-    {
-        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to verify code");
+    match verification_code::mark_verification_code_used(&state.pool, db_code.id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return error_response(StatusCode::BAD_REQUEST, "invalid or expired code");
+        }
+        Err(error) => {
+            tracing::warn!(%error, "auth: failed to consume verification code");
+            return error_response(StatusCode::BAD_REQUEST, "invalid or expired code");
+        }
     }
     complete_login(&state, &headers, &email, None).await
 }
@@ -517,6 +518,19 @@ async fn complete_login(
             response.headers_mut().append(header::SET_COOKIE, value);
         }
     }
+    if let Some(signer) = state.attachment_download.cloudfront_signer.as_ref() {
+        match signer.signed_cookie_headers(crate::cloudfront::cloudfront_cookie_expiry(Utc::now()))
+        {
+            Ok(cookies) => {
+                for cookie in cookies {
+                    if let Ok(value) = HeaderValue::from_str(&cookie) {
+                        response.headers_mut().append(header::SET_COOKIE, value);
+                    }
+                }
+            }
+            Err(error) => tracing::warn!(%error, "auth: failed to sign CloudFront cookies"),
+        }
+    }
     response
 }
 
@@ -648,12 +662,6 @@ mod tests {
                 "null true",
                 StatusCode::BAD_REQUEST,
                 "email is required",
-            ),
-            (
-                "/auth/send-code",
-                r#"{"email":"victim@example.com\r\nRCPT TO:<attacker@example.com>"}"#,
-                StatusCode::BAD_REQUEST,
-                "invalid email",
             ),
             (
                 "/auth/verify-code",

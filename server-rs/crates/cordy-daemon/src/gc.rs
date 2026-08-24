@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context as _;
@@ -22,6 +23,7 @@ use chrono::{DateTime, Utc};
 use futures_util::Future;
 use sha2::{Digest, Sha256};
 
+use crate::activity::DaemonActivity;
 use crate::artifact_matcher::{
     safe_relative_path, ArtifactMatcher, MANAGED_ARTIFACT_PATTERN_PREFIX,
 };
@@ -526,7 +528,8 @@ fn managed_reclaimable_artifact_subpaths() -> Vec<String> {
 // and receive `reserve_store_for_deletion` as a reservation callback.
 
 /// Reservation callback handed to store pruners (`d.reserveStoreForDeletion`).
-pub(crate) type ReserveStoreForDeletion<'a> = &'a (dyn Fn(&Path) + Send + Sync);
+pub(crate) type ReserveStoreForDeletion<'a> =
+    &'a (dyn Fn(&Path) -> Option<crate::activity::StoreGcReservation> + Send + Sync);
 
 fn prune_codex_session_stores(
     profile: &str,
@@ -646,7 +649,9 @@ fn prune_store_tree(
         if newest >= cutoff {
             continue;
         }
-        reserve(&store);
+        let Some(_reservation) = reserve(&store) else {
+            continue;
+        };
         match std::fs::remove_dir_all(&store) {
             Ok(()) => {
                 removed += 1;
@@ -776,23 +781,13 @@ pub(crate) trait GcHost: Send + Sync {
         task_id: &str,
     ) -> impl Future<Output = anyhow::Result<IssueGCCheckStatus>> + Send;
 
-    /// `d.isActiveEnvRoot`: true while a task is running on this env root.
-    fn is_active_env_root(&self, task_dir: &Path) -> bool;
-
-    /// `d.reserveEnvRootForGC`: atomically reserves an env root for deletion;
-    /// returns the release closure, or None when reservation failed.
-    fn reserve_env_root_for_gc(&self, task_dir: &Path) -> Option<Box<dyn FnOnce() + Send>>;
-
-    /// `d.reserveStoreForDeletion`: reservation callback passed to store
-    /// pruners.
-    fn reserve_store_for_deletion(&self, path: &Path);
+    /// Shared task/root state used for active checks and atomic GC deletion
+    /// reservations.
+    fn activity(&self) -> &Arc<DaemonActivity>;
 
     /// `d.repoBarePathIsLive`: whether any watched workspace still claims
     /// this bare repo path (gc.go:1141/1183).
     fn repo_bare_path_is_live(&self, bare_path: &Path) -> bool;
-
-    /// `d.activeTasks.Load()` (gc.go:1312/1330).
-    fn active_tasks(&self) -> i64;
 
     /// Repo-cache gate for maintenance (`d.repoCache`, gc.go:1075/1095);
     /// None mirrors a daemon built without a repo cache.
@@ -871,6 +866,10 @@ pub(crate) async fn gc_loop<H: GcHost>(host: &H, ctx: &Ctx) {
     let cfg = host.config();
     if !cfg.gc_enabled {
         tracing::info!("gc: disabled");
+        // This is still an owned production loop. Remain attached to the
+        // daemon root so the supervisor cannot mistake a supported disabled
+        // configuration for an unexpected owner exit.
+        ctx.cancelled().await;
         return;
     }
     tracing::info!(
@@ -972,7 +971,7 @@ pub(crate) async fn run_gc<H: GcHost>(host: &H, ctx: &Ctx) {
 
     // Reclaim per-issue Codex session stores idle past their TTL (MUL-4424).
     let now = Utc::now();
-    let reserve = |p: &Path| host.reserve_store_for_deletion(p);
+    let reserve = |p: &Path| host.activity().reserve_store_for_gc(p);
     let (stores_removed, store_bytes) =
         prune_codex_session_stores(&cfg.profile, cfg.gc_codex_session_ttl, now, &reserve);
     if stores_removed > 0 {
@@ -1058,7 +1057,7 @@ async fn gc_workspace<H: GcHost>(host: &H, ctx: &Ctx, ws_dir: &Path, stats: &mut
             continue;
         }
         let task_dir = ws_dir.join(entry.file_name());
-        if host.is_active_env_root(&task_dir) {
+        if host.activity().is_active_env_root(&task_dir) {
             stats.skipped += 1;
             continue;
         }
@@ -1193,7 +1192,7 @@ fn apply_gc_action<H: GcHost>(
     stats: &mut GcStats,
 ) -> i32 {
     let _release = if action != GcAction::Skip {
-        match host.reserve_env_root_for_gc(task_dir) {
+        match host.activity().reserve_env_root_for_gc(task_dir) {
             Some(release) => Some(release),
             None => {
                 stats.skipped += 1;
@@ -1262,7 +1261,7 @@ fn record_artifact_cleanup(
 async fn should_clean_task_dir<H: GcHost>(host: &H, ctx: &Ctx, task_dir: &Path) -> GcAction {
     // A task currently running on this env root must never be reclaimed —
     // not even on the done/cancelled or orphan-404 paths.
-    if host.is_active_env_root(task_dir) {
+    if host.activity().is_active_env_root(task_dir) {
         return GcAction::Skip;
     }
 
@@ -2237,7 +2236,7 @@ async fn prune_worktree_locked<H: GcHost>(host: &H, ctx: &Ctx, bare_path: &Path)
     // Agent CLIs can mutate linked-worktree refs directly, outside the
     // daemon's in-process repository gate. Do not start heavy maintenance
     // while any task is active.
-    if host.active_tasks() > 0 {
+    if host.activity().active_tasks() > 0 {
         tracing::debug!(repo = %bare_path.display(), "gc: heavy repo maintenance deferred while tasks are active");
         return;
     }
@@ -2255,7 +2254,7 @@ async fn prune_worktree_locked<H: GcHost>(host: &H, ctx: &Ctx, bare_path: &Path)
     ];
     let mut completed = true;
     for (args, timeout) in maintenance {
-        if ctx.err().is_some() || host.active_tasks() > 0 {
+        if ctx.err().is_some() || host.activity().active_tasks() > 0 {
             return;
         }
         let before = snapshot_repo_maintenance_locks(bare_path);
@@ -2519,6 +2518,106 @@ fn gc_is_bare_repo(path: &Path) -> bool {
 mod tests {
     use super::*;
 
+    struct DisabledGcHost {
+        config: GcConfig,
+        activity: Arc<DaemonActivity>,
+    }
+
+    impl GcHost for DisabledGcHost {
+        fn config(&self) -> &GcConfig {
+            &self.config
+        }
+
+        async fn get_issue_gc_check(
+            &self,
+            _ctx: &Ctx,
+            _issue_id: &str,
+        ) -> anyhow::Result<IssueGCCheckStatus> {
+            panic!("disabled GC must not query issue state")
+        }
+
+        async fn get_issue_gc_checks(
+            &self,
+            _ctx: &Ctx,
+            _workspace_id: &str,
+            _issue_ids: &[String],
+        ) -> anyhow::Result<HashMap<String, IssueGCCheckResult>> {
+            panic!("disabled GC must not query issue state")
+        }
+
+        async fn get_chat_session_gc_check(
+            &self,
+            _ctx: &Ctx,
+            _chat_session_id: &str,
+        ) -> anyhow::Result<IssueGCCheckStatus> {
+            panic!("disabled GC must not query chat state")
+        }
+
+        async fn get_autopilot_run_gc_check(
+            &self,
+            _ctx: &Ctx,
+            _autopilot_run_id: &str,
+        ) -> anyhow::Result<IssueGCCheckStatus> {
+            panic!("disabled GC must not query autopilot state")
+        }
+
+        async fn get_task_gc_check(
+            &self,
+            _ctx: &Ctx,
+            _task_id: &str,
+        ) -> anyhow::Result<IssueGCCheckStatus> {
+            panic!("disabled GC must not query task state")
+        }
+
+        fn activity(&self) -> &Arc<DaemonActivity> {
+            &self.activity
+        }
+
+        fn repo_bare_path_is_live(&self, _bare_path: &Path) -> bool {
+            panic!("disabled GC must not inspect repository liveness")
+        }
+
+        fn repo_cache_for_gc(&self) -> Option<&crate::repocache::Cache> {
+            panic!("disabled GC must not access the repository cache")
+        }
+    }
+
+    #[tokio::test]
+    async fn disabled_loop_remains_owned_until_cancelled() {
+        let host = DisabledGcHost {
+            config: GcConfig {
+                profile: String::new(),
+                workspaces_root: PathBuf::new(),
+                gc_enabled: false,
+                gc_interval: Duration::from_secs(1),
+                gc_ttl: Duration::ZERO,
+                gc_completed_task_ttl: Duration::ZERO,
+                gc_orphan_ttl: Duration::ZERO,
+                gc_artifact_ttl: Duration::ZERO,
+                gc_codex_session_ttl: Duration::ZERO,
+                gc_hermes_memory_ttl: Duration::ZERO,
+                gc_hermes_session_ttl: Duration::ZERO,
+                gc_repo_ttl: Duration::ZERO,
+                gc_repo_maintenance_enabled: false,
+                gc_artifact_patterns: Vec::new(),
+            },
+            activity: DaemonActivity::new(),
+        };
+        let ctx = Ctx::new();
+        let loop_future = gc_loop(&host, &ctx);
+        tokio::pin!(loop_future);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(10), &mut loop_future)
+                .await
+                .is_err(),
+            "disabled GC owner returned before cancellation"
+        );
+        ctx.cancel_with(CancelCause::Shutdown);
+        tokio::time::timeout(Duration::from_secs(1), &mut loop_future)
+            .await
+            .expect("disabled GC owner ignored cancellation");
+    }
+
     /// safeRelativePath contract (artifact_matcher.go:74–84): rejects empty,
     /// absolute, and upward-escaping paths; cleans the rest.
     #[test]
@@ -2566,7 +2665,11 @@ mod tests {
         std::fs::write(fresh_store.join("memory.db"), b"fresh").unwrap();
 
         let reserved = std::sync::Mutex::new(Vec::new());
-        let reserve = |path: &Path| reserved.lock().unwrap().push(path.to_path_buf());
+        let activity = DaemonActivity::new();
+        let reserve = |path: &Path| {
+            reserved.lock().unwrap().push(path.to_path_buf());
+            activity.reserve_store_for_gc(path)
+        };
         let now = Utc::now() + chrono::Duration::seconds(2);
         let (removed, bytes) =
             prune_store_tree(temp.path(), 2, Duration::from_secs(1), now, &reserve);
@@ -2585,7 +2688,9 @@ mod tests {
         std::fs::create_dir_all(&store).unwrap();
         std::fs::write(store.join("memory.db"), b"keep").unwrap();
 
-        let reserve = |_path: &Path| panic!("disabled pruning must not reserve a store");
+        let reserve = |_path: &Path| -> Option<crate::activity::StoreGcReservation> {
+            panic!("disabled pruning must not reserve a store")
+        };
         let result = prune_store_tree(temp.path(), 2, Duration::ZERO, Utc::now(), &reserve);
 
         assert_eq!(result, (0, 0));

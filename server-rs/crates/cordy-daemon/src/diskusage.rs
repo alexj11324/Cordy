@@ -11,7 +11,7 @@
 //! - `ScanDiskUsage` → [`scan_disk_usage`]
 //! - `repoCacheSize` / `ratio` / `buildTaskUsage` / `parentIDForMeta` /
 //!   `taskSize` / `ShortID` → same-named fns
-//! - `ParentStatusFetcher` → [`ParentStatusFetcher`] alias
+//! - `ParentStatusFetcher` → [`ParentStatusResolver`]
 //! - `ResolveParentStatuses` → [`resolve_parent_statuses`]
 //!
 //! Port notes:
@@ -29,15 +29,22 @@
 // and lane B wiring; silence dead-code until then.
 #![allow(dead_code)]
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use tokio_util::sync::CancellationToken;
 
 use crate::artifact_matcher::ArtifactMatcher;
+use crate::client::Client;
 use crate::execenv::execenv::{read_gc_meta, GCMetaKind, GcMeta};
 use crate::gc::{dir_size, REPOS_DIR_NAME};
 use crate::repocache::short_id;
+use crate::repocache::{CancelCause, Ctx};
+
+pub use crate::config::{artifact_patterns_from_env, resolve_workspaces_root};
 
 /// `issueGCBatchSize` (gc.go:195): same chunk size the GC loop uses so one
 /// oversized root cannot trip the server's batch cap.
@@ -45,11 +52,11 @@ pub(crate) const ISSUE_GC_BATCH_SIZE: usize = 500;
 
 /// `DiskUsageKindUnknown`: kind for task dirs whose .gc_meta.json is missing
 /// or unreadable — present on disk, but no parent record we can lock onto.
-pub(crate) const DISK_USAGE_KIND_UNKNOWN: &str = "unknown";
+pub const DISK_USAGE_KIND_UNKNOWN: &str = "unknown";
 
 /// `TaskDiskUsage`: one task workdir's footprint on disk.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct TaskDiskUsage {
+pub struct TaskDiskUsage {
     #[serde(rename = "workspace_id")]
     pub workspace_id: String,
     #[serde(rename = "workspace_short")]
@@ -76,7 +83,7 @@ pub(crate) struct TaskDiskUsage {
 
 /// `WorkspaceDiskUsage`: per-workspace footprint across all tasks.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct WorkspaceDiskUsage {
+pub struct WorkspaceDiskUsage {
     #[serde(rename = "workspace_id")]
     pub workspace_id: String,
     #[serde(rename = "workspace_short")]
@@ -97,7 +104,7 @@ pub(crate) struct WorkspaceDiskUsage {
 /// `DiskUsageReport`: full result of a single scan. Total* fields always
 /// reflect the entire scan, never the post-`--top` truncated view.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct DiskUsageReport {
+pub struct DiskUsageReport {
     #[serde(rename = "workspaces_root")]
     pub workspaces_root: String,
     #[serde(rename = "generated_at")]
@@ -130,15 +137,15 @@ pub(crate) struct DiskUsageReport {
 
 /// `DiskUsageRoot`: a workspaces root plus the profile it was derived from
 /// ("" = default root).
-#[derive(Debug, Clone, Default)]
-pub(crate) struct DiskUsageRoot {
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DiskUsageRoot {
     pub profile: String,
     pub root: String,
 }
 
 /// `RootDiskUsage`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct RootDiskUsage {
+pub struct RootDiskUsage {
     #[serde(default)]
     pub profile: String,
     pub report: DiskUsageReport,
@@ -147,7 +154,7 @@ pub(crate) struct RootDiskUsage {
 /// `AggregateDiskUsageReport`: result of scanning several roots in one pass;
 /// grand totals across every root's FULL scan.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub(crate) struct AggregateDiskUsageReport {
+pub struct AggregateDiskUsageReport {
     #[serde(rename = "generated_at")]
     pub generated_at: chrono::DateTime<chrono::Utc>,
     #[serde(rename = "artifact_patterns")]
@@ -209,7 +216,7 @@ fn repo_cache_size(repos_root: &str) -> (i64, usize) {
 /// `ScanDiskUsageRoots` (diskusage.go:112): scans every root in order and
 /// returns the combined report. A missing root yields an empty per-root report
 /// (not an error); a genuinely unreadable root aborts the whole scan.
-pub(crate) fn scan_disk_usage_roots(
+pub fn scan_disk_usage_roots(
     roots: &[DiskUsageRoot],
     artifact_patterns: &[String],
 ) -> anyhow::Result<AggregateDiskUsageReport> {
@@ -246,7 +253,7 @@ pub(crate) fn scan_disk_usage_roots(
 /// what the GC would actually reclaim (.git counts toward the total but not
 /// artifacts). Missing roots return an empty report, not an error. Purely
 /// local: parent_status stays empty until resolve_parent_statuses runs.
-pub(crate) fn scan_disk_usage(
+pub fn scan_disk_usage(
     workspaces_root: &str,
     artifact_patterns: &[String],
 ) -> anyhow::Result<DiskUsageReport> {
@@ -506,24 +513,72 @@ fn absolute(path: &Path) -> anyhow::Result<PathBuf> {
     Ok(cwd.join(path))
 }
 
+/// Resolves issue statuses without leaking the daemon's internal repository
+/// context into a CLI or embedding caller.
+#[async_trait]
+pub trait ParentStatusResolver: Send + Sync {
+    async fn fetch_parent_statuses(
+        &self,
+        cancellation: &CancellationToken,
+        workspace_id: &str,
+        issue_ids: &[String],
+    ) -> anyhow::Result<HashMap<String, String>>;
+}
+
+/// Adapter over the daemon HTTP client. The client keeps its existing batch →
+/// legacy fallback and request/error taxonomy; this boundary only translates
+/// the public cancellation token into the internal request context.
+pub struct ClientParentStatusResolver {
+    client: Arc<Client>,
+}
+
+impl ClientParentStatusResolver {
+    pub fn new(client: Arc<Client>) -> Self {
+        Self { client }
+    }
+}
+
+#[async_trait]
+impl ParentStatusResolver for ClientParentStatusResolver {
+    async fn fetch_parent_statuses(
+        &self,
+        cancellation: &CancellationToken,
+        workspace_id: &str,
+        issue_ids: &[String],
+    ) -> anyhow::Result<HashMap<String, String>> {
+        let ctx = Ctx::new();
+        if cancellation.is_cancelled() {
+            ctx.cancel_with(CancelCause::Cancelled);
+        }
+        let result = tokio::select! {
+            result = self.client.get_issue_gc_checks(&ctx, workspace_id, issue_ids) => result,
+            () = cancellation.cancelled() => {
+                ctx.cancel_with(CancelCause::Cancelled);
+                Err(anyhow::anyhow!("context canceled"))
+            }
+        };
+        result.map(|results| {
+            results
+                .into_iter()
+                .filter_map(|(issue_id, result)| {
+                    (result.err.is_none() && result.found).then_some((issue_id, result.status))
+                })
+                .collect()
+        })
+    }
+}
+
 /// `ResolveParentStatuses` (diskusage.go:376): fills ParentStatus on every
 /// issue-kind task via batch fetches. Best-effort: a failed workspace leaves
 /// its tasks unresolved and its error returned while other workspaces still
 /// fill in.
-pub(crate) async fn resolve_parent_statuses<F>(
-    ctx: &crate::repocache::Ctx,
+pub async fn resolve_parent_statuses<R>(
+    cancellation: &CancellationToken,
     report: &mut DiskUsageReport,
-    fetch: F,
+    resolver: &R,
 ) -> anyhow::Result<()>
 where
-    F: for<'a> Fn(
-        &'a crate::repocache::Ctx,
-        &'a str,
-        &'a [String],
-    ) -> futures_util::future::BoxFuture<
-        'a,
-        anyhow::Result<std::collections::HashMap<String, String>>,
-    >,
+    R: ParentStatusResolver + ?Sized,
 {
     let mut ids_by_ws: BTreeMap<String, Vec<String>> = BTreeMap::new();
     let mut seen: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
@@ -553,7 +608,10 @@ where
     for (workspace_id, ids) in ids_by_ws {
         let mut resolved = std::collections::HashMap::with_capacity(ids.len());
         for chunk in ids.chunks(ISSUE_GC_BATCH_SIZE) {
-            match fetch(ctx, &workspace_id, chunk).await {
+            match resolver
+                .fetch_parent_statuses(cancellation, &workspace_id, chunk)
+                .await
+            {
                 Err(err) => {
                     if first_err.is_none() {
                         first_err = Some(err);
@@ -579,5 +637,121 @@ where
     match first_err {
         Some(err) => Err(err),
         None => Ok(()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct FakeParentStatusResolver;
+
+    #[async_trait]
+    impl ParentStatusResolver for FakeParentStatusResolver {
+        async fn fetch_parent_statuses(
+            &self,
+            cancellation: &CancellationToken,
+            workspace_id: &str,
+            issue_ids: &[String],
+        ) -> anyhow::Result<HashMap<String, String>> {
+            if cancellation.is_cancelled() || workspace_id == "workspace-error" {
+                anyhow::bail!("parent status lookup unavailable")
+            }
+            Ok(issue_ids
+                .iter()
+                .map(|id| (id.clone(), "in_progress".to_string()))
+                .collect())
+        }
+    }
+
+    #[test]
+    fn report_dto_serializes_go_field_names_without_runtime_paths() {
+        let report = DiskUsageReport {
+            workspaces_root: "/tmp/workspaces".to_string(),
+            total_task_count: 1,
+            total_size_bytes: 12,
+            ..Default::default()
+        };
+        let json = serde_json::to_value(report).expect("disk usage JSON");
+        assert_eq!(json["workspaces_root"], "/tmp/workspaces");
+        assert_eq!(json["total_task_count"], 1);
+        assert!(json.get("totalTaskCount").is_none());
+    }
+
+    #[test]
+    fn root_and_scan_boundaries_are_typed_and_fail_closed() {
+        let root = DiskUsageRoot {
+            profile: "staging".to_string(),
+            root: "/tmp/staging-workspaces".to_string(),
+        };
+        let encoded = serde_json::to_value(&root).expect("root JSON");
+        assert_eq!(encoded["profile"], "staging");
+        assert_eq!(encoded["root"], "/tmp/staging-workspaces");
+        assert!(scan_disk_usage("", &[]).is_err());
+        let missing = scan_disk_usage("/path/that/does/not/exist", &["node_modules".into()])
+            .expect("missing roots are empty reports");
+        assert_eq!(missing.total_task_count, 0);
+        assert_eq!(missing.artifact_patterns, vec!["node_modules"]);
+        let resolved = resolve_workspaces_root("staging", "relative-root")
+            .expect("relative override is made absolute");
+        assert!(Path::new(&resolved).is_absolute());
+    }
+
+    #[tokio::test]
+    async fn parent_status_resolution_deduplicates_and_keeps_best_effort_results() {
+        let mut report = DiskUsageReport {
+            tasks: vec![
+                TaskDiskUsage {
+                    workspace_id: "workspace-ok".into(),
+                    kind: "issue".into(),
+                    parent_id: "issue-1".into(),
+                    ..Default::default()
+                },
+                TaskDiskUsage {
+                    workspace_id: "workspace-ok".into(),
+                    kind: "issue".into(),
+                    parent_id: "issue-1".into(),
+                    ..Default::default()
+                },
+                TaskDiskUsage {
+                    workspace_id: "workspace-error".into(),
+                    kind: "issue".into(),
+                    parent_id: "issue-2".into(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let error = resolve_parent_statuses(
+            &CancellationToken::new(),
+            &mut report,
+            &FakeParentStatusResolver,
+        )
+        .await
+        .expect_err("one workspace failure is reported");
+        assert!(error.to_string().contains("unavailable"));
+        assert_eq!(report.tasks[0].parent_status, "in_progress");
+        assert_eq!(report.tasks[1].parent_status, "in_progress");
+        assert!(report.tasks[2].parent_status.is_empty());
+    }
+
+    #[tokio::test]
+    async fn parent_status_resolution_honors_cancellation() {
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+        let mut report = DiskUsageReport {
+            tasks: vec![TaskDiskUsage {
+                workspace_id: "workspace-ok".into(),
+                kind: "issue".into(),
+                parent_id: "issue-1".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let error = resolve_parent_statuses(&cancellation, &mut report, &FakeParentStatusResolver)
+            .await
+            .expect_err("cancelled lookup is surfaced");
+        assert!(error.to_string().contains("unavailable"));
+        assert!(report.tasks[0].parent_status.is_empty());
     }
 }

@@ -1,21 +1,22 @@
 //! Durable PostgreSQL-backed Autopilot webhook delivery worker.
 
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
-use cordy_db::models::{AutopilotTrigger, WebhookDelivery};
+use cordy_db::models::WebhookDelivery;
 use cordy_db::queries::{autopilot, webhook_delivery};
 use cordy_service::autopilot::{AutopilotQuotaExceededError, AutopilotService};
-use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::Notify;
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 const MAX_ATTEMPTS: i32 = 5;
 const CONCURRENCY: usize = 4;
+pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The queue and lease live in PostgreSQL. `Notify` is only a latency hint;
 /// polling recovers rows after process restarts or missed local notifications.
@@ -23,6 +24,8 @@ pub struct WebhookDeliveryWorker {
     pool: sqlx::PgPool,
     autopilots: Arc<AutopilotService>,
     notify: Arc<Notify>,
+    rate_limit: crate::webhook_rate_limit::SlidingWindowGate,
+    metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
 }
 
 impl WebhookDeliveryWorker {
@@ -30,37 +33,56 @@ impl WebhookDeliveryWorker {
         pool: sqlx::PgPool,
         autopilots: Arc<AutopilotService>,
         notify: Arc<Notify>,
+        rate_limit: crate::webhook_rate_limit::SlidingWindowGate,
+        metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     ) -> Arc<Self> {
         Arc::new(Self {
             pool,
             autopilots,
             notify,
+            rate_limit,
+            metrics,
         })
     }
 
-    pub fn start(self: Arc<Self>) {
-        tokio::spawn(async move {
-            let mut workers = tokio::task::JoinSet::new();
-            for _ in 0..CONCURRENCY {
-                let worker = self.clone();
-                workers.spawn(async move { worker.run_loop().await });
-            }
-            while let Some(result) = workers.join_next().await {
-                if let Err(error) = result {
-                    tracing::error!(%error, "webhook delivery worker stopped unexpectedly");
-                }
-            }
-        });
+    /// Starts an owned supervisor. Its JoinSet owns all four workers, so
+    /// aborting the supervisor cannot leave detached delivery loops behind.
+    pub fn start(self: Arc<Self>, cancel: CancellationToken) -> WebhookDeliveryRuntime {
+        let task_cancel = cancel.clone();
+        let task = tokio::spawn(async move { self.run_workers(task_cancel).await });
+        WebhookDeliveryRuntime {
+            cancel,
+            task: Some(task),
+        }
     }
 
-    async fn run_loop(&self) {
+    async fn run_workers(self: Arc<Self>, cancel: CancellationToken) {
+        let mut workers = tokio::task::JoinSet::new();
+        for _ in 0..CONCURRENCY {
+            let worker = self.clone();
+            let worker_cancel = cancel.child_token();
+            workers.spawn(async move { worker.run_loop(worker_cancel).await });
+        }
+        while let Some(result) = workers.join_next().await {
+            if let Err(error) = result {
+                tracing::error!(%error, "webhook delivery worker stopped unexpectedly");
+            }
+        }
+    }
+
+    async fn run_loop(&self, cancel: CancellationToken) {
         loop {
-            match self.process_next().await {
+            let processed = tokio::select! {
+                _ = cancel.cancelled() => return,
+                result = self.process_next() => result,
+            };
+            match processed {
                 Ok(true) => continue,
                 Ok(false) => {}
                 Err(error) => tracing::error!(%error, "webhook worker failed to process delivery"),
             }
             tokio::select! {
+                _ = cancel.cancelled() => return,
                 () = self.notify.notified() => {},
                 () = tokio::time::sleep(POLL_INTERVAL) => {},
             }
@@ -75,6 +97,50 @@ impl WebhookDeliveryWorker {
         let Some(lease_token) = delivery.lease_token else {
             anyhow::bail!("claimed webhook delivery has no lease token");
         };
+
+        // Ingress persists before returning its authentication response. If
+        // that terminal update failed, the durable row can still be queued;
+        // never dispatch a payload already classified as unauthenticated.
+        if matches!(delivery.signature_status.as_str(), "missing" | "invalid") {
+            let reason = if delivery.signature_status == "missing" {
+                "missing_signature"
+            } else {
+                "invalid_signature"
+            };
+            self.complete(
+                &delivery,
+                lease_token,
+                "rejected",
+                None,
+                Some(reason),
+                Some(reason),
+            )
+            .await?;
+            return Ok(true);
+        }
+
+        let cancel = CancellationToken::new();
+        if let crate::webhook_rate_limit::GateDecision::Limited { retry_after } = self
+            .rate_limit
+            .allow(&delivery.trigger_id.to_string(), &cancel)
+            .await
+        {
+            if let Some(metrics) = self.metrics.as_deref() {
+                metrics.record_webhook_rate_limited("worker_trigger");
+            }
+            let available_at = Utc::now()
+                + chrono::Duration::from_std(retry_after.max(Duration::from_secs(1)))
+                    .expect("webhook retry delay fits chrono");
+            let _ = webhook_delivery::defer_claimed_webhook_delivery(
+                &self.pool,
+                delivery.id,
+                lease_token,
+                Some(available_at),
+            )
+            .await?;
+            tracing::warn!("autopilot webhook worker rate limited");
+            return Ok(true);
+        }
 
         let trigger = match autopilot::get_autopilot_trigger(&self.pool, delivery.trigger_id).await
         {
@@ -158,7 +224,10 @@ impl WebhookDeliveryWorker {
                 Some("autopilot_archived")
             } else if autopilot_row.status != "active" {
                 Some("autopilot_paused")
-            } else if !event_allowed(&trigger, &envelope) {
+            } else if !crate::autopilot_webhook::event_allowed(
+                trigger.event_filters.as_ref(),
+                &envelope,
+            ) {
                 Some("event_filtered")
             } else {
                 None
@@ -286,6 +355,48 @@ impl WebhookDeliveryWorker {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WebhookShutdownOutcome {
+    Stopped,
+    Panicked,
+    TimedOut,
+}
+
+/// Production-owned root for the webhook delivery supervisor and its worker
+/// JoinSet. Drop is a fail-safe abort; normal shutdown is cooperative/bounded.
+pub struct WebhookDeliveryRuntime {
+    cancel: CancellationToken,
+    task: Option<JoinHandle<()>>,
+}
+
+impl WebhookDeliveryRuntime {
+    pub async fn shutdown(mut self, timeout: Duration) -> WebhookShutdownOutcome {
+        self.cancel.cancel();
+        let mut task = self
+            .task
+            .take()
+            .expect("webhook delivery runtime always owns a supervisor");
+        match tokio::time::timeout(timeout, &mut task).await {
+            Ok(Ok(())) => WebhookShutdownOutcome::Stopped,
+            Ok(Err(_)) => WebhookShutdownOutcome::Panicked,
+            Err(_) => {
+                task.abort();
+                let _ = task.await;
+                WebhookShutdownOutcome::TimedOut
+            }
+        }
+    }
+}
+
+impl Drop for WebhookDeliveryRuntime {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
+}
+
 fn normalize_stored_payload(delivery: &WebhookDelivery) -> Result<Value, &'static str> {
     let raw = delivery.raw_body.as_deref().ok_or("empty body")?;
     let raw = raw.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(raw);
@@ -293,13 +404,11 @@ fn normalize_stored_payload(delivery: &WebhookDelivery) -> Result<Value, &'stati
     if !matches!(body, Value::Object(_) | Value::Array(_)) {
         return Err("body must be a JSON object or array");
     }
-    let event = body
-        .as_object()
-        .and_then(|object| object.get("event"))
-        .and_then(Value::as_str)
-        .filter(|event| !event.is_empty())
-        .unwrap_or(&delivery.event)
-        .to_string();
+    // `delivery.event` is the normalized provider-aware value computed by
+    // ingress (for example `github.pull_request.opened`). It is authoritative
+    // during recovery; rebuilding from the raw body alone loses header-derived
+    // identity after a crash.
+    let event = delivery.event.clone();
     let payload = body
         .as_object()
         .and_then(|object| object.get("eventPayload"))
@@ -318,116 +427,4 @@ fn normalize_stored_payload(delivery: &WebhookDelivery) -> Result<Value, &'stati
             "contentType": delivery.content_type,
         }
     }))
-}
-
-#[derive(Debug, Deserialize)]
-struct EventFilter {
-    event: String,
-    #[serde(default)]
-    actions: Vec<String>,
-}
-
-fn event_allowed(trigger: &AutopilotTrigger, envelope: &Value) -> bool {
-    let Some(raw) = trigger.event_filters.as_ref() else {
-        return true;
-    };
-    let Ok(filters) = serde_json::from_value::<Vec<EventFilter>>(raw.clone()) else {
-        tracing::warn!(trigger_id = %trigger.id, "webhook trigger has malformed event filters");
-        return false;
-    };
-    if filters.is_empty() {
-        return true;
-    }
-    let event = envelope
-        .get("event")
-        .and_then(Value::as_str)
-        .unwrap_or_default();
-    let (name, suffix) = split_event(event);
-    let payload = envelope.get("eventPayload").unwrap_or(&Value::Null);
-    let mut candidates = HashSet::new();
-    if !suffix.is_empty() {
-        candidates.insert(suffix.to_string());
-    }
-    if let Some(object) = payload.as_object() {
-        for field in ["action", "state", "conclusion", "status"] {
-            if let Some(value) = object
-                .get(field)
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-            {
-                candidates.insert(value.to_string());
-            }
-        }
-    }
-    filters.into_iter().any(|filter| {
-        filter.event == name
-            && (filter.actions.is_empty()
-                || filter
-                    .actions
-                    .iter()
-                    .any(|action| candidates.contains(action)))
-    })
-}
-
-fn split_event(event: &str) -> (&str, &str) {
-    let mut parts = event.split('.');
-    let first = parts.next().unwrap_or_default();
-    let second = parts.next();
-    if matches!(first, "github" | "gitlab" | "bitbucket" | "gitea") {
-        let name = second.unwrap_or_default();
-        let offset = first.len() + usize::from(second.is_some()) + name.len();
-        return (
-            name,
-            event
-                .get(offset + usize::from(offset < event.len())..)
-                .unwrap_or_default(),
-        );
-    }
-    let suffix = second
-        .and_then(|_| event.get(first.len() + 1..))
-        .unwrap_or_default();
-    (first, suffix)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn split_event_preserves_multi_segment_action() {
-        assert_eq!(
-            split_event("github.workflow_run.completed.success"),
-            ("workflow_run", "completed.success")
-        );
-        assert_eq!(split_event("deploy.finished"), ("deploy", "finished"));
-    }
-
-    #[test]
-    fn filters_consider_payload_action() {
-        let now = Utc::now();
-        let trigger = AutopilotTrigger {
-            id: Uuid::new_v4(),
-            autopilot_id: Uuid::new_v4(),
-            kind: "webhook".into(),
-            enabled: true,
-            cron_expression: None,
-            timezone: None,
-            next_run_at: None,
-            webhook_token: None,
-            label: None,
-            last_fired_at: None,
-            created_at: now,
-            updated_at: now,
-            provider: "github".into(),
-            signing_secret: None,
-            event_filters: Some(json!([{"event":"pull_request","actions":["opened"]}])),
-            published_by_type: None,
-            published_by_id: None,
-        };
-        assert!(event_allowed(
-            &trigger,
-            &json!({"event":"github.pull_request","eventPayload":{"action":"opened"}})
-        ));
-    }
 }

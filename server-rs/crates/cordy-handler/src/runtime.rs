@@ -4,10 +4,10 @@ use axum::body::Bytes;
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, patch};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use cordy_db::models::{AgentRuntime, Member};
-use cordy_db::queries::runtime;
+use cordy_db::queries::{agent, runtime, runtime_profile};
 use cordy_middleware::workspace::WorkspaceContext;
 use cordy_protocol::EVENT_DAEMON_REGISTER;
 use serde::{Deserialize, Serialize};
@@ -25,6 +25,301 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/runtimes/", get(list))
         .route("/api/runtimes/{runtime_id}", patch(update))
         .route("/api/runtimes/{runtime_id}/", patch(update))
+        .route("/api/runtimes/{runtime_id}", delete(delete_runtime))
+        .route(
+            "/api/runtimes/{runtime_id}/unbind-agents-and-delete",
+            post(delete_runtime_confirmed),
+        )
+        // Compatibility boundary for installed clients. It deliberately runs
+        // the current unbind semantics; no user agent is archived or deleted.
+        .route(
+            "/api/runtimes/{runtime_id}/archive-agents-and-delete",
+            post(delete_runtime_confirmed),
+        )
+}
+
+fn runtime_profile_conflict() -> Response {
+    (
+        StatusCode::CONFLICT,
+        Json(json!({
+            "error": "cannot delete a custom runtime instance directly; delete its runtime profile instead.",
+            "code": "runtime_profile_instance_delete_unsupported"
+        })),
+    )
+        .into_response()
+}
+
+fn redact_gateway_token(mut config: Value) -> Value {
+    let has_token = config
+        .get_mut("gateway")
+        .and_then(Value::as_object_mut)
+        .and_then(|gateway| gateway.get_mut("token"))
+        .and_then(|value| value.as_str())
+        .filter(|token| !token.is_empty())
+        .is_some();
+    if has_token {
+        config["gateway"]["token"] = Value::String("***".into());
+    }
+    config
+}
+
+fn safe_agent_response(state: &HandlerState, agent: &cordy_db::models::Agent) -> Value {
+    let env_count = agent.custom_env.as_object().map_or(0, serde_json::Map::len);
+    let runtime_id = agent
+        .runtime_id
+        .map(|id| id.to_string())
+        .unwrap_or_default();
+    json!({
+        "id": agent.id,
+        "workspace_id": agent.workspace_id,
+        "runtime_id": runtime_id,
+        "runtime_bound": agent.runtime_id.is_some(),
+        "name": agent.name,
+        "description": agent.description,
+        "instructions": agent.instructions,
+        "system_key": agent.system_key,
+        "avatar_url": agent.avatar_url.as_deref().map(|raw| crate::avatar::resolve_url(state, raw)),
+        "runtime_mode": agent.runtime_mode,
+        "runtime_config": redact_gateway_token(agent.runtime_config.clone()),
+        "custom_args": agent.custom_args,
+        "mcp_config": Value::Null,
+        "mcp_config_redacted": agent.mcp_config.is_some(),
+        "has_custom_env": env_count > 0,
+        "custom_env_key_count": env_count,
+        "visibility": agent.visibility,
+        "permission_mode": agent.permission_mode,
+        "invocation_targets": [],
+        "status": agent.status,
+        "max_concurrent_tasks": agent.max_concurrent_tasks,
+        "model": agent.model.as_deref().unwrap_or_default(),
+        "thinking_level": agent.thinking_level.as_deref().unwrap_or_default(),
+        "service_tier": agent.service_tier.as_deref().unwrap_or_default(),
+        "composio_toolkit_allowlist": Value::Null,
+        "composio_toolkit_allowlist_redacted": agent.composio_toolkit_allowlist.is_some(),
+        "owner_id": agent.owner_id,
+        "skills": [],
+        "disabled_runtime_skills": agent.disabled_runtime_skills,
+        "created_at": crate::timefmt::rfc3339(agent.created_at),
+        "updated_at": crate::timefmt::rfc3339(agent.updated_at),
+        "archived_at": agent.archived_at.map(crate::timefmt::rfc3339),
+        "archived_by": agent.archived_by,
+    })
+}
+
+fn active_agents_conflict(
+    state: &HandlerState,
+    agents: &[cordy_db::models::Agent],
+    plan_changed: bool,
+) -> Response {
+    let (message, code) = if plan_changed {
+        (
+            "the active agent set changed; please review and confirm again.",
+            "runtime_delete_plan_changed",
+        )
+    } else {
+        (
+            "cannot delete runtime: it has active agents bound to it. Reassign them or confirm unbinding them first.",
+            "runtime_has_active_agents",
+        )
+    };
+    (
+        StatusCode::CONFLICT,
+        Json(json!({
+            "error": message,
+            "code": code,
+            "active_agents": agents.iter().map(|agent| safe_agent_response(state, agent)).collect::<Vec<_>>()
+        })),
+    )
+        .into_response()
+}
+
+async fn load_deletable_runtime(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    raw_id: &str,
+) -> Result<AgentRuntime, Response> {
+    let runtime_id = Uuid::parse_str(raw_id)
+        .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"))?;
+    let found = runtime::get_agent_runtime(&state.pool, runtime_id)
+        .await
+        .ok()
+        .flatten()
+        .ok_or_else(|| error_response(StatusCode::NOT_FOUND, "runtime not found"))?;
+    if found.workspace_id != context.member.workspace_id {
+        return Err(error_response(StatusCode::NOT_FOUND, "runtime not found"));
+    }
+    if !can_edit(&context.member, &found) {
+        return Err(error_response(
+            StatusCode::FORBIDDEN,
+            "you can only delete your own runtimes",
+        ));
+    }
+    if let Some(profile_id) = found.profile_id {
+        match runtime_profile::get_runtime_profile_for_workspace(
+            &state.pool,
+            profile_id,
+            found.workspace_id,
+        )
+        .await
+        {
+            Ok(Some(_)) => return Err(runtime_profile_conflict()),
+            Ok(None) => {
+                tracing::warn!(%runtime_id, %profile_id, "deleting orphaned profile runtime")
+            }
+            Err(_) => {
+                return Err(error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to check runtime profile",
+                ))
+            }
+        }
+    }
+    Ok(found)
+}
+
+async fn locked_delete(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    found: &AgentRuntime,
+    expected: Option<&[Uuid]>,
+) -> Response {
+    let mut transaction = match state.pool.begin().await {
+        Ok(value) => value,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to delete runtime",
+            )
+        }
+    };
+    if runtime::lock_agent_runtime(&mut *transaction, found.id)
+        .await
+        .ok()
+        .flatten()
+        .is_none()
+        || agent::list_user_agents_by_runtime_for_update(&mut *transaction, found.id)
+            .await
+            .is_err()
+    {
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to lock runtime");
+    }
+    let active =
+        match agent::list_active_agents_by_runtime_for_update(&mut *transaction, found.id).await {
+            Ok(value) => value,
+            Err(_) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to enumerate active agents",
+                )
+            }
+        };
+    let mut current_ids = active.iter().map(|value| value.id).collect::<Vec<_>>();
+    current_ids.sort_unstable();
+    if let Some(expected) = expected {
+        let mut expected = expected.to_vec();
+        expected.sort_unstable();
+        if expected != current_ids {
+            return active_agents_conflict(state, &active, true);
+        }
+    } else if !active.is_empty() {
+        return active_agents_conflict(state, &active, false);
+    }
+    let teardown = match crate::runtime_profile::teardown_runtime(&mut transaction, found.id).await
+    {
+        Ok(value) => value,
+        Err(error) if error.to_string().contains("runtime_delete_not_drained") => {
+            return (
+                StatusCode::CONFLICT,
+                Json(json!({
+                    "error": "the runtime still has tasks in flight; retry in a moment.",
+                    "code": "runtime_delete_not_drained"
+                })),
+            )
+                .into_response()
+        }
+        Err(error) => {
+            tracing::error!(%error, runtime_id = %found.id, "runtime teardown failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to delete runtime",
+            );
+        }
+    };
+    if runtime::delete_agent_runtime(&mut *transaction, found.id)
+        .await
+        .is_err()
+        || transaction.commit().await.is_err()
+    {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to delete runtime",
+        );
+    }
+    state
+        .tasks
+        .broadcast_cancelled_tasks(&found.workspace_id.to_string(), &teardown.cancelled_tasks)
+        .await;
+    crate::runtime_profile::publish_teardown(
+        state,
+        found.workspace_id,
+        context.member.user_id,
+        &teardown,
+    );
+    Json(json!({"status": "ok"})).into_response()
+}
+
+async fn delete_runtime(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(raw_id): Path<String>,
+) -> Response {
+    let found = match load_deletable_runtime(&state, &context, &raw_id).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    match agent::list_active_agents_by_runtime(&state.pool, found.id).await {
+        Ok(active) if !active.is_empty() => return active_agents_conflict(&state, &active, false),
+        Ok(_) => {}
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to check runtime dependencies",
+            )
+        }
+    }
+    locked_delete(&state, &context, &found, None).await
+}
+
+#[derive(Deserialize)]
+struct ConfirmDeleteRequest {
+    expected_active_agent_ids: Vec<String>,
+}
+
+async fn delete_runtime_confirmed(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(raw_id): Path<String>,
+    Json(request): Json<ConfirmDeleteRequest>,
+) -> Response {
+    let mut expected = Vec::with_capacity(request.expected_active_agent_ids.len());
+    for raw in request.expected_active_agent_ids {
+        match Uuid::parse_str(&raw) {
+            Ok(id) => expected.push(id),
+            Err(_) => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "expected_active_agent_ids must be a list of valid UUIDs",
+                )
+            }
+        }
+    }
+    expected.sort_unstable();
+    expected.dedup();
+    let found = match load_deletable_runtime(&state, &context, &raw_id).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    locked_delete(&state, &context, &found, Some(&expected)).await
 }
 
 #[derive(Debug, Serialize)]
@@ -270,6 +565,40 @@ async fn update(
 mod tests {
     use super::*;
 
+    fn test_agent() -> cordy_db::models::Agent {
+        let now = chrono::Utc::now();
+        cordy_db::models::Agent {
+            archived_at: None,
+            archived_by: None,
+            avatar_url: None,
+            composio_toolkit_allowlist: Some(vec!["github".into()]),
+            created_at: now,
+            custom_args: json!(["--safe"]),
+            custom_env: json!({"SECRET": "do-not-leak"}),
+            description: "description".into(),
+            disabled_runtime_skills: json!([]),
+            id: Uuid::new_v4(),
+            instructions: "instructions".into(),
+            kind: "user".into(),
+            max_concurrent_tasks: 1,
+            mcp_config: Some(json!({"token": "do-not-leak"})),
+            model: None,
+            name: "agent".into(),
+            owner_id: Some(Uuid::new_v4()),
+            permission_mode: "private".into(),
+            runtime_config: json!({"gateway": {"token": "do-not-leak"}}),
+            runtime_id: Some(Uuid::new_v4()),
+            runtime_mode: "local".into(),
+            service_tier: None,
+            status: "active".into(),
+            system_key: None,
+            thinking_level: None,
+            updated_at: now,
+            visibility: "workspace".into(),
+            workspace_id: Uuid::new_v4(),
+        }
+    }
+
     #[test]
     fn update_decoder_matches_go_first_value_and_unknown_field_behavior() {
         let request = decode_update(
@@ -294,5 +623,18 @@ mod tests {
     fn custom_name_limit_counts_unicode_codepoints() {
         assert_eq!("机".repeat(MAX_CUSTOM_NAME_CHARS).chars().count(), 100);
         assert_eq!("机".repeat(MAX_CUSTOM_NAME_CHARS + 1).chars().count(), 101);
+    }
+
+    #[tokio::test]
+    async fn runtime_delete_conflict_never_serializes_agent_secrets() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None);
+        let response = safe_agent_response(&state, &test_agent());
+        assert!(response.get("custom_env").is_none());
+        assert_eq!(response["custom_env_key_count"], 1);
+        assert_eq!(response["mcp_config"], Value::Null);
+        assert_eq!(response["runtime_config"]["gateway"]["token"], "***");
+        assert_eq!(response["composio_toolkit_allowlist"], Value::Null);
+        assert!(!response.to_string().contains("do-not-leak"));
     }
 }

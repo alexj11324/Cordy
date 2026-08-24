@@ -1,16 +1,21 @@
 //! Human-only owner-credit billing and workspace subscription proxies.
 
+use std::collections::HashMap;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use axum::body::{Body, Bytes};
-use axum::extract::{Extension, Path, State};
-use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode, Uri};
+use axum::extract::{ConnectInfo, Extension, Path, Request, State};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::Router;
+use axum::{Router, middleware};
 use cordy_middleware::workspace::WorkspaceContext;
 use futures_util::StreamExt;
+use ipnetwork::IpNetwork;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::cloud_runtime::{
@@ -42,6 +47,162 @@ pub fn billing_router(proxy: Arc<dyn CloudRuntimeProxy>) -> Router<HandlerState>
             post(create_billing_portal),
         )
         .layer(Extension(proxy))
+}
+
+/// Public Stripe ingress. The fleet verifies Stripe's signature; this edge
+/// preserves the exact signed bytes and signature header and never attaches a
+/// Cordy user identity.
+pub fn stripe_webhook_router(proxy: Arc<dyn CloudRuntimeProxy>) -> Router<HandlerState> {
+    stripe_webhook_router_with_limiter(proxy, StripeIpLimiter::from_env())
+}
+
+fn stripe_webhook_router_with_limiter(
+    proxy: Arc<dyn CloudRuntimeProxy>,
+    limiter: StripeIpLimiter,
+) -> Router<HandlerState> {
+    Router::new()
+        .route("/api/webhooks/stripe", post(stripe_webhook))
+        .route_layer(middleware::from_fn_with_state(limiter, stripe_ip_limit))
+        .layer(Extension(proxy))
+}
+
+#[derive(Clone)]
+struct StripeIpLimiter {
+    hits: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
+    limit: usize,
+    window: Duration,
+    trusted_proxies: Vec<IpNetwork>,
+}
+
+impl StripeIpLimiter {
+    fn from_env() -> Self {
+        Self {
+            hits: Arc::new(Mutex::new(HashMap::new())),
+            limit: 30,
+            window: Duration::from_secs(60),
+            trusted_proxies: cordy_middleware::ratelimit::parse_trusted_proxies(
+                &std::env::var("RATE_LIMIT_TRUSTED_PROXIES").unwrap_or_default(),
+            ),
+        }
+    }
+
+    #[cfg(test)]
+    fn test(limit: usize) -> Self {
+        Self {
+            hits: Arc::new(Mutex::new(HashMap::new())),
+            limit,
+            window: Duration::from_secs(60),
+            trusted_proxies: Vec::new(),
+        }
+    }
+
+    async fn allow(&self, ip: &str) -> bool {
+        if self.limit == 0 || ip.is_empty() {
+            return true;
+        }
+        let now = Instant::now();
+        let cutoff = now - self.window;
+        let mut hits = self.hits.lock().await;
+        hits.retain(|_, entries| {
+            entries.retain(|seen| *seen > cutoff);
+            !entries.is_empty()
+        });
+        let entries = hits.entry(ip.to_string()).or_default();
+        if entries.len() >= self.limit {
+            return false;
+        }
+        entries.push(now);
+        true
+    }
+}
+
+fn stripe_client_ip(request: &Request, trusted_proxies: &[IpNetwork]) -> String {
+    let remote = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|info| info.0.ip());
+    if remote.is_some_and(|ip| trusted_proxies.iter().any(|network| network.contains(ip))) {
+        if let Some(forwarded) = request
+            .headers()
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok())
+        {
+            for candidate in forwarded.rsplit(',').map(str::trim) {
+                if let Ok(ip) = candidate.parse::<IpAddr>() {
+                    if !trusted_proxies.iter().any(|network| network.contains(ip)) {
+                        return ip.to_string();
+                    }
+                }
+            }
+        }
+    }
+    remote.map(|ip| ip.to_string()).unwrap_or_default()
+}
+
+async fn stripe_ip_limit(
+    State(limiter): State<StripeIpLimiter>,
+    request: Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let ip = stripe_client_ip(&request, &limiter.trusted_proxies);
+    if !limiter.allow(&ip).await {
+        return error_response(StatusCode::TOO_MANY_REQUESTS, "rate limit exceeded");
+    }
+    next.run(request).await
+}
+
+async fn stripe_webhook(
+    Extension(cloud): Extension<Arc<dyn CloudRuntimeProxy>>,
+    headers: HeaderMap,
+    body: Body,
+) -> Response {
+    if !cloud.enabled() {
+        return unavailable();
+    }
+    let Some(signature) = headers.get("stripe-signature").cloned() else {
+        return error_response(StatusCode::UNAUTHORIZED, "missing Stripe-Signature header");
+    };
+    let body = match read_raw_body(body).await {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    let mut forwarded = HeaderMap::new();
+    forwarded.insert("stripe-signature", signature);
+    if let Some(content_type) = headers.get(header::CONTENT_TYPE).cloned() {
+        forwarded.insert(header::CONTENT_TYPE, content_type);
+    }
+    let request_id = headers
+        .get("x-request-id")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+    match cloud
+        .execute(CloudRuntimeRequest {
+            method: Method::POST,
+            path: "/api/v1/webhooks/stripe".into(),
+            query: None,
+            body,
+            headers: forwarded,
+            user_id: String::new(),
+            request_id,
+        })
+        .await
+    {
+        Ok(response) => upstream_response(response),
+        Err(CloudRuntimeError::Disabled) => unavailable(),
+        Err(CloudRuntimeError::InvalidBaseUrl) => error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "cloud runtime is misconfigured",
+        ),
+        Err(CloudRuntimeError::Timeout) => error_response(
+            StatusCode::GATEWAY_TIMEOUT,
+            "cloud runtime request timed out",
+        ),
+        Err(error) => {
+            tracing::warn!(%error, "Stripe webhook proxy failed");
+            error_response(StatusCode::BAD_GATEWAY, "cloud runtime request failed")
+        }
+    }
 }
 
 /// Member-readable subscription routes. Mount behind `RequireWorkspaceMember`.
@@ -280,7 +441,7 @@ async fn create_subscription_checkout(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to build subscription request",
-            )
+            );
         }
     };
     proxy_call(
@@ -461,6 +622,23 @@ fn idempotency_headers(headers: &HeaderMap) -> HeaderMap {
 }
 
 async fn read_json_body(body: Body) -> Result<Vec<u8>, Response> {
+    let output = read_raw_body(body).await?;
+    if output.iter().all(u8::is_ascii_whitespace) {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "request body is required",
+        ));
+    }
+    if serde_json::from_slice::<serde_json::Value>(&output).is_err() {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid request body",
+        ));
+    }
+    Ok(output)
+}
+
+async fn read_raw_body(body: Body) -> Result<Vec<u8>, Response> {
     let mut stream = body.into_data_stream();
     let mut output = Vec::new();
     while let Some(chunk) = stream.next().await {
@@ -473,18 +651,6 @@ async fn read_json_body(body: Body) -> Result<Vec<u8>, Response> {
             ));
         }
         output.extend_from_slice(&chunk);
-    }
-    if output.iter().all(u8::is_ascii_whitespace) {
-        return Err(error_response(
-            StatusCode::BAD_REQUEST,
-            "request body is required",
-        ));
-    }
-    if serde_json::from_slice::<serde_json::Value>(&output).is_err() {
-        return Err(error_response(
-            StatusCode::BAD_REQUEST,
-            "invalid request body",
-        ));
     }
     Ok(output)
 }
@@ -629,15 +795,19 @@ mod tests {
     }
 
     fn test_state(flags: bool) -> HandlerState {
-        let state = HandlerState::new(
-            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
-            cordy_auth::pat_cache::PatCache::disabled(),
-            None,
-        );
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let pat_cache = cordy_auth::pat_cache::PatCache::disabled();
         if flags {
-            state.with_feature_flags(Arc::new(EnabledFlags))
+            HandlerState::new_with_production_dependencies(
+                pool,
+                pat_cache,
+                None,
+                Arc::new(cordy_analytics::NoopClient),
+                Arc::new(EnabledFlags),
+                None,
+            )
         } else {
-            state
+            HandlerState::new(pool, pat_cache, None)
         }
     }
 
@@ -674,6 +844,83 @@ mod tests {
         assert_eq!(request.query.as_deref(), Some("page=2&page_size=50"));
         assert_eq!(request.user_id, "user-1");
         assert_eq!(request.request_id, "request-1");
+    }
+
+    #[tokio::test]
+    async fn stripe_webhook_preserves_signed_bytes_and_has_no_user() {
+        let cloud = Arc::new(FakeProxy::default());
+        let body = b" {\"id\":\"evt_1\"}\n";
+        let result = stripe_webhook_router(cloud.clone())
+            .with_state(test_state(false))
+            .oneshot(
+                Request::post("/api/webhooks/stripe")
+                    .header("stripe-signature", "t=1,v1=abc")
+                    .header("content-type", "application/json; charset=utf-8")
+                    .body(Body::from(body.as_slice()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.status(), StatusCode::OK);
+        let request = cloud.request.lock().await.take().unwrap();
+        assert_eq!(request.body, body);
+        assert!(request.user_id.is_empty());
+        assert_eq!(
+            request
+                .headers
+                .get("stripe-signature")
+                .and_then(|value| value.to_str().ok()),
+            Some("t=1,v1=abc")
+        );
+    }
+
+    #[tokio::test]
+    async fn stripe_webhook_rejects_missing_signature_before_proxy() {
+        let cloud = Arc::new(FakeProxy::default());
+        let result = stripe_webhook_router(cloud.clone())
+            .with_state(test_state(false))
+            .oneshot(
+                Request::post("/api/webhooks/stripe")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.status(), StatusCode::UNAUTHORIZED);
+        assert!(cloud.request.lock().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn stripe_webhook_is_rate_limited_per_remote_ip_before_proxy() {
+        let cloud = Arc::new(FakeProxy::default());
+        let app = stripe_webhook_router_with_limiter(cloud, StripeIpLimiter::test(1))
+            .with_state(test_state(false));
+        for expected in [StatusCode::OK, StatusCode::TOO_MANY_REQUESTS] {
+            let mut request = Request::post("/api/webhooks/stripe")
+                .header("stripe-signature", "t=1,v1=abc")
+                .body(Body::from("{}"))
+                .unwrap();
+            request
+                .extensions_mut()
+                .insert(ConnectInfo(SocketAddr::from(([203, 0, 113, 7], 1234))));
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), expected);
+        }
+    }
+
+    #[tokio::test]
+    async fn stripe_limiter_evicts_expired_client_entries() {
+        let limiter = StripeIpLimiter::test(2);
+        limiter.hits.lock().await.insert(
+            "198.51.100.9".into(),
+            vec![Instant::now() - Duration::from_secs(120)],
+        );
+
+        assert!(limiter.allow("203.0.113.7").await);
+
+        let hits = limiter.hits.lock().await;
+        assert!(!hits.contains_key("198.51.100.9"));
+        assert_eq!(hits.len(), 1);
     }
 
     #[tokio::test]
@@ -714,13 +961,16 @@ mod tests {
     #[test]
     fn stripe_checkout_ids_reject_path_retargeting() {
         for id in ["cs_test/../admin", "cs?inject=1", "cs#frag"] {
-            assert!(!id
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'));
+            assert!(
+                !id.bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            );
         }
-        assert!("cs_test_abc"
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'));
+        assert!(
+            "cs_test_abc"
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        );
     }
 
     #[test]

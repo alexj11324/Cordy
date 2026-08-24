@@ -69,22 +69,12 @@ struct InvokeHookRequest {
     input: Option<Value>,
 }
 
-fn has_callback_token(headers: &HeaderMap) -> bool {
-    cordy_middleware::plugin_auth::bearer_token(headers).starts_with(CALLBACK_TOKEN_PREFIX)
-}
-
 async fn invoke_plugin_hook(
     State(state): State<HandlerState>,
     headers: HeaderMap,
     Path(key): Path<String>,
     body: Bytes,
 ) -> Response {
-    if has_callback_token(&headers) {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            "callback tokens cannot invoke plugin hooks",
-        );
-    }
     let (caller, actor) = match caller(&state, &headers, "").await {
         Ok(value) => value,
         Err(response) => return response,
@@ -449,18 +439,7 @@ WHERE id=$1 AND workspace_id=$4"#,
         );
     }
     match issue_q::get_issue_in_workspace(&state.pool, issue.id, caller.workspace_id).await {
-        Ok(Some(updated)) => {
-            crate::issue::publish_issue_updated(
-                &state,
-                &issue,
-                &updated,
-                "plugin",
-                caller.installation.id,
-                None,
-            )
-            .await;
-            Json(issue_json(&state, &updated).await).into_response()
-        }
+        Ok(Some(issue)) => Json(issue_json(&state, &issue).await).into_response(),
         _ => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to update the issue",
@@ -618,8 +597,8 @@ async fn create_comment(
     state.bus.publish(&cordy_events::Event {
         event_type: cordy_protocol::EVENT_COMMENT_CREATED.to_string(),
         workspace_id: caller.workspace_id.to_string(),
-        actor_type: "plugin".to_string(),
-        actor_id: caller.installation.id.to_string(),
+        actor_type: author_type.to_string(),
+        actor_id: author_id.to_string(),
         payload: json!({
             "comment": payload.clone(),
             "issue_title": issue.title,
@@ -794,21 +773,5 @@ mod tests {
         let actor = PluginActor { member: None };
         assert_eq!(actor.actor_type(), "plugin");
         assert_eq!(actor.user_id(), None);
-    }
-
-    #[test]
-    fn callback_tokens_cannot_reenter_hook_invocation() {
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            axum::http::header::AUTHORIZATION,
-            "Bearer mpc_callback-token".parse().unwrap(),
-        );
-        assert!(has_callback_token(&headers));
-
-        headers.insert(
-            axum::http::header::AUTHORIZATION,
-            "Bearer mpi_install-token".parse().unwrap(),
-        );
-        assert!(!has_callback_token(&headers));
     }
 }

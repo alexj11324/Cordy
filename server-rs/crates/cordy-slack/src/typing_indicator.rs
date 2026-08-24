@@ -16,6 +16,7 @@ use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use cordy_channel::RuntimeTasks;
 use cordy_db::models::ChannelInstallation;
 use cordy_db::queries::channel::get_channel_installation;
 
@@ -247,15 +248,22 @@ impl TypingIndicatorManager {
     /// Call once at boot against a fresh bus; register it before the outbound
     /// subscriber so the reaction clears ahead of the reply on chat:done (bus
     /// delivery is synchronous, in subscription order).
-    pub fn register(self: &Arc<Self>, bus: &cordy_events::Bus, decrypt: Option<DecrypterArc>) {
+    pub fn register(
+        self: &Arc<Self>,
+        bus: &cordy_events::Bus,
+        decrypt: Option<DecrypterArc>,
+        tasks: Arc<cordy_channel::RuntimeTasks>,
+    ) {
         let subscribe = {
             let me = Arc::clone(self);
             let decrypt = decrypt.clone();
+            let tasks = tasks.clone();
             move |bus: &cordy_events::Bus, event_type: &str| {
                 let me = Arc::clone(&me);
                 let decrypt = decrypt.clone();
+                let tasks = tasks.clone();
                 bus.subscribe(event_type, move |e: &cordy_events::Event| {
-                    me.handle_event(e, decrypt.as_ref());
+                    me.handle_event(e, decrypt.as_ref(), &tasks);
                 });
             }
         };
@@ -264,23 +272,31 @@ impl TypingIndicatorManager {
         subscribe(bus, cordy_protocol::EVENT_TASK_CANCELLED);
     }
 
-    fn handle_event(&self, e: &cordy_events::Event, decrypt: Option<&DecrypterArc>) {
+    fn handle_event(
+        self: &Arc<Self>,
+        e: &cordy_events::Event,
+        decrypt: Option<&DecrypterArc>,
+        tasks: &RuntimeTasks,
+    ) {
         // Issue / autopilot tasks carry no chat_session — nothing to clear.
         let Some(session_id) = chat_session_id_from_event(e) else {
             return;
         };
         // Bus delivery is synchronous; bound the reaction calls so a stuck
         // Slack HTTP request cannot wedge the publish call site.
-        let me = std::sync::Arc::new(self_clone(self));
+        let me = Arc::clone(self);
         let decrypt = decrypt.cloned();
-        tokio::spawn(async move {
+        tasks.spawn(async move {
             let ctx = tokio_util::sync::CancellationToken::new();
-            let cancel = ctx.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_secs(10)).await;
-                cancel.cancel();
-            });
-            me.clear(ctx, session_id, decrypt.as_ref()).await;
+            if tokio::time::timeout(
+                Duration::from_secs(10),
+                me.clear(ctx, session_id, decrypt.as_ref()),
+            )
+            .await
+            .is_err()
+            {
+                tracing::warn!(%session_id, "slack typing indicator clear timed out");
+            }
         });
     }
 
@@ -311,17 +327,6 @@ impl TypingIndicatorManager {
         let creds = decode_credentials(&config, decrypt.map(|d| d.as_ref()))
             .map_err(|e| anyhow::anyhow!("decode credentials: {e}"))?;
         Ok(SlackClient::new(creds.bot_token))
-    }
-}
-
-// The manager lives behind Arc at wiring time; handle_event needs an owned
-// handle for the detached clear. Cheap manual clone of the two shared fields.
-fn self_clone(m: &TypingIndicatorManager) -> TypingIndicatorManager {
-    TypingIndicatorManager {
-        pool: m.pool.clone(),
-        states: Mutex::new(HashMap::new()), // unused by clear(); state stays in the original
-                                            // SAFETY-free trick: clear() reads through the same mutex object via
-                                            // Arc below instead — see handle_event.
     }
 }
 

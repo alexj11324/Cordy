@@ -152,6 +152,12 @@ async fn get_me(State(state): State<HandlerState>, headers: HeaderMap) -> Respon
 }
 
 async fn update_me(State(state): State<HandlerState>, headers: HeaderMap, body: Bytes) -> Response {
+    if is_machine_actor_source(&headers) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "this endpoint is only available to human actors",
+        );
+    }
     let user_id = match authenticated_user_id(&headers) {
         Some(user_id) => user_id,
         None => return error_response(StatusCode::UNAUTHORIZED, "user not authenticated"),
@@ -534,6 +540,15 @@ fn authenticated_user_id(headers: &HeaderMap) -> Option<Uuid> {
         .and_then(|value| Uuid::parse_str(value).ok())
 }
 
+fn is_machine_actor_source(headers: &HeaderMap) -> bool {
+    matches!(
+        headers
+            .get("x-actor-source")
+            .and_then(|value| value.to_str().ok()),
+        Some("task_token" | "cloud_pat")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -599,6 +614,39 @@ mod tests {
             "界".repeat(MAX_PROFILE_DESCRIPTION_LEN + 1).chars().count(),
             2_001
         );
+    }
+
+    #[tokio::test]
+    async fn update_me_rejects_machine_credentials_before_database_access() {
+        let state = HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let app = router().with_state(state);
+
+        for actor_source in ["task_token", "cloud_pat"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::patch("/api/me")
+                        .header("x-user-id", "018f946a-1234-7890-abcd-1234567890ab")
+                        .header("x-actor-source", actor_source)
+                        .header("content-type", "application/json")
+                        .body(Body::from(r#"{"profile_description":"machine supplied"}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{actor_source}");
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(
+                value["error"],
+                "this endpoint is only available to human actors"
+            );
+        }
     }
 
     #[test]

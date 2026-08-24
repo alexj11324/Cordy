@@ -42,6 +42,9 @@ pub trait MediaStorage: Send + Sync {
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + '_>>;
     /// The URL a successful upload of key returns.
     fn object_url(&self, key: &str) -> String;
+    fn as_stream_storage(&self) -> Option<&dyn MediaStreamStorage> {
+        None
+    }
 }
 
 /// Optional streaming upload capability. Unknown-length HTTP bodies cannot be
@@ -258,42 +261,88 @@ impl FeishuMediaResolver {
         creds: &InstallationCredentials,
         p: DownloadResourceParams,
     ) -> anyhow::Result<DownloadedResourceStream> {
-        // The transport's buffered download wraps its bytes into a reader —
-        // the same shape Go produced via io.NopCloser(bytes.NewReader(...)).
-        let got = self.api.download_message_resource(creds.clone(), p).await?;
-        Ok(DownloadedResourceStream {
-            body: Box::new(std::io::Cursor::new(got.data)),
-            content_type: got.content_type,
-            filename: got.filename,
-            size_bytes: got.size_bytes,
-        })
+        self.api
+            .download_message_resource_stream(creds.clone(), p)
+            .await
     }
 
-    /// Buffers then uploads one resource. The transport already enforces the
-    /// 100 MiB resource cap, so buffering is bounded; the returned count is
-    /// the byte length actually transferred.
     async fn upload_resource(
         &self,
-        _ctx: CancellationToken,
+        ctx: CancellationToken,
         key: &str,
         got: DownloadedResourceStream,
         content_type: &str,
         filename: &str,
     ) -> anyhow::Result<i64> {
         let DownloadedResourceStream {
-            mut body,
+            body,
             content_type: _,
             filename: _,
-            size_bytes: _size_hint,
+            size_bytes,
         } = got;
-        let mut data = Vec::new();
-        tokio::io::AsyncReadExt::read_to_end(&mut body, &mut data).await?;
-        let n = data.len() as i64;
-        self.storage
-            .upload(key, data, content_type, filename)
-            .await?;
-        Ok(n)
+        let stream_storage = self.storage.as_stream_storage().ok_or_else(|| {
+            anyhow::anyhow!("lark media storage does not support streaming uploads")
+        })?;
+        const MAX_RESOURCE_BYTES: i64 = 100 << 20;
+        if size_bytes > 0 {
+            anyhow::ensure!(
+                size_bytes <= MAX_RESOURCE_BYTES,
+                "lark resource exceeds download limit"
+            );
+            tokio::select! {
+                _ = ctx.cancelled() => anyhow::bail!("lark media upload cancelled"),
+                result = stream_storage.upload_stream(ctx.clone(), key, body, size_bytes, content_type, filename) => result?,
+            }
+            return Ok(size_bytes);
+        }
+
+        let file = create_unlinked_media_temp()?;
+        let mut file = tokio::fs::File::from_std(file);
+        let mut limited = tokio::io::AsyncReadExt::take(body, MAX_RESOURCE_BYTES as u64 + 1);
+        let copied = tokio::select! {
+            _ = ctx.cancelled() => anyhow::bail!("lark media download cancelled"),
+            result = tokio::io::copy(&mut limited, &mut file) => result?,
+        };
+        anyhow::ensure!(
+            copied <= MAX_RESOURCE_BYTES as u64,
+            "lark resource exceeds download limit"
+        );
+        tokio::io::AsyncSeekExt::seek(&mut file, std::io::SeekFrom::Start(0)).await?;
+        let copied = copied as i64;
+        tokio::select! {
+            _ = ctx.cancelled() => anyhow::bail!("lark media upload cancelled"),
+            result = stream_storage.upload_stream(ctx.clone(), key, Box::new(file), copied, content_type, filename) => result?,
+        }
+        Ok(copied)
     }
+}
+
+fn create_unlinked_media_temp() -> anyhow::Result<std::fs::File> {
+    for _ in 0..8 {
+        let path = std::env::temp_dir().join(format!(
+            "cordy-lark-media-{:016x}.tmp",
+            rand::random::<u64>()
+        ));
+        match std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+        {
+            Ok(file) => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = file.set_permissions(std::fs::Permissions::from_mode(0o600));
+                }
+                let _ = std::fs::remove_file(path);
+                return Ok(file);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(anyhow::anyhow!("lark media temp file: {error}")),
+        }
+    }
+    anyhow::bail!("lark media temp file: could not find a free name")
 }
 
 fn log_media_warn(msg: &str, message_id: &str, message_type: &str, err: Option<&anyhow::Error>) {
@@ -641,6 +690,7 @@ fn first_non_empty(values: &[&String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
 
     struct PanicCredentials;
 
@@ -666,6 +716,53 @@ mod tests {
 
         fn object_url(&self, _key: &str) -> String {
             panic!("cancelled resolver must not derive an object URL")
+        }
+    }
+
+    #[derive(Default)]
+    struct StreamingStorage {
+        uploaded: AtomicU64,
+        declared: std::sync::Mutex<Vec<i64>>,
+    }
+
+    impl MediaStorage for StreamingStorage {
+        fn upload(
+            &self,
+            _key: &str,
+            _data: Vec<u8>,
+            _content_type: &str,
+            _filename: &str,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<()>> + Send + '_>>
+        {
+            panic!("streaming test must not use buffered upload")
+        }
+
+        fn object_url(&self, key: &str) -> String {
+            format!("https://objects.example/{key}")
+        }
+
+        fn as_stream_storage(&self) -> Option<&dyn MediaStreamStorage> {
+            Some(self)
+        }
+    }
+
+    #[async_trait]
+    impl MediaStreamStorage for StreamingStorage {
+        async fn upload_stream(
+            &self,
+            _ctx: CancellationToken,
+            _key: &str,
+            mut body: Box<dyn tokio::io::AsyncRead + Send + Unpin>,
+            size_bytes: i64,
+            _content_type: &str,
+            _filename: &str,
+        ) -> anyhow::Result<()> {
+            let mut sink = tokio::io::sink();
+            let copied = tokio::io::copy(&mut body, &mut sink).await?;
+            anyhow::ensure!(copied == size_bytes as u64, "declared size mismatch");
+            self.uploaded.store(copied, Ordering::Relaxed);
+            self.declared.lock().unwrap().push(size_bytes);
+            Ok(())
         }
     }
 
@@ -717,6 +814,36 @@ mod tests {
             )
             .await;
         assert_eq!(got.message_id, "om_cancelled");
+    }
+
+    #[tokio::test]
+    async fn unknown_length_resource_spools_then_streams_with_exact_size() {
+        let storage = Arc::new(StreamingStorage::default());
+        let resolver = FeishuMediaResolver::new(
+            Arc::new(crate::client::StubApiClient::new()),
+            Arc::new(PanicCredentials),
+            storage.clone(),
+            Arc::new(PanicLedger),
+        );
+        let got = DownloadedResourceStream {
+            body: Box::new(std::io::Cursor::new(b"streamed-body".to_vec())),
+            content_type: "application/octet-stream".into(),
+            filename: "body.bin".into(),
+            size_bytes: 0,
+        };
+        let size = resolver
+            .upload_resource(
+                CancellationToken::new(),
+                "workspaces/w/lark/object",
+                got,
+                "application/octet-stream",
+                "body.bin",
+            )
+            .await
+            .unwrap();
+        assert_eq!(size, 13);
+        assert_eq!(storage.uploaded.load(Ordering::Relaxed), 13);
+        assert_eq!(*storage.declared.lock().unwrap(), vec![13]);
     }
 
     #[test]

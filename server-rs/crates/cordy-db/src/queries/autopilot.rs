@@ -156,7 +156,7 @@ pub async fn create_autopilot_rule_version(
     autopilot_id: Uuid,
     workspace_id: Uuid,
     published_by_type: &str,
-    published_by_id: Uuid,
+    published_by_id: Option<Uuid>,
     config_summary: &serde_json::Value,
 ) -> anyhow::Result<Option<AutopilotRuleVersion>> {
     let row = sqlx::query(
@@ -1699,6 +1699,45 @@ RETURNING id, workspace_id, title, description, assignee_id, status, execution_m
         .bind(id)
         .fetch_optional(executor)
         .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(Autopilot {
+        id: row.try_get(0)?,
+        workspace_id: row.try_get(1)?,
+        title: row.try_get(2)?,
+        description: row.try_get(3)?,
+        assignee_id: row.try_get(4)?,
+        status: row.try_get(5)?,
+        execution_mode: row.try_get(6)?,
+        issue_title_template: row.try_get(7)?,
+        created_by_type: row.try_get(8)?,
+        created_by_id: row.try_get(9)?,
+        last_run_at: row.try_get(10)?,
+        created_at: row.try_get(11)?,
+        updated_at: row.try_get(12)?,
+        assignee_type: row.try_get(13)?,
+        project_id: row.try_get(14)?,
+        pause_reason: row.try_get(15)?,
+    }))
+}
+
+/// Workspace-scoped variant used by cross-tenant background sweeps. The
+/// status predicate makes retries and concurrent monitors idempotent: only
+/// the caller that transitions the row receives it back.
+pub async fn system_pause_autopilot_in_workspace(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+    workspace_id: Uuid,
+) -> anyhow::Result<Option<Autopilot>> {
+    let row = sqlx::query(
+        r#"UPDATE autopilot
+SET status = 'paused', pause_reason = NULL, updated_at = now()
+WHERE id = $1 AND workspace_id = $2 AND status = 'active'
+RETURNING id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason"#,
+    )
+    .bind(id)
+    .bind(workspace_id)
+    .fetch_optional(executor)
+    .await?;
     let Some(row) = row else { return Ok(None) };
     Ok(Some(Autopilot {
         id: row.try_get(0)?,

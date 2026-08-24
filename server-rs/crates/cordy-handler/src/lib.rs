@@ -18,6 +18,9 @@ pub mod attachment;
 pub mod attachment_storage;
 pub mod auth;
 pub mod autopilot;
+pub mod autopilot_listeners;
+pub mod autopilot_webhook;
+pub mod avatar;
 pub mod binding_redeem;
 pub mod chat_api;
 mod chat_title;
@@ -27,17 +30,21 @@ pub mod cli_token;
 pub mod client_usage;
 pub mod cloud_billing;
 pub mod cloud_runtime;
+pub mod cloudfront;
 pub mod comment;
 pub mod comment_list;
 pub mod composio;
 pub mod config;
+pub mod connectors;
 pub mod contact_sales;
 pub mod daemon;
 pub mod daemon_ws;
 pub mod dashboard;
 pub mod error;
 pub mod feedback;
+pub mod github;
 pub mod health;
+pub mod heartbeat_scheduler;
 pub mod inbox;
 pub mod invitation;
 pub mod issue;
@@ -50,6 +57,9 @@ pub mod label;
 pub mod mcp_merge;
 pub mod me;
 pub mod notification;
+mod notification_listeners;
+pub mod onboarding_shim;
+pub mod ordered_event_side_effects;
 pub mod pat;
 pub mod pending_store;
 pub mod pin;
@@ -59,9 +69,12 @@ pub mod profile_json;
 pub mod project;
 pub mod property;
 pub mod quick_action;
+pub mod realtime_forwarder;
 pub mod runtime;
+pub mod runtime_liveness;
 pub mod runtime_profile;
 pub mod runtime_requests;
+pub mod runtime_sweeper;
 pub mod runtime_usage;
 pub mod session;
 pub mod skill;
@@ -69,11 +82,14 @@ mod skill_import;
 pub mod squad;
 pub mod squad_briefing;
 pub mod state;
+mod subscriber_activity_listeners;
 pub mod task;
 pub mod task_json;
 pub mod timefmt;
+pub mod vcs;
 pub mod vcs_webhook;
 pub mod webhook_delivery_worker;
+pub mod webhook_rate_limit;
 pub mod workspace;
 pub mod workspace_mcp;
 pub mod ws;
@@ -84,7 +100,7 @@ use std::time::Duration;
 use axum::http::{header, HeaderName, HeaderValue, Method};
 use axum::routing::get;
 use axum::{middleware, Router};
-use cordy_middleware::auth::{auth_middleware, AuthState};
+use cordy_middleware::auth::{auth_middleware, AuthState, IdentityProxyTrust};
 use cordy_middleware::daemon_auth::{daemon_auth_middleware, DaemonAuthState};
 use cordy_middleware::workspace::WorkspaceGuardState;
 use cordy_realtime::hub::Hub;
@@ -138,7 +154,6 @@ fn cors_layer() -> CorsLayer {
         HeaderName::from_static("x-client-version"),
         HeaderName::from_static("x-client-os"),
         HeaderName::from_static("x-client-capabilities"),
-        HeaderName::from_static("x-request-id"),
         HeaderName::from_static("x-cordy-plugin-installation"),
     ];
     let exposed_headers = [
@@ -200,15 +215,25 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         hub.set_authorizer(Arc::new(ws::DbScopeAuthorizer::new(state.tasks.clone())));
     }
 
+    let auth_side_effects: Arc<dyn cordy_middleware::auth::AuthSideEffectSpawner> = {
+        let tasks = state.tasks.clone();
+        Arc::new(move |task| tasks.spawn_side_effect(task))
+    };
     let auth_state = AuthState {
         pool: state.pool.clone(),
         pat_cache: state.pat_cache.clone(),
+        cloud_pat_verifier: state.cloud_pat_verifier.clone(),
+        side_effects: auth_side_effects.clone(),
+        identity_proxy: IdentityProxyTrust::from_env(),
     };
     let daemon_auth_state = DaemonAuthState {
         pool: state.pool.clone(),
         pat_cache: state.pat_cache.clone(),
         daemon_cache: state.daemon_token_cache.clone(),
+        cloud_pat_verifier: state.cloud_pat_verifier.clone(),
+        side_effects: auth_side_effects,
     };
+    let cloudfront_signer = state.attachment_download.cloudfront_signer.clone();
     let public_auth = auth::public_router(
         state.auth_rate_limit.clone(),
         state.auth_verify_rate_limit.clone(),
@@ -283,6 +308,54 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
                 cordy_middleware::workspace::require_workspace,
             )),
         )
+        .merge(
+            vcs::member_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(state.pool.clone(), "id"),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            vcs::admin_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url_with_roles(
+                    state.pool.clone(),
+                    "id",
+                    vec!["owner".into(), "admin".into()],
+                ),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            github::member_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(state.pool.clone(), "id"),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            github::admin_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url_with_roles(
+                    state.pool.clone(),
+                    "id",
+                    vec!["owner".into(), "admin".into()],
+                ),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            connectors::member_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(state.pool.clone(), "id"),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            connectors::admin_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url_with_roles(
+                    state.pool.clone(),
+                    "id",
+                    vec!["owner".into(), "admin".into()],
+                ),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
         .merge(attachment::authenticated_router())
         .merge(
             agent_aggregation::router().route_layer(middleware::from_fn_with_state(
@@ -341,6 +414,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .merge(me::router())
+        .merge(onboarding_shim::router())
         .merge(
             dashboard::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
@@ -375,7 +449,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             ),
         )
         .merge(
-            cloud_billing::subscription_admin_router(cloud_runtime_proxy).route_layer(
+            cloud_billing::subscription_admin_router(cloud_runtime_proxy.clone()).route_layer(
                 middleware::from_fn_with_state(
                     WorkspaceGuardState::with_roles(
                         state.pool.clone(),
@@ -475,12 +549,16 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
                 issue::require_issue_workspace,
             )),
         )
-        .route_layer(middleware::from_fn_with_state(auth_state, auth_middleware));
+        .route_layer(middleware::from_fn_with_state(
+            cloudfront_signer,
+            cloudfront::refresh_signed_cookies,
+        ))
+        .route_layer(middleware::from_fn_with_state(
+            auth_state.clone(),
+            auth_middleware,
+        ));
     let plugin_action = plugin_action::router().route_layer(middleware::from_fn_with_state(
-        AuthState {
-            pool: state.pool.clone(),
-            pat_cache: state.pat_cache.clone(),
-        },
+        auth_state,
         cordy_middleware::plugin_auth::plugin_auth,
     ));
     let daemon = daemon::router().route_layer(middleware::from_fn_with_state(
@@ -493,17 +571,32 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .filter(|value| *value > 0)
         .unwrap_or(5);
     let contact_sales = contact_sales::router().route_layer(middleware::from_fn_with_state(
-        cordy_middleware::ratelimit::RateLimitState {
-            client: state.rate_limit_client.clone(),
-            conn: Arc::new(tokio::sync::Mutex::new(None)),
-            limit: contact_sales_limit,
-            window_secs: 60 * 60,
-            trusted_proxies: cordy_middleware::ratelimit::parse_trusted_proxies(
+        cordy_middleware::ratelimit::RateLimitState::configured(
+            state.rate_limit_client.clone(),
+            contact_sales_limit,
+            60 * 60,
+            cordy_middleware::ratelimit::parse_trusted_proxies(
                 &std::env::var("RATE_LIMIT_TRUSTED_PROXIES").unwrap_or_default(),
             ),
-        },
+        ),
         cordy_middleware::ratelimit::rate_limit,
     ));
+    // Stripe ingress gets a coarse per-IP budget before body buffering or a
+    // cloud-runtime call. Redis absence is the documented self-hosted
+    // fail-open path. Autopilot webhooks apply their separate token/IP gates
+    // inside their handler because successful and bad-credential deliveries
+    // intentionally consume different budgets.
+    let webhook_ip_limit = cordy_middleware::ratelimit::RateLimitState::configured(
+        state.rate_limit_client.clone(),
+        30,
+        60,
+        cordy_middleware::ratelimit::parse_trusted_proxies(
+            &std::env::var("RATE_LIMIT_TRUSTED_PROXIES").unwrap_or_default(),
+        ),
+    );
+    let stripe_webhooks = cloud_billing::stripe_webhook_router(cloud_runtime_proxy).route_layer(
+        middleware::from_fn_with_state(webhook_ip_limit, cordy_middleware::ratelimit::rate_limit),
+    );
 
     let http_metrics = state.http_metrics.clone();
     let app = Router::new()
@@ -512,8 +605,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(session::public_router())
         .merge(workspace::public_router())
         .merge(attachment::public_router())
+        .merge(avatar::router())
+        .merge(autopilot_webhook::router())
+        .merge(github::public_router())
         .merge(config::router())
         .merge(contact_sales)
+        .merge(stripe_webhooks)
         .merge(vcs_webhook::router())
         .merge(composio::public_router().with_state::<HandlerState>(composio_state))
         .merge(plugin_action)
@@ -1307,7 +1404,7 @@ mod tests {
                     .header("access-control-request-method", "GET")
                     .header(
                         "access-control-request-headers",
-                        "authorization,x-workspace-id,x-client-capabilities,x-request-id",
+                        "authorization,x-workspace-id,x-client-capabilities",
                     )
                     .body(Body::empty())
                     .unwrap(),

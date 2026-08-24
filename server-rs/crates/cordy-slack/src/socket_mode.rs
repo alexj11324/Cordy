@@ -11,12 +11,17 @@ use tokio_util::sync::CancellationToken;
 
 use crate::client::SlackClient;
 
-/// The subset of Socket Mode envelope types this adapter reacts to. Everything
-/// else (hello, disconnect, incoming errors) is lifecycle noise.
+const SOCKET_HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
+const SOCKET_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// The subset of Socket Mode envelope types this adapter reacts to. Disconnect
+/// requests end the stream so its owner can reconnect; hello and incoming
+/// error frames remain lifecycle noise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnvelopeKind {
     EventsApi,
     SlashCommand,
+    Disconnect,
     Other,
 }
 
@@ -29,6 +34,8 @@ pub struct Envelope {
     /// The inner payload (the Events API envelope or the slash-command form
     /// object).
     pub payload: serde_json::Value,
+    /// Slack's lifecycle reason for a disconnect control frame.
+    pub disconnect_reason: Option<String>,
     /// Whether the envelope carries an id that must be ACKed.
     pub needs_ack: bool,
 }
@@ -39,6 +46,7 @@ impl Envelope {
         let kind = match v.get("type").and_then(|t| t.as_str())? {
             "events_api" => EnvelopeKind::EventsApi,
             "slash_commands" => EnvelopeKind::SlashCommand,
+            "disconnect" => EnvelopeKind::Disconnect,
             _ => EnvelopeKind::Other,
         };
         let envelope_id = v
@@ -50,6 +58,10 @@ impl Envelope {
             kind,
             envelope_id: envelope_id.clone(),
             payload: v.get("payload").cloned().unwrap_or(serde_json::Value::Null),
+            disconnect_reason: v
+                .get("reason")
+                .and_then(|reason| reason.as_str())
+                .map(str::to_owned),
             needs_ack: !envelope_id.is_empty(),
         })
     }
@@ -60,11 +72,17 @@ impl Envelope {
         }
         Some(
             serde_json::json!({
-                "type": "ack",
                 "envelope_id": self.envelope_id,
             })
             .to_string(),
         )
+    }
+
+    fn disconnect_error(&self) -> Option<anyhow::Error> {
+        (self.kind == EnvelopeKind::Disconnect).then(|| {
+            let reason = self.disconnect_reason.as_deref().unwrap_or("unknown");
+            anyhow::anyhow!("slack: socket mode disconnect requested: {reason}")
+        })
     }
 }
 
@@ -93,10 +111,29 @@ impl SocketModeStream {
         }
         let (ws, _resp) = tokio::select! {
             _ = ctx.cancelled() => anyhow::bail!("slack: dial cancelled"),
-            r = tokio_tungstenite::connect_async(&url) => r
-                .map_err(|e| anyhow::anyhow!("slack: socket mode handshake: {e}"))?,
+            result = tokio::time::timeout(
+                SOCKET_HANDSHAKE_TIMEOUT,
+                tokio_tungstenite::connect_async(&url),
+            ) => result
+                .map_err(|_| anyhow::anyhow!(
+                    "slack: socket mode handshake timed out after {SOCKET_HANDSHAKE_TIMEOUT:?}"
+                ))?
+                .map_err(|error| anyhow::anyhow!("slack: socket mode handshake: {error}"))?,
         };
         Ok(Self { ws })
+    }
+
+    async fn send_frame(
+        &mut self,
+        frame: WsMessage,
+        operation: &'static str,
+    ) -> anyhow::Result<()> {
+        tokio::time::timeout(SOCKET_WRITE_TIMEOUT, self.ws.send(frame))
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!("slack: {operation} write timed out after {SOCKET_WRITE_TIMEOUT:?}")
+            })?
+            .map_err(|error| anyhow::anyhow!("slack: {operation} write failed: {error}"))
     }
 
     /// Runs the receive loop: decode each envelope, ACK it FIRST (Slack
@@ -125,7 +162,7 @@ impl SocketModeStream {
             let text = match msg {
                 WsMessage::Text(t) => t,
                 WsMessage::Ping(p) => {
-                    self.ws.send(WsMessage::Pong(p)).await.ok();
+                    self.send_frame(WsMessage::Pong(p), "pong").await?;
                     continue;
                 }
                 WsMessage::Pong(_) | WsMessage::Binary(_) | WsMessage::Frame(_) => continue,
@@ -138,10 +175,10 @@ impl SocketModeStream {
             };
             // ACK first, independent of handler outcome.
             if let Some(ack) = envelope.ack_frame() {
-                self.ws
-                    .send(WsMessage::Text(ack.into()))
-                    .await
-                    .map_err(|e| anyhow::anyhow!("slack: ack failed: {e}"))?;
+                self.send_frame(WsMessage::Text(ack.into()), "ack").await?;
+            }
+            if let Some(error) = envelope.disconnect_error() {
+                return Err(error);
             }
             handler(envelope).await?;
         }
@@ -170,6 +207,18 @@ mod tests {
         assert_eq!(e.kind, EnvelopeKind::SlashCommand);
         assert_eq!(e.payload["command"], "/issue");
 
+        let e = Envelope::parse(
+            r#"{"type":"disconnect","reason":"refresh_requested","debug_info":{"host":"wss-111.slack.com"}}"#,
+        )
+        .unwrap();
+        assert_eq!(e.kind, EnvelopeKind::Disconnect);
+        assert_eq!(e.disconnect_reason.as_deref(), Some("refresh_requested"));
+        assert!(!e.needs_ack);
+        assert_eq!(
+            e.disconnect_error().unwrap().to_string(),
+            "slack: socket mode disconnect requested: refresh_requested"
+        );
+
         let e = Envelope::parse(r#"{"type":"hello"}"#).unwrap();
         assert_eq!(e.kind, EnvelopeKind::Other);
         assert!(!e.needs_ack);
@@ -180,12 +229,9 @@ mod tests {
     }
 
     #[test]
-    fn ack_frame_echoes_envelope_id() {
+    fn ack_frame_echoes_only_envelope_id() {
         let e =
             Envelope::parse(r#"{"type":"events_api","envelope_id":"abc","payload":{}}"#).unwrap();
-        assert_eq!(
-            e.ack_frame().unwrap(),
-            r#"{"envelope_id":"abc","type":"ack"}"#
-        );
+        assert_eq!(e.ack_frame().unwrap(), r#"{"envelope_id":"abc"}"#);
     }
 }

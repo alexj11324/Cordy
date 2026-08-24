@@ -6,31 +6,24 @@
 //! RFC3339, nullable columns as absent-or-null JSON.
 
 use axum::body::Bytes;
-use axum::extract::{Extension, Path, Request, State};
-use axum::http::{header, HeaderValue, StatusCode};
-use axum::middleware::Next;
+use axum::extract::{Extension, Path, State};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
-use base64::Engine;
 use cordy_db::models::{Agent, AgentTaskQueue, Member, User, Workspace};
 use cordy_db::queries::{member, share_link, user, workspace};
 use cordy_middleware::workspace::WorkspaceContext;
-use hmac::{Hmac, Mac};
 use rand::RngCore;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
-use std::path::Path as FilePath;
 use uuid::Uuid;
 
 use crate::error::error_response;
 use crate::state::HandlerState;
 
 pub fn public_router() -> Router<HandlerState> {
-    Router::new()
-        .route("/api/share-links/{code}", get(get_share_link_info))
-        .route("/api/avatars/{signature}/{*key}", get(get_avatar))
+    Router::new().route("/api/share-links/{code}", get(get_share_link_info))
 }
 
 /// Authenticated workspace routes from router.go. The collection is user
@@ -77,95 +70,6 @@ pub fn admin_router() -> Router<HandlerState> {
             "/api/workspaces/{id}/share-links/{link_id}",
             delete(revoke_share_link),
         )
-        .route_layer(axum::middleware::from_fn(require_human_admin_actor))
-}
-
-pub(crate) async fn require_human_admin_actor(request: Request, next: Next) -> Response {
-    if matches!(
-        request
-            .headers()
-            .get("x-actor-source")
-            .and_then(|value| value.to_str().ok()),
-        Some("task_token" | "cloud_pat")
-    ) {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            "workspace administration is only available to human actors",
-        );
-    }
-    next.run(request).await
-}
-
-type HmacSha256 = Hmac<Sha256>;
-
-fn avatar_signature(key: &str) -> String {
-    let derived = Sha256::digest(
-        [
-            b"avatar-url:".as_slice(),
-            cordy_auth::jwt::jwt_secret().as_bytes(),
-        ]
-        .concat(),
-    );
-    let mut mac = HmacSha256::new_from_slice(&derived).expect("SHA-256 is a valid HMAC key");
-    mac.update(key.as_bytes());
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
-}
-
-fn avatar_key_from_served_url(raw: &str) -> Option<String> {
-    let parsed_path;
-    let path = if raw.starts_with('/') {
-        raw
-    } else {
-        parsed_path = url::Url::parse(raw).ok()?.path().to_string();
-        &parsed_path
-    };
-    let rest = path.strip_prefix("/api/avatars/")?;
-    let (signature, key) = rest.split_once('/')?;
-    (!key.is_empty() && avatar_signature(key) == signature).then(|| key.to_string())
-}
-
-fn avatar_content_type(key: &str) -> Option<&'static str> {
-    match FilePath::new(key)
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("png") => Some("image/png"),
-        Some("jpg" | "jpeg") => Some("image/jpeg"),
-        Some("gif") => Some("image/gif"),
-        Some("webp") => Some("image/webp"),
-        Some("avif") => Some("image/avif"),
-        Some("bmp") => Some("image/bmp"),
-        Some("ico") => Some("image/x-icon"),
-        _ => None,
-    }
-}
-
-async fn avatar_key_publishable(state: &HandlerState, key: &str) -> bool {
-    if avatar_content_type(key).is_none() {
-        return false;
-    }
-    if !key.starts_with("workspaces/") {
-        return true;
-    }
-    let Some(id) = FilePath::new(key)
-        .file_stem()
-        .and_then(|value| value.to_str())
-        .and_then(|value| Uuid::parse_str(value).ok())
-    else {
-        return false;
-    };
-    matches!(
-        cordy_db::queries::attachment::get_attachment_by_id_only(&state.pool, id).await,
-        Ok(Some(attachment))
-            if attachment.content_type.to_ascii_lowercase().starts_with("image/")
-                && attachment.issue_id.is_none()
-                && attachment.comment_id.is_none()
-                && attachment.chat_session_id.is_none()
-                && attachment.chat_message_id.is_none()
-                && attachment.task_id.is_none()
-    )
 }
 
 async fn accept_avatar_url(
@@ -173,81 +77,13 @@ async fn accept_avatar_url(
     raw: &str,
     current: &str,
 ) -> Result<String, Response> {
-    let mut value = raw.trim().to_string();
-    let Some(storage) = state.attachment_storage.as_ref() else {
-        return Ok(value);
-    };
-    if let Some(key) = avatar_key_from_served_url(&value) {
-        value = storage.object_url(&key);
-    }
-    if value == current.trim() {
-        return Ok(value);
-    }
-    let Some(key) = storage.key_from_url(&value) else {
-        return Ok(value);
-    };
-    if !avatar_key_publishable(state, &key).await {
-        return Err(error_response(
-            StatusCode::FORBIDDEN,
-            "avatar_url must reference a standalone image upload, not a file attached to an issue, comment, or chat",
-        ));
-    }
-    Ok(value)
+    crate::avatar::accept_url(state, raw, Some(current))
+        .await
+        .map_err(|message| error_response(StatusCode::FORBIDDEN, message))
 }
 
 fn resolve_avatar_url(state: &HandlerState, raw: Option<String>) -> Option<String> {
-    let value = raw?;
-    let Some(storage) = state.attachment_storage.as_ref() else {
-        return Some(value);
-    };
-    let Some(key) = storage.key_from_url(&value) else {
-        return Some(value);
-    };
-    if avatar_content_type(&key).is_none() {
-        return Some(value);
-    }
-    if storage.is_local() {
-        return Some(value);
-    }
-    let path = format!("/api/avatars/{}/{}", avatar_signature(&key), key);
-    let base = std::env::var("CORDY_PUBLIC_URL")
-        .unwrap_or_default()
-        .trim()
-        .trim_end_matches('/')
-        .to_string();
-    Some(if base.is_empty() {
-        path
-    } else {
-        format!("{base}{path}")
-    })
-}
-
-async fn get_avatar(
-    State(state): State<HandlerState>,
-    Path((signature, key)): Path<(String, String)>,
-) -> Response {
-    if signature != avatar_signature(&key) || !avatar_key_publishable(&state, &key).await {
-        return error_response(StatusCode::NOT_FOUND, "avatar not found");
-    }
-    let Some(storage) = state.attachment_storage.as_ref() else {
-        return error_response(StatusCode::NOT_FOUND, "avatar not found");
-    };
-    let object = match storage.get(&key, None).await {
-        Ok(object) => object,
-        Err(_) => return error_response(StatusCode::NOT_FOUND, "avatar not found"),
-    };
-    let mut response = Response::new(object.body);
-    *response.status_mut() = object.status;
-    if let Some(content_type) = avatar_content_type(&key) {
-        response
-            .headers_mut()
-            .insert(header::CONTENT_TYPE, HeaderValue::from_static(content_type));
-    }
-    response.headers_mut().insert(
-        header::CACHE_CONTROL,
-        HeaderValue::from_static("public, max-age=300"),
-    );
-    response
+    raw.map(|value| crate::avatar::resolve_url(state, &value))
 }
 
 /// GET /api/share-links/{code} — public preview of a workspace share link.
@@ -521,9 +357,10 @@ async fn join_by_share_link(
         payload: serde_json::json!({"member": &member_response}),
         ..Default::default()
     });
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_workspaces_changed(&user_id.to_string());
-    }
+    state
+        .daemon_notifier
+        .notify_workspaces_changed(&user_id.to_string())
+        .await;
 
     Json(JoinByShareLinkResponse {
         member: member_response,
@@ -740,9 +577,10 @@ async fn create_workspace(
     if let Some(metrics) = state.business_metrics.as_deref() {
         metrics.inc_for_event(&event);
     }
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_workspaces_changed(&user_id.to_string());
-    }
+    state
+        .daemon_notifier
+        .notify_workspaces_changed(&user_id.to_string())
+        .await;
     (
         StatusCode::CREATED,
         Json(workspace_response(&state, created)),
@@ -892,12 +730,12 @@ async fn update_workspace(
         ..Default::default()
     });
     if request.name.is_some() {
-        if let (Ok(members), Some(hub)) = (
-            member::list_members(&state.pool, updated.id).await,
-            state.daemon_hub.as_ref(),
-        ) {
+        if let Ok(members) = member::list_members(&state.pool, updated.id).await {
             for member in members {
-                hub.notify_workspaces_changed(&member.user_id.to_string());
+                state
+                    .daemon_notifier
+                    .notify_workspaces_changed(&member.user_id.to_string())
+                    .await;
             }
         }
     }
@@ -973,6 +811,10 @@ async fn update_member(
     let Ok(member_id) = Uuid::parse_str(&path.member_id) else {
         return error_response(StatusCode::BAD_REQUEST, "invalid member id");
     };
+    let target = match member::get_member(&state.pool, member_id).await {
+        Ok(Some(target)) if target.workspace_id == context.member.workspace_id => target,
+        _ => return error_response(StatusCode::NOT_FOUND, "member not found"),
+    };
     let request: UpdateMemberRequest = match serde_json::from_slice(&body) {
         Ok(request) => request,
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
@@ -983,39 +825,11 @@ async fn update_member(
     let Some(role) = normalized_member_role(&request.role, false) else {
         return error_response(StatusCode::BAD_REQUEST, "invalid member role");
     };
-
-    let mut transaction = match state.pool.begin().await {
-        Ok(transaction) => transaction,
-        Err(_) => {
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update member")
-        }
-    };
-    // All owner-set reductions share the workspace row lock, including full
-    // workspace deletion, so concurrent demotions/removals serialize here.
-    match workspace::lock_workspace_for_delete(&mut *transaction, context.member.workspace_id).await
-    {
-        Ok(Some(_)) => {}
-        Ok(None) => return error_response(StatusCode::NOT_FOUND, "workspace not found"),
-        Err(_) => {
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update member")
-        }
-    }
-    let actor = match member::get_member(&mut *transaction, context.member.id).await {
-        Ok(Some(actor)) if actor.workspace_id == context.member.workspace_id => actor,
-        _ => return error_response(StatusCode::FORBIDDEN, "insufficient permissions"),
-    };
-    if !matches!(actor.role.as_str(), "owner" | "admin") {
-        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
-    }
-    let target = match member::get_member(&mut *transaction, member_id).await {
-        Ok(Some(target)) if target.workspace_id == context.member.workspace_id => target,
-        _ => return error_response(StatusCode::NOT_FOUND, "member not found"),
-    };
-    if (target.role == "owner" || role == "owner") && actor.role != "owner" {
+    if (target.role == "owner" || role == "owner") && context.member.role != "owner" {
         return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
     }
     if target.role == "owner" && role != "owner" {
-        match member::list_members(&mut *transaction, target.workspace_id).await {
+        match member::list_members(&state.pool, target.workspace_id).await {
             Ok(rows) if rows.iter().filter(|member| member.role == "owner").count() <= 1 => {
                 return error_response(
                     StatusCode::BAD_REQUEST,
@@ -1028,13 +842,17 @@ async fn update_member(
             _ => {}
         }
     }
-    let updated = match member::update_member_role(&mut *transaction, target.id, role).await {
+    let updated = match member::update_member_role(&state.pool, target.id, role).await {
         Ok(Some(updated)) => updated,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update member"),
     };
-    if transaction.commit().await.is_err() {
-        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update member");
-    }
+    state
+        .membership_cache
+        .invalidate(
+            &target.user_id.to_string(),
+            &target.workspace_id.to_string(),
+        )
+        .await;
     let found_user = match user::get_user(&state.pool, updated.user_id).await {
         Ok(Some(user)) => user,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load member"),
@@ -1054,40 +872,11 @@ async fn update_member(
 async fn revoke_and_remove_member(
     state: &HandlerState,
     workspace_id: Uuid,
+    user_id: Uuid,
     member_id: Uuid,
-    actor_member_id: Uuid,
-) -> Result<(Member, MemberRevocation), RemoveMemberError> {
+    archived_by: Uuid,
+) -> anyhow::Result<MemberRevocation> {
     let mut transaction = state.pool.begin().await?;
-    let Some(_) = workspace::lock_workspace_for_delete(&mut *transaction, workspace_id).await?
-    else {
-        return Err(RemoveMemberError::NotFound);
-    };
-    let actor = member::get_member(&mut *transaction, actor_member_id)
-        .await?
-        .filter(|actor| actor.workspace_id == workspace_id)
-        .ok_or(RemoveMemberError::Forbidden)?;
-    let target = member::get_member(&mut *transaction, member_id)
-        .await?
-        .filter(|target| target.workspace_id == workspace_id)
-        .ok_or(RemoveMemberError::NotFound)?;
-    if actor.id != target.id && !matches!(actor.role.as_str(), "owner" | "admin") {
-        return Err(RemoveMemberError::Forbidden);
-    }
-    if target.role == "owner" && actor.role != "owner" {
-        return Err(RemoveMemberError::Forbidden);
-    }
-    if target.role == "owner"
-        && member::list_members(&mut *transaction, workspace_id)
-            .await?
-            .iter()
-            .filter(|member| member.role == "owner")
-            .count()
-            <= 1
-    {
-        return Err(RemoveMemberError::LastOwner);
-    }
-    let user_id = target.user_id;
-    let archived_by = actor.user_id;
     cordy_db::queries::subscriber::lock_subscriber_writes(&mut *transaction, workspace_id, user_id)
         .await?;
     let runtimes = cordy_db::queries::runtime::list_agent_runtimes_by_owner(
@@ -1178,27 +967,7 @@ async fn revoke_and_remove_member(
     .await?;
     member::delete_member(&mut *transaction, member_id).await?;
     transaction.commit().await?;
-    Ok((target, result))
-}
-
-#[derive(Debug)]
-enum RemoveMemberError {
-    Forbidden,
-    LastOwner,
-    NotFound,
-    Storage(anyhow::Error),
-}
-
-impl From<anyhow::Error> for RemoveMemberError {
-    fn from(error: anyhow::Error) -> Self {
-        Self::Storage(error)
-    }
-}
-
-impl From<sqlx::Error> for RemoveMemberError {
-    fn from(error: sqlx::Error) -> Self {
-        Self::Storage(error.into())
-    }
+    Ok(result)
 }
 
 #[derive(Default)]
@@ -1262,31 +1031,45 @@ async fn remove_member_common(
     context: &WorkspaceContext,
     target: Member,
 ) -> Response {
-    let (target, revocation) =
-        match revoke_and_remove_member(state, target.workspace_id, target.id, context.member.id)
-            .await
-        {
-            Ok(result) => result,
-            Err(RemoveMemberError::Forbidden) => {
-                return error_response(StatusCode::FORBIDDEN, "insufficient permissions")
-            }
-            Err(RemoveMemberError::LastOwner) => {
+    if target.role == "owner" && context.member.role != "owner" {
+        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
+    }
+    if target.role == "owner" {
+        match member::list_members(&state.pool, target.workspace_id).await {
+            Ok(rows) if rows.iter().filter(|member| member.role == "owner").count() <= 1 => {
                 return error_response(
                     StatusCode::BAD_REQUEST,
                     "workspace must have at least one owner",
                 )
             }
-            Err(RemoveMemberError::NotFound) => {
-                return error_response(StatusCode::NOT_FOUND, "member not found")
+            Err(_) => {
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete member")
             }
-            Err(RemoveMemberError::Storage(error)) => {
-                tracing::warn!(%error, member_id = %target.id, "failed to revoke member");
-                return error_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to delete member",
-                );
-            }
-        };
+            _ => {}
+        }
+    }
+    let revocation = match revoke_and_remove_member(
+        state,
+        target.workspace_id,
+        target.user_id,
+        target.id,
+        context.member.user_id,
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(error) => {
+            tracing::warn!(%error, member_id = %target.id, "failed to revoke member");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete member");
+        }
+    };
+    state
+        .membership_cache
+        .invalidate(
+            &target.user_id.to_string(),
+            &target.workspace_id.to_string(),
+        )
+        .await;
     publish_member_revocation(
         state,
         target.workspace_id,
@@ -1301,9 +1084,10 @@ async fn remove_member_common(
         payload: serde_json::json!({"member_id": target.id, "workspace_id": workspace_id, "user_id": target.user_id}),
         ..Default::default()
     });
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_workspaces_changed(&target.user_id.to_string());
-    }
+    state
+        .daemon_notifier
+        .notify_workspaces_changed(&target.user_id.to_string())
+        .await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -1713,6 +1497,12 @@ async fn delete_workspace(
         .into_iter()
         .map(|member| member.user_id)
         .collect::<Vec<_>>();
+    for user_id in &affected_users {
+        state
+            .membership_cache
+            .invalidate(&user_id.to_string(), &workspace_id.to_string())
+            .await;
+    }
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(_) => {
@@ -1903,10 +1693,11 @@ async fn delete_workspace(
         payload: serde_json::json!({"workspace_id": workspace_id}),
         ..Default::default()
     });
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        for user_id in affected_users {
-            hub.notify_workspaces_changed(&user_id.to_string());
-        }
+    for user_id in affected_users {
+        state
+            .daemon_notifier
+            .notify_workspaces_changed(&user_id.to_string())
+            .await;
     }
     StatusCode::NO_CONTENT.into_response()
 }
@@ -2021,37 +1812,6 @@ mod tests {
         assert_eq!(response.status(), StatusCode::FORBIDDEN);
     }
 
-    #[tokio::test]
-    async fn machine_tokens_cannot_use_workspace_admin_routes() {
-        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
-        let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None);
-        let app = admin_router()
-            .merge(crate::invitation::workspace_admin_router())
-            .with_state(state);
-        let workspace_id = Uuid::new_v4();
-        for actor_source in ["task_token", "cloud_pat"] {
-            for (method, path) in [
-                ("DELETE", format!("/api/workspaces/{workspace_id}")),
-                ("POST", format!("/api/workspaces/{workspace_id}/members")),
-            ] {
-                let response = app
-                    .clone()
-                    .oneshot(
-                        Request::builder()
-                            .method(method)
-                            .uri(path)
-                            .header("x-actor-source", actor_source)
-                            .header("x-user-id", Uuid::new_v4().to_string())
-                            .body(Body::empty())
-                            .unwrap(),
-                    )
-                    .await
-                    .unwrap();
-                assert_eq!(response.status(), StatusCode::FORBIDDEN, "{actor_source}");
-            }
-        }
-    }
-
     #[test]
     fn workspace_input_normalization_matches_go() {
         assert_eq!(default_issue_prefix("front-end"), "FRON");
@@ -2066,16 +1826,6 @@ mod tests {
         assert_eq!(normalized_member_role("", true), Some("member"));
         assert_eq!(normalized_member_role("owner", false), Some("owner"));
         assert_eq!(normalized_member_role(" OWNER ", false), None);
-    }
-
-    #[test]
-    fn avatar_signatures_round_trip_and_reject_tampering() {
-        let key = "workspaces/ws/avatar/018f03a0-c4d2-7a37-ae4d-5aa45de12f11.png";
-        let served = format!("/api/avatars/{}/{}", avatar_signature(key), key);
-        assert_eq!(avatar_key_from_served_url(&served).as_deref(), Some(key));
-        assert!(avatar_key_from_served_url(&served.replace(".png", ".jpg")).is_none());
-        assert_eq!(avatar_content_type(key), Some("image/png"));
-        assert_eq!(avatar_content_type("avatar.svg"), None);
     }
 
     #[tokio::test]

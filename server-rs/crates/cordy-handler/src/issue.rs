@@ -16,7 +16,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{NaiveDate, SecondsFormat};
 use cordy_db::models::{
     AgentTaskQueue, Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber,
@@ -32,7 +32,7 @@ use cordy_service::issue_service::{
     IssueCreateError, IssueCreateOpts, IssueCreateParams, IssueTriggerInput, IssueTriggerProbe,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -2299,7 +2299,7 @@ async fn record_squad_evaluated(
         issue.workspace_id,
         issue.id,
         Some("agent"),
-        actor_id,
+        Some(actor_id),
         "squad_leader_evaluated",
         &details,
         cordy_db::dbid::new_v7(),
@@ -2782,7 +2782,7 @@ async fn add_issue_reaction(
             };
             if reaction.issue_revision > 0 {
                 state.bus.publish(&cordy_events::Event {
-                    event_type: "issue:reaction_added".into(),
+                    event_type: cordy_protocol::EVENT_ISSUE_REACTION_ADDED.into(),
                     workspace_id: context.workspace_id.clone(),
                     actor_type: actor_type.into(),
                     actor_id: actor_id.to_string(),
@@ -4824,11 +4824,6 @@ RETURNING *"#,
     if attachments_changed {
         publish_issue_attachments_changed(state, &updated, &actor_type, actor_id, task_id);
     }
-    if previous.assignee_type != updated.assignee_type
-        || previous.assignee_id != updated.assignee_id
-    {
-        record_assignee_activity(state, &previous, &updated, &actor_type, actor_id).await;
-    }
     let assignee_changed = previous.assignee_type != updated.assignee_type
         || previous.assignee_id != updated.assignee_id;
     let status_changed = previous.status != updated.status;
@@ -5125,13 +5120,20 @@ async fn validate_parent(
 }
 
 async fn issue_response(state: &HandlerState, issue: Issue) -> Response {
+    Json(issue_response_projection(state, &issue).await).into_response()
+}
+
+pub(crate) async fn issue_response_projection(
+    state: &HandlerState,
+    issue: &Issue,
+) -> IssueResponse {
     let mut response =
-        IssueResponse::from_issue(&issue, &issue_prefix(state, issue.workspace_id).await);
+        IssueResponse::from_issue(issue, &issue_prefix(state, issue.workspace_id).await);
     response.status_category = Some(
         cordy_service::issue_status::effective(&state.pool, issue.workspace_id, &issue.status)
             .await,
     );
-    Json(response).into_response()
+    response
 }
 
 pub(crate) async fn mutation_actor(
@@ -5146,7 +5148,7 @@ pub(crate) async fn mutation_actor(
     }
 }
 
-pub(crate) async fn publish_issue_updated(
+async fn publish_issue_updated(
     state: &HandlerState,
     previous: &Issue,
     issue: &Issue,
@@ -5171,6 +5173,20 @@ pub(crate) async fn publish_issue_updated(
             "status_changed": previous.status != issue.status,
             "priority_changed": previous.priority != issue.priority,
             "project_changed": previous.project_id != issue.project_id,
+            "start_date_changed": previous.start_date != issue.start_date,
+            "due_date_changed": previous.due_date != issue.due_date,
+            "description_changed": previous.description != issue.description,
+            "title_changed": previous.title != issue.title,
+            "prev_title": previous.title,
+            "prev_assignee_type": previous.assignee_type,
+            "prev_assignee_id": previous.assignee_id.map(|id| id.to_string()),
+            "prev_status": previous.status,
+            "prev_priority": previous.priority,
+            "prev_start_date": previous.start_date.map(|date| date.format("%Y-%m-%d").to_string()),
+            "prev_due_date": previous.due_date.map(|date| date.format("%Y-%m-%d").to_string()),
+            "prev_description": previous.description,
+            "creator_type": previous.creator_type,
+            "creator_id": previous.creator_id.to_string(),
         }),
         task_id: task_id.map(|id| id.to_string()).unwrap_or_default(),
         chat_session_id: String::new(),
@@ -5256,35 +5272,6 @@ fn publish_issue_attachments_changed(
         task_id: task_id.map(|id| id.to_string()).unwrap_or_default(),
         chat_session_id: String::new(),
     });
-}
-
-async fn record_assignee_activity(
-    state: &HandlerState,
-    previous: &Issue,
-    issue: &Issue,
-    actor_type: &str,
-    actor_id: Uuid,
-) {
-    let details = json!({
-        "from_type": previous.assignee_type,
-        "from_id": previous.assignee_id.map(|id| id.to_string()),
-        "to_type": issue.assignee_type,
-        "to_id": issue.assignee_id.map(|id| id.to_string()),
-    });
-    if let Err(error) = cordy_db::queries::activity::create_activity(
-        &state.pool,
-        issue.workspace_id,
-        issue.id,
-        Some(actor_type),
-        actor_id,
-        "assignee_changed",
-        &details,
-        cordy_db::dbid::new_v7(),
-    )
-    .await
-    {
-        tracing::warn!(%error, issue_id = %issue.id, "failed to record assignee activity");
-    }
 }
 
 fn terminal_category(category: &str) -> bool {
@@ -5936,13 +5923,16 @@ async fn trusted_agent_task(
     context: &WorkspaceContext,
     headers: &HeaderMap,
 ) -> Option<(Uuid, Uuid)> {
-    let agent_id = header_uuid(headers, "x-agent-id")?;
-    let task_id = header_uuid(headers, "x-task-id")?;
-    let task = agent::get_agent_task(&state.pool, task_id)
-        .await
-        .ok()
-        .flatten()?;
-    if task.agent_id != agent_id {
+    let (task_id, agent_id) = authoritative_task_actor_headers(headers)?;
+    // Resolve through the workspace-scoped join before trusting the task.
+    // Callers that bind a mutation to one issue retain their stricter
+    // task.issue_id checks after this shared actor-resolution boundary.
+    let task =
+        agent::get_agent_task_in_workspace(&state.pool, task_id, context.member.workspace_id)
+            .await
+            .ok()
+            .flatten()?;
+    if !task_belongs_to_claimed_agent(task.agent_id, agent_id) {
         return None;
     }
     agent::get_agent_in_workspace(&state.pool, agent_id, context.member.workspace_id)
@@ -5951,6 +5941,24 @@ async fn trusted_agent_task(
         .flatten()
         .filter(|agent| agent.archived_at.is_none())?;
     Some((task_id, agent_id))
+}
+
+fn authoritative_task_actor_headers(headers: &HeaderMap) -> Option<(Uuid, Uuid)> {
+    if headers
+        .get("x-actor-source")
+        .and_then(|value| value.to_str().ok())
+        != Some("task_token")
+    {
+        return None;
+    }
+    Some((
+        header_uuid(headers, "x-task-id")?,
+        header_uuid(headers, "x-agent-id")?,
+    ))
+}
+
+fn task_belongs_to_claimed_agent(task_agent_id: Uuid, claimed_agent_id: Uuid) -> bool {
+    task_agent_id == claimed_agent_id
 }
 
 fn header_uuid(headers: &HeaderMap, name: &str) -> Option<Uuid> {
@@ -6588,11 +6596,7 @@ impl From<&Attachment> for AttachmentResponse {
 }
 
 fn object_or_empty(value: Value) -> Value {
-    if value.is_object() {
-        value
-    } else {
-        json!({})
-    }
+    if value.is_object() { value } else { json!({}) }
 }
 
 #[derive(Debug, Serialize)]
@@ -6944,10 +6948,15 @@ mod tests {
         };
         let mut headers = HeaderMap::new();
         headers.insert("x-agent-id", agent_id.to_string().parse().unwrap());
+        headers.insert("x-task-id", Uuid::new_v4().to_string().parse().unwrap());
+        assert!(authoritative_task_actor_headers(&headers).is_none());
         assert_eq!(request_actor(&headers, &context), ("member", user_id));
 
         headers.insert("x-actor-source", "task_token".parse().unwrap());
+        assert!(authoritative_task_actor_headers(&headers).is_some());
         assert_eq!(request_actor(&headers, &context), ("agent", agent_id));
+        assert!(task_belongs_to_claimed_agent(agent_id, agent_id));
+        assert!(!task_belongs_to_claimed_agent(Uuid::new_v4(), agent_id));
     }
 
     #[test]

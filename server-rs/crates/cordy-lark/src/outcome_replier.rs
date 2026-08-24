@@ -31,6 +31,16 @@ pub trait AgentNameLookup: Send + Sync {
     async fn get_agent_name(&self, id: Uuid) -> anyhow::Result<String>;
 }
 
+#[async_trait]
+impl AgentNameLookup for crate::channel_store::ChannelStore {
+    async fn get_agent_name(&self, id: Uuid) -> anyhow::Result<String> {
+        Ok(cordy_db::queries::agent::get_agent(self.pool(), id)
+            .await?
+            .map(|agent| agent.name)
+            .unwrap_or_default())
+    }
+}
+
 /// The safe default when Lark is wired without an outbound APIClient (stub) or
 /// without a BindingTokenService. It logs each outcome that would have
 /// produced a reply so an operator can see the gap in production logs.

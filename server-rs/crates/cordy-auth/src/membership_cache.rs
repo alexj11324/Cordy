@@ -1,7 +1,7 @@
 //! Redis-backed workspace-membership cache — port of
 //! `server/internal/auth/membership_cache.go`.
 
-use redis::aio::ConnectionManager;
+use cordy_redis::RecoveringConnection;
 
 const MEMBERSHIP_CACHE_PREFIX: &str = "mul:auth:member:";
 
@@ -26,15 +26,19 @@ pub const MEMBERSHIP_CACHE_TTL_SECS: i64 = 5 * 60;
 /// A `disabled()` cache is safe to use — every method becomes a no-op or
 /// reports a miss, and callers degrade to direct DB lookups (mirrors Go's nil
 /// `*MembershipCache`).
+#[derive(Clone)]
 pub struct MembershipCache {
-    conn: Option<ConnectionManager>,
+    conn: Option<RecoveringConnection>,
 }
 
 impl MembershipCache {
     /// Builds an active cache backed by `client`'s connection manager.
     pub async fn new(client: redis::Client) -> redis::RedisResult<Self> {
-        let conn = client.get_connection_manager().await?;
-        Ok(Self { conn: Some(conn) })
+        Ok(Self::from_connection(RecoveringConnection::new(client)))
+    }
+
+    pub fn from_connection(conn: RecoveringConnection) -> Self {
+        Self { conn: Some(conn) }
     }
 
     /// A cache that never hits — used when REDIS_URL is unset.
@@ -52,18 +56,17 @@ impl MembershipCache {
         let Some(mut conn) = self.conn.clone() else {
             return false;
         };
-        let result: Result<Option<String>, _> = redis::cmd("GET")
-            .arg(Self::key(user_id, workspace_id))
-            .query_async(&mut conn)
-            .await;
+        let result = crate::bounded_redis(
+            redis::cmd("GET")
+                .arg(Self::key(user_id, workspace_id))
+                .query_async::<Option<String>>(&mut conn),
+        )
+        .await;
         match result {
             Ok(Some(_)) => true,
             Ok(None) => false,
-            Err(e) => {
-                tracing::warn!(
-                    error = %e,
-                    "membership_cache: get failed; falling back to DB"
-                );
+            Err(error) => {
+                tracing::warn!(?error, "membership_cache: get failed; falling back to DB");
                 false
             }
         }
@@ -74,15 +77,17 @@ impl MembershipCache {
         let Some(mut conn) = self.conn.clone() else {
             return;
         };
-        let result = redis::cmd("SET")
-            .arg(Self::key(user_id, workspace_id))
-            .arg("1")
-            .arg("EX")
-            .arg(MEMBERSHIP_CACHE_TTL_SECS)
-            .query_async::<()>(&mut conn)
-            .await;
-        if let Err(e) = result {
-            tracing::warn!(error = %e, "membership_cache: set failed");
+        let result = crate::bounded_redis(
+            redis::cmd("SET")
+                .arg(Self::key(user_id, workspace_id))
+                .arg("1")
+                .arg("EX")
+                .arg(MEMBERSHIP_CACHE_TTL_SECS)
+                .query_async::<()>(&mut conn),
+        )
+        .await;
+        if let Err(error) = result {
+            tracing::warn!(?error, "membership_cache: set failed");
         }
     }
 
@@ -91,12 +96,14 @@ impl MembershipCache {
         let Some(mut conn) = self.conn.clone() else {
             return;
         };
-        let result = redis::cmd("DEL")
-            .arg(Self::key(user_id, workspace_id))
-            .query_async::<i64>(&mut conn)
-            .await;
-        if let Err(e) = result {
-            tracing::warn!(error = %e, "membership_cache: invalidate failed");
+        let result = crate::bounded_redis(
+            redis::cmd("DEL")
+                .arg(Self::key(user_id, workspace_id))
+                .query_async::<i64>(&mut conn),
+        )
+        .await;
+        if let Err(error) = result {
+            tracing::warn!(?error, "membership_cache: invalidate failed");
         }
     }
 }

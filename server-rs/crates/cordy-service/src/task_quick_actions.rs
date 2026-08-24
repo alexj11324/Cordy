@@ -31,7 +31,7 @@ pub(crate) async fn chat_quick_actions_eligible(
     task: &AgentTaskQueue,
     msg: Option<&ChatMessage>,
 ) -> bool {
-    let enabled = match svc.quick_actions() {
+    let enabled = match &svc.quick_actions {
         Some(qa) => qa.enabled(),
         None => false,
     };
@@ -158,7 +158,7 @@ impl TaskService {
     ) -> Result<(), crate::task_service::TaskServiceError> {
         use crate::task_service::TaskServiceError;
 
-        let enabled = match self.quick_actions() {
+        let enabled = match &self.quick_actions {
             Some(qa) => qa.enabled(),
             None => false,
         };
@@ -189,7 +189,8 @@ impl TaskService {
         let prompt = self.build_chat_quick_actions_prompt(task, &target).await?;
 
         let raw = self
-            .quick_actions()
+            .quick_actions
+            .as_ref()
             .expect("enabled gate checked above")
             .generate_json(
                 "",
@@ -242,7 +243,7 @@ impl TaskService {
         task: AgentTaskQueue,
         origin: ChatQuickActionsOrigin,
     ) {
-        let enabled = match self.quick_actions() {
+        let enabled = match &self.quick_actions {
             Some(qa) => qa.enabled(),
             None => false,
         };
@@ -291,7 +292,7 @@ impl TaskService {
         }
 
         let svc = Arc::clone(self);
-        tokio::spawn(async move {
+        self.spawn_side_effect(async move {
             let outcome = tokio::time::timeout(CHAT_QUICK_ACTIONS_TIMEOUT, async {
                 svc.generate_chat_quick_actions_for_task(&task, origin)
                     .await
@@ -334,7 +335,7 @@ impl TaskService {
     /// leaving it to expire would show a spinner for work that never started.
     pub fn resolve_chat_quick_actions_placeholder(self: &Arc<Self>, task: AgentTaskQueue) {
         let svc = Arc::clone(self);
-        tokio::spawn(async move {
+        self.spawn_side_effect(async move {
             if let Err(err) = supplement_chat_quick_actions(&svc, &task, "", false).await {
                 tracing::warn!(
                     task_id = %task.id,
