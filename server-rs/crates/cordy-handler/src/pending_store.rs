@@ -852,23 +852,26 @@ impl ModelListStore {
         let mut req = unmarshal_model_list(&raw)?;
         if apply_model_list_timeout(&mut req, Utc::now()) {
             self.persist_request(&req).await?;
-            let _: () = redis::cmd("ZREM")
-                .arg(model_list_pending_key(&req.runtime_id))
-                .arg(&req.id)
-                .query_async(&mut self.conn.clone())
-                .await?;
+            zrem(
+                &mut self.conn.clone(),
+                &model_list_pending_key(&req.runtime_id),
+                &req.id,
+            )
+            .await?;
         }
         Ok(Some(req))
     }
 
     async fn persist_request(&self, req: &ModelListRequest) -> anyhow::Result<()> {
         let data = marshal_model_list(req)?;
-        let (): () = redis::cmd("SET")
+        let mut conn = self.conn.clone();
+        let mut command = redis::cmd("SET");
+        command
             .arg(model_list_key(&req.id))
             .arg(data)
             .arg("EX")
-            .arg(MODEL_LIST_STORE_RETENTION_SECS)
-            .query_async(&mut self.conn.clone())
+            .arg(MODEL_LIST_STORE_RETENTION_SECS);
+        let (): () = bounded_pending_redis("persist model list", command.query_async(&mut conn))
             .await
             .map_err(|e| anyhow::anyhow!("persist model list request: {e}"))?;
         Ok(())
@@ -888,8 +891,8 @@ impl ModelListStore {
         let data = marshal_model_list(&req)?;
         let mut conn = self.conn.clone();
         let pending_key = model_list_pending_key(runtime_id);
-        let (): () = redis::pipe()
-            .cmd("SET")
+        let mut pipe = redis::pipe();
+        pipe.cmd("SET")
             .arg(model_list_key(&req.id))
             .arg(&data)
             .arg("EX")
@@ -903,8 +906,8 @@ impl ModelListStore {
             .cmd("EXPIRE")
             .arg(&pending_key)
             .arg(MODEL_LIST_STORE_RETENTION_SECS * 2)
-            .ignore()
-            .query_async(&mut conn)
+            .ignore();
+        let (): () = bounded_pending_redis("persist model list", pipe.query_async(&mut conn))
             .await
             .map_err(|e| anyhow::anyhow!("persist model list request: {e}"))?;
         Ok(req)
@@ -921,32 +924,24 @@ impl ModelListStore {
     pub async fn pop_pending(&self, runtime_id: &str) -> anyhow::Result<Option<ModelListRequest>> {
         let pending_key = model_list_pending_key(runtime_id);
         for _ in 0..POP_MAX_RETRIES {
-            let ids: Vec<String> = redis::cmd("ZRANGE")
-                .arg(&pending_key)
-                .arg(0)
-                .arg(0)
-                .query_async(&mut self.conn.clone())
-                .await
-                .map_err(|e| anyhow::anyhow!("zrange pending: {e}"))?;
+            let mut conn = self.conn.clone();
+            let mut range = redis::cmd("ZRANGE");
+            range.arg(&pending_key).arg(0).arg(0);
+            let ids: Vec<String> =
+                bounded_pending_redis("list pending model requests", range.query_async(&mut conn))
+                    .await
+                    .map_err(|e| anyhow::anyhow!("zrange pending: {e}"))?;
             let Some(id) = ids.into_iter().next() else {
                 return Ok(None);
             };
             let Some(mut req) = self.load_request(&id).await? else {
                 // Record expired but the zset still references it — drop and retry.
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             };
             if req.status != ModelListStatus::Pending {
                 // Timeout fired inside load_request or another node picked it up.
-                let _: () = redis::cmd("ZREM")
-                    .arg(&pending_key)
-                    .arg(&id)
-                    .query_async(&mut self.conn.clone())
-                    .await?;
+                zrem(&mut self.conn.clone(), &pending_key, &id).await?;
                 continue;
             }
             let now = Utc::now();
