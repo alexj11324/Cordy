@@ -59,6 +59,19 @@ impl SendersRegistry {
         self.by_key.get(&id).map(|handle| handle.value().clone())
     }
 
+    /// Returns the sender together with the non-secret routing generation
+    /// advertised to the cross-replica relay. Keeping the two in one registry
+    /// read lets the relay bind a stream copy to the exact socket generation
+    /// it resolved instead of merely to this process.
+    pub(crate) fn get_routed(&self, id: Uuid) -> Option<(Arc<WsSender>, String)> {
+        self.by_key.get(&id).map(|handle| {
+            (
+                handle.value().clone(),
+                handle.generation().epoch().to_string(),
+            )
+        })
+    }
+
     /// Snapshot of locally connected installations and their connection
     /// generations. Used by the Redis outbound relay's ownership heartbeat;
     /// sender handles never leave this process.
@@ -120,5 +133,22 @@ mod tests {
         reg.set(a, s.clone(), LeaseGeneration::standalone());
         assert!(reg.get(b).is_none());
         assert!(reg.get(a).is_some());
+    }
+
+    #[test]
+    fn routed_lookup_changes_with_generation() {
+        let reg = SendersRegistry::new();
+        let id = Uuid::now_v7();
+        let old = LeaseGeneration::standalone();
+        reg.set(id, sender(), old.clone());
+        let (_, old_route) = reg.get_routed(id).unwrap();
+        assert_eq!(old_route, old.epoch().to_string());
+
+        let new = LeaseGeneration::standalone();
+        reg.set(id, sender(), new.clone());
+        let (_, new_route) = reg.get_routed(id).unwrap();
+        assert_eq!(new_route, new.epoch().to_string());
+        assert_ne!(new_route, old_route);
+        assert!(!old.is_active());
     }
 }
