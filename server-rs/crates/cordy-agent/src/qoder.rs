@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::process::Stdio;
 use std::sync::LazyLock;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use async_trait::async_trait;
 use regex::Regex;
@@ -22,6 +22,7 @@ use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, R
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
+use crate::kimi_usage::{scan_kimi_session_usage, KimiUsageScan};
 use crate::model::{parse_acp_session_models, Catalog, CatalogCache, ModelDiscoveryCacheKey};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
@@ -61,6 +62,8 @@ static KIRO_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = Laz
         ("--trust-tools", BlockedArgMode::WithValue),
     ])
 });
+static KIMI_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
+    LazyLock::new(|| BTreeMap::from([("acp", BlockedArgMode::Standalone)]));
 static TERMINAL_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:(?:⚠️|❌|\[ERROR\]).*(?:BadRequestError|AuthenticationError|RateLimitError|HTTP \d{3}|Non-retryable|API call failed)|API call failed after \d+ retr(?:y|ies))")
         .unwrap_or_else(|error| panic!("invalid Qoder provider-error regex: {error}"))
@@ -209,6 +212,40 @@ impl Backend for KiroBackend {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct KimiConfig {
+    pub command: RuntimeCommand,
+    pub env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct KimiBackend {
+    inner: QoderBackend,
+}
+
+impl KimiBackend {
+    pub fn new(config: KimiConfig) -> Self {
+        Self {
+            inner: QoderBackend::new(QoderConfig {
+                command: config.command,
+                env: config.env,
+                default_command: "kimi".to_string(),
+                provider: "kimi".to_string(),
+                launch_args: vec!["acp".to_string()],
+                discovery_args: vec!["acp".to_string()],
+                ..QoderConfig::default()
+            }),
+        }
+    }
+}
+
+#[async_trait]
+impl Backend for KimiBackend {
+    async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
+        self.inner.execute(prompt, options).await
+    }
+}
+
 pub fn build_qoder_args(options: &ExecOptions) -> Vec<String> {
     build_session_args(&QoderConfig::default(), options)
 }
@@ -241,6 +278,19 @@ pub fn build_kiro_args(options: &ExecOptions) -> Vec<String> {
     )
 }
 
+pub fn build_kimi_args(options: &ExecOptions) -> Vec<String> {
+    build_session_args(
+        &QoderConfig {
+            provider: "kimi".to_string(),
+            launch_args: vec!["acp".to_string()],
+            discovery_args: vec!["acp".to_string()],
+            default_command: "kimi".to_string(),
+            ..QoderConfig::default()
+        },
+        options,
+    )
+}
+
 fn build_session_args(config: &QoderConfig, options: &ExecOptions) -> Vec<String> {
     let blocked = blocked_args(&config.provider);
     let mut args = config.launch_args.clone();
@@ -253,6 +303,7 @@ fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMod
     match provider {
         "traecli" => &TRAECLI_BLOCKED_ARGS,
         "kiro" => &KIRO_BLOCKED_ARGS,
+        "kimi" => &KIMI_BLOCKED_ARGS,
         _ => &BLOCKED_ARGS,
     }
 }
@@ -399,11 +450,19 @@ impl Backend for QoderBackend {
         let timeout = options.timeout;
         let cancellation = options.cancellation.clone();
         let started = Instant::now();
+        let started_at = SystemTime::now();
         let stderr_tail = SharedDiagnosticBuffer::new(DEFAULT_TAIL_BYTES);
         let prompt = prompt.to_string();
         let provider = self.config.provider.clone();
         let resume_method = self.config.resume_method.clone();
         let prompt_content_alias = self.config.prompt_content_alias;
+        let kimi_home = self.config.env.get("KIMI_CODE_HOME").cloned();
+        let resumed = !options.resume_session_id.is_empty();
+        let fallback_model = if options.model.is_empty() {
+            "unknown".to_string()
+        } else {
+            options.model.clone()
+        };
 
         tokio::spawn(async move {
             let stderr_reader = stderr_tail.clone();
@@ -467,6 +526,28 @@ impl Backend for QoderBackend {
                 {
                     outcome.status = "failed".to_string();
                     outcome.error = provider_error;
+                }
+            }
+            if provider == "kimi" && !has_token_usage(&outcome.usage) {
+                let provider_cost = outcome
+                    .usage
+                    .values()
+                    .map(|usage| usage.cost_usd_ticks)
+                    .max()
+                    .unwrap_or(0);
+                outcome.usage = scan_kimi_session_usage(KimiUsageScan {
+                    started_at,
+                    configured_home: kimi_home.as_deref(),
+                    session_id: &outcome.session_id,
+                    resumed,
+                    fallback_model: &fallback_model,
+                });
+                if provider_cost > 0 {
+                    outcome
+                        .usage
+                        .entry(fallback_model.clone())
+                        .or_default()
+                        .cost_usd_ticks = provider_cost;
                 }
             }
             if !outcome.error.is_empty() {
@@ -590,7 +671,9 @@ async fn run_protocol(
             Err(error) => return protocol_failure(&provider, &resume_method, error, String::new(), false),
         }
     };
-    let mut effective_model = if options.model.is_empty() {
+    let mut effective_model = if provider == "kimi" {
+        options.model.clone()
+    } else if options.model.is_empty() {
         extract_current_model(&session_result)
     } else {
         options.model.clone()
@@ -615,6 +698,39 @@ async fn run_protocol(
     if effective_model.is_empty() {
         effective_model = "unknown".to_string();
     }
+    if provider == "kimi" && !options.thinking_level.is_empty() {
+        let requested_level = options.thinking_level.clone();
+        match client
+            .request(
+                "session/set_config_option",
+                serde_json::json!({
+                    "sessionId":session_id,
+                    "configId":"thinking",
+                    "value":requested_level,
+                }),
+                |_| {},
+            )
+            .await
+        {
+            Ok(result) => {
+                let confirmed = extract_config_value(&result, "thinking");
+                if confirmed.as_deref() != Some(requested_level.as_str()) {
+                    tracing::warn!(
+                        provider = "kimi",
+                        requested_level,
+                        effective_level = confirmed.as_deref().unwrap_or("unknown"),
+                        "runtime did not confirm requested thinking level; continuing"
+                    );
+                }
+            }
+            Err(error) => tracing::warn!(
+                provider = "kimi",
+                requested_level,
+                error = %error,
+                "runtime rejected requested thinking level; continuing"
+            ),
+        }
+    }
     let user_text = if options.system_prompt.is_empty() {
         prompt
     } else {
@@ -622,6 +738,7 @@ async fn run_protocol(
     };
     let mut state = NotificationState {
         kiro_dialect: provider == "kiro",
+        extended_tool_names: matches!(provider.as_str(), "kiro" | "kimi"),
         ..NotificationState::default()
     };
     let prompt_blocks = serde_json::json!([{"type":"text","text":user_text}]);
@@ -727,6 +844,7 @@ struct NotificationState {
     usage: TokenUsage,
     last_finishing_status: String,
     kiro_dialect: bool,
+    extended_tool_names: bool,
 }
 
 #[derive(Default)]
@@ -845,7 +963,7 @@ fn handle_tool_start(
     if id.is_empty() {
         return;
     }
-    let name = tool_name(data, state.kiro_dialect);
+    let name = tool_name(data, state.extended_tool_names);
     let input = tool_input(data);
     let finishing = state.kiro_dialect && is_finishing_tool(&name, &input);
     state.deliverable.tool_boundary();
@@ -888,7 +1006,7 @@ fn handle_tool_update(
         None => {
             state.deliverable.tool_boundary();
             PendingTool {
-                name: tool_name(data, state.kiro_dialect),
+                name: tool_name(data, state.extended_tool_names),
                 input: tool_input(data),
                 emitted: false,
                 finishing: false,
@@ -916,7 +1034,7 @@ fn handle_tool_update(
     }
 }
 
-fn tool_name(data: &Value, kiro_dialect: bool) -> String {
+fn tool_name(data: &Value, extended_names: bool) -> String {
     let name = data
         .get("name")
         .or_else(|| data.get("title"))
@@ -928,7 +1046,7 @@ fn tool_name(data: &Value, kiro_dialect: bool) -> String {
         .trim()
         .to_string();
     let lower = name.to_ascii_lowercase();
-    if !kiro_dialect {
+    if !extended_names {
         return match lower.as_str() {
             "shell" | "terminal" => "terminal".to_string(),
             "read" => "read_file".to_string(),
@@ -1079,6 +1197,15 @@ fn merge_usage(current: TokenUsage, next: TokenUsage) -> TokenUsage {
     }
 }
 
+fn has_token_usage(usage: &BTreeMap<String, TokenUsage>) -> bool {
+    usage.values().any(|usage| {
+        usage.input_tokens > 0
+            || usage.output_tokens > 0
+            || usage.cache_read_tokens > 0
+            || usage.cache_write_tokens > 0
+    })
+}
+
 fn integer(value: &Value, keys: &[&str]) -> i64 {
     keys.iter()
         .find_map(|key| value.get(*key).and_then(Value::as_i64))
@@ -1109,6 +1236,30 @@ fn extract_current_model(value: &Value) -> String {
         .unwrap_or_default()
         .trim()
         .to_string()
+}
+
+fn extract_config_value(value: &Value, config_id: &str) -> Option<String> {
+    value
+        .get("configOptions")
+        .and_then(Value::as_array)
+        .and_then(|options| {
+            options.iter().find(|option| {
+                option
+                    .get("id")
+                    .or_else(|| option.get("configId"))
+                    .and_then(Value::as_str)
+                    == Some(config_id)
+            })
+        })
+        .and_then(|option| option.get("currentValue"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .or_else(|| {
+            value
+                .get("currentValue")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
 }
 
 fn provider_error(provider: &str, stderr: &str, output: &str) -> Option<String> {
@@ -1217,6 +1368,19 @@ mod tests {
     }
 
     #[test]
+    fn kimi_arguments_keep_acp_subcommand_owned() {
+        let args = build_kimi_args(&ExecOptions {
+            extra_args: ["acp", "--verbose"].map(str::to_string).to_vec(),
+            custom_args: ["acp", "--debug"].map(str::to_string).to_vec(),
+            ..ExecOptions::default()
+        });
+        assert_eq!(args.iter().filter(|arg| arg.as_str() == "acp").count(), 1);
+        assert_eq!(args[0], "acp");
+        assert!(args.iter().any(|arg| arg == "--verbose"));
+        assert!(args.iter().any(|arg| arg == "--debug"));
+    }
+
+    #[test]
     fn kiro_arguments_keep_protocol_and_trust_mode_owned() {
         let args = build_kiro_args(&ExecOptions {
             custom_args: [
@@ -1284,6 +1448,7 @@ mod tests {
         let (messages, _receiver) = mpsc::channel(8);
         let mut state = NotificationState {
             kiro_dialect: true,
+            extended_tool_names: true,
             ..NotificationState::default()
         };
         for (id, status) in [("first", "completed"), ("final", "failed")] {
@@ -1346,6 +1511,32 @@ mod tests {
                 "KIRO_REQUESTS".to_string(),
                 requests.to_string_lossy().into_owned(),
             )]),
+        });
+        (directory, requests, backend)
+    }
+
+    #[cfg(unix)]
+    fn fake_kimi_backend(script: &str) -> (tempfile::TempDir, std::path::PathBuf, KimiBackend) {
+        let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
+        let executable = directory.path().join("kimi");
+        let requests = directory.path().join("requests.jsonl");
+        let kimi_home = directory.path().join("kimi-home");
+        std::fs::write(&executable, script)
+            .unwrap_or_else(|error| panic!("write fake Kimi: {error}"));
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|error| panic!("chmod fake Kimi: {error}"));
+        let backend = KimiBackend::new(KimiConfig {
+            command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
+            env: BTreeMap::from([
+                (
+                    "KIMI_REQUESTS".to_string(),
+                    requests.to_string_lossy().into_owned(),
+                ),
+                (
+                    "KIMI_CODE_HOME".to_string(),
+                    kimi_home.to_string_lossy().into_owned(),
+                ),
+            ]),
         });
         (directory, requests, backend)
     }
@@ -1458,6 +1649,63 @@ done
         assert!(result
             .error
             .contains("image dimensions exceed max allowed size"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kimi_applies_model_and_thinking_then_falls_back_to_wire_usage() {
+        let (_directory, requests, backend) = fake_kimi_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$KIMI_REQUESTS"
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"kimi-session"}}\n' "$id" ;;
+    *'"method":"session/set_model"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/set_config_option"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":[{"id":"thinking","currentValue":"max"}]}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      mkdir -p "$KIMI_CODE_HOME/sessions/workspace/kimi-session/agents/main"
+      printf '%s\n' '{"type":"usage.record","time":0,"usage":{"inputOther":12,"output":4,"inputCacheRead":20,"inputCacheCreation":3}}' > "$KIMI_CODE_HOME/sessions/workspace/kimi-session/agents/main/wire.jsonl"
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"Kimi answer"}}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    model: "kimi-k3".to_string(),
+                    thinking_level: "max".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Kimi: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Kimi result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "Kimi answer");
+        assert_eq!(result.usage["kimi-k3"].input_tokens, 12);
+        assert_eq!(result.usage["kimi-k3"].output_tokens, 4);
+        assert_eq!(result.usage["kimi-k3"].cache_read_tokens, 20);
+        assert_eq!(result.usage["kimi-k3"].cache_write_tokens, 3);
+        let requests = std::fs::read_to_string(requests)
+            .unwrap_or_else(|error| panic!("read Kimi requests: {error}"));
+        let set_model = requests
+            .find("\"method\":\"session/set_model\"")
+            .unwrap_or_else(|| panic!("Kimi set_model missing"));
+        let set_thinking = requests
+            .find("\"method\":\"session/set_config_option\"")
+            .unwrap_or_else(|| panic!("Kimi thinking config missing"));
+        let prompt = requests
+            .find("\"method\":\"session/prompt\"")
+            .unwrap_or_else(|| panic!("Kimi prompt missing"));
+        assert!(set_model < set_thinking && set_thinking < prompt);
     }
 
     #[cfg(unix)]

@@ -15,6 +15,7 @@ pub mod contract;
 pub mod cursor;
 pub mod deveco;
 pub mod dsh;
+mod kimi_usage;
 pub mod mcp;
 pub mod model;
 pub mod openclaw;
@@ -52,6 +53,7 @@ pub use opencode::{build_opencode_args, OpencodeBackend, OpencodeConfig};
 pub use pi::{build_pi_args, PiBackend, PiConfig};
 pub use process::{OwnedProcessTree, ProcessTreeSignal};
 pub use qoder::{
-    KiroBackend, KiroConfig, QoderBackend, QoderConfig, TraecliBackend, TraecliConfig,
+    KimiBackend, KimiConfig, KiroBackend, KiroConfig, QoderBackend, QoderConfig, TraecliBackend,
+    TraecliConfig,
 };
 pub use qwen::{QwenBackend, QwenConfig};
