@@ -741,6 +741,11 @@
       lease recovery, client backpressure, canonical-state reconnect, and
       bounded producer-to-consumer shutdown match Go. No new P0/P1 or
       changed-code blocker; no implementation change was justified.
+- [x] Task claim/retry lifecycle audit completed: `SKIP LOCKED` runtime and
+      heartbeat ownership, stale reclaim/lease refresh, CAS finalization,
+      terminal idempotence, retry ceilings/backoff, successor dedupe, orphan
+      recovery, and failure/event reconciliation match Go. No new P0/P1 or
+      changed-code blocker; no implementation change was justified.
 
 ## Phase 4 — S8 route and API parity
 
