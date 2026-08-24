@@ -266,7 +266,10 @@ async fn build_production_router(
         state.start_ordered_event_side_effects(root_cancel.child_token());
     let (state, autopilot_event_listeners) =
         state.start_autopilot_event_listeners(root_cancel.child_token());
-    let (state, plugin_events) = state.start_plugin_event_dispatcher(root_cancel.child_token());
+    // Event-hook delivery is a consumer lifecycle. It is stopped explicitly
+    // after every event producer/listener has drained, rather than sharing the
+    // producer root and racing their final publications.
+    let (state, plugin_events) = state.start_plugin_event_dispatcher(CancellationToken::new());
     let github_snapshots = state.github_snapshots.start(root_cancel.child_token());
     let heartbeat_scheduler = Arc::new(
         cordy_handler::heartbeat_scheduler::BatchedHeartbeatScheduler::new(
@@ -576,7 +579,6 @@ async fn main() -> anyhow::Result<()> {
         channel_media_shutdown,
         heartbeat_shutdown,
         runtime_sweeper_shutdown,
-        plugin_events_shutdown,
         github_snapshots_shutdown,
     ) = tokio::join!(
         failure_monitor
@@ -588,7 +590,6 @@ async fn main() -> anyhow::Result<()> {
         shutdown_channel_media(channel_media),
         heartbeat_scheduler.shutdown(),
         runtime_sweeper.shutdown(),
-        shutdown_plugin_events(plugin_events),
         shutdown_github_snapshots(github_snapshots),
     );
     let autopilot_event_listeners_shutdown =
@@ -599,6 +600,7 @@ async fn main() -> anyhow::Result<()> {
     // → notification order.
     let ordered_event_side_effects_shutdown =
         shutdown_ordered_event_side_effects(ordered_event_side_effects).await;
+    let plugin_events_shutdown = shutdown_plugin_events(plugin_events).await;
     match failure_shutdown {
         cordy_service::autopilot_failure_monitor::ShutdownOutcome::TimedOut => {
             tracing::warn!("autopilot failure monitor exceeded shutdown deadline and was aborted");
