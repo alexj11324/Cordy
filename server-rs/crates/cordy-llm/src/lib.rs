@@ -277,10 +277,7 @@ impl Client {
         let transport = self.transport.as_ref().ok_or(Error::ClientUnavailable)?;
 
         for attempt in 0..=self.max_retries {
-            match transport
-                .post(&self.endpoint, &self.api_key, &request)
-                .await
-            {
+            match transport.post(&self.endpoint, &self.api_key, request).await {
                 Ok(response) if response.status.is_success() => return Ok(response),
                 Ok(response) => {
                     let status = response.status;
