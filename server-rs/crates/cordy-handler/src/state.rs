@@ -382,6 +382,14 @@ impl HandlerState {
         self
     }
 
+    pub fn with_feature_flags(
+        mut self,
+        flags: Arc<dyn cordy_service::feature_flags::FlagSource>,
+    ) -> Self {
+        self.feature_flags = Some(flags);
+        self
+    }
+
     pub fn with_observability(
         mut self,
         business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,

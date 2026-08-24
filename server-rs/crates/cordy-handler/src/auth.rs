@@ -89,6 +89,14 @@ impl AuthSettings {
             cordy_auth::cookie::is_secure_cookie(Some(&self.frontend_origin)),
         )
     }
+
+    pub(crate) fn public_signup_allowed(&self) -> bool {
+        self.allow_signup
+    }
+
+    pub(crate) fn google_client_id(&self) -> &str {
+        &self.google_client_id
+    }
 }
 
 pub fn public_router(

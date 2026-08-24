@@ -84,8 +84,8 @@ async fn get_config(State(state): State<HandlerState>) -> Json<AppConfig> {
     Json(AppConfig {
         cdn_domain: state.public_config.cdn_domain.clone(),
         cdn_signed: state.public_config.cdn_signed,
-        allow_signup: std::env::var("ALLOW_SIGNUP").as_deref() != Ok("false"),
-        google_client_id: std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
+        allow_signup: state.auth_settings.public_signup_allowed(),
+        google_client_id: state.auth_settings.google_client_id().to_string(),
         workspace_creation_disabled: std::env::var("DISABLE_WORKSPACE_CREATION").as_deref()
             == Ok("true"),
         daemon_server_url,
@@ -211,11 +211,15 @@ mod tests {
 
     #[tokio::test]
     async fn public_route_is_available_before_authentication() {
+        let mut loaded = cordy_config::Config::default();
+        loaded.auth.allow_signup = Some("false".into());
+        loaded.auth.google_client_id = Some("toml-client-id".into());
         let state = HandlerState::new(
             sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
             cordy_auth::pat_cache::PatCache::disabled(),
             None,
-        );
+        )
+        .with_auth_settings(crate::auth::AuthSettings::from_config(&loaded));
         let response = router()
             .with_state(state)
             .oneshot(Request::get("/api/config").body(Body::empty()).unwrap())
@@ -226,5 +230,7 @@ mod tests {
         let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(value["local_worktree_supported"], true);
         assert_eq!(value["feature_flags"]["agents_agent_builder"], true);
+        assert_eq!(value["allow_signup"], false);
+        assert_eq!(value["google_client_id"], "toml-client-id");
     }
 }

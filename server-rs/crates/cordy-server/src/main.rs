@@ -74,6 +74,12 @@ async fn build_production_router(
 ) -> Router {
     let analytics: Arc<dyn cordy_analytics::AnalyticsClient> =
         Arc::from(cordy_analytics::new_from_env());
+    let feature_flags = Arc::new(
+        cordy_service::feature_flags::ConfiguredFlags::from_env().unwrap_or_else(|error| {
+            tracing::warn!(%error, "invalid feature flag configuration; using disabled defaults");
+            cordy_service::feature_flags::ConfiguredFlags::default()
+        }),
+    );
     let mut state = cordy_handler::HandlerState::new(
         db,
         cordy_auth::pat_cache::PatCache::disabled(),
@@ -111,6 +117,7 @@ async fn build_production_router(
                 || cfg.storage.cloudfront_private_key_secret.is_some()),
         server_version: env!("CARGO_PKG_VERSION").to_string(),
     })
+    .with_feature_flags(feature_flags)
     .with_vcs_webhooks(vcs.enabled, vcs.secret_box);
     let redis_url = cfg
         .redis
