@@ -113,6 +113,33 @@ pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
     repo_warmups: mpsc::Sender<RepoWarmupRequest>,
     source: Arc<S>,
     serial: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
+    pending_deregistrations: PendingDeregistrations,
+    deregistration_flush: AsyncMutex<()>,
+}
+
+#[derive(Default)]
+struct PendingDeregistrations {
+    runtime_ids: Mutex<BTreeSet<String>>,
+}
+
+impl PendingDeregistrations {
+    fn queue(&self, runtime_ids: &[String]) {
+        self.runtime_ids
+            .lock()
+            .unwrap()
+            .extend(runtime_ids.iter().filter(|id| !id.is_empty()).cloned());
+    }
+
+    fn snapshot(&self) -> Vec<String> {
+        self.runtime_ids.lock().unwrap().iter().cloned().collect()
+    }
+
+    fn acknowledge(&self, runtime_ids: &[String]) {
+        let mut pending = self.runtime_ids.lock().unwrap();
+        for runtime_id in runtime_ids {
+            pending.remove(runtime_id);
+        }
+    }
 }
 
 impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
@@ -130,6 +157,8 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             repo_warmups,
             source,
             serial: Mutex::new(HashMap::new()),
+            pending_deregistrations: PendingDeregistrations::default(),
+            deregistration_flush: AsyncMutex::new(()),
         }
     }
 
@@ -142,6 +171,9 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         registry: &RuntimeRegistry,
         reconcile_profiles: bool,
     ) -> anyhow::Result<()> {
+        if let Err(error) = self.flush_pending_deregistrations(&ctx).await {
+            tracing::warn!(%error, "pending runtime deregistration retry failed");
+        }
         let workspaces =
             tokio::time::timeout(WORKSPACE_SYNC_TIMEOUT, self.client.list_workspaces(&ctx))
                 .await
@@ -189,9 +221,18 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         }
 
         for workspace_id in tracked.difference(&api_ids) {
-            registry.remove_workspace(workspace_id);
+            let dropped = registry.remove_workspace(workspace_id);
             self.source.workspace_removed(workspace_id);
             self.repo_state.remove_workspace(workspace_id);
+            self.pending_deregistrations.queue(&dropped);
+            if let Err(error) = self.flush_pending_deregistrations(&ctx).await {
+                tracing::warn!(
+                    %workspace_id,
+                    runtimes = dropped.len(),
+                    %error,
+                    "removed workspace runtime deregistration deferred"
+                );
+            }
             tracing::info!(%workspace_id, "stopped watching workspace");
         }
 
@@ -320,7 +361,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 Vec::new(),
             )?;
             round.registration_applied(&workspace.id);
-            self.deregister_dropped(&ctx, &delta.dropped).await?;
+            self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
             tracing::info!(
                 workspace_id = %workspace.id,
                 dropped = delta.dropped.len(),
@@ -364,7 +405,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         round.registration_applied(&workspace.id);
         self.repo_state
             .replace_workspace(&workspace.id, &repos, settings);
-        self.deregister_dropped(&ctx, &delta.dropped).await?;
+        self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
         if recover_orphans {
             for runtime_id in runtime_ids {
                 if let Err(error) = self.client.recover_orphans(&ctx, &runtime_id).await {
@@ -400,7 +441,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             let delta =
                 registry.apply_builtin_registration(&workspace.id, &workspace.name, Vec::new())?;
             round.registration_applied(&workspace.id);
-            self.deregister_dropped(&ctx, &delta.dropped).await?;
+            self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
             return Ok(());
         }
         let response = self
@@ -430,17 +471,32 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             response.runtimes,
         )?;
         round.registration_applied(&workspace.id);
-        self.deregister_dropped(&ctx, &delta.dropped).await?;
+        self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
         Ok(())
     }
 
-    async fn deregister_dropped(&self, ctx: &Ctx, runtime_ids: &[String]) -> anyhow::Result<()> {
+    async fn queue_and_flush_dropped(&self, ctx: &Ctx, runtime_ids: &[String]) {
+        self.pending_deregistrations.queue(runtime_ids);
+        if let Err(error) = self.flush_pending_deregistrations(ctx).await {
+            tracing::warn!(
+                runtimes = runtime_ids.len(),
+                %error,
+                "runtime deregistration deferred"
+            );
+        }
+    }
+
+    async fn flush_pending_deregistrations(&self, ctx: &Ctx) -> anyhow::Result<()> {
+        let _flush = self.deregistration_flush.lock().await;
+        let runtime_ids = self.pending_deregistrations.snapshot();
         if runtime_ids.is_empty() {
             return Ok(());
         }
         self.client
-            .deregister(ctx, runtime_ids, HashMap::new())
-            .await
+            .deregister(ctx, &runtime_ids, HashMap::new())
+            .await?;
+        self.pending_deregistrations.acknowledge(&runtime_ids);
+        Ok(())
     }
 
     fn workspace_lock(&self, workspace_id: &str) -> Arc<AsyncMutex<()>> {
@@ -472,6 +528,27 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
 mod tests {
     use super::*;
     use serde_json::Value;
+
+    #[test]
+    fn pending_deregistrations_are_deduplicated_and_acknowledged_by_snapshot() {
+        let pending = PendingDeregistrations::default();
+        pending.queue(&[
+            "runtime-2".to_string(),
+            "runtime-1".to_string(),
+            "runtime-2".to_string(),
+            String::new(),
+        ]);
+
+        let first = pending.snapshot();
+        assert_eq!(
+            first,
+            vec!["runtime-1".to_string(), "runtime-2".to_string()]
+        );
+
+        pending.queue(&["runtime-3".to_string()]);
+        pending.acknowledge(&first);
+        assert_eq!(pending.snapshot(), vec!["runtime-3".to_string()]);
+    }
 
     #[test]
     fn repo_warmup_queue_is_bounded_and_keeps_existing_work() {
