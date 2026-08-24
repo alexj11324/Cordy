@@ -12,6 +12,7 @@ pub mod codebuddy;
 pub mod codebuddy_discovery;
 pub mod command;
 pub mod contract;
+mod kimi_usage;
 pub mod mcp;
 pub mod model;
 pub mod process;
@@ -39,8 +40,8 @@ pub use model::{
 };
 pub use process::{OwnedProcessTree, ProcessTreeSignal};
 pub use qoder::{
-    KiroBackend, KiroConfig, QoderBackend, QoderConfig, QwenpawBackend, QwenpawConfig,
-    TraecliBackend, TraecliConfig,
+    KimiBackend, KimiConfig, KiroBackend, KiroConfig, QoderBackend, QoderConfig, QwenpawBackend,
+    QwenpawConfig, TraecliBackend, TraecliConfig,
 };
 pub use qwen::{QwenBackend, QwenConfig};
 pub use registry::{build_backend, BackendConfig};
