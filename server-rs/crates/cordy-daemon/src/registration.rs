@@ -94,6 +94,11 @@ pub trait RuntimeRegistrationSource: Send + Sync + 'static {
         ctx: Ctx,
         reason: BuiltinRefreshReason,
     ) -> anyhow::Result<Option<Arc<dyn RuntimeRegistrationRound>>>;
+
+    /// Releases provider-owned launch state when workspace membership is
+    /// removed. A later re-add must not revive stale custom profile commands
+    /// if its first profile fetch fails.
+    fn workspace_removed(&self, workspace_id: &str);
 }
 
 pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
@@ -180,6 +185,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
 
         for workspace_id in tracked.difference(&api_ids) {
             registry.remove_workspace(workspace_id);
+            self.source.workspace_removed(workspace_id);
             self.repo_state.remove_workspace(workspace_id);
             tracing::info!(%workspace_id, "stopped watching workspace");
         }
