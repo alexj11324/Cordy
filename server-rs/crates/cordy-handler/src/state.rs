@@ -48,6 +48,7 @@ pub struct HandlerState {
     pub business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     /// HTTP request metrics. None when METRICS_ADDR is disabled.
     pub http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
+    pub heartbeat_scheduler: Arc<dyn crate::heartbeat_scheduler::HeartbeatScheduler>,
     /// Public authentication dependencies and boot-time policy.
     pub auth_settings: crate::auth::AuthSettings,
     pub email_service: Arc<EmailService>,
@@ -143,6 +144,8 @@ impl HandlerState {
         ));
         let issues = Arc::new(IssueService::new(pool.clone(), bus.clone(), tasks.clone()));
         let plugins = Arc::new(PluginService::with_pool(pool.clone()));
+        let heartbeat_scheduler =
+            Arc::new(crate::heartbeat_scheduler::PassthroughHeartbeatScheduler::new(pool.clone()));
         let trusted_proxies = cordy_middleware::ratelimit::parse_trusted_proxies(
             &std::env::var("RATE_LIMIT_TRUSTED_PROXIES").unwrap_or_default(),
         );
@@ -165,6 +168,7 @@ impl HandlerState {
             bus,
             business_metrics: None,
             http_metrics: None,
+            heartbeat_scheduler,
             auth_settings: crate::auth::AuthSettings::from_env(),
             email_service: Arc::new(EmailService::new()),
             analytics: Arc::new(cordy_analytics::NoopClient),
@@ -314,6 +318,14 @@ impl HandlerState {
         }
         self.business_metrics = business_metrics;
         self.http_metrics = http_metrics;
+        self
+    }
+
+    pub fn with_heartbeat_scheduler(
+        mut self,
+        scheduler: Arc<dyn crate::heartbeat_scheduler::HeartbeatScheduler>,
+    ) -> Self {
+        self.heartbeat_scheduler = scheduler;
         self
     }
 

@@ -20,6 +20,7 @@ struct ProductionApp {
     webhook_delivery: cordy_handler::webhook_delivery_worker::WebhookDeliveryRuntime,
     scheduler: cordy_scheduler::ManagerRuntime,
     channel_media: Option<cordy_service::channel_media_reconciler::ChannelMediaReconcilerRuntime>,
+    heartbeat_scheduler: cordy_handler::heartbeat_scheduler::HeartbeatSchedulerRuntime,
 }
 
 struct VcsWebhookConfig {
@@ -257,8 +258,16 @@ async fn build_production_router(
         .start_notification_event_listeners()
         .start_autopilot_event_listeners()
         .start_plugin_event_dispatcher();
+    let heartbeat_scheduler = Arc::new(
+        cordy_handler::heartbeat_scheduler::BatchedHeartbeatScheduler::new(
+            state.pool.clone(),
+            cordy_handler::heartbeat_scheduler::DEFAULT_BATCH_INTERVAL,
+        ),
+    );
+    let state = state.with_heartbeat_scheduler(heartbeat_scheduler.clone());
     let (state, webhook_worker) = state.prepare_webhook_delivery_worker();
     let root_cancel = CancellationToken::new();
+    let heartbeat_scheduler = heartbeat_scheduler.start(root_cancel.child_token());
     let failure_metrics = state.business_metrics.clone().map(|metrics| {
         metrics as Arc<dyn cordy_service::autopilot_failure_monitor::FailureMonitorMetrics>
     });
@@ -316,6 +325,7 @@ async fn build_production_router(
         webhook_delivery,
         scheduler,
         channel_media,
+        heartbeat_scheduler,
     })
 }
 
@@ -453,6 +463,7 @@ async fn main() -> anyhow::Result<()> {
         webhook_delivery,
         scheduler,
         channel_media,
+        heartbeat_scheduler,
     } = app;
     let serve_result = axum::serve(
         listener,
@@ -467,6 +478,7 @@ async fn main() -> anyhow::Result<()> {
         webhook_shutdown,
         scheduler_shutdown,
         channel_media_shutdown,
+        heartbeat_shutdown,
     ) = tokio::join!(
         failure_monitor
             .shutdown(cordy_service::autopilot_failure_monitor::DEFAULT_SHUTDOWN_TIMEOUT),
@@ -475,6 +487,7 @@ async fn main() -> anyhow::Result<()> {
         webhook_delivery.shutdown(cordy_handler::webhook_delivery_worker::DEFAULT_SHUTDOWN_TIMEOUT),
         scheduler.shutdown(),
         shutdown_channel_media(channel_media),
+        heartbeat_scheduler.shutdown(),
     );
     match failure_shutdown {
         cordy_service::autopilot_failure_monitor::ShutdownOutcome::TimedOut => {
@@ -521,6 +534,15 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(cordy_service::channel_media_reconciler::ChannelMediaShutdownOutcome::Stopped)
         | None => {}
+    }
+    match heartbeat_shutdown {
+        cordy_handler::heartbeat_scheduler::HeartbeatShutdownOutcome::TimedOut => {
+            tracing::warn!("heartbeat scheduler exceeded shutdown deadline and was aborted");
+        }
+        cordy_handler::heartbeat_scheduler::HeartbeatShutdownOutcome::Panicked => {
+            tracing::error!("heartbeat scheduler task panicked during shutdown");
+        }
+        cordy_handler::heartbeat_scheduler::HeartbeatShutdownOutcome::Stopped => {}
     }
     serve_result?;
     Ok(())

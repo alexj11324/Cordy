@@ -43,6 +43,7 @@ pub mod error;
 pub mod feedback;
 pub mod github;
 pub mod health;
+pub mod heartbeat_scheduler;
 pub mod inbox;
 pub mod invitation;
 pub mod issue;

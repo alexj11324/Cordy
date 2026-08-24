@@ -693,17 +693,8 @@ async fn heartbeat(
     Json(resp).into_response()
 }
 
-/// Passthrough liveness write (Go PassthroughHeartbeatScheduler.Schedule):
-/// touch last_seen_at on online rows, flip offline→online otherwise. The
-/// Redis TTL layer and batched coalescing land with the redis slice.
 async fn record_heartbeat(state: &HandlerState, rt: &AgentRuntime) {
-    if rt.status == "online" && rt.last_seen_at.is_some() {
-        match runtime::touch_agent_runtime_last_seen(&state.pool, rt.id).await {
-            Ok(n) if n > 0 => return,
-            _ => {}
-        }
-    }
-    if let Err(e) = runtime::mark_agent_runtime_online(&state.pool, rt.id).await {
+    if let Err(e) = state.heartbeat_scheduler.schedule(rt).await {
         tracing::warn!(error = %e, runtime_id = %rt.id, "heartbeat db update failed");
     }
 }
