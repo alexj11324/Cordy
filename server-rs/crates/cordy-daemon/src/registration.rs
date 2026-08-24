@@ -14,6 +14,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use crate::client::{Client, WorkspaceInfo};
 use crate::config::Config;
+use crate::repo_state::DaemonRepoState;
 use crate::repocache::{Cache, Ctx, RepoInfo};
 use crate::runtime_registry::RuntimeRegistry;
 
@@ -62,6 +63,7 @@ pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
     config: Arc<Config>,
     client: Arc<Client>,
     repo_cache: Arc<Cache>,
+    repo_state: Arc<DaemonRepoState>,
     source: Arc<S>,
     serial: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
 }
@@ -71,12 +73,14 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         config: Arc<Config>,
         client: Arc<Client>,
         repo_cache: Arc<Cache>,
+        repo_state: Arc<DaemonRepoState>,
         source: Arc<S>,
     ) -> Self {
         Self {
             config,
             client,
             repo_cache,
+            repo_state,
             source,
             serial: Mutex::new(HashMap::new()),
         }
@@ -138,6 +142,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
 
         for workspace_id in tracked.difference(&api_ids) {
             registry.remove_workspace(workspace_id);
+            self.repo_state.remove_workspace(workspace_id);
             tracing::info!(%workspace_id, "stopped watching workspace");
         }
 
@@ -278,11 +283,14 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             .map(|runtime| runtime.id.clone())
             .collect();
         let repos = response.repos;
+        let settings = response.settings;
         let delta = registry.apply_registration(
             workspace.id.clone(),
             workspace.name.clone(),
             response.runtimes,
         )?;
+        self.repo_state
+            .replace_workspace(&workspace.id, &repos, settings);
         if !delta.dropped.is_empty() {
             self.client
                 .deregister(&ctx, &delta.dropped, HashMap::new())
@@ -379,8 +387,13 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         if repos.is_empty() {
             return;
         }
-        if let Err(error) = self.repo_cache.sync_ctx(ctx, workspace_id, &repos).await {
-            tracing::warn!(%workspace_id, %error, "workspace repo cache sync failed");
+        match self.repo_cache.sync_ctx(ctx, workspace_id, &repos).await {
+            Ok(()) => self.repo_state.set_sync_error(workspace_id, String::new()),
+            Err(error) => {
+                self.repo_state
+                    .set_sync_error(workspace_id, error.to_string());
+                tracing::warn!(%workspace_id, %error, "workspace repo cache sync failed");
+            }
         }
     }
 }

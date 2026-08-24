@@ -26,6 +26,7 @@ use crate::reconcile::{ReconcileBroadcaster, WorkspaceChangeSignal};
 use crate::registration::{
     BuiltinRefreshReason, RuntimeRegistrationService, RuntimeRegistrationSource,
 };
+use crate::repo_state::DaemonRepoState;
 use crate::repocache::{Cache, Ctx};
 use crate::runtime_registry::RuntimeRegistry;
 use crate::task_execution::TaskRunOutcome;
@@ -49,6 +50,7 @@ pub trait ProviderRuntimeAdapter: RuntimeRegistrationSource {
         provider: String,
         slot: usize,
         activity: Arc<DaemonActivity>,
+        repo_state: Arc<DaemonRepoState>,
     ) -> TaskRunOutcome;
 
     fn repo_bare_path_is_live(&self, bare_path: &Path) -> bool;
@@ -67,6 +69,7 @@ pub struct DaemonProductionServices<P: ProviderRuntimeAdapter> {
     client: Arc<Client>,
     provider: Arc<P>,
     registration: RuntimeRegistrationService<P>,
+    repo_state: Arc<DaemonRepoState>,
 }
 
 impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
@@ -76,16 +79,19 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
         repo_cache: Arc<Cache>,
         provider: Arc<P>,
     ) -> Self {
+        let repo_state = Arc::new(DaemonRepoState::new());
         Self {
             registration: RuntimeRegistrationService::new(
                 Arc::clone(&config),
                 Arc::clone(&client),
                 repo_cache,
+                Arc::clone(&repo_state),
                 Arc::clone(&provider),
             ),
             config,
             client,
             provider,
+            repo_state,
         }
     }
 
@@ -217,7 +223,14 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
         activity: Arc<DaemonActivity>,
     ) -> TaskRunOutcome {
         self.provider
-            .run_task(ctx, task, provider, slot, activity)
+            .run_task(
+                ctx,
+                task,
+                provider,
+                slot,
+                activity,
+                Arc::clone(&self.repo_state),
+            )
             .await
     }
 

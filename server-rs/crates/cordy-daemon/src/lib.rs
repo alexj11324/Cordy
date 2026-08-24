@@ -37,6 +37,7 @@ pub mod production_stack;
 pub mod production_services;
 pub mod registration;
 pub mod reconcile;
+pub mod repo_state;
 pub mod runtime_registry;
 pub mod runtime_set;
 pub mod task_execution;
