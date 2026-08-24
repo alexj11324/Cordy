@@ -241,9 +241,18 @@ struct SetupArgs {
 #[derive(Debug, Subcommand)]
 enum SetupCommand {
     #[command(about = "Configure Cordy Cloud")]
-    Cloud,
+    Cloud(SetupCloudArgs),
     #[command(about = "Configure a self-hosted Cordy server")]
     SelfHost(SetupSelfHostArgs),
+}
+
+#[derive(Debug, Args)]
+struct SetupCloudArgs {
+    #[arg(
+        long,
+        help = "Host/IP the browser callback URL points at when it can reach this CLI directly"
+    )]
+    callback_host: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -262,6 +271,11 @@ struct SetupSelfHostArgs {
         help = "Frontend port for local self-hosting"
     )]
     frontend_port: u16,
+    #[arg(
+        long,
+        help = "Host/IP the browser callback URL points at when it can reach this CLI directly"
+    )]
+    callback_host: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -3711,7 +3725,7 @@ async fn run_setup<R: Read>(
             environment,
             &LoginArgs {
                 token: None,
-                callback_host: None,
+                callback_host: setup_callback_host(args),
             },
             Some(&input.server_url),
             Some(&input.app_url),
@@ -3921,7 +3935,7 @@ fn resolve_setup_profile_input(
 ) -> Result<config::SetupProfileInput> {
     let existing = environment.load_config(&cli.profile).unwrap_or_default();
     match &args.command {
-        None | Some(SetupCommand::Cloud) => {
+        None | Some(SetupCommand::Cloud(_)) => {
             config::SetupProfileInput::new(CLOUD_SERVER_URL, CLOUD_APP_URL)
         }
         Some(SetupCommand::SelfHost(options)) => {
@@ -3954,6 +3968,14 @@ fn resolve_setup_profile_input(
                 .ok_or(SetupError::RemoteAppUrlRequired)?;
             config::SetupProfileInput::new(server_url, app_url)
         }
+    }
+}
+
+fn setup_callback_host(args: &SetupArgs) -> Option<String> {
+    match args.command.as_ref() {
+        Some(SetupCommand::Cloud(options)) => options.callback_host.clone(),
+        Some(SetupCommand::SelfHost(options)) => options.callback_host.clone(),
+        None => None,
     }
 }
 
@@ -28529,6 +28551,49 @@ mod tests {
         assert_eq!(options.app_url.as_deref(), Some("https://app.example/"));
         assert_eq!(options.port, 9090);
         assert_eq!(options.frontend_port, 4000);
+    }
+
+    #[test]
+    fn setup_callback_host_is_available_for_cloud_and_self_host_browser_flows() {
+        let cloud =
+            Cli::try_parse_from(["cordy", "setup", "cloud", "--callback-host", "192.168.1.20"])
+                .expect("cloud callback host");
+        let Command::Setup(SetupArgs {
+            command: Some(command),
+        }) = cloud.command
+        else {
+            panic!("expected cloud setup");
+        };
+        let SetupCommand::Cloud(options) = command else {
+            panic!("expected cloud options");
+        };
+        assert_eq!(options.callback_host.as_deref(), Some("192.168.1.20"));
+        assert_eq!(
+            setup_callback_host(&SetupArgs {
+                command: Some(SetupCommand::Cloud(options)),
+            }),
+            Some("192.168.1.20".into())
+        );
+
+        let self_host =
+            Cli::try_parse_from(["cordy", "setup", "self-host", "--callback-host", "10.0.0.7"])
+                .expect("self-host callback host");
+        let Command::Setup(SetupArgs {
+            command: Some(command),
+        }) = self_host.command
+        else {
+            panic!("expected self-host setup");
+        };
+        let SetupCommand::SelfHost(options) = command else {
+            panic!("expected self-host options");
+        };
+        assert_eq!(options.callback_host.as_deref(), Some("10.0.0.7"));
+        assert_eq!(
+            setup_callback_host(&SetupArgs {
+                command: Some(SetupCommand::SelfHost(options)),
+            }),
+            Some("10.0.0.7".into())
+        );
     }
 
     #[test]
