@@ -26,6 +26,7 @@ use crate::kimi_usage::{scan_kimi_session_usage, KimiUsageScan};
 use crate::model::{parse_acp_session_models, Catalog, CatalogCache, ModelDiscoveryCacheKey};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
+use crate::version::check_minimum;
 
 const MESSAGE_BUFFER: usize = 256;
 const TERMINATION_GRACE: Duration = Duration::from_secs(2);
@@ -33,6 +34,8 @@ const KILL_GRACE: Duration = Duration::from_secs(10);
 const NOTIFICATION_QUIET: Duration = Duration::from_millis(250);
 const NOTIFICATION_DRAIN_MAX: Duration = Duration::from_secs(2);
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
+const DISCOVERY_OUTPUT_MAX: u64 = 4 * 1024 * 1024;
+const KIMI_THINKING_MIN_VERSION: &str = "0.29.0";
 
 static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
     BTreeMap::from([
@@ -304,6 +307,15 @@ impl KimiBackend {
             }),
         }
     }
+
+    pub async fn discover_models(
+        &self,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_kimi_models(&self.inner.config, cache, cancellation, timeout).await
+    }
 }
 
 #[async_trait]
@@ -408,6 +420,21 @@ async fn discover_models(
     if let Some(catalog) = cache.get(&key) {
         return catalog;
     }
+    let catalog = discover_acp_session(config, cancellation, timeout)
+        .await
+        .map_or_else(Catalog::default, |(_, session)| Catalog {
+            models: parse_acp_session_models(&session, &config.provider),
+            fallback: false,
+        });
+    let _ = cache.insert(key, catalog.clone());
+    catalog
+}
+
+async fn discover_acp_session(
+    config: &QoderConfig,
+    cancellation: CancellationToken,
+    timeout: Duration,
+) -> Option<(Value, Value)> {
     let command_path = if config.command.path.is_empty() {
         config.default_command.as_str()
     } else {
@@ -429,21 +456,21 @@ async fn discover_models(
         Ok(tree) => tree,
         Err(error) => {
             tracing::debug!(provider = %config.provider, error = %error, "ACP model discovery process failed to start");
-            return Catalog::default();
+            return None;
         }
     };
     let Some(stdin) = tree.child_mut().stdin.take() else {
         let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-        return Catalog::default();
+        return None;
     };
     let Some(stdout) = tree.child_mut().stdout.take() else {
         let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-        return Catalog::default();
+        return None;
     };
     let provider = config.provider.clone();
     let mut handshake = tokio::spawn(async move {
         let mut client = AcpClient::new(BufReader::new(stdout), stdin);
-        client
+        let initialize = client
             .request(
                 "initialize",
                 serde_json::json!({"protocolVersion":1,"clientInfo":{"name":"cordy-model-discovery","version":"0.1.0"},"clientCapabilities":{}}),
@@ -454,13 +481,14 @@ async fn discover_models(
             .prefix(&format!("cordy-{provider}-discovery-"))
             .tempdir()
             .map_err(AcpError::Transport)?;
-        client
+        let session = client
             .request(
                 "session/new",
                 serde_json::json!({"cwd":directory.path().to_string_lossy(),"mcpServers":[]}),
                 |_| {},
             )
-            .await
+            .await?;
+        Ok::<_, AcpError>((initialize, session))
     });
     let timeout = if timeout.is_zero() {
         DISCOVERY_TIMEOUT
@@ -476,12 +504,189 @@ async fn discover_models(
     if !handshake.is_finished() {
         handshake.abort();
     }
-    let catalog = result.map_or_else(Catalog::default, |session| Catalog {
-        models: parse_acp_session_models(&session, &config.provider),
+    result
+}
+
+async fn discover_kimi_models(
+    config: &QoderConfig,
+    cache: &CatalogCache,
+    cancellation: CancellationToken,
+    timeout: Duration,
+) -> Catalog {
+    let Some(key) = ModelDiscoveryCacheKey::new("kimi", &config.command) else {
+        return Catalog::default();
+    };
+    if let Some(catalog) = cache.get(&key) {
+        return catalog;
+    }
+    let Some((initialize, session)) =
+        discover_acp_session(config, cancellation.clone(), timeout).await
+    else {
+        return Catalog::default();
+    };
+    let mut catalog = Catalog {
+        models: parse_acp_session_models(&session, "kimi"),
         fallback: false,
-    });
+    };
+    let version = initialize
+        .get("agentInfo")
+        .or_else(|| initialize.get("agent_info"))
+        .and_then(|info| info.get("version"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if check_minimum(version, KIMI_THINKING_MIN_VERSION, false).is_ok() {
+        if let Some(thinking) = discover_kimi_thinking(config, cancellation, timeout).await {
+            for model in &mut catalog.models {
+                if let Some(model_thinking) = thinking.get(&model.id) {
+                    model.thinking = Some(model_thinking.clone());
+                }
+            }
+        } else {
+            tracing::debug!(
+                provider = "kimi",
+                reason = "provider_list_unavailable",
+                "per-model thinking discovery unavailable"
+            );
+        }
+    }
     let _ = cache.insert(key, catalog.clone());
     catalog
+}
+
+async fn discover_kimi_thinking(
+    config: &QoderConfig,
+    cancellation: CancellationToken,
+    timeout: Duration,
+) -> Option<BTreeMap<String, crate::model::ModelThinking>> {
+    let command_path = if config.command.path.is_empty() {
+        config.default_command.as_str()
+    } else {
+        config.command.path.as_str()
+    };
+    let prefix = filter_launch_prefix(&config.command.prefix, &KIMI_BLOCKED_ARGS);
+    let mut argv = prefix.args;
+    argv.extend(["provider", "list", "--json"].map(str::to_string));
+    let mut command = Command::new(command_path);
+    command
+        .args(argv)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .envs(&config.env)
+        .kill_on_drop(false);
+    let mut tree = OwnedProcessTree::spawn(&mut command).await.ok()?;
+    let stdout = tree.child_mut().stdout.take()?;
+    let mut reader = tokio::spawn(async move {
+        let mut output = Vec::new();
+        stdout
+            .take(DISCOVERY_OUTPUT_MAX.saturating_add(1))
+            .read_to_end(&mut output)
+            .await
+            .map(|_| output)
+    });
+    let timeout = if timeout.is_zero() {
+        DISCOVERY_TIMEOUT
+    } else {
+        timeout
+    };
+    let succeeded = tokio::select! {
+        status = tree.wait() => status.is_ok_and(|status| status.success()),
+        () = cancellation.cancelled() => false,
+        () = tokio::time::sleep(timeout) => false,
+    };
+    let output = if succeeded {
+        tokio::time::timeout(TERMINATION_GRACE, &mut reader)
+            .await
+            .ok()
+            .and_then(Result::ok)
+            .and_then(Result::ok)
+            .filter(|output| {
+                u64::try_from(output.len()).is_ok_and(|len| len <= DISCOVERY_OUTPUT_MAX)
+            })
+    } else {
+        None
+    };
+    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+    if !reader.is_finished() {
+        reader.abort();
+    }
+    output.and_then(|output| parse_kimi_thinking(&output))
+}
+
+fn parse_kimi_thinking(output: &[u8]) -> Option<BTreeMap<String, crate::model::ModelThinking>> {
+    let response: Value = serde_json::from_slice(output).ok()?;
+    let models = response.get("models")?.as_object()?;
+    if models.is_empty() {
+        return None;
+    }
+    let mut parsed = BTreeMap::new();
+    for (model_id, model) in models {
+        let model_id = model_id.trim();
+        if model_id.is_empty() {
+            continue;
+        }
+        let efforts = model
+            .get("supportEfforts")
+            .or_else(|| model.get("support_efforts"))
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let mut seen = std::collections::BTreeSet::new();
+        let supported_levels: Vec<_> = efforts
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::trim)
+            .filter(|effort| valid_dynamic_value(effort) && seen.insert((*effort).to_string()))
+            .map(|effort| crate::model::ThinkingLevel {
+                value: effort.to_string(),
+                label: thinking_label(effort),
+                description: String::new(),
+            })
+            .collect();
+        if supported_levels.is_empty() {
+            continue;
+        }
+        let default_level = model
+            .get("defaultEffort")
+            .or_else(|| model.get("default_effort"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|default| seen.contains(*default))
+            .unwrap_or_default()
+            .to_string();
+        parsed.insert(
+            model_id.to_string(),
+            crate::model::ModelThinking {
+                supported_levels,
+                default_level,
+            },
+        );
+    }
+    Some(parsed)
+}
+
+fn valid_dynamic_value(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 64
+        && value.chars().enumerate().all(|(index, character)| {
+            character.is_ascii_alphanumeric()
+                || ((character == '-' || character == '_' || character == '.') && index > 0)
+        })
+}
+
+fn thinking_label(value: &str) -> String {
+    match value {
+        "low" => "Low".to_string(),
+        "medium" => "Medium".to_string(),
+        "high" => "High".to_string(),
+        "max" => "Max".to_string(),
+        _ => {
+            let mut characters = value.chars();
+            characters.next().map_or_else(String::new, |first| {
+                first.to_uppercase().collect::<String>() + characters.as_str()
+            })
+        }
+    }
 }
 
 #[async_trait]
@@ -1570,6 +1775,19 @@ mod tests {
     }
 
     #[test]
+    fn kimi_thinking_catalog_rejects_unsafe_and_duplicate_values() {
+        let parsed = parse_kimi_thinking(
+            br#"{"models":{"kimi-code/k3":{"supportEfforts":["low","low","max","../bad",""],"defaultEffort":"../bad"}}}"#,
+        )
+        .unwrap_or_else(|| panic!("parse Kimi thinking catalog"));
+        let thinking = &parsed["kimi-code/k3"];
+        assert_eq!(thinking.supported_levels.len(), 2);
+        assert_eq!(thinking.supported_levels[0].value, "low");
+        assert_eq!(thinking.supported_levels[1].value, "max");
+        assert!(thinking.default_level.is_empty());
+    }
+
+    #[test]
     fn kiro_finishing_command_is_payload_driven_and_strict() {
         assert!(is_kiro_issue_comment_add_command(
             "CORDY_TOKEN=x sh -c 'cordy issue comment add TASK-1 --body done'"
@@ -1991,6 +2209,50 @@ done
             .find("\"method\":\"session/prompt\"")
             .unwrap_or_else(|| panic!("Kimi prompt missing"));
         assert!(set_model < set_thinking && set_thinking < prompt);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kimi_discovery_merges_version_gated_per_model_effort() {
+        let (_directory, _requests, backend) = fake_kimi_backend(
+            r#"#!/bin/sh
+if test "$1" = provider && test "$2" = list && test "$3" = --json; then
+  printf '%s\n' '{"models":{"kimi-code/k3":{"supportEfforts":["low","high","max"],"defaultEffort":"high"},"kimi-code/plain":{"supportEfforts":[]}}}'
+  exit 0
+fi
+test "$1" = acp || exit 20
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentInfo":{"name":"Kimi Code CLI","version":"0.33.0"}}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"discovery","configOptions":[{"id":"model","category":"model","currentValue":"kimi-code/k3","options":[{"value":"kimi-code/k3","name":"K3"},{"value":"kimi-code/plain","name":"Plain"}]}]}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let catalog = backend
+            .discover_models(
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(catalog.models.len(), 2);
+        assert!(catalog.models[0].default);
+        let thinking = catalog.models[0]
+            .thinking
+            .as_ref()
+            .unwrap_or_else(|| panic!("Kimi K3 thinking catalog missing"));
+        assert_eq!(thinking.default_level, "high");
+        assert_eq!(
+            thinking
+                .supported_levels
+                .iter()
+                .map(|level| level.value.as_str())
+                .collect::<Vec<_>>(),
+            ["low", "high", "max"]
+        );
+        assert!(catalog.models[1].thinking.is_none());
     }
 
     #[cfg(unix)]
