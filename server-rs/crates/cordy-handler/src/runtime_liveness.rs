@@ -5,6 +5,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 
 const KEY_PREFIX: &str = "mul:runtime:hb:";
+const REDIS_OPERATION_TIMEOUT: Duration = Duration::from_millis(250);
 
 #[async_trait]
 pub trait LivenessStore: Send + Sync {
@@ -31,12 +32,12 @@ impl LivenessStore for NoopLivenessStore {
 }
 
 pub struct RedisLivenessStore {
-    client: redis::Client,
+    connection: cordy_redis::RecoveringConnection,
 }
 
 impl RedisLivenessStore {
-    pub fn new(client: redis::Client) -> Arc<Self> {
-        Arc::new(Self { client })
+    pub fn new(connection: cordy_redis::RecoveringConnection) -> Arc<Self> {
+        Arc::new(Self { connection })
     }
     fn key(runtime_id: &str) -> String {
         format!("{KEY_PREFIX}{runtime_id}")
@@ -54,14 +55,18 @@ impl LivenessStore for RedisLivenessStore {
             !runtime_id.is_empty(),
             "redis liveness store: empty runtime id"
         );
-        let mut connection = self.client.get_multiplexed_async_connection().await?;
-        redis::cmd("SET")
-            .arg(Self::key(runtime_id))
-            .arg("1")
-            .arg("PX")
-            .arg(u64::try_from(ttl.as_millis()).unwrap_or(u64::MAX))
-            .query_async::<()>(&mut connection)
-            .await?;
+        let mut connection = self.connection.clone();
+        tokio::time::timeout(
+            REDIS_OPERATION_TIMEOUT,
+            redis::cmd("SET")
+                .arg(Self::key(runtime_id))
+                .arg("1")
+                .arg("PX")
+                .arg(u64::try_from(ttl.as_millis()).unwrap_or(u64::MAX))
+                .query_async::<()>(&mut connection),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("liveness touch timed out"))??;
         Ok(())
     }
 
@@ -69,25 +74,29 @@ impl LivenessStore for RedisLivenessStore {
         if runtime_ids.is_empty() {
             return (HashMap::new(), true);
         }
-        let mut connection = match self.client.get_multiplexed_async_connection().await {
-            Ok(connection) => connection,
-            Err(error) => {
-                tracing::warn!(%error, "liveness connection failed; falling back to DB");
-                return (HashMap::new(), false);
-            }
-        };
+        let mut connection = self.connection.clone();
         let keys = runtime_ids
             .iter()
             .map(|id| Self::key(id))
             .collect::<Vec<_>>();
-        let values = match redis::cmd("MGET")
-            .arg(keys)
-            .query_async::<Vec<Option<String>>>(&mut connection)
-            .await
+        let values = match tokio::time::timeout(
+            REDIS_OPERATION_TIMEOUT,
+            redis::cmd("MGET")
+                .arg(keys)
+                .query_async::<Vec<Option<String>>>(&mut connection),
+        )
+        .await
         {
-            Ok(values) => values,
-            Err(error) => {
+            Ok(Ok(values)) => values,
+            Ok(Err(error)) => {
                 tracing::warn!(%error, count = runtime_ids.len(), "liveness mget failed; falling back to DB");
+                return (HashMap::new(), false);
+            }
+            Err(_) => {
+                tracing::warn!(
+                    count = runtime_ids.len(),
+                    "liveness mget timed out; falling back to DB"
+                );
                 return (HashMap::new(), false);
             }
         };
@@ -103,17 +112,18 @@ impl LivenessStore for RedisLivenessStore {
         if runtime_id.is_empty() {
             return;
         }
-        let result = async {
-            let mut connection = self.client.get_multiplexed_async_connection().await?;
+        let mut connection = self.connection.clone();
+        match tokio::time::timeout(
+            REDIS_OPERATION_TIMEOUT,
             redis::cmd("DEL")
                 .arg(Self::key(runtime_id))
-                .query_async::<()>(&mut connection)
-                .await?;
-            Ok::<_, redis::RedisError>(())
-        }
-        .await;
-        if let Err(error) = result {
-            tracing::warn!(%error, %runtime_id, "liveness forget failed");
+                .query_async::<()>(&mut connection),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => tracing::warn!(%error, %runtime_id, "liveness forget failed"),
+            Err(_) => tracing::warn!(%runtime_id, "liveness forget timed out"),
         }
     }
 }

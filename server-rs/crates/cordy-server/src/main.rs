@@ -13,8 +13,6 @@ use tokio_util::sync::CancellationToken;
 mod channel_runtime;
 mod realtime_runtime;
 
-const PENDING_STORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
-
 struct ProductionApp {
     router: Router,
     root_cancel: CancellationToken,
@@ -197,7 +195,7 @@ fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<cordy_realtime::hub::H
     cordy_handler::build_router(db, hub)
 }
 
-async fn install_pending_stores(
+fn install_pending_stores(
     state: cordy_handler::HandlerState,
     redis_url: Option<&str>,
 ) -> cordy_handler::HandlerState {
@@ -207,22 +205,11 @@ async fn install_pending_stores(
     let client = match redis::Client::open(redis_url) {
         Ok(client) => client,
         Err(_) => {
-            tracing::warn!("REDIS_URL is invalid; runtime pending requests are disabled");
+            tracing::warn!("REDIS_URL is invalid; Redis caches and stores are disabled");
             return state;
         }
     };
-    match tokio::time::timeout(
-        PENDING_STORE_CONNECT_TIMEOUT,
-        state.clone().with_redis(client),
-    )
-    .await
-    {
-        Ok(Ok(wired)) => wired,
-        Ok(Err(_)) | Err(_) => {
-            tracing::warn!("Redis is unavailable; runtime pending requests are disabled");
-            state
-        }
-    }
+    state.with_redis(client)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -243,9 +230,13 @@ async fn build_production_router(
 ) -> anyhow::Result<ProductionApp> {
     let feature_flags = Arc::new(cordy_service::feature_flags::ConfiguredFlags::from_env()?);
     let entitlements = autopilot_entitlements(cfg);
+    let attachment_download =
+        cordy_handler::state::AttachmentDownloadSettings::from_config(cfg).await?;
+    attachment_download.validate_for_storage(attachment_storage.as_ref())?;
+    let cdn_signed = attachment_download.cloudfront_signer.is_some();
     let analytics: Arc<dyn cordy_analytics::AnalyticsClient> =
         Arc::from(cordy_analytics::new_from_env());
-    let mut state = cordy_handler::HandlerState::new_with_production_dependencies(
+    let state = cordy_handler::HandlerState::new_with_production_dependencies(
         db,
         cordy_auth::pat_cache::PatCache::disabled(),
         Some(hub.clone()),
@@ -257,6 +248,12 @@ async fn build_production_router(
     .with_autopilot_entitlements(entitlements)
     .with_github_snapshots(github_client)
     .with_auth_settings(cordy_handler::auth::AuthSettings::from_config(cfg))
+    .with_cloud_pat_fleet_url(
+        cfg.fleet
+            .cloud_fleet_url
+            .as_deref()
+            .or(cfg.fleet.fleet_url.as_deref()),
+    )
     .with_email_service(Arc::new(
         cordy_service::email::EmailService::from_config_values(
             cfg.email.resend_api_key.as_deref(),
@@ -264,16 +261,18 @@ async fn build_production_router(
         ),
     ))
     .with_rate_limit_trusted_proxies(cfg.urls.rate_limit_trusted_proxies.as_deref())
-    .with_attachment_storage(attachment_storage, attachment_frame_ancestors)
+    .with_attachment_storage(
+        attachment_storage,
+        attachment_frame_ancestors,
+        attachment_download,
+    )
     .with_plugins_from_env()
     .with_slack_history_from_env()
     .with_llm_from_env()?
     .with_integrations(cfg.integrations.clone())
     .with_public_config(cordy_handler::config::PublicConfigSettings {
         cdn_domain: cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
-        cdn_signed: cfg.storage.cloudfront_key_pair_id.is_some()
-            && (cfg.storage.cloudfront_private_key.is_some()
-                || cfg.storage.cloudfront_private_key_secret.is_some()),
+        cdn_signed,
         server_version: env!("CARGO_PKG_VERSION").to_string(),
     })
     .with_vcs_webhooks(vcs.enabled, vcs.secret_box);
@@ -282,25 +281,9 @@ async fn build_production_router(
         .url
         .as_deref()
         .filter(|value| !value.trim().is_empty());
-    if let Some(redis_url) = redis_url {
-        match redis::Client::open(redis_url) {
-            Ok(client) => {
-                state = state
-                    .with_rate_limit_redis(client.clone())
-                    .with_auth_redis(client.clone())
-                    .with_liveness_redis(client);
-            }
-            Err(error) => {
-                tracing::warn!(%error, "invalid REDIS_URL; public-route rate limiting disabled");
-            }
-        }
-    } else {
-        tracing::warn!("public-route rate limiting disabled: REDIS_URL not configured");
-    }
     let root_cancel = CancellationToken::new();
-    let state = install_pending_stores(state, redis_url)
-        .await
-        .with_channel_cancel(root_cancel.child_token());
+    let state =
+        install_pending_stores(state, redis_url).with_channel_cancel(root_cancel.child_token());
     // Go registers realtime fanout before subscriber/activity/notification
     // side effects. Preserve that callback order while retaining async relay
     // ownership outside the handler state.
@@ -560,7 +543,8 @@ async fn main() -> anyhow::Result<()> {
     let attachment_storage = cordy_handler::attachment_storage::from_env(
         cfg.storage.local_upload_dir.as_deref(),
         cfg.storage.local_upload_base_url.as_deref(),
-    )?;
+    )
+    .await?;
     let attachment_frame_ancestors = cfg
         .urls
         .cors_allowed_origins
@@ -1003,7 +987,7 @@ mod tests {
             cordy_auth::pat_cache::PatCache::disabled(),
             None,
         );
-        let state = install_pending_stores(state, Some("not-a-redis-url")).await;
+        let state = install_pending_stores(state, Some("not-a-redis-url"));
         assert!(state.update_store.is_none());
         assert!(state.model_list_store.is_none());
         assert!(state.local_skill_list_store.is_none());
@@ -1011,7 +995,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unreachable_redis_does_not_block_server_startup() {
+    async fn unreachable_redis_is_installed_lazily_for_later_recovery() {
         let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
         let state = cordy_handler::HandlerState::new(
             pool,
@@ -1019,12 +1003,12 @@ mod tests {
             None,
         );
         let started = tokio::time::Instant::now();
-        let state = install_pending_stores(state, Some("redis://192.0.2.1:6379/")).await;
-        assert!(started.elapsed() <= PENDING_STORE_CONNECT_TIMEOUT + Duration::from_secs(1));
-        assert!(state.update_store.is_none());
-        assert!(state.model_list_store.is_none());
-        assert!(state.local_skill_list_store.is_none());
-        assert!(state.local_skill_import_store.is_none());
+        let state = install_pending_stores(state, Some("redis://192.0.2.1:6379/"));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(state.update_store.is_some());
+        assert!(state.model_list_store.is_some());
+        assert!(state.local_skill_list_store.is_some());
+        assert!(state.local_skill_import_store.is_some());
     }
 
     #[tokio::test]

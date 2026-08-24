@@ -14,9 +14,9 @@ use cordy_db::queries::{github, member};
 use cordy_middleware::workspace::WorkspaceContext;
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
-use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
-use rand::rngs::OsRng;
+use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use rand::RngCore;
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::Sha256;
@@ -238,7 +238,7 @@ async fn setup(State(state): State<HandlerState>, Query(query): Query<SetupQuery
         Ok(Some(value)) => value,
         _ => {
             return Redirect::temporary(&format!("{target}&github_error=persist_failed"))
-                .into_response()
+                .into_response();
         }
     };
     if let Ok(Some(pending)) =
@@ -377,7 +377,7 @@ async fn list_repositories(
             return error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "github repository browsing is not configured",
-            )
+            );
         }
     };
     match client

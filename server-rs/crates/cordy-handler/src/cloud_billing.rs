@@ -7,10 +7,10 @@ use std::time::{Duration, Instant};
 
 use axum::body::{Body, Bytes};
 use axum::extract::{ConnectInfo, Extension, Path, Request, State};
-use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode, Uri};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::{middleware, Router};
+use axum::{Router, middleware};
 use cordy_middleware::workspace::WorkspaceContext;
 use futures_util::StreamExt;
 use ipnetwork::IpNetwork;
@@ -441,7 +441,7 @@ async fn create_subscription_checkout(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to build subscription request",
-            )
+            );
         }
     };
     proxy_call(
@@ -961,13 +961,16 @@ mod tests {
     #[test]
     fn stripe_checkout_ids_reject_path_retargeting() {
         for id in ["cs_test/../admin", "cs?inject=1", "cs#frag"] {
-            assert!(!id
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'));
+            assert!(
+                !id.bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            );
         }
-        assert!("cs_test_abc"
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'));
+        assert!(
+            "cs_test_abc"
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        );
     }
 
     #[test]

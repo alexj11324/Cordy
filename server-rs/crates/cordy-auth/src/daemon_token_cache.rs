@@ -1,7 +1,7 @@
 //! Redis-backed daemon-token (mdt_) lookup cache — port of
 //! `server/internal/auth/daemon_token_cache.go`.
 
-use redis::aio::ConnectionManager;
+use cordy_redis::RecoveringConnection;
 use serde::{Deserialize, Serialize};
 
 /// Namespaces daemon-token cache keys separately from PAT (`mul:auth:pat:*`)
@@ -26,14 +26,17 @@ pub struct DaemonTokenIdentity {
 /// lookups (mirrors Go's nil `*DaemonTokenCache`).
 #[derive(Clone)]
 pub struct DaemonTokenCache {
-    conn: Option<ConnectionManager>,
+    conn: Option<RecoveringConnection>,
 }
 
 impl DaemonTokenCache {
     /// Builds an active cache backed by `client`'s connection manager.
     pub async fn new(client: redis::Client) -> redis::RedisResult<Self> {
-        let conn = client.get_connection_manager().await?;
-        Ok(Self { conn: Some(conn) })
+        Ok(Self::from_connection(RecoveringConnection::new(client)))
+    }
+
+    pub fn from_connection(conn: RecoveringConnection) -> Self {
+        Self { conn: Some(conn) }
     }
 
     /// A cache that never hits — used when REDIS_URL is unset.
@@ -49,17 +52,16 @@ impl DaemonTokenCache {
     /// Redis / decode error — a dead Redis must not take down auth.
     pub async fn get(&self, hash: &str) -> Option<DaemonTokenIdentity> {
         let mut conn = self.conn.clone()?;
-        let raw: Option<String> = match redis::cmd("GET")
-            .arg(Self::key(hash))
-            .query_async(&mut conn)
-            .await
+        let raw: Option<String> = match crate::bounded_redis(
+            redis::cmd("GET")
+                .arg(Self::key(hash))
+                .query_async(&mut conn),
+        )
+        .await
         {
             Ok(raw) => raw,
-            Err(e) => {
-                tracing::warn!(
-                    error = %e,
-                    "daemon_token_cache: get failed; falling back to DB"
-                );
+            Err(error) => {
+                tracing::warn!(?error, "daemon_token_cache: get failed; falling back to DB");
                 return None;
             }
         };
@@ -93,15 +95,17 @@ impl DaemonTokenCache {
             tracing::warn!("daemon_token_cache: marshal failed");
             return;
         };
-        let result = redis::cmd("SET")
-            .arg(Self::key(hash))
-            .arg(raw)
-            .arg("EX")
-            .arg(ttl_secs)
-            .query_async::<()>(&mut conn)
-            .await;
-        if let Err(e) = result {
-            tracing::warn!(error = %e, "daemon_token_cache: set failed");
+        let result = crate::bounded_redis(
+            redis::cmd("SET")
+                .arg(Self::key(hash))
+                .arg(raw)
+                .arg("EX")
+                .arg(ttl_secs)
+                .query_async::<()>(&mut conn),
+        )
+        .await;
+        if let Err(error) = result {
+            tracing::warn!(?error, "daemon_token_cache: set failed");
         }
     }
 
@@ -111,13 +115,15 @@ impl DaemonTokenCache {
         let Some(mut conn) = self.conn.clone() else {
             return;
         };
-        let result = redis::cmd("DEL")
-            .arg(Self::key(hash))
-            .query_async::<i64>(&mut conn)
-            .await;
-        if let Err(e) = result {
+        let result = crate::bounded_redis(
+            redis::cmd("DEL")
+                .arg(Self::key(hash))
+                .query_async::<i64>(&mut conn),
+        )
+        .await;
+        if let Err(error) = result {
             tracing::warn!(
-                error = %e,
+                ?error,
                 "daemon_token_cache: invalidate failed; entry will expire on TTL"
             );
         }

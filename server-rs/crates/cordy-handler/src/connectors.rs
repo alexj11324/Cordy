@@ -16,7 +16,7 @@ use cordy_db::queries::{agent, channel, dingtalk};
 use cordy_lark::client::ApiClient as _;
 use cordy_middleware::workspace::WorkspaceContext;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -761,7 +761,7 @@ async fn update_dingtalk_group_route(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to update dingtalk group route",
-            )
+            );
         }
     };
     state.bus.publish(&cordy_events::Event {
@@ -817,7 +817,7 @@ async fn revoke(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to load installation",
-            )
+            );
         }
     };
     if matches!(provider, Provider::Lark)
@@ -1080,7 +1080,7 @@ async fn install_wecom(
                     return error_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "failed to load installation",
-                    )
+                    );
                 }
             };
             publish_created(&state, Provider::WeCom, &row, actor);
@@ -1140,14 +1140,14 @@ async fn install_telegram(
             return error_response(
                 StatusCode::BAD_REQUEST,
                 "telegram: bot token must look like 123456:ABC-DEF…",
-            )
+            );
         }
     };
     let api = cordy_telegram::BotApi::new("", token);
     let me = match api.get_me().await {
         Ok(value) if value.is_bot && !value.username.is_empty() => value,
         Ok(_) => {
-            return error_response(StatusCode::BAD_REQUEST, "Telegram rejected this bot token")
+            return error_response(StatusCode::BAD_REQUEST, "Telegram rejected this bot token");
         }
         Err(error) => {
             tracing::warn!(%error, "Telegram credential verification failed");
@@ -1162,7 +1162,7 @@ async fn install_telegram(
             return error_response(
                 StatusCode::BAD_REQUEST,
                 "this Telegram bot has a webhook configured",
-            )
+            );
         }
         Ok(_) => {}
         Err(error) => {
@@ -1179,7 +1179,7 @@ async fn install_telegram(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to encrypt bot token",
-            )
+            );
         }
     };
     let config = json!({"app_id": bot_id, "bot_username": me.username, "bot_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed)});
@@ -1297,7 +1297,7 @@ async fn install_slack(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to initialize Slack verification",
-            )
+            );
         }
     };
     let auth = match slack_call(&client, "auth.test", bot_token, &[]).await {
@@ -1309,7 +1309,7 @@ async fn install_slack(
             value
         }
         Ok(_) | Err(_) => {
-            return error_response(StatusCode::BAD_REQUEST, "could not verify the Slack tokens")
+            return error_response(StatusCode::BAD_REQUEST, "could not verify the Slack tokens");
         }
     };
     let bot = match slack_call(
@@ -1322,7 +1322,7 @@ async fn install_slack(
     {
         Ok(value) => value,
         Err(_) => {
-            return error_response(StatusCode::BAD_REQUEST, "could not verify the Slack tokens")
+            return error_response(StatusCode::BAD_REQUEST, "could not verify the Slack tokens");
         }
     };
     if bot.bot.app_id != app_id {
@@ -1343,7 +1343,7 @@ async fn install_slack(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to encrypt Slack token",
-            )
+            );
         }
     };
     let sealed_app = match box_.seal(app_token.as_bytes()) {
@@ -1352,7 +1352,7 @@ async fn install_slack(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to encrypt Slack token",
-            )
+            );
         }
     };
     let config = json!({"app_id": app_id, "team_id": auth.team_id, "bot_user_id": auth.user_id, "bot_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed_bot), "app_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed_app)});

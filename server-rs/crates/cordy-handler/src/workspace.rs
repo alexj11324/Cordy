@@ -846,6 +846,13 @@ async fn update_member(
         Ok(Some(updated)) => updated,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update member"),
     };
+    state
+        .membership_cache
+        .invalidate(
+            &target.user_id.to_string(),
+            &target.workspace_id.to_string(),
+        )
+        .await;
     let found_user = match user::get_user(&state.pool, updated.user_id).await {
         Ok(Some(user)) => user,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load member"),
@@ -1056,6 +1063,13 @@ async fn remove_member_common(
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete member");
         }
     };
+    state
+        .membership_cache
+        .invalidate(
+            &target.user_id.to_string(),
+            &target.workspace_id.to_string(),
+        )
+        .await;
     publish_member_revocation(
         state,
         target.workspace_id,
@@ -1483,6 +1497,12 @@ async fn delete_workspace(
         .into_iter()
         .map(|member| member.user_id)
         .collect::<Vec<_>>();
+    for user_id in &affected_users {
+        state
+            .membership_cache
+            .invalidate(&user_id.to_string(), &workspace_id.to_string())
+            .await;
+    }
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(_) => {
