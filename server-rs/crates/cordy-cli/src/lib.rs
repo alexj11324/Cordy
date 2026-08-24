@@ -146,6 +146,8 @@ enum IssueCommand {
     Comment(IssueCommentArgs),
     #[command(about = "List execution history for an issue")]
     Runs(IssueRunsArgs),
+    #[command(about = "Show aggregated token usage for an issue")]
+    Usage(IssueUsageArgs),
 }
 
 #[derive(Debug, Args)]
@@ -424,6 +426,14 @@ struct IssueRunsArgs {
     output: OutputFormat,
     #[arg(long, help = "Show full task UUIDs in table output")]
     full_id: bool,
+}
+
+#[derive(Debug, Args)]
+struct IssueUsageArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -831,6 +841,9 @@ async fn run_with_input<R: Read>(
         Command::Issue(IssueArgs {
             command: IssueCommand::Runs(args),
         }) => run_issue_runs(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command: IssueCommand::Usage(args),
+        }) => run_issue_usage(cli, environment, args).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -3402,6 +3415,67 @@ fn format_issue_runs_table(runs: &[Value], full_id: bool, actors: &IssueActorNam
     format_table(&rows)
 }
 
+async fn run_issue_usage(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueUsageArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let usage: Value = client
+        .get_json(&format!("/api/issues/{issue_id}/usage"))
+        .await
+        .context("get issue usage")?;
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&usage)?),
+        OutputFormat::Table => format_table(&[
+            vec![
+                "INPUT_TOKENS".into(),
+                "OUTPUT_TOKENS".into(),
+                "CACHE_READ".into(),
+                "CACHE_WRITE".into(),
+                "RUNS".into(),
+            ],
+            vec![
+                format_metadata_value(usage.get("total_input_tokens")),
+                format_metadata_value(usage.get("total_output_tokens")),
+                format_metadata_value(usage.get("total_cache_read_tokens")),
+                format_metadata_value(usage.get("total_cache_write_tokens")),
+                format_metadata_value(usage.get("task_count")),
+            ],
+        ]),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn format_metadata_value(value: Option<&Value>) -> String {
+    match value.unwrap_or(&Value::Null) {
+        Value::String(value) => value.clone(),
+        Value::Bool(value) => value.to_string(),
+        Value::Number(value) => {
+            if let Some(value) = value.as_i64() {
+                value.to_string()
+            } else if let Some(value) = value.as_u64() {
+                value.to_string()
+            } else if let Some(value) = value.as_f64() {
+                if value.fract() == 0.0 {
+                    format!("{value:.0}")
+                } else {
+                    value.to_string()
+                }
+            } else {
+                value.to_string()
+            }
+        }
+        value => serde_json::to_string(value).unwrap_or_default(),
+    }
+}
+
 fn validate_issue_status(status: &str) -> Result<()> {
     let normalized = status.trim().to_ascii_lowercase();
     let bytes = normalized.as_bytes();
@@ -4926,6 +5000,15 @@ mod tests {
                 command: IssueCommand::Runs(args),
             }) => args,
             _ => panic!("expected issue runs"),
+        }
+    }
+
+    fn issue_usage_args(cli: &Cli) -> &IssueUsageArgs {
+        match &cli.command {
+            Command::Issue(IssueArgs {
+                command: IssueCommand::Usage(args),
+            }) => args,
+            _ => panic!("expected issue usage"),
         }
     }
 
@@ -7176,6 +7259,59 @@ mod tests {
         assert!(output.stdout.starts_with("ID"));
         assert!(output.stdout.contains("CodeBot"));
         assert!(output.stdout.contains("completed"));
+        task.abort();
+    }
+
+    #[test]
+    fn issue_usage_parser_and_number_format_match_go() {
+        let cli = Cli::try_parse_from(["cordy", "issue", "usage", "CORD-18", "--output", "json"])
+            .expect("usage CLI");
+        let args = issue_usage_args(&cli);
+        assert_eq!(args.issue_id, "CORD-18");
+        assert_eq!(args.output, OutputFormat::Json);
+        assert_eq!(format_metadata_value(Some(&serde_json::json!(42.0))), "42");
+        assert_eq!(
+            format_metadata_value(Some(&serde_json::json!(1234567890123_u64))),
+            "1234567890123"
+        );
+        assert_eq!(format_metadata_value(None), "null");
+    }
+
+    #[tokio::test]
+    async fn issue_usage_resolves_issue_and_renders_aggregate_table() {
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid/usage",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "total_input_tokens":1000,"total_output_tokens":200,
+                        "total_cache_read_tokens":300,"total_cache_write_tokens":40,"task_count":2
+                    }))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from(["cordy", "issue", "usage", "CORD-18"]).expect("usage CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("issue usage");
+        assert!(output.stdout.starts_with("INPUT_TOKENS"));
+        assert!(output.stdout.contains("1000"));
+        assert!(output.stdout.contains("300"));
+        assert!(output.stdout.contains("2"));
         task.abort();
     }
 
