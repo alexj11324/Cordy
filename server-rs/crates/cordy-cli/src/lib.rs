@@ -108,6 +108,8 @@ enum Command {
     User(UserArgs),
     #[command(about = "Work with workspaces")]
     Workspace(WorkspaceArgs),
+    #[command(about = "Work with squads")]
+    Squad(SquadArgs),
     #[command(about = "Work with issue labels")]
     Label(LabelArgs),
     #[command(about = "Work with projects")]
@@ -2257,6 +2259,21 @@ struct WorkspaceArgs {
     command: WorkspaceCommand,
 }
 
+#[derive(Debug, Args)]
+struct SquadArgs {
+    #[command(subcommand)]
+    command: SquadCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum SquadCommand {
+    #[command(about = "List squads in the workspace")]
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
+}
+
 #[derive(Debug, Subcommand)]
 enum WorkspaceCommand {
     #[command(about = "List all workspaces you belong to")]
@@ -2953,6 +2970,9 @@ async fn run_with_input<R: Read>(
             run_workspace_mcp_remove(cli, environment, server_id, workspace.as_deref(), *output)
                 .await
         }
+        Command::Squad(SquadArgs {
+            command: SquadCommand::List { output },
+        }) => run_squad_list(cli, environment, *output).await,
         Command::Label(LabelArgs {
             command: LabelCommand::List { output, full_id },
         }) => run_label_list(cli, environment, *output, *full_id).await,
@@ -13695,6 +13715,65 @@ async fn run_workspace_member_invite(
     })
 }
 
+async fn run_squad_list(
+    cli: &Cli,
+    environment: &Environment,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let squads: Vec<Value> = client
+        .get_json("/api/squads")
+        .await
+        .context("list squads")?;
+    if output == OutputFormat::Json {
+        return Ok(RunOutput {
+            stdout: format!("{}\n", serde_json::to_string_pretty(&squads)?),
+            stderr: String::new(),
+        });
+    }
+    if squads.is_empty() {
+        return Ok(RunOutput {
+            stdout: String::new(),
+            stderr: "No squads found.\n".into(),
+        });
+    }
+    Ok(RunOutput {
+        stdout: format_squad_list_table(&squads),
+        stderr: String::new(),
+    })
+}
+
+fn format_squad_list_table(squads: &[Value]) -> String {
+    let mut rows = vec![vec![
+        "ID".into(),
+        "NAME".into(),
+        "LEADER ID".into(),
+        "MEMBERS".into(),
+    ]];
+    rows.extend(squads.iter().map(|squad| {
+        vec![
+            value_string(squad, "id"),
+            value_string(squad, "name"),
+            value_string(squad, "leader_id"),
+            squad_member_count_display(squad),
+        ]
+    }));
+    format_table(&rows)
+}
+
+fn squad_member_count_display(squad: &Value) -> String {
+    let Some(count) = squad.get("member_count") else {
+        return "-".into();
+    };
+    if let Some(count) = count.as_u64().filter(|count| *count > 0) {
+        return count.to_string();
+    }
+    if let Some(count) = count.as_i64().filter(|count| *count > 0) {
+        return count.to_string();
+    }
+    "-".into()
+}
+
 #[derive(Debug, Deserialize, Serialize)]
 struct WorkspaceMcpServer {
     id: String,
@@ -24122,6 +24201,87 @@ mod tests {
         assert!(error
             .to_string()
             .contains("daemon logs is not available inside a daemon-managed task"));
+    }
+
+    #[test]
+    fn squad_list_parses_output_and_matches_go_table_columns() {
+        let cli = Cli::try_parse_from(["cordy", "squad", "list", "--output", "json"])
+            .expect("squad list CLI");
+        let Command::Squad(SquadArgs {
+            command: SquadCommand::List { output },
+        }) = cli.command
+        else {
+            panic!("expected squad list");
+        };
+        assert_eq!(output, OutputFormat::Json);
+
+        let squads = vec![
+            serde_json::json!({
+                "id": "squad-1",
+                "name": "Reviewers",
+                "leader_id": "agent-1",
+                "member_count": 3
+            }),
+            serde_json::json!({
+                "id": "squad-2",
+                "name": "Empty",
+                "leader_id": "agent-2",
+                "member_count": 0
+            }),
+            serde_json::json!({
+                "id": "squad-3",
+                "name": "Legacy",
+                "leader_id": "agent-3"
+            }),
+        ];
+        let table = format_squad_list_table(&squads);
+        assert!(table.starts_with("ID"));
+        assert!(table.contains("LEADER ID"));
+        assert!(table.contains("squad-1"));
+        assert!(table.contains("Reviewers"));
+        assert!(table.contains("3\n"));
+        assert!(table.contains("Empty"));
+        assert!(table.contains("Legacy"));
+        assert_eq!(squad_member_count_display(&squads[1]), "-");
+        assert_eq!(squad_member_count_display(&squads[2]), "-");
+    }
+
+    #[tokio::test]
+    async fn squad_list_uses_authenticated_workspace_endpoint_and_json_shape() {
+        let app = Router::new().route(
+            "/api/squads",
+            get(|request: Request| async move {
+                assert_eq!(request.headers()["authorization"], "Bearer token-1");
+                assert_eq!(request.headers()["x-workspace-id"], "workspace-1");
+                Json(serde_json::json!([{
+                    "id": "squad-1",
+                    "name": "Reviewers",
+                    "leader_id": "agent-1",
+                    "member_count": 2,
+                    "created_at": "2026-08-24T00:00:00Z"
+                }]))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let cli = Cli::try_parse_from(["cordy", "squad", "list", "--output", "json"])
+            .expect("squad list CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("squad list");
+        let squads: Value = serde_json::from_str(&output.stdout).expect("squad JSON");
+        assert_eq!(squads[0]["id"], "squad-1");
+        assert_eq!(squads[0]["member_count"], 2);
+        assert!(!output.stdout.contains("token-1"));
+        server.abort();
     }
 
     #[test]
