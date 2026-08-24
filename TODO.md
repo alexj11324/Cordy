@@ -290,6 +290,19 @@
 - [ ] Next substantive slice: move to the next Go→Rust business domain; keep
       the daemon lifecycle/provider assembly single-sourced and do not reopen
       the recorded non-blocking P2 differences without new evidence.
+- [x] Began the `cordy setup` domain with a typed, fail-closed profile
+      replacement boundary in PR #129. `SetupProfileInput` only carries
+      server/app URLs; health preflight must succeed before mutation; success
+      atomically replaces the whole profile (clearing stale token/workspace and
+      unknown fields) while preserving lock/permission/fsync semantics. Current
+      head is `8044e5a6beecb26a93c07a7a45ab2ee64dbdf22f` (parent
+      `a7827a4cb39a9a09ca8f6ad88da0b636427ffe32`, tree
+      `7d382be33a072241db1d6b99d038768da33915b1`), candidate
+      `466f3184e7bf7d0b7da16657cf9bd6ce247f70ec`; scoped rustfmt/diff-check
+      pass, Cargo/review/gate/merge remain with pro.
+- [ ] Next setup slice: add the real async health probe and setup command
+      interaction/login sequencing on top of this persistence boundary; never
+      mutate the old profile before a bounded health success.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
