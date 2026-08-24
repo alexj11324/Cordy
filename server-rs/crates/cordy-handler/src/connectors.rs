@@ -355,12 +355,10 @@ fn dingtalk_installation_bindings(
     installation_id: Uuid,
     bindings: Option<&HashMap<Uuid, Vec<String>>>,
 ) -> Value {
-    if let Some(target) = value.as_object_mut() {
+    if let (Some(target), Some(bindings)) = (value.as_object_mut(), bindings) {
         target.insert(
             "bound_dingtalk_user_ids".into(),
-            bindings
-                .map(|items| json!(items.get(&installation_id).cloned().unwrap_or_default()))
-                .unwrap_or(Value::Null),
+            json!(bindings.get(&installation_id).cloned().unwrap_or_default()),
         );
     }
     value
@@ -1592,7 +1590,7 @@ mod tests {
 
         let member =
             dingtalk_installation_bindings(json!({"id": installation_id}), installation_id, None);
-        assert!(member["bound_dingtalk_user_ids"].is_null());
+        assert!(member.get("bound_dingtalk_user_ids").is_none());
     }
 
     #[test]
