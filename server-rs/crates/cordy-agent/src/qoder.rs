@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::io;
 use std::process::Stdio;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use async_trait::async_trait;
@@ -149,6 +149,68 @@ static OUTPUT_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)API call failed after \d+ retr(?:y|ies)")
         .unwrap_or_else(|error| panic!("invalid Qoder output-error regex: {error}"))
 });
+
+#[derive(Debug, Default)]
+struct ProviderErrorState {
+    suffix: Vec<u8>,
+    marker: bool,
+    error_kind: bool,
+    found: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ProviderErrorTracker {
+    state: Arc<Mutex<ProviderErrorState>>,
+}
+
+impl ProviderErrorTracker {
+    fn push(&self, buffer: &[u8]) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        for segment in buffer.split_inclusive(|byte| *byte == b'\n') {
+            let ends_line = segment.ends_with(b"\n");
+            let mut window = Vec::with_capacity(state.suffix.len().saturating_add(segment.len()));
+            window.extend_from_slice(&state.suffix);
+            window.extend_from_slice(segment);
+            let rendered = String::from_utf8_lossy(&window);
+            let lower = rendered.to_ascii_lowercase();
+            state.marker |=
+                lower.contains("[error]") || rendered.contains('⚠') || rendered.contains('❌');
+            state.error_kind |= [
+                "badrequesterror",
+                "authenticationerror",
+                "ratelimiterror",
+                "non-retryable",
+                "api call failed",
+            ]
+            .iter()
+            .any(|needle| lower.contains(needle))
+                || (lower.contains("http ")
+                    && lower.split("http ").skip(1).any(|tail| {
+                        tail.as_bytes().get(..3).is_some_and(|code| {
+                            code[0] == b'4' && code.iter().all(u8::is_ascii_digit)
+                        })
+                    }));
+            state.found |=
+                TERMINAL_PROVIDER_ERROR.is_match(&rendered) || (state.marker && state.error_kind);
+            if ends_line {
+                state.suffix.clear();
+                state.marker = false;
+                state.error_kind = false;
+            } else {
+                const SUFFIX_BYTES: usize = 256;
+                state.suffix.clear();
+                let start = window.len().saturating_sub(SUFFIX_BYTES);
+                state.suffix.extend_from_slice(&window[start..]);
+            }
+        }
+    }
+
+    fn found(&self) -> bool {
+        self.state.lock().is_ok_and(|state| state.found)
+    }
+}
 
 #[derive(Debug, Clone)]
 pub struct QoderConfig {
@@ -1159,6 +1221,7 @@ impl Backend for QoderBackend {
         let started = Instant::now();
         let started_at = SystemTime::now();
         let stderr_tail = SharedDiagnosticBuffer::new(DEFAULT_TAIL_BYTES);
+        let terminal_stderr = ProviderErrorTracker::default();
         let prompt = prompt.to_string();
         let provider = self.config.provider.clone();
         let resume_method = self.config.resume_method.clone();
@@ -1189,6 +1252,7 @@ impl Backend for QoderBackend {
 
         tokio::spawn(async move {
             let stderr_reader = stderr_tail.clone();
+            let stderr_errors = terminal_stderr.clone();
             let mut stderr_task = tokio::spawn(async move {
                 let mut stderr = stderr;
                 let mut buffer = [0_u8; 8192];
@@ -1197,6 +1261,7 @@ impl Backend for QoderBackend {
                         break;
                     }
                     stderr_reader.push(&buffer[..bytes]);
+                    stderr_errors.push(&buffer[..bytes]);
                 }
             });
             let mut protocol_task = tokio::spawn(run_protocol(
@@ -1260,9 +1325,12 @@ impl Backend for QoderBackend {
             }
             let stderr = stderr_tail.tail();
             if outcome.status == "completed" {
-                if let Some(provider_error) =
-                    provider_error(&provider, &stderr, &outcome.full_output)
-                {
+                if let Some(provider_error) = provider_error(
+                    &provider,
+                    terminal_stderr.found(),
+                    &stderr,
+                    &outcome.full_output,
+                ) {
                     outcome.status = "failed".to_string();
                     outcome.error = provider_error;
                 }
@@ -2962,7 +3030,17 @@ fn select_grok_auth_method(initialize: &Value, have_api_key: bool) -> Result<&'s
     ))
 }
 
-fn provider_error(provider: &str, stderr: &str, output: &str) -> Option<String> {
+fn provider_error(
+    provider: &str,
+    terminal_stderr: bool,
+    stderr: &str,
+    output: &str,
+) -> Option<String> {
+    if terminal_stderr {
+        return Some(format!(
+            "{provider} provider reported a terminal upstream error on stderr"
+        ));
+    }
     if let Some(found) = TERMINAL_PROVIDER_ERROR.find(stderr) {
         return Some(format!("{provider} provider error: {}", found.as_str()));
     }
@@ -3461,6 +3539,28 @@ mod tests {
             assert_eq!(accumulator.usage.cache_write_tokens, 7);
             assert_eq!(accumulator.usage.cost_usd_ticks, 900);
         }
+    }
+
+    #[test]
+    fn terminal_provider_error_survives_chunk_boundaries_and_tail_eviction() {
+        let tracker = ProviderErrorTracker::default();
+        tracker.push(b"[ER");
+        tracker.push(b"ROR] upstream Authentication");
+        tracker.push(b"Error: invalid credentials\n");
+        tracker.push(&vec![b'x'; DEFAULT_TAIL_BYTES * 4]);
+        assert!(tracker.found());
+        assert_eq!(
+            provider_error("qoder", tracker.found(), "xxxxx", ""),
+            Some("qoder provider reported a terminal upstream error on stderr".to_string())
+        );
+    }
+
+    #[test]
+    fn provider_error_tracker_does_not_join_unrelated_lines() {
+        let tracker = ProviderErrorTracker::default();
+        tracker.push(b"[ERROR] ordinary validation warning\n");
+        tracker.push(b"AuthenticationError appears in documentation\n");
+        assert!(!tracker.found());
     }
 
     #[test]
