@@ -442,6 +442,14 @@ impl HandlerState {
         self
     }
 
+    /// Binds channel-originated tasks to the process cancellation tree. The
+    /// owned ChannelRuntime still performs its ordered drain first; this child
+    /// token is the fail-safe for startup errors and abnormal root shutdown.
+    pub fn with_channel_cancel(mut self, cancel: tokio_util::sync::CancellationToken) -> Self {
+        self.channel_cancel = cancel;
+        self
+    }
+
     pub fn with_feature_flags(
         mut self,
         flags: Arc<dyn cordy_service::feature_flags::FlagSource>,
