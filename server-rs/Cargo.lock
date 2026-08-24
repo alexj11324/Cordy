@@ -835,6 +835,8 @@ dependencies = [
  "cordy-protocol",
  "cordy-realtime",
  "cordy-remotemcp",
+ "cordy-task-failure",
+ "flate2",
  "futures-util",
  "hex",
  "http 1.5.0",
@@ -852,13 +854,16 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
+ "tokio-tungstenite 0.26.2",
  "tokio-util",
  "toml",
  "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
  "walkdir",
  "windows-sys 0.61.2",
+ "zip",
 ]
 
 [[package]]

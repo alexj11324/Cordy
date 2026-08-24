@@ -44,6 +44,7 @@ cordy-wecom = { path = "../cordy-wecom" }
 futures-util = { workspace = true }
 hex = { workspace = true }
 hmac = { workspace = true }
+http-body-util = { workspace = true }
 ipnetwork = { workspace = true }
 percent-encoding = { workspace = true }
 rand = { workspace = true }
@@ -68,5 +69,4 @@ zip = { workspace = true }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
-http-body-util = { workspace = true }
 tempfile = { workspace = true }

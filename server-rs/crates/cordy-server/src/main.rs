@@ -312,7 +312,10 @@ async fn build_production_router(
             cordy_handler::heartbeat_scheduler::DEFAULT_BATCH_INTERVAL,
         ),
     );
-    let state = state.with_heartbeat_scheduler(heartbeat_scheduler.clone());
+    let state = state
+        .with_heartbeat_scheduler(heartbeat_scheduler.clone())
+        .with_daemon_heartbeat_handler()
+        .with_daemon_rpc_handler();
     let (state, webhook_worker) = state.prepare_webhook_delivery_worker();
     let task_side_effects = state
         .tasks

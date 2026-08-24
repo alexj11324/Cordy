@@ -27,19 +27,19 @@ use tokio_util::sync::CancellationToken;
 /// A subscription to one broadcast generation: resolves (once) on the next
 /// broadcast — Go's receive from the closed `<-chan struct{}`.
 #[derive(Clone)]
-pub(crate) struct Snapshot {
+pub struct Snapshot {
     token: CancellationToken,
 }
 
 impl Snapshot {
     /// Waits for this generation's broadcast (`<-ch`).
-    pub(crate) async fn recv(&self) {
+    pub async fn recv(&self) {
         self.token.cancelled().await;
     }
 
     /// Whether the missed event already fired (`ch == nil`-style fast check);
     /// used by tests and non-blocking pollers.
-    pub(crate) fn is_closed(&self) -> bool {
+    pub fn is_closed(&self) -> bool {
         self.token.is_cancelled()
     }
 }
@@ -74,13 +74,13 @@ struct Inner {
 /// Broadcast calls within `min_broadcast_interval` of the previous one are
 /// debounced, so a flapping WS connection cannot translate a network blip into
 /// a stampede of GetTaskStatus / ListWorkspaces requests.
-pub(crate) struct ReconcileBroadcaster {
+pub struct ReconcileBroadcaster {
     inner: Mutex<Inner>,
 }
 
 impl ReconcileBroadcaster {
     /// `newReconcileBroadcaster`.
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             inner: Mutex::new(Inner {
                 ch: CancellationToken::new(),
@@ -114,7 +114,7 @@ impl ReconcileBroadcaster {
     /// returned by the next notify() call is already fired. The replay flag is
     /// cleared by that call: a second concurrent late subscriber does NOT see
     /// the same replayed event.
-    pub(crate) fn notify(&self) -> Snapshot {
+    pub fn notify(&self) -> Snapshot {
         let mut inner = self.inner.lock().unwrap();
         if inner.pending {
             // Replay the missed broadcast exactly once: hand back a fresh,
@@ -136,7 +136,7 @@ impl ReconcileBroadcaster {
     /// a one-slot replay flag is set so the next notify() observes the missed
     /// event once. Reports whether the signal fired so callers can log
     /// debug-level traces of suppressed broadcasts.
-    pub(crate) fn broadcast(&self) -> bool {
+    pub fn broadcast(&self) -> bool {
         let mut inner = self.inner.lock().unwrap();
         let now = (inner.now)();
         if let Some(last) = inner.last_broadcast {
@@ -165,7 +165,7 @@ impl Default for ReconcileBroadcaster {
 ///
 /// Go's buffered `<-chan struct{}` (capacity 1) becomes a `tokio::sync::mpsc`
 /// capacity-1 channel; receiving from it is [`Self::recv`].
-pub(crate) struct WorkspaceChangeSignal {
+pub struct WorkspaceChangeSignal {
     tx: tokio::sync::mpsc::Sender<()>,
     rx: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<()>>,
 }
@@ -178,7 +178,7 @@ impl Default for WorkspaceChangeSignal {
 
 impl WorkspaceChangeSignal {
     /// `newWorkspaceChangeSignal`.
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         Self {
             tx,
@@ -188,13 +188,13 @@ impl WorkspaceChangeSignal {
 
     /// `notify` + receive: waits for one coalesced change event (Go's
     /// `<-s.ch`). Returns None only if the sender side was dropped.
-    pub(crate) async fn recv(&self) -> Option<()> {
+    pub async fn recv(&self) -> Option<()> {
         self.rx.lock().await.recv().await
     }
 
     /// `broadcast`: enqueues one dirty mark; a full buffer means an event is
     /// already pending (coalesced), which reports false like Go's default arm.
-    pub(crate) fn broadcast(&self) -> bool {
+    pub fn broadcast(&self) -> bool {
         self.tx.try_send(()).is_ok()
     }
 }

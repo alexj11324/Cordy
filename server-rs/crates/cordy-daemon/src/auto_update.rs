@@ -29,6 +29,7 @@ use anyhow::anyhow;
 use futures_util::future::BoxFuture;
 use serde::Deserialize;
 
+use crate::activity::DaemonActivity;
 use crate::repocache::Ctx;
 
 /// How long the loop waits before its first check (go:69): startup has auth,
@@ -201,14 +202,8 @@ pub(crate) trait AutoUpdateHost: Send + Sync {
     /// `d.updating.Store(false)`.
     fn updating_store_false(&self);
 
-    /// `d.activeTasks.Load()` — ownership-safe count of tasks in handleTask.
-    fn active_tasks(&self) -> i64;
-
-    /// `d.trySetClaimBarrier` (daemon.go:4548): atomically pause new claims
-    /// when the daemon is fully idle; false when busy or already held.
-    fn try_set_claim_barrier(&self) -> bool;
-    /// `d.releaseClaimBarrier` (daemon.go:4566).
-    fn release_claim_barrier(&self);
+    /// Shared claim/task state used by both update paths and the poller.
+    fn activity(&self) -> &Arc<DaemonActivity>;
 
     /// `d.RestartBinary()` (daemon.go:2038): scheduled restart target, empty
     /// when none.
@@ -259,6 +254,7 @@ pub(crate) async fn auto_update_loop(
     let settings = host.settings();
     if settings.launched_by == "desktop" {
         tracing::info!("auto-update: skipped (managed by Desktop)");
+        ctx.cancelled().await;
         return;
     }
 
@@ -277,6 +273,10 @@ pub(crate) async fn auto_update_loop(
         tracing::info!("auto-reload: disabled");
     }
     if !pull_enabled && !reload_enabled {
+        // The production supervisor owns this loop for the full daemon
+        // lifetime. A supported disabled configuration is passive, not an
+        // owner failure, so retain ownership until root shutdown.
+        ctx.cancelled().await;
         return;
     }
 
@@ -367,7 +367,7 @@ pub(crate) async fn try_auto_update(
     // Cheap pre-fetch idle check: don't pay the GitHub call when we already
     // know we'll defer; a task starting after this load is caught by the
     // strict barrier check below (go:209–217).
-    let running = host.active_tasks();
+    let running = host.activity().active_tasks();
     if running > 0 {
         tracing::debug!(active = running, "auto-update: skip — tasks running");
         return;
@@ -400,7 +400,7 @@ pub(crate) async fn try_auto_update(
     // process exit is imminent and clearing either would open a window for
     // new claims mid-shutdown (go:284–290).
     let mut hold_through_exit = false;
-    if !host.try_set_claim_barrier() {
+    if !host.activity().try_set_claim_barrier() {
         tracing::info!("auto-update: deferring — task or claim in flight at barrier check");
     } else {
         tracing::info!(
@@ -423,7 +423,7 @@ pub(crate) async fn try_auto_update(
                     tracing::error!(
                         "auto-update: upgrade completed but restart could not be scheduled — resuming claims"
                     );
-                    host.release_claim_barrier();
+                    host.activity().release_claim_barrier();
                 }
             }
             Err(err) => {
@@ -431,7 +431,7 @@ pub(crate) async fn try_auto_update(
                     error = %err,
                     "auto-update: upgrade failed — will retry"
                 );
-                host.release_claim_barrier();
+                host.activity().release_claim_barrier();
             }
         }
     }
@@ -520,7 +520,7 @@ pub(crate) async fn try_self_reload(host: &dyn AutoUpdateHost, ctx: &Ctx) {
         );
         host.set_reload_pending(Some(reason.clone()));
 
-        if !host.try_set_claim_barrier() {
+        if !host.activity().try_set_claim_barrier() {
             tracing::info!(
                 reason = %reason,
                 "auto-reload: deferring — task or claim in flight at barrier check"
@@ -538,7 +538,7 @@ pub(crate) async fn try_self_reload(host: &dyn AutoUpdateHost, ctx: &Ctx) {
         } else {
             // A failed restart must never cost the daemon its claims nor hold
             // the flag against a restart that is not coming (go:402–408).
-            host.release_claim_barrier();
+            host.activity().release_claim_barrier();
             host.updating_store_false();
         }
     }
@@ -547,7 +547,7 @@ pub(crate) async fn try_self_reload(host: &dyn AutoUpdateHost, ctx: &Ctx) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicBool, AtomicI64, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Mutex;
 
     type RunUpdateFn = Box<dyn Fn(&str) -> (String, anyhow::Result<String>) + Send + Sync>;
@@ -557,9 +557,7 @@ mod tests {
     struct FakeHost {
         settings: AutoUpdateSettings,
         updating: AtomicBool,
-        active_tasks: AtomicI64,
-        claims_in_flight: AtomicI64,
-        pause_claims: AtomicBool,
+        activity: Arc<DaemonActivity>,
         restart_binary: Mutex<String>,
         reload_pending: Mutex<Option<String>>,
         restart_calls: AtomicUsize,
@@ -577,9 +575,7 @@ mod tests {
                     auto_update_check_interval: Duration::ZERO,
                 },
                 updating: AtomicBool::new(false),
-                active_tasks: AtomicI64::new(0),
-                claims_in_flight: AtomicI64::new(0),
-                pause_claims: AtomicBool::new(false),
+                activity: DaemonActivity::new(),
                 restart_binary: Mutex::new(String::new()),
                 reload_pending: Mutex::new(None),
                 restart_calls: AtomicUsize::new(0),
@@ -588,7 +584,7 @@ mod tests {
         }
 
         fn pause_claims(&self) -> bool {
-            self.pause_claims.load(Ordering::SeqCst)
+            self.activity.claims_paused()
         }
     }
 
@@ -607,23 +603,8 @@ mod tests {
         fn updating_store_false(&self) {
             self.updating.store(false, Ordering::SeqCst);
         }
-        fn active_tasks(&self) -> i64 {
-            self.active_tasks.load(Ordering::SeqCst)
-        }
-        // Mirrors daemon.go trySetClaimBarrier: refuse when already held or
-        // busy; pairs with tryEnterClaim's counter in production.
-        fn try_set_claim_barrier(&self) -> bool {
-            if self.pause_claims()
-                || self.claims_in_flight.load(Ordering::SeqCst) > 0
-                || self.active_tasks() > 0
-            {
-                return false;
-            }
-            self.pause_claims.store(true, Ordering::SeqCst);
-            true
-        }
-        fn release_claim_barrier(&self) {
-            self.pause_claims.store(false, Ordering::SeqCst);
+        fn activity(&self) -> &Arc<DaemonActivity> {
+            &self.activity
         }
         fn restart_binary(&self) -> String {
             self.restart_binary.lock().unwrap().clone()
@@ -708,7 +689,8 @@ mod tests {
     #[tokio::test]
     async fn skips_when_tasks_running() {
         let host = FakeHost::new("v0.1.13");
-        host.active_tasks.store(1, Ordering::SeqCst);
+        let claim = host.activity.try_enter_claim().unwrap();
+        let _tasks = claim.handoff(vec![Vec::new()]).await;
         try_auto_update_with(&host, &stub_release(Some("v0.1.14"), None)).await;
         assert_eq!(host.restart_calls.load(Ordering::SeqCst), 0);
         assert!(!host.updating.load(Ordering::SeqCst));
@@ -717,7 +699,7 @@ mod tests {
     #[tokio::test]
     async fn defers_when_claim_in_flight_at_barrier() {
         let host = FakeHost::new("v0.1.13");
-        host.claims_in_flight.store(1, Ordering::SeqCst);
+        let _claim = host.activity.try_enter_claim().unwrap();
         try_auto_update_with(&host, &stub_release(Some("v0.1.14"), None)).await;
         assert_eq!(host.restart_calls.load(Ordering::SeqCst), 0);
         assert!(
@@ -759,21 +741,16 @@ mod tests {
     }
 
     #[test]
-    fn try_enter_claim_respects_barrier_shape() {
-        // The barrier contract the poller side relies on (go:136–158): enter/
-        // exit balance and refusal while held. Exercised through the fake's
-        // mirror of trySetClaimBarrier.
+    fn shared_activity_controls_claim_barrier() {
         let host = FakeHost::new("");
-        assert!(host.try_set_claim_barrier());
-        assert!(!{
-            host.claims_in_flight.store(1, Ordering::SeqCst);
-            let granted = host.try_set_claim_barrier();
-            host.claims_in_flight.store(0, Ordering::SeqCst);
-            granted
-        });
-        host.release_claim_barrier();
-        assert!(host.try_set_claim_barrier());
-        host.release_claim_barrier();
+        assert!(host.activity.try_set_claim_barrier());
+        assert!(host.activity.try_enter_claim().is_none());
+        host.activity.release_claim_barrier();
+        let claim = host.activity.try_enter_claim().unwrap();
+        assert!(!host.activity.try_set_claim_barrier());
+        drop(claim);
+        assert!(host.activity.try_set_claim_barrier());
+        host.activity.release_claim_barrier();
     }
 
     #[tokio::test]
@@ -826,8 +803,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn loop_early_exits() {
-        struct NullHost(AutoUpdateSettings);
+    async fn disabled_loop_remains_owned_until_cancelled() {
+        struct NullHost(AutoUpdateSettings, Arc<DaemonActivity>);
         impl AutoUpdateHost for NullHost {
             fn settings(&self) -> &AutoUpdateSettings {
                 &self.0
@@ -839,13 +816,9 @@ mod tests {
                 false
             }
             fn updating_store_false(&self) {}
-            fn active_tasks(&self) -> i64 {
-                0
+            fn activity(&self) -> &Arc<DaemonActivity> {
+                &self.1
             }
-            fn try_set_claim_barrier(&self) -> bool {
-                false
-            }
-            fn release_claim_barrier(&self) {}
             fn restart_binary(&self) -> String {
                 String::new()
             }
@@ -865,15 +838,30 @@ mod tests {
             ("managed by desktop", true, "v0.1.13", "desktop"),
             ("dev build", true, "v0.1.13-235-gabcdef0", ""),
         ];
-        for (_, enabled, version, launched_by) in cases {
-            let host = NullHost(AutoUpdateSettings {
-                launched_by: launched_by.to_string(),
-                cli_version: version.to_string(),
-                auto_update_enabled: enabled,
-                auto_reload_enabled: false,
-                auto_update_check_interval: Duration::ZERO,
-            });
-            auto_update_loop(&host, &Ctx::new(), stub_release(Some("v0.1.14"), None)).await;
+        for (name, enabled, version, launched_by) in cases {
+            let host = NullHost(
+                AutoUpdateSettings {
+                    launched_by: launched_by.to_string(),
+                    cli_version: version.to_string(),
+                    auto_update_enabled: enabled,
+                    auto_reload_enabled: false,
+                    auto_update_check_interval: Duration::ZERO,
+                },
+                DaemonActivity::new(),
+            );
+            let ctx = Ctx::new();
+            let loop_future = auto_update_loop(&host, &ctx, stub_release(Some("v0.1.14"), None));
+            tokio::pin!(loop_future);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(10), &mut loop_future)
+                    .await
+                    .is_err(),
+                "{name}: disabled owner returned before cancellation"
+            );
+            ctx.cancel_with(crate::repocache::CancelCause::Shutdown);
+            tokio::time::timeout(Duration::from_secs(1), &mut loop_future)
+                .await
+                .unwrap_or_else(|_| panic!("{name}: disabled owner ignored cancellation"));
         }
     }
 
