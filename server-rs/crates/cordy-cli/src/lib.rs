@@ -5484,6 +5484,13 @@ async fn run_attachment_upload(
     } else {
         environment.current_dir().join(path)
     };
+    // Chat-task attachment uploads are performed with the task's machine
+    // credentials.  Keep the source file inside the task workdir so a task
+    // cannot exfiltrate arbitrary daemon-readable files via an absolute or
+    // parent-traversal path.  Human-facing attachment flows have their own
+    // explicit external-file policy; this task-scoped command has no such
+    // override.
+    ensure_file_within_workdir(path, environment.current_dir(), false, "attachment")?;
     let data =
         fs::read(&read_path).with_context(|| format!("read file {}", path.to_string_lossy()))?;
     let request_timeout =
@@ -19898,6 +19905,23 @@ mod tests {
             r#"![chart\[v2\].png](/api/attachments/attachment-1/download)"#
         );
 
+        let outside = tempfile::tempdir().expect("outside directory");
+        let outside_path = outside.path().join("secret.txt");
+        fs::write(&outside_path, b"must not upload").expect("outside file");
+        let rejected = Cli::try_parse_from([
+            "cordy",
+            "attachment",
+            "upload",
+            outside_path.to_str().expect("outside path"),
+        ])
+        .expect("external attachment CLI");
+        let error = run_with_input(&rejected, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("task attachment outside workdir must fail closed");
+        assert!(error
+            .to_string()
+            .contains("resolves outside the current working directory"));
+
         let download = Cli::try_parse_from([
             "cordy",
             "attachment",
@@ -20278,7 +20302,7 @@ mod tests {
     #[tokio::test]
     async fn property_create_update_and_archive_use_go_patch_and_output_contracts() {
         let property_id = "11111111-1111-1111-1111-111111111111";
-        let definition = || {
+        let definition = move || {
             serde_json::json!({
                 "id":property_id,"name":"Severity","type":"select","description":"",
                 "icon":"shield","config":{"options":[{

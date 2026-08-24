@@ -6,7 +6,10 @@
 //! catalog: production construction requires a real [`ProviderCatalog`].
 
 use std::collections::{BTreeMap, HashMap};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex, RwLock,
+};
 
 use crate::client::{Client, RuntimeProfile};
 use crate::config::Config;
@@ -170,7 +173,8 @@ pub struct ProviderRegistrationSource<C: ProviderCatalog> {
     client: Arc<Client>,
     catalog: Arc<C>,
     launches: Arc<RuntimeLaunchRegistry>,
-    last_builtin_payload: Mutex<Option<Vec<BTreeMap<String, String>>>>,
+    last_builtin_snapshot: Mutex<Option<BuiltinSnapshot>>,
+    retry_builtin: Arc<AtomicBool>,
 }
 
 impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
@@ -185,7 +189,8 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
             client,
             catalog,
             launches,
-            last_builtin_payload: Mutex::new(None),
+            last_builtin_snapshot: Mutex::new(None),
+            retry_builtin: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -234,6 +239,7 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct BuiltinSnapshot {
     payload: Vec<BTreeMap<String, String>>,
     launches: Vec<RuntimeLaunchSpec>,
@@ -248,6 +254,7 @@ struct ProviderRegistrationRound<C: ProviderCatalog> {
     builtin_launches: Vec<RuntimeLaunchSpec>,
     include_profiles: bool,
     pending_profiles: Mutex<HashMap<String, Vec<RuntimeLaunchSpec>>>,
+    retry_builtin: Arc<AtomicBool>,
 }
 
 #[async_trait::async_trait]
@@ -353,13 +360,17 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
         self.launches
             .replace_workspace_profiles(workspace_id, specs);
     }
+
+    fn registration_failed(&self, _workspace_id: &str) {
+        self.retry_builtin.store(true, Ordering::Release);
+    }
 }
 
 #[async_trait::async_trait]
 impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSource<C> {
     async fn begin_round(&self, ctx: Ctx) -> anyhow::Result<Arc<dyn RuntimeRegistrationRound>> {
         let snapshot = self.probe(ctx, ProviderProbeReason::Registration).await?;
-        *self.last_builtin_payload.lock().unwrap() = Some(snapshot.payload.clone());
+        *self.last_builtin_snapshot.lock().unwrap() = Some(snapshot.clone());
         Ok(Arc::new(ProviderRegistrationRound {
             config: Arc::clone(&self.config),
             client: Arc::clone(&self.client),
@@ -369,6 +380,7 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
             builtin_launches: snapshot.launches,
             include_profiles: true,
             pending_profiles: Mutex::new(HashMap::new()),
+            retry_builtin: Arc::clone(&self.retry_builtin),
         }))
     }
 
@@ -379,13 +391,13 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
     ) -> anyhow::Result<Option<Arc<dyn RuntimeRegistrationRound>>> {
         let snapshot = self.probe(ctx, reason.into()).await?;
         let changed = {
-            let mut previous = self.last_builtin_payload.lock().unwrap();
-            if previous.as_ref() == Some(&snapshot.payload) {
-                false
-            } else {
-                *previous = Some(snapshot.payload.clone());
-                true
+            let mut previous = self.last_builtin_snapshot.lock().unwrap();
+            let retry = self.retry_builtin.swap(false, Ordering::AcqRel);
+            let changed = builtin_refresh_needed(previous.as_ref(), &snapshot, retry);
+            if changed {
+                *previous = Some(snapshot.clone());
             }
+            changed
         };
         if !changed {
             return Ok(None);
@@ -399,6 +411,7 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
             builtin_launches: snapshot.launches,
             include_profiles: false,
             pending_profiles: Mutex::new(HashMap::new()),
+            retry_builtin: Arc::clone(&self.retry_builtin),
         })))
     }
 
@@ -441,9 +454,46 @@ fn profile_failure(profile: &RuntimeProfile, reason: &str) -> BTreeMap<String, S
     ])
 }
 
+fn builtin_refresh_needed(
+    previous: Option<&BuiltinSnapshot>,
+    current: &BuiltinSnapshot,
+    retry: bool,
+) -> bool {
+    retry || previous != Some(current)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn builtin_refresh_detects_launch_changes_and_failed_workspace_retry() {
+        let snapshot = |command_path: &str| BuiltinSnapshot {
+            payload: vec![registration_entry(
+                "Codex".to_string(),
+                "codex".to_string(),
+                "1.0.0".to_string(),
+                None,
+            )],
+            launches: vec![RuntimeLaunchSpec {
+                target: RuntimeExecutionTarget {
+                    provider: "codex".to_string(),
+                    profile_id: String::new(),
+                },
+                display_name: "Codex".to_string(),
+                command_path: command_path.to_string(),
+                fixed_args: vec!["--safe".to_string()],
+                version: "1.0.0".to_string(),
+            }],
+        };
+        let previous = snapshot("/opt/codex");
+        let same = snapshot("/opt/codex");
+        let changed = snapshot("/opt/codex-new");
+
+        assert!(!builtin_refresh_needed(Some(&previous), &same, false));
+        assert!(builtin_refresh_needed(Some(&previous), &changed, false));
+        assert!(builtin_refresh_needed(Some(&previous), &same, true));
+    }
 
     #[test]
     fn launch_registry_keeps_provider_and_profile_identity_atomic() {

@@ -78,6 +78,44 @@ impl DaemonActivity {
 
     pub(crate) fn release_claim_barrier(&self) {
         self.state.lock().unwrap().pause_claims = false;
+        self.activity_changed.notify_waiters();
+    }
+
+    /// Acquires an owned claim barrier and waits until every already-issued
+    /// claim has either failed or handed off, and every handed-off task has
+    /// exited. Runtime demotion holds this guard across server deregistration
+    /// so no task can be claimed against an identity being taken offline.
+    pub(crate) async fn pause_claims_until_idle(
+        self: &Arc<Self>,
+        ctx: &crate::repocache::Ctx,
+    ) -> Option<ClaimBarrierGuard> {
+        let mut owns_barrier = false;
+        loop {
+            let changed = self.activity_changed.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
+            {
+                let mut state = self.state.lock().unwrap();
+                if !owns_barrier && !state.pause_claims {
+                    state.pause_claims = true;
+                    owns_barrier = true;
+                }
+                if owns_barrier && state.claims_in_flight == 0 && state.active_tasks == 0 {
+                    return Some(ClaimBarrierGuard {
+                        activity: Arc::clone(self),
+                    });
+                }
+            }
+            tokio::select! {
+                () = ctx.cancelled() => {
+                    if owns_barrier {
+                        self.release_claim_barrier();
+                    }
+                    return None;
+                }
+                () = changed.as_mut() => {}
+            }
+        }
     }
 
     /// Server-triggered update acquisition: pause new claims while allowing an
@@ -101,6 +139,8 @@ impl DaemonActivity {
                         return true;
                     }
                     state.pause_claims = false;
+                    drop(state);
+                    self.activity_changed.notify_waiters();
                     return false;
                 }
             }
@@ -275,6 +315,19 @@ pub(crate) struct ActiveTaskGuard {
     env_roots: Vec<PathBuf>,
 }
 
+/// Owned pause of task admission. Drop is the only release path so errors and
+/// cancellation during a demotion transaction cannot strand the daemon with
+/// claims permanently disabled.
+pub(crate) struct ClaimBarrierGuard {
+    activity: Arc<DaemonActivity>,
+}
+
+impl Drop for ClaimBarrierGuard {
+    fn drop(&mut self) {
+        self.activity.release_claim_barrier();
+    }
+}
+
 impl Drop for ActiveTaskGuard {
     fn drop(&mut self) {
         let mut state = self.activity.state.lock().unwrap();
@@ -408,6 +461,31 @@ mod tests {
         assert!(!acquiring.await.unwrap());
         assert!(!activity.claims_paused());
         drop(tasks);
+    }
+
+    #[tokio::test]
+    async fn owned_claim_barrier_waits_for_claim_handoff_and_active_task_exit() {
+        let activity = DaemonActivity::new();
+        let claim = activity.try_enter_claim().unwrap();
+        let ctx = crate::repocache::Ctx::new();
+        let acquiring = tokio::spawn({
+            let activity = Arc::clone(&activity);
+            async move { activity.pause_claims_until_idle(&ctx).await }
+        });
+        tokio::task::yield_now().await;
+        assert!(activity.claims_paused());
+        assert!(activity.try_enter_claim().is_none());
+
+        let tasks = claim.handoff(vec![Vec::new()]).await;
+        tokio::task::yield_now().await;
+        assert!(!acquiring.is_finished());
+        drop(tasks);
+
+        let barrier = acquiring.await.unwrap().unwrap();
+        assert!(activity.claims_paused());
+        drop(barrier);
+        assert!(!activity.claims_paused());
+        assert!(activity.try_enter_claim().is_some());
     }
 
     #[tokio::test]

@@ -69,6 +69,7 @@ pub trait ProductionRuntimeServices: DaemonCoreServices {
         reconcile: Arc<ReconcileBroadcaster>,
         workspace_changes: Arc<WorkspaceChangeSignal>,
         registry: Arc<RuntimeRegistry>,
+        activity: Arc<DaemonActivity>,
     ) -> anyhow::Result<()>;
 
     /// Provider-owned health fields: agents, skipped-agent diagnostics, and
@@ -355,6 +356,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         let reconcile_signal = Arc::clone(&reconcile);
         let workspace_signal = Arc::clone(&workspace_changes);
         let reconcile_registry = Arc::clone(&registry);
+        let reconcile_activity = Arc::clone(&activity);
         owners.spawn(async move {
             let result = reconcile_services
                 .run_reconcile(
@@ -362,6 +364,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
                     reconcile_signal,
                     workspace_signal,
                     reconcile_registry,
+                    reconcile_activity,
                 )
                 .await;
             if reconcile_ctx.err().is_none() {
