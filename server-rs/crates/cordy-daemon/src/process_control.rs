@@ -151,6 +151,71 @@ pub enum DaemonStopOutcome {
     StillStopping { pid: u32, forced: bool },
 }
 
+#[async_trait::async_trait]
+pub trait DaemonRestartPreflight: Send + Sync {
+    async fn check(&self) -> anyhow::Result<()>;
+}
+
+pub struct DaemonRestartRequest {
+    pub launch: BackgroundLaunchOptions,
+    pub port: u16,
+    pub stop_timeout: Duration,
+    pub startup_timeout: Duration,
+}
+
+#[derive(Debug)]
+pub enum DaemonRestartOutcome {
+    StopIncomplete(DaemonStopOutcome),
+    Launch {
+        stop: DaemonStopOutcome,
+        startup: BackgroundStartupOutcome,
+    },
+}
+
+/// Restarts without sacrificing a healthy daemon when the replacement cannot
+/// pass authentication/server preflight. The expensive preflight is required
+/// only when a live daemon would otherwise be stopped; starting from a stopped
+/// state retains the normal child-preflight/early-exit path.
+pub async fn restart_daemon<C, K, T, P>(
+    control: &C,
+    clock: &K,
+    terminator: &T,
+    preflight: &P,
+    request: DaemonRestartRequest,
+) -> anyhow::Result<DaemonRestartOutcome>
+where
+    C: LocalDaemonControl,
+    K: StartupClock,
+    T: ProcessTerminator,
+    P: DaemonRestartPreflight,
+{
+    let stop = stop_daemon_with_preflight(
+        control,
+        clock,
+        terminator,
+        &request.launch.profile,
+        request.port,
+        request.stop_timeout,
+        Some(preflight),
+    )
+    .await?;
+    if matches!(stop, DaemonStopOutcome::StillStopping { .. }) {
+        return Ok(DaemonRestartOutcome::StopIncomplete(stop));
+    }
+    let profile = request.launch.profile.clone();
+    let daemon = BackgroundDaemon::spawn(request.launch)?;
+    let startup = daemon
+        .wait_until_ready(
+            control,
+            clock,
+            &profile,
+            request.port,
+            request.startup_timeout,
+        )
+        .await?;
+    Ok(DaemonRestartOutcome::Launch { stop, startup })
+}
+
 /// Executes the identity-safe cross-platform stop transaction used by both
 /// `daemon stop` and the stop phase of `daemon restart`.
 pub async fn stop_daemon<C, K, T>(
@@ -166,11 +231,43 @@ where
     K: StartupClock,
     T: ProcessTerminator,
 {
+    stop_daemon_with_preflight(
+        control,
+        clock,
+        terminator,
+        profile,
+        port,
+        wait_timeout,
+        None,
+    )
+    .await
+}
+
+async fn stop_daemon_with_preflight<C, K, T>(
+    control: &C,
+    clock: &K,
+    terminator: &T,
+    profile: &str,
+    port: u16,
+    wait_timeout: Duration,
+    preflight: Option<&dyn DaemonRestartPreflight>,
+) -> anyhow::Result<DaemonStopOutcome>
+where
+    C: LocalDaemonControl,
+    K: StartupClock,
+    T: ProcessTerminator,
+{
     let snapshot = match control.health(port).await {
         LocalDaemonHealth::Stopped => return Ok(DaemonStopOutcome::AlreadyStopped),
         LocalDaemonHealth::Live(snapshot) => snapshot,
     };
     snapshot.confirm_profile(profile, port)?;
+    if let Some(preflight) = preflight {
+        preflight
+            .check()
+            .await
+            .context("daemon restart preflight failed; running daemon was left untouched")?;
+    }
     let pid = u32::try_from(snapshot.response.pid)
         .ok()
         .filter(|pid| *pid > 0)
@@ -494,6 +591,36 @@ mod tests {
         }
     }
 
+    struct LiveControl;
+
+    #[async_trait::async_trait]
+    impl LocalDaemonProbe for LiveControl {
+        async fn health(&self, _port: u16) -> LocalDaemonHealth {
+            crate::control_client::parse_health(serde_json::json!({
+                "status": "running",
+                "pid": 42,
+                "profile": "profile"
+            }))
+            .unwrap()
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl LocalDaemonControl for LiveControl {
+        async fn request_shutdown(&self, _port: u16) -> anyhow::Result<()> {
+            panic!("failed restart preflight must not stop the running daemon")
+        }
+    }
+
+    struct FailingPreflight;
+
+    #[async_trait::async_trait]
+    impl DaemonRestartPreflight for FailingPreflight {
+        async fn check(&self) -> anyhow::Result<()> {
+            anyhow::bail!("server rejected token")
+        }
+    }
+
     #[test]
     fn missing_logs_start_at_zero() {
         let directory = tempfile::tempdir().unwrap();
@@ -561,5 +688,33 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(outcome, DaemonStopOutcome::AlreadyStopped);
+    }
+
+    #[tokio::test]
+    async fn restart_preflight_failure_leaves_running_daemon_untouched() {
+        let result = restart_daemon(
+            &LiveControl,
+            &UnusedClock,
+            &UnusedTerminator,
+            &FailingPreflight,
+            DaemonRestartRequest {
+                launch: BackgroundLaunchOptions {
+                    profile: "profile".to_string(),
+                    binary: PathBuf::from("/must/not/spawn"),
+                    args: Vec::new(),
+                },
+                port: 19515,
+                stop_timeout: Duration::from_secs(5),
+                startup_timeout: Duration::from_secs(45),
+            },
+        )
+        .await;
+        let error = result.unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("running daemon was left untouched"));
+        assert!(error
+            .chain()
+            .any(|cause| cause.to_string() == "server rejected token"));
     }
 }

@@ -174,7 +174,7 @@ impl LocalDaemonControl for DaemonControlClient {
     }
 }
 
-fn parse_health(value: Value) -> Option<LocalDaemonHealth> {
+pub(crate) fn parse_health(value: Value) -> Option<LocalDaemonHealth> {
     let status = value.get("status")?.as_str()?;
     if status != "running" && status != "starting" {
         return Some(LocalDaemonHealth::Stopped);
