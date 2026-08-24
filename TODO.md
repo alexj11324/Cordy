@@ -805,8 +805,9 @@
       `7e16b07aa89e890255063d813d307012c58a6ec8`): setup-after-daemon, start,
       restart, and stop now live in `cordy-cli/src/daemon_commands.rs`;
       parsing, setup policy, and status rendering remain in `lib.rs`. Scoped
-      rustfmt and diff-check pass; no Cargo was run. The serial subagent owns
-      exact-head review and minimal fixes; pro owns Ready PR, gate, and merge.
+      rustfmt and diff-check pass; no Cargo was run. The serial subagent
+      reviewed exact head `16540c59` and found no issue (environment lacked a
+      rustfmt binary for a second pass); pro owns Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
