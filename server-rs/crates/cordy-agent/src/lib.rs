@@ -23,7 +23,7 @@ pub mod stderr;
 pub mod stream;
 pub mod version;
 
-pub use acp::{AcpClient, AcpError, AcpNotification};
+pub use acp::{AcpClient, AcpError, AcpNotification, AcpPermissionDecision};
 pub use acp_mcp::{
     build_acp_mcp_servers, filter_acp_mcp_servers, parse_acp_mcp_capabilities, AcpMcpCapabilities,
     AcpMcpCapabilityDeclaration, AcpMcpServer,

@@ -15,6 +15,12 @@ pub struct AcpNotification {
     pub params: Value,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AcpPermissionDecision {
+    Select(String),
+    Reject(String),
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum AcpError {
     #[error("ACP transport error: {0}")]
@@ -93,7 +99,18 @@ where
         &mut self,
         method: &str,
         params: Value,
-        mut on_notification: impl FnMut(AcpNotification),
+        on_notification: impl FnMut(AcpNotification),
+    ) -> Result<Value, AcpError> {
+        self.request_with_permission(method, params, on_notification, default_permission_decision)
+            .await
+    }
+
+    pub async fn request_with_permission(
+        &mut self,
+        method: &str,
+        params: Value,
+        on_notification: impl FnMut(AcpNotification),
+        mut on_permission: impl FnMut(Option<&Value>) -> AcpPermissionDecision,
     ) -> Result<Value, AcpError> {
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
@@ -121,8 +138,13 @@ where
             let frame_method = frame.get("method").and_then(Value::as_str);
             match (frame_id, frame_method) {
                 (Some(request_id), Some(agent_method)) => {
-                    self.answer_agent_request(request_id, agent_method, frame.get("params"))
-                        .await?;
+                    self.answer_agent_request(
+                        request_id,
+                        agent_method,
+                        frame.get("params"),
+                        &mut on_permission,
+                    )
+                    .await?;
                 }
                 (Some(response_id), None) if response_id == id => {
                     if let Some(error) = frame.get("error") {
@@ -149,6 +171,22 @@ where
         maximum: Duration,
         mut on_notification: impl FnMut(AcpNotification),
     ) -> Result<(), AcpError> {
+        self.drain_notifications_with_permission(
+            quiet,
+            maximum,
+            on_notification,
+            default_permission_decision,
+        )
+        .await
+    }
+
+    pub async fn drain_notifications_with_permission(
+        &mut self,
+        quiet: Duration,
+        maximum: Duration,
+        mut on_notification: impl FnMut(AcpNotification),
+        mut on_permission: impl FnMut(Option<&Value>) -> AcpPermissionDecision,
+    ) -> Result<(), AcpError> {
         let deadline = tokio::time::Instant::now() + maximum;
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
@@ -173,8 +211,13 @@ where
             let frame_method = frame.get("method").and_then(Value::as_str);
             match (frame_id, frame_method) {
                 (Some(request_id), Some(agent_method)) => {
-                    self.answer_agent_request(request_id, agent_method, frame.get("params"))
-                        .await?;
+                    self.answer_agent_request(
+                        request_id,
+                        agent_method,
+                        frame.get("params"),
+                        &mut on_permission,
+                    )
+                    .await?;
                 }
                 (None, Some(notification_method)) => on_notification(AcpNotification {
                     method: notification_method.to_string(),
@@ -190,6 +233,7 @@ where
         id: u64,
         method: &str,
         params: Option<&Value>,
+        on_permission: &mut impl FnMut(Option<&Value>) -> AcpPermissionDecision,
     ) -> Result<(), AcpError> {
         if method != "session/request_permission" {
             return self
@@ -200,21 +244,36 @@ where
                 }))
                 .await;
         }
-        if let Some(option_id) = select_permission(params) {
-            return self
-                .write(&serde_json::json!({
+        match on_permission(params) {
+            AcpPermissionDecision::Select(option_id) if !option_id.is_empty() => {
+                self.write(&serde_json::json!({
                     "jsonrpc": "2.0",
                     "id": id,
                     "result": {"outcome": {"outcome": "selected", "optionId": option_id}},
                 }))
-                .await;
+                .await
+            }
+            AcpPermissionDecision::Select(_) => {
+                self.write(&serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {"code": -32603, "message": "permission policy selected an empty option"},
+                }))
+                .await
+            }
+            AcpPermissionDecision::Reject(reason) => {
+                self.write(&serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "error": {"code": -32603, "message": if reason.is_empty() {
+                        "permission request rejected by headless policy"
+                    } else {
+                        &reason
+                    }},
+                }))
+                .await
+            }
         }
-        self.write(&serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "error": {"code": -32603, "message": "no auto-selectable permission option offered"},
-        }))
-        .await
     }
 
     async fn write(&mut self, frame: &Value) -> Result<(), AcpError> {
@@ -260,6 +319,17 @@ fn select_permission(params: Option<&Value>) -> Option<String> {
         }
     }
     None
+}
+
+fn default_permission_decision(params: Option<&Value>) -> AcpPermissionDecision {
+    select_permission(params).map_or_else(
+        || {
+            AcpPermissionDecision::Reject(
+                "no auto-selectable permission option offered".to_string(),
+            )
+        },
+        AcpPermissionDecision::Select,
+    )
 }
 
 fn rpc_error(method: &str, error: &Value) -> AcpError {
@@ -339,6 +409,65 @@ mod tests {
             .unwrap_or_else(|error| panic!("agent task: {error}"));
         assert_eq!(result["stopReason"], "end_turn");
         assert_eq!(notifications.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn request_uses_injected_fail_closed_permission_policy() {
+        let (client_io, agent_io) = tokio::io::duplex(16 * 1024);
+        let (client_read, client_write) = tokio::io::split(client_io);
+        let (agent_read, mut agent_write) = tokio::io::split(agent_io);
+        let agent = tokio::spawn(async move {
+            let mut lines = BufReader::new(agent_read).lines();
+            let _request = lines
+                .next_line()
+                .await
+                .unwrap_or_else(|error| panic!("read request: {error}"))
+                .unwrap_or_else(|| panic!("request line"));
+            agent_write
+                .write_all(
+                    br#"{"jsonrpc":"2.0","id":7,"method":"session/request_permission","params":{"toolCall":{"toolCallId":"ask-1","title":"Choose a deployment"},"options":[{"optionId":"allow","kind":"allow_once"}]}}
+"#,
+                )
+                .await
+                .unwrap_or_else(|error| panic!("write permission request: {error}"));
+            let decision = lines
+                .next_line()
+                .await
+                .unwrap_or_else(|error| panic!("read permission decision: {error}"))
+                .unwrap_or_else(|| panic!("permission decision line"));
+            assert!(decision.contains("interactive input unavailable"));
+            assert!(!decision.contains("\"outcome\":\"selected\""));
+            agent_write
+                .write_all(
+                    br#"{"jsonrpc":"2.0","id":1,"result":{"stopReason":"error"}}
+"#,
+                )
+                .await
+                .unwrap_or_else(|error| panic!("write response: {error}"));
+        });
+        let mut client = AcpClient::new(BufReader::new(client_read), client_write);
+        let result = client
+            .request_with_permission(
+                "session/prompt",
+                serde_json::json!({}),
+                |_| {},
+                |params| {
+                    assert_eq!(
+                        params
+                            .and_then(|params| params.get("toolCall"))
+                            .and_then(|tool| tool.get("toolCallId"))
+                            .and_then(Value::as_str),
+                        Some("ask-1")
+                    );
+                    AcpPermissionDecision::Reject("interactive input unavailable".to_string())
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("ACP request: {error}"));
+        agent
+            .await
+            .unwrap_or_else(|error| panic!("agent task: {error}"));
+        assert_eq!(result["stopReason"], "error");
     }
 
     #[test]
