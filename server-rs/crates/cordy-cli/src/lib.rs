@@ -13759,6 +13759,7 @@ async fn run_user_profile_update<R: Read>(
     args: &UpdateProfileArgs,
     input: &mut R,
 ) -> Result<RunOutput> {
+    require_human_local_command(environment, "user profile update")?;
     let description = resolve_profile_description(args, environment, input)?;
     let client = new_api_client(cli, environment)?;
     let profile: Value = client
@@ -25015,6 +25016,29 @@ mod tests {
         let json: Value = serde_json::from_str(&output.stdout).expect("JSON output");
         assert_eq!(json["profile_description"], "Reviewer\nTypeScript");
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn user_profile_update_rejects_task_context_before_input_or_network() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_AGENT_ID", "agent-1");
+        environment.set("CORDY_TASK_ID", "task-1");
+        environment.set("CORDY_TOKEN", "mat_task-token");
+        let cli =
+            Cli::try_parse_from(["cordy", "user", "profile", "update", "--description-stdin"])
+                .expect("profile update CLI");
+        let mut input = Cursor::new(b"persistent task-supplied profile text".to_vec());
+
+        let error = run_with_input(&cli, &environment, &mut input)
+            .await
+            .expect_err("task profile mutation must be rejected");
+
+        assert_eq!(input.position(), 0, "task input must not be consumed");
+        assert!(error
+            .to_string()
+            .contains("user profile update is not available inside a daemon-managed task"));
     }
 
     #[test]
