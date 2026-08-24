@@ -2,41 +2,92 @@
 //! `server/cmd/server/autopilot_listeners.go`.
 
 use std::future::Future;
+use std::panic::AssertUnwindSafe;
+use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cordy_events::{Bus, Event};
 use cordy_service::autopilot::AutopilotService;
-use tokio::task::JoinSet;
+use futures_util::FutureExt;
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
+#[derive(Debug)]
+enum AutopilotEventWork {
+    Issue(Uuid),
+    Task {
+        task_id: Uuid,
+        sync_linked_issue_failure: bool,
+    },
+}
+
+type WorkFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+type WorkProcessor = Arc<dyn Fn(AutopilotEventWork) -> WorkFuture + Send + Sync>;
+
 /// Keeps Autopilot runs synchronized with the issue or task created for them.
 ///
 /// The Rust database layer is async while the in-process bus is deliberately
-/// synchronous. Classification remains inline, while every admitted database
-/// task is tracked for bounded production shutdown.
+/// synchronous. Classification remains inline, while one owned FIFO consumer
+/// preserves publication order across the admitted database operations.
 pub struct AutopilotEventListeners {
     bus: Arc<Bus>,
-    service: Arc<AutopilotService>,
-    cancel: CancellationToken,
+    processor: WorkProcessor,
     started: AtomicBool,
     accepting_tasks: AtomicBool,
-    tasks: Mutex<JoinSet<()>>,
+    sender: Mutex<Option<mpsc::UnboundedSender<AutopilotEventWork>>>,
 }
 
 impl AutopilotEventListeners {
     pub fn new(bus: Arc<Bus>, service: Arc<AutopilotService>) -> Arc<Self> {
+        let processor: WorkProcessor = Arc::new(move |work| {
+            let service = service.clone();
+            Box::pin(async move {
+                match work {
+                    AutopilotEventWork::Issue(issue_id) => {
+                        match cordy_db::queries::issue::get_issue(&service.pool, issue_id).await {
+                            Ok(Some(issue)) => service.sync_run_from_issue(&issue).await,
+                            Ok(None) => {}
+                            Err(error) => tracing::debug!(
+                                %issue_id,
+                                %error,
+                                "autopilot listener: failed to load issue"
+                            ),
+                        }
+                    }
+                    AutopilotEventWork::Task {
+                        task_id,
+                        sync_linked_issue_failure,
+                    } => {
+                        let Ok(Some(task)) =
+                            cordy_db::queries::agent::get_agent_task(&service.pool, task_id).await
+                        else {
+                            return;
+                        };
+                        if task.autopilot_run_id.is_some() {
+                            service.sync_run_from_task(&task).await;
+                        } else if sync_linked_issue_failure {
+                            service.sync_run_from_linked_issue_task(&task).await;
+                        }
+                    }
+                }
+            })
+        });
+        Self::with_processor(bus, processor)
+    }
+
+    fn with_processor(bus: Arc<Bus>, processor: WorkProcessor) -> Arc<Self> {
         Arc::new(Self {
             bus,
-            service,
-            cancel: CancellationToken::new(),
+            processor,
             started: AtomicBool::new(false),
             accepting_tasks: AtomicBool::new(false),
-            tasks: Mutex::new(JoinSet::new()),
+            sender: Mutex::new(None),
         })
     }
 
@@ -47,6 +98,11 @@ impl AutopilotEventListeners {
         if self.started.swap(true, Ordering::AcqRel) {
             return None;
         }
+        let (sender, receiver) = mpsc::unbounded_channel();
+        *self
+            .sender
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(sender);
         self.accepting_tasks.store(true, Ordering::Release);
         let issue_listeners = self.clone();
         self.bus
@@ -59,15 +115,18 @@ impl AutopilotEventListeners {
         self.subscribe_task_event(cordy_protocol::EVENT_TASK_CANCELLED, false);
 
         let listeners = self.clone();
-        self.spawn_task(async move {
-            tokio::select! {
-                _ = parent.cancelled() => {}
-                _ = listeners.cancel.cancelled() => {}
+        let processor = self.processor.clone();
+        let task = tokio::spawn(async move {
+            AutopilotEventWorker {
+                receiver,
+                processor,
             }
-            listeners.cancel.cancel();
+            .run(parent, listeners)
+            .await;
         });
         Some(AutopilotEventListenersRuntime {
             listeners: self.clone(),
+            task: Some(task),
         })
     }
 
@@ -75,18 +134,7 @@ impl AutopilotEventListeners {
         let Some(issue_id) = terminal_issue_id(event) else {
             return;
         };
-        let service = self.service.clone();
-        self.spawn_task(async move {
-            match cordy_db::queries::issue::get_issue(&service.pool, issue_id).await {
-                Ok(Some(issue)) => service.sync_run_from_issue(&issue).await,
-                Ok(None) => {}
-                Err(error) => tracing::debug!(
-                    %issue_id,
-                    %error,
-                    "autopilot listener: failed to load issue"
-                ),
-            }
-        });
+        self.enqueue(AutopilotEventWork::Issue(issue_id));
     }
 
     fn subscribe_task_event(self: &Arc<Self>, event_type: &'static str, linked_failure: bool) {
@@ -100,43 +148,75 @@ impl AutopilotEventListeners {
         let Some(task_id) = task_id(event) else {
             return;
         };
-        let service = self.service.clone();
-        self.spawn_task(async move {
-            let Ok(Some(task)) =
-                cordy_db::queries::agent::get_agent_task(&service.pool, task_id).await
-            else {
-                return;
-            };
-            if task.autopilot_run_id.is_some() {
-                service.sync_run_from_task(&task).await;
-            } else if sync_linked_issue_failure {
-                service.sync_run_from_linked_issue_task(&task).await;
-            }
+        self.enqueue(AutopilotEventWork::Task {
+            task_id,
+            sync_linked_issue_failure,
         });
     }
 
-    fn spawn_task(&self, task: impl Future<Output = ()> + Send + 'static) {
-        let mut tasks = self
-            .tasks
+    fn enqueue(&self, work: AutopilotEventWork) {
+        if !self.accepting_tasks.load(Ordering::Acquire) {
+            return;
+        }
+        let sender = self
+            .sender
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        while let Some(result) = tasks.try_join_next() {
-            if let Err(error) = result {
-                tracing::error!(%error, "autopilot event listener task panicked");
-            }
-        }
-        if self.accepting_tasks.load(Ordering::Acquire) {
-            tasks.spawn(task);
+        if let Some(sender) = sender.as_ref() {
+            let _ = sender.send(work);
         }
     }
 
-    fn stop_accepting_tasks(&self) -> JoinSet<()> {
-        let mut tasks = self
-            .tasks
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+    fn stop_accepting_tasks(&self) {
         self.accepting_tasks.store(false, Ordering::Release);
-        std::mem::take(&mut *tasks)
+        self.sender
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+    }
+}
+
+struct AutopilotEventWorker {
+    receiver: mpsc::UnboundedReceiver<AutopilotEventWork>,
+    processor: WorkProcessor,
+}
+
+impl AutopilotEventWorker {
+    async fn run(mut self, parent: CancellationToken, listeners: Arc<AutopilotEventListeners>) {
+        loop {
+            tokio::select! {
+                biased;
+                _ = parent.cancelled() => {
+                    listeners.stop_accepting_tasks();
+                    self.receiver.close();
+                    while self.process_next().await {}
+                    return;
+                }
+                processed = self.process_next() => {
+                    if !processed {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    async fn process_next(&mut self) -> bool {
+        let Some(work) = self.receiver.recv().await else {
+            return false;
+        };
+        if let Err(panic) = AssertUnwindSafe((self.processor)(work))
+            .catch_unwind()
+            .await
+        {
+            let detail = panic
+                .downcast_ref::<&str>()
+                .map(|message| (*message).to_string())
+                .or_else(|| panic.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "unknown panic".to_string());
+            tracing::error!(recovered = %detail, "autopilot event listener task panicked");
+        }
+        true
     }
 }
 
@@ -149,39 +229,33 @@ pub enum AutopilotEventShutdownOutcome {
 
 pub struct AutopilotEventListenersRuntime {
     listeners: Arc<AutopilotEventListeners>,
+    task: Option<JoinHandle<()>>,
 }
 
 impl AutopilotEventListenersRuntime {
-    pub async fn shutdown(self, timeout: Duration) -> AutopilotEventShutdownOutcome {
-        self.listeners.cancel.cancel();
-        let mut tasks = self.listeners.stop_accepting_tasks();
-        let mut panicked = false;
-        let joined = tokio::time::timeout(timeout, async {
-            while let Some(result) = tasks.join_next().await {
-                if result.is_err() {
-                    panicked = true;
-                }
+    pub async fn shutdown(mut self, timeout: Duration) -> AutopilotEventShutdownOutcome {
+        self.listeners.stop_accepting_tasks();
+        let Some(mut task) = self.task.take() else {
+            return AutopilotEventShutdownOutcome::Stopped;
+        };
+        match tokio::time::timeout(timeout, &mut task).await {
+            Ok(Ok(())) => AutopilotEventShutdownOutcome::Stopped,
+            Ok(Err(_)) => AutopilotEventShutdownOutcome::Panicked,
+            Err(_) => {
+                task.abort();
+                let _ = task.await;
+                AutopilotEventShutdownOutcome::TimedOut
             }
-        })
-        .await;
-        if joined.is_err() {
-            tasks.abort_all();
-            while tasks.join_next().await.is_some() {}
-            return AutopilotEventShutdownOutcome::TimedOut;
-        }
-        if panicked {
-            AutopilotEventShutdownOutcome::Panicked
-        } else {
-            AutopilotEventShutdownOutcome::Stopped
         }
     }
 }
 
 impl Drop for AutopilotEventListenersRuntime {
     fn drop(&mut self) {
-        self.listeners.cancel.cancel();
-        let mut tasks = self.listeners.stop_accepting_tasks();
-        tasks.abort_all();
+        self.listeners.stop_accepting_tasks();
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
     }
 }
 
@@ -292,5 +366,43 @@ mod tests {
             }),
             None
         );
+    }
+
+    #[tokio::test]
+    async fn worker_processes_admitted_events_in_fifo_order() {
+        let log = Arc::new(Mutex::new(Vec::new()));
+        let processor: WorkProcessor = Arc::new({
+            let log = log.clone();
+            move |work| {
+                let log = log.clone();
+                Box::pin(async move {
+                    let kind = match work {
+                        AutopilotEventWork::Issue(_) => "issue",
+                        AutopilotEventWork::Task { .. } => "task",
+                    };
+                    log.lock().unwrap().push(kind);
+                })
+            }
+        });
+        let (sender, receiver) = mpsc::unbounded_channel();
+        sender
+            .send(AutopilotEventWork::Issue(ISSUE_ID.parse().unwrap()))
+            .unwrap();
+        sender
+            .send(AutopilotEventWork::Task {
+                task_id: TASK_ID.parse().unwrap(),
+                sync_linked_issue_failure: true,
+            })
+            .unwrap();
+        drop(sender);
+        let mut worker = AutopilotEventWorker {
+            receiver,
+            processor,
+        };
+
+        assert!(worker.process_next().await);
+        assert!(worker.process_next().await);
+        assert!(!worker.process_next().await);
+        assert_eq!(*log.lock().unwrap(), vec!["issue", "task"]);
     }
 }
