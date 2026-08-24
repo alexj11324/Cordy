@@ -142,6 +142,8 @@ enum IssueCommand {
     Status(IssueStatusArgs),
     #[command(about = "Move an issue within its status column")]
     Reorder(IssueReorderArgs),
+    #[command(about = "Work with issue comments")]
+    Comment(IssueCommentArgs),
 }
 
 #[derive(Debug, Args)]
@@ -319,6 +321,48 @@ struct IssueReorderArgs {
         help = "Move to the bottom of the current status column"
     )]
     bottom: Option<bool>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssueCommentArgs {
+    #[command(subcommand)]
+    command: IssueCommentCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum IssueCommentCommand {
+    #[command(about = "Add a comment to an issue")]
+    Add(IssueCommentAddArgs),
+}
+
+#[derive(Debug, Args)]
+struct IssueCommentAddArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(
+        long,
+        help = "Comment content (decodes \\n, \\r, \\t, \\\\; use stdin to preserve literal backslashes)"
+    )]
+    content: Option<String>,
+    #[arg(long, help = "Read comment content from stdin")]
+    content_stdin: bool,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Read comment content from a UTF-8 file"
+    )]
+    content_file: Option<String>,
+    #[arg(
+        long,
+        help = "Allow content/attachment files outside the current workdir"
+    )]
+    allow_external_file: bool,
+    #[arg(long, help = "Parent comment ID to reply under")]
+    parent: Option<String>,
+    #[arg(long, value_delimiter = ',', help = "File path(s) to attach")]
+    attachment: Vec<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
 }
@@ -695,6 +739,12 @@ async fn run_with_input<R: Read>(
         Command::Issue(IssueArgs {
             command: IssueCommand::Reorder(args),
         }) => run_issue_reorder(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Comment(IssueCommentArgs {
+                    command: IssueCommentCommand::Add(args),
+                }),
+        }) => run_issue_comment_add(cli, environment, args, input).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -2285,7 +2335,8 @@ async fn run_issue_create<R: Read>(
         );
     }
 
-    let (pending, mut stderr) = collect_issue_attachments(args, environment)?;
+    let (pending, mut stderr) =
+        collect_local_attachments(&args.attachment, args.allow_external_file, environment)?;
     let issue: Value = match client.post_json("/api/issues", &body).await {
         Ok(issue) => issue,
         Err(error) => {
@@ -2828,6 +2879,119 @@ fn compute_reorder_position(
     }
 }
 
+async fn run_issue_comment_add<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueCommentAddArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let Some(content) = resolve_issue_comment_content(args, environment, input)? else {
+        bail!("--content, --content-stdin, or --content-file is required");
+    };
+    guard_issue_description_local_links(
+        &content,
+        environment,
+        "Deliver the file itself with `cordy issue comment add <issue-id> --attachment <path>` (repeatable) and drop the link.",
+    )?;
+
+    let mut client = new_api_client(cli, environment)?;
+    if !args.attachment.is_empty() {
+        let timeout = http_timeout(environment.raw("CORDY_HTTP_TIMEOUT"))
+            .max(std::time::Duration::from_secs(60));
+        client = client.with_request_timeout(timeout);
+    }
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let (pending, mut stderr) =
+        collect_local_attachments(&args.attachment, args.allow_external_file, environment)?;
+    let mut attachment_ids = Vec::with_capacity(pending.len());
+    for attachment in pending {
+        let id = client
+            .upload_file(attachment.data, &attachment.path, &issue_id)
+            .await
+            .with_context(|| format!("upload attachment {}", attachment.path))?;
+        attachment_ids.push(id);
+        let _ = writeln!(stderr, "Uploaded {}", attachment.path);
+    }
+
+    let mut body = serde_json::Map::from_iter([("content".into(), Value::String(content))]);
+    if let Some(parent_id) = args.parent.as_deref().filter(|value| !value.is_empty()) {
+        body.insert("parent_id".into(), Value::String(parent_id.into()));
+    }
+    if !attachment_ids.is_empty() {
+        body.insert(
+            "attachment_ids".into(),
+            Value::Array(attachment_ids.into_iter().map(Value::String).collect()),
+        );
+    }
+    let comment: Value = client
+        .post_json(&format!("/api/issues/{issue_id}/comments"), &body)
+        .await
+        .context("add comment")?;
+    let _ = writeln!(stderr, "Comment added to issue {}.", args.issue_id);
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&comment)?),
+        OutputFormat::Table => String::new(),
+    };
+    Ok(RunOutput { stdout, stderr })
+}
+
+fn resolve_issue_comment_content<R: Read>(
+    args: &IssueCommentAddArgs,
+    environment: &Environment,
+    input: &mut R,
+) -> Result<Option<String>> {
+    let inline = args.content.as_deref().unwrap_or_default();
+    let content_file = args
+        .content_file
+        .as_deref()
+        .filter(|path| !path.is_empty())
+        .map(Path::new);
+    let sources = [
+        args.content_stdin,
+        !inline.is_empty(),
+        content_file.is_some(),
+    ]
+    .into_iter()
+    .filter(|source| *source)
+    .count();
+    if sources > 1 {
+        bail!("--content, --content-stdin, and --content-file are mutually exclusive");
+    }
+    if args.content_stdin {
+        let mut bytes = Vec::new();
+        input
+            .read_to_end(&mut bytes)
+            .context("read stdin for --content-stdin")?;
+        let body = trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned());
+        if body.is_empty() {
+            bail!("stdin content for --content-stdin is empty");
+        }
+        return Ok(Some(body));
+    }
+    if let Some(path) = content_file {
+        ensure_file_within_workdir(
+            path,
+            environment.current_dir(),
+            args.allow_external_file,
+            "content",
+        )?;
+        let read_path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            environment.current_dir().join(path)
+        };
+        let bytes = fs::read(read_path).context("read file for --content-file")?;
+        let body = trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned());
+        if body.is_empty() {
+            bail!("file content for --content-file is empty");
+        }
+        return Ok(Some(body));
+    }
+    Ok((!inline.is_empty()).then(|| unescape_backslash_escapes(inline)))
+}
+
 fn validate_issue_status(status: &str) -> Result<()> {
     let normalized = status.trim().to_ascii_lowercase();
     let bytes = normalized.as_bytes();
@@ -2998,13 +3162,14 @@ fn quick_create_attachment_ids(environment: &Environment) -> Result<Vec<String>>
     Ok(append_unique_strings(ids))
 }
 
-fn collect_issue_attachments(
-    args: &IssueCreateArgs,
+fn collect_local_attachments(
+    attachments: &[String],
+    allow_external_file: bool,
     environment: &Environment,
 ) -> Result<(Vec<PendingAttachment>, String)> {
-    let mut pending = Vec::with_capacity(args.attachment.len());
+    let mut pending = Vec::with_capacity(attachments.len());
     let mut stderr = String::new();
-    for file_path in &args.attachment {
+    for file_path in attachments {
         let trimmed = file_path.trim();
         if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
             let _ = writeln!(
@@ -3014,7 +3179,7 @@ fn collect_issue_attachments(
             continue;
         }
         let path = Path::new(file_path);
-        if !args.allow_external_file {
+        if !allow_external_file {
             let base = fs::canonicalize(environment.current_dir())
                 .unwrap_or_else(|_| lexical_normalize(environment.current_dir()));
             let absolute = if path.is_absolute() {
@@ -4318,6 +4483,18 @@ mod tests {
                 command: IssueCommand::Reorder(args),
             }) => args,
             _ => panic!("expected issue reorder"),
+        }
+    }
+
+    fn issue_comment_add_args(cli: &Cli) -> &IssueCommentAddArgs {
+        match &cli.command {
+            Command::Issue(IssueArgs {
+                command:
+                    IssueCommand::Comment(IssueCommentArgs {
+                        command: IssueCommentCommand::Add(args),
+                    }),
+            }) => args,
+            _ => panic!("expected issue comment add"),
         }
     }
 
@@ -6151,6 +6328,148 @@ mod tests {
             .await
             .expect_err("false selector");
         assert!(error.to_string().contains("cannot be set to false"));
+    }
+
+    #[test]
+    fn issue_comment_add_parser_and_content_sources_match_go() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "comment",
+            "add",
+            "CORD-18",
+            "--content",
+            "one\\ntwo",
+            "--parent",
+            "comment-1",
+            "--attachment",
+            "one.png",
+            "--output",
+            "table",
+        ])
+        .expect("comment add CLI");
+        let args = issue_comment_add_args(&cli);
+        assert_eq!(args.issue_id, "CORD-18");
+        assert_eq!(args.parent.as_deref(), Some("comment-1"));
+        assert_eq!(args.attachment, vec![String::from("one.png")]);
+        assert_eq!(args.output, OutputFormat::Table);
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        assert_eq!(
+            resolve_issue_comment_content(args, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .expect("inline content"),
+            Some("one\ntwo".into())
+        );
+
+        let empty_file = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "comment",
+            "add",
+            "CORD-18",
+            "--content-file",
+            "",
+        ])
+        .expect("empty file reaches runtime");
+        assert!(resolve_issue_comment_content(
+            issue_comment_add_args(&empty_file),
+            &environment,
+            &mut Cursor::new(Vec::<u8>::new())
+        )
+        .expect("empty file is unset")
+        .is_none());
+    }
+
+    #[tokio::test]
+    async fn issue_comment_add_prevalidates_uploads_then_posts_attachment_ids() {
+        let captured = Arc::new(Mutex::new(None::<Value>));
+        let captured_by_comment = Arc::clone(&captured);
+        let uploads = Arc::new(Mutex::new(0_usize));
+        let uploads_by_handler = Arc::clone(&uploads);
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/upload-file",
+                post(move |headers: HeaderMap, _body: axum::body::Bytes| {
+                    let uploads = Arc::clone(&uploads_by_handler);
+                    async move {
+                        *uploads.lock().expect("uploads") += 1;
+                        assert!(headers["content-type"]
+                            .to_str()
+                            .expect("content type")
+                            .starts_with("multipart/form-data; boundary="));
+                        Json(serde_json::json!({"id":"attachment-1"}))
+                    }
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid/comments",
+                post(move |Json(body): Json<Value>| {
+                    let captured = Arc::clone(&captured_by_comment);
+                    async move {
+                        *captured.lock().expect("comment body") = Some(body.clone());
+                        Json(serde_json::json!({"id":"comment-1","content":body["content"]}))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        fs::write(cwd.path().join("proof.txt"), b"proof").expect("attachment");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "comment",
+            "add",
+            "CORD-18",
+            "--content",
+            "Completed\\nSee proof.",
+            "--parent",
+            "parent-comment",
+            "--attachment",
+            "proof.txt",
+        ])
+        .expect("comment add CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("add comment");
+        assert!(output.stderr.contains("Uploaded proof.txt"));
+        assert!(output.stderr.contains("Comment added to issue CORD-18."));
+        assert_eq!(*uploads.lock().expect("uploads"), 1);
+        let body = captured
+            .lock()
+            .expect("body")
+            .clone()
+            .expect("captured body");
+        assert_eq!(body["content"], "Completed\nSee proof.");
+        assert_eq!(body["parent_id"], "parent-comment");
+        assert_eq!(body["attachment_ids"], serde_json::json!(["attachment-1"]));
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn issue_comment_add_rejects_missing_content_before_network() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from(["cordy", "issue", "comment", "add", "CORD-18"])
+            .expect("missing content reaches runtime");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("missing content");
+        assert!(error.to_string().contains("--content-file is required"));
     }
 
     #[test]
