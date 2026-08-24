@@ -34,7 +34,6 @@ use crate::version::check_minimum;
 const MESSAGE_BUFFER: usize = 256;
 const TERMINATION_GRACE: Duration = Duration::from_secs(2);
 const KILL_GRACE: Duration = Duration::from_secs(10);
-const NOTIFICATION_QUIET: Duration = Duration::from_millis(250);
 const NOTIFICATION_DRAIN_MAX: Duration = Duration::from_secs(2);
 const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 const DISCOVERY_OUTPUT_MAX: u64 = 4 * 1024 * 1024;
@@ -1806,10 +1805,33 @@ async fn run_protocol(
             return protocol_failure(&provider, "session/prompt", error, session_id, rejected);
         }
     };
+    if close_session && !session_id.is_empty() {
+        match tokio::time::timeout(
+            NOTIFICATION_DRAIN_MAX,
+            client.request(
+                "session/close",
+                serde_json::json!({"sessionId":session_id}),
+                |notification| handle_notification(notification, &messages, &mut state),
+            ),
+        )
+        .await
+        {
+            Ok(Ok(_)) => {}
+            Ok(Err(error)) => {
+                tracing::debug!(provider = %provider, error = %error, "best-effort ACP session close failed")
+            }
+            Err(_) => {
+                tracing::debug!(provider = %provider, "best-effort ACP session close timed out")
+            }
+        }
+    }
+    if let Err(error) = client.close_request_side().await {
+        tracing::debug!(provider = %provider, error = %error, "ACP request-side shutdown failed");
+    }
     let drain = if provider == "reasonix" {
         client
             .drain_notifications_with_permission(
-                NOTIFICATION_QUIET,
+                NOTIFICATION_DRAIN_MAX,
                 NOTIFICATION_DRAIN_MAX,
                 |notification| handle_notification(notification, &messages, &mut state),
                 |params| {
@@ -1824,9 +1846,11 @@ async fn run_protocol(
             .await
     } else {
         client
-            .drain_notifications(NOTIFICATION_QUIET, NOTIFICATION_DRAIN_MAX, |notification| {
-                handle_notification(notification, &messages, &mut state)
-            })
+            .drain_notifications(
+                NOTIFICATION_DRAIN_MAX,
+                NOTIFICATION_DRAIN_MAX,
+                |notification| handle_notification(notification, &messages, &mut state),
+            )
             .await
     };
     if let Err(error) = drain {
@@ -1837,18 +1861,6 @@ async fn run_protocol(
             provider = "reasonix",
             "permission request omitted trusted metadata; protected-decision detection may be degraded"
         );
-    }
-    if close_session && !session_id.is_empty() {
-        if let Err(error) = client
-            .request(
-                "session/close",
-                serde_json::json!({"sessionId":session_id}),
-                |notification| handle_notification(notification, &messages, &mut state),
-            )
-            .await
-        {
-            tracing::debug!(provider = %provider, error = %error, "best-effort ACP session close failed");
-        }
     }
     let stop_reason = prompt_result
         .get("stopReason")
@@ -4128,7 +4140,7 @@ while IFS= read -r line; do
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"ToolCallUpdate","toolCallId":"tool-1","name":"read_file","status":"completed","output":"contents"}}}'
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"final answer"}}}}'
       printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","usage":{"inputTokens":11,"outputTokens":4}}}\n' "$id"
-      sleep 0.05
+      sleep 0.4
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":" tail"}}}}'
       ;;
   esac

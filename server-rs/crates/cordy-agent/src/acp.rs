@@ -228,6 +228,13 @@ where
         }
     }
 
+    /// Closes the client request side so an ACP subprocess can flush its
+    /// remaining notifications and terminate. Callers may continue reading
+    /// through `drain_notifications*` until EOF or their hard deadline.
+    pub async fn close_request_side(&mut self) -> Result<(), AcpError> {
+        self.writer.shutdown().await.map_err(AcpError::Transport)
+    }
+
     async fn answer_agent_request(
         &mut self,
         id: u64,
