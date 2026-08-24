@@ -10,7 +10,7 @@
 //! slow-log attribution.
 
 use axum::extract::{Request, State};
-use axum::http::{header, StatusCode};
+use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
 use cordy_auth::daemon_token_cache::{DaemonTokenCache, DaemonTokenIdentity};
@@ -23,7 +23,6 @@ use crate::auth::AuthSideEffectSpawner;
 
 /// Cloud node PAT prefix. Fail-closed until the Cloud Fleet verifier lands
 /// with the integrations port — mirrors Go when CORDY_CLOUD_FLEET_URL unset.
-const CLOUD_PAT_PREFIX: &str = "mcn_";
 pub const DAEMON_WORKSPACE_HEADER: &str = "x-cordy-daemon-workspace-id";
 pub const DAEMON_ID_HEADER: &str = "x-cordy-daemon-id";
 
@@ -50,6 +49,7 @@ pub struct DaemonAuthState {
     /// human CLI and a daemon converges on one DB round-trip per TTL window.
     pub pat_cache: PatCache,
     pub daemon_cache: DaemonTokenCache,
+    pub cloud_pat_verifier: Option<cordy_auth::cloud_pat::CloudPatVerifier>,
     pub side_effects: std::sync::Arc<dyn AuthSideEffectSpawner>,
 }
 
@@ -162,12 +162,39 @@ pub async fn daemon_auth_middleware(
     // only surface the resolved owner_id as X-User-ID downstream. Same
     // fail-closed semantics as Auth: no verifier configured → 401, Fleet
     // unreachable → 503.
-    if token.starts_with(CLOUD_PAT_PREFIX) {
-        tracing::warn!(
-            path = ?req.uri().path(),
-            "daemon_auth: mcn_ token presented but cloud verifier not configured"
-        );
-        return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+    if token.starts_with(cordy_auth::cloud_pat::CLOUD_PAT_PREFIX) {
+        let owner_id = match crate::auth::verify_cloud_pat(
+            &state.pool,
+            state.cloud_pat_verifier.as_ref(),
+            token,
+        )
+        .await
+        {
+            Ok(owner_id) => owner_id,
+            Err(crate::auth::CloudAuthError::Invalid) => {
+                tracing::warn!(path = ?req.uri().path(), "daemon_auth: cloud PAT rejected");
+                return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+            }
+            Err(crate::auth::CloudAuthError::Unavailable) => {
+                tracing::warn!(path = ?req.uri().path(), "daemon_auth: cloud PAT verifier unavailable");
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    r#"{"error":"cloud pat verifier unavailable"}"#,
+                ));
+            }
+        };
+        if reject_disabled(&owner_id, "", DAEMON_AUTH_PATH_CLOUD_PAT) {
+            return Err(err_disabled());
+        }
+        set_user(&mut req, &owner_id);
+        req.headers_mut()
+            .insert("x-actor-source", HeaderValue::from_static("cloud_pat"));
+        req.extensions_mut().insert(DaemonContext {
+            workspace_id: None,
+            daemon_id: None,
+            auth_path: DAEMON_AUTH_PATH_CLOUD_PAT,
+        });
+        return Ok(next.run(req).await);
     }
 
     // Fallback: PAT tokens ("mul_" prefix).

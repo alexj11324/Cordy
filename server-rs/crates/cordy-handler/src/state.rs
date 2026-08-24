@@ -4,6 +4,7 @@
 use std::sync::Arc;
 
 use cordy_auth::daemon_token_cache::DaemonTokenCache;
+use cordy_auth::membership_cache::MembershipCache;
 use cordy_auth::pat_cache::PatCache;
 use cordy_realtime::hub::Hub;
 use cordy_service::autopilot::{AutopilotService, EntitlementProvider};
@@ -83,6 +84,259 @@ impl cordy_analytics::AnalyticsClient for SharedAnalyticsClient {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum AttachmentDownloadMode {
+    #[default]
+    Auto,
+    CloudFront,
+    Presign,
+    Proxy,
+}
+
+#[derive(Clone)]
+pub struct AttachmentDownloadSettings {
+    pub mode: AttachmentDownloadMode,
+    pub public_url: String,
+    pub ttl: std::time::Duration,
+    pub cloudfront_signer: Option<Arc<crate::cloudfront::CloudFrontSigner>>,
+}
+
+impl Default for AttachmentDownloadSettings {
+    fn default() -> Self {
+        Self {
+            mode: AttachmentDownloadMode::Auto,
+            public_url: String::new(),
+            ttl: std::time::Duration::from_secs(30 * 60),
+            cloudfront_signer: None,
+        }
+    }
+}
+
+impl AttachmentDownloadSettings {
+    pub async fn from_config(config: &cordy_config::Config) -> anyhow::Result<Self> {
+        let raw_mode = config
+            .storage
+            .attachment_download_mode
+            .as_deref()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+        let mode = match raw_mode.as_str() {
+            "" | "auto" => AttachmentDownloadMode::Auto,
+            "cloudfront" => AttachmentDownloadMode::CloudFront,
+            "presign" => AttachmentDownloadMode::Presign,
+            "proxy" => AttachmentDownloadMode::Proxy,
+            _ => {
+                tracing::warn!(
+                    value = raw_mode,
+                    "invalid ATTACHMENT_DOWNLOAD_MODE; using auto"
+                );
+                AttachmentDownloadMode::Auto
+            }
+        };
+        let ttl = match config
+            .storage
+            .attachment_download_url_ttl
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            Some(raw) => cordy_auth::cookie::parse_auth_token_ttl(raw).ok_or_else(|| {
+                anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL must be a positive Go duration")
+            })?,
+            None => std::time::Duration::from_secs(30 * 60),
+        };
+        chrono::Duration::from_std(ttl)
+            .map_err(|_| anyhow::anyhow!("ATTACHMENT_DOWNLOAD_URL_TTL is too large"))?;
+        let cloudfront_signer = crate::cloudfront::CloudFrontSigner::from_config(config)
+            .await?
+            .map(Arc::new);
+        anyhow::ensure!(
+            mode != AttachmentDownloadMode::CloudFront || cloudfront_signer.is_some(),
+            "ATTACHMENT_DOWNLOAD_MODE=cloudfront requires a usable CloudFront signing key"
+        );
+        Ok(Self {
+            mode,
+            public_url: config
+                .urls
+                .public_url
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .trim_end_matches('/')
+                .to_string(),
+            ttl,
+            cloudfront_signer,
+        })
+    }
+
+    pub fn validate_for_storage(
+        &self,
+        storage: &dyn crate::attachment_storage::AttachmentStorage,
+    ) -> anyhow::Result<()> {
+        self.validate_presign_support(storage.supports_presigned_downloads())
+    }
+
+    fn validate_presign_support(&self, supports_presigned_downloads: bool) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.mode != AttachmentDownloadMode::Presign || supports_presigned_downloads,
+            "ATTACHMENT_DOWNLOAD_MODE=presign requires S3 attachment storage"
+        );
+        if supports_presigned_downloads
+            && matches!(
+                self.mode,
+                AttachmentDownloadMode::Auto | AttachmentDownloadMode::Presign
+            )
+        {
+            crate::attachment_storage::validate_s3_presign_ttl(self.ttl).map_err(|_| {
+                anyhow::anyhow!(
+                    "ATTACHMENT_DOWNLOAD_URL_TTL must be between 1 second and 7 days when S3 presigned downloads are enabled"
+                )
+            })?;
+        }
+        Ok(())
+    }
+
+    pub fn resolve_mode(
+        &self,
+        storage: Option<&dyn crate::attachment_storage::AttachmentStorage>,
+        raw_url: &str,
+    ) -> AttachmentDownloadMode {
+        match self.mode {
+            AttachmentDownloadMode::CloudFront => return AttachmentDownloadMode::CloudFront,
+            AttachmentDownloadMode::Presign => return AttachmentDownloadMode::Presign,
+            AttachmentDownloadMode::Proxy => return AttachmentDownloadMode::Proxy,
+            AttachmentDownloadMode::Auto => {}
+        }
+        if self
+            .cloudfront_signer
+            .as_deref()
+            .is_some_and(|signer| signer.can_sign_url(raw_url))
+        {
+            return AttachmentDownloadMode::CloudFront;
+        }
+        if should_proxy_attachment_url(raw_url) {
+            return AttachmentDownloadMode::Proxy;
+        }
+        if storage.is_some_and(|storage| storage.supports_presigned_downloads()) {
+            return AttachmentDownloadMode::Presign;
+        }
+        AttachmentDownloadMode::Proxy
+    }
+}
+
+#[cfg(test)]
+mod attachment_download_tests {
+    use std::time::Duration;
+
+    use super::{should_proxy_attachment_url, AttachmentDownloadMode, AttachmentDownloadSettings};
+
+    #[test]
+    fn auto_mode_keeps_internal_object_urls_on_the_proxy() {
+        for url in [
+            "http://localhost:9000/bucket/object",
+            "https://objects.internal/object",
+            "https://10.0.0.8/object",
+            "https://[::1]/object",
+            "/uploads/object",
+        ] {
+            assert!(should_proxy_attachment_url(url), "{url}");
+        }
+        assert!(!should_proxy_attachment_url(
+            "https://bucket.s3.us-west-2.amazonaws.com/object"
+        ));
+    }
+
+    #[test]
+    fn explicit_presign_requires_a_presigning_storage_backend() {
+        let settings = AttachmentDownloadSettings {
+            mode: AttachmentDownloadMode::Presign,
+            ..AttachmentDownloadSettings::default()
+        };
+
+        let error = settings.validate_presign_support(false).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "ATTACHMENT_DOWNLOAD_MODE=presign requires S3 attachment storage"
+        );
+    }
+
+    #[test]
+    fn presign_ttl_is_validated_at_startup_for_auto_and_explicit_modes() {
+        for mode in [
+            AttachmentDownloadMode::Auto,
+            AttachmentDownloadMode::Presign,
+        ] {
+            for ttl in [
+                Duration::from_millis(500),
+                Duration::from_secs(7 * 24 * 60 * 60 + 1),
+            ] {
+                let settings = AttachmentDownloadSettings {
+                    mode,
+                    ttl,
+                    ..AttachmentDownloadSettings::default()
+                };
+                assert!(settings.validate_presign_support(true).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn proxy_mode_does_not_apply_the_s3_presign_ttl_limit() {
+        let settings = AttachmentDownloadSettings {
+            mode: AttachmentDownloadMode::Proxy,
+            ttl: Duration::from_millis(500),
+            ..AttachmentDownloadSettings::default()
+        };
+
+        settings.validate_presign_support(false).unwrap();
+    }
+}
+
+fn should_proxy_attachment_url(raw: &str) -> bool {
+    let Ok(url) = url::Url::parse(raw) else {
+        return true;
+    };
+    let Some(host) = url.host_str() else {
+        return true;
+    };
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    if host.is_empty()
+        || host == "localhost"
+        || host.ends_with(".localhost")
+        || !host.contains('.')
+        || [
+            ".local",
+            ".localdomain",
+            ".internal",
+            ".lan",
+            ".home",
+            ".docker",
+        ]
+        .iter()
+        .any(|suffix| host.ends_with(suffix))
+    {
+        return true;
+    }
+    host.parse::<std::net::IpAddr>()
+        .is_ok_and(|address| match address {
+            std::net::IpAddr::V4(address) => {
+                address.is_loopback()
+                    || address.is_private()
+                    || address.is_link_local()
+                    || address.is_multicast()
+                    || address.is_unspecified()
+            }
+            std::net::IpAddr::V6(address) => {
+                address.is_loopback()
+                    || address.is_unique_local()
+                    || address.is_unicast_link_local()
+                    || address.is_multicast()
+                    || address.is_unspecified()
+            }
+        })
+}
+
 struct DaemonTaskWakeup {
     notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
 }
@@ -112,6 +366,8 @@ pub struct HandlerState {
     pub pool: sqlx::PgPool,
     pub pat_cache: PatCache,
     pub daemon_token_cache: DaemonTokenCache,
+    pub membership_cache: MembershipCache,
+    pub cloud_pat_verifier: Option<cordy_auth::cloud_pat::CloudPatVerifier>,
     /// Realtime WS hub (cordy-realtime). `None` only in tests.
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
@@ -133,7 +389,6 @@ pub struct HandlerState {
     pub analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
     pub auth_rate_limit: cordy_middleware::ratelimit::RateLimitState,
     pub auth_verify_rate_limit: cordy_middleware::ratelimit::RateLimitState,
-    pub(crate) webhook_rate_limits: crate::autopilot_webhook::WebhookRateLimits,
     pub invitation_admission: crate::invitation::InvitationAdmission,
     /// Anonymous frontend capability/configuration response.
     pub public_config: crate::config::PublicConfigSettings,
@@ -180,6 +435,7 @@ pub struct HandlerState {
     pub update_store: Option<Arc<crate::pending_store::UpdateStore>>,
     pub model_list_store: Option<Arc<crate::pending_store::ModelListStore>>,
     pub model_catalog_cache: Option<Arc<crate::pending_store::ModelCatalogCache>>,
+    pub webhook_rate_limits: crate::webhook_rate_limit::WebhookRateLimits,
     pub local_skill_list_store: Option<Arc<crate::pending_store::LocalSkillListStore>>,
     pub local_skill_import_store: Option<Arc<crate::pending_store::LocalSkillImportStore>>,
     /// Shared Redis connection for per-IP public-route rate limiting. None is
@@ -198,7 +454,10 @@ pub struct HandlerState {
     pub daemon_notifier: Arc<cordy_daemon::notifier::RelayNotifier>,
     /// Attachment object store. None is the explicit unconfigured test path.
     pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
+    /// Production Lark/WeCom media adapter over the same object store.
+    pub channel_media_storage: Option<Arc<crate::attachment_storage::ChannelMediaStorage>>,
     pub attachment_frame_ancestors: Vec<String>,
+    pub attachment_download: AttachmentDownloadSettings,
     /// On-demand Slack channel history reader. `None` means Slack history is
     /// not configured; chat history then falls back to the persisted transcript.
     pub slack_history: Option<Arc<cordy_slack::history::History>>,
@@ -309,12 +568,13 @@ impl HandlerState {
             positive_env_i64("RATE_LIMIT_AUTH_VERIFY", 20),
             60,
         );
-        auth_verify_rate_limit.trusted_proxies = trusted_proxies.clone();
-        let webhook_rate_limits = crate::autopilot_webhook::WebhookRateLimits::new(trusted_proxies);
+        auth_verify_rate_limit.trusted_proxies = trusted_proxies;
         Self {
             pool,
             pat_cache,
             daemon_token_cache: DaemonTokenCache::disabled(),
+            membership_cache: MembershipCache::disabled(),
+            cloud_pat_verifier: None,
             hub,
             bus,
             channel_tasks: Arc::new(cordy_channel::RuntimeTasks::new()),
@@ -328,7 +588,6 @@ impl HandlerState {
             analytics,
             auth_rate_limit,
             auth_verify_rate_limit,
-            webhook_rate_limits,
             invitation_admission: crate::invitation::InvitationAdmission::default(),
             public_config: crate::config::PublicConfigSettings::default(),
             integrations: cordy_config::IntegrationsConfig::default(),
@@ -351,6 +610,7 @@ impl HandlerState {
             update_store: None,
             model_list_store: None,
             model_catalog_cache: None,
+            webhook_rate_limits: crate::webhook_rate_limit::WebhookRateLimits::default(),
             local_skill_list_store: None,
             local_skill_import_store: None,
             rate_limit_client: None,
@@ -359,7 +619,9 @@ impl HandlerState {
             daemon_hub: Some(daemon_hub),
             daemon_notifier,
             attachment_storage: None,
+            channel_media_storage: None,
             attachment_frame_ancestors: Vec::new(),
+            attachment_download: AttachmentDownloadSettings::default(),
             slack_history: None,
             llm,
             webhook_delivery_notify: None,
@@ -426,9 +688,14 @@ impl HandlerState {
         mut self,
         storage: Arc<dyn crate::attachment_storage::AttachmentStorage>,
         frame_ancestors: Vec<String>,
+        download: AttachmentDownloadSettings,
     ) -> Self {
+        self.channel_media_storage = Some(Arc::new(
+            crate::attachment_storage::ChannelMediaStorage::new(storage.clone()),
+        ));
         self.attachment_storage = Some(storage);
         self.attachment_frame_ancestors = frame_ancestors;
+        self.attachment_download = download;
         self
     }
 
@@ -501,7 +768,9 @@ impl HandlerState {
     }
 
     pub fn with_liveness_redis(mut self, client: redis::Client) -> Self {
-        self.liveness_store = crate::runtime_liveness::RedisLivenessStore::new(client);
+        self.liveness_store = crate::runtime_liveness::RedisLivenessStore::new(
+            cordy_redis::RecoveringConnection::new(client),
+        );
         self
     }
 
@@ -614,6 +883,8 @@ impl HandlerState {
             self.pool.clone(),
             self.autopilots.clone(),
             notify.clone(),
+            self.webhook_rate_limits.token.clone(),
+            self.business_metrics.clone(),
         );
         self.webhook_delivery_notify = Some(notify);
         (self, worker)
@@ -630,6 +901,11 @@ impl HandlerState {
         self
     }
 
+    pub fn with_cloud_pat_fleet_url(mut self, fleet_url: Option<&str>) -> Self {
+        self.cloud_pat_verifier = fleet_url.and_then(cordy_auth::cloud_pat::CloudPatVerifier::new);
+        self
+    }
+
     pub fn with_email_service(mut self, email_service: Arc<EmailService>) -> Self {
         self.email_service = email_service;
         self
@@ -638,8 +914,7 @@ impl HandlerState {
     pub fn with_rate_limit_trusted_proxies(mut self, raw: Option<&str>) -> Self {
         let trusted = cordy_middleware::ratelimit::parse_trusted_proxies(raw.unwrap_or_default());
         self.auth_rate_limit.trusted_proxies = trusted.clone();
-        self.auth_verify_rate_limit.trusted_proxies = trusted.clone();
-        self.webhook_rate_limits.trusted_proxies = trusted;
+        self.auth_verify_rate_limit.trusted_proxies = trusted;
         self
     }
 
@@ -693,15 +968,26 @@ impl HandlerState {
         self
     }
 
-    /// Builds the pending-request stores from a Redis client (Go
-    /// NewRedis{Update,ModelList,LocalSkill*}Store wiring). Callers without
-    /// Redis keep `None` fields — the disabled path degrades exactly like Go's
+    /// Builds all handler/service Redis dependencies from the production
+    /// client: auth/member caches, empty-claim cache, runtime liveness,
+    /// invitation/webhook gates, and pending request stores. Callers without
+    /// Redis keep the explicit disabled implementations and preserve the Go
     /// nil-store behavior.
-    pub async fn with_redis(mut self, client: redis::Client) -> Result<Self, redis::RedisError> {
+    pub fn with_redis(mut self, client: redis::Client) -> Self {
         self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
         self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client.clone());
-        self.daemon_token_cache = DaemonTokenCache::new(client.clone()).await?;
-        let conn = client.get_connection_manager().await?;
+        self.rate_limit_client = Some(client.clone());
+        let conn = cordy_redis::RecoveringConnection::new(client);
+        self.invitation_admission = self.invitation_admission.with_redis(conn.clone());
+        self.pat_cache = PatCache::from_connection(conn.clone());
+        self.daemon_token_cache = DaemonTokenCache::from_connection(conn.clone());
+        self.membership_cache = MembershipCache::from_connection(conn.clone());
+        if let Some(verifier) = self.cloud_pat_verifier.as_mut() {
+            verifier.set_cache(conn.clone());
+        }
+        self.tasks.install_empty_claim_cache(
+            cordy_service::empty_claim_cache::EmptyClaimCache::new(conn.clone()),
+        );
         self.update_store = Some(Arc::new(crate::pending_store::UpdateStore::new(
             conn.clone(),
         )));
@@ -711,13 +997,16 @@ impl HandlerState {
         self.model_catalog_cache = Some(Arc::new(crate::pending_store::ModelCatalogCache::new(
             conn.clone(),
         )));
+        self.liveness_store = crate::runtime_liveness::RedisLivenessStore::new(conn.clone());
+        self.webhook_rate_limits =
+            crate::webhook_rate_limit::WebhookRateLimits::redis(conn.clone());
         self.local_skill_list_store = Some(Arc::new(
             crate::pending_store::LocalSkillListStore::new(conn.clone()),
         ));
         self.local_skill_import_store = Some(Arc::new(
             crate::pending_store::LocalSkillImportStore::new(conn.clone()),
         ));
-        Ok(self)
+        self
     }
 
     /// Connects the daemon WebSocket heartbeat consumer after all production
@@ -749,10 +1038,12 @@ impl HandlerState {
     /// so a handler-domain migration cannot implicitly activate pending-store
     /// behavior owned by other S8 domains.
     pub fn with_rate_limit_redis(mut self, client: redis::Client) -> Self {
-        // Keep Redis lazy like Go's redis.Client. The middleware establishes
-        // and caches a bounded connection on demand, so an unavailable Redis
-        // never delays or aborts HTTP server startup and can recover later.
+        // Keep Redis lazy like Go's redis.Client. Shared recovering
+        // connections prevent cold-start stampedes while the existing
+        // operation timeouts keep requests bounded.
+        let invitation_redis = cordy_redis::RecoveringConnection::new(client.clone());
         self.rate_limit_client = Some(client);
+        self.invitation_admission = self.invitation_admission.with_redis(invitation_redis);
         self
     }
 

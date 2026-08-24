@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Datelike, Timelike, Utc};
@@ -66,12 +66,43 @@ struct CacheEntry {
     fresh_until: DateTime<Utc>,
     stale_until: DateTime<Utc>,
     retry_after: Option<DateTime<Utc>>,
+    last_access_sequence: u64,
 }
 
 #[derive(Debug, Default)]
 struct CacheState {
     entries: HashMap<Uuid, CacheEntry>,
     refresh_locks: HashMap<Uuid, Arc<Mutex<()>>>,
+    access_sequence: u64,
+}
+
+impl CacheState {
+    fn next_access_sequence(&mut self) -> u64 {
+        self.access_sequence = self.access_sequence.saturating_add(1);
+        self.access_sequence
+    }
+
+    fn touch(&mut self, workspace_id: Uuid) {
+        let sequence = self.next_access_sequence();
+        if let Some(entry) = self.entries.get_mut(&workspace_id) {
+            entry.last_access_sequence = sequence;
+        }
+    }
+
+    fn evict_lru_if_full(&mut self, workspace_id: Uuid, max_entries: usize) {
+        if self.entries.contains_key(&workspace_id) || self.entries.len() < max_entries {
+            return;
+        }
+        if let Some(victim) = self
+            .entries
+            .iter()
+            .min_by_key(|(_, entry)| entry.last_access_sequence)
+            .map(|(workspace_id, _)| *workspace_id)
+        {
+            self.entries.remove(&victim);
+            self.refresh_locks.remove(&victim);
+        }
+    }
 }
 
 pub struct HttpEntitlementProvider {
@@ -82,11 +113,75 @@ pub struct HttpEntitlementProvider {
     emergency_disabled: AtomicBool,
     client: reqwest::Client,
     cache: Mutex<CacheState>,
+    metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PolicyRegression {
+    Policy,
+    Subscription,
+}
+
+enum StorePolicyError {
+    Version(PolicyRegression),
+    InvalidStaleGrace,
+}
+
+#[derive(Clone, Copy)]
+enum FetchPolicyError {
+    Timeout,
+    Network,
+    Unauthorized,
+    NotFound,
+    Server,
+    Client,
+    Status,
+    Read,
+    InvalidPolicy,
+}
+
+impl FetchPolicyError {
+    fn refresh_outcome(self) -> &'static str {
+        match self {
+            Self::Timeout => "timeout",
+            Self::Network => "network",
+            Self::Unauthorized => "unauthorized",
+            Self::NotFound => "not_found",
+            Self::Server => "5xx",
+            Self::Client => "4xx",
+            Self::Status => "status",
+            Self::Read => "read",
+            Self::InvalidPolicy => "invalid_policy",
+        }
+    }
+
+    fn decision_reason(self) -> &'static str {
+        match self {
+            Self::InvalidPolicy => "invalid_policy",
+            _ => "unavailable",
+        }
+    }
+}
+
+impl PolicyRegression {
+    fn source(self) -> &'static str {
+        match self {
+            Self::Policy => "policy",
+            Self::Subscription => "subscription",
+        }
+    }
 }
 
 impl HttpEntitlementProvider {
     pub fn new(
         config: EntitlementClientConfig,
+    ) -> Result<Option<Arc<Self>>, EntitlementClientError> {
+        Self::new_with_metrics(config, None)
+    }
+
+    pub fn new_with_metrics(
+        config: EntitlementClientConfig,
+        metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     ) -> Result<Option<Arc<Self>>, EntitlementClientError> {
         if !config.enabled {
             return Ok(None);
@@ -123,6 +218,7 @@ impl HttpEntitlementProvider {
             emergency_disabled: AtomicBool::new(config.emergency_disabled),
             client,
             cache: Mutex::new(CacheState::default()),
+            metrics,
         })))
     }
 
@@ -153,21 +249,37 @@ impl HttpEntitlementProvider {
         &self,
         workspace_id: Uuid,
         now: DateTime<Utc>,
-    ) -> Option<EntitlementGateDecision> {
-        let cache = self.cache.lock().await;
-        let entry = cache.entries.get(&workspace_id)?;
+        record_outcome: bool,
+    ) -> Option<(EntitlementGateDecision, &'static str)> {
+        let mut cache = self.cache.lock().await;
+        cache.touch(workspace_id);
+        let Some(entry) = cache.entries.get(&workspace_id) else {
+            if record_outcome {
+                self.record_cache("miss");
+            }
+            return None;
+        };
         if now < entry.fresh_until {
-            return Some(entry.decision.clone());
+            if record_outcome {
+                self.record_cache("hit");
+            }
+            return Some((entry.decision.clone(), "cache_fresh"));
         }
         if entry
             .retry_after
             .is_some_and(|retry_after| now < retry_after)
         {
+            if record_outcome {
+                self.record_cache("retry_suppressed");
+            }
             return Some(if now < entry.stale_until {
-                Self::stale(entry.decision.clone())
+                (Self::stale(entry.decision.clone()), "stale")
             } else {
-                Self::off()
+                (Self::off(), "unavailable")
             });
+        }
+        if record_outcome {
+            self.record_cache("expired");
         }
         None
     }
@@ -184,12 +296,8 @@ impl HttpEntitlementProvider {
     async fn mark_failure(&self, workspace_id: Uuid) {
         let mut cache = self.cache.lock().await;
         let now = Utc::now();
-        if !cache.entries.contains_key(&workspace_id) && cache.entries.len() >= MAX_CACHE_ENTRIES {
-            if let Some(oldest) = cache.entries.keys().next().copied() {
-                cache.entries.remove(&oldest);
-                cache.refresh_locks.remove(&oldest);
-            }
-        }
+        cache.evict_lru_if_full(workspace_id, MAX_CACHE_ENTRIES);
+        let access_sequence = cache.next_access_sequence();
         let entry = cache
             .entries
             .entry(workspace_id)
@@ -198,48 +306,53 @@ impl HttpEntitlementProvider {
                 fresh_until: now,
                 stale_until: now,
                 retry_after: None,
+                last_access_sequence: access_sequence,
             });
         entry.retry_after = Some(
             now + chrono::Duration::from_std(FAILURE_RETRY)
                 .expect("five seconds fits chrono duration"),
         );
+        entry.last_access_sequence = access_sequence;
     }
 
-    async fn failure_decision(&self, workspace_id: Uuid) -> EntitlementGateDecision {
+    async fn failure_decision(&self, workspace_id: Uuid) -> (EntitlementGateDecision, bool) {
         let now = Utc::now();
-        let cache = self.cache.lock().await;
-        cache
+        let mut cache = self.cache.lock().await;
+        cache.touch(workspace_id);
+        if let Some(decision) = cache
             .entries
             .get(&workspace_id)
             .filter(|entry| now < entry.stale_until)
             .map(|entry| Self::stale(entry.decision.clone()))
-            .unwrap_or_else(Self::off)
+        {
+            (decision, true)
+        } else {
+            (Self::off(), false)
+        }
     }
 
     async fn store_policy(
         &self,
         workspace_id: Uuid,
         fetched: FetchedPolicy,
-    ) -> Result<EntitlementGateDecision, ()> {
+    ) -> Result<EntitlementGateDecision, StorePolicyError> {
         let now = Utc::now();
         let ttl = chrono::Duration::seconds(fetched.valid_for_seconds);
-        let stale_grace = chrono::Duration::from_std(self.stale_grace).map_err(|_| ())?;
+        let stale_grace = chrono::Duration::from_std(self.stale_grace)
+            .map_err(|_| StorePolicyError::InvalidStaleGrace)?;
         let mut cache = self.cache.lock().await;
         if let Some(current) = cache.entries.get(&workspace_id) {
-            if now < current.stale_until
-                && (fetched.decision.policy_revision < current.decision.policy_revision
-                    || fetched.decision.subscription_version
-                        < current.decision.subscription_version)
-            {
-                return Err(());
+            if now < current.stale_until {
+                if fetched.decision.policy_revision < current.decision.policy_revision {
+                    return Err(StorePolicyError::Version(PolicyRegression::Policy));
+                }
+                if fetched.decision.subscription_version < current.decision.subscription_version {
+                    return Err(StorePolicyError::Version(PolicyRegression::Subscription));
+                }
             }
         }
-        if !cache.entries.contains_key(&workspace_id) && cache.entries.len() >= MAX_CACHE_ENTRIES {
-            if let Some(oldest) = cache.entries.keys().next().copied() {
-                cache.entries.remove(&oldest);
-                cache.refresh_locks.remove(&oldest);
-            }
-        }
+        cache.evict_lru_if_full(workspace_id, MAX_CACHE_ENTRIES);
+        let last_access_sequence = cache.next_access_sequence();
         let decision = fetched.decision;
         cache.entries.insert(
             workspace_id,
@@ -248,12 +361,40 @@ impl HttpEntitlementProvider {
                 fresh_until: now + ttl,
                 stale_until: now + ttl + stale_grace,
                 retry_after: None,
+                last_access_sequence,
             },
         );
         Ok(decision)
     }
 
-    async fn fetch(&self, workspace_id: Uuid) -> Result<FetchedPolicy, ()> {
+    fn record_cache(&self, outcome: &str) {
+        if let Some(metrics) = self.metrics.as_deref() {
+            metrics.record_entitlement_cache(outcome);
+        }
+    }
+
+    fn record_refresh(&self, outcome: &str, started: Instant) {
+        if let Some(metrics) = self.metrics.as_deref() {
+            metrics.record_entitlement_refresh(outcome, started.elapsed().as_secs_f64());
+        }
+    }
+
+    fn record_decision(
+        &self,
+        decision: EntitlementGateDecision,
+        reason: &'static str,
+    ) -> EntitlementGateDecision {
+        if let Some(metrics) = self.metrics.as_deref() {
+            metrics.record_entitlement_decision(
+                "autopilot_runs",
+                decision.gate_action.as_str(),
+                reason,
+            );
+        }
+        decision
+    }
+
+    async fn fetch(&self, workspace_id: Uuid) -> Result<FetchedPolicy, FetchPolicyError> {
         let mut url = self.base_url.clone();
         let prefix = self.base_url.path().trim_end_matches('/');
         url.set_path(&format!(
@@ -271,58 +412,107 @@ impl HttpEntitlementProvider {
                 .send(),
         )
         .await
-        .map_err(|_| ())?
-        .map_err(|_| ())?;
+        .map_err(|_| FetchPolicyError::Timeout)?
+        .map_err(|error| {
+            if error.is_timeout() {
+                FetchPolicyError::Timeout
+            } else {
+                FetchPolicyError::Network
+            }
+        })?;
         if response.status() != reqwest::StatusCode::OK {
-            return Err(());
+            return Err(match response.status() {
+                reqwest::StatusCode::UNAUTHORIZED => FetchPolicyError::Unauthorized,
+                reqwest::StatusCode::NOT_FOUND => FetchPolicyError::NotFound,
+                status if status.is_server_error() => FetchPolicyError::Server,
+                status if status.is_client_error() => FetchPolicyError::Client,
+                _ => FetchPolicyError::Status,
+            });
         }
         if response
             .content_length()
             .is_some_and(|length| length > MAX_RESPONSE_BODY as u64)
         {
-            return Err(());
+            return Err(FetchPolicyError::InvalidPolicy);
         }
         let mut body = Vec::new();
         let mut stream = response.bytes_stream();
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|_| ())?;
+            let chunk = chunk.map_err(|_| FetchPolicyError::Read)?;
             if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BODY {
-                return Err(());
+                return Err(FetchPolicyError::InvalidPolicy);
             }
             body.extend_from_slice(&chunk);
         }
-        let wire: WirePolicy = serde_json::from_slice(&body).map_err(|_| ())?;
-        normalize_policy(wire)
+        let wire: WirePolicy =
+            serde_json::from_slice(&body).map_err(|_| FetchPolicyError::InvalidPolicy)?;
+        normalize_policy(wire).map_err(|_| FetchPolicyError::InvalidPolicy)
     }
 }
 
 #[async_trait]
 impl EntitlementProvider for HttpEntitlementProvider {
     async fn gate_autopilot_runs(&self, workspace_id: Uuid) -> EntitlementGateDecision {
-        if self.emergency_disabled.load(Ordering::Acquire) || workspace_id.is_nil() {
-            return Self::off();
+        if self.emergency_disabled.load(Ordering::Acquire) {
+            return self.record_decision(Self::off(), "emergency_disabled");
+        }
+        if workspace_id.is_nil() {
+            return self.record_decision(Self::off(), "invalid_workspace");
         }
         let now = Utc::now();
-        if let Some(decision) = self.cached_decision(workspace_id, now).await {
-            return decision;
+        if let Some((decision, reason)) = self.cached_decision(workspace_id, now, true).await {
+            return self.record_decision(decision, reason);
         }
 
         let refresh_lock = self.refresh_lock(workspace_id).await;
         let _guard = refresh_lock.lock().await;
-        if let Some(decision) = self.cached_decision(workspace_id, Utc::now()).await {
-            return decision;
+        if let Some((decision, reason)) =
+            self.cached_decision(workspace_id, Utc::now(), false).await
+        {
+            if self.emergency_disabled.load(Ordering::Acquire) {
+                return self.record_decision(Self::off(), "emergency_disabled");
+            }
+            return self.record_decision(decision, reason);
         }
+        let started = Instant::now();
         match self.fetch(workspace_id).await {
             Ok(policy) => match self.store_policy(workspace_id, policy).await {
-                Ok(decision) => decision,
-                Err(()) => {
+                Ok(decision) => {
+                    self.record_refresh("ok", started);
+                    if self.emergency_disabled.load(Ordering::Acquire) {
+                        self.record_decision(Self::off(), "emergency_disabled")
+                    } else {
+                        self.record_decision(decision, "refreshed")
+                    }
+                }
+                Err(error) => {
+                    let (outcome, failure_reason) =
+                        if let StorePolicyError::Version(regression) = error {
+                            if let Some(metrics) = self.metrics.as_deref() {
+                                metrics.record_entitlement_version_regression(regression.source());
+                            }
+                            ("version_regression", "version_regression")
+                        } else {
+                            ("error", "unavailable")
+                        };
+                    self.record_refresh(outcome, started);
                     self.mark_failure(workspace_id).await;
-                    self.failure_decision(workspace_id).await
+                    if self.emergency_disabled.load(Ordering::Acquire) {
+                        return self.record_decision(Self::off(), "emergency_disabled");
+                    }
+                    let (decision, stale) = self.failure_decision(workspace_id).await;
+                    self.record_decision(decision, if stale { "stale" } else { failure_reason })
                 }
             },
-            Err(()) => {
+            Err(error) => {
+                self.record_refresh(error.refresh_outcome(), started);
                 self.mark_failure(workspace_id).await;
-                self.failure_decision(workspace_id).await
+                if self.emergency_disabled.load(Ordering::Acquire) {
+                    return self.record_decision(Self::off(), "emergency_disabled");
+                }
+                let (decision, stale) = self.failure_decision(workspace_id).await;
+                let failure_reason = error.decision_reason();
+                self.record_decision(decision, if stale { "stale" } else { failure_reason })
             }
         }
     }
@@ -432,6 +622,33 @@ mod tests {
     use serde_json::json;
 
     #[test]
+    fn fetch_failures_use_bounded_go_compatible_metric_labels() {
+        let cases = [
+            (FetchPolicyError::Timeout, "timeout", "unavailable"),
+            (FetchPolicyError::Network, "network", "unavailable"),
+            (
+                FetchPolicyError::Unauthorized,
+                "unauthorized",
+                "unavailable",
+            ),
+            (FetchPolicyError::NotFound, "not_found", "unavailable"),
+            (FetchPolicyError::Server, "5xx", "unavailable"),
+            (FetchPolicyError::Client, "4xx", "unavailable"),
+            (FetchPolicyError::Status, "status", "unavailable"),
+            (FetchPolicyError::Read, "read", "unavailable"),
+            (
+                FetchPolicyError::InvalidPolicy,
+                "invalid_policy",
+                "invalid_policy",
+            ),
+        ];
+        for (error, refresh, decision) in cases {
+            assert_eq!(error.refresh_outcome(), refresh);
+            assert_eq!(error.decision_reason(), decision);
+        }
+    }
+
+    #[test]
     fn rejects_inert_or_partial_autopilot_gate() {
         let base = json!({
             "schema_version": 1,
@@ -476,5 +693,30 @@ mod tests {
             HttpEntitlementProvider::new(config),
             Err(EntitlementClientError::InvalidServiceToken)
         ));
+    }
+
+    #[test]
+    fn policy_cache_evicts_the_least_recently_used_workspace() {
+        let mut cache = CacheState::default();
+        let first = Uuid::from_u128(1);
+        let second = Uuid::from_u128(2);
+        let incoming = Uuid::from_u128(3);
+        let now = Utc::now();
+        let entry = |last_access_sequence| CacheEntry {
+            decision: HttpEntitlementProvider::off(),
+            fresh_until: now,
+            stale_until: now,
+            retry_after: None,
+            last_access_sequence,
+        };
+        cache.entries.insert(first, entry(1));
+        cache.entries.insert(second, entry(2));
+        cache.access_sequence = 2;
+
+        cache.touch(first);
+        cache.evict_lru_if_full(incoming, 2);
+
+        assert!(cache.entries.contains_key(&first));
+        assert!(!cache.entries.contains_key(&second));
     }
 }
