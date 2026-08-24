@@ -2276,9 +2276,23 @@ enum SquadCommand {
     Get {
         #[arg(value_name = "SQUAD-ID")]
         squad_id: String,
-        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
+    #[command(about = "Create a new squad")]
+    Create(SquadCreateArgs),
+}
+
+#[derive(Debug, Args)]
+struct SquadCreateArgs {
+    #[arg(long, help = "Squad name (required)")]
+    name: Option<String>,
+    #[arg(long, default_value = "", help = "Squad description")]
+    description: String,
+    #[arg(long, help = "Leader agent (name or ID) — required")]
+    leader: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Subcommand)]
@@ -2983,6 +2997,9 @@ async fn run_with_input<R: Read>(
         Command::Squad(SquadArgs {
             command: SquadCommand::Get { squad_id, output },
         }) => run_squad_get(cli, environment, squad_id, *output).await,
+        Command::Squad(SquadArgs {
+            command: SquadCommand::Create(args),
+        }) => run_squad_create(cli, environment, args).await,
         Command::Label(LabelArgs {
             command: LabelCommand::List { output, full_id },
         }) => run_label_list(cli, environment, *output, *full_id).await,
@@ -13777,6 +13794,51 @@ async fn run_squad_get(
     })
 }
 
+async fn run_squad_create(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SquadCreateArgs,
+) -> Result<RunOutput> {
+    let name = args.name.as_deref().unwrap_or_default().trim();
+    if name.is_empty() {
+        bail!("--name is required");
+    }
+    let leader = args.leader.as_deref().unwrap_or_default().trim();
+    if leader.is_empty() {
+        bail!("--leader is required (agent name or ID)");
+    }
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let leader_id = resolve_autopilot_agent(&client, &workspace_id, leader)
+        .await
+        .context("resolve leader")?;
+    let mut body = serde_json::Map::from_iter([
+        ("name".into(), Value::String(name.into())),
+        ("leader_id".into(), Value::String(leader_id)),
+    ]);
+    if !args.description.is_empty() {
+        body.insert(
+            "description".into(),
+            Value::String(args.description.clone()),
+        );
+    }
+    let squad: Value = client
+        .post_json("/api/squads", &body)
+        .await
+        .context("create squad")?;
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&squad)?),
+            OutputFormat::Table => format!(
+                "Squad created: {} ({})\n",
+                value_string(&squad, "name"),
+                value_string(&squad, "id")
+            ),
+        },
+        stderr: String::new(),
+    })
+}
+
 fn format_squad_list_table(squads: &[Value]) -> String {
     let mut rows = vec![vec![
         "ID".into(),
@@ -24335,7 +24397,7 @@ mod tests {
     }
 
     #[test]
-    fn squad_get_parses_default_json_output_and_preserves_optional_instructions() {
+    fn squad_get_parses_default_table_output_and_preserves_optional_instructions() {
         let cli = Cli::try_parse_from(["cordy", "squad", "get", "squad-1"]).expect("squad get CLI");
         let Command::Squad(SquadArgs {
             command: SquadCommand::Get { squad_id, output },
@@ -24344,7 +24406,7 @@ mod tests {
             panic!("expected squad get");
         };
         assert_eq!(squad_id, "squad-1");
-        assert_eq!(output, OutputFormat::Json);
+        assert_eq!(output, OutputFormat::Table);
 
         let squad = serde_json::json!({
             "id": "squad-1",
@@ -24406,6 +24468,111 @@ mod tests {
             .await
             .expect_err("empty squad ID");
         assert_eq!(error.to_string(), "squad ID must not be empty");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn squad_create_resolves_leader_and_posts_go_compatible_body() {
+        let app = Router::new()
+            .route(
+                "/api/agents",
+                get(|request: Request| async move {
+                    assert_eq!(request.headers()["authorization"], "Bearer token-1");
+                    assert_eq!(request.headers()["x-workspace-id"], "workspace-1");
+                    assert_eq!(request.uri().query(), Some("workspace_id=workspace-1"));
+                    Json(serde_json::json!([{"id":"agent-1","name":"Lambda"}]))
+                }),
+            )
+            .route(
+                "/api/squads",
+                post(|headers: HeaderMap, Json(body): Json<Value>| async move {
+                    assert_eq!(headers["authorization"], "Bearer token-1");
+                    assert_eq!(headers["x-workspace-id"], "workspace-1");
+                    assert_eq!(
+                        body,
+                        serde_json::json!({
+                            "name": "Reviewers",
+                            "leader_id": "agent-1",
+                            "description": "Review changes"
+                        })
+                    );
+                    Json(serde_json::json!({"id":"squad-1","name":"Reviewers"}))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "create",
+            "--name",
+            " Reviewers ",
+            "--description",
+            "Review changes",
+            "--leader",
+            "Lambda",
+            "--output",
+            "table",
+        ])
+        .expect("squad create CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("squad create");
+        assert_eq!(output.stdout, "Squad created: Reviewers (squad-1)\n");
+        assert!(output.stderr.is_empty());
+        assert!(!output.stdout.contains("token-1"));
+
+        let json_cli = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "create",
+            "--name",
+            "Reviewers",
+            "--leader",
+            "agent-1",
+            "--output",
+            "json",
+        ])
+        .expect("squad create JSON CLI");
+        let json_output =
+            run_with_input(&json_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .await
+                .expect("squad create JSON");
+        let created: Value = serde_json::from_str(&json_output.stdout).expect("created squad JSON");
+        assert_eq!(created["id"], "squad-1");
+        assert!(json_output.stderr.is_empty());
+
+        let missing_name = SquadCreateArgs {
+            name: None,
+            description: String::new(),
+            leader: Some("agent-1".into()),
+            output: OutputFormat::Json,
+        };
+        let error = run_squad_create(&cli, &environment, &missing_name)
+            .await
+            .expect_err("missing name");
+        assert_eq!(error.to_string(), "--name is required");
+        let missing_leader = SquadCreateArgs {
+            name: Some("Reviewers".into()),
+            description: String::new(),
+            leader: Some(" ".into()),
+            output: OutputFormat::Json,
+        };
+        let error = run_squad_create(&cli, &environment, &missing_leader)
+            .await
+            .expect_err("missing leader");
+        assert_eq!(
+            error.to_string(),
+            "--leader is required (name or ID)"
+        );
         server.abort();
     }
 
