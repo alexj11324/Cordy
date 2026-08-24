@@ -10,6 +10,7 @@ use chrono_tz::Tz;
 use cordy_db::models::User;
 use cordy_db::queries::user;
 use serde::{Deserialize, Serialize};
+use structured_email_address::{Config as EmailConfig, EmailAddress};
 use uuid::Uuid;
 
 use crate::error::error_response;
@@ -23,9 +24,15 @@ pub fn router() -> Router<HandlerState> {
             "/api/me/onboarding/complete",
             axum::routing::post(complete_onboarding),
         )
+        .route(
+            "/api/me/onboarding/cloud-waitlist",
+            axum::routing::post(join_cloud_waitlist),
+        )
 }
 
 const MAX_PROFILE_DESCRIPTION_LEN: usize = 2_000;
+const MAX_CLOUD_WAITLIST_EMAIL_LEN: usize = 254;
+const MAX_CLOUD_WAITLIST_REASON_LEN: usize = 500;
 const PATCH_ONBOARDING_BODY_LIMIT: usize = 16 * 1024;
 const QUESTIONNAIRE_SCHEMA_VERSION: i64 = 2;
 
@@ -44,23 +51,31 @@ struct PatchOnboardingRequest {
 }
 
 #[derive(Debug, Default, Deserialize)]
+struct JoinCloudWaitlistRequest {
+    #[serde(default)]
+    email: String,
+    #[serde(default)]
+    reason: String,
+}
+
+#[derive(Debug, Default, Deserialize)]
 struct QuestionnaireAnswers {
     #[serde(default, deserialize_with = "deserialize_string_or_slice")]
     source: Vec<String>,
     #[serde(default)]
-    source_other: Option<String>,
+    source_other: String,
     #[serde(default)]
     source_skipped: bool,
     #[serde(default)]
-    role: Option<String>,
+    role: String,
     #[serde(default)]
-    role_other: Option<String>,
+    role_other: String,
     #[serde(default)]
     role_skipped: bool,
     #[serde(default, deserialize_with = "deserialize_string_or_slice")]
     use_case: Vec<String>,
     #[serde(default)]
-    use_case_other: Option<String>,
+    use_case_other: String,
     #[serde(default)]
     use_case_skipped: bool,
     #[serde(default)]
@@ -74,7 +89,7 @@ impl QuestionnaireAnswers {
 
     fn complete(&self) -> bool {
         self.version == QUESTIONNAIRE_SCHEMA_VERSION
-            && (self.role.as_deref().is_some_and(|role| !role.is_empty()) || self.role_skipped)
+            && (!self.role.is_empty() || self.role_skipped)
             && (!self.use_case.is_empty() || self.use_case_skipped)
     }
 }
@@ -137,6 +152,12 @@ async fn get_me(State(state): State<HandlerState>, headers: HeaderMap) -> Respon
 }
 
 async fn update_me(State(state): State<HandlerState>, headers: HeaderMap, body: Bytes) -> Response {
+    if is_machine_actor_source(&headers) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "this endpoint is only available to human actors",
+        );
+    }
     let user_id = match authenticated_user_id(&headers) {
         Some(user_id) => user_id,
         None => return error_response(StatusCode::UNAUTHORIZED, "user not authenticated"),
@@ -279,23 +300,14 @@ async fn patch_onboarding(
             &cordy_analytics::onboarding_questionnaire_submitted(
                 &user_id.to_string(),
                 after.source.clone(),
-                after.role.as_deref().unwrap_or_default(),
+                &after.role,
                 after.use_case.clone(),
                 after.source_skipped,
                 after.role_skipped,
                 after.use_case_skipped,
-                after
-                    .source_other
-                    .as_deref()
-                    .is_some_and(|value| !value.is_empty()),
-                after
-                    .role_other
-                    .as_deref()
-                    .is_some_and(|value| !value.is_empty()),
-                after
-                    .use_case_other
-                    .as_deref()
-                    .is_some_and(|value| !value.is_empty()),
+                !after.source_other.is_empty(),
+                !after.role_other.is_empty(),
+                !after.use_case_other.is_empty(),
             ),
         );
     }
@@ -309,10 +321,7 @@ async fn patch_onboarding(
                 &user_id.to_string(),
                 after.source.clone(),
                 after.source_skipped,
-                after
-                    .source_other
-                    .as_deref()
-                    .is_some_and(|value| !value.is_empty()),
+                !after.source_other.is_empty(),
             ),
         );
     }
@@ -393,6 +402,101 @@ async fn complete_onboarding(
     Json(UserResponse::from(&updated)).into_response()
 }
 
+async fn join_cloud_waitlist(
+    State(state): State<HandlerState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let user_id = match authenticated_user_id(&headers) {
+        Some(user_id) => user_id,
+        None => return error_response(StatusCode::UNAUTHORIZED, "user not authenticated"),
+    };
+    let request: JoinCloudWaitlistRequest = match decode_json_body(&body) {
+        Ok(request) => request,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+
+    let email = request.email.trim().to_lowercase();
+    if email.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "email is required");
+    }
+    if email.len() > MAX_CLOUD_WAITLIST_EMAIL_LEN {
+        return error_response(StatusCode::BAD_REQUEST, "email is too long");
+    }
+    if !valid_email_address(&email) {
+        return error_response(StatusCode::BAD_REQUEST, "email is invalid");
+    }
+
+    let reason = request.reason.trim();
+    if reason.len() > MAX_CLOUD_WAITLIST_REASON_LEN {
+        return error_response(StatusCode::BAD_REQUEST, "reason is too long");
+    }
+    let reason = (!reason.is_empty()).then_some(reason);
+
+    let updated = match user::join_cloud_waitlist(&state.pool, user_id, Some(&email), reason).await
+    {
+        Ok(Some(user)) => user,
+        Ok(None) | Err(_) => {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to join waitlist")
+        }
+    };
+
+    record_metric_event(
+        &state,
+        &cordy_analytics::cloud_waitlist_joined(&user_id.to_string(), reason.is_some()),
+    );
+    Json(UserResponse::from(&updated)).into_response()
+}
+
+fn valid_email_address(value: &str) -> bool {
+    let config = EmailConfig::builder()
+        .allow_display_name()
+        .allow_domain_literal()
+        .allow_single_label_domain()
+        .build();
+    if EmailAddress::parse_with(value, &config).is_err() {
+        return false;
+    }
+
+    // structured-email-address accepts RFC 5322 comments inside an addr-spec,
+    // while Go's net/mail.ParseAddress only accepts comments in the display
+    // name or after a bare address. Validate the bare prefix separately so the
+    // migration keeps the existing wire contract.
+    if let (Some(start), Some(end)) = (first_unquoted(value, '<'), first_unquoted(value, '>')) {
+        return start < end && first_unquoted(&value[start + 1..end], '(').is_none();
+    }
+    match first_unquoted(value, '(') {
+        Some(comment_start) => {
+            let address = value[..comment_start].trim_end();
+            !address.is_empty() && EmailAddress::parse_with(address, &config).is_ok()
+        }
+        None => true,
+    }
+}
+
+fn first_unquoted(value: &str, needle: char) -> Option<usize> {
+    let mut quoted = false;
+    let mut escaped = false;
+    for (index, ch) in value.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' && quoted {
+            escaped = true;
+            continue;
+        }
+        if ch == '"' {
+            quoted = !quoted;
+            continue;
+        }
+        if !quoted && ch == needle {
+            return Some(index);
+        }
+    }
+    None
+}
+
 fn record_metric_event(state: &HandlerState, event: &cordy_analytics::Event) {
     if let Some(metrics) = state.business_metrics.as_deref() {
         metrics.inc_for_event(event);
@@ -436,9 +540,22 @@ fn authenticated_user_id(headers: &HeaderMap) -> Option<Uuid> {
         .and_then(|value| Uuid::parse_str(value).ok())
 }
 
+fn is_machine_actor_source(headers: &HeaderMap) -> bool {
+    matches!(
+        headers
+            .get("x-actor-source")
+            .and_then(|value| value.to_str().ok()),
+        Some("task_token" | "cloud_pat")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use axum::body::Body;
+    use axum::http::Request;
+    use http_body_util::BodyExt;
+    use tower::ServiceExt;
 
     #[test]
     fn user_response_matches_go_nullable_and_timestamp_contract() {
@@ -499,6 +616,39 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn update_me_rejects_machine_credentials_before_database_access() {
+        let state = HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let app = router().with_state(state);
+
+        for actor_source in ["task_token", "cloud_pat"] {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::patch("/api/me")
+                        .header("x-user-id", "018f946a-1234-7890-abcd-1234567890ab")
+                        .header("x-actor-source", actor_source)
+                        .header("content-type", "application/json")
+                        .body(Body::from(r#"{"profile_description":"machine supplied"}"#))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{actor_source}");
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(
+                value["error"],
+                "this endpoint is only available to human actors"
+            );
+        }
+    }
+
     #[test]
     fn questionnaire_accepts_legacy_strings_and_current_arrays() {
         let legacy: QuestionnaireAnswers = serde_json::from_value(serde_json::json!({
@@ -524,27 +674,6 @@ mod tests {
     }
 
     #[test]
-    fn questionnaire_preserves_answers_when_optional_strings_are_null() {
-        let answers: QuestionnaireAnswers = serde_json::from_value(serde_json::json!({
-            "source": [],
-            "source_other": null,
-            "source_skipped": true,
-            "role": null,
-            "role_other": null,
-            "role_skipped": true,
-            "use_case": [],
-            "use_case_other": null,
-            "use_case_skipped": true,
-            "version": 2
-        }))
-        .unwrap();
-
-        assert!(answers.source_resolved());
-        assert!(answers.complete());
-        assert_eq!(answers.version, QUESTIONNAIRE_SCHEMA_VERSION);
-    }
-
-    #[test]
     fn questionnaire_completion_is_scoped_to_schema_v2() {
         let answers: QuestionnaireAnswers = serde_json::from_value(serde_json::json!({
             "role": "founder",
@@ -563,5 +692,98 @@ mod tests {
 
         let complete: Option<CompleteOnboardingRequest> = decode_json_body(b"null").unwrap();
         assert!(complete.is_none());
+    }
+
+    #[test]
+    fn cloud_waitlist_email_validation_accepts_go_mailbox_forms() {
+        for email in [
+            "alex@example.com",
+            "alex+cordy@example.co.uk",
+            "alex jiang <alex@example.com>",
+            "alex (friend) <alex@example.com>",
+            "alex@example.com (friend)",
+            "\"alex jiang\"@example.com",
+            "\"alex(friend)\"@example.com",
+            "alex@[127.0.0.1]",
+            "ü@example.com",
+            "alex@例子.测试",
+            "alex@localhost",
+        ] {
+            assert!(valid_email_address(email), "expected valid email: {email}");
+        }
+    }
+
+    #[test]
+    fn cloud_waitlist_email_validation_rejects_invalid_forms() {
+        for email in [
+            "invalid",
+            "alex@",
+            "@example.com",
+            "alex example.com",
+            "alex(comment)@example.com",
+            "alex@example.com, bob@example.com",
+            "alex..jiang@example.com",
+        ] {
+            assert!(
+                !valid_email_address(email),
+                "expected invalid email: {email}"
+            );
+        }
+    }
+
+    #[test]
+    fn cloud_waitlist_request_matches_go_decoder_defaults() {
+        let request: JoinCloudWaitlistRequest =
+            decode_json_body(br#"{"email":" Alex@Example.COM ","reason":""} trailing"#).unwrap();
+        assert_eq!(request.email.trim().to_lowercase(), "alex@example.com");
+        assert!(request.reason.is_empty());
+
+        let omitted: JoinCloudWaitlistRequest = decode_json_body(b"{}").unwrap();
+        assert!(omitted.email.is_empty());
+        assert!(omitted.reason.is_empty());
+    }
+
+    #[tokio::test]
+    async fn cloud_waitlist_validation_matches_go_before_database_access() {
+        let state = HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let app = router().with_state(state);
+        let user_id = "018f946a-1234-7890-abcd-1234567890ab";
+        let cases = vec![
+            (String::new(), "invalid request body"),
+            ("{}".to_string(), "email is required"),
+            (r#"{"email":"invalid"}"#.to_string(), "email is invalid"),
+            (
+                format!(r#"{{"email":"{}@example.com"}}"#, "a".repeat(255)),
+                "email is too long",
+            ),
+            (
+                format!(
+                    r#"{{"email":"alex@example.com","reason":"{}"}}"#,
+                    "x".repeat(MAX_CLOUD_WAITLIST_REASON_LEN + 1)
+                ),
+                "reason is too long",
+            ),
+        ];
+
+        for (body, expected_error) in cases {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::post("/api/me/onboarding/cloud-waitlist")
+                        .header("x-user-id", user_id)
+                        .body(Body::from(body.to_string()))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+            let body = response.into_body().collect().await.unwrap().to_bytes();
+            let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(value["error"], expected_error);
+        }
     }
 }

@@ -29,7 +29,8 @@ pub struct Credentials {
 }
 
 /// Decrypter seam — Go's `Decrypter func([]byte) ([]byte, error)`.
-pub type Decrypter<'a> = Option<&'a dyn Fn(&[u8]) -> Result<Vec<u8>>>;
+pub type DecrypterFn = dyn Fn(&[u8]) -> Result<Vec<u8>> + Send + Sync;
+pub type Decrypter<'a> = Option<&'a DecrypterFn>;
 
 pub fn decode_credentials(raw: &[u8], decrypt: Decrypter<'_>) -> Result<Credentials> {
     if raw.is_empty() {

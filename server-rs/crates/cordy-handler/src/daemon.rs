@@ -10,20 +10,34 @@
 //!   `{status, updated_at|completed_at}`.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::Duration;
 
+use anyhow::Context as _;
 use axum::extract::{Path, Query as AxumQuery, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+use cordy_daemon::hub::{
+    ClientIdentity, HeartbeatHandler, RpcHandler, RpcHandlerError, RpcOutcome,
+};
 use cordy_db::models::AgentRuntime;
 use cordy_db::queries::{
     agent, autopilot, chat, comment as comment_q, issue, member, runtime, runtime_profile,
     task_message, task_token, workspace,
 };
 use cordy_middleware::daemon_auth::DaemonContext;
-use cordy_protocol::EVENT_DAEMON_REGISTER;
+use cordy_protocol::{
+    DaemonHeartbeatAckPayload, DaemonHeartbeatPendingLocalSkillImport,
+    DaemonHeartbeatPendingLocalSkills, DaemonHeartbeatPendingModelList,
+    DaemonHeartbeatPendingUpdate, DAEMON_CAPABILITY_RPC_V1, EVENT_DAEMON_REGISTER,
+    HEARTBEAT_STATUS_RUNTIME_GONE,
+};
 use cordy_service::issue_status as issue_status_svc;
+use cordy_service::plugin::PluginService;
+use cordy_service::task_service::TaskService;
+use http_body_util::BodyExt as _;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use uuid::Uuid;
@@ -256,8 +270,23 @@ async fn check_daemon_workspace_access(
     if user_id.is_empty() {
         return Err(error_response(StatusCode::NOT_FOUND, "not found"));
     }
+    if access
+        .state
+        .membership_cache
+        .get(&user_id, workspace_id)
+        .await
+    {
+        return Ok(workspace_id.to_string());
+    }
     match access.get_member(&user_id, workspace_id).await {
-        Some(_) => Ok(workspace_id.to_string()),
+        Some(_) => {
+            access
+                .state
+                .membership_cache
+                .set(&user_id, workspace_id)
+                .await;
+            Ok(workspace_id.to_string())
+        }
         None => Err(error_response(StatusCode::NOT_FOUND, "not found")),
     }
 }
@@ -472,6 +501,7 @@ async fn deregister(
             tracing::warn!(error = %e, runtime_id = %rid, "deregister: failed to set offline");
             continue;
         }
+        state.liveness_store.forget(&rt.id.to_string()).await;
         if !affected.contains(&ws_id) {
             affected.push(ws_id);
         }
@@ -502,6 +532,230 @@ struct HeartbeatRequest {
     runtime_id: String,
     #[serde(default, rename = "supports_batch_import")]
     supports_batch_import: bool,
+}
+
+/// Production implementation of the daemon WebSocket heartbeat seam. It owns
+/// only the dependencies used by `processHeartbeat`, deliberately excluding
+/// `DaemonHub` so installing it on the hub cannot create a strong-reference
+/// cycle through `HandlerState`.
+pub(crate) struct DaemonHeartbeatProcessor {
+    pool: sqlx::PgPool,
+    heartbeat_scheduler: Arc<dyn crate::heartbeat_scheduler::HeartbeatScheduler>,
+    liveness_store: Arc<dyn crate::runtime_liveness::LivenessStore>,
+    update_store: Option<Arc<crate::pending_store::UpdateStore>>,
+    model_list_store: Option<Arc<crate::pending_store::ModelListStore>>,
+    local_skill_list_store: Option<Arc<crate::pending_store::LocalSkillListStore>>,
+    local_skill_import_store: Option<Arc<crate::pending_store::LocalSkillImportStore>>,
+}
+
+impl DaemonHeartbeatProcessor {
+    pub(crate) fn from_state(state: &HandlerState) -> Self {
+        Self {
+            pool: state.pool.clone(),
+            heartbeat_scheduler: state.heartbeat_scheduler.clone(),
+            liveness_store: state.liveness_store.clone(),
+            update_store: state.update_store.clone(),
+            model_list_store: state.model_list_store.clone(),
+            local_skill_list_store: state.local_skill_list_store.clone(),
+            local_skill_import_store: state.local_skill_import_store.clone(),
+        }
+    }
+
+    async fn process(
+        &self,
+        rt: &AgentRuntime,
+        supports_batch_import: bool,
+    ) -> anyhow::Result<DaemonHeartbeatAckPayload> {
+        record_heartbeat(
+            self.liveness_store.as_ref(),
+            self.heartbeat_scheduler.as_ref(),
+            rt,
+        )
+        .await?;
+
+        let runtime_id = rt.id.to_string();
+        let mut ack = DaemonHeartbeatAckPayload {
+            runtime_id: runtime_id.clone(),
+            status: "ok".to_string(),
+            server_capabilities: vec![DAEMON_CAPABILITY_RPC_V1.to_string()],
+            runtime_gone: false,
+            pending_update: None,
+            pending_model_list: None,
+            pending_local_skills: None,
+            pending_local_skill_import: None,
+            pending_local_skill_imports: Vec::new(),
+        };
+
+        if let Some(store) = &self.update_store {
+            match tokio::time::timeout(
+                crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
+                store.has_pending(&runtime_id),
+            )
+            .await
+            {
+                Ok(Ok(true)) => match store.pop_pending(&runtime_id).await {
+                    Ok(Some(pending)) => {
+                        ack.pending_update = Some(DaemonHeartbeatPendingUpdate {
+                            id: pending.id,
+                            target_version: pending.target_version,
+                        });
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, %runtime_id, "update PopPending failed")
+                    }
+                },
+                Ok(Ok(false)) => {}
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, %runtime_id, "update HasPending failed")
+                }
+                Err(_) => tracing::warn!(%runtime_id, "update HasPending timed out"),
+            }
+        }
+
+        if let Some(store) = &self.model_list_store {
+            match tokio::time::timeout(
+                crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
+                store.has_pending(&runtime_id),
+            )
+            .await
+            {
+                Ok(Ok(true)) => match store.pop_pending(&runtime_id).await {
+                    Ok(Some(pending)) => {
+                        ack.pending_model_list =
+                            Some(DaemonHeartbeatPendingModelList { id: pending.id });
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, %runtime_id, "model list PopPending failed")
+                    }
+                },
+                Ok(Ok(false)) => {}
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, %runtime_id, "model list HasPending failed")
+                }
+                Err(_) => tracing::warn!(%runtime_id, "model list HasPending timed out"),
+            }
+        }
+
+        if let Some(store) = &self.local_skill_list_store {
+            match tokio::time::timeout(
+                crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
+                store.has_pending(&runtime_id),
+            )
+            .await
+            {
+                Ok(Ok(true)) => match store.pop_pending(&runtime_id).await {
+                    Ok(Some(pending)) => {
+                        ack.pending_local_skills =
+                            Some(DaemonHeartbeatPendingLocalSkills { id: pending.id });
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, %runtime_id, "local skill list PopPending failed")
+                    }
+                },
+                Ok(Ok(false)) => {}
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, %runtime_id, "local skill list HasPending failed")
+                }
+                Err(_) => tracing::warn!(%runtime_id, "local skill list HasPending timed out"),
+            }
+        }
+
+        if let Some(store) = &self.local_skill_import_store {
+            match tokio::time::timeout(
+                crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
+                store.has_pending(&runtime_id),
+            )
+            .await
+            {
+                Ok(Ok(true)) if supports_batch_import => match store
+                    .pop_pending_batch(
+                        &runtime_id,
+                        crate::claim_response::MAX_LOCAL_SKILL_IMPORT_BATCH,
+                    )
+                    .await
+                {
+                    Ok(pending) if !pending.is_empty() => {
+                        ack.pending_local_skill_import =
+                            Some(DaemonHeartbeatPendingLocalSkillImport {
+                                id: pending[0].id.clone(),
+                                skill_key: pending[0].skill_key.clone(),
+                            });
+                        ack.pending_local_skill_imports = pending
+                            .into_iter()
+                            .map(|pending| DaemonHeartbeatPendingLocalSkillImport {
+                                id: pending.id,
+                                skill_key: pending.skill_key,
+                            })
+                            .collect();
+                    }
+                    Ok(_) => {}
+                    Err(error) => tracing::warn!(
+                        %error,
+                        %runtime_id,
+                        "local skill import PopPendingBatch failed"
+                    ),
+                },
+                Ok(Ok(true)) => match store.pop_pending(&runtime_id).await {
+                    Ok(Some(pending)) => {
+                        ack.pending_local_skill_import =
+                            Some(DaemonHeartbeatPendingLocalSkillImport {
+                                id: pending.id,
+                                skill_key: pending.skill_key,
+                            });
+                    }
+                    Ok(None) => {}
+                    Err(error) => tracing::warn!(
+                        %error,
+                        %runtime_id,
+                        "local skill import PopPending failed"
+                    ),
+                },
+                Ok(Ok(false)) => {}
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, %runtime_id, "local skill import HasPending failed")
+                }
+                Err(_) => tracing::warn!(%runtime_id, "local skill import HasPending timed out"),
+            }
+        }
+
+        Ok(ack)
+    }
+}
+
+#[async_trait::async_trait]
+impl HeartbeatHandler for DaemonHeartbeatProcessor {
+    async fn handle_heartbeat(
+        &self,
+        identity: &ClientIdentity,
+        runtime_id: &str,
+        supports_batch_import: bool,
+    ) -> anyhow::Result<Option<DaemonHeartbeatAckPayload>> {
+        let runtime_uuid = Uuid::parse_str(runtime_id).context("invalid runtime_id")?;
+        let Some(rt) = runtime::get_agent_runtime(&self.pool, runtime_uuid)
+            .await
+            .context("get agent runtime")?
+        else {
+            return Ok(Some(DaemonHeartbeatAckPayload {
+                runtime_id: runtime_id.to_string(),
+                status: HEARTBEAT_STATUS_RUNTIME_GONE.to_string(),
+                server_capabilities: Vec::new(),
+                runtime_gone: true,
+                pending_update: None,
+                pending_model_list: None,
+                pending_local_skills: None,
+                pending_local_skill_import: None,
+                pending_local_skill_imports: Vec::new(),
+            }));
+        };
+        anyhow::ensure!(
+            identity.allows_workspace(&rt.workspace_id.to_string()),
+            "runtime not in connection workspace"
+        );
+        Ok(Some(self.process(&rt, supports_batch_import).await?))
+    }
 }
 
 /// POST /api/daemon/heartbeat. Records liveness and pops any pending update /
@@ -546,166 +800,64 @@ async fn heartbeat(
         }
     }
 
-    record_heartbeat(&state, &rt).await;
+    let processor = DaemonHeartbeatProcessor::from_state(&state);
+    let ack = match processor.process(&rt, req.supports_batch_import).await {
+        Ok(ack) => ack,
+        Err(error) => {
+            tracing::warn!(%error, runtime_id = %req.runtime_id, "heartbeat failed");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "heartbeat failed");
+        }
+    };
 
-    // Probe-then-claim each pending queue (Go processHeartbeat): a slow shared
-    // store cannot stall the heartbeat on empty ticks; the claim runs unbounded
-    // because its Lua side effects cannot be safely aborted mid-script. With no
-    // store wired the ack carries only the base fields — old daemons already
-    // tolerate absent optional fields.
-    let mut resp = json!({ "status": "ok", "runtime_id": rt.id.to_string() });
-    let runtime_id_str = rt.id.to_string();
-    if let Some(store) = &state.update_store {
-        match tokio::time::timeout(
-            crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
-            store.has_pending(&runtime_id_str),
-        )
-        .await
-        {
-            Ok(Ok(true)) => match store.pop_pending(&runtime_id_str).await {
-                Ok(Some(pending)) => {
-                    resp["pending_update"] = json!({
-                        "id": pending.id,
-                        "target_version": pending.target_version,
-                    });
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::warn!(error = %e, runtime_id = %runtime_id_str, "update PopPending failed")
-                }
-            },
-            Ok(Ok(false)) => {}
-            Ok(Err(e)) => {
-                tracing::warn!(error = %e, runtime_id = %runtime_id_str, "update HasPending failed")
-            }
-            Err(_) => tracing::warn!(runtime_id = %runtime_id_str, "update HasPending timed out"),
-        }
+    // Preserve the existing HTTP shape while the WebSocket response also
+    // advertises its transport capabilities.
+    let mut resp = json!({ "status": ack.status, "runtime_id": ack.runtime_id });
+    if let Some(pending) = ack.pending_update {
+        resp["pending_update"] = json!(pending);
     }
-    if let Some(store) = &state.model_list_store {
-        match tokio::time::timeout(
-            crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
-            store.has_pending(&runtime_id_str),
-        )
-        .await
-        {
-            Ok(Ok(true)) => match store.pop_pending(&runtime_id_str).await {
-                Ok(Some(pending)) => {
-                    resp["pending_model_list"] = json!({ "id": pending.id });
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::warn!(error = %e, runtime_id = %runtime_id_str, "model list PopPending failed")
-                }
-            },
-            Ok(Ok(false)) => {}
-            Ok(Err(e)) => {
-                tracing::warn!(error = %e, runtime_id = %runtime_id_str, "model list HasPending failed")
-            }
-            Err(_) => {
-                tracing::warn!(runtime_id = %runtime_id_str, "model list HasPending timed out")
-            }
-        }
+    if let Some(pending) = ack.pending_model_list {
+        resp["pending_model_list"] = json!(pending);
     }
-    if let Some(store) = &state.local_skill_list_store {
-        match tokio::time::timeout(
-            crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
-            store.has_pending(&runtime_id_str),
-        )
-        .await
-        {
-            Ok(Ok(true)) => match store.pop_pending(&runtime_id_str).await {
-                Ok(Some(pending)) => {
-                    resp["pending_local_skills"] = json!({ "id": pending.id });
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::warn!(error = %e, runtime_id = %runtime_id_str, "local skill list PopPending failed")
-                }
-            },
-            Ok(Ok(false)) => {}
-            Ok(Err(e)) => {
-                tracing::warn!(error = %e, runtime_id = %runtime_id_str, "local skill list HasPending failed")
-            }
-            Err(_) => {
-                tracing::warn!(runtime_id = %runtime_id_str, "local skill list HasPending timed out")
-            }
-        }
+    if let Some(pending) = ack.pending_local_skills {
+        resp["pending_local_skills"] = json!(pending);
     }
-    if let Some(store) = &state.local_skill_import_store {
-        match tokio::time::timeout(
-            crate::pending_store::HEARTBEAT_HAS_PENDING_TIMEOUT,
-            store.has_pending(&runtime_id_str),
-        )
-        .await
-        {
-            Ok(Ok(true)) => {
-                if req.supports_batch_import {
-                    match store
-                        .pop_pending_batch(
-                            &runtime_id_str,
-                            crate::claim_response::MAX_LOCAL_SKILL_IMPORT_BATCH,
-                        )
-                        .await
-                    {
-                        Ok(pending) if !pending.is_empty() => {
-                            // Backwards compat: singular field carries the first
-                            // item so older daemons still get one.
-                            resp["pending_local_skill_import"] = json!({
-                                "id": pending[0].id,
-                                "skill_key": pending[0].skill_key,
-                            });
-                            let batch: Vec<Value> = pending
-                                .iter()
-                                .map(|p| json!({ "id": p.id, "skill_key": p.skill_key }))
-                                .collect();
-                            resp["pending_local_skill_imports"] = Value::Array(batch);
-                        }
-                        Ok(_) => {}
-                        Err(e) => {
-                            tracing::warn!(error = %e, runtime_id = %runtime_id_str, "local skill import PopPendingBatch failed")
-                        }
-                    }
-                } else {
-                    match store.pop_pending(&runtime_id_str).await {
-                        Ok(Some(pending)) => {
-                            resp["pending_local_skill_import"] = json!({
-                                "id": pending.id,
-                                "skill_key": pending.skill_key,
-                            });
-                        }
-                        Ok(None) => {}
-                        Err(e) => {
-                            tracing::warn!(error = %e, runtime_id = %runtime_id_str, "local skill import PopPending failed")
-                        }
-                    }
-                }
-            }
-            Ok(Ok(false)) => {}
-            Ok(Err(e)) => {
-                tracing::warn!(error = %e, runtime_id = %runtime_id_str, "local skill import HasPending failed")
-            }
-            Err(_) => {
-                tracing::warn!(runtime_id = %runtime_id_str, "local skill import HasPending timed out")
-            }
-        }
+    if let Some(pending) = ack.pending_local_skill_import {
+        resp["pending_local_skill_import"] = json!(pending);
     }
-
+    if !ack.pending_local_skill_imports.is_empty() {
+        resp["pending_local_skill_imports"] = json!(ack.pending_local_skill_imports);
+    }
     Json(resp).into_response()
 }
 
-/// Passthrough liveness write (Go PassthroughHeartbeatScheduler.Schedule):
-/// touch last_seen_at on online rows, flip offline→online otherwise. The
-/// Redis TTL layer and batched coalescing land with the redis slice.
-async fn record_heartbeat(state: &HandlerState, rt: &AgentRuntime) {
-    if rt.status == "online" && rt.last_seen_at.is_some() {
-        match runtime::touch_agent_runtime_last_seen(&state.pool, rt.id).await {
-            Ok(n) if n > 0 => return,
-            _ => {}
+const RUNTIME_LIVENESS_TTL: Duration = Duration::from_secs(90);
+const RUNTIME_HEARTBEAT_DB_FLUSH_INTERVAL: Duration = Duration::from_secs(60);
+
+async fn record_heartbeat(
+    liveness_store: &dyn crate::runtime_liveness::LivenessStore,
+    heartbeat_scheduler: &dyn crate::heartbeat_scheduler::HeartbeatScheduler,
+    rt: &AgentRuntime,
+) -> anyhow::Result<()> {
+    let stale_in_db = rt.last_seen_at.is_none_or(|last_seen| {
+        chrono::Utc::now().signed_duration_since(last_seen)
+            >= chrono::Duration::from_std(RUNTIME_HEARTBEAT_DB_FLUSH_INTERVAL)
+                .unwrap_or_else(|_| chrono::Duration::seconds(60))
+    });
+    let mut needs_db_write = !liveness_store.available() || rt.status != "online" || stale_in_db;
+
+    if liveness_store.available() {
+        if let Err(error) = liveness_store
+            .touch(&rt.id.to_string(), RUNTIME_LIVENESS_TTL)
+            .await
+        {
+            tracing::warn!(%error, runtime_id = %rt.id, "liveness touch failed; falling back to DB heartbeat");
+            needs_db_write = true;
         }
     }
-    if let Err(e) = runtime::mark_agent_runtime_online(&state.pool, rt.id).await {
-        tracing::warn!(error = %e, runtime_id = %rt.id, "heartbeat db update failed");
+    if needs_db_write {
+        heartbeat_scheduler.schedule(rt).await?;
     }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -798,7 +950,13 @@ async fn register(
     } else {
         let user_id = request_user_id(&headers);
         match access_get_member(&state, &headers, &user_id, &req.workspace_id).await {
-            Some(m) => owner_id = Some(m.user_id),
+            Some(m) => {
+                state
+                    .membership_cache
+                    .set(&user_id, &req.workspace_id)
+                    .await;
+                owner_id = Some(m.user_id);
+            }
             None => return error_response(StatusCode::NOT_FOUND, "workspace not found"),
         }
     }
@@ -1356,7 +1514,7 @@ fn runtime_to_json(rt: &AgentRuntime) -> Value {
 
 /// Port of pkg/agent.LaunchHeader's static map + omp descriptor lookup.
 #[allow(dead_code)]
-fn launch_header(agent_type: &str) -> &'static str {
+pub(crate) fn launch_header(agent_type: &str) -> &'static str {
     match agent_type {
         "antigravity" => "agy -p (non-interactive)",
         "claude" => "claude (stream-json)",
@@ -1403,6 +1561,154 @@ struct BatchClaimRequest {
 /// Bounds one machine-level batch claim (Go claimBatchMaxTasksCap).
 const CLAIM_BATCH_MAX_TASKS_CAP: usize = 32;
 
+/// Exact production dependencies shared by HTTP and WebSocket task claims.
+/// Keeping this snapshot independent of `HandlerState` prevents installing an
+/// RPC handler from forming `DaemonHub -> handler state -> DaemonHub`.
+#[derive(Clone)]
+pub(crate) struct DaemonClaimServices {
+    pub(crate) pool: sqlx::PgPool,
+    pub(crate) tasks: Arc<TaskService>,
+    pub(crate) plugins: Arc<PluginService>,
+}
+
+impl DaemonClaimServices {
+    fn from_state(state: &HandlerState) -> Self {
+        Self {
+            pool: state.pool.clone(),
+            tasks: state.tasks.clone(),
+            plugins: state.plugins.clone(),
+        }
+    }
+}
+
+/// Production WS RPC dispatcher. The supported method intentionally stays
+/// narrow: every method must reuse the corresponding HTTP domain core rather
+/// than grow a second claim/finalization implementation.
+pub(crate) struct DaemonRpcProcessor {
+    claims: DaemonClaimServices,
+}
+
+impl DaemonRpcProcessor {
+    pub(crate) fn from_state(state: &HandlerState) -> Self {
+        Self {
+            claims: DaemonClaimServices::from_state(state),
+        }
+    }
+
+    fn identity_headers(identity: &ClientIdentity) -> Result<HeaderMap, RpcHandlerError> {
+        fn insert(
+            headers: &mut HeaderMap,
+            name: &'static str,
+            value: &str,
+        ) -> Result<(), RpcHandlerError> {
+            if value.is_empty() {
+                return Ok(());
+            }
+            let value = HeaderValue::from_str(value).map_err(|error| {
+                RpcHandlerError::new(
+                    StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                    anyhow::Error::new(error).context(format!("invalid {name} identity value")),
+                )
+            })?;
+            headers.insert(name, value);
+            Ok(())
+        }
+
+        let mut headers = HeaderMap::new();
+        if identity.daemon_id.is_empty() {
+            insert(&mut headers, "x-user-id", &identity.user_id)?;
+        } else {
+            insert(
+                &mut headers,
+                cordy_middleware::daemon_auth::DAEMON_WORKSPACE_HEADER,
+                &identity.primary_workspace_id(),
+            )?;
+            insert(
+                &mut headers,
+                cordy_middleware::daemon_auth::DAEMON_ID_HEADER,
+                &identity.daemon_id,
+            )?;
+        }
+        insert(
+            &mut headers,
+            "x-client-capabilities",
+            &identity.capabilities,
+        )?;
+        insert(&mut headers, "x-client-version", &identity.client_version)?;
+        Ok(headers)
+    }
+
+    async fn claim_tasks(
+        &self,
+        ctx: &tokio_util::sync::CancellationToken,
+        identity: &ClientIdentity,
+        body: Option<&Value>,
+    ) -> Result<RpcOutcome, RpcHandlerError> {
+        let request =
+            serde_json::from_value::<BatchClaimRequest>(body.cloned().unwrap_or_else(|| json!({})))
+                .map(Json)
+                .map_err(|error| {
+                    RpcHandlerError::new(
+                        StatusCode::BAD_REQUEST.as_u16(),
+                        anyhow::Error::new(error).context("invalid request body"),
+                    )
+                })?;
+        let headers = Self::identity_headers(identity)?;
+        let response = tokio::select! {
+            biased;
+            () = ctx.cancelled() => {
+                return Err(RpcHandlerError::new(
+                    StatusCode::SERVICE_UNAVAILABLE.as_u16(),
+                    anyhow::anyhow!("connection closed"),
+                ));
+            }
+            response = claim_tasks_by_runtime_core(&self.claims, headers, Some(request)) => response,
+        };
+        let status = response.status().as_u16();
+        let bytes = response
+            .into_body()
+            .collect()
+            .await
+            .map_err(|error| {
+                RpcHandlerError::new(
+                    StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                    anyhow::Error::new(error).context("collect tasks.claim response"),
+                )
+            })?
+            .to_bytes();
+        let body = if bytes.is_empty() {
+            None
+        } else {
+            Some(serde_json::from_slice::<Value>(&bytes).map_err(|error| {
+                RpcHandlerError::new(
+                    StatusCode::INTERNAL_SERVER_ERROR.as_u16(),
+                    anyhow::Error::new(error).context("decode tasks.claim response"),
+                )
+            })?)
+        };
+        Ok(RpcOutcome { status, body })
+    }
+}
+
+#[async_trait::async_trait]
+impl RpcHandler for DaemonRpcProcessor {
+    async fn handle_rpc(
+        &self,
+        ctx: &tokio_util::sync::CancellationToken,
+        identity: &ClientIdentity,
+        method: &str,
+        body: Option<&Value>,
+    ) -> Result<RpcOutcome, RpcHandlerError> {
+        match method {
+            "tasks.claim" => self.claim_tasks(ctx, identity, body).await,
+            _ => Err(RpcHandlerError::new(
+                StatusCode::NOT_FOUND.as_u16(),
+                anyhow::anyhow!("unknown rpc method {method:?}"),
+            )),
+        }
+    }
+}
+
 fn empty_tasks_response() -> Response {
     Json(json!({ "tasks": [] })).into_response()
 }
@@ -1420,11 +1726,23 @@ async fn claim_tasks_by_runtime(
     headers: HeaderMap,
     body: Option<Json<BatchClaimRequest>>,
 ) -> Response {
+    claim_tasks_by_runtime_core(&DaemonClaimServices::from_state(&state), headers, body).await
+}
+
+async fn claim_tasks_by_runtime_core(
+    state: &DaemonClaimServices,
+    headers: HeaderMap,
+    body: Option<Json<BatchClaimRequest>>,
+) -> Response {
     let Some(Json(req)) = body else {
         return error_response(StatusCode::BAD_REQUEST, "invalid request body");
     };
     if req.daemon_id.is_empty() {
         return error_response(StatusCode::BAD_REQUEST, "daemon_id is required");
+    }
+    let authenticated_daemon_id = daemon_id_of(daemon_context_from_headers(&headers));
+    if !authenticated_daemon_id.is_empty() && authenticated_daemon_id != req.daemon_id {
+        return error_response(StatusCode::FORBIDDEN, "daemon_id does not match token");
     }
     if req.max_tasks < 0 {
         return error_response(StatusCode::BAD_REQUEST, "max_tasks must not be negative");
@@ -1464,7 +1782,7 @@ async fn claim_tasks_by_runtime(
             true => {
                 let user_id = request_user_id(&headers);
                 !user_id.is_empty()
-                    && access_get_member(&state, &headers, &user_id, &ws_id)
+                    && claim_access_get_member(state, &user_id, &ws_id)
                         .await
                         .is_some()
             }
@@ -1515,7 +1833,7 @@ async fn claim_tasks_by_runtime(
         // Stale comment-plan repair: a claimed task whose trigger was cleared
         // (only coalesced survive) must never dispatch as a generic assignment.
         if task.trigger_comment_id.is_none() && !task.coalesced_comment_ids.is_empty() {
-            match repair_stale_comment_plan(&state, &task, &rt_workspace).await {
+            match repair_stale_comment_plan(state, &task, &rt_workspace).await {
                 RepairOutcome::NotApplicable => {}
                 RepairOutcome::RepairedClean => continue,
                 RepairOutcome::Failed(resp) => {
@@ -1528,7 +1846,7 @@ async fn claim_tasks_by_runtime(
         // task must not be dispatched; the builder cancelled it where the
         // semantics require it — skip it either way.
         let built = match crate::claim_response::build_claimed_task_response(
-            &state,
+            state,
             &headers,
             &task,
             rt,
@@ -1556,7 +1874,7 @@ async fn claim_tasks_by_runtime(
             let _ = state.tasks.cancel_task(task.id).await;
             continue;
         };
-        match finalize_claim_enriched_with_runtime(&state, &task, owner, &built, Some(rt)).await {
+        match finalize_claim_enriched_with_runtime(state, &task, owner, &built, Some(rt)).await {
             Ok((auth_token, remote_mcp_token, receipt)) => {
                 let mut payload = built.payload;
                 if let Some(obj) = payload.as_object_mut() {
@@ -1585,6 +1903,19 @@ async fn claim_tasks_by_runtime(
     Json(json!({ "tasks": out })).into_response()
 }
 
+async fn claim_access_get_member(
+    state: &DaemonClaimServices,
+    user_id: &str,
+    workspace_id: &str,
+) -> Option<cordy_db::models::Member> {
+    let user_id = Uuid::parse_str(user_id).ok()?;
+    let workspace_id = Uuid::parse_str(workspace_id).ok()?;
+    member::get_member_by_user_and_workspace(&state.pool, user_id, workspace_id)
+        .await
+        .ok()
+        .flatten()
+}
+
 /// Outcome of the stale comment-plan repair (Go repairStaleCommentPlanIfNeeded).
 enum RepairOutcome {
     /// The guard does not apply; proceed with a normal claim.
@@ -1605,7 +1936,7 @@ enum RepairOutcome {
 /// Port of Go `repairStaleCommentPlanIfNeeded`. Returns NotApplicable whenever
 /// the guard does not fire so callers can fall through.
 async fn repair_stale_comment_plan(
-    state: &HandlerState,
+    state: &DaemonClaimServices,
     task: &cordy_db::models::AgentTaskQueue,
     runtime_workspace_id: &str,
 ) -> RepairOutcome {
@@ -1719,7 +2050,7 @@ async fn repair_stale_comment_plan(
 /// daemon token can be bound to the claiming runtime's daemon.
 #[allow(clippy::too_many_arguments)]
 async fn finalize_claim_enriched_full(
-    state: &HandlerState,
+    state: &DaemonClaimServices,
     task: &cordy_db::models::AgentTaskQueue,
     owner_id: Uuid,
     built: &crate::claim_response::BuiltClaim,
@@ -1803,7 +2134,7 @@ async fn finalize_claim_enriched_full(
 }
 
 async fn finalize_claim_enriched_with_runtime(
-    state: &HandlerState,
+    state: &DaemonClaimServices,
     task: &cordy_db::models::AgentTaskQueue,
     owner_id: Uuid,
     built: &crate::claim_response::BuiltClaim,
@@ -1889,10 +2220,11 @@ async fn claim_task_by_runtime(
         Ok(Some(rt)) => rt,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load runtime"),
     };
+    let claim_services = DaemonClaimServices::from_state(&state);
     // Stale comment-plan repair (Go repairStaleCommentPlanIfNeeded): a claimed
     // task whose trigger was cleared must never dispatch as a generic assignment.
     if task.trigger_comment_id.is_none() && !task.coalesced_comment_ids.is_empty() {
-        match repair_stale_comment_plan(&state, &task, &ws_id).await {
+        match repair_stale_comment_plan(&claim_services, &task, &ws_id).await {
             RepairOutcome::NotApplicable => {}
             RepairOutcome::RepairedClean => {
                 return Json(json!({ "task": null })).into_response();
@@ -1901,7 +2233,7 @@ async fn claim_task_by_runtime(
         }
     }
     let built = match crate::claim_response::build_claimed_task_response(
-        &state,
+        &claim_services,
         &headers,
         &task,
         &rt,
@@ -1921,7 +2253,9 @@ async fn claim_task_by_runtime(
             "runtime owner required to mint task token",
         );
     };
-    match finalize_claim_enriched_with_runtime(&state, &task, owner, &built, Some(&rt)).await {
+    match finalize_claim_enriched_with_runtime(&claim_services, &task, owner, &built, Some(&rt))
+        .await
+    {
         Ok((token, remote_mcp_token, receipt)) => {
             let mut payload = built.payload;
             if let Some(obj) = payload.as_object_mut() {
@@ -2302,7 +2636,7 @@ async fn complete_task(
         .await
     {
         Ok(task) => {
-            state.tasks.notify_task_finished(&task);
+            state.tasks.notify_task_finished(&task).await;
             revoke_tokens_best_effort(&state, task.id).await;
             tracing::info!(task_id = %task_id, agent_id = %task.agent_id, "task completed");
             Json(crate::task_json::task_to_map(&task, &ws_id)).into_response()
@@ -2398,7 +2732,7 @@ async fn fail_task_impl(
         .await
     {
         Ok(task) => {
-            state.tasks.notify_task_finished(&task);
+            state.tasks.notify_task_finished(&task).await;
             revoke_tokens_best_effort(state, task.id).await;
             tracing::info!(
                 task_id = %task_id,
@@ -3395,19 +3729,17 @@ async fn report_model_list_result(
     let Some(Json(body)) = body else {
         return error_response(StatusCode::BAD_REQUEST, "invalid request body");
     };
-    let status = body.get("status").and_then(|v| v.as_str()).unwrap_or("");
+    let body = match decode_model_list_report(body) {
+        Ok(body) => body,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    let status = body.status.as_str();
     match status {
         "completed" => {
             // Older daemons may omit `supported`; default true keeps the UI usable.
-            let supported = body
-                .get("supported")
-                .and_then(|v| v.as_bool())
-                .unwrap_or(true);
-            let models: Vec<crate::pending_store::ModelEntry> = body
-                .get("models")
-                .cloned()
-                .and_then(|m| serde_json::from_value(m).ok())
-                .unwrap_or_default();
+            let supported = body.supported.unwrap_or(true);
+            let fallback = body.fallback.unwrap_or(false);
+            let models = body.models;
             if let Err(e) = store.complete(request_id.trim(), &models, supported).await {
                 tracing::error!(error = %e, request_id = %request_id, "ModelListStore Complete failed");
                 return error_response(
@@ -3415,14 +3747,22 @@ async fn report_model_list_result(
                     "failed to persist completion",
                 );
             }
+            if let Some(cache) = state.model_catalog_cache.as_ref() {
+                use crate::pending_store::{model_catalog_cache_action, ModelCatalogCacheAction};
+                let result = match model_catalog_cache_action(&models, supported, fallback) {
+                    ModelCatalogCacheAction::Store => {
+                        cache.put(runtime_id.trim(), &models, supported).await
+                    }
+                    ModelCatalogCacheAction::Drop => cache.invalidate(runtime_id.trim()).await,
+                    ModelCatalogCacheAction::Keep => Ok(()),
+                };
+                if let Err(error) = result {
+                    tracing::warn!(%error, runtime_id = %runtime_id, "model catalog cache update failed");
+                }
+            }
         }
         _ => {
-            let error = body
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            if let Err(e) = store.fail(request_id.trim(), &error).await {
+            if let Err(e) = store.fail(request_id.trim(), &body.error).await {
                 tracing::error!(error = %e, request_id = %request_id, "ModelListStore Fail failed");
                 return error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -3433,6 +3773,36 @@ async fn report_model_list_result(
     }
     tracing::debug!(runtime_id = %runtime_id, request_id = %request_id, status = %status, "model list report");
     Json(json!({ "status": "ok" })).into_response()
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ModelListReportBody {
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    status: String,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    models: Vec<crate::pending_store::ModelEntry>,
+    #[serde(default)]
+    supported: Option<bool>,
+    #[serde(default, deserialize_with = "deserialize_null_default")]
+    error: String,
+    #[serde(default)]
+    fallback: Option<bool>,
+}
+
+fn decode_model_list_report(body: Value) -> Result<ModelListReportBody, serde_json::Error> {
+    if body.is_null() {
+        Ok(ModelListReportBody::default())
+    } else {
+        serde_json::from_value(body)
+    }
+}
+
+fn deserialize_null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Option::<T>::deserialize(deserializer).map(Option::unwrap_or_default)
 }
 
 async fn report_local_skill_list_result(
@@ -3790,7 +4160,7 @@ async fn report_local_skill_import_result(
             Some(&sanitized_name),
             Some(&sanitized_description),
             Some(&sanitized_content),
-            &config,
+            Some(&config),
         )
         .await
         {
@@ -3995,6 +4365,155 @@ fn plugin_error_response(err: &cordy_service::plugin::PluginError, fallback: &st
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn lazy_test_state() -> HandlerState {
+        let pool = sqlx::postgres::PgPoolOptions::new()
+            .connect_lazy("postgres://cordy:cordy@127.0.0.1/cordy")
+            .expect("test database URL is valid");
+        HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None)
+    }
+
+    #[tokio::test]
+    async fn websocket_heartbeat_rejects_malformed_runtime_before_database_access() {
+        let state = lazy_test_state();
+        let processor = DaemonHeartbeatProcessor::from_state(&state);
+
+        let error = processor
+            .handle_heartbeat(&ClientIdentity::default(), "not-a-uuid", false)
+            .await
+            .expect_err("malformed runtime IDs must fail the heartbeat");
+
+        assert!(
+            error.to_string().contains("invalid runtime_id"),
+            "{error:#}"
+        );
+    }
+
+    #[tokio::test]
+    async fn batch_claim_rejects_daemon_token_spoof_before_database_access() {
+        let state = lazy_test_state();
+        let services = DaemonClaimServices::from_state(&state);
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            cordy_middleware::daemon_auth::DAEMON_ID_HEADER,
+            HeaderValue::from_static("authenticated-daemon"),
+        );
+        headers.insert(
+            cordy_middleware::daemon_auth::DAEMON_WORKSPACE_HEADER,
+            HeaderValue::from_static("workspace-1"),
+        );
+
+        let response = claim_tasks_by_runtime_core(
+            &services,
+            headers,
+            Some(Json(BatchClaimRequest {
+                daemon_id: "spoofed-daemon".to_string(),
+                runtime_ids: Vec::new(),
+                max_tasks: 1,
+            })),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        let body = response.into_body().collect().await.unwrap().to_bytes();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&body).unwrap(),
+            json!({"error":"daemon_id does not match token"})
+        );
+    }
+
+    #[tokio::test]
+    async fn websocket_rpc_rejects_unknown_methods_and_cancelled_claims() {
+        let state = lazy_test_state();
+        let processor = DaemonRpcProcessor::from_state(&state);
+        let ctx = tokio_util::sync::CancellationToken::new();
+        let unknown = processor
+            .handle_rpc(&ctx, &ClientIdentity::default(), "unknown", None)
+            .await;
+        match unknown {
+            Err(error) => assert_eq!(error.status, StatusCode::NOT_FOUND.as_u16()),
+            Ok(_) => panic!("unknown RPC method unexpectedly succeeded"),
+        }
+
+        ctx.cancel();
+        let claim_body = json!({
+            "daemon_id": "daemon-1",
+            "runtime_ids": [],
+            "max_tasks": 1
+        });
+        let cancelled = processor
+            .handle_rpc(
+                &ctx,
+                &ClientIdentity {
+                    daemon_id: "daemon-1".to_string(),
+                    workspace_id: "workspace-1".to_string(),
+                    ..ClientIdentity::default()
+                },
+                "tasks.claim",
+                Some(&claim_body),
+            )
+            .await;
+        match cancelled {
+            Err(error) => assert_eq!(error.status, StatusCode::SERVICE_UNAVAILABLE.as_u16()),
+            Ok(_) => panic!("cancelled RPC claim unexpectedly succeeded"),
+        }
+    }
+
+    #[test]
+    fn model_list_report_rejects_malformed_typed_fields_before_mutation() {
+        for body in [
+            json!({"status":"completed","models":[{"id":123}],"supported":true}),
+            json!({"status":"completed","models":[],"supported":"yes"}),
+            json!({"status":"completed","models":[],"fallback":"yes"}),
+            json!({
+                "status":"completed",
+                "models":[{"id":"m","thinking":{"supported_levels":[{"value":7}]}}]
+            }),
+            json!({
+                "status":"completed",
+                "models":[{"id":"m","service_tiers":[{"id":7}]}]
+            }),
+        ] {
+            assert!(decode_model_list_report(body).is_err());
+        }
+    }
+
+    #[test]
+    fn model_list_report_preserves_go_null_and_omitted_defaults() {
+        let null_report = decode_model_list_report(Value::Null).unwrap();
+        assert!(null_report.status.is_empty());
+        assert!(null_report.models.is_empty());
+        assert!(null_report.error.is_empty());
+        assert!(null_report.supported.is_none());
+        assert!(null_report.fallback.is_none());
+
+        let report = decode_model_list_report(json!({
+            "status": "completed",
+            "models": [{
+                "id": null,
+                "label": null,
+                "default": null,
+                "thinking": {"supported_levels": null, "default_level": null},
+                "service_tiers": null
+            }],
+            "supported": null,
+            "fallback": null
+        }))
+        .unwrap();
+        assert_eq!(report.models.len(), 1);
+        assert!(report.models[0].id.is_empty());
+        assert!(report.models[0].label.is_empty());
+        assert!(!report.models[0].default);
+        assert!(report.models[0]
+            .thinking
+            .as_ref()
+            .unwrap()
+            .supported_levels
+            .is_empty());
+        assert!(report.models[0].service_tiers.is_empty());
+        assert!(report.supported.unwrap_or(true));
+        assert!(!report.fallback.unwrap_or(false));
+    }
 
     #[test]
     fn normalize_provider_trims_and_lowercases() {

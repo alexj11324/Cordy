@@ -6,14 +6,16 @@
 //! RFC3339, nullable columns as absent-or-null JSON.
 
 use axum::body::Bytes;
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
-use cordy_db::models::Workspace;
-use cordy_db::models::{Member, User};
+use cordy_db::models::{Agent, AgentTaskQueue, Member, User, Workspace};
 use cordy_db::queries::{member, share_link, user, workspace};
+use cordy_middleware::workspace::WorkspaceContext;
+use rand::RngCore;
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -29,11 +31,59 @@ pub fn public_router() -> Router<HandlerState> {
 /// named by `{id}`.
 pub fn authenticated_router() -> Router<HandlerState> {
     Router::new()
-        .route("/api/workspaces", get(list_workspaces))
-        .route("/api/workspaces/", get(list_workspaces))
+        .route(
+            "/api/workspaces",
+            get(list_workspaces).post(create_workspace),
+        )
+        .route(
+            "/api/workspaces/",
+            get(list_workspaces).post(create_workspace),
+        )
         .route("/api/workspaces/{id}", get(get_workspace))
         .route("/api/workspaces/{id}/", get(get_workspace))
         .route("/api/share-links/join", post(join_by_share_link))
+}
+
+pub fn member_router() -> Router<HandlerState> {
+    Router::new()
+        .route("/api/workspaces/{id}/members", get(list_members))
+        .route("/api/workspaces/{id}/leave", post(leave_workspace))
+}
+
+pub fn admin_router() -> Router<HandlerState> {
+    Router::new()
+        .route(
+            "/api/workspaces/{id}",
+            put(update_workspace)
+                .patch(update_workspace)
+                .delete(delete_workspace),
+        )
+        .route(
+            "/api/workspaces/{id}/members/{member_id}",
+            patch(update_member).delete(delete_member),
+        )
+        .route(
+            "/api/workspaces/{id}/share-links",
+            get(list_share_links).post(create_share_link),
+        )
+        .route(
+            "/api/workspaces/{id}/share-links/{link_id}",
+            delete(revoke_share_link),
+        )
+}
+
+async fn accept_avatar_url(
+    state: &HandlerState,
+    raw: &str,
+    current: &str,
+) -> Result<String, Response> {
+    crate::avatar::accept_url(state, raw, Some(current))
+        .await
+        .map_err(|message| error_response(StatusCode::FORBIDDEN, message))
+}
+
+fn resolve_avatar_url(state: &HandlerState, raw: Option<String>) -> Option<String> {
+    raw.map(|value| crate::avatar::resolve_url(state, &value))
 }
 
 /// GET /api/share-links/{code} — public preview of a workspace share link.
@@ -85,7 +135,7 @@ async fn list_workspaces(
     match workspace::list_workspaces(&state.pool, user_id).await {
         Ok(rows) => Json(
             rows.into_iter()
-                .map(WorkspaceResponse::from)
+                .map(|workspace| workspace_response(&state, workspace))
                 .collect::<Vec<_>>(),
         )
         .into_response(),
@@ -134,7 +184,7 @@ async fn get_workspace(
     }
 
     match workspace::get_workspace(&state.pool, id).await {
-        Ok(Some(row)) => Json(WorkspaceResponse::from(row)).into_response(),
+        Ok(Some(row)) => Json(workspace_response(&state, row)).into_response(),
         Ok(None) => error_response(StatusCode::NOT_FOUND, "workspace not found"),
         Err(error) => {
             tracing::warn!(%error, workspace_id = %id, "failed to get workspace");
@@ -149,7 +199,7 @@ struct JoinByShareLinkRequest {
 }
 
 #[derive(Debug, Serialize)]
-struct MemberWithUserResponse {
+pub(crate) struct MemberWithUserResponse {
     id: String,
     workspace_id: String,
     user_id: String,
@@ -161,7 +211,7 @@ struct MemberWithUserResponse {
 }
 
 impl MemberWithUserResponse {
-    fn new(member: &Member, user: &User) -> Self {
+    pub(crate) fn new(member: &Member, user: &User) -> Self {
         Self {
             id: member.id.to_string(),
             workspace_id: member.workspace_id.to_string(),
@@ -172,6 +222,12 @@ impl MemberWithUserResponse {
             email: user.email.clone(),
             avatar_url: user.avatar_url.clone(),
         }
+    }
+
+    pub(crate) fn new_resolved(state: &HandlerState, member: &Member, user: &User) -> Self {
+        let mut response = Self::new(member, user);
+        response.avatar_url = resolve_avatar_url(state, response.avatar_url);
+        response
     }
 }
 
@@ -187,17 +243,6 @@ async fn join_by_share_link(
     headers: axum::http::HeaderMap,
     body: Bytes,
 ) -> Response {
-    if matches!(
-        headers
-            .get("x-actor-source")
-            .and_then(|value| value.to_str().ok()),
-        Some("task_token" | "cloud_pat")
-    ) {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            "this endpoint is only available to human actors",
-        );
-    }
     let Some(user_id) = header_uuid(&headers, "x-user-id") else {
         return error_response(StatusCode::UNAUTHORIZED, "user not authenticated");
     };
@@ -302,7 +347,8 @@ async fn join_by_share_link(
         .flatten()
         .map(|workspace| workspace.slug)
         .unwrap_or_default();
-    let member_response = MemberWithUserResponse::new(&joined_member, &current_user);
+    let member_response =
+        MemberWithUserResponse::new_resolved(&state, &joined_member, &current_user);
     state.bus.publish(&cordy_events::Event {
         event_type: cordy_protocol::events::EVENT_MEMBER_ADDED.to_string(),
         workspace_id: workspace_id.clone(),
@@ -311,9 +357,10 @@ async fn join_by_share_link(
         payload: serde_json::json!({"member": &member_response}),
         ..Default::default()
     });
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_workspaces_changed(&user_id.to_string());
-    }
+    state
+        .daemon_notifier
+        .notify_workspaces_changed(&user_id.to_string())
+        .await;
 
     Json(JoinByShareLinkResponse {
         member: member_response,
@@ -323,7 +370,7 @@ async fn join_by_share_link(
     .into_response()
 }
 
-fn unique_violation(error: &anyhow::Error) -> bool {
+pub(crate) fn unique_violation(error: &anyhow::Error) -> bool {
     error
         .downcast_ref::<sqlx::Error>()
         .and_then(|error| error.as_database_error())
@@ -371,12 +418,1298 @@ impl From<Workspace> for WorkspaceResponse {
     }
 }
 
+fn workspace_response(state: &HandlerState, workspace: Workspace) -> WorkspaceResponse {
+    let mut response = WorkspaceResponse::from(workspace);
+    response.avatar_url = resolve_avatar_url(state, response.avatar_url);
+    response
+}
+
+#[derive(Deserialize)]
+struct CreateWorkspaceRequest {
+    name: String,
+    slug: String,
+    description: Option<String>,
+    context: Option<String>,
+    issue_prefix: Option<String>,
+}
+
+fn normalize_issue_prefix(raw: &str) -> Result<Option<String>, Response> {
+    let prefix = raw.trim().to_ascii_uppercase();
+    if prefix.is_empty() {
+        return Ok(None);
+    }
+    if prefix.len() > 10
+        || !prefix
+            .bytes()
+            .all(|byte| byte.is_ascii_uppercase() || byte.is_ascii_digit())
+    {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "issue prefix must be 1-10 uppercase letters or digits",
+        ));
+    }
+    Ok(Some(prefix))
+}
+
+fn default_issue_prefix(slug: &str) -> String {
+    slug.bytes()
+        .filter(u8::is_ascii_alphanumeric)
+        .take(4)
+        .map(|byte| (byte as char).to_ascii_uppercase())
+        .collect()
+}
+
+fn reserved_slug(slug: &str) -> bool {
+    #[derive(Deserialize)]
+    struct File {
+        groups: Vec<Group>,
+    }
+    #[derive(Deserialize)]
+    struct Group {
+        slugs: Vec<String>,
+    }
+    let file: File = serde_json::from_str(include_str!(
+        "../../../../server/internal/handler/reserved_slugs.json"
+    ))
+    .expect("reserved_slugs.json must be valid");
+    file.groups
+        .iter()
+        .any(|group| group.slugs.iter().any(|item| item == slug))
+}
+
+async fn create_workspace(
+    State(state): State<HandlerState>,
+    headers: axum::http::HeaderMap,
+    body: Bytes,
+) -> Response {
+    let Some(user_id) = header_uuid(&headers, "x-user-id") else {
+        return error_response(StatusCode::UNAUTHORIZED, "user not authenticated");
+    };
+    if crate::config::workspace_creation_disabled() {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "workspace creation is disabled for this instance",
+        );
+    }
+    let mut request: CreateWorkspaceRequest = match serde_json::from_slice(&body) {
+        Ok(request) => request,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    request.name = request.name.trim().to_string();
+    request.slug = request.slug.trim().to_ascii_lowercase();
+    if request.name.is_empty() || request.slug.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "name and slug are required");
+    }
+    let slug_pattern = Regex::new(r"^[a-z0-9]+(?:-[a-z0-9]+)*$").expect("valid regex");
+    if !slug_pattern.is_match(&request.slug) {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "slug must contain only lowercase letters, numbers, and hyphens",
+        );
+    }
+    if reserved_slug(&request.slug) {
+        return error_response(StatusCode::BAD_REQUEST, "slug is reserved");
+    }
+    let issue_prefix = match request.issue_prefix.as_deref() {
+        Some(raw) => match normalize_issue_prefix(raw) {
+            Ok(Some(prefix)) => prefix,
+            Ok(None) => default_issue_prefix(&request.slug),
+            Err(response) => return response,
+        },
+        None => default_issue_prefix(&request.slug),
+    };
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to create workspace",
+            )
+        }
+    };
+    let created = match workspace::create_workspace(
+        &mut *transaction,
+        &request.name,
+        &request.slug,
+        request.description.as_deref(),
+        request.context.as_deref(),
+        &issue_prefix,
+    )
+    .await
+    {
+        Ok(Some(created)) => created,
+        Err(error) if unique_violation(&error) => {
+            return error_response(StatusCode::CONFLICT, "workspace slug already exists")
+        }
+        Ok(None) | Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to create workspace",
+            )
+        }
+    };
+    if member::create_member(&mut *transaction, created.id, user_id, "owner")
+        .await
+        .ok()
+        .flatten()
+        .is_none()
+    {
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to add owner");
+    }
+    if cordy_service::issue_status::ensure(&mut *transaction, created.id)
+        .await
+        .is_err()
+    {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to seed issue statuses",
+        );
+    }
+    if transaction.commit().await.is_err() {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to create workspace",
+        );
+    }
+    let workspace_id = created.id.to_string();
+    let event = cordy_analytics::workspace_created(&user_id.to_string(), &workspace_id);
+    state.analytics.capture(event.clone());
+    if let Some(metrics) = state.business_metrics.as_deref() {
+        metrics.inc_for_event(&event);
+    }
+    state
+        .daemon_notifier
+        .notify_workspaces_changed(&user_id.to_string())
+        .await;
+    (
+        StatusCode::CREATED,
+        Json(workspace_response(&state, created)),
+    )
+        .into_response()
+}
+
+#[derive(Default, Deserialize)]
+struct UpdateWorkspaceRequest {
+    name: Option<String>,
+    description: Option<String>,
+    context: Option<String>,
+    settings: Option<serde_json::Value>,
+    repos: Option<serde_json::Value>,
+    issue_prefix: Option<String>,
+    avatar_url: Option<String>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct WorkspaceRepoRef {
+    url: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    description: String,
+}
+
+fn valid_git_url(value: &str) -> bool {
+    if let Ok(url) = url::Url::parse(value) {
+        if url.host_str().is_some() && matches!(url.scheme(), "http" | "https" | "ssh" | "git") {
+            return true;
+        }
+    }
+    if value.contains(' ') || value.contains("://") {
+        return false;
+    }
+    let Some(colon) = value.find(':') else {
+        return false;
+    };
+    if colon == 0 || colon + 1 == value.len() {
+        return false;
+    }
+    !value.find('@').is_some_and(|at| at >= colon)
+}
+
+fn normalize_repos(value: serde_json::Value) -> Result<serde_json::Value, Response> {
+    let repos: Vec<WorkspaceRepoRef> = serde_json::from_value(value).map_err(|_| {
+        error_response(
+            StatusCode::BAD_REQUEST,
+            "repos must be an array of repository objects",
+        )
+    })?;
+    let mut seen = std::collections::HashSet::new();
+    let mut normalized = Vec::new();
+    for (index, mut repo) in repos.into_iter().enumerate() {
+        repo.url = repo.url.trim().to_string();
+        repo.description = repo.description.trim().to_string();
+        if repo.url.is_empty() {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                &format!("repos[{index}]: url is required"),
+            ));
+        }
+        if !valid_git_url(&repo.url) {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                &format!("repos[{index}]: url must be a valid http(s) or ssh git URL"),
+            ));
+        }
+        if seen.insert(repo.url.clone()) {
+            normalized.push(repo);
+        }
+    }
+    Ok(serde_json::to_value(normalized).expect("serializable repos"))
+}
+
+async fn update_workspace(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    body: Bytes,
+) -> Response {
+    let mut request: UpdateWorkspaceRequest = match serde_json::from_slice(&body) {
+        Ok(request) => request,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    if let Some(name) = request.name.as_mut() {
+        *name = name.trim().to_string();
+        if name.is_empty() {
+            return error_response(StatusCode::BAD_REQUEST, "name is required");
+        }
+    }
+    let prefix = match request.issue_prefix.as_deref() {
+        Some(raw) => match normalize_issue_prefix(raw) {
+            Ok(value) => value,
+            Err(response) => return response,
+        },
+        None => None,
+    };
+    let repos = match request.repos.take() {
+        Some(value) => match normalize_repos(value) {
+            Ok(value) => Some(value),
+            Err(response) => return response,
+        },
+        None => None,
+    };
+    let settings = request.settings;
+    let avatar = match request.avatar_url.as_deref() {
+        Some(raw) => {
+            let current = workspace::get_workspace(&state.pool, context.member.workspace_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|workspace| workspace.avatar_url)
+                .unwrap_or_default();
+            match accept_avatar_url(&state, raw, &current).await {
+                Ok(value) => Some(value),
+                Err(response) => return response,
+            }
+        }
+        None => None,
+    };
+    let updated = match workspace::update_workspace(
+        &state.pool,
+        context.member.workspace_id,
+        request.name.as_deref(),
+        request.description.as_deref(),
+        request.context.as_deref(),
+        settings.as_ref(),
+        repos.as_ref(),
+        prefix.as_deref(),
+        avatar.as_deref(),
+    )
+    .await
+    {
+        Ok(Some(updated)) => updated,
+        _ => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update workspace",
+            )
+        }
+    };
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::events::EVENT_WORKSPACE_UPDATED.into(),
+        workspace_id: updated.id.to_string(),
+        actor_type: "member".into(),
+        actor_id: context.member.user_id.to_string(),
+        payload: serde_json::json!({"workspace": workspace_response(&state, updated.clone())}),
+        ..Default::default()
+    });
+    if request.name.is_some() {
+        if let Ok(members) = member::list_members(&state.pool, updated.id).await {
+            for member in members {
+                state
+                    .daemon_notifier
+                    .notify_workspaces_changed(&member.user_id.to_string())
+                    .await;
+            }
+        }
+    }
+    Json(workspace_response(&state, updated)).into_response()
+}
+
+#[derive(Serialize)]
+struct MemberListResponse {
+    id: String,
+    workspace_id: String,
+    user_id: String,
+    role: String,
+    created_at: String,
+    name: String,
+    email: String,
+    avatar_url: Option<String>,
+}
+
+async fn list_members(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    match member::list_members_with_user(&state.pool, context.member.workspace_id).await {
+        Ok(rows) => Json(
+            rows.into_iter()
+                .map(|row| MemberListResponse {
+                    id: row.id.map(|id| id.to_string()).unwrap_or_default(),
+                    workspace_id: row
+                        .workspace_id
+                        .map(|id| id.to_string())
+                        .unwrap_or_default(),
+                    user_id: row.user_id.map(|id| id.to_string()).unwrap_or_default(),
+                    role: row.role,
+                    created_at: row
+                        .created_at
+                        .map(crate::timefmt::rfc3339)
+                        .unwrap_or_default(),
+                    name: row.user_name,
+                    email: row.user_email,
+                    avatar_url: resolve_avatar_url(&state, row.user_avatar_url),
+                })
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(_) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to list members"),
+    }
+}
+
+fn normalized_member_role(role: &str, allow_default: bool) -> Option<&str> {
+    let role = role.trim();
+    if role.is_empty() && allow_default {
+        return Some("member");
+    }
+    matches!(role, "owner" | "admin" | "member").then_some(role)
+}
+
+#[derive(Deserialize)]
+struct MemberPath {
+    member_id: String,
+}
+
+#[derive(Deserialize)]
+struct UpdateMemberRequest {
+    role: String,
+}
+
+async fn update_member(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(path): Path<MemberPath>,
+    body: Bytes,
+) -> Response {
+    let Ok(member_id) = Uuid::parse_str(&path.member_id) else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid member id");
+    };
+    let target = match member::get_member(&state.pool, member_id).await {
+        Ok(Some(target)) if target.workspace_id == context.member.workspace_id => target,
+        _ => return error_response(StatusCode::NOT_FOUND, "member not found"),
+    };
+    let request: UpdateMemberRequest = match serde_json::from_slice(&body) {
+        Ok(request) => request,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    if request.role.trim().is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "role is required");
+    }
+    let Some(role) = normalized_member_role(&request.role, false) else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid member role");
+    };
+    if (target.role == "owner" || role == "owner") && context.member.role != "owner" {
+        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
+    }
+    if target.role == "owner" && role != "owner" {
+        match member::list_members(&state.pool, target.workspace_id).await {
+            Ok(rows) if rows.iter().filter(|member| member.role == "owner").count() <= 1 => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "workspace must have at least one owner",
+                )
+            }
+            Err(_) => {
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update member")
+            }
+            _ => {}
+        }
+    }
+    let updated = match member::update_member_role(&state.pool, target.id, role).await {
+        Ok(Some(updated)) => updated,
+        _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update member"),
+    };
+    state
+        .membership_cache
+        .invalidate(
+            &target.user_id.to_string(),
+            &target.workspace_id.to_string(),
+        )
+        .await;
+    let found_user = match user::get_user(&state.pool, updated.user_id).await {
+        Ok(Some(user)) => user,
+        _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load member"),
+    };
+    let response = MemberWithUserResponse::new_resolved(&state, &updated, &found_user);
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::events::EVENT_MEMBER_UPDATED.into(),
+        workspace_id: updated.workspace_id.to_string(),
+        actor_type: "member".into(),
+        actor_id: context.member.user_id.to_string(),
+        payload: serde_json::json!({"member": &response}),
+        ..Default::default()
+    });
+    Json(response).into_response()
+}
+
+async fn revoke_and_remove_member(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    member_id: Uuid,
+    archived_by: Uuid,
+) -> anyhow::Result<MemberRevocation> {
+    let mut transaction = state.pool.begin().await?;
+    cordy_db::queries::subscriber::lock_subscriber_writes(&mut *transaction, workspace_id, user_id)
+        .await?;
+    let runtimes = cordy_db::queries::runtime::list_agent_runtimes_by_owner(
+        &mut *transaction,
+        workspace_id,
+        user_id,
+    )
+    .await?;
+    let runtime_ids: Vec<Uuid> = runtimes.iter().map(|runtime| runtime.id).collect();
+    let mut result = MemberRevocation::default();
+    if !runtime_ids.is_empty() {
+        result.archived_agents = cordy_db::queries::agent::archive_agents_by_runtime(
+            &mut *transaction,
+            archived_by,
+            runtime_ids.clone(),
+        )
+        .await?;
+        let agent_ids: Vec<Uuid> = result
+            .archived_agents
+            .iter()
+            .map(|agent| agent.id)
+            .collect();
+        result.cancelled_tasks =
+            cordy_db::queries::runtime::cancel_agent_tasks_by_runtime_or_agent(
+                &mut *transaction,
+                runtime_ids.clone(),
+                agent_ids,
+            )
+            .await?;
+        result.offline_runtime_ids = cordy_db::queries::runtime::force_offline_runtimes_by_i_ds(
+            &mut *transaction,
+            runtime_ids,
+        )
+        .await?
+        .into_iter()
+        .filter_map(|runtime| runtime.id)
+        .collect();
+        let daemon_ids: Vec<String> = runtimes
+            .into_iter()
+            .filter_map(|runtime| runtime.daemon_id)
+            .filter(|id| !id.is_empty())
+            .collect();
+        if !daemon_ids.is_empty() {
+            result.revoked_token_hashes =
+                cordy_db::queries::daemon_token::delete_daemon_tokens_by_workspace_and_daemons(
+                    &mut *transaction,
+                    workspace_id,
+                    &daemon_ids,
+                )
+                .await?;
+        }
+    }
+    cordy_db::queries::channel::delete_channel_user_bindings_by_workspace_member(
+        &mut *transaction,
+        workspace_id,
+        user_id,
+    )
+    .await?;
+    cordy_db::queries::agent_invocation_target::delete_agent_invocation_targets_by_member(
+        &mut *transaction,
+        workspace_id,
+        user_id,
+    )
+    .await?;
+    cordy_db::queries::quick_action::delete_private_quick_actions_by_creator(
+        &mut *transaction,
+        workspace_id,
+        user_id,
+    )
+    .await?;
+    cordy_db::queries::issue_view::delete_private_issue_views_by_owner(
+        &mut *transaction,
+        workspace_id,
+        user_id,
+    )
+    .await?;
+    cordy_db::queries::issue_view::delete_issue_view_preferences_by_user(
+        &mut *transaction,
+        workspace_id,
+        user_id,
+    )
+    .await?;
+    cordy_db::queries::subscriber::delete_subscriptions_by_member(
+        &mut *transaction,
+        workspace_id,
+        user_id,
+    )
+    .await?;
+    member::delete_member(&mut *transaction, member_id).await?;
+    transaction.commit().await?;
+    Ok(result)
+}
+
+#[derive(Default)]
+struct MemberRevocation {
+    archived_agents: Vec<Agent>,
+    cancelled_tasks: Vec<AgentTaskQueue>,
+    offline_runtime_ids: Vec<Uuid>,
+    revoked_token_hashes: Vec<String>,
+}
+
+async fn publish_member_revocation(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    actor_id: Uuid,
+    result: &MemberRevocation,
+) {
+    for hash in &result.revoked_token_hashes {
+        state.daemon_token_cache.invalidate(hash).await;
+    }
+    state
+        .tasks
+        .broadcast_cancelled_tasks(&workspace_id.to_string(), &result.cancelled_tasks)
+        .await;
+    for agent in &result.archived_agents {
+        let mut response = serde_json::to_value(agent).unwrap_or_default();
+        if let Some(object) = response.as_object_mut() {
+            let env_count = object
+                .remove("custom_env")
+                .and_then(|value| value.as_object().map(|env| env.len()))
+                .unwrap_or_default();
+            object.remove("mcp_config");
+            object.remove("composio_toolkit_allowlist");
+            object.insert("has_custom_env".into(), serde_json::json!(env_count > 0));
+            object.insert("custom_env_key_count".into(), serde_json::json!(env_count));
+            object.insert("mcp_config".into(), serde_json::json!({}));
+            object.insert("mcp_config_redacted".into(), serde_json::json!(true));
+        }
+        state.bus.publish(&cordy_events::Event {
+            event_type: cordy_protocol::EVENT_AGENT_ARCHIVED.into(),
+            workspace_id: workspace_id.to_string(),
+            actor_type: "member".into(),
+            actor_id: actor_id.to_string(),
+            payload: serde_json::json!({"agent": response}),
+            ..Default::default()
+        });
+    }
+    if !result.offline_runtime_ids.is_empty() {
+        state.bus.publish(&cordy_events::Event {
+            event_type: cordy_protocol::EVENT_DAEMON_REGISTER.into(),
+            workspace_id: workspace_id.to_string(),
+            actor_type: "member".into(),
+            actor_id: actor_id.to_string(),
+            payload: serde_json::json!({"action": "revoke"}),
+            ..Default::default()
+        });
+    }
+}
+
+async fn remove_member_common(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    target: Member,
+) -> Response {
+    if target.role == "owner" && context.member.role != "owner" {
+        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
+    }
+    if target.role == "owner" {
+        match member::list_members(&state.pool, target.workspace_id).await {
+            Ok(rows) if rows.iter().filter(|member| member.role == "owner").count() <= 1 => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "workspace must have at least one owner",
+                )
+            }
+            Err(_) => {
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete member")
+            }
+            _ => {}
+        }
+    }
+    let revocation = match revoke_and_remove_member(
+        state,
+        target.workspace_id,
+        target.user_id,
+        target.id,
+        context.member.user_id,
+    )
+    .await
+    {
+        Ok(result) => result,
+        Err(error) => {
+            tracing::warn!(%error, member_id = %target.id, "failed to revoke member");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete member");
+        }
+    };
+    state
+        .membership_cache
+        .invalidate(
+            &target.user_id.to_string(),
+            &target.workspace_id.to_string(),
+        )
+        .await;
+    publish_member_revocation(
+        state,
+        target.workspace_id,
+        context.member.user_id,
+        &revocation,
+    )
+    .await;
+    let workspace_id = target.workspace_id.to_string();
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::events::EVENT_MEMBER_REMOVED.into(), workspace_id: workspace_id.clone(),
+        actor_type: "member".into(), actor_id: context.member.user_id.to_string(),
+        payload: serde_json::json!({"member_id": target.id, "workspace_id": workspace_id, "user_id": target.user_id}),
+        ..Default::default()
+    });
+    state
+        .daemon_notifier
+        .notify_workspaces_changed(&target.user_id.to_string())
+        .await;
+    StatusCode::NO_CONTENT.into_response()
+}
+
+async fn delete_member(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(path): Path<MemberPath>,
+) -> Response {
+    let Ok(member_id) = Uuid::parse_str(&path.member_id) else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid member id");
+    };
+    let target = match member::get_member(&state.pool, member_id).await {
+        Ok(Some(target)) if target.workspace_id == context.member.workspace_id => target,
+        _ => return error_response(StatusCode::NOT_FOUND, "member not found"),
+    };
+    remove_member_common(&state, &context, target).await
+}
+
+async fn leave_workspace(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    let response = remove_member_common(&state, &context, context.member.clone()).await;
+    if response.status() == StatusCode::INTERNAL_SERVER_ERROR {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to leave workspace",
+        );
+    }
+    response
+}
+
+#[derive(Serialize)]
+struct ShareLinkResponse {
+    id: String,
+    workspace_id: String,
+    code: String,
+    created_by: String,
+    role: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expires_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_uses: Option<i32>,
+    use_count: i32,
+    is_active: bool,
+    created_at: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    creator_name: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    creator_email: String,
+}
+
+impl From<cordy_db::models::WorkspaceShareLink> for ShareLinkResponse {
+    fn from(link: cordy_db::models::WorkspaceShareLink) -> Self {
+        Self {
+            id: link.id.to_string(),
+            workspace_id: link.workspace_id.to_string(),
+            code: link.code,
+            created_by: link.created_by.to_string(),
+            role: link.role,
+            expires_at: link.expires_at.map(crate::timefmt::rfc3339),
+            max_uses: link.max_uses,
+            use_count: link.use_count,
+            is_active: link.is_active,
+            created_at: crate::timefmt::rfc3339(link.created_at),
+            creator_name: String::new(),
+            creator_email: String::new(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct CreateShareLinkRequest {
+    #[serde(default)]
+    role: String,
+    expires_in: Option<i64>,
+    max_uses: Option<i64>,
+}
+
+async fn create_share_link(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    body: Bytes,
+) -> Response {
+    let request: CreateShareLinkRequest = match serde_json::from_slice(&body) {
+        Ok(request) => request,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
+    };
+    let role = match request.role.trim().to_ascii_lowercase().as_str() {
+        "" | "member" => "member",
+        "admin" => "admin",
+        _ => return error_response(StatusCode::BAD_REQUEST, "invalid role"),
+    };
+    const MAX_HOURS: i64 = i64::MAX / 3_600_000_000_000;
+    let expires_at = match request.expires_in {
+        Some(hours) if !(1..=MAX_HOURS).contains(&hours) => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                &format!("expires_in must be between 1 and {MAX_HOURS} hours"),
+            )
+        }
+        Some(hours) => chrono::Utc::now().checked_add_signed(chrono::Duration::hours(hours)),
+        None => None,
+    };
+    let max_uses = match request.max_uses {
+        Some(value) if !(1..=i32::MAX as i64).contains(&value) => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "max_uses must be between 1 and 2147483647",
+            )
+        }
+        Some(value) => Some(value as i32),
+        None => None,
+    };
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to create share link",
+            )
+        }
+    };
+    if share_link::deactivate_workspace_share_links(&mut *transaction, context.member.workspace_id)
+        .await
+        .is_err()
+    {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to create share link",
+        );
+    }
+    let mut bytes = [0_u8; 12];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    let code = hex::encode(bytes);
+    let link = match share_link::create_share_link(
+        &mut *transaction,
+        context.member.workspace_id,
+        &code,
+        context.member.user_id,
+        role,
+        expires_at,
+        max_uses,
+    )
+    .await
+    {
+        Ok(Some(link)) => link,
+        Err(error) if unique_violation(&error) => {
+            return error_response(
+                StatusCode::CONFLICT,
+                "a share link is already active for this workspace",
+            )
+        }
+        _ => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to create share link",
+            )
+        }
+    };
+    if transaction.commit().await.is_err() {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to create share link",
+        );
+    }
+    (StatusCode::CREATED, Json(ShareLinkResponse::from(link))).into_response()
+}
+
+async fn list_share_links(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    match share_link::list_share_links_by_workspace(&state.pool, context.member.workspace_id).await
+    {
+        Ok(rows) => Json(
+            rows.into_iter()
+                .map(|row| ShareLinkResponse {
+                    id: row.id.map(|id| id.to_string()).unwrap_or_default(),
+                    workspace_id: row
+                        .workspace_id
+                        .map(|id| id.to_string())
+                        .unwrap_or_default(),
+                    code: row.code,
+                    created_by: row.created_by.map(|id| id.to_string()).unwrap_or_default(),
+                    role: row.role,
+                    expires_at: row.expires_at.map(crate::timefmt::rfc3339),
+                    max_uses: row.max_uses,
+                    use_count: row.use_count,
+                    is_active: row.is_active,
+                    created_at: row
+                        .created_at
+                        .map(crate::timefmt::rfc3339)
+                        .unwrap_or_default(),
+                    creator_name: row.creator_name,
+                    creator_email: row.creator_email,
+                })
+                .collect::<Vec<_>>(),
+        )
+        .into_response(),
+        Err(_) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to list share links",
+        ),
+    }
+}
+
+#[derive(Deserialize)]
+struct ShareLinkPath {
+    link_id: String,
+}
+
+async fn revoke_share_link(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(path): Path<ShareLinkPath>,
+) -> Response {
+    let Ok(link_id) = Uuid::parse_str(&path.link_id) else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid link id");
+    };
+    match share_link::revoke_share_link(&state.pool, link_id, context.member.workspace_id).await {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(_) => error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to revoke share link",
+        ),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum TaskOwnerKind {
+    Agent,
+    Issue,
+    Runtime,
+}
+
+async fn workspace_owner_page(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    workspace_id: Uuid,
+    kind: TaskOwnerKind,
+    cursor: Option<Uuid>,
+) -> anyhow::Result<Vec<Uuid>> {
+    const LIMIT: i32 = 500;
+    use cordy_db::queries::workspace_delete as deletion;
+    let rows = match (kind, cursor) {
+        (TaskOwnerKind::Agent, None) => {
+            deletion::list_workspace_agent_id_first_page(&mut **transaction, workspace_id, LIMIT)
+                .await?
+        }
+        (TaskOwnerKind::Agent, Some(cursor)) => {
+            deletion::list_workspace_agent_id_page(&mut **transaction, workspace_id, cursor, LIMIT)
+                .await?
+        }
+        (TaskOwnerKind::Issue, None) => {
+            deletion::list_workspace_issue_id_first_page(&mut **transaction, workspace_id, LIMIT)
+                .await?
+        }
+        (TaskOwnerKind::Issue, Some(cursor)) => {
+            deletion::list_workspace_issue_id_page(&mut **transaction, workspace_id, cursor, LIMIT)
+                .await?
+        }
+        (TaskOwnerKind::Runtime, None) => {
+            deletion::list_workspace_runtime_id_first_page(&mut **transaction, workspace_id, LIMIT)
+                .await?
+        }
+        (TaskOwnerKind::Runtime, Some(cursor)) => {
+            deletion::list_workspace_runtime_id_page(
+                &mut **transaction,
+                workspace_id,
+                cursor,
+                LIMIT,
+            )
+            .await?
+        }
+    };
+    Ok(rows.into_iter().flatten().collect())
+}
+
+async fn task_page(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    owner_id: Uuid,
+    kind: TaskOwnerKind,
+    cursor: Option<Uuid>,
+) -> anyhow::Result<Vec<Uuid>> {
+    const LIMIT: i32 = 1000;
+    use cordy_db::queries::workspace_delete as deletion;
+    let rows = match (kind, cursor) {
+        (TaskOwnerKind::Agent, None) => {
+            deletion::list_task_i_ds_by_agent_first_page(&mut **transaction, owner_id, LIMIT)
+                .await?
+        }
+        (TaskOwnerKind::Agent, Some(cursor)) => {
+            deletion::list_task_i_ds_by_agent_page(&mut **transaction, owner_id, cursor, LIMIT)
+                .await?
+        }
+        (TaskOwnerKind::Issue, None) => {
+            deletion::list_task_i_ds_by_issue_first_page(&mut **transaction, owner_id, LIMIT)
+                .await?
+        }
+        (TaskOwnerKind::Issue, Some(cursor)) => {
+            deletion::list_task_i_ds_by_issue_page(&mut **transaction, owner_id, cursor, LIMIT)
+                .await?
+        }
+        (TaskOwnerKind::Runtime, None) => {
+            deletion::list_task_i_ds_by_runtime_first_page(&mut **transaction, owner_id, LIMIT)
+                .await?
+        }
+        (TaskOwnerKind::Runtime, Some(cursor)) => {
+            deletion::list_task_i_ds_by_runtime_page(&mut **transaction, owner_id, cursor, LIMIT)
+                .await?
+        }
+    };
+    Ok(rows.into_iter().flatten().collect())
+}
+
+async fn sweep_tasks_for_owner(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    owner_id: Uuid,
+    kind: TaskOwnerKind,
+) -> anyhow::Result<()> {
+    use cordy_db::queries::workspace_delete as deletion;
+    for _ in 0..3 {
+        let mut cursor = None;
+        let mut deleted = 0_usize;
+        loop {
+            let task_ids = task_page(transaction, owner_id, kind, cursor).await?;
+            let Some(last_id) = task_ids.last().copied() else {
+                break;
+            };
+            deletion::detach_task_batch_references(&mut **transaction, task_ids.clone()).await?;
+            deletion::delete_task_batch(&mut **transaction, task_ids.clone()).await?;
+            deleted += task_ids.len();
+            cursor = Some(last_id);
+        }
+        if deleted == 0 {
+            return Ok(());
+        }
+    }
+    anyhow::bail!("tasks kept appearing after the workspace owner was fenced")
+}
+
+async fn delete_workspace_tasks(
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    workspace_id: Uuid,
+) -> anyhow::Result<()> {
+    for kind in [
+        TaskOwnerKind::Agent,
+        TaskOwnerKind::Issue,
+        TaskOwnerKind::Runtime,
+    ] {
+        let mut cursor = None;
+        loop {
+            let owners = workspace_owner_page(transaction, workspace_id, kind, cursor).await?;
+            let Some(last_id) = owners.last().copied() else {
+                break;
+            };
+            for owner_id in owners {
+                sweep_tasks_for_owner(transaction, owner_id, kind).await?;
+                if matches!(kind, TaskOwnerKind::Agent) {
+                    cordy_db::queries::workspace_delete::delete_task_tokens_by_agent(
+                        &mut **transaction,
+                        owner_id,
+                    )
+                    .await?;
+                }
+            }
+            cursor = Some(last_id);
+        }
+    }
+    Ok(())
+}
+
+fn retryable_lock_error(error: &impl std::fmt::Display) -> bool {
+    let message = error.to_string().to_ascii_lowercase();
+    message.contains("55p03")
+        || message.contains("40p01")
+        || message.contains("lock timeout")
+        || message.contains("deadlock detected")
+}
+
+fn workspace_delete_error(retryable: bool) -> Response {
+    error_response(
+        if retryable {
+            StatusCode::SERVICE_UNAVAILABLE
+        } else {
+            StatusCode::INTERNAL_SERVER_ERROR
+        },
+        if retryable {
+            "workspace deletion is temporarily blocked by another operation, please try again"
+        } else {
+            "failed to delete workspace"
+        },
+    )
+}
+
+async fn delete_workspace(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    if context.member.role != "owner" {
+        return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
+    }
+    let workspace_id = context.member.workspace_id;
+    let affected_users = member::list_members(&state.pool, workspace_id)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|member| member.user_id)
+        .collect::<Vec<_>>();
+    for user_id in &affected_users {
+        state
+            .membership_cache
+            .invalidate(&user_id.to_string(), &workspace_id.to_string())
+            .await;
+    }
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to delete workspace",
+            )
+        }
+    };
+    macro_rules! step {
+        ($name:literal, $expr:expr) => {
+            if let Err(error) = $expr.await {
+                tracing::warn!(%error, workspace_id = %workspace_id, step = $name, "workspace delete failed");
+                return workspace_delete_error(retryable_lock_error(&error));
+            }
+        };
+    }
+    step!(
+        "set lock timeout",
+        sqlx::query("SET LOCAL lock_timeout = '10s'").execute(&mut *tx)
+    );
+    step!(
+        "lock workspace",
+        workspace::lock_workspace_for_delete(&mut *tx, workspace_id)
+    );
+    step!(
+        "lock chat sessions",
+        cordy_db::queries::chat::lock_chat_sessions_by_workspace(&mut *tx, workspace_id)
+    );
+    step!(
+        "set teardown mode",
+        cordy_db::queries::workspace_delete::set_workspace_teardown_mode(&mut *tx)
+    );
+    step!(
+        "lock agents",
+        cordy_db::queries::workspace_delete::lock_workspace_task_owner_agents(
+            &mut *tx,
+            workspace_id
+        )
+    );
+    step!(
+        "lock issues",
+        cordy_db::queries::workspace_delete::lock_workspace_task_owner_issues(
+            &mut *tx,
+            workspace_id
+        )
+    );
+    step!(
+        "lock runtimes",
+        cordy_db::queries::workspace_delete::lock_workspace_task_owner_runtimes(
+            &mut *tx,
+            workspace_id
+        )
+    );
+    step!(
+        "prepare links",
+        cordy_db::queries::workspace_delete::prepare_workspace_deletion_links(
+            &mut *tx,
+            workspace_id
+        )
+    );
+    step!(
+        "delete chat pins",
+        cordy_db::queries::chat_pinned_agent::delete_chat_pinned_agents_by_workspace(
+            &mut *tx,
+            workspace_id
+        )
+    );
+    step!(
+        "lock usage rollup",
+        cordy_db::queries::workspace_delete::lock_task_usage_rollup_for_workspace_delete(&mut *tx)
+    );
+    step!(
+        "delete tasks",
+        delete_workspace_tasks(&mut tx, workspace_id)
+    );
+    step!(
+        "delete leaf data",
+        cordy_db::queries::workspace_delete::delete_workspace_leaf_data(&mut *tx, workspace_id)
+    );
+    step!(
+        "delete autopilot runs",
+        cordy_db::queries::workspace_delete::delete_workspace_autopilot_runs(
+            &mut *tx,
+            workspace_id
+        )
+    );
+    step!(
+        "delete quota reservations",
+        cordy_db::queries::workspace_delete::delete_workspace_autopilot_quota_reservations(
+            &mut *tx,
+            workspace_id
+        )
+    );
+    step!(
+        "delete quota periods",
+        cordy_db::queries::workspace_delete::delete_workspace_autopilot_quota_periods(
+            &mut *tx,
+            workspace_id
+        )
+    );
+    step!(
+        "delete chat messages",
+        cordy_db::queries::workspace_delete::delete_workspace_chat_messages(&mut *tx, workspace_id)
+    );
+    step!(
+        "delete communication roots",
+        cordy_db::queries::workspace_delete::delete_workspace_communication_roots(
+            &mut *tx,
+            workspace_id
+        )
+    );
+    step!(
+        "delete comments",
+        cordy_db::queries::workspace_delete::delete_workspace_comments(&mut *tx, workspace_id)
+    );
+    step!(
+        "delete issue roots",
+        cordy_db::queries::workspace_delete::delete_workspace_issue_roots(&mut *tx, workspace_id)
+    );
+    step!(
+        "delete issue statuses",
+        cordy_db::queries::issue_status::delete_issue_status_entries_for_workspace(
+            &mut *tx,
+            workspace_id
+        )
+    );
+    step!(
+        "delete autopilot children",
+        cordy_db::queries::workspace_delete::delete_workspace_autopilot_children(
+            &mut *tx,
+            workspace_id
+        )
+    );
+    step!(
+        "delete autopilots",
+        cordy_db::queries::workspace_delete::delete_workspace_autopilots(&mut *tx, workspace_id)
+    );
+    step!(
+        "delete pull requests",
+        cordy_db::queries::workspace_delete::delete_workspace_pull_requests(&mut *tx, workspace_id)
+    );
+    step!(
+        "delete integrations",
+        cordy_db::queries::workspace_delete::delete_workspace_connections(&mut *tx, workspace_id)
+    );
+    step!(
+        "delete squads and skills",
+        cordy_db::queries::workspace_delete::delete_workspace_squads_and_skills(
+            &mut *tx,
+            workspace_id
+        )
+    );
+    step!(
+        "delete plugin data",
+        cordy_db::queries::workspace_delete::delete_workspace_plugin_data(&mut *tx, workspace_id)
+    );
+    step!(
+        "delete agents",
+        cordy_db::queries::workspace_delete::delete_workspace_agents(&mut *tx, workspace_id)
+    );
+    step!(
+        "delete runtimes and projects",
+        cordy_db::queries::workspace_delete::delete_workspace_runtimes_and_projects(
+            &mut *tx,
+            workspace_id
+        )
+    );
+    step!(
+        "delete administration",
+        cordy_db::queries::workspace_delete::delete_workspace_administration(
+            &mut *tx,
+            workspace_id
+        )
+    );
+    step!(
+        "delete workspace",
+        workspace::delete_workspace(&mut *tx, workspace_id)
+    );
+    if let Err(error) = tx.commit().await {
+        return workspace_delete_error(retryable_lock_error(&error));
+    }
+    state.bus.publish(&cordy_events::Event {
+        event_type: cordy_protocol::events::EVENT_WORKSPACE_DELETED.into(),
+        workspace_id: workspace_id.to_string(),
+        actor_type: "member".into(),
+        actor_id: context.member.user_id.to_string(),
+        payload: serde_json::json!({"workspace_id": workspace_id}),
+        ..Default::default()
+    });
+    for user_id in affected_users {
+        state
+            .daemon_notifier
+            .notify_workspaces_changed(&user_id.to_string())
+            .await;
+    }
+    StatusCode::NO_CONTENT.into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::Request;
+    use axum::middleware;
     use chrono::{TimeZone, Utc};
+    use cordy_middleware::workspace::WorkspaceGuardState;
     use serde_json::json;
     use tower::ServiceExt;
 
@@ -390,21 +1723,109 @@ mod tests {
         authenticated_router().with_state(state)
     }
 
+    fn guarded_workspace_router() -> Router {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = HandlerState::new(
+            pool.clone(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        member_router()
+            .route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(pool.clone(), "id"),
+                cordy_middleware::workspace::require_workspace,
+            ))
+            .merge(admin_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url_with_roles(
+                    pool.clone(),
+                    "id",
+                    vec!["owner".into(), "admin".into()],
+                ),
+                cordy_middleware::workspace::require_workspace,
+            )))
+            .merge(crate::invitation::workspace_admin_router().route_layer(
+                middleware::from_fn_with_state(
+                    WorkspaceGuardState::from_url_with_roles(
+                        pool,
+                        "id",
+                        vec!["owner".into(), "admin".into()],
+                    ),
+                    cordy_middleware::workspace::require_workspace,
+                ),
+            ))
+            .with_state(state)
+    }
+
     #[tokio::test]
-    async fn share_link_join_rejects_machine_credentials_before_database_access() {
-        for source in ["task_token", "cloud_pat"] {
-            let response = test_router()
+    async fn workspace_collection_create_requires_authentication() {
+        let response = test_router()
+            .oneshot(
+                Request::post("/api/workspaces")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"name":"Cordy","slug":"cordy-team"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn workspace_member_and_admin_routes_require_authentication() {
+        let workspace_id = Uuid::new_v4();
+        for (method, path) in [
+            ("GET", format!("/api/workspaces/{workspace_id}/members")),
+            ("POST", format!("/api/workspaces/{workspace_id}/leave")),
+            ("POST", format!("/api/workspaces/{workspace_id}/members")),
+            ("PATCH", format!("/api/workspaces/{workspace_id}")),
+            ("GET", format!("/api/workspaces/{workspace_id}/share-links")),
+        ] {
+            let response = guarded_workspace_router()
                 .oneshot(
-                    Request::post("/api/share-links/join")
-                        .header("x-user-id", Uuid::nil().to_string())
-                        .header("x-actor-source", source)
-                        .body(Body::from(r#"{"code":"share-code"}"#))
+                    Request::builder()
+                        .method(method)
+                        .uri(path)
+                        .body(Body::empty())
                         .unwrap(),
                 )
                 .await
                 .unwrap();
-            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{source}");
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED, "{method}");
         }
+    }
+
+    #[tokio::test]
+    async fn task_token_cannot_cross_workspace_on_new_routes() {
+        let requested = Uuid::new_v4();
+        let bound = Uuid::new_v4();
+        let response = guarded_workspace_router()
+            .oneshot(
+                Request::get(format!("/api/workspaces/{requested}/members"))
+                    .header("x-actor-source", "task_token")
+                    .header("x-workspace-id", bound.to_string())
+                    .header("x-user-id", Uuid::new_v4().to_string())
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[test]
+    fn workspace_input_normalization_matches_go() {
+        assert_eq!(default_issue_prefix("front-end"), "FRON");
+        assert_eq!(default_issue_prefix("team-2"), "TEAM");
+        assert_eq!(
+            normalize_issue_prefix(" ab12 ").unwrap(),
+            Some("AB12".into())
+        );
+        assert!(normalize_issue_prefix("bad-prefix").is_err());
+        assert!(reserved_slug("login"));
+        assert!(!reserved_slug("cordy-team"));
+        assert_eq!(normalized_member_role("", true), Some("member"));
+        assert_eq!(normalized_member_role("owner", false), Some("owner"));
+        assert_eq!(normalized_member_role(" OWNER ", false), None);
     }
 
     #[tokio::test]

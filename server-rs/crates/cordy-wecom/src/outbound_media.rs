@@ -30,13 +30,19 @@ use sqlx::PgPool;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use cordy_channel::RuntimeTasks;
 use cordy_db::models::Attachment;
+use cordy_db::queries::agent::get_agent_task;
 use cordy_db::queries::attachment::list_attachments_by_chat_message;
+use cordy_db::queries::channel::{
+    get_channel_chat_session_binding_by_session, get_channel_installation,
+};
 use cordy_events::Event;
 
 use crate::media_upload::{
     MediaMsgType, MediaSend, MediaUploadTooLarge, OutboundMedia, MAX_MEDIA_UPLOAD_BYTES,
 };
+use crate::outbound_relay::{OutboundRelay, RelayEventHandler};
 use crate::senders_registry::SendersRegistry;
 use crate::ws_sender::{is_ack_timeout, is_context_cancelled, is_write_attempted, WsSender};
 
@@ -174,20 +180,26 @@ struct DeliveryCounters {
 
 pub struct Outbound {
     pool: PgPool,
+    app_url: String,
     /// None — a deployment with no object storage — delivers an answer exactly
     /// as before, and the agent is told as much in its brief.
     objects: Option<Arc<dyn MediaObjectStore>>,
     senders: Option<Arc<SendersRegistry>>,
+    relay: Option<Arc<OutboundRelay>>,
     counters: Arc<DeliveryCounters>,
+    runtime_tasks: Arc<RuntimeTasks>,
 }
 
 impl Outbound {
     pub fn new(pool: PgPool) -> Self {
         Self {
             pool,
+            app_url: String::new(),
             objects: None,
             senders: None,
+            relay: None,
             counters: Arc::new(DeliveryCounters::default()),
+            runtime_tasks: Arc::new(RuntimeTasks::new()),
         }
     }
 
@@ -201,6 +213,211 @@ impl Outbound {
     pub fn with_senders(mut self, senders: Arc<SendersRegistry>) -> Self {
         self.senders = Some(senders);
         self
+    }
+
+    pub fn with_relay(mut self, relay: Arc<OutboundRelay>) -> Self {
+        self.relay = Some(relay);
+        self
+    }
+
+    pub fn with_runtime_tasks(mut self, runtime_tasks: Arc<RuntimeTasks>) -> Self {
+        self.runtime_tasks = runtime_tasks;
+        self
+    }
+
+    pub fn with_app_url(mut self, app_url: impl Into<String>) -> Self {
+        self.app_url = app_url.into().trim_end_matches('/').to_string();
+        self
+    }
+
+    /// Subscribes the production text + attachment delivery path. Text is
+    /// accepted by WeCom before attachment work is detached, preserving the
+    /// answer-first contract.
+    pub fn register(self: &Arc<Self>, bus: &cordy_events::Bus) {
+        let me = Arc::clone(self);
+        let tasks = self.runtime_tasks.clone();
+        bus.subscribe(cordy_protocol::EVENT_CHAT_DONE, move |event| {
+            let me = Arc::clone(&me);
+            let event = event.clone();
+            tasks.spawn(async move {
+                match tokio::time::timeout(REPLY_BUDGET, me.process_event(&event, true)).await {
+                    Err(_) => tracing::warn!(
+                        chat_session_id = %event.chat_session_id,
+                        "wecom outbound: reply delivery timed out"
+                    ),
+                    Ok(Err(error)) => tracing::warn!(
+                        %error,
+                        chat_session_id = %event.chat_session_id,
+                        "wecom outbound: reply delivery failed"
+                    ),
+                    Ok(Ok(())) => {}
+                }
+            });
+        });
+        let me = Arc::clone(self);
+        let tasks = self.runtime_tasks.clone();
+        bus.subscribe(cordy_protocol::EVENT_INBOX_NEW, move |event| {
+            let me = Arc::clone(&me);
+            let event = event.clone();
+            tasks.spawn(async move {
+                if let Err(error) = tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    me.process_inbox_event(&event, true),
+                )
+                .await
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("inbox delivery timed out")))
+                {
+                    tracing::warn!(%error, "wecom outbound: inbox delivery failed");
+                }
+            });
+        });
+    }
+
+    async fn process_event(&self, event: &Event, allow_relay: bool) -> anyhow::Result<()> {
+        let Some(session_id) = event_uuid(event, &event.chat_session_id, "chat_session_id") else {
+            return Ok(());
+        };
+        let Some(task_id) = event_uuid(event, &event.task_id, "task_id") else {
+            return Ok(());
+        };
+        let Some(binding) =
+            get_channel_chat_session_binding_by_session(&self.pool, session_id, crate::TYPE_WECOM)
+                .await?
+        else {
+            return Ok(());
+        };
+        let task = get_agent_task(&self.pool, task_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("load agent task: no row"))?;
+        if !cordy_channel_engine::task_input_is_channel_ingested(
+            &self.pool,
+            task.chat_input_task_id,
+        )
+        .await?
+        {
+            return Ok(());
+        }
+        let Some(inst) =
+            get_channel_installation(&self.pool, binding.installation_id, crate::TYPE_WECOM)
+                .await?
+        else {
+            anyhow::bail!("load wecom installation: no row");
+        };
+        if inst.status != crate::types::INSTALLATION_ACTIVE {
+            return Ok(());
+        }
+        let target = attachment_target(&binding);
+        if self
+            .senders
+            .as_ref()
+            .and_then(|senders| senders.get(inst.id))
+            .is_none()
+        {
+            if allow_relay {
+                if let Some(relay) = &self.relay {
+                    return relay
+                        .forward_chat_done(&CancellationToken::new(), inst.id, event)
+                        .await;
+                }
+            }
+            anyhow::bail!("wecom: connection not ready on this replica");
+        }
+        let content = event
+            .payload
+            .get("content")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default();
+        if !content.is_empty() {
+            let sender = self
+                .senders
+                .as_ref()
+                .and_then(|senders| senders.get(inst.id))
+                .ok_or_else(|| anyhow::anyhow!("wecom: connection not ready"))?;
+            sender
+                .send_text_ctx(
+                    &CancellationToken::new(),
+                    &target.chat_id,
+                    target.chat_type,
+                    content,
+                )
+                .await?;
+        }
+        if self.may_carry_attachments(event) {
+            self.deliver_attachments(event, target);
+        }
+        Ok(())
+    }
+
+    async fn process_inbox_event(&self, event: &Event, allow_relay: bool) -> anyhow::Result<()> {
+        let Some(item) = event.payload.get("item") else {
+            return Ok(());
+        };
+        if item.get("recipient_type").and_then(|value| value.as_str()) != Some("member") {
+            return Ok(());
+        }
+        let Some(recipient_id) = item
+            .get("recipient_id")
+            .and_then(|value| value.as_str())
+            .and_then(|value| value.parse::<Uuid>().ok())
+        else {
+            return Ok(());
+        };
+        let Some(workspace_id) = item
+            .get("workspace_id")
+            .and_then(|value| value.as_str())
+            .and_then(|value| value.parse::<Uuid>().ok())
+        else {
+            return Ok(());
+        };
+        let Some(binding) = cordy_db::queries::channel::find_channel_binding_for_member(
+            &self.pool,
+            workspace_id,
+            recipient_id,
+            crate::TYPE_WECOM,
+        )
+        .await?
+        else {
+            return Ok(());
+        };
+        let sender = self
+            .senders
+            .as_ref()
+            .and_then(|senders| senders.get(binding.installation_id));
+        let Some(sender) = sender else {
+            if allow_relay {
+                if let Some(relay) = &self.relay {
+                    return relay
+                        .forward_inbox_new(
+                            &CancellationToken::new(),
+                            binding.installation_id,
+                            event,
+                        )
+                        .await;
+                }
+            }
+            anyhow::bail!("wecom: connection not ready on this replica");
+        };
+        let slug = cordy_db::queries::workspace::get_workspace(&self.pool, workspace_id)
+            .await?
+            .map(|workspace| workspace.slug)
+            .unwrap_or_default();
+        let text = crate::inbox_message::build_inbox_markdown(
+            item,
+            &workspace_id.to_string(),
+            &slug,
+            &self.app_url,
+        );
+        if text.is_empty() {
+            return Ok(());
+        }
+        sender
+            .send_text_ctx(
+                &CancellationToken::new(),
+                &binding.channel_user_id,
+                1,
+                &text,
+            )
+            .await
     }
 
     /// Reports whether this turn is worth the lookups even though the agent
@@ -226,6 +443,15 @@ impl Outbound {
         if workspace_id.is_nil() || to.installation_id.is_nil() || to.chat_id.is_empty() {
             return;
         }
+        self.deliver_attachment_target(message_id, workspace_id, to);
+    }
+
+    fn deliver_attachment_target(
+        &self,
+        message_id: Uuid,
+        workspace_id: Uuid,
+        to: AttachmentTarget,
+    ) {
         // Admission is claimed here rather than inside the spawned task,
         // because a task that has already started is a task this cap did not
         // bound. The lookup it runs is on the far side of this gate too: under
@@ -247,19 +473,102 @@ impl Outbound {
         }
         let me = Arc::new(Self {
             pool: self.pool.clone(),
+            app_url: self.app_url.clone(),
             objects: self.objects.clone(),
             senders: self.senders.clone(),
+            relay: self.relay.clone(),
             counters: Arc::clone(&self.counters),
+            runtime_tasks: self.runtime_tasks.clone(),
         });
-        tokio::spawn(async move {
+        let tasks = self.runtime_tasks.clone();
+        let rejected = me.clone();
+        if !tasks.spawn(async move {
             let ctx = CancellationToken::new();
-            let cancel = ctx.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(ATTACHMENT_BUDGET).await;
-                cancel.cancel();
-            });
-            send_attachments(me, ctx, message_id, workspace_id, to).await;
-        });
+            if tokio::time::timeout(
+                ATTACHMENT_BUDGET,
+                send_attachments(me, ctx, message_id, workspace_id, to),
+            )
+            .await
+            .is_err()
+            {
+                tracing::warn!("wecom outbound: attachment delivery timed out");
+            }
+        }) {
+            rejected.release_attachment_admission();
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl RelayEventHandler for Outbound {
+    async fn handle_chat_done(&self, event: Event) -> anyhow::Result<()> {
+        self.process_event(&event, false).await
+    }
+
+    async fn handle_inbox_new(&self, event: Event) -> anyhow::Result<()> {
+        self.process_inbox_event(&event, false).await
+    }
+
+    async fn handle_attachments(
+        &self,
+        installation_id: Uuid,
+        message_id: Uuid,
+        workspace_id: Uuid,
+        chat_id: String,
+        chat_type: i64,
+    ) -> anyhow::Result<()> {
+        if self.objects.is_none() {
+            anyhow::bail!("wecom: attachment storage not configured on relay holder");
+        }
+        if self
+            .senders
+            .as_ref()
+            .and_then(|senders| senders.get(installation_id))
+            .is_none()
+        {
+            anyhow::bail!("wecom: connection lost before relayed attachment delivery");
+        }
+        self.deliver_attachment_target(
+            message_id,
+            workspace_id,
+            AttachmentTarget {
+                installation_id,
+                chat_id,
+                chat_type,
+            },
+        );
+        Ok(())
+    }
+}
+
+const REPLY_BUDGET: std::time::Duration = std::time::Duration::from_secs(10);
+
+fn event_uuid(event: &Event, envelope: &str, payload_key: &str) -> Option<Uuid> {
+    let raw = if envelope.is_empty() {
+        event
+            .payload
+            .get(payload_key)
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+    } else {
+        envelope
+    };
+    raw.parse().ok().filter(|id: &Uuid| !id.is_nil())
+}
+
+fn attachment_target(binding: &cordy_db::models::ChannelChatSessionBinding) -> AttachmentTarget {
+    let config =
+        serde_json::from_value::<crate::resolvers::WecomBindingConfig>(binding.config.clone()).ok();
+    AttachmentTarget {
+        installation_id: binding.installation_id,
+        chat_id: config
+            .as_ref()
+            .map(|config| config.chat_id.clone())
+            .filter(|chat_id| !chat_id.is_empty())
+            .unwrap_or_else(|| binding.channel_chat_id.clone()),
+        chat_type: crate::ws_frame::aibot_chat_type_from_channel(&cordy_channel::ChatType(
+            binding.chat_type.clone(),
+        )),
     }
 }
 
@@ -290,8 +599,19 @@ fn send_attachments(
     // forces the compiler to verify the concrete, owned shape instead of a
     // higher-ranked generalization that rustc cannot prove here.
     Box::pin(async move {
+        struct AdmissionGuard(Arc<DeliveryCounters>);
+        impl Drop for AdmissionGuard {
+            fn drop(&mut self) {
+                let mut admitted = self
+                    .0
+                    .admitted
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner());
+                *admitted -= 1;
+            }
+        }
+        let _admission_guard = AdmissionGuard(Arc::clone(&me.counters));
         send_attachments_owned(Arc::clone(&me), ctx, message_id, workspace_id, to).await;
-        me.release_attachment_admission();
     })
 }
 
@@ -315,7 +635,7 @@ async fn send_attachments_owned(
             );
             tell_user(
                 ctx.clone(),
-                senders.clone(),
+                me.clone(),
                 to.clone(),
                 MEDIA_LOOKUP_FAILED_TEXT.to_string(),
             )
@@ -342,7 +662,7 @@ async fn send_attachments_owned(
         );
         tell_user(
             ctx.clone(),
-            senders.clone(),
+            me.clone(),
             to.clone(),
             MEDIA_SEND_FAILED_TEXT.to_string(),
         )
@@ -376,14 +696,35 @@ async fn send_attachments_owned(
     // delivered the words may have been minutes ago on a socket since
     // replaced, and the registry always holds the live one.
     let Some(sender) = senders.get(to.installation_id) else {
-        // Nothing to say it with — the socket that would carry the apology
-        // is the socket that is missing. The log is the only place this can
-        // go.
-        tracing::warn!(
-            installation_id = %to.installation_id,
-            attachments = rows.len(),
-            "wecom outbound: no live connection for attachment delivery"
-        );
+        // No upload or send has started, so moving the complete attachment
+        // job to the successor is safe. The relay claim prevents two holders
+        // from accepting it during rollover.
+        let Some(relay) = &me.relay else {
+            tracing::warn!(
+                installation_id = %to.installation_id,
+                attachments = rows.len(),
+                "wecom outbound: no live connection for attachment delivery"
+            );
+            return;
+        };
+        if let Err(error) = relay
+            .forward_attachments(
+                &ctx,
+                to.installation_id,
+                message_id,
+                workspace_id,
+                &to.chat_id,
+                to.chat_type,
+            )
+            .await
+        {
+            tracing::warn!(
+                %error,
+                installation_id = %to.installation_id,
+                attachments = rows.len(),
+                "wecom outbound: attachment rollover relay failed"
+            );
+        }
         return;
     };
     let mut failed = 0usize;
@@ -432,7 +773,7 @@ async fn send_attachments_owned(
         lines.push(MEDIA_SEND_UNKNOWN_TEXT);
     }
     if !lines.is_empty() {
-        tell_user(ctx.clone(), senders.clone(), to.clone(), lines.join("\n")).await;
+        tell_user(ctx.clone(), me.clone(), to.clone(), lines.join("\n")).await;
     }
 }
 
@@ -441,17 +782,26 @@ async fn send_attachments_owned(
 /// and dropped rather than propagated — there is nothing further to try.
 async fn tell_user(
     ctx: CancellationToken,
-    senders: Arc<SendersRegistry>,
+    outbound: Arc<Outbound>,
     to: AttachmentTarget,
     text: String,
 ) {
-    let Some(sender) = senders.get(to.installation_id) else {
-        return;
-    };
-    if let Err(err) = sender
-        .send_text_ctx(&ctx, &to.chat_id, to.chat_type, &text)
-        .await
+    let result = if let Some(sender) = outbound
+        .senders
+        .as_ref()
+        .and_then(|senders| senders.get(to.installation_id))
     {
+        sender
+            .send_text_ctx(&ctx, &to.chat_id, to.chat_type, &text)
+            .await
+    } else if let Some(relay) = &outbound.relay {
+        relay
+            .send_text(&ctx, to.installation_id, &to.chat_id, to.chat_type, &text)
+            .await
+    } else {
+        Err(anyhow::anyhow!("wecom: connection not ready"))
+    };
+    if let Err(err) = result {
         tracing::warn!(
             error = %err,
             installation_id = %to.installation_id,
@@ -611,7 +961,7 @@ impl Outbound {
             .counters
             .admitted
             .lock()
-            .unwrap_or_else(|e| e.into_inner());
+            .unwrap_or_else(|error| error.into_inner());
         *admitted -= 1;
     }
 }

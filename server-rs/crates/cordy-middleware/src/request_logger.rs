@@ -10,7 +10,7 @@
 
 use axum::body::Body;
 use axum::extract::Request;
-use axum::http::StatusCode;
+use axum::http::{header, StatusCode};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 
@@ -70,6 +70,48 @@ fn is_soft_not_found(body: &[u8]) -> bool {
     SOFT_NOT_FOUND_MARKERS.iter().any(|m| lower.contains(m))
 }
 
+/// Return a user id only when the logger can independently verify a JWT.
+///
+/// The request logger sits outside authentication so it must never trust
+/// client-supplied `X-User-ID`: a rejected request could otherwise attribute
+/// its warning to an arbitrary victim. JWT bearer/cookie requests can be
+/// verified locally with the same HS256 decoder as auth. PAT, task-token and
+/// managed-proxy requests deliberately remain unattributed here; their raw
+/// forwarding headers are not evidence of identity.
+fn verified_jwt_user_id(req: &Request) -> String {
+    let token = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned)
+        .or_else(|| {
+            let cookies = req
+                .headers()
+                .get(header::COOKIE)
+                .and_then(|value| value.to_str().ok())?;
+            cookies.split(';').find_map(|pair| {
+                let (name, value) = pair.trim().split_once('=')?;
+                (name == cordy_auth::cookie::AUTH_COOKIE_NAME && !value.is_empty())
+                    .then(|| value.to_string())
+            })
+        });
+    let Some(token) = token else {
+        return String::new();
+    };
+    crate::auth::decode_jwt_claims(&token)
+        .and_then(|claims| {
+            claims
+                .get("sub")
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+        })
+        .unwrap_or_default()
+}
+
 /// Structured HTTP request logger. Skips the hot liveness endpoint to keep
 /// logs readable.
 pub async fn request_logger(req: Request, next: Next) -> Response {
@@ -82,7 +124,7 @@ pub async fn request_logger(req: Request, next: Next) -> Response {
     let method = req.method().to_string();
     let raw_path = req.uri().path().to_string();
     let request_id = header_str(&req, "x-request-id");
-    let user_id = header_str(&req, "x-user-id");
+    let user_id = verified_jwt_user_id(&req);
     let meta = req.extensions().get::<ClientMetadata>().cloned();
 
     let mut res = next.run(req).await;
@@ -166,6 +208,8 @@ fn header_str(req: &Request, name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
+    use serde_json::json;
 
     #[test]
     fn webhook_paths_redact_token_segment() {
@@ -198,5 +242,31 @@ mod tests {
         assert!(is_soft_not_found(b"{\"error\":\"task not found\"}"));
         assert!(!is_soft_not_found(b"{\"error\":\"wrong path\"}"));
         assert!(!is_soft_not_found(b""));
+    }
+
+    #[test]
+    fn spoofed_user_header_is_never_logged_as_identity() {
+        let request = Request::builder()
+            .uri("/api/me")
+            .header("x-user-id", "victim")
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(verified_jwt_user_id(&request), "");
+    }
+
+    #[test]
+    fn valid_jwt_identity_is_available_to_outer_logger() {
+        let token = encode(
+            &Header::new(Algorithm::HS256),
+            &json!({"sub":"user-1","exp":chrono::Utc::now().timestamp()+60}),
+            &EncodingKey::from_secret(cordy_auth::jwt::jwt_secret().as_bytes()),
+        )
+        .unwrap();
+        let request = Request::builder()
+            .uri("/api/me")
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(verified_jwt_user_id(&request), "user-1");
     }
 }

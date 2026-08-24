@@ -457,7 +457,7 @@ impl TaskService {
                                 recipient,
                                 "task_failed",
                                 "action_required",
-                                target.issue.id,
+                                Some(target.issue.id),
                                 &target.issue.title,
                                 Some(exhausted_comment.content.as_str()),
                                 Some("system"),

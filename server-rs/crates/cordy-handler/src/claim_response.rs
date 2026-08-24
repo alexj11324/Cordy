@@ -26,10 +26,10 @@ use crate::claim_comments::{
     build_coalesced_comment_data, comment_data_ids, format_legacy_comment_bundle,
     select_comment_delivery, CoalescedCommentData, MAX_CLAIM_COMMENT_PAYLOAD_BYTES,
 };
+use crate::daemon::DaemonClaimServices;
 use crate::error::error_response;
 use crate::mcp_merge::{merge_mcp_overlay, resolve_agent_mcp_config, WorkspaceMcpBinding};
 use crate::squad_briefing::build_squad_leader_briefing;
-use crate::state::HandlerState;
 use crate::timefmt::rfc3339;
 
 /// Max local-skill import requests claimed in one heartbeat batch.
@@ -229,7 +229,7 @@ fn github_repo_refs(resources: &[Value]) -> Vec<Value> {
     out
 }
 
-async fn list_project_resources(state: &HandlerState, project_id: Uuid) -> Vec<Value> {
+async fn list_project_resources(state: &DaemonClaimServices, project_id: Uuid) -> Vec<Value> {
     match cordy_db::queries::project_resource::list_project_resources(&state.pool, project_id).await
     {
         Ok(rows) => rows
@@ -253,7 +253,7 @@ async fn list_project_resources(state: &HandlerState, project_id: Uuid) -> Vec<V
 /// Applies project title/description/resources to the payload and returns any
 /// github_repo lifts (Go's inline project-resources block).
 async fn apply_project_context(
-    state: &HandlerState,
+    state: &DaemonClaimServices,
     payload: &mut Map<String, Value>,
     project_id: Uuid,
 ) -> Vec<Value> {
@@ -288,7 +288,11 @@ async fn apply_project_context(
     project_repos
 }
 
-async fn workspace_repos_or(state: &HandlerState, workspace_id: Uuid, fallback: Value) -> Value {
+async fn workspace_repos_or(
+    state: &DaemonClaimServices,
+    workspace_id: Uuid,
+    fallback: Value,
+) -> Value {
     if let Ok(Some(ws)) = workspace_q::get_workspace(&state.pool, workspace_id).await {
         let repos = ws.repos;
         if let Some(list) = repos.as_array() {
@@ -305,8 +309,8 @@ async fn workspace_repos_or(state: &HandlerState, workspace_id: Uuid, fallback: 
 /// A returned Err means the task must NOT be dispatched; the builder has already
 /// cancelled it where the failure semantics require it.
 #[allow(clippy::too_many_lines)]
-pub async fn build_claimed_task_response(
-    state: &HandlerState,
+pub(crate) async fn build_claimed_task_response(
+    state: &DaemonClaimServices,
     headers: &HeaderMap,
     task: &AgentTaskQueue,
     runtime: &AgentRuntime,
@@ -1479,7 +1483,7 @@ fn chat_session_resume_fallback_needed(prior_session_id: &str, prior_work_dir: &
 /// the daemon ever receives the task. If settlement fails, release the exact
 /// claim so a later attempt can retry the gate.
 async fn fail_claimed_task_before_launch(
-    state: &HandlerState,
+    state: &DaemonClaimServices,
     task: &AgentTaskQueue,
     user_message: &str,
     failure_reason: cordy_task_failure::Reason,

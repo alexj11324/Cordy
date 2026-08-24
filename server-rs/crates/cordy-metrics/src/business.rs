@@ -61,6 +61,8 @@ pub struct BusinessMetrics {
     entitlement_decision: CounterVec,
     entitlement_version_regression: CounterVec,
     autopilot_quota_decision: CounterVec,
+    autopilot_failure_monitor: CounterVec,
+    autopilot_quota_reconciler: CounterVec,
 
     active_tasks: Mutex<HashMap<String, ActiveTaskLabels>>,
 
@@ -220,6 +222,14 @@ impl BusinessMetrics {
                 "cordy_autopilot_quota_decision_total",
                 "Total autopilot quota admission outcomes.",
             ),
+            autopilot_failure_monitor: counter_vec(
+                "cordy_autopilot_failure_monitor_total",
+                "Total autopilot failure monitor outcomes by bounded stage.",
+            ),
+            autopilot_quota_reconciler: counter_vec(
+                "cordy_autopilot_quota_reconciler_total",
+                "Total autopilot quota reconciler outcomes by bounded stage.",
+            ),
             active_tasks: Mutex::new(HashMap::new()),
             events: BusinessEventMetrics::new(),
         };
@@ -261,6 +271,8 @@ impl BusinessMetrics {
             Box::new(self.entitlement_decision.clone()),
             Box::new(self.entitlement_version_regression.clone()),
             Box::new(self.autopilot_quota_decision.clone()),
+            Box::new(self.autopilot_failure_monitor.clone()),
+            Box::new(self.autopilot_quota_reconciler.clone()),
         ];
         for c in collectors {
             registry.register(c).expect("unique collector");
@@ -304,6 +316,38 @@ impl BusinessMetrics {
         };
         self.autopilot_quota_decision
             .with_label_values(&[action, source, result])
+            .inc();
+    }
+
+    pub fn record_autopilot_failure_monitor(&self, action: &str, outcome: &str) {
+        let action = match action {
+            "sweep" | "candidate" | "pause" | "rule_version" | "recipient" | "inbox"
+            | "shutdown" => action,
+            _ => "candidate",
+        };
+        let outcome = match outcome {
+            "success" | "retryable_error" | "permanent_error" | "already_inactive"
+            | "no_recipient" | "cancelled" | "timed_out" => outcome,
+            _ => "permanent_error",
+        };
+        self.autopilot_failure_monitor
+            .with_label_values(&[action, outcome])
+            .inc();
+    }
+
+    pub fn record_autopilot_quota_reconciler(&self, action: &str, outcome: &str) {
+        let action = match action {
+            "reconcile" | "shutdown" => action,
+            _ => "reconcile",
+        };
+        let outcome = match outcome {
+            "success" | "retryable_error" | "permanent_error" | "cancelled" | "timed_out" => {
+                outcome
+            }
+            _ => "permanent_error",
+        };
+        self.autopilot_quota_reconciler
+            .with_label_values(&[action, outcome])
             .inc();
     }
 

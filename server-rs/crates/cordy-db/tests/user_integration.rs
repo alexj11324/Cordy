@@ -105,6 +105,40 @@ async fn generated_user_queries_roundtrip() {
         .expect("update returning row");
     assert_eq!(preserved.onboarding_questionnaire, questionnaire);
 
+    let waitlisted = cordy_db::queries::user::join_cloud_waitlist(
+        &pool,
+        created.id,
+        Some("waitlist@example.com"),
+        Some("evaluating for our team"),
+    )
+    .await
+    .expect("join cloud waitlist")
+    .expect("update returning row");
+    assert_eq!(
+        waitlisted.cloud_waitlist_email.as_deref(),
+        Some("waitlist@example.com")
+    );
+    assert_eq!(
+        waitlisted.cloud_waitlist_reason.as_deref(),
+        Some("evaluating for our team")
+    );
+    assert_eq!(waitlisted.onboarded_at, onboarded.onboarded_at);
+
+    let waitlisted_without_reason = cordy_db::queries::user::join_cloud_waitlist(
+        &pool,
+        created.id,
+        Some("second@example.com"),
+        None,
+    )
+    .await
+    .expect("overwrite cloud waitlist")
+    .expect("update returning row");
+    assert_eq!(
+        waitlisted_without_reason.cloud_waitlist_email.as_deref(),
+        Some("second@example.com")
+    );
+    assert!(waitlisted_without_reason.cloud_waitlist_reason.is_none());
+
     let onboarded_again = cordy_db::queries::user::mark_user_onboarded(&pool, created.id)
         .await
         .expect("mark_user_onboarded idempotently")

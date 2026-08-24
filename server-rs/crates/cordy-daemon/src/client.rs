@@ -110,6 +110,15 @@ pub(crate) fn is_task_not_found_error(err: &ClientError) -> bool {
     )
 }
 
+/// `isTaskNotFoundError` over the `anyhow::Result` surface returned by client
+/// methods. Request helpers preserve either the concrete [`RequestError`] or
+/// its [`ClientError`] wrapper in the error chain.
+pub(crate) fn is_task_not_found_anyhow(err: &anyhow::Error) -> bool {
+    request_error(err).is_some_and(|req| {
+        req.status_code == 404 && req.body.to_lowercase().contains("task not found")
+    })
+}
+
 /// `isUnauthorizedError` (client.go:65): a 401 from the server.
 pub(crate) fn is_unauthorized_error(err: &ClientError) -> bool {
     matches!(err.as_request(), Some(req) if req.status_code == 401)
@@ -151,7 +160,7 @@ pub(crate) fn is_issue_gc_batch_unsupported(err: &ClientError) -> bool {
 /// Identity headers sent on every request as X-Client-* are populated by
 /// [`Client::set_version`] ([`Client::platform`] / [`Client::os`] are fixed at
 /// construction); empty values are simply omitted.
-pub(crate) struct Client {
+pub struct Client {
     base_url: String,
     token: std::sync::Mutex<String>,
     http: reqwest::Client,
@@ -178,7 +187,7 @@ struct IssueGcBatchState {
 
 /// `NewClient` (client.go:122): creates a new daemon API client.
 impl Client {
-    pub(crate) fn new(base_url: impl Into<String>) -> Self {
+    pub fn new(base_url: impl Into<String>) -> Self {
         Self {
             base_url: base_url.into(),
             token: std::sync::Mutex::new(String::new()),
@@ -216,6 +225,30 @@ impl Client {
     /// `Token` (client.go:207).
     pub fn token(&self) -> String {
         self.token.lock().unwrap().clone()
+    }
+
+    /// Builds the daemon control-WebSocket handshake with exactly the same
+    /// identity and capability headers as the HTTP control plane.
+    pub(crate) fn websocket_request(&self, url: &str) -> anyhow::Result<http::Request<()>> {
+        use tokio_tungstenite::tungstenite::client::IntoClientRequest;
+
+        let mut request = url.into_client_request()?;
+        let headers = request.headers_mut();
+        let token = self.token();
+        if !token.is_empty() {
+            headers.insert("Authorization", format!("Bearer {token}").parse()?);
+        }
+        headers.insert("X-Client-Platform", self.platform().parse()?);
+        headers.insert("X-Client-OS", self.os().parse()?);
+        headers.insert(
+            "X-Client-Capabilities",
+            daemon_client_capabilities().parse()?,
+        );
+        let version = self.version.lock().unwrap().clone();
+        if !version.is_empty() {
+            headers.insert("X-Client-Version", version.parse()?);
+        }
+        Ok(request)
     }
 
     fn platform(&self) -> &'static str {
@@ -542,6 +575,26 @@ impl Client {
             ctx,
             &format!("/api/daemon/tasks/{task_id}/messages"),
             json!({ "messages": messages }),
+        )
+        .await
+    }
+
+    /// `ReportTaskUsage` (client.go:464): token usage is best-effort and is
+    /// reported before every terminal/cancel branch so interrupted runs are
+    /// not silently omitted from billing telemetry.
+    pub(crate) async fn report_task_usage(
+        &self,
+        ctx: &crate::repocache::Ctx,
+        task_id: &str,
+        usage: &[crate::types::TaskUsageEntry],
+    ) -> anyhow::Result<()> {
+        if usage.is_empty() {
+            return Ok(());
+        }
+        self.post_json_unit(
+            ctx,
+            &format!("/api/daemon/tasks/{task_id}/usage"),
+            json!({ "usage": usage }),
         )
         .await
     }
@@ -1013,6 +1066,17 @@ impl Client {
             .await
     }
 
+    /// Authenticated identity probe used by CLI restart preflight before a
+    /// healthy daemon is stopped. The response body is intentionally ignored;
+    /// a successful authenticated decode is the only required evidence.
+    pub(crate) async fn preflight_identity(
+        &self,
+        ctx: &crate::repocache::Ctx,
+    ) -> anyhow::Result<()> {
+        let _: Value = self.get_json(ctx, "/api/me").await?;
+        Ok(())
+    }
+
     /// `ListWorkspaces` (client.go:611): minimal workspace membership set.
     /// First 404 permanently switches this client process to the legacy full-
     /// workspace endpoint for compatibility with older servers.
@@ -1281,12 +1345,15 @@ impl Client {
         let mut results = HashMap::with_capacity(issue_ids.len());
         for issue_id in issue_ids {
             match self.get_issue_gc_check(ctx, issue_id).await {
-                Err(_not_found) => {
+                Err(err) => {
+                    let not_found =
+                        request_error(&err).is_some_and(|request| request.status_code == 404);
                     results.insert(
                         issue_id.clone(),
                         IssueGcCheckResult {
                             id: issue_id.clone(),
                             found: false,
+                            err: (!not_found).then(|| err.to_string()),
                             ..Default::default()
                         },
                     );
@@ -1377,7 +1444,7 @@ pub(crate) const DEFAULT_TERMINAL_RETRY_SCHEDULE: &[Duration] = &[
 /// 408/429 — versus permanent 4xx. Non-request errors (transport-level) are
 /// transient by definition. Callers separately bail on parent-context
 /// cancellation.
-fn is_transient_error(err: &anyhow::Error) -> bool {
+pub(crate) fn is_transient_error(err: &anyhow::Error) -> bool {
     let Some(req) = request_error(err) else {
         return true;
     };
@@ -1392,6 +1459,10 @@ fn request_error(err: &anyhow::Error) -> Option<&RequestError> {
         err.downcast_ref::<ClientError>()
             .and_then(ClientError::as_request)
     })
+}
+
+pub(crate) fn request_status_code(err: &anyhow::Error) -> Option<u16> {
+    request_error(err).map(|request| request.status_code)
 }
 
 impl Client {
@@ -1591,7 +1662,7 @@ impl Client {
                 apply_ctx_deadline(builder, ctx, CONTROL_PLANE_TIMEOUT),
                 ctx.clone(),
                 true,
-                "POST",
+                "GET",
             )
             .await?;
         Ok(opt.unwrap_or_else(|| serde_json::from_value(Value::Null).unwrap()))

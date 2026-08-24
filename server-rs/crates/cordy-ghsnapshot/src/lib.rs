@@ -11,8 +11,11 @@ pub mod client;
 pub mod manager;
 pub mod snapshot;
 
-pub use client::{Client, RateLimitError, DEFAULT_API_BASE};
-pub use manager::{Address, Manager, OnApplied};
+pub use client::{Client, PullRequestMetadata, RateLimitError, DEFAULT_API_BASE};
+pub use manager::{
+    Address, Manager, ManagerRuntime, ManagerShutdownOutcome, OnApplied, OnAppliedFuture,
+    DEFAULT_SHUTDOWN_TIMEOUT,
+};
 pub use snapshot::{
     fetch_pr_snapshot, normalize_node, normalize_run_status, normalize_status_state, CheckContext,
     PrSnapshot, PR_SNAPSHOT_QUERY,

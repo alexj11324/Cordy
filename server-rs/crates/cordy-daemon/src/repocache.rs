@@ -35,7 +35,7 @@ use crate::gc::processtree;
 /// - `Shutdown` is the daemon-wide cancellation cause used by callers that
 ///   previously passed `context.Background()` plus their own lifetimes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum CancelCause {
+pub enum CancelCause {
     Cancelled,
     Preempted,
     Shutdown,
@@ -61,7 +61,7 @@ impl std::fmt::Display for CancelCause {
 /// A cancellation token paired with an optional cause, mirroring Go's
 /// `context.Context` created via `context.WithCancelCause`.
 #[derive(Debug, Clone)]
-pub(crate) struct Ctx {
+pub struct Ctx {
     token: CancellationToken,
     cause: Arc<Mutex<Option<CancelCause>>>,
 }
@@ -74,7 +74,7 @@ impl Default for Ctx {
 
 impl Ctx {
     /// Equivalent of `context.Background()` wrapped for cause tracking.
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             token: CancellationToken::new(),
             cause: Arc::new(Mutex::new(None)),
@@ -83,7 +83,7 @@ impl Ctx {
 
     /// Equivalent of `context.WithCancelCause(parent)`: a child token that is
     /// cancelled when either the parent or this child is cancelled.
-    pub(crate) fn child(&self) -> Self {
+    pub fn child(&self) -> Self {
         Self {
             token: self.token.child_token(),
             cause: Arc::new(Mutex::new(None)),
@@ -91,7 +91,7 @@ impl Ctx {
     }
 
     /// Cancels the token recording `cause`, mirroring `cancel(cause)`.
-    pub(crate) fn cancel_with(&self, cause: CancelCause) {
+    pub fn cancel_with(&self, cause: CancelCause) {
         {
             let mut slot = self.cause.lock().unwrap();
             if slot.is_none() {
@@ -102,7 +102,7 @@ impl Ctx {
     }
 
     /// Non-blocking `ctx.Err()` check; `Some` means cancelled.
-    pub(crate) fn err(&self) -> Option<CancelCause> {
+    pub fn err(&self) -> Option<CancelCause> {
         if self.token.is_cancelled() {
             Some(self.cause())
         } else {
@@ -112,12 +112,12 @@ impl Ctx {
 
     /// Resolved cause: the recorded cause if any, otherwise plain cancelled
     /// (parent-initiated cancellation without a local cause).
-    pub(crate) fn cause(&self) -> CancelCause {
+    pub fn cause(&self) -> CancelCause {
         self.cause.lock().unwrap().unwrap_or(CancelCause::Cancelled)
     }
 
     /// Future resolving on cancellation (`<-ctx.Done()`).
-    pub(crate) async fn cancelled(&self) {
+    pub async fn cancelled(&self) {
         self.token.cancelled().await;
     }
 
@@ -543,7 +543,7 @@ impl RepoLock {
 
 /// `Cache` (cache.go:161–170): manages bare git clones for workspace
 /// repositories.
-pub(crate) struct Cache {
+pub struct Cache {
     /// base directory for all caches (e.g. ~/cordy_workspaces/.repos)
     root: PathBuf,
     /// `repoLocks` maps bare repo path → dedicated mutex. Any mutating
@@ -558,7 +558,7 @@ pub(crate) struct Cache {
 impl Cache {
     /// `New` (cache.go:296–298): creates a new repo cache rooted at the given
     /// directory.
-    pub(crate) fn new(root: impl Into<PathBuf>) -> Self {
+    pub fn new(root: impl Into<PathBuf>) -> Self {
         Self {
             root: root.into(),
             repo_locks: Mutex::new(HashMap::new()),
