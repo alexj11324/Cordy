@@ -119,6 +119,64 @@ enum PropertyCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
         output: OutputFormat,
     },
+    #[command(about = "Create a property definition (workspace owner/admin only)")]
+    Create(PropertyCreateArgs),
+    #[command(about = "Update a property definition (owner/admin only; type is immutable)")]
+    Update(PropertyUpdateArgs),
+    #[command(about = "Archive a property definition (hidden from pickers; values preserved)")]
+    Archive(PropertyArchiveArgs),
+    #[command(about = "Restore an archived property definition")]
+    Unarchive(PropertyArchiveArgs),
+}
+
+#[derive(Debug, Args)]
+struct PropertyCreateArgs {
+    #[arg(long, help = "Property name (required)")]
+    name: Option<String>,
+    #[arg(
+        long = "type",
+        help = "Property type: text, number, select, multi_select, date, checkbox, url, actor, multi_actor (required)"
+    )]
+    property_type: Option<String>,
+    #[arg(long, default_value = "", help = "Property description")]
+    description: String,
+    #[arg(
+        long,
+        default_value = "",
+        help = "Property icon key from the Web picker (for example, flag, tag, or shield)"
+    )]
+    icon: String,
+    #[arg(long, action = clap::ArgAction::Append, help = "Select option as \"Name\" or \"Name:#rrggbb\" (repeatable; select types only)")]
+    option: Vec<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct PropertyUpdateArgs {
+    #[arg(value_name = "ID-OR-NAME")]
+    property: String,
+    #[arg(long, help = "New property name")]
+    name: Option<String>,
+    #[arg(long, help = "New property description")]
+    description: Option<String>,
+    #[arg(
+        long,
+        help = "New property icon key from the Web picker; pass an empty value to clear"
+    )]
+    icon: Option<String>,
+    #[arg(long, action = clap::ArgAction::Append, help = "Replacement option list as \"Name\" or \"Name:#rrggbb\" (repeatable)")]
+    option: Vec<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct PropertyArchiveArgs {
+    #[arg(value_name = "ID-OR-NAME")]
+    property: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -1639,6 +1697,18 @@ async fn run_with_input<R: Read>(
         Command::Property(PropertyArgs {
             command: PropertyCommand::Get { property, output },
         }) => run_property_get(cli, environment, property, *output).await,
+        Command::Property(PropertyArgs {
+            command: PropertyCommand::Create(args),
+        }) => run_property_create(cli, environment, args).await,
+        Command::Property(PropertyArgs {
+            command: PropertyCommand::Update(args),
+        }) => run_property_update(cli, environment, args).await,
+        Command::Property(PropertyArgs {
+            command: PropertyCommand::Archive(args),
+        }) => run_property_archive(cli, environment, args, true).await,
+        Command::Property(PropertyArgs {
+            command: PropertyCommand::Unarchive(args),
+        }) => run_property_archive(cli, environment, args, false).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -6448,6 +6518,158 @@ async fn run_property_get(
             OutputFormat::Table => {
                 format_property_definitions(std::slice::from_ref(property), output)?
             }
+        },
+        stderr: String::new(),
+    })
+}
+
+const DEFAULT_PROPERTY_OPTION_COLOR: &str = "#6b7280";
+
+fn parse_property_options(flags: &[String], existing: &[PropertyOption]) -> Vec<Value> {
+    let by_name = existing
+        .iter()
+        .map(|option| (option.name.to_ascii_lowercase(), option.id.as_str()))
+        .collect::<HashMap<_, _>>();
+    flags
+        .iter()
+        .map(|raw| {
+            let (name, color) = raw.rfind(":#").filter(|index| *index > 0).map_or_else(
+                || (raw.as_str(), DEFAULT_PROPERTY_OPTION_COLOR),
+                |index| (&raw[..index], &raw[index + 1..]),
+            );
+            let name = name.trim();
+            let mut option = serde_json::Map::from_iter([
+                ("name".into(), Value::String(name.into())),
+                ("color".into(), Value::String(color.into())),
+            ]);
+            if let Some(id) = by_name.get(&name.to_ascii_lowercase()) {
+                option.insert("id".into(), Value::String((*id).into()));
+            }
+            Value::Object(option)
+        })
+        .collect()
+}
+
+fn format_property_mutation(
+    property: &PropertyDefinition,
+    output: OutputFormat,
+    action: &str,
+) -> Result<String> {
+    match output {
+        OutputFormat::Json => Ok(format!("{}\n", serde_json::to_string_pretty(property)?)),
+        OutputFormat::Table => Ok(format!(
+            "Property {:?} {action}.\n{}",
+            property.name,
+            format_property_definitions(std::slice::from_ref(property), OutputFormat::Table)?
+        )),
+    }
+}
+
+async fn run_property_create(
+    cli: &Cli,
+    environment: &Environment,
+    args: &PropertyCreateArgs,
+) -> Result<RunOutput> {
+    let name = args
+        .name
+        .as_deref()
+        .filter(|name| !name.is_empty())
+        .context("--name is required")?;
+    let property_type = args
+        .property_type
+        .as_deref()
+        .filter(|property_type| !property_type.is_empty())
+        .context("--type is required")?;
+    let mut body = serde_json::Map::from_iter([
+        ("name".into(), Value::String(name.into())),
+        ("type".into(), Value::String(property_type.into())),
+        (
+            "description".into(),
+            Value::String(args.description.clone()),
+        ),
+        ("icon".into(), Value::String(args.icon.clone())),
+    ]);
+    if !args.option.is_empty() {
+        body.insert(
+            "config".into(),
+            serde_json::json!({"options":parse_property_options(&args.option, &[])}),
+        );
+    }
+    let client = new_api_client(cli, environment)?;
+    let property: PropertyDefinition = client
+        .post_json("/api/properties", &body)
+        .await
+        .context("create property")?;
+    Ok(RunOutput {
+        stdout: format_property_mutation(&property, args.output, "created")?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_property_update(
+    cli: &Cli,
+    environment: &Environment,
+    args: &PropertyUpdateArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let properties = fetch_property_definitions(&client).await?;
+    let property = resolve_property(&properties, &args.property)?;
+    let mut body = serde_json::Map::new();
+    for (key, value) in [
+        ("name", args.name.as_ref()),
+        ("description", args.description.as_ref()),
+        ("icon", args.icon.as_ref()),
+    ] {
+        if let Some(value) = value {
+            body.insert(key.into(), Value::String(value.clone()));
+        }
+    }
+    if !args.option.is_empty() {
+        body.insert(
+            "config".into(),
+            serde_json::json!({
+                "options":parse_property_options(&args.option, &property.config.options)
+            }),
+        );
+    }
+    if body.is_empty() {
+        bail!("nothing to update; pass --name, --description, --icon, or --option");
+    }
+    let updated: PropertyDefinition = client
+        .patch_json(&format!("/api/properties/{}", property.id), &body)
+        .await
+        .context("update property")?;
+    Ok(RunOutput {
+        stdout: format_property_mutation(&updated, args.output, "updated")?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_property_archive(
+    cli: &Cli,
+    environment: &Environment,
+    args: &PropertyArchiveArgs,
+    archive: bool,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let properties = fetch_property_definitions(&client).await?;
+    let property = resolve_property(&properties, &args.property)?;
+    let action = if archive { "archive" } else { "unarchive" };
+    let updated: PropertyDefinition = client
+        .patch_json(
+            &format!("/api/properties/{}", property.id),
+            &serde_json::json!({"archived":archive}),
+        )
+        .await
+        .with_context(|| format!("{action} property"))?;
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&updated)?),
+            OutputFormat::Table => format!(
+                "Property {:?} {}.\n",
+                updated.name,
+                if archive { "archived" } else { "restored" }
+            ),
         },
         stderr: String::new(),
     })
@@ -12316,6 +12538,159 @@ mod tests {
         assert_eq!(property["position"], 1.5);
         assert_eq!(property["usage_count"], 7);
         assert_eq!(property["archived"], true);
+        task.abort();
+    }
+
+    #[test]
+    fn property_mutation_parser_preserves_option_ids_and_clear_values() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "property",
+            "update",
+            "Severity",
+            "--description=",
+            "--icon=",
+            "--option",
+            "critical:#ef4444",
+            "--option",
+            "Minor",
+        ])
+        .expect("property update CLI");
+        let Command::Property(PropertyArgs {
+            command: PropertyCommand::Update(args),
+        }) = &cli.command
+        else {
+            panic!("expected property update");
+        };
+        assert_eq!(args.description.as_deref(), Some(""));
+        assert_eq!(args.icon.as_deref(), Some(""));
+        let existing = vec![PropertyOption {
+            id: "option-1".into(),
+            name: "Critical".into(),
+            color: "#000000".into(),
+        }];
+        assert_eq!(
+            parse_property_options(&args.option, &existing),
+            vec![
+                serde_json::json!({"id":"option-1","name":"critical","color":"#ef4444"}),
+                serde_json::json!({"name":"Minor","color":"#6b7280"})
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn property_create_update_and_archive_use_go_patch_and_output_contracts() {
+        let property_id = "11111111-1111-1111-1111-111111111111";
+        let definition = || {
+            serde_json::json!({
+                "id":property_id,"name":"Severity","type":"select","description":"",
+                "icon":"shield","config":{"options":[{
+                    "id":"option-1","name":"Critical","color":"#ef4444"
+                }]},"position":1,"archived":false,"usage_count":0,
+                "created_at":"","updated_at":""
+            })
+        };
+        let app = Router::new()
+            .route(
+                "/api/properties",
+                get(move || async move {
+                    Json(serde_json::json!({"properties":[definition()]}))
+                })
+                .post(|Json(body): Json<Value>| async move {
+                    assert_eq!(body["name"], "Severity");
+                    assert_eq!(body["type"], "select");
+                    assert_eq!(body["description"], "");
+                    assert_eq!(body["config"]["options"][0]["color"], "#ef4444");
+                    Json(serde_json::json!({
+                        "id":"11111111-1111-1111-1111-111111111111",
+                        "name":"Severity","type":"select","description":"","icon":"shield",
+                        "config":{"options":[{"id":"option-1","name":"Critical","color":"#ef4444"}]},
+                        "position":1,"archived":false,"usage_count":0,"created_at":"","updated_at":""
+                    }))
+                }),
+            )
+            .route(
+                "/api/properties/11111111-1111-1111-1111-111111111111",
+                patch(|Json(body): Json<Value>| async move {
+                    if let Some(archived) = body.get("archived") {
+                        return Json(serde_json::json!({
+                            "id":"11111111-1111-1111-1111-111111111111",
+                            "name":"Severity","type":"select","description":"","icon":"shield",
+                            "config":{"options":[]},"position":1,"archived":archived,
+                            "usage_count":0,"created_at":"","updated_at":""
+                        }));
+                    }
+                    assert_eq!(body["description"], "Impact");
+                    assert_eq!(body["config"]["options"][0]["id"], "option-1");
+                    Json(serde_json::json!({
+                        "id":"11111111-1111-1111-1111-111111111111",
+                        "name":"Severity","type":"select","description":"Impact","icon":"shield",
+                        "config":body["config"],"position":1,"archived":false,
+                        "usage_count":0,"created_at":"","updated_at":""
+                    }))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let create = Cli::try_parse_from([
+            "cordy",
+            "property",
+            "create",
+            "--name",
+            "Severity",
+            "--type",
+            "select",
+            "--icon",
+            "shield",
+            "--option",
+            "Critical:#ef4444",
+            "--output",
+            "json",
+        ])
+        .expect("property create CLI");
+        let created = run_with_input(&create, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("create property");
+        assert_eq!(
+            serde_json::from_str::<Value>(&created.stdout).expect("created property")["id"],
+            property_id
+        );
+
+        let update = Cli::try_parse_from([
+            "cordy",
+            "property",
+            "update",
+            "severity",
+            "--description",
+            "Impact",
+            "--option",
+            "Critical:#22c55e",
+            "--output",
+            "table",
+        ])
+        .expect("property update CLI");
+        let updated = run_with_input(&update, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("update property");
+        assert!(updated.stdout.starts_with("Property \"Severity\" updated."));
+        assert!(updated.stdout.contains("Critical"));
+
+        let archive = Cli::try_parse_from([
+            "cordy", "property", "archive", "Severity", "--output", "table",
+        ])
+        .expect("property archive CLI");
+        let archived = run_with_input(&archive, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("archive property");
+        assert_eq!(archived.stdout, "Property \"Severity\" archived.\n");
         task.abort();
     }
 
