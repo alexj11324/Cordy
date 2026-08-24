@@ -34,8 +34,8 @@ pub use contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
 pub use model::{
-    Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelServiceTier, ModelThinking,
-    ThinkingLevel,
+    parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey,
+    ModelServiceTier, ModelThinking, ThinkingLevel,
 };
 pub use process::{OwnedProcessTree, ProcessTreeSignal};
 pub use qoder::{QoderBackend, QoderConfig, TraecliBackend, TraecliConfig};

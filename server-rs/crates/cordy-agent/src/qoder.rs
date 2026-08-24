@@ -12,6 +12,7 @@ use serde_json::Value;
 use tokio::io::{AsyncReadExt, BufReader};
 use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, oneshot};
+use tokio_util::sync::CancellationToken;
 
 use crate::acp::{AcpClient, AcpError, AcpNotification};
 use crate::acp_mcp::{
@@ -21,6 +22,7 @@ use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, R
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
+use crate::model::{parse_acp_session_models, Catalog, CatalogCache, ModelDiscoveryCacheKey};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 
@@ -29,6 +31,7 @@ const TERMINATION_GRACE: Duration = Duration::from_secs(2);
 const KILL_GRACE: Duration = Duration::from_secs(10);
 const NOTIFICATION_QUIET: Duration = Duration::from_millis(250);
 const NOTIFICATION_DRAIN_MAX: Duration = Duration::from_secs(2);
+const DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 
 static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
     BTreeMap::from([
@@ -91,6 +94,15 @@ impl QoderBackend {
     pub fn new(config: QoderConfig) -> Self {
         Self { config }
     }
+
+    pub async fn discover_models(
+        &self,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models(&self.config, cache, cancellation, timeout).await
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -116,6 +128,17 @@ impl TraecliBackend {
                 resume_method: "session/load".to_string(),
             }),
         }
+    }
+
+    pub async fn discover_models(
+        &self,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        self.inner
+            .discover_models(cache, cancellation, timeout)
+            .await
     }
 }
 
@@ -157,6 +180,94 @@ fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMod
     } else {
         &BLOCKED_ARGS
     }
+}
+
+async fn discover_models(
+    config: &QoderConfig,
+    cache: &CatalogCache,
+    cancellation: CancellationToken,
+    timeout: Duration,
+) -> Catalog {
+    let Some(key) = ModelDiscoveryCacheKey::new(&config.provider, &config.command) else {
+        return Catalog::default();
+    };
+    if let Some(catalog) = cache.get(&key) {
+        return catalog;
+    }
+    let command_path = if config.command.path.is_empty() {
+        config.default_command.as_str()
+    } else {
+        config.command.path.as_str()
+    };
+    let blocked = blocked_args(&config.provider);
+    let prefix = filter_launch_prefix(&config.command.prefix, blocked);
+    let mut argv = prefix.args;
+    argv.extend(config.launch_args.clone());
+    let mut command = Command::new(command_path);
+    command
+        .args(argv)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .envs(&config.env)
+        .kill_on_drop(false);
+    let mut tree = match OwnedProcessTree::spawn(&mut command).await {
+        Ok(tree) => tree,
+        Err(error) => {
+            tracing::debug!(provider = %config.provider, error = %error, "ACP model discovery process failed to start");
+            return Catalog::default();
+        }
+    };
+    let Some(stdin) = tree.child_mut().stdin.take() else {
+        let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+        return Catalog::default();
+    };
+    let Some(stdout) = tree.child_mut().stdout.take() else {
+        let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+        return Catalog::default();
+    };
+    let provider = config.provider.clone();
+    let mut handshake = tokio::spawn(async move {
+        let mut client = AcpClient::new(BufReader::new(stdout), stdin);
+        client
+            .request(
+                "initialize",
+                serde_json::json!({"protocolVersion":1,"clientInfo":{"name":"cordy-model-discovery","version":"0.1.0"},"clientCapabilities":{}}),
+                |_| {},
+            )
+            .await?;
+        let directory = tempfile::Builder::new()
+            .prefix(&format!("cordy-{provider}-discovery-"))
+            .tempdir()
+            .map_err(AcpError::Transport)?;
+        client
+            .request(
+                "session/new",
+                serde_json::json!({"cwd":directory.path().to_string_lossy(),"mcpServers":[]}),
+                |_| {},
+            )
+            .await
+    });
+    let timeout = if timeout.is_zero() {
+        DISCOVERY_TIMEOUT
+    } else {
+        timeout
+    };
+    let result = tokio::select! {
+        result = &mut handshake => result.ok().and_then(Result::ok),
+        () = cancellation.cancelled() => None,
+        () = tokio::time::sleep(timeout) => None,
+    };
+    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+    if !handshake.is_finished() {
+        handshake.abort();
+    }
+    let catalog = result.map_or_else(Catalog::default, |session| Catalog {
+        models: parse_acp_session_models(&session, &config.provider),
+        fallback: false,
+    });
+    let _ = cache.insert(key, catalog.clone());
+    catalog
 }
 
 #[async_trait]
@@ -927,7 +1038,7 @@ while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
   case "$line" in
     *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentCapabilities":{"mcpCapabilities":{"http":true}}}}\n' "$id" ;;
-    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"qoder-real","models":{"currentModelId":"qoder-auto"}}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"qoder-real","models":{"currentModelId":"qoder-auto","availableModels":[{"modelId":"qoder-auto","name":"Qoder Auto"}]}}}\n' "$id" ;;
     *'"method":"session/prompt"'*)
       printf '%s\n' '{"jsonrpc":"2.0","id":99,"method":"session/request_permission","params":{"options":[{"optionId":"forever","kind":"allow_always"},{"optionId":"once","kind":"allow_once"}]}}'
       IFS= read -r permission
@@ -944,6 +1055,16 @@ while IFS= read -r line; do
 done
 "#,
         );
+        let catalog = backend
+            .discover_models(
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(catalog.models.len(), 1);
+        assert_eq!(catalog.models[0].id, "qoder-auto");
+        assert!(catalog.models[0].default);
         let session = backend
             .execute("prompt", ExecOptions::default())
             .await
@@ -1004,6 +1125,7 @@ while IFS= read -r line; do
   id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
   case "$line" in
     *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"agentCapabilities":{"loadSession":true}}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"discovery","models":{"currentModelId":"Doubao-Seed-2.1-Pro","availableModels":[{"modelId":"Doubao-Seed-2.1-Pro","name":"Doubao Seed Pro"}]}}}\n' "$id" ;;
     *'"method":"session/load"'*)
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"old history"}}}}'
       printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
@@ -1024,6 +1146,14 @@ done
                 requests.to_string_lossy().into_owned(),
             )]),
         });
+        let catalog = backend
+            .discover_models(
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(catalog.models[0].id, "Doubao-Seed-2.1-Pro");
         let session = backend
             .execute(
                 "prompt",

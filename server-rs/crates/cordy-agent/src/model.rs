@@ -5,6 +5,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::command::RuntimeCommand;
 
@@ -51,6 +52,61 @@ pub struct Catalog {
     /// True when models are a static stand-in after discovery failed. Such a
     /// catalog must not be cached or used to qualify a persisted selector.
     pub fallback: bool,
+}
+
+/// Parses the standard ACP `session/new.models` catalog without inventing a
+/// fallback. Callers supply the runtime family only when an entry carries no
+/// provider-qualified id; authoritative model ids and advertised order remain
+/// unchanged.
+pub fn parse_acp_session_models(result: &Value, fallback_provider: &str) -> Vec<Model> {
+    let Some(models) = result.get("models") else {
+        return Vec::new();
+    };
+    let current = models
+        .get("currentModelId")
+        .or_else(|| models.get("current_model_id"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    let Some(available) = models
+        .get("availableModels")
+        .or_else(|| models.get("available_models"))
+        .and_then(Value::as_array)
+    else {
+        return Vec::new();
+    };
+    let mut seen = std::collections::BTreeSet::new();
+    available
+        .iter()
+        .filter_map(|entry| {
+            let id = entry
+                .get("modelId")
+                .or_else(|| entry.get("model_id"))
+                .and_then(Value::as_str)?
+                .trim();
+            if id.is_empty() || !seen.insert(id.to_string()) {
+                return None;
+            }
+            let label = entry
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|label| !label.is_empty())
+                .unwrap_or(id);
+            let provider = id
+                .split_once('/')
+                .map(|(provider, _)| provider)
+                .filter(|provider| !provider.is_empty())
+                .unwrap_or(fallback_provider);
+            Some(Model {
+                id: id.to_string(),
+                label: label.to_string(),
+                provider: provider.to_string(),
+                default: id == current,
+                ..Model::default()
+            })
+        })
+        .collect()
 }
 
 /// Qualifies a bare selector only when one authoritative catalog entry owns it.
