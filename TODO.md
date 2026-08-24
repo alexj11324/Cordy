@@ -180,10 +180,17 @@
       guard tests were added; scoped rustfmt check and diff-check pass.
       Cargo/review/gate/merge remain with the pro model and are not duplicated
       here.
-- [ ] Next substantive refactor slice: daemon foreground production assembly;
-      a serial subagent is checking for a concrete `ProviderRuntimeAdapter` /
-      typed launch boundary in `codex/cord-50-daemon-command-assembly`, not a
-      visibility-only facade or stub.
+- [ ] Next substantive refactor slice: daemon foreground production assembly.
+      Audit of `codex/cord-50-daemon-command-assembly` shows
+      `DaemonProductionInputs::into_stack` still requires a generic
+      `ProviderRuntimeAdapter`, but `cordy-daemon` has no concrete impl and does
+      not depend on `cordy-agent`; `cordy-agent::build_backend` is not wired into
+      task orchestration. A visibility-only facade or no-op adapter would not
+      start a real daemon, so this is a genuine assembly dependency blocker.
+      The subagent audit was stopped after this evidence; next slice is a
+      concrete provider adapter that translates the existing agent Backend /
+      Session contract into `TaskRunOutcome`, with cancellation and transcript
+      delivery tests.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
