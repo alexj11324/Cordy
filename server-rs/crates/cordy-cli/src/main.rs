@@ -21,10 +21,12 @@ async fn main() {
                 print!("{}", output.stdout);
                 eprint!("{}", output.stderr);
             }
-            eprintln!(
-                "{}",
-                error::format_error(&cause, cli.debug_enabled(&environment))
-            );
+            if !cordy_cli::suppress_error_message(&cause) {
+                eprintln!(
+                    "{}",
+                    error::format_error(&cause, cli.debug_enabled(&environment))
+                );
+            }
             std::process::exit(error::exit_code(&cause));
         }
     }

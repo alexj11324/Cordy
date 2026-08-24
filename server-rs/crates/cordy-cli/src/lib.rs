@@ -107,10 +107,27 @@ enum Command {
     Skill(SkillArgs),
     #[command(about = "Work with squads")]
     Squad(SquadArgs),
+    #[command(about = "Control the local agent runtime daemon")]
+    Daemon(DaemonArgs),
     #[command(about = "Print version information")]
     Version {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
         output: VersionOutput,
+    },
+}
+
+#[derive(Debug, Args)]
+struct DaemonArgs {
+    #[command(subcommand)]
+    command: DaemonCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum DaemonCommand {
+    #[command(about = "Show daemon status")]
+    Status {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
 }
 
@@ -2608,6 +2625,7 @@ pub struct RunOutput {
 struct OutputError {
     output: RunOutput,
     message: String,
+    silent: bool,
 }
 
 impl std::fmt::Display for OutputError {
@@ -2623,6 +2641,13 @@ pub fn output_for_error(error: &anyhow::Error) -> Option<&RunOutput> {
         .chain()
         .find_map(|cause| cause.downcast_ref::<OutputError>())
         .map(|error| &error.output)
+}
+
+pub fn suppress_error_message(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<OutputError>())
+        .is_some_and(|error| error.silent)
 }
 
 impl Cli {
@@ -2878,6 +2903,9 @@ async fn run_with_input<R: Read>(
                     output,
                 },
         }) => run_squad_activity(cli, environment, issue_id, outcome, reason, *output).await,
+        Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Status { output },
+        }) => run_daemon_status(cli, environment, *output).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -5320,6 +5348,321 @@ async fn run_squad_activity(
     })
 }
 
+const DEFAULT_DAEMON_HEALTH_PORT: u32 = 19_514;
+
+async fn run_daemon_status(
+    cli: &Cli,
+    environment: &Environment,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let profile = cli.profile.as_str();
+    let health_port = daemon_status_health_port(profile, environment)?;
+    if !profile.is_empty() && !daemon_profile_dir(environment, profile)?.is_dir() {
+        let known = known_daemon_profiles(environment)?;
+        let message = unknown_daemon_profile_message(profile, &known);
+        if output == OutputFormat::Json {
+            let structured = RunOutput {
+                stdout: format!(
+                    "{}\n",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "status":"unknown_profile",
+                        "profile":profile,
+                        "known_profiles":known
+                    }))?
+                ),
+                stderr: String::new(),
+            };
+            return Err(anyhow::Error::new(OutputError {
+                output: structured,
+                message,
+                silent: true,
+            }));
+        }
+        bail!(message)
+    }
+
+    let health = probe_daemon_health(health_port).await;
+    let conflict =
+        if daemon_health_is_alive(&health) && !environment.in_daemon_task_identity_context() {
+            daemon_profile_conflict(&health, profile, health_port)
+        } else {
+            None
+        };
+    if output == OutputFormat::Json {
+        let value = match conflict.as_ref() {
+            Some(DaemonProfileConflict::Profile { got, port }) => serde_json::json!({
+                "status":"stopped",
+                "port_conflict":{"port":port,"profile":got}
+            }),
+            Some(DaemonProfileConflict::Unreadable { port }) => serde_json::json!({
+                "status":"stopped",
+                "port_conflict":{"port":port,"unreadable_identity":true}
+            }),
+            None => health,
+        };
+        return Ok(RunOutput {
+            stdout: format!("{}\n", serde_json::to_string_pretty(&value)?),
+            stderr: String::new(),
+        });
+    }
+
+    let label = if profile.is_empty() {
+        "Daemon".into()
+    } else {
+        format!("Daemon [{profile}]")
+    };
+    let stdout = if let Some(conflict) = conflict {
+        format!(
+            "{label}: stopped\n{}\n",
+            daemon_profile_conflict_note(&conflict)
+        )
+    } else {
+        match value_string(&health, "status").as_str() {
+            "running" => format_daemon_status_report(&label, &health),
+            "starting" => format!(
+                "{label}: starting (pid {})\n",
+                daemon_health_value(&health, "pid")
+            ),
+            _ => format!("{label}: stopped\n"),
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn daemon_status_health_port(profile: &str, environment: &Environment) -> Result<u32> {
+    if !environment.in_daemon_task_identity_context() {
+        if profile.is_empty() {
+            return Ok(DEFAULT_DAEMON_HEALTH_PORT);
+        }
+        let hash = profile.bytes().map(u32::from).sum::<u32>() % 1_000;
+        return Ok(DEFAULT_DAEMON_HEALTH_PORT + 1 + hash);
+    }
+    if !profile.is_empty() {
+        bail!("daemon status --profile is not available inside a daemon-managed task")
+    }
+    let raw = environment
+        .trimmed("CORDY_DAEMON_PORT")
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "daemon status inside a daemon-managed task requires the daemon-injected CORDY_DAEMON_PORT"
+            )
+        })?;
+    let port = raw.parse::<i64>().ok().filter(|port| *port > 0);
+    port.and_then(|port| u32::try_from(port).ok())
+        .ok_or_else(|| {
+            anyhow::anyhow!("invalid CORDY_DAEMON_PORT {raw:?} inside a daemon-managed task")
+        })
+}
+
+fn daemon_profile_dir(environment: &Environment, profile: &str) -> Result<PathBuf> {
+    environment
+        .config_path(profile)?
+        .parent()
+        .map(Path::to_path_buf)
+        .context("resolve profile directory")
+}
+
+fn known_daemon_profiles(environment: &Environment) -> Result<Vec<String>> {
+    let probe = daemon_profile_dir(environment, "__cordy_profile_probe__")?;
+    let root = probe.parent().context("resolve profiles directory")?;
+    if !root.exists() {
+        return Ok(Vec::new());
+    }
+    let mut names = Vec::new();
+    collect_daemon_profiles(root, root, &mut names)?;
+    names.sort();
+    Ok(names)
+}
+
+fn collect_daemon_profiles(root: &Path, directory: &Path, names: &mut Vec<String>) -> Result<()> {
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Ok(()),
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_daemon_profiles(root, &path, names)?;
+        } else if entry.file_name() == "config.json" {
+            let Some(parent) = path.parent() else {
+                continue;
+            };
+            let Ok(relative) = parent.strip_prefix(root) else {
+                continue;
+            };
+            if !relative.as_os_str().is_empty() {
+                names.push(
+                    relative
+                        .to_string_lossy()
+                        .replace(std::path::MAIN_SEPARATOR, "/"),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn unknown_daemon_profile_message(profile: &str, known: &[String]) -> String {
+    if known.is_empty() {
+        format!(
+            "unknown profile {profile:?}: no named profiles exist yet.\nCreate one with: cordy login --profile {}",
+            shell_quote_argument(profile)
+        )
+    } else {
+        format!(
+            "unknown profile {profile:?}\nKnown profiles: {}",
+            known.join(", ")
+        )
+    }
+}
+
+fn shell_quote_argument(value: &str) -> String {
+    if !value.is_empty()
+        && value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || "_@%+=:,./-".contains(character))
+    {
+        return value.into();
+    }
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+async fn probe_daemon_health(port: u32) -> Value {
+    let Ok(client) = reqwest::Client::builder()
+        .timeout(Duration::from_secs(2))
+        .build()
+    else {
+        return serde_json::json!({"status":"stopped"});
+    };
+    let url = format!("http://127.0.0.1:{port}/health");
+    match client.get(url).send().await {
+        Ok(response) => response
+            .json::<Value>()
+            .await
+            .ok()
+            .filter(Value::is_object)
+            .unwrap_or_else(|| serde_json::json!({"status":"stopped"})),
+        Err(_) => serde_json::json!({"status":"stopped"}),
+    }
+}
+
+fn daemon_health_is_alive(health: &Value) -> bool {
+    matches!(
+        value_string(health, "status").as_str(),
+        "running" | "starting"
+    )
+}
+
+#[derive(Debug)]
+enum DaemonProfileConflict {
+    Profile { got: String, port: u32 },
+    Unreadable { port: u32 },
+}
+
+fn daemon_profile_conflict(
+    health: &Value,
+    expected: &str,
+    port: u32,
+) -> Option<DaemonProfileConflict> {
+    let profile = health.as_object()?.get("profile")?;
+    match profile {
+        Value::String(profile) if profile == expected => None,
+        Value::String(profile) => Some(DaemonProfileConflict::Profile {
+            got: profile.clone(),
+            port,
+        }),
+        _ => Some(DaemonProfileConflict::Unreadable { port }),
+    }
+}
+
+fn daemon_profile_conflict_note(conflict: &DaemonProfileConflict) -> String {
+    match conflict {
+        DaemonProfileConflict::Profile { got, port } => format!(
+            "Note: port {port} is serving {}, which hashes to the same port.",
+            describe_daemon_profile(got)
+        ),
+        DaemonProfileConflict::Unreadable { port } => format!(
+            "Note: port {port} is serving a daemon whose profile identity could not be read."
+        ),
+    }
+}
+
+fn describe_daemon_profile(profile: &str) -> String {
+    if profile.is_empty() {
+        "the default profile".into()
+    } else {
+        format!("{profile:?}")
+    }
+}
+
+fn daemon_health_value(health: &Value, key: &str) -> String {
+    match health.get(key) {
+        Some(Value::String(value)) => value.clone(),
+        Some(value) if !value.is_null() => value.to_string(),
+        _ => "<nil>".into(),
+    }
+}
+
+fn format_daemon_status_report(label: &str, health: &Value) -> String {
+    let mut rows = vec![(
+        label.to_string(),
+        format!(
+            "running (pid {}, uptime {})",
+            daemon_health_value(health, "pid"),
+            daemon_health_value(health, "uptime")
+        ),
+    )];
+    let version = value_string(health, "cli_version");
+    if !version.is_empty() {
+        rows.push(("Version".into(), version));
+    }
+    let launched_by = value_string(health, "launched_by");
+    if !launched_by.is_empty() {
+        rows.push((
+            "Managed by".into(),
+            if launched_by == "desktop" {
+                "Cordy Desktop app (start and stop it from the app)".into()
+            } else {
+                launched_by
+            },
+        ));
+    }
+    let pending = value_string(health, "reload_pending_reason");
+    if !pending.is_empty() {
+        rows.push(("Restart pending".into(), pending));
+    }
+    if let Some(agents) = health.get("agents").and_then(Value::as_array) {
+        if !agents.is_empty() {
+            rows.push((
+                "Agents".into(),
+                agents
+                    .iter()
+                    .map(|agent| match agent {
+                        Value::String(agent) => agent.clone(),
+                        other => other.to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            ));
+        }
+    }
+    if let Some(workspaces) = health.get("workspaces").and_then(Value::as_array) {
+        rows.push(("Workspaces".into(), workspaces.len().to_string()));
+    }
+    let width = rows
+        .iter()
+        .map(|(key, _)| key.len() + 1)
+        .max()
+        .unwrap_or_default();
+    rows.into_iter()
+        .map(|(key, value)| format!("{:<width$}  {value}\n", format!("{key}:")))
+        .collect()
+}
+
 async fn run_skill_import(
     cli: &Cli,
     environment: &Environment,
@@ -5424,6 +5767,7 @@ fn structured_skill_import_error(
     Ok(Some(anyhow::Error::new(OutputError {
         output,
         message: reason,
+        silent: false,
     })))
 }
 
@@ -14363,6 +14707,178 @@ mod tests {
     use std::io::Cursor;
     use std::sync::{Arc, Mutex};
     use tokio::net::TcpListener;
+
+    #[test]
+    fn daemon_status_parser_and_profile_ports_match_go_registry() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            "dev",
+            "daemon",
+            "status",
+            "--output",
+            "json",
+        ])
+        .expect("daemon status CLI");
+        assert!(matches!(
+            cli.command,
+            Command::Daemon(DaemonArgs {
+                command: DaemonCommand::Status {
+                    output: OutputFormat::Json
+                }
+            })
+        ));
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        assert_eq!(
+            daemon_status_health_port("", &environment).expect("default port"),
+            19_514
+        );
+        assert_eq!(
+            daemon_status_health_port("ab", &environment).expect("profile port"),
+            19_514 + 1 + u32::from(b'a') + u32::from(b'b')
+        );
+    }
+
+    #[tokio::test]
+    async fn daemon_status_uses_injected_task_port_and_renders_health() {
+        let app = Router::new().route(
+            "/health",
+            get(|| async {
+                Json(serde_json::json!({
+                    "status":"running",
+                    "pid":123,
+                    "uptime":"5m",
+                    "cli_version":"v1.2.3",
+                    "launched_by":"desktop",
+                    "reload_pending_reason":"waiting for tasks",
+                    "agents":["codex","claude"],
+                    "workspaces":["workspace-1","workspace-2"],
+                    "profile":"host-profile"
+                }))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_AGENT_ID", "agent-1");
+        environment.set("CORDY_DAEMON_PORT", address.port().to_string());
+
+        let table =
+            Cli::try_parse_from(["cordy", "daemon", "status"]).expect("daemon status table CLI");
+        let output = run_with_input(&table, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("daemon status table");
+        assert!(output.stdout.contains("Daemon:"));
+        assert!(output.stdout.contains("running (pid 123, uptime 5m)"));
+        assert!(output.stdout.contains("Version:"));
+        assert!(output
+            .stdout
+            .contains("Cordy Desktop app (start and stop it from the app)"));
+        assert!(output.stdout.contains("Restart pending:"));
+        assert!(output.stdout.contains("codex, claude"));
+        assert!(output.stdout.contains("Workspaces:"));
+        assert!(output.stdout.contains('2'));
+
+        let json = Cli::try_parse_from(["cordy", "daemon", "status", "--output", "json"])
+            .expect("daemon status JSON CLI");
+        let output = run_with_input(&json, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("daemon status JSON");
+        let value: Value = serde_json::from_str(&output.stdout).expect("status JSON output");
+        assert_eq!(value["profile"], "host-profile");
+        assert_eq!(value["agents"][0], "codex");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn daemon_status_unknown_profile_preserves_json_and_nonzero_exit() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        fs::create_dir_all(home.path().join(".cordy/profiles/alpha"))
+            .expect("alpha profile directory");
+        fs::write(home.path().join(".cordy/profiles/alpha/config.json"), "{}")
+            .expect("alpha config");
+        fs::create_dir_all(home.path().join(".cordy/profiles/team/dev"))
+            .expect("nested profile directory");
+        fs::write(
+            home.path().join(".cordy/profiles/team/dev/config.json"),
+            "{}",
+        )
+        .expect("nested config");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            "missing",
+            "daemon",
+            "status",
+            "--output",
+            "json",
+        ])
+        .expect("unknown profile status CLI");
+
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("unknown profile rejected");
+        assert!(suppress_error_message(&error));
+        assert_eq!(
+            error.to_string(),
+            "unknown profile \"missing\"\nKnown profiles: alpha, team/dev"
+        );
+        let output = output_for_error(&error).expect("structured unknown profile output");
+        let value: Value = serde_json::from_str(&output.stdout).expect("unknown profile JSON");
+        assert_eq!(value["status"], "unknown_profile");
+        assert_eq!(value["profile"], "missing");
+        assert_eq!(
+            value["known_profiles"],
+            serde_json::json!(["alpha", "team/dev"])
+        );
+    }
+
+    #[test]
+    fn daemon_status_task_port_and_profile_collision_fail_closed() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_TASK_ID", "task-1");
+        assert_eq!(
+            daemon_status_health_port("", &environment)
+                .expect_err("missing injected port")
+                .to_string(),
+            "daemon status inside a daemon-managed task requires the daemon-injected CORDY_DAEMON_PORT"
+        );
+        environment.set("CORDY_DAEMON_PORT", "not-a-port");
+        assert_eq!(
+            daemon_status_health_port("", &environment)
+                .expect_err("invalid injected port")
+                .to_string(),
+            "invalid CORDY_DAEMON_PORT \"not-a-port\" inside a daemon-managed task"
+        );
+        assert_eq!(
+            daemon_status_health_port("dev", &environment)
+                .expect_err("task profile rejected")
+                .to_string(),
+            "daemon status --profile is not available inside a daemon-managed task"
+        );
+
+        let health = serde_json::json!({"status":"running","profile":"ba"});
+        let conflict =
+            daemon_profile_conflict(&health, "ab", 19_710).expect("colliding profile detected");
+        assert_eq!(
+            daemon_profile_conflict_note(&conflict),
+            "Note: port 19710 is serving \"ba\", which hashes to the same port."
+        );
+        let unreadable = serde_json::json!({"status":"running","profile":null});
+        assert!(matches!(
+            daemon_profile_conflict(&unreadable, "", 19_514),
+            Some(DaemonProfileConflict::Unreadable { .. })
+        ));
+    }
 
     #[test]
     fn squad_read_parser_matches_go_registry() {
