@@ -2430,12 +2430,36 @@ enum SkillCommand {
     },
     #[command(about = "Get skill details")]
     Get(SkillGetArgs),
+    #[command(about = "Create a new skill")]
+    Create(SkillCreateArgs),
 }
 
 #[derive(Debug, Args)]
 struct SkillGetArgs {
     #[arg(value_name = "SKILL-ID")]
     skill_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct SkillCreateArgs {
+    #[arg(long, help = "Skill name (required)")]
+    name: Option<String>,
+    #[arg(long, default_value = "", help = "Skill description")]
+    description: String,
+    #[arg(long, help = "Skill content (SKILL.md body)")]
+    content: Option<String>,
+    #[arg(long, help = "Read skill content from stdin")]
+    content_stdin: bool,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Read skill content from a UTF-8 file"
+    )]
+    content_file: Option<PathBuf>,
+    #[arg(long, help = "Skill config as JSON")]
+    config: Option<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
 }
@@ -2844,6 +2868,9 @@ async fn run_with_input<R: Read>(
         Command::Skill(SkillArgs {
             command: SkillCommand::Get(args),
         }) => run_skill_get(cli, environment, args).await,
+        Command::Skill(SkillArgs {
+            command: SkillCommand::Create(args),
+        }) => run_skill_create(cli, environment, args, input).await,
         Command::Autopilot(AutopilotArgs {
             command:
                 AutopilotCommand::List {
@@ -6344,6 +6371,93 @@ async fn run_skill_get(
     Ok(RunOutput {
         stdout,
         stderr: String::new(),
+    })
+}
+
+fn resolve_skill_content<R: Read>(
+    args: &SkillCreateArgs,
+    environment: &Environment,
+    input: &mut R,
+) -> Result<Option<String>> {
+    let sources = [
+        args.content.is_some(),
+        args.content_stdin,
+        args.content_file.is_some(),
+    ]
+    .into_iter()
+    .filter(|source| *source)
+    .count();
+    if sources > 1 {
+        bail!("--content, --content-stdin, and --content-file are mutually exclusive");
+    }
+    if args.content_stdin {
+        let mut bytes = Vec::new();
+        input
+            .read_to_end(&mut bytes)
+            .context("read stdin for --content-stdin")?;
+        let content = String::from_utf8(bytes).map_err(|_| {
+            anyhow::anyhow!("stdin content for --content-stdin must be valid UTF-8")
+        })?;
+        return Ok(Some(content));
+    }
+    if let Some(path) = args.content_file.as_deref() {
+        ensure_file_within_workdir(path, environment.current_dir(), false, "content")?;
+        let read_path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            environment.current_dir().join(path)
+        };
+        let bytes = fs::read(read_path).context("read file for --content-file")?;
+        let content = String::from_utf8(bytes)
+            .map_err(|_| anyhow::anyhow!("file content for --content-file must be valid UTF-8"))?;
+        return Ok(Some(content));
+    }
+    Ok(args.content.clone())
+}
+
+async fn run_skill_create<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SkillCreateArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let name = args.name.as_deref().filter(|name| !name.is_empty());
+    let name = name.context("--name is required")?;
+    let content = resolve_skill_content(args, environment, input)?;
+    let mut body = serde_json::Map::new();
+    body.insert("name".into(), Value::String(name.into()));
+    if !args.description.is_empty() {
+        body.insert(
+            "description".into(),
+            Value::String(args.description.clone()),
+        );
+    }
+    if let Some(content) = content.filter(|content| !content.is_empty()) {
+        body.insert("content".into(), Value::String(content));
+    }
+    if let Some(raw_config) = args.config.as_deref() {
+        let config: Value = serde_json::from_str(raw_config)
+            .map_err(|error| anyhow::anyhow!("--config must be valid JSON: {error}"))?;
+        body.insert("config".into(), config);
+    }
+    let client = new_api_client(cli, environment)?;
+    let result: Value = client
+        .post_json("/api/skills", &body)
+        .await
+        .context("create skill")?;
+    Ok(match args.output {
+        OutputFormat::Json => RunOutput {
+            stdout: format!("{}\n", serde_json::to_string_pretty(&result)?),
+            stderr: String::new(),
+        },
+        OutputFormat::Table => RunOutput {
+            stdout: format!(
+                "Skill created: {} ({})\n",
+                value_string(&result, "name"),
+                value_string(&result, "id")
+            ),
+            stderr: String::new(),
+        },
     })
 }
 
@@ -16746,6 +16860,174 @@ mod tests {
             .await
             .expect_err("empty skill ID");
         assert_eq!(error.to_string(), "skill ID must not be empty");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn skill_create_matches_go_content_config_and_output_contracts() {
+        let app = Router::new().route(
+            "/api/skills",
+            post(|headers: HeaderMap, Json(body): Json<Value>| async move {
+                assert_eq!(headers["authorization"], "Bearer token-1");
+                assert_eq!(headers["x-workspace-id"], "workspace-1");
+                match body["name"].as_str() {
+                    Some("Reviewer") => {
+                        assert_eq!(body["description"], "Reviews changes");
+                        assert_eq!(body["content"], "line1\nline2\n");
+                        assert_eq!(body["config"], serde_json::json!({"level":"strict"}));
+                    }
+                    Some("Inline") => {
+                        assert_eq!(body["content"], "inline");
+                        assert!(body.get("description").is_none());
+                        assert!(body.get("config").is_none());
+                    }
+                    other => panic!("unexpected skill name: {other:?}"),
+                }
+                Json(serde_json::json!({
+                    "id": "skill-1",
+                    "name": body["name"].clone()
+                }))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let table_cli = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "create",
+            "--name",
+            "Reviewer",
+            "--description",
+            "Reviews changes",
+            "--content-stdin",
+            "--config",
+            r#"{"level":"strict"}"#,
+            "--output",
+            "table",
+        ])
+        .expect("skill create table CLI");
+        let Command::Skill(SkillArgs {
+            command: SkillCommand::Create(args),
+        }) = &table_cli.command
+        else {
+            panic!("expected skill create");
+        };
+        assert_eq!(args.output, OutputFormat::Table);
+        let table = run_with_input(
+            &table_cli,
+            &environment,
+            &mut Cursor::new(b"line1\nline2\n".to_vec()),
+        )
+        .await
+        .expect("create skill table");
+        assert_eq!(table.stdout, "Skill created: Reviewer (skill-1)\n");
+        assert!(table.stderr.is_empty());
+
+        let json_cli = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "create",
+            "--name",
+            "Inline",
+            "--content",
+            "inline",
+        ])
+        .expect("skill create JSON CLI");
+        let Command::Skill(SkillArgs {
+            command: SkillCommand::Create(args),
+        }) = &json_cli.command
+        else {
+            panic!("expected skill create JSON");
+        };
+        assert_eq!(args.output, OutputFormat::Json);
+        let json = run_with_input(&json_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("create skill JSON");
+        let created: Value = serde_json::from_str(&json.stdout).expect("created skill JSON");
+        assert_eq!(created["name"], "Inline");
+        assert_eq!(created["id"], "skill-1");
+        assert!(json.stderr.is_empty());
+
+        let missing_name = SkillCreateArgs {
+            name: None,
+            description: String::new(),
+            content: None,
+            content_stdin: false,
+            content_file: None,
+            config: None,
+            output: OutputFormat::Json,
+        };
+        let error = run_skill_create(
+            &json_cli,
+            &environment,
+            &missing_name,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .await
+        .expect_err("missing skill name");
+        assert_eq!(error.to_string(), "--name is required");
+
+        let conflict = SkillCreateArgs {
+            name: Some("Conflict".into()),
+            content: Some("inline".into()),
+            content_stdin: true,
+            ..missing_name
+        };
+        let error =
+            resolve_skill_content(&conflict, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .expect_err("conflicting content sources");
+        assert_eq!(
+            error.to_string(),
+            "--content, --content-stdin, and --content-file are mutually exclusive"
+        );
+
+        let empty_stdin = SkillCreateArgs {
+            name: Some("Empty".into()),
+            description: String::new(),
+            content: None,
+            content_stdin: true,
+            content_file: None,
+            config: None,
+            output: OutputFormat::Json,
+        };
+        assert_eq!(
+            resolve_skill_content(
+                &empty_stdin,
+                &environment,
+                &mut Cursor::new(Vec::<u8>::new())
+            )
+            .expect("empty stdin is accepted"),
+            Some(String::new())
+        );
+
+        let invalid_config = SkillCreateArgs {
+            name: Some("Invalid".into()),
+            description: String::new(),
+            content: None,
+            content_stdin: false,
+            content_file: None,
+            config: Some("{".into()),
+            output: OutputFormat::Json,
+        };
+        let error = run_skill_create(
+            &json_cli,
+            &environment,
+            &invalid_config,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .await
+        .expect_err("invalid config");
+        assert!(error
+            .to_string()
+            .starts_with("--config must be valid JSON:"));
         server.abort();
     }
 
