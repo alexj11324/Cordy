@@ -359,6 +359,20 @@
       `5cc28510b5414d5410d1fa9193fb660d0b91b4ae`, parent
       `e817370fe8ad3f2482a7235bc6cf2d17db664543`; PR remains Ready/CLEAN.
       Scoped rustfmt/diff-check pass; Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy daemon status` to PR #129 as the next bounded CLI slice.
+      It reuses the typed daemon health/control client, preserves profile-derived
+      ports and profile-identity collision checks, uses the injected daemon port
+      inside managed tasks, rejects task profile overrides and unknown profiles,
+      and renders Go-compatible running/starting/stopped diagnostics in table or
+      JSON form. Tests cover parser modes, nested profile discovery, task port
+      boundaries, collision JSON, and table diagnostics. Exact head is
+      `0882488ed29b3bb84d96e8f06dfda9c54dfa75b5`, parent
+      `22762d880efac094d28c1e309cbdb7f7f1376f0e`, tree
+      `b8fe798ee4d548671f005f204ba5537ba7f6a407`, candidate
+      `84765f8571c2d64a849a19e8992bbfe912396bc0`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready/CLEAN/MERGEABLE were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
