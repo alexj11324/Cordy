@@ -40,7 +40,15 @@ async fn require_human_actor(request: Request, next: Next) -> Response {
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
+        .and_then(|value| {
+            let mut parts = value.split_ascii_whitespace();
+            match (parts.next(), parts.next(), parts.next()) {
+                (Some(scheme), Some(token), None) if scheme.eq_ignore_ascii_case("bearer") => {
+                    Some(token)
+                }
+                _ => None,
+            }
+        })
         .is_some_and(|token| token.starts_with("mat_") || token.starts_with("mcn_"));
 
     if actor_source_is_machine || bearer_is_machine {
@@ -450,18 +458,22 @@ mod tests {
             assert_eq!(response.status(), StatusCode::FORBIDDEN, "{source}");
         }
 
-        for token in ["mat_task-token", "mcn_cloud-pat"] {
+        for authorization in [
+            "Bearer mat_task-token",
+            "bearer mcn_cloud-pat",
+            "BeArEr\tmat_task-token",
+        ] {
             let response = test_router()
                 .oneshot(
                     Request::get("/api/invitations")
                         .header("x-user-id", Uuid::nil().to_string())
-                        .header(header::AUTHORIZATION, format!("Bearer {token}"))
+                        .header(header::AUTHORIZATION, authorization)
                         .body(Body::empty())
                         .unwrap(),
                 )
                 .await
                 .unwrap();
-            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{token}");
+            assert_eq!(response.status(), StatusCode::FORBIDDEN, "{authorization}");
         }
     }
 
