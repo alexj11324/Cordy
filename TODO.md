@@ -824,8 +824,9 @@
       disk-usage command orchestration now route through
       `cordy-cli/src/daemon_commands.rs`; scanning/formatting helpers remain
       in `lib.rs` for a separate slice. Scoped rustfmt/diff-check pass; no
-      Cargo was run. The serial subagent owns review/minimal fixes; pro owns
-      Ready PR, gate, and merge.
+      Cargo was run. The serial subagent reviewed exact head `cce3266f` and
+      found no issue (environment lacked a rustfmt binary for a second pass);
+      pro owns Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
