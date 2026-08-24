@@ -150,6 +150,8 @@ enum IssueCommand {
     Usage(IssueUsageArgs),
     #[command(about = "Re-enqueue an issue assignment as a fresh task")]
     Rerun(IssueRerunArgs),
+    #[command(about = "Search issues by title, description, or comments")]
+    Search(IssueSearchArgs),
 }
 
 #[derive(Debug, Args)]
@@ -443,6 +445,18 @@ struct IssueRerunArgs {
     #[arg(value_name = "ID")]
     issue_id: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssueSearchArgs {
+    #[arg(value_name = "QUERY")]
+    query: String,
+    #[arg(long, default_value_t = 20, help = "Maximum number of results")]
+    limit: i64,
+    #[arg(long, help = "Include done and cancelled issues")]
+    include_closed: bool,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
     output: OutputFormat,
 }
 
@@ -857,6 +871,9 @@ async fn run_with_input<R: Read>(
         Command::Issue(IssueArgs {
             command: IssueCommand::Rerun(args),
         }) => run_issue_rerun(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command: IssueCommand::Search(args),
+        }) => run_issue_search(cli, environment, args).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -3531,6 +3548,70 @@ async fn run_issue_rerun(
     })
 }
 
+async fn run_issue_search(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueSearchArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let mut serializer = form_urlencoded::Serializer::new(String::new());
+    serializer.append_pair("q", &args.query);
+    if args.limit > 0 {
+        serializer.append_pair("limit", &args.limit.to_string());
+    }
+    if args.include_closed {
+        serializer.append_pair("include_closed", "true");
+    }
+    let result: Value = client
+        .get_json(&format!("/api/issues/search?{}", serializer.finish()))
+        .await
+        .context("search issues")?;
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+        OutputFormat::Table => {
+            let issues = result
+                .get("issues")
+                .and_then(Value::as_array)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            format_issue_search_table(issues)
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn format_issue_search_table(issues: &[Value]) -> String {
+    let mut rows = vec![vec![
+        "KEY".into(),
+        "TITLE".into(),
+        "STATUS".into(),
+        "MATCH".into(),
+    ]];
+    for issue in issues {
+        let mut match_info = value_string(issue, "match_source");
+        let snippet = value_string(issue, "matched_snippet");
+        if !snippet.is_empty() {
+            let snippet = if snippet.chars().count() > 50 {
+                format!("{}...", snippet.chars().take(47).collect::<String>())
+            } else {
+                snippet
+            };
+            match_info.push_str(": ");
+            match_info.push_str(&snippet);
+        }
+        rows.push(vec![
+            value_string(issue, "identifier"),
+            value_string(issue, "title"),
+            value_string(issue, "status"),
+            match_info,
+        ]);
+    }
+    format_table(&rows)
+}
+
 fn validate_issue_status(status: &str) -> Result<()> {
     let normalized = status.trim().to_ascii_lowercase();
     let bytes = normalized.as_bytes();
@@ -5073,6 +5154,15 @@ mod tests {
                 command: IssueCommand::Rerun(args),
             }) => args,
             _ => panic!("expected issue rerun"),
+        }
+    }
+
+    fn issue_search_args(cli: &Cli) -> &IssueSearchArgs {
+        match &cli.command {
+            Command::Issue(IssueArgs {
+                command: IssueCommand::Search(args),
+            }) => args,
+            _ => panic!("expected issue search"),
         }
     }
 
@@ -7416,6 +7506,81 @@ mod tests {
             .expect("rerun issue");
         assert_eq!(output.stdout, "Re-enqueued task task-1 on agent CodeBot\n");
         assert!(output.stderr.is_empty());
+        task.abort();
+    }
+
+    #[test]
+    fn issue_search_parser_and_table_match_go_contract() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "search",
+            "cache bug",
+            "--limit",
+            "5",
+            "--include-closed",
+            "--output",
+            "json",
+        ])
+        .expect("search CLI");
+        let args = issue_search_args(&cli);
+        assert_eq!(args.query, "cache bug");
+        assert_eq!(args.limit, 5);
+        assert!(args.include_closed);
+        assert_eq!(args.output, OutputFormat::Json);
+
+        let table = format_issue_search_table(&[serde_json::json!({
+            "identifier":"CORD-18","title":"Cache issue","status":"todo",
+            "match_source":"comment","matched_snippet":"x".repeat(51)
+        })]);
+        assert!(table.starts_with("KEY"));
+        assert!(table.contains("CORD-18"));
+        assert!(table.contains("comment: "));
+        assert!(table.contains("xxx..."));
+    }
+
+    #[tokio::test]
+    async fn issue_search_encodes_query_and_preserves_json_envelope() {
+        let app = Router::new().route(
+            "/api/issues/search",
+            get(|request: Request| async move {
+                let query = request.uri().query().unwrap_or_default();
+                assert!(query.contains("q=cache+bug"));
+                assert!(query.contains("limit=5"));
+                assert!(query.contains("include_closed=true"));
+                Json(serde_json::json!({
+                    "issues":[{"id":"issue-1","identifier":"CORD-18","title":"Cache bug"}],
+                    "total":1
+                }))
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "search",
+            "cache bug",
+            "--limit",
+            "5",
+            "--include-closed",
+            "--output",
+            "json",
+        ])
+        .expect("search CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("search issues");
+        let result: Value = serde_json::from_str(&output.stdout).expect("search JSON");
+        assert_eq!(result["total"], 1);
+        assert_eq!(result["issues"][0]["identifier"], "CORD-18");
         task.abort();
     }
 
