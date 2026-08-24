@@ -903,6 +903,15 @@
       policy remain unchanged. Scoped rustfmt and diff-check pass; no Cargo
       was run. The serial subagent reviewed exact head `0e5533b3` and found no
       issue; pro owns push/Ready PR, gate, and merge.
+- [ ] CLI runtime-update policy structural refactor is committed at
+      `7bc594ee612abee02dc81b627eefd2d182221cc2` (parent
+      `0e5533b33f837cb14e5e0eb7fcd720519946614b`, tree
+      `a395a52380a62fa7b331a5b763406b1b552d8242`): target validation,
+      bounded polling, request timeout selection, terminal status handling,
+      and table/JSON output now live in `cordy-cli/src/runtime_update.rs`;
+      runtime API dispatch remains unchanged. Scoped rustfmt and diff-check
+      pass; no Cargo was run. The serial subagent reviewed exact head
+      `7bc594ee` and found no issue; pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
