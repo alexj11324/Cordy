@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use crate::bootstrap::{self, BootstrapContext, BootstrapOptions, BootstrapOutcome};
 use crate::client::Client;
 use crate::config::{self, CliProfileConfig, Config, Overrides};
 use crate::execenv::context::ensure_workspaces_root_marker;
@@ -63,6 +64,39 @@ pub struct DaemonProductionInputs {
     pub config: Config,
     pub client: Arc<Client>,
     pub repo_cache: Arc<Cache>,
+}
+
+/// Complete set of real services returned by the CLI-side profile/provider
+/// loader after bootstrap has established process ownership and logging.
+pub struct DaemonProductionAssembly<P: ProviderRuntimeAdapter> {
+    pub inputs: DaemonProductionInputs,
+    pub provider: Arc<P>,
+    pub checkout_registry: Arc<RepoCheckoutRegistry>,
+}
+
+/// Process-level production entrypoint for the Rust CLI daemon command.
+///
+/// `build` runs after PID ownership, log installation, and signal setup. It
+/// must load the active CLI profile and construct a real provider adapter; the
+/// returned stack then owns all background services until bounded shutdown and
+/// optional successor handoff complete.
+pub async fn run_production_daemon<P, Build>(
+    options: BootstrapOptions,
+    build: Build,
+) -> anyhow::Result<BootstrapOutcome>
+where
+    P: ProviderRuntimeAdapter,
+    Build: FnOnce(&BootstrapContext) -> anyhow::Result<DaemonProductionAssembly<P>>,
+{
+    bootstrap::run_once(options, move |context| async move {
+        let assembly = build(&context)?;
+        let stack = assembly
+            .inputs
+            .into_stack(assembly.provider, assembly.checkout_registry)
+            .await?;
+        stack.run(context.shutdown).await
+    })
+    .await
 }
 
 impl DaemonProductionInputs {
