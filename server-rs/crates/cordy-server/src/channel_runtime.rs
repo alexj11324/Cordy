@@ -732,15 +732,25 @@ fn configure_lark(
         store.as_ref().clone(),
         Arc::new(secret_box),
     ));
+    let http_base_url = cfg
+        .integrations
+        .lark_http_base_url
+        .clone()
+        .unwrap_or_default();
+    let callback_base_url = cfg
+        .integrations
+        .lark_callback_base_url
+        .clone()
+        .unwrap_or_default();
     let api: Arc<dyn cordy_lark::client::ApiClient> = Arc::new(
         cordy_lark::http_client::HttpApiClient::new(cordy_lark::http_client::HttpClientConfig {
-            base_url: std::env::var("CORDY_LARK_HTTP_BASE_URL").unwrap_or_default(),
+            base_url: http_base_url.clone(),
             ..Default::default()
         }),
     );
     let endpoint = Arc::new(cordy_lark::ws_endpoint::HttpConnectionTokenFetcher::new(
         cordy_lark::ws_endpoint::HttpConnectionTokenConfig {
-            base_url: std::env::var("CORDY_LARK_CALLBACK_BASE_URL").unwrap_or_default(),
+            base_url: callback_base_url.clone(),
             http_client: None,
         },
     ));
@@ -774,8 +784,8 @@ fn configure_lark(
         store.clone(),
         api.clone(),
         installations.clone(),
-        std::env::var("CORDY_LARK_HTTP_BASE_URL").unwrap_or_default(),
-        std::env::var("CORDY_LARK_CALLBACK_BASE_URL").unwrap_or_default(),
+        http_base_url,
+        callback_base_url,
     )?;
     let backfill_cancel = cancel.clone();
     let backfill_handle = tokio::spawn(async move {
