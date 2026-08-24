@@ -1,0 +1,136 @@
+name: Scoped review remediation runner
+
+on:
+  pull_request_target:
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: review-remediation-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  remediate:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'remediation/review-debt-20260824'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: cordy
+          POSTGRES_USER: cordy
+          POSTGRES_PASSWORD: cordy
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cordy -d cordy"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: remediation/review-debt-20260824
+          fetch-depth: 0
+
+      - name: Verify exact same-repository head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          if git log -1 --pretty=%B | grep -q '^\[remediation-runner\]'; then
+            echo 'Runner-authored synchronization; nothing to do.'
+            echo skip=true >> "$GITHUB_ENV"
+          fi
+
+      - name: Replay known reviewed fixes without forcing conflicts
+        if: env.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch --all --prune
+
+          commits=(
+            6b52dddb5744e4649a1e665999543b3e4b018995
+            92e5a112de11ab7fca40d28c00c76bda1dc62762
+            b0641e6e789978c0e0dc89c8776dd055995b3835
+            dd105d0b47d0b64d0a1c13ff70e71e8d60c49c00
+            2dbdb9c6e51043bf6a19da085c160f39898d0fd0
+            20972daaf71b6c126a6bcf8799ac016f765d8ae5
+            27f93aab3596c85b1fca52492a113ebe7df3ccc5
+            301f3ce4bf9356cc9396a8eb6d3b9755e3d1226e
+            9f2ed44a08270c58c1cf40f623130425e1096c20
+            31c7080227b81bba523a91b709eba39359745d66
+            2f0c54594f0755a2327da2232e744dbea7805043
+            5402efab8930fbdb408a787fef19bacb4988a77d
+            ed95d6ef3639bcfdad28a57a81f198ec64dbe23e
+            2513d90c12656e9549a18ac6b360d199c10e8fe0
+            5a450533bb8e6ab4f2085d37ac034d2b93463849
+            41eed2a2918ec798c202e8719e86f429f0ee5cd9
+            881da969d4d1357553a86115ffe6e17f21c671e8
+          )
+
+          : > .remediation-replay-report.txt
+          printf '# Review-fix replay report\n\n' >> .remediation-replay-report.txt
+          for commit in "${commits[@]}"; do
+            subject=$(git show -s --format=%s "$commit" 2>/dev/null || true)
+            printf '## %s — %s\n' "$commit" "$subject" >> .remediation-replay-report.txt
+            if git cherry-pick -x "$commit"; then
+              printf 'applied\n\n' >> .remediation-replay-report.txt
+              continue
+            fi
+
+            conflicts=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
+            if [[ -z "$conflicts" ]]; then
+              git cherry-pick --skip || git cherry-pick --abort || true
+              printf 'empty/already effective\n\n' >> .remediation-replay-report.txt
+            else
+              printf 'CONFLICT: %s\n\n' "$conflicts" >> .remediation-replay-report.txt
+              git cherry-pick --abort
+            fi
+          done
+
+      - name: Validate replayed tree
+        if: env.skip != 'true'
+        shell: bash
+        run: |
+          set +e
+          : > .remediation-test-report.txt
+          run_check() {
+            name="$1"; shift
+            echo "## $name" >> .remediation-test-report.txt
+            echo '\`\`\`' >> .remediation-test-report.txt
+            "$@" >> .remediation-test-report.txt 2>&1
+            code=$?
+            echo '\`\`\`' >> .remediation-test-report.txt
+            echo "exit=$code" >> .remediation-test-report.txt
+            echo >> .remediation-test-report.txt
+            return 0
+          }
+          run_check 'cargo fmt --all --check' bash -lc 'cd server-rs && cargo fmt --all -- --check'
+          run_check 'migrations' bash -lc 'cd server-rs && cargo run --locked -p cordy-migrate -- up'
+          run_check 'cargo check workspace all targets' bash -lc 'cd server-rs && cargo check --workspace --all-targets --locked'
+          run_check 'cargo test workspace all targets' bash -lc 'cd server-rs && cargo test --workspace --all-targets --locked'
+          run_check 'strict clippy' bash -lc 'cd server-rs && cargo clippy --workspace --all-targets --locked -- -D warnings'
+
+      - name: Publish replay and validation results to remediation branch
+        if: env.skip != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m '[remediation-runner] replay reviewed fixes and record validation'
+          fi
+          git push origin HEAD:remediation/review-debt-20260824

@@ -52,9 +52,9 @@ struct PatchOnboardingRequest {
 
 #[derive(Debug, Default, Deserialize)]
 struct JoinCloudWaitlistRequest {
-    #[serde(default, deserialize_with = "deserialize_nullable_string")]
+    #[serde(default)]
     email: String,
-    #[serde(default, deserialize_with = "deserialize_nullable_string")]
+    #[serde(default)]
     reason: String,
 }
 
@@ -62,19 +62,19 @@ struct JoinCloudWaitlistRequest {
 struct QuestionnaireAnswers {
     #[serde(default, deserialize_with = "deserialize_string_or_slice")]
     source: Vec<String>,
-    #[serde(default, deserialize_with = "deserialize_nullable_string")]
+    #[serde(default)]
     source_other: String,
     #[serde(default)]
     source_skipped: bool,
-    #[serde(default, deserialize_with = "deserialize_nullable_string")]
+    #[serde(default)]
     role: String,
-    #[serde(default, deserialize_with = "deserialize_nullable_string")]
+    #[serde(default)]
     role_other: String,
     #[serde(default)]
     role_skipped: bool,
     #[serde(default, deserialize_with = "deserialize_string_or_slice")]
     use_case: Vec<String>,
-    #[serde(default, deserialize_with = "deserialize_nullable_string")]
+    #[serde(default)]
     use_case_other: String,
     #[serde(default)]
     use_case_skipped: bool,
@@ -503,13 +503,6 @@ fn record_metric_event(state: &HandlerState, event: &cordy_analytics::Event) {
     }
 }
 
-fn deserialize_nullable_string<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
-}
-
 fn deserialize_string_or_slice<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -671,12 +664,8 @@ mod tests {
 
         let current: QuestionnaireAnswers = serde_json::from_value(serde_json::json!({
             "source": ["friend"],
-            "source_other": null,
-            "role": null,
-            "role_other": null,
             "role_skipped": true,
             "use_case": ["research", "coding"],
-            "use_case_other": null,
             "version": 2
         }))
         .unwrap();
@@ -748,10 +737,6 @@ mod tests {
             decode_json_body(br#"{"email":" Alex@Example.COM ","reason":""} trailing"#).unwrap();
         assert_eq!(request.email.trim().to_lowercase(), "alex@example.com");
         assert!(request.reason.is_empty());
-
-        let nullable_reason: JoinCloudWaitlistRequest =
-            decode_json_body(br#"{"email":"alex@example.com","reason":null}"#).unwrap();
-        assert!(nullable_reason.reason.is_empty());
 
         let omitted: JoinCloudWaitlistRequest = decode_json_body(b"{}").unwrap();
         assert!(omitted.email.is_empty());
