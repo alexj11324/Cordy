@@ -92,10 +92,41 @@ enum Command {
     Property(PropertyArgs),
     #[command(about = "Work with the current chat conversation")]
     Chat(ChatArgs),
+    #[command(about = "Work with attachments")]
+    Attachment(AttachmentArgs),
     #[command(about = "Print version information")]
     Version {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
         output: VersionOutput,
+    },
+}
+
+#[derive(Debug, Args)]
+struct AttachmentArgs {
+    #[command(subcommand)]
+    command: AttachmentCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum AttachmentCommand {
+    #[command(about = "Download an attachment to a local file")]
+    Download {
+        #[arg(value_name = "ATTACHMENT-ID")]
+        attachment_id: String,
+        #[arg(
+            short = 'o',
+            long,
+            default_value = ".",
+            help = "Directory to save the downloaded file"
+        )]
+        output_dir: PathBuf,
+    },
+    #[command(about = "Upload a file to attach to your chat reply")]
+    Upload {
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        #[arg(long, help = "Chat task id to attach to (defaults to CORDY_TASK_ID)")]
+        task: Option<String>,
     },
 }
 
@@ -1932,6 +1963,16 @@ async fn run_with_input<R: Read>(
             )
             .await
         }
+        Command::Attachment(AttachmentArgs {
+            command:
+                AttachmentCommand::Download {
+                    attachment_id,
+                    output_dir,
+                },
+        }) => run_attachment_download(cli, environment, attachment_id, output_dir).await,
+        Command::Attachment(AttachmentArgs {
+            command: AttachmentCommand::Upload { path, task },
+        }) => run_attachment_upload(cli, environment, path, task.as_deref()).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -2041,6 +2082,127 @@ async fn run_chat_read(
     Ok(RunOutput {
         stdout: format_chat_read(&response, args.output, overview)?,
         stderr: String::new(),
+    })
+}
+
+fn escape_markdown_label(label: &str) -> String {
+    let mut escaped = String::with_capacity(label.len());
+    for character in label.chars() {
+        if matches!(character, '\\' | '[' | ']' | '(' | ')') {
+            escaped.push('\\');
+        }
+        escaped.push(character);
+    }
+    escaped
+}
+
+async fn run_attachment_upload(
+    cli: &Cli,
+    environment: &Environment,
+    path: &Path,
+    task: Option<&str>,
+) -> Result<RunOutput> {
+    let task_id = task
+        .filter(|task| !task.is_empty())
+        .or_else(|| environment.raw("CORDY_TASK_ID"))
+        .unwrap_or_default();
+    if task_id.is_empty() {
+        bail!(
+            "no chat task in context: run inside a chat task (CORDY_TASK_ID set) or pass --task <id>"
+        );
+    }
+    let path_text = path.to_string_lossy();
+    if path_text.starts_with("http://") || path_text.starts_with("https://") {
+        bail!("upload accepts a local file path, not a URL: {path_text}");
+    }
+    let read_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        environment.current_dir().join(path)
+    };
+    let data =
+        fs::read(&read_path).with_context(|| format!("read file {}", path.to_string_lossy()))?;
+    let request_timeout =
+        http_timeout(environment.raw("CORDY_HTTP_TIMEOUT")).max(std::time::Duration::from_secs(60));
+    let client = new_api_client(cli, environment)?.with_request_timeout(request_timeout);
+    let attachment = client
+        .upload_chat_attachment(data, &path_text, task_id)
+        .await
+        .context("upload attachment")?;
+    let filename = path
+        .file_name()
+        .and_then(|filename| filename.to_str())
+        .unwrap_or(&path_text);
+    let label = escape_markdown_label(filename);
+    let markdown = if attachment.content_type.starts_with("image/") {
+        format!("![{label}]({})", attachment.markdown_url)
+    } else {
+        format!("!file[{label}]({})", attachment.markdown_url)
+    };
+    Ok(RunOutput {
+        stdout: format!(
+            "{}\n",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "id":attachment.id,
+                "filename":filename,
+                "markdown_url":attachment.markdown_url,
+                "markdown":markdown
+            }))?
+        ),
+        stderr: format!("Uploaded: {filename}\n"),
+    })
+}
+
+async fn run_attachment_download(
+    cli: &Cli,
+    environment: &Environment,
+    attachment_id: &str,
+    output_dir: &Path,
+) -> Result<RunOutput> {
+    let request_timeout =
+        http_timeout(environment.raw("CORDY_HTTP_TIMEOUT")).max(std::time::Duration::from_secs(60));
+    let client = new_api_client(cli, environment)?.with_request_timeout(request_timeout);
+    let attachment: Value = client
+        .get_json(&format!("/api/attachments/{attachment_id}"))
+        .await
+        .context("get attachment")?;
+    let download_url = value_string(&attachment, "download_url");
+    if download_url.is_empty() {
+        bail!("attachment has no download URL");
+    }
+    let raw_filename = value_string(&attachment, "filename");
+    let filename = Path::new(&raw_filename)
+        .file_name()
+        .and_then(|filename| filename.to_str())
+        .filter(|filename| !filename.is_empty() && *filename != ".")
+        .unwrap_or(attachment_id);
+    let data = client
+        .download_file(&download_url)
+        .await
+        .context("download file")?;
+    let directory = if output_dir.is_absolute() {
+        output_dir.to_path_buf()
+    } else {
+        environment.current_dir().join(output_dir)
+    };
+    if !output_dir.as_os_str().is_empty() {
+        fs::create_dir_all(&directory).context("create output directory")?;
+    }
+    let destination = directory.join(filename);
+    fs::write(&destination, data).context("write file")?;
+    let absolute = fs::canonicalize(&destination).unwrap_or(destination);
+    let path = absolute.to_string_lossy();
+    Ok(RunOutput {
+        stdout: format!(
+            "{}\n",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "id":value_string(&attachment, "id"),
+                "filename":filename,
+                "path":path,
+                "size":value_string(&attachment, "size_bytes")
+            }))?
+        ),
+        stderr: format!("Downloaded: {path}\n"),
     })
 }
 
@@ -13181,6 +13343,101 @@ mod tests {
             .await
             .expect("chat thread");
         assert_eq!(thread.stdout, "thread is unavailable\n");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn attachment_upload_and_download_match_go_file_and_output_contracts() {
+        let app = Router::new()
+            .route(
+                "/api/upload-file",
+                post(|request: Request| async move {
+                    let content_type = request
+                        .headers()
+                        .get("content-type")
+                        .and_then(|value| value.to_str().ok())
+                        .unwrap_or_default()
+                        .to_string();
+                    assert!(content_type.starts_with("multipart/form-data; boundary="));
+                    let body = axum::body::to_bytes(request.into_body(), usize::MAX)
+                        .await
+                        .expect("multipart body");
+                    let body = String::from_utf8_lossy(&body);
+                    assert!(body.contains("task-1"));
+                    assert!(body.contains("chart[v2].png"));
+                    Json(serde_json::json!({
+                        "id":"attachment-1","content_type":"image/png",
+                        "markdown_url":"/api/attachments/attachment-1/download"
+                    }))
+                }),
+            )
+            .route(
+                "/api/attachments/attachment-1",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "id":"attachment-1","filename":"../report.txt",
+                        "download_url":"/downloads/report.txt","size_bytes":15
+                    }))
+                }),
+            )
+            .route(
+                "/downloads/report.txt",
+                get(|request: Request| async move {
+                    assert!(request.headers().contains_key("authorization"));
+                    "attachment body"
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        fs::write(cwd.path().join("chart[v2].png"), b"png bytes").expect("upload file");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TASK_ID", "task-1");
+        environment.set("CORDY_TOKEN", "mat_test-token");
+
+        let upload = Cli::try_parse_from(["cordy", "attachment", "upload", "chart[v2].png"])
+            .expect("attachment upload CLI");
+        let uploaded = run_with_input(&upload, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("upload attachment");
+        assert_eq!(uploaded.stderr, "Uploaded: chart[v2].png\n");
+        let uploaded_json: Value = serde_json::from_str(&uploaded.stdout).expect("upload JSON");
+        assert_eq!(uploaded_json["id"], "attachment-1");
+        assert_eq!(
+            uploaded_json["markdown"],
+            r#"![chart\[v2\].png](/api/attachments/attachment-1/download)"#
+        );
+
+        let download = Cli::try_parse_from([
+            "cordy",
+            "attachment",
+            "download",
+            "attachment-1",
+            "-o",
+            "attachments",
+        ])
+        .expect("attachment download CLI");
+        let downloaded =
+            run_with_input(&download, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .await
+                .expect("download attachment");
+        let destination = cwd.path().join("attachments/report.txt");
+        assert_eq!(
+            fs::read_to_string(&destination).expect("downloaded file"),
+            "attachment body"
+        );
+        assert!(downloaded
+            .stderr
+            .contains(destination.to_string_lossy().as_ref()));
+        let downloaded_json: Value =
+            serde_json::from_str(&downloaded.stdout).expect("download JSON");
+        assert_eq!(downloaded_json["filename"], "report.txt");
+        assert_eq!(downloaded_json["size"], "15");
+        assert!(!downloaded.stdout.contains("../"));
         server.abort();
     }
 
