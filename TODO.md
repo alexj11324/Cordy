@@ -679,6 +679,14 @@
       rejects daemon/task-managed contexts before host lifecycle control, with
       a regression test. Scoped rustfmt and diff-check pass; pushed on the
       cumulative branch; Cargo/review/PR/merge remain with pro.
+- [x] Completed setup callback-host parity in
+      `b44b1dbcc0fd34b2caebd093abc9d1d31f3432b0` (parent `d4e935b7`, tree
+      `868114c31af566633937bc79dc7fb7bbca503486`). `setup cloud` and
+      `setup self-host` now expose and propagate the Go-compatible callback
+      host to browser login, with parser/propagation tests. Scoped rustfmt for
+      changed files and diff-check pass (an unrelated existing `daemon.rs`
+      formatting hunk remains untouched); pushed on the cumulative branch.
+      Cargo/review/PR/merge remain with pro.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
