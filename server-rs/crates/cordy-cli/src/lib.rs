@@ -335,6 +335,15 @@ struct IssueCommentArgs {
 enum IssueCommentCommand {
     #[command(about = "Add a comment to an issue")]
     Add(IssueCommentAddArgs),
+    #[command(about = "Delete a comment")]
+    Delete {
+        #[arg(value_name = "COMMENT-ID")]
+        comment_id: String,
+    },
+    #[command(about = "Resolve a comment thread")]
+    Resolve(IssueCommentResolutionArgs),
+    #[command(about = "Unresolve a comment thread")]
+    Unresolve(IssueCommentResolutionArgs),
 }
 
 #[derive(Debug, Args)]
@@ -363,6 +372,14 @@ struct IssueCommentAddArgs {
     parent: Option<String>,
     #[arg(long, value_delimiter = ',', help = "File path(s) to attach")]
     attachment: Vec<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssueCommentResolutionArgs {
+    #[arg(value_name = "COMMENT-ID")]
+    comment_id: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
 }
@@ -745,6 +762,24 @@ async fn run_with_input<R: Read>(
                     command: IssueCommentCommand::Add(args),
                 }),
         }) => run_issue_comment_add(cli, environment, args, input).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Comment(IssueCommentArgs {
+                    command: IssueCommentCommand::Delete { comment_id },
+                }),
+        }) => run_issue_comment_delete(cli, environment, comment_id).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Comment(IssueCommentArgs {
+                    command: IssueCommentCommand::Resolve(args),
+                }),
+        }) => run_issue_comment_resolution(cli, environment, args, true).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Comment(IssueCommentArgs {
+                    command: IssueCommentCommand::Unresolve(args),
+                }),
+        }) => run_issue_comment_resolution(cli, environment, args, false).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -2992,6 +3027,54 @@ fn resolve_issue_comment_content<R: Read>(
     Ok((!inline.is_empty()).then(|| unescape_backslash_escapes(inline)))
 }
 
+async fn run_issue_comment_delete(
+    cli: &Cli,
+    environment: &Environment,
+    comment_id: &str,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    client
+        .delete(&format!("/api/comments/{comment_id}"))
+        .await
+        .context("delete comment")?;
+    Ok(RunOutput {
+        stdout: String::new(),
+        stderr: format!("Comment {comment_id} deleted.\n"),
+    })
+}
+
+async fn run_issue_comment_resolution(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueCommentResolutionArgs,
+    resolve: bool,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let comment_id = args.comment_id.trim();
+    let encoded_id = form_urlencoded::byte_serialize(comment_id.as_bytes()).collect::<String>();
+    let path = format!("/api/comments/{encoded_id}/resolve");
+    let comment: Value = if resolve {
+        client
+            .post_json(&path, &Value::Null)
+            .await
+            .context("resolve comment")?
+    } else {
+        client
+            .delete_json(&path)
+            .await
+            .context("unresolve comment")?
+    };
+    let action = if resolve { "resolved" } else { "unresolved" };
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&comment)?),
+        OutputFormat::Table => String::new(),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: format!("Comment {comment_id} {action}.\n"),
+    })
+}
+
 fn validate_issue_status(status: &str) -> Result<()> {
     let normalized = status.trim().to_ascii_lowercase();
     let bytes = normalized.as_bytes();
@@ -4299,7 +4382,7 @@ mod tests {
     use super::*;
     use axum::extract::Request;
     use axum::http::HeaderMap;
-    use axum::routing::{get, patch, post, put};
+    use axum::routing::{delete as delete_route, get, patch, post, put};
     use axum::{Json, Router};
     use clap::Parser;
     use std::fs;
@@ -6470,6 +6553,69 @@ mod tests {
             .await
             .expect_err("missing content");
         assert!(error.to_string().contains("--content-file is required"));
+    }
+
+    #[tokio::test]
+    async fn issue_comment_delete_resolve_and_unresolve_match_go_http_contracts() {
+        let app = Router::new()
+            .route(
+                "/api/comments/comment-1",
+                delete_route(|| async { axum::http::StatusCode::NO_CONTENT }),
+            )
+            .route(
+                "/api/comments/comment-1/resolve",
+                post(|| async {
+                    Json(serde_json::json!({"id":"comment-1","resolved_at":"2026-08-24T00:00:00Z"}))
+                })
+                .delete(|| async {
+                    Json(serde_json::json!({"id":"comment-1","resolved_at":null}))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let delete = Cli::try_parse_from(["cordy", "issue", "comment", "delete", "comment-1"])
+            .expect("delete CLI");
+        let output = run_with_input(&delete, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("delete comment");
+        assert!(output.stdout.is_empty());
+        assert_eq!(output.stderr, "Comment comment-1 deleted.\n");
+
+        let resolve = Cli::try_parse_from(["cordy", "issue", "comment", "resolve", "comment-1"])
+            .expect("resolve CLI");
+        let output = run_with_input(&resolve, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("resolve comment");
+        assert_eq!(output.stderr, "Comment comment-1 resolved.\n");
+        assert!(
+            serde_json::from_str::<Value>(&output.stdout).expect("resolved JSON")["resolved_at"]
+                .is_string()
+        );
+
+        let unresolve = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "comment",
+            "unresolve",
+            "comment-1",
+            "--output",
+            "table",
+        ])
+        .expect("unresolve CLI");
+        let output = run_with_input(&unresolve, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("unresolve comment");
+        assert!(output.stdout.is_empty());
+        assert_eq!(output.stderr, "Comment comment-1 unresolved.\n");
+        task.abort();
     }
 
     #[test]
