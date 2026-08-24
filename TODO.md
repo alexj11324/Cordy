@@ -295,10 +295,10 @@
       server/app URLs; health preflight must succeed before mutation; success
       atomically replaces the whole profile (clearing stale token/workspace and
       unknown fields) while preserving lock/permission/fsync semantics. Current
-      head is now `33d5df4560abe803fd193668e91ab8104b071bff` (parent
-      `31ed70f6fbef53eff392c8bd861e16ff1ae25e35`, tree
-      `96a6a16e9b4795f1630035f62e72a71be89b8be4`), candidate
-      `ad820ed10935d3df3692ab603c15493e294e8e09`; the remote branch and PR
+      head is now `c0e3d8dd227111c11618c3793410cb2ae3a207ea` (parent
+      `33d5df4560abe803fd193668e91ab8104b071bff`, tree
+      `08c91422dc6db1edd7f53cab1dd92d75e98533ed`), candidate
+      `25b074290da886e9c2a4022102dbef95d30da74e`; the remote branch and PR
       candidate were verified at these exact SHAs. PR #129 remains
       Ready/CLEAN/MERGEABLE on base `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`.
       The slice adds the bounded unauthenticated `/health` probe (HTTP(S), no
@@ -338,6 +338,17 @@
       `31ed70f6fbef53eff392c8bd861e16ff1ae25e35`; remote head/base and
       Ready/CLEAN mergeability were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added the typed daemon root-update facade to PR #129. `UpdateRequest`
+      supports explicit or latest targets and caller download timeouts;
+      direct installs resolve and validate the latest tag, while Homebrew
+      treats latest-release lookup as advisory and still upgrades when it
+      fails. Existing download, checksum, extraction, and atomic replacement
+      code remains single-sourced, and public outcomes are path-free. Exact
+      head is `c0e3d8dd227111c11618c3793410cb2ae3a207ea`, tree
+      `08c91422dc6db1edd7f53cab1dd92d75e98533ed`, candidate
+      `25b074290da886e9c2a4022102dbef95d30da74e`, parent
+      `33d5df4560abe803fd193668e91ab8104b071bff`; PR remains Ready/CLEAN.
+      Scoped rustfmt/diff-check pass; Cargo/review/gate/merge remain with pro.
 - [x] Added the hidden `cordy daemon probe-runtimes` command through a typed
       daemon facade in PR #129. The facade reuses the complete daemon
       `load_config`/agent discovery path with `AllowNoAgents=true`, preserves
