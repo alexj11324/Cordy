@@ -21,7 +21,8 @@ use crate::config::{
 };
 use crate::daemon_core::DaemonCoreServices;
 use crate::health::{
-    ActiveRepoCheckoutTask, HealthResponse, RepoCheckoutRequest, REPO_CHECKOUT_LOCK_WAIT_TIMEOUT,
+    ActiveRepoCheckoutTask, HealthResponse, RepoCheckoutRegistry, RepoCheckoutRequest,
+    REPO_CHECKOUT_LOCK_WAIT_TIMEOUT,
 };
 use crate::production_stack::{ProductionRuntimeServices, RepoCheckoutFailure};
 use crate::reconcile::{ReconcileBroadcaster, WorkspaceChangeSignal};
@@ -53,6 +54,7 @@ pub trait ProviderRuntimeAdapter: RuntimeRegistrationSource {
         slot: usize,
         activity: Arc<DaemonActivity>,
         repo_state: Arc<DaemonRepoState>,
+        checkout_registry: Arc<RepoCheckoutRegistry>,
     ) -> TaskRunOutcome;
 
     fn health_snapshot(&self) -> HealthResponse;
@@ -65,6 +67,7 @@ pub struct DaemonProductionServices<P: ProviderRuntimeAdapter> {
     registration: RuntimeRegistrationService<P>,
     repo_cache: Arc<Cache>,
     repo_state: Arc<DaemonRepoState>,
+    checkout_registry: Arc<RepoCheckoutRegistry>,
 }
 
 impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
@@ -72,6 +75,7 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
         config: Arc<Config>,
         client: Arc<Client>,
         repo_cache: Arc<Cache>,
+        checkout_registry: Arc<RepoCheckoutRegistry>,
         provider: Arc<P>,
     ) -> Self {
         let repo_state = Arc::new(DaemonRepoState::new());
@@ -88,6 +92,7 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
             provider,
             repo_cache,
             repo_state,
+            checkout_registry,
         }
     }
 
@@ -278,6 +283,49 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
             Err(error) => Err(checkout_failure(500, error.to_string())),
         }
     }
+
+    async fn sync_task_repos(&self, ctx: &Ctx, task: &Task) -> TaskRepoRefGuard {
+        let candidates =
+            self.repo_state
+                .register_task_repos(&task.workspace_id, &task.id, &task.repos);
+        let repos: Vec<RepoInfo> = candidates
+            .into_iter()
+            .filter(|url| self.repo_cache.lookup(&task.workspace_id, url).is_none())
+            .map(|url| RepoInfo { url })
+            .collect();
+        if !repos.is_empty() {
+            if let Err(error) = self
+                .repo_cache
+                .sync_ctx(ctx, &task.workspace_id, &repos)
+                .await
+            {
+                tracing::warn!(
+                    workspace_id = %task.workspace_id,
+                    task_id = %task.id,
+                    %error,
+                    "task repository cache sync failed"
+                );
+            }
+        }
+        TaskRepoRefGuard {
+            state: Arc::clone(&self.repo_state),
+            workspace_id: task.workspace_id.clone(),
+            task_id: task.id.clone(),
+        }
+    }
+}
+
+struct TaskRepoRefGuard {
+    state: Arc<DaemonRepoState>,
+    workspace_id: String,
+    task_id: String,
+}
+
+impl Drop for TaskRepoRefGuard {
+    fn drop(&mut self) {
+        self.state
+            .clear_task_refs(&self.workspace_id, &self.task_id);
+    }
 }
 
 fn checkout_failure(status_code: u16, message: impl Into<String>) -> RepoCheckoutFailure {
@@ -340,6 +388,7 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
         slot: usize,
         activity: Arc<DaemonActivity>,
     ) -> TaskRunOutcome {
+        let _repo_refs = self.sync_task_repos(&ctx, &task).await;
         self.provider
             .run_task(
                 ctx,
@@ -348,6 +397,7 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
                 slot,
                 activity,
                 Arc::clone(&self.repo_state),
+                Arc::clone(&self.checkout_registry),
             )
             .await
     }

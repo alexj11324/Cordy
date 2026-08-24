@@ -58,7 +58,7 @@ impl DaemonRepoState {
     }
 
     /// Registers repositories surfaced only by one claimed task and returns
-    /// URLs newly added to the union, for cache synchronization by the caller.
+    /// the normalized candidates, for cache synchronization by the caller.
     pub fn register_task_repos(
         &self,
         workspace_id: &str,
@@ -69,13 +69,12 @@ impl DaemonRepoState {
         let Some(workspace) = workspaces.get_mut(workspace_id) else {
             return Vec::new();
         };
-        let mut newly_tracked = Vec::new();
+        let mut candidates = BTreeSet::new();
         for repo in repos {
             let url = repo.url.trim();
             if url.is_empty() {
                 continue;
             }
-            let was_tracked = workspace.allowed.contains(url) || workspace.task_urls.contains(url);
             workspace.task_urls.insert(url.to_string());
             if !task_id.is_empty() {
                 workspace
@@ -85,11 +84,9 @@ impl DaemonRepoState {
                     .entry(url.to_string())
                     .or_insert_with(|| repo.ref_.trim().to_string());
             }
-            if !was_tracked {
-                newly_tracked.push(url.to_string());
-            }
+            candidates.insert(url.to_string());
         }
-        newly_tracked
+        candidates.into_iter().collect()
     }
 
     pub fn clear_task_refs(&self, workspace_id: &str, task_id: &str) {

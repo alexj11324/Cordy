@@ -164,6 +164,22 @@ impl RepoCheckoutRegistry {
         self.tasks.lock().unwrap().remove(token);
     }
 
+    /// Ownership-safe provider execution seam. Dropping the returned guard
+    /// always revokes the task credential, including cancellation and unwind
+    /// paths around provider execution.
+    pub fn register_owned(
+        self: &std::sync::Arc<Self>,
+        token: impl Into<String>,
+        task: ActiveRepoCheckoutTask,
+    ) -> RepoCheckoutTaskGuard {
+        let token = token.into();
+        self.register(&token, task);
+        RepoCheckoutTaskGuard {
+            registry: std::sync::Arc::clone(self),
+            token,
+        }
+    }
+
     /// `activeRepoCheckoutTask(r)`: resolves the Authorization header's bearer
     /// token against the registry.
     pub(crate) fn resolve(&self, authorization_header: &str) -> Option<ActiveRepoCheckoutTask> {
@@ -173,6 +189,17 @@ impl RepoCheckoutRegistry {
             return None;
         }
         self.tasks.lock().unwrap().get(token).cloned()
+    }
+}
+
+pub struct RepoCheckoutTaskGuard {
+    registry: std::sync::Arc<RepoCheckoutRegistry>,
+    token: String,
+}
+
+impl Drop for RepoCheckoutTaskGuard {
+    fn drop(&mut self) {
+        self.registry.clear(&self.token);
     }
 }
 
@@ -221,4 +248,33 @@ pub(crate) fn authorize_repo_checkout_workdir(
         anyhow::bail!("workdir is outside the active task workdir");
     }
     Ok(workdir)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+
+    #[test]
+    fn owned_checkout_credential_is_revoked_on_drop() {
+        let registry = Arc::new(RepoCheckoutRegistry::default());
+        let guard = registry.register_owned(
+            "task-token",
+            ActiveRepoCheckoutTask {
+                task_id: "task-1".to_string(),
+                ..ActiveRepoCheckoutTask::default()
+            },
+        );
+        assert_eq!(
+            registry
+                .resolve("Bearer task-token")
+                .map(|task| task.task_id)
+                .as_deref(),
+            Some("task-1")
+        );
+
+        drop(guard);
+        assert!(registry.resolve("Bearer task-token").is_none());
+    }
 }

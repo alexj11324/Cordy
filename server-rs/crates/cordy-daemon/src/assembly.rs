@@ -194,6 +194,7 @@ impl DaemonProductionInputs {
             Arc::clone(&config),
             Arc::clone(&self.client),
             Arc::clone(&self.repo_cache),
+            Arc::clone(&checkout_registry),
             provider,
         ));
         DaemonProductionStack::new_shared(
