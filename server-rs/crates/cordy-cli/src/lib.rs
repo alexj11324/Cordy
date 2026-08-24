@@ -10,7 +10,7 @@ pub mod daemon;
 pub mod error;
 
 use anyhow::{bail, Context, Result};
-use api::{http_timeout, ApiClient, HttpError, NetworkError};
+use api::{http_timeout, ApiClient, HealthProbeError, HttpError, NetworkError};
 use chrono::{DateTime, FixedOffset};
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use config::Environment;
@@ -124,6 +124,8 @@ enum Command {
     Runtime(RuntimeArgs),
     #[command(about = "Run the local Cordy daemon")]
     Daemon(DaemonArgs),
+    #[command(about = "Configure the Cordy server and authenticate")]
+    Setup(SetupArgs),
     #[command(about = "Manage autopilots (scheduled/triggered agent automations)")]
     Autopilot(AutopilotArgs),
     #[command(about = "Print version information")]
@@ -159,6 +161,48 @@ struct DaemonStartArgs {
 struct DaemonRestartArgs {
     #[command(flatten)]
     launch: DaemonLaunchArgs,
+}
+
+#[derive(Debug, Args)]
+struct SetupArgs {
+    #[command(subcommand)]
+    command: Option<SetupCommand>,
+}
+
+#[derive(Debug, Subcommand)]
+enum SetupCommand {
+    #[command(about = "Configure Cordy Cloud")]
+    Cloud,
+    #[command(about = "Configure a self-hosted Cordy server")]
+    SelfHost(SetupSelfHostArgs),
+}
+
+#[derive(Debug, Args)]
+struct SetupSelfHostArgs {
+    #[arg(long, help = "Frontend URL used by the login flow")]
+    app_url: Option<String>,
+    #[arg(
+        long,
+        default_value_t = 8080,
+        help = "Backend port for local self-hosting"
+    )]
+    port: u16,
+    #[arg(
+        long,
+        default_value_t = 3000,
+        help = "Frontend port for local self-hosting"
+    )]
+    frontend_port: u16,
+}
+
+#[derive(Debug, thiserror::Error)]
+enum SetupError {
+    #[error("setup health preflight failed: {0}")]
+    HealthProbe(#[source] HealthProbeError),
+    #[error("setup self-host requires --app-url when --server-url points at a remote host")]
+    RemoteAppUrlRequired,
+    #[error("setup configured the profile, but the interactive login flow is not available in this Rust slice yet")]
+    LoginFlowUnavailable,
 }
 
 /// Launch flags shared by `daemon start` and `daemon restart`.
@@ -3076,8 +3120,101 @@ async fn run_with_input<R: Read>(
         Command::Daemon(DaemonArgs {
             command: DaemonCommand::Stop,
         }) => run_daemon_stop(cli, environment).await,
+        Command::Setup(args) => run_setup(cli, environment, args).await,
         Command::Version { output } => run_version(*output),
     }
+}
+
+const CLOUD_SERVER_URL: &str = "https://api.cordy.ai";
+const CLOUD_APP_URL: &str = "https://cordy.ai";
+const SETUP_HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
+
+async fn run_setup(cli: &Cli, environment: &Environment, args: &SetupArgs) -> Result<RunOutput> {
+    require_human_local_command(environment, "setup")?;
+    let input = resolve_setup_profile_input(cli, environment, args)?;
+
+    // The health probe is deliberately before any config lock or write. A
+    // failed target must leave the current URL and token untouched.
+    ApiClient::probe_health(&input.server_url, SETUP_HEALTH_TIMEOUT)
+        .await
+        .map_err(SetupError::HealthProbe)?;
+    environment.replace_profile_for_setup(&cli.profile, &input)?;
+
+    // A token supplied by the surrounding environment is the non-interactive
+    // login/token boundary available to this slice. The browser login flow is
+    // intentionally not recreated here; the explicit typed error below keeps
+    // setup from claiming completion when that flow is not present yet.
+    if let Some(token) = environment.trimmed("CORDY_TOKEN") {
+        environment.set_profile_value(
+            &cli.profile,
+            "token",
+            Some(Value::String(token.to_owned())),
+        )?;
+        return Ok(RunOutput {
+            stdout: String::new(),
+            stderr: format!(
+                "Configured {} for profile {:?}; token authentication preserved.\n",
+                input.server_url, cli.profile
+            ),
+        });
+    }
+    Err(SetupError::LoginFlowUnavailable.into())
+}
+
+fn resolve_setup_profile_input(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SetupArgs,
+) -> Result<config::SetupProfileInput> {
+    let existing = environment.load_config(&cli.profile).unwrap_or_default();
+    match &args.command {
+        None | Some(SetupCommand::Cloud) => {
+            config::SetupProfileInput::new(CLOUD_SERVER_URL, CLOUD_APP_URL)
+        }
+        Some(SetupCommand::SelfHost(options)) => {
+            let raw_server = cli
+                .server_url
+                .as_deref()
+                .or_else(|| environment.trimmed("CORDY_SERVER_URL"))
+                .or_else(|| {
+                    (!existing.server_url.trim().is_empty()).then_some(existing.server_url.as_str())
+                })
+                .unwrap_or("");
+            let raw_server = if raw_server.is_empty() {
+                format!("http://localhost:{}", options.port)
+            } else {
+                raw_server.to_owned()
+            };
+            let server_url = normalize_api_base_url(&raw_server)?;
+            let app_url = options
+                .app_url
+                .as_deref()
+                .or_else(|| environment.trimmed("CORDY_APP_URL"))
+                .or_else(|| {
+                    (!existing.app_url.trim().is_empty()).then_some(existing.app_url.as_str())
+                })
+                .map(|value| value.trim_end_matches('/').to_owned())
+                .or_else(|| {
+                    setup_server_is_local(&server_url)
+                        .then(|| format!("http://localhost:{}", options.frontend_port))
+                })
+                .ok_or(SetupError::RemoteAppUrlRequired)?;
+            config::SetupProfileInput::new(server_url, app_url)
+        }
+    }
+}
+
+fn setup_server_is_local(server_url: &str) -> bool {
+    let Ok(url) = Url::parse(server_url) else {
+        return false;
+    };
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| ip.is_loopback())
 }
 
 async fn run_daemon_start(
@@ -13199,7 +13336,7 @@ fn value_string(object: &Value, key: &str) -> String {
 mod tests {
     use super::*;
     use axum::extract::Request;
-    use axum::http::HeaderMap;
+    use axum::http::{HeaderMap, StatusCode};
     use axum::routing::{delete as delete_route, get, patch, post, put};
     use axum::{Json, Router};
     use clap::Parser;
@@ -22474,6 +22611,154 @@ mod tests {
                 command: DaemonCommand::Stop
             })
         ));
+    }
+
+    #[test]
+    fn setup_parser_exposes_cloud_and_self_host_boundaries() {
+        assert!(matches!(
+            Cli::try_parse_from(["cordy", "setup"])
+                .expect("cloud setup")
+                .command,
+            Command::Setup(SetupArgs { command: None })
+        ));
+
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            "staging",
+            "--server-url",
+            "wss://api.example/ws",
+            "setup",
+            "self-host",
+            "--app-url",
+            "https://app.example/",
+            "--port",
+            "9090",
+            "--frontend-port",
+            "4000",
+        ])
+        .expect("self-host setup");
+        let Command::Setup(SetupArgs {
+            command: Some(SetupCommand::SelfHost(options)),
+        }) = cli.command
+        else {
+            panic!("expected self-host setup");
+        };
+        assert_eq!(options.app_url.as_deref(), Some("https://app.example/"));
+        assert_eq!(options.port, 9090);
+        assert_eq!(options.frontend_port, 4000);
+    }
+
+    #[test]
+    fn setup_remote_self_host_requires_explicit_app_url() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "--server-url",
+            "https://api.example",
+            "setup",
+            "self-host",
+        ])
+        .expect("setup CLI");
+        let Command::Setup(args) = &cli.command else {
+            panic!("expected setup");
+        };
+        let error = resolve_setup_profile_input(&cli, &environment, args)
+            .expect_err("remote setup must not guess app URL");
+        assert!(error.to_string().contains("requires --app-url"));
+    }
+
+    #[tokio::test]
+    async fn setup_probes_before_replacing_profile_and_preserves_env_token() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let profile = "staging";
+        let config_path = environment.config_path(profile).expect("config path");
+        fs::create_dir_all(config_path.parent().expect("config parent")).expect("config dir");
+        let old_config = br#"{"server_url":"http://old.example","app_url":"http://old.app","token":"mul_old","workspace_id":"old"}"#;
+        fs::write(&config_path, old_config).expect("old config");
+
+        let observed_during_probe = Arc::new(Mutex::new(None::<Vec<u8>>));
+        let observed = Arc::clone(&observed_during_probe);
+        let path_for_server = config_path.clone();
+        let app = Router::new().route(
+            "/health",
+            get(move || {
+                let observed = Arc::clone(&observed);
+                let path = path_for_server.clone();
+                async move {
+                    *observed.lock().expect("probe capture") = fs::read(path).ok();
+                    StatusCode::OK
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+
+        let mut environment = environment;
+        environment.set("CORDY_TOKEN", "mul_env");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            profile,
+            "--server-url",
+            &format!("http://{address}"),
+            "setup",
+            "self-host",
+            "--app-url",
+            "https://app.example/",
+        ])
+        .expect("setup CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("setup should complete with env token");
+        assert!(output.stderr.contains("token authentication preserved"));
+        assert_eq!(
+            *observed_during_probe.lock().expect("probe capture"),
+            Some(old_config.to_vec())
+        );
+        let saved: Value = serde_json::from_slice(&fs::read(config_path).expect("saved config"))
+            .expect("saved JSON");
+        assert_eq!(saved["server_url"], format!("http://{address}"));
+        assert_eq!(saved["app_url"], "https://app.example");
+        assert_eq!(saved["token"], "mul_env");
+        assert!(saved.get("workspace_id").is_none());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn setup_failed_probe_does_not_mutate_existing_profile() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let profile = "staging";
+        let config_path = environment.config_path(profile).expect("config path");
+        fs::create_dir_all(config_path.parent().expect("config parent")).expect("config dir");
+        let old_config =
+            br#"{"server_url":"http://old.example","token":"mul_old","workspace_id":"old"}"#;
+        fs::write(&config_path, old_config).expect("old config");
+        environment.set("CORDY_TOKEN", "mul_env");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            profile,
+            "--server-url",
+            "http://127.0.0.1:1",
+            "setup",
+            "self-host",
+            "--app-url",
+            "https://app.example",
+        ])
+        .expect("setup CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("unreachable setup target");
+        assert!(error.to_string().contains("health preflight failed"));
+        assert_eq!(fs::read(config_path).expect("config remains"), old_config);
     }
 
     #[test]

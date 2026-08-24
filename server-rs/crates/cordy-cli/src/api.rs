@@ -1,11 +1,12 @@
 //! HTTP client foundation ported from `server/internal/cli/client.go`.
 
 use anyhow::{Context, Result};
-use reqwest::{header::HeaderMap, Client, Method, RequestBuilder, Response};
+use reqwest::{header::HeaderMap, Client, Method, RequestBuilder, Response, StatusCode};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
 use thiserror::Error;
+use url::Url;
 
 const DEFAULT_HTTP_TIMEOUT: Duration = Duration::from_secs(30);
 const ERROR_BODY_LIMIT: usize = 4096;
@@ -61,6 +62,23 @@ pub struct NetworkError {
     pub source: reqwest::Error,
 }
 
+/// Errors returned by the unauthenticated setup preflight.  The probe must
+/// not leak a bearer token, response body, or an untrusted redirect target in
+/// the command error: setup runs before a new profile is persisted.
+#[derive(Debug, Error)]
+pub enum HealthProbeError {
+    #[error("health probe URL is invalid")]
+    InvalidUrl,
+    #[error("health probe only supports http(s) URLs")]
+    UnsupportedScheme,
+    #[error("health probe timeout")]
+    Timeout,
+    #[error("health probe request failed ({kind})")]
+    Request { kind: ErrorKind },
+    #[error("health endpoint returned HTTP {status_code}")]
+    Unhealthy { status_code: u16 },
+}
+
 #[derive(Debug)]
 pub struct ApiClient {
     base_url: String,
@@ -89,6 +107,52 @@ pub struct FileUploadResponse {
 }
 
 impl ApiClient {
+    /// Probe a deployment before setup changes the persisted profile.
+    ///
+    /// This is deliberately unauthenticated and bounded by both reqwest's
+    /// request timeout and an outer future timeout. Redirects are disabled so
+    /// setup cannot silently validate a different host than the one supplied
+    /// by the user.
+    pub async fn probe_health(
+        base_url: &str,
+        timeout: Duration,
+    ) -> std::result::Result<(), HealthProbeError> {
+        if timeout.is_zero() {
+            return Err(HealthProbeError::Timeout);
+        }
+        let mut base = Url::parse(base_url.trim()).map_err(|_| HealthProbeError::InvalidUrl)?;
+        match base.scheme() {
+            "http" | "https" => {}
+            _ => return Err(HealthProbeError::UnsupportedScheme),
+        }
+        if base.query().is_some() || base.fragment().is_some() {
+            return Err(HealthProbeError::InvalidUrl);
+        }
+        let path = base.path().trim_end_matches('/');
+        base.set_path(&format!("{path}/health"));
+
+        let client = Client::builder()
+            .timeout(timeout)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|_| HealthProbeError::Request {
+                kind: ErrorKind::Unknown,
+            })?;
+        let request = client.get(base);
+        let response = tokio::time::timeout(timeout, request.send())
+            .await
+            .map_err(|_| HealthProbeError::Timeout)?
+            .map_err(|source| HealthProbeError::Request {
+                kind: classify_network_error(&source),
+            })?;
+        if response.status() != StatusCode::OK {
+            return Err(HealthProbeError::Unhealthy {
+                status_code: response.status().as_u16(),
+            });
+        }
+        Ok(())
+    }
+
     pub fn new(
         base_url: String,
         workspace_id: String,
@@ -491,5 +555,25 @@ mod tests {
         assert_eq!(http_timeout(Some("45")), Duration::from_secs(45));
         assert_eq!(http_timeout(Some("0s")), DEFAULT_HTTP_TIMEOUT);
         assert_eq!(http_timeout(Some("nonsense")), DEFAULT_HTTP_TIMEOUT);
+    }
+
+    #[tokio::test]
+    async fn health_probe_rejects_unsafe_or_unbounded_inputs_before_network() {
+        assert!(matches!(
+            ApiClient::probe_health("ftp://example.test", Duration::from_secs(2)).await,
+            Err(HealthProbeError::UnsupportedScheme)
+        ));
+        assert!(matches!(
+            ApiClient::probe_health(
+                "https://example.test/health?token=secret",
+                Duration::from_secs(2)
+            )
+            .await,
+            Err(HealthProbeError::InvalidUrl)
+        ));
+        assert!(matches!(
+            ApiClient::probe_health("https://example.test", Duration::ZERO).await,
+            Err(HealthProbeError::Timeout)
+        ));
     }
 }
