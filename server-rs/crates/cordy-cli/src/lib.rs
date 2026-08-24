@@ -170,6 +170,46 @@ enum AgentCommand {
     Skills(AgentSkillsArgs),
     #[command(about = "Read and update an agent's custom environment variables (audited)")]
     Env(AgentEnvArgs),
+    #[command(about = "Manage which workspace MCP servers an agent uses")]
+    Mcp(AgentMcpArgs),
+}
+
+#[derive(Debug, Args)]
+struct AgentMcpArgs {
+    #[command(subcommand)]
+    command: AgentMcpCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum AgentMcpCommand {
+    #[command(about = "List workspace MCP servers assigned to an agent")]
+    List(AgentMcpListArgs),
+    #[command(about = "Give a workspace MCP server to an agent")]
+    Add(AgentMcpMutationArgs),
+    #[command(about = "Turn an assigned MCP server back on for this agent")]
+    Enable(AgentMcpMutationArgs),
+    #[command(about = "Turn an assigned MCP server off for this agent")]
+    Disable(AgentMcpMutationArgs),
+    #[command(about = "Take a workspace MCP server away from an agent")]
+    Remove(AgentMcpMutationArgs),
+}
+
+#[derive(Debug, Args)]
+struct AgentMcpListArgs {
+    #[arg(value_name = "AGENT-ID")]
+    agent_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct AgentMcpMutationArgs {
+    #[arg(value_name = "AGENT-ID")]
+    agent_id: String,
+    #[arg(value_name = "SERVER-ID")]
+    server_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -1962,6 +2002,36 @@ async fn run_with_input<R: Read>(
                     command: AgentEnvCommand::Set(args),
                 }),
         }) => run_agent_env_set(cli, environment, args, input).await,
+        Command::Agent(AgentArgs {
+            command:
+                AgentCommand::Mcp(AgentMcpArgs {
+                    command: AgentMcpCommand::List(args),
+                }),
+        }) => run_agent_mcp_list(cli, environment, args).await,
+        Command::Agent(AgentArgs {
+            command:
+                AgentCommand::Mcp(AgentMcpArgs {
+                    command: AgentMcpCommand::Add(args),
+                }),
+        }) => run_agent_mcp_mutation(cli, environment, args, AgentMcpAction::Add).await,
+        Command::Agent(AgentArgs {
+            command:
+                AgentCommand::Mcp(AgentMcpArgs {
+                    command: AgentMcpCommand::Enable(args),
+                }),
+        }) => run_agent_mcp_mutation(cli, environment, args, AgentMcpAction::Enable).await,
+        Command::Agent(AgentArgs {
+            command:
+                AgentCommand::Mcp(AgentMcpArgs {
+                    command: AgentMcpCommand::Disable(args),
+                }),
+        }) => run_agent_mcp_mutation(cli, environment, args, AgentMcpAction::Disable).await,
+        Command::Agent(AgentArgs {
+            command:
+                AgentCommand::Mcp(AgentMcpArgs {
+                    command: AgentMcpCommand::Remove(args),
+                }),
+        }) => run_agent_mcp_mutation(cli, environment, args, AgentMcpAction::Remove).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -2919,6 +2989,76 @@ async fn run_agent_env_set<R: Read>(
     };
     Ok(RunOutput {
         stdout,
+        stderr: String::new(),
+    })
+}
+
+#[derive(Clone, Copy)]
+enum AgentMcpAction {
+    Add,
+    Enable,
+    Disable,
+    Remove,
+}
+
+fn agent_mcp_path(agent_id: &str, suffix: &[&str]) -> String {
+    let mut url = Url::parse("http://localhost").expect("constant URL");
+    {
+        let mut segments = url.path_segments_mut().expect("hierarchical URL");
+        segments.clear();
+        segments.extend(["api", "agents", agent_id.trim(), "mcp-servers"]);
+        segments.extend(suffix.iter().copied());
+    }
+    url.path().into()
+}
+
+async fn run_agent_mcp_list(
+    cli: &Cli,
+    environment: &Environment,
+    args: &AgentMcpListArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let servers: Vec<WorkspaceMcpServer> = client
+        .get_json(&agent_mcp_path(&args.agent_id, &[]))
+        .await
+        .context("list agent mcp servers")?;
+    Ok(RunOutput {
+        stdout: format_workspace_mcp_servers(&servers, args.output)?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_agent_mcp_mutation(
+    cli: &Cli,
+    environment: &Environment,
+    args: &AgentMcpMutationArgs,
+    action: AgentMcpAction,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let agent_id = args.agent_id.trim();
+    let server_id = args.server_id.trim();
+    let servers: Vec<WorkspaceMcpServer> = match action {
+        AgentMcpAction::Add => client
+            .post_json(
+                &agent_mcp_path(agent_id, &[]),
+                &serde_json::json!({"server_id":server_id}),
+            )
+            .await
+            .context("add agent mcp server")?,
+        AgentMcpAction::Enable | AgentMcpAction::Disable => client
+            .put_json(
+                &agent_mcp_path(agent_id, &[server_id, "enabled"]),
+                &serde_json::json!({"enabled":matches!(action, AgentMcpAction::Enable)}),
+            )
+            .await
+            .context("update agent mcp server")?,
+        AgentMcpAction::Remove => client
+            .delete_json(&agent_mcp_path(agent_id, &[server_id]))
+            .await
+            .context("remove agent mcp server")?,
+    };
+    Ok(RunOutput {
+        stdout: format_workspace_mcp_servers(&servers, args.output)?,
         stderr: String::new(),
     })
 }
@@ -11420,6 +11560,95 @@ mod tests {
         assert!(error
             .to_string()
             .contains("specify the new env via --custom-env"));
+    }
+
+    #[test]
+    fn agent_mcp_paths_trim_and_escape_each_identifier() {
+        assert_eq!(
+            agent_mcp_path(" agent/one ", &["server/two", "enabled"]),
+            "/api/agents/agent%2Fone/mcp-servers/server%2Ftwo/enabled"
+        );
+    }
+
+    #[tokio::test]
+    async fn agent_mcp_commands_match_go_api_and_redacted_output_contract() {
+        let server_value = || {
+            serde_json::json!({
+                "id":"server-1","name":"linear","transport":"http","enabled":true,
+                "config":{"headers":{"Authorization":"secret"}}
+            })
+        };
+        let app = Router::new()
+            .route(
+                "/api/agents/agent-1/mcp-servers",
+                get({
+                    let value = server_value();
+                    move || {
+                        let value = value.clone();
+                        async move { Json(vec![value]) }
+                    }
+                })
+                .post({
+                    let value = server_value();
+                    move |Json(body): Json<Value>| {
+                        let value = value.clone();
+                        async move {
+                            assert_eq!(body, serde_json::json!({"server_id":"server-1"}));
+                            Json(vec![value])
+                        }
+                    }
+                }),
+            )
+            .route(
+                "/api/agents/agent-1/mcp-servers/server-1/enabled",
+                put({
+                    let value = server_value();
+                    move |Json(body): Json<Value>| {
+                        let value = value.clone();
+                        async move {
+                            assert!(body.get("enabled").and_then(Value::as_bool).is_some());
+                            Json(vec![value])
+                        }
+                    }
+                }),
+            )
+            .route(
+                "/api/agents/agent-1/mcp-servers/server-1",
+                delete_route(|| async { Json(Vec::<Value>::new()) }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "token-1");
+
+        for argv in [
+            vec!["cordy", "agent", "mcp", "list", "agent-1"],
+            vec!["cordy", "agent", "mcp", "add", "agent-1", "server-1"],
+            vec!["cordy", "agent", "mcp", "enable", "agent-1", "server-1"],
+            vec!["cordy", "agent", "mcp", "disable", "agent-1", "server-1"],
+        ] {
+            let cli = Cli::try_parse_from(argv).expect("agent MCP CLI");
+            let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .await
+                .expect("agent MCP request");
+            assert!(output.stdout.contains("linear"));
+            assert!(output.stdout.contains("enabled"));
+            assert!(!output.stdout.contains("secret"));
+            assert!(!output.stdout.contains("Authorization"));
+        }
+
+        let remove =
+            Cli::try_parse_from(["cordy", "agent", "mcp", "remove", "agent-1", "server-1"])
+                .expect("agent MCP remove CLI");
+        let removed = run_with_input(&remove, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("remove agent MCP server");
+        assert_eq!(removed.stdout, "no MCP servers\n");
+        server.abort();
     }
 
     #[test]
