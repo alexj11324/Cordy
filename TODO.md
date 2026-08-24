@@ -875,6 +875,16 @@
       and diff-check pass; no Cargo was run. The serial subagent reviewed exact
       head `0f79c830` and found no issue; pro owns push/Ready PR, gate, and
       merge.
+- [ ] CLI disk-usage policy structural refactor is committed at
+      `e3ee3e8740ddf0daa4b545a68f8e042d3c9d6a53` (parent
+      `0f79c8306cc6518226af08a176fb62e6f419d543`, tree
+      `3b67687ef1308ac7c2853a7fdebdfdfbe6b4bda8`): task-context validation,
+      profile/root resolution, profile enumeration, top limits, and parent
+      status lookup now live in `cordy-cli/src/disk_usage_commands.rs`;
+      dispatch and disk scanning remain unchanged. Scoped rustfmt and
+      diff-check pass; no Cargo was run. The serial subagent reviewed exact
+      head `e3ee3e87` and found no issue; pro owns push/Ready PR, gate, and
+      merge.
 
 ## Phase 4 — S8 route and API parity
 
