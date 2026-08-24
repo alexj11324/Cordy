@@ -67,11 +67,12 @@
       PR base now `2b7d31e5`, candidate `3dcffd6c169ad2772935955b868339fe1cf36de6`,
       Ready/CLEAN, exact-head review requested at `5395491572`.
 - [ ] #113 review found one P1 in task-context attachment upload; fixed and pushed as
-      `170d7c21ec0a543fa3bb36793f2e661d2f92b58c` (parent `709838df`):
+      `170d7c21ec0a543fa3bb36793f2e661d2f92b58c` (parent `709838df`), then corrected
+      the required Rustfmt-only test layout in `ad36bc3a2ef53840ce2043ffc40cfde0145cc077`:
       `run_attachment_upload` now enforces workdir containment before reading the file,
       with regression coverage for an outside absolute path. New candidate is
-      `006debb907db00660735da2c9eef2da917a03f0d`; exact-head review requested once at
-      comment `5395662140`; gate remains pending review. Previous review/gate is stale.
+      `46b5390d171bad90aad5b8ec34461d164b2c6077`; exact-head review requested once at
+      comment `5395709568`; gate remains pending review. Previous review/gate is stale.
 - [ ] #113 gate remains pending review; original worktree
       `.worktrees/cord-22-daemon-production-assembly` has unrelated uncommitted CLI
       edits and must not be reset or used for the gate. Restacked tree has passed
