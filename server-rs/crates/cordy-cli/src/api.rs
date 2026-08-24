@@ -272,6 +272,27 @@ impl ApiClient {
             .await
     }
 
+    pub async fn delete_json_with_body<B: Serialize + ?Sized>(
+        &self,
+        path: &str,
+        body: &B,
+    ) -> Result<()> {
+        let response = self
+            .request(Method::DELETE, path)
+            .json(body)
+            .send()
+            .await
+            .map_err(|source| NetworkError {
+                kind: classify_network_error(&source),
+                op: format!("DELETE {path}"),
+                source,
+            })?;
+        if response.status().is_client_error() || response.status().is_server_error() {
+            return Err(read_http_error(Method::DELETE, path, response).await.into());
+        }
+        Ok(())
+    }
+
     pub async fn upload_file(
         &self,
         file_data: Vec<u8>,
