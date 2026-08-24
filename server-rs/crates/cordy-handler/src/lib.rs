@@ -132,6 +132,7 @@ fn cors_layer() -> CorsLayer {
         HeaderName::from_static("x-client-version"),
         HeaderName::from_static("x-client-os"),
         HeaderName::from_static("x-client-capabilities"),
+        HeaderName::from_static("x-request-id"),
         HeaderName::from_static("x-cordy-plugin-installation"),
     ];
     let exposed_headers = [
@@ -980,7 +981,7 @@ mod tests {
                     .header("access-control-request-method", "GET")
                     .header(
                         "access-control-request-headers",
-                        "authorization,x-workspace-id,x-client-capabilities",
+                        "authorization,x-workspace-id,x-client-capabilities,x-request-id",
                     )
                     .body(Body::empty())
                     .unwrap(),
