@@ -36,6 +36,7 @@ zip = { workspace = true }
 flate2 = { workspace = true }
 libc = { workspace = true }
 cordy-db = { path = "../cordy-db" }
+cordy-agent = { path = "../cordy-agent" }
 cordy-protocol = { path = "../cordy-protocol" }
 cordy-realtime = { path = "../cordy-realtime" }
 cordy-config = { path = "../cordy-config" }

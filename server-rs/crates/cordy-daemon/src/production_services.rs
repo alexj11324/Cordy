@@ -5,11 +5,12 @@
 //! registration ordering, runtime-gone recovery, profile refresh, and the
 //! reconcile lifecycle remain daemon responsibilities.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use cordy_agent::{BackendConfig, RuntimeCommand};
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -110,6 +111,36 @@ impl ProviderRuntimeContext {
     /// workspace and target.
     pub fn launch_registry(&self) -> Arc<RuntimeLaunchRegistry> {
         Arc::clone(&self.launch_registry)
+    }
+
+    /// Converts one accepted launch into the provider crate's command
+    /// contract. The caller supplies only task-scoped environment values;
+    /// command path and fixed arguments always come from the workspace
+    /// registration state, never from task payload or process environment.
+    pub fn backend_config(
+        &self,
+        workspace_id: &str,
+        target: &RuntimeExecutionTarget,
+        env: BTreeMap<String, String>,
+    ) -> anyhow::Result<BackendConfig> {
+        let launch = self
+            .launch_registry
+            .resolve(workspace_id, target)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no accepted launch registered for workspace {workspace_id:?} and provider {}",
+                    target.provider
+                )
+            })?;
+        anyhow::ensure!(
+            !launch.command_path.trim().is_empty(),
+            "accepted launch for provider {} has no executable path",
+            target.provider
+        );
+        Ok(BackendConfig {
+            command: RuntimeCommand::new(launch.command_path, launch.fixed_args),
+            env,
+        })
     }
 
     /// Process-wide activity state used to coordinate execution with update
@@ -687,5 +718,67 @@ mod tests {
             &context.checkout_registry(),
             &checkout_registry
         ));
+    }
+
+    #[test]
+    fn provider_runtime_context_builds_backend_config_from_accepted_launch() {
+        let client = Arc::new(Client::new("https://example.test"));
+        let launch_registry = Arc::new(RuntimeLaunchRegistry::default());
+        let target = RuntimeExecutionTarget {
+            provider: "codex".to_string(),
+            profile_id: String::new(),
+        };
+        launch_registry.replace_builtins(
+            "workspace-1",
+            vec![crate::provider_registration::RuntimeLaunchSpec {
+                target: target.clone(),
+                display_name: "Codex".to_string(),
+                command_path: "/opt/codex".to_string(),
+                fixed_args: vec!["--profile".to_string(), "cordy".to_string()],
+                version: "1.0.0".to_string(),
+            }],
+        );
+        let context = ProviderRuntimeContext::new(
+            client,
+            Arc::clone(&launch_registry),
+            DaemonActivity::new(),
+            Arc::new(DaemonRepoState::new()),
+            Arc::new(RepoCheckoutRegistry::default()),
+        );
+        let config = context
+            .backend_config(
+                "workspace-1",
+                &target,
+                BTreeMap::from([("CORDY_TASK_ID".to_string(), "task-1".to_string())]),
+            )
+            .expect("accepted launch must resolve");
+        assert_eq!(config.command.path, "/opt/codex");
+        assert_eq!(
+            config.command.prefix,
+            vec!["--profile".to_string(), "cordy".to_string()]
+        );
+        assert_eq!(config.env.get("CORDY_TASK_ID"), Some(&"task-1".to_string()));
+    }
+
+    #[test]
+    fn provider_runtime_context_rejects_unregistered_launch() {
+        let context = ProviderRuntimeContext::new(
+            Arc::new(Client::new("https://example.test")),
+            Arc::new(RuntimeLaunchRegistry::default()),
+            DaemonActivity::new(),
+            Arc::new(DaemonRepoState::new()),
+            Arc::new(RepoCheckoutRegistry::default()),
+        );
+        let error = context
+            .backend_config(
+                "workspace-1",
+                &RuntimeExecutionTarget {
+                    provider: "codex".to_string(),
+                    profile_id: String::new(),
+                },
+                BTreeMap::new(),
+            )
+            .expect_err("unregistered launch must fail closed");
+        assert!(error.to_string().contains("no accepted launch"));
     }
 }

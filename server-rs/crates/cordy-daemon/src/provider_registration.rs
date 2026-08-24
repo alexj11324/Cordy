@@ -103,7 +103,7 @@ pub struct RuntimeLaunchRegistry {
 }
 
 impl RuntimeLaunchRegistry {
-    fn replace_builtins(&self, workspace_id: &str, specs: Vec<RuntimeLaunchSpec>) {
+    pub(crate) fn replace_builtins(&self, workspace_id: &str, specs: Vec<RuntimeLaunchSpec>) {
         let builtins = specs
             .into_iter()
             .map(|spec| (spec.target.provider.clone(), spec))
@@ -115,7 +115,11 @@ impl RuntimeLaunchRegistry {
             .insert(workspace_id.to_string(), builtins);
     }
 
-    fn replace_workspace_profiles(&self, workspace_id: &str, specs: Vec<RuntimeLaunchSpec>) {
+    pub(crate) fn replace_workspace_profiles(
+        &self,
+        workspace_id: &str,
+        specs: Vec<RuntimeLaunchSpec>,
+    ) {
         let profiles = specs
             .into_iter()
             .map(|spec| (spec.target.profile_id.clone(), spec))
