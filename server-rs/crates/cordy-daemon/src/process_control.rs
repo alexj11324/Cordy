@@ -248,7 +248,7 @@ where
 }
 
 #[async_trait::async_trait]
-pub trait DaemonRestartPreflight: Send + Sync {
+pub trait DaemonRestartPreflight: DaemonStartPreflight {
     async fn check(&self) -> anyhow::Result<()>;
 }
 
@@ -319,6 +319,11 @@ where
     .await?;
     if matches!(stop, DaemonStopOutcome::StillStopping { .. }) {
         return Ok(DaemonRestartOutcome::StopIncomplete(stop));
+    }
+    if matches!(stop, DaemonStopOutcome::AlreadyStopped) {
+        DaemonStartPreflight::check(preflight)
+            .await
+            .context("daemon restart start preflight failed")?;
     }
     let profile = request.launch.profile.clone();
     let daemon = BackgroundDaemon::spawn(request.launch)?;
@@ -759,6 +764,13 @@ mod tests {
         }
     }
 
+    #[async_trait::async_trait]
+    impl DaemonStartPreflight for FailingPreflight {
+        async fn check(&self) -> anyhow::Result<()> {
+            anyhow::bail!("server rejected token")
+        }
+    }
+
     struct PanicStartPreflight;
 
     #[async_trait::async_trait]
@@ -903,5 +915,35 @@ mod tests {
         assert!(restart_error
             .to_string()
             .contains("cordy login --profile staging"));
+    }
+
+    #[tokio::test]
+    async fn restart_of_stopped_daemon_runs_start_preflight_before_spawn() {
+        let client = Arc::new(Client::new("http://127.0.0.1:1"));
+        let preflight = AuthenticatedLaunchPreflight::new(client, "staging");
+        let result = restart_daemon(
+            &StoppedControl,
+            &UnusedClock,
+            &UnusedTerminator,
+            &preflight,
+            DaemonRestartRequest {
+                launch: BackgroundLaunchOptions {
+                    profile: "staging".to_string(),
+                    binary: std::env::current_exe().unwrap(),
+                    args: Vec::new(),
+                },
+                port: 19515,
+                stop_timeout: Duration::from_secs(5),
+                startup_timeout: Duration::from_secs(45),
+            },
+        )
+        .await;
+        let error = result.unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("daemon restart start preflight failed"));
+        assert!(error
+            .chain()
+            .any(|cause| cause.to_string().contains("cordy login --profile staging")));
     }
 }
