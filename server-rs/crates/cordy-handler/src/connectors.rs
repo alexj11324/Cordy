@@ -1183,22 +1183,69 @@ async fn install_telegram(
         }
     };
     let config = json!({"app_id": bot_id, "bot_username": me.username, "bot_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed)});
-    match persist(
-        &state,
-        Provider::Telegram,
+    let persist = match cordy_telegram::install::InstallPersist::new(
         workspace_id,
         agent_id,
         actor,
-        &bot_id,
-        &config,
-    )
-    .await
+        bot_id,
+        config,
+    ) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(%error, "failed to compose Telegram installation");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to save Telegram installation",
+            );
+        }
+    };
+    match cordy_telegram::install::InstallService::new(state.pool.clone())
+        .persist_install(&persist)
+        .await
     {
         Ok(row) => {
             publish_created(&state, Provider::Telegram, &row, actor);
             Json(installation_response(Provider::Telegram, row)).into_response()
         }
-        Err(response) => response,
+        Err(error) => {
+            let failure = classify_telegram_install_persist_error(&error);
+            if failure.status == StatusCode::INTERNAL_SERVER_ERROR {
+                tracing::error!(%error, %workspace_id, %agent_id, "Telegram installation persist failed");
+            }
+            error_response(failure.status, failure.message)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TelegramInstallPersistFailure {
+    status: StatusCode,
+    message: &'static str,
+}
+
+fn classify_telegram_install_persist_error(error: &anyhow::Error) -> TelegramInstallPersistFailure {
+    use cordy_telegram::install::InstallError;
+
+    match error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<InstallError>())
+    {
+        Some(InstallError::BotOwnedBySameWorkspace) => TelegramInstallPersistFailure {
+            status: StatusCode::CONFLICT,
+            message: "this Telegram bot is already connected to another agent in this workspace — disconnect it there first, then connect it here",
+        },
+        Some(InstallError::BotOwnedByArchivedAgent) => TelegramInstallPersistFailure {
+            status: StatusCode::CONFLICT,
+            message: "this Telegram bot is connected to an archived agent in this workspace — restore that agent, or disconnect its bot, before connecting it here",
+        },
+        Some(InstallError::BotOwnedByAnotherWorkspace) => TelegramInstallPersistFailure {
+            status: StatusCode::CONFLICT,
+            message: "this Telegram bot is already connected to a different Cordy workspace — disconnect it there before connecting it here",
+        },
+        None => TelegramInstallPersistFailure {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "could not save this Telegram bot — something went wrong on the server; the token was not saved",
+        },
     }
 }
 
@@ -1421,74 +1468,6 @@ fn classify_slack_install_persist_error(error: &anyhow::Error) -> SlackInstallPe
     }
 }
 
-async fn persist(
-    state: &HandlerState,
-    provider: Provider,
-    workspace_id: Uuid,
-    agent_id: Uuid,
-    actor: Uuid,
-    app_id: &str,
-    config: &Value,
-) -> Result<ChannelInstallation, Response> {
-    let mut tx = state.pool.begin().await.map_err(|_| {
-        error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to start install")
-    })?;
-    channel::reclaim_dead_channel_installation_by_app_id(
-        &mut *tx,
-        provider.channel_type(),
-        app_id,
-        workspace_id,
-        agent_id,
-    )
-    .await
-    .map_err(|_| {
-        error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to prepare installation",
-        )
-    })?;
-    let row = channel::upsert_channel_installation(
-        &mut *tx,
-        workspace_id,
-        agent_id,
-        provider.channel_type(),
-        config,
-        actor,
-    )
-    .await
-    .map_err(|error| {
-        if error.chain().any(|cause| {
-            cause
-                .downcast_ref::<sqlx::Error>()
-                .and_then(sqlx::Error::as_database_error)
-                .is_some_and(|db| db.code().as_deref() == Some("23505"))
-        }) {
-            error_response(
-                StatusCode::CONFLICT,
-                "this bot is already connected to another agent or workspace",
-            )
-        } else {
-            error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to save installation",
-            )
-        }
-    })?
-    .ok_or_else(|| {
-        error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to save installation",
-        )
-    })?;
-    tx.commit().await.map_err(|_| {
-        error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to finish install",
-        )
-    })?;
-    Ok(row)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1584,6 +1563,35 @@ mod tests {
 
         let internal = classify_slack_install_persist_error(&anyhow::anyhow!("database down"));
         assert_eq!(internal.status, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn telegram_persist_errors_preserve_owner_recovery_path() {
+        use cordy_telegram::install::InstallError;
+
+        let cases = [
+            (
+                InstallError::BotOwnedBySameWorkspace,
+                "another agent in this workspace",
+            ),
+            (
+                InstallError::BotOwnedByArchivedAgent,
+                "archived agent in this workspace",
+            ),
+            (
+                InstallError::BotOwnedByAnotherWorkspace,
+                "different Cordy workspace",
+            ),
+        ];
+        for (error, recovery_scope) in cases {
+            let failure = classify_telegram_install_persist_error(&anyhow::Error::new(error));
+            assert_eq!(failure.status, StatusCode::CONFLICT);
+            assert!(failure.message.contains(recovery_scope));
+        }
+
+        let internal = classify_telegram_install_persist_error(&anyhow::anyhow!("database down"));
+        assert_eq!(internal.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(internal.message.contains("token was not saved"));
     }
 
     #[test]
