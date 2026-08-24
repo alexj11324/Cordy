@@ -143,6 +143,24 @@ enum AutopilotCommand {
         #[arg(value_name = "ID")]
         id: String,
     },
+    #[command(about = "Manually trigger an autopilot to run once")]
+    Trigger {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
+    #[command(about = "List execution history for an autopilot")]
+    Runs {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, default_value_t = 20, help = "Max number of runs to return")]
+        limit: i32,
+        #[arg(long, default_value_t = 0, help = "Pagination offset")]
+        offset: i32,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -2352,6 +2370,18 @@ async fn run_with_input<R: Read>(
         Command::Autopilot(AutopilotArgs {
             command: AutopilotCommand::Delete { id },
         }) => run_autopilot_delete(cli, environment, id).await,
+        Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::Trigger { id, output },
+        }) => run_autopilot_trigger(cli, environment, id, *output).await,
+        Command::Autopilot(AutopilotArgs {
+            command:
+                AutopilotCommand::Runs {
+                    id,
+                    limit,
+                    offset,
+                    output,
+                },
+        }) => run_autopilot_runs(cli, environment, id, *limit, *offset, *output).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -3721,6 +3751,104 @@ async fn run_autopilot_delete(cli: &Cli, environment: &Environment, id: &str) ->
         stdout: format!("Autopilot {display} deleted.\n"),
         stderr: String::new(),
     })
+}
+
+async fn run_autopilot_trigger(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let timeout = http_timeout(environment.raw("CORDY_HTTP_TIMEOUT"))
+        .saturating_add(Duration::from_secs(5))
+        .max(Duration::from_secs(30));
+    let client = new_api_client(cli, environment)?.with_request_timeout(timeout);
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+    let run: Value = client
+        .post_json(
+            &format!("/api/autopilots/{autopilot_id}/trigger"),
+            &Value::Null,
+        )
+        .await
+        .context("trigger autopilot")?;
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&run)?),
+            OutputFormat::Table => format!(
+                "Autopilot triggered: run {} (status: {})\n",
+                value_string(&run, "id"),
+                value_string(&run, "status")
+            ),
+        },
+        stderr: String::new(),
+    })
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct AutopilotRunsEnvelope {
+    runs: Vec<Value>,
+    total: i64,
+}
+
+async fn run_autopilot_runs(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    limit: i32,
+    offset: i32,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+    let mut query = form_urlencoded::Serializer::new(String::new());
+    if limit > 0 {
+        query.append_pair("limit", &limit.to_string());
+    }
+    if offset > 0 {
+        query.append_pair("offset", &offset.to_string());
+    }
+    let query = query.finish();
+    let path = if query.is_empty() {
+        format!("/api/autopilots/{autopilot_id}/runs")
+    } else {
+        format!("/api/autopilots/{autopilot_id}/runs?{query}")
+    };
+    let response: AutopilotRunsEnvelope = client.get_json(&path).await.context("list runs")?;
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&response)?),
+            OutputFormat::Table => format_autopilot_runs_table(&response.runs),
+        },
+        stderr: String::new(),
+    })
+}
+
+fn format_autopilot_runs_table(runs: &[Value]) -> String {
+    let mut rows = vec![vec![
+        "ID".into(),
+        "SOURCE".into(),
+        "STATUS".into(),
+        "ISSUE".into(),
+        "TRIGGERED_AT".into(),
+        "COMPLETED_AT".into(),
+    ]];
+    rows.extend(runs.iter().map(|run| {
+        vec![
+            value_string(run, "id"),
+            value_string(run, "source"),
+            value_string(run, "status"),
+            value_string(run, "issue_id"),
+            value_string(run, "triggered_at"),
+            value_string(run, "completed_at"),
+        ]
+    }));
+    format_table(&rows)
 }
 
 async fn resolve_autopilot_agent(
@@ -12545,6 +12673,48 @@ mod tests {
             panic!("expected autopilot get");
         };
         assert_eq!(id, "abcd");
+
+        let trigger =
+            Cli::try_parse_from(["cordy", "autopilot", "trigger", "abcd", "--output", "table"])
+                .expect("autopilot trigger CLI");
+        let Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::Trigger { id, output },
+        }) = trigger.command
+        else {
+            panic!("expected autopilot trigger");
+        };
+        assert_eq!(id, "abcd");
+        assert_eq!(output, OutputFormat::Table);
+
+        let runs = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "runs",
+            "abcd",
+            "--limit",
+            "5",
+            "--offset",
+            "2",
+            "--output",
+            "json",
+        ])
+        .expect("autopilot runs CLI");
+        let Command::Autopilot(AutopilotArgs {
+            command:
+                AutopilotCommand::Runs {
+                    id,
+                    limit,
+                    offset,
+                    output,
+                },
+        }) = runs.command
+        else {
+            panic!("expected autopilot runs");
+        };
+        assert_eq!(id, "abcd");
+        assert_eq!(limit, 5);
+        assert_eq!(offset, 2);
+        assert_eq!(output, OutputFormat::Json);
         assert_eq!(output, OutputFormat::Json);
         assert!(Cli::try_parse_from(["cordy", "autopilot", "get"]).is_err());
         assert!(Cli::try_parse_from(["cordy", "autopilot", "list", "extra"]).is_err());
@@ -12981,6 +13151,100 @@ mod tests {
             .await
             .expect("delete autopilot");
         assert_eq!(output.stdout, "Autopilot Daily planner deleted.\n");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn autopilot_trigger_and_runs_match_go_requests_and_outputs() {
+        const ID: &str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        let app = Router::new()
+            .route(
+                "/api/autopilots/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/trigger",
+                post(|Json(body): Json<Value>| async move {
+                    assert!(body.is_null());
+                    Json(serde_json::json!({
+                        "id":"run-1",
+                        "status":"queued",
+                        "server_only":"preserved"
+                    }))
+                }),
+            )
+            .route(
+                "/api/autopilots/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/runs",
+                get(|request: Request| async move {
+                    assert_eq!(request.uri().query(), Some("limit=5&offset=2"));
+                    Json(serde_json::json!({
+                        "runs":[{
+                            "id":"run-1",
+                            "source":"manual",
+                            "status":"completed",
+                            "issue_id":"issue-1",
+                            "triggered_at":"2026-08-24T01:00:00Z",
+                            "completed_at":"2026-08-24T01:01:00Z",
+                            "server_only":"preserved"
+                        }],
+                        "total":1
+                    }))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+
+        let trigger =
+            Cli::try_parse_from(["cordy", "autopilot", "trigger", ID, "--output", "table"])
+                .expect("autopilot trigger CLI");
+        let output = run_with_input(&trigger, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("trigger autopilot");
+        assert_eq!(
+            output.stdout,
+            "Autopilot triggered: run run-1 (status: queued)\n"
+        );
+
+        let runs = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "runs",
+            ID,
+            "--limit",
+            "5",
+            "--offset",
+            "2",
+        ])
+        .expect("autopilot runs table CLI");
+        let output = run_with_input(&runs, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list autopilot runs");
+        assert!(output.stdout.starts_with("ID"));
+        assert!(output.stdout.contains("run-1"));
+        assert!(output.stdout.contains("manual"));
+        assert!(output.stdout.contains("issue-1"));
+
+        let runs_json = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "runs",
+            ID,
+            "--limit",
+            "5",
+            "--offset",
+            "2",
+            "--output",
+            "json",
+        ])
+        .expect("autopilot runs JSON CLI");
+        let output = run_with_input(&runs_json, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list autopilot runs JSON");
+        let value: Value = serde_json::from_str(&output.stdout).expect("JSON output");
+        assert_eq!(value["total"], 1);
+        assert_eq!(value["runs"][0]["server_only"], "preserved");
         server.abort();
     }
 
