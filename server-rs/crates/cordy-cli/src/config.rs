@@ -168,6 +168,45 @@ impl Environment {
         Ok(true)
     }
 
+    /// Persist an authenticated profile in one locked, atomic replacement.
+    ///
+    /// Authentication changes deployment credentials and workspace identity
+    /// together; retaining the old workspace after a login can direct the
+    /// daemon at a tenant from the previous account. The token never appears
+    /// in an error or diagnostic produced by this method.
+    pub fn save_authenticated_profile(
+        &self,
+        profile: &str,
+        server_url: &str,
+        app_url: &str,
+        token: &str,
+        workspace_id: &str,
+    ) -> Result<()> {
+        let path = self.config_path(profile)?;
+        let directory = path.parent().context("resolve CLI config directory")?;
+        ensure_config_directory(directory, self.trimmed(TASK_CONFIG_ROOT_ENV))?;
+        let lock_path = directory.join(".config.lock");
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .context("open CLI config lock")?;
+        restrict_file_permissions(&lock_path)?;
+        lock.lock().context("lock CLI config")?;
+
+        let mut document = read_config_document(&path)?;
+        let object = document
+            .as_object_mut()
+            .context("parse CLI config: expected a JSON object")?;
+        object.insert("server_url".into(), Value::String(server_url.into()));
+        object.insert("app_url".into(), Value::String(app_url.into()));
+        object.insert("token".into(), Value::String(token.into()));
+        object.insert("workspace_id".into(), Value::String(workspace_id.into()));
+        write_json_atomically(&path, &document)
+    }
+
     pub fn load_profile_document(&self, profile: &str) -> Result<Value> {
         let path = self.config_path(profile)?;
         read_config_document(&path)

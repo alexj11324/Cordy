@@ -14,6 +14,7 @@ use api::{http_timeout, ApiClient, HealthProbeError, HttpError, NetworkError};
 use chrono::{DateTime, FixedOffset};
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use config::Environment;
+use rand::RngCore;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -24,6 +25,8 @@ use std::io::{Read, Seek, SeekFrom, Write as IoWrite};
 use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 use url::{form_urlencoded, Url};
 
 pub const CLIENT_VERSION: &str = env!("CORDY_BUILD_VERSION");
@@ -104,6 +107,8 @@ enum Command {
     Issue(IssueArgs),
     #[command(about = "Authenticate cordy with Cordy")]
     Auth(AuthArgs),
+    #[command(about = "Authenticate and set up workspaces")]
+    Login(LoginArgs),
     #[command(about = "Manage configuration for cordy")]
     Config(ConfigArgs),
     #[command(about = "Work with your user account")]
@@ -265,8 +270,6 @@ enum SetupError {
     HealthProbe(#[source] HealthProbeError),
     #[error("setup self-host requires --app-url when --server-url points at a remote host")]
     RemoteAppUrlRequired,
-    #[error("setup configured the profile, but the interactive login flow is not available in this Rust slice yet")]
-    LoginFlowUnavailable,
 }
 
 /// Launch flags shared by `daemon start` and `daemon restart`.
@@ -2240,6 +2243,17 @@ struct AuthArgs {
     command: AuthCommand,
 }
 
+#[derive(Debug, Args)]
+struct LoginArgs {
+    #[arg(long, help = "Authenticate using a personal access token")]
+    token: Option<String>,
+    #[arg(
+        long,
+        help = "Host/IP the browser callback URL points at when it can reach this CLI directly"
+    )]
+    callback_host: Option<String>,
+}
+
 #[derive(Debug, Subcommand)]
 enum AuthCommand {
     #[command(about = "Show current authentication status")]
@@ -3302,6 +3316,7 @@ async fn run_with_input<R: Read>(
         Command::Auth(AuthArgs {
             command: AuthCommand::Logout,
         }) => run_auth_logout(cli, environment),
+        Command::Login(args) => run_login(cli, environment, args).await,
         Command::Config(ConfigArgs { command: None }) => {
             run_config_show(cli, environment, OutputFormat::Table)
         }
@@ -3687,8 +3702,25 @@ async fn run_setup<R: Read>(
             stderr: "Aborted.\n".into(),
         });
     }
-    let input = prepare_setup_profile_input(environment, setup_input).await?;
-    let mut output = run_daemon_after_setup(cli, environment).await?;
+    let input = prepare_setup_profile_input(environment, &cli.profile, setup_input).await?;
+    let mut output = if environment.trimmed("CORDY_TOKEN").is_some() {
+        run_daemon_after_setup(cli, environment).await?
+    } else {
+        let login_output = run_login_with_urls(
+            cli,
+            environment,
+            &LoginArgs {
+                token: None,
+                callback_host: None,
+            },
+            Some(&input.server_url),
+            Some(&input.app_url),
+        )
+        .await?;
+        let mut daemon_output = run_daemon_after_setup(cli, environment).await?;
+        daemon_output.stderr = format!("{}{}", login_output.stderr, daemon_output.stderr);
+        daemon_output
+    };
     output.stderr = format!(
         "Configured {} for profile {:?}; token authentication preserved.\n{}",
         input.server_url, cli.profile, output.stderr
@@ -3762,11 +3794,12 @@ async fn prepare_setup_profile(
     require_human_local_command(environment, "setup")?;
     let input = resolve_setup_profile_input(cli, environment, args)?;
 
-    prepare_setup_profile_input(environment, input).await
+    prepare_setup_profile_input(environment, &cli.profile, input).await
 }
 
 async fn prepare_setup_profile_input(
     environment: &Environment,
+    profile: &str,
     input: config::SetupProfileInput,
 ) -> Result<config::SetupProfileInput> {
     // The health probe is deliberately before any config lock or write. A
@@ -3774,16 +3807,14 @@ async fn prepare_setup_profile_input(
     ApiClient::probe_health(&input.server_url, SETUP_HEALTH_TIMEOUT)
         .await
         .map_err(SetupError::HealthProbe)?;
-    environment.replace_profile_for_setup(&cli.profile, &input)?;
 
     // A token supplied by the surrounding environment is the non-interactive
-    // login/token boundary available to this slice. The browser login flow is
-    // intentionally not recreated here; the explicit typed error below keeps
-    // setup from claiming completion when that flow is not present yet.
-    let Some(token) = environment.trimmed("CORDY_TOKEN") else {
-        return Err(SetupError::LoginFlowUnavailable.into());
-    };
-    environment.set_profile_value(&cli.profile, "token", Some(Value::String(token.to_owned())))?;
+    // login boundary. Keep this legacy setup path intact; browser setup does
+    // not mutate the profile until the callback credential is verified.
+    if let Some(token) = environment.trimmed("CORDY_TOKEN") {
+        environment.replace_profile_for_setup(profile, &input)?;
+        environment.set_profile_value(profile, "token", Some(Value::String(token.to_owned())))?;
+    }
     Ok(input)
 }
 
@@ -8777,6 +8808,334 @@ async fn run_repo_checkout(
 struct AuthUser {
     name: String,
     email: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LoginWorkspace {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    name: String,
+}
+
+const LOGIN_CALLBACK_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const LOGIN_CALLBACK_READ_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Authenticate either with a PAT or with the browser callback flow. The
+/// credential and workspace reset are committed together after the new token
+/// has been verified, so a failed login cannot damage an existing profile.
+async fn run_login(cli: &Cli, environment: &Environment, args: &LoginArgs) -> Result<RunOutput> {
+    run_login_with_urls(cli, environment, args, None, None).await
+}
+
+async fn run_login_with_urls(
+    cli: &Cli,
+    environment: &Environment,
+    args: &LoginArgs,
+    server_override: Option<&str>,
+    app_override: Option<&str>,
+) -> Result<RunOutput> {
+    require_human_local_command(environment, "login")?;
+    let existing = environment.load_config(&cli.profile).unwrap_or_default();
+    let server_url = server_override
+        .or(cli.server_url.as_deref())
+        .or_else(|| environment.trimmed("CORDY_SERVER_URL"))
+        .filter(|value| !value.trim().is_empty())
+        .map(normalize_api_base_url)
+        .transpose()?
+        .or_else(|| (!existing.server_url.trim().is_empty()).then(|| existing.server_url.clone()))
+        .context("No server configured. Run 'cordy setup' first.")?;
+    let app_url = app_override
+        .map(str::to_owned)
+        .or_else(|| environment.trimmed("CORDY_APP_URL").map(str::to_owned))
+        .or_else(|| (!existing.app_url.trim().is_empty()).then(|| existing.app_url.clone()))
+        .or_else(|| (server_url == CLOUD_SERVER_URL).then(|| CLOUD_APP_URL.into()))
+        .unwrap_or_default()
+        .trim_end_matches('/')
+        .to_owned();
+
+    let token = match args
+        .token
+        .as_deref()
+        .map(str::trim)
+        .or_else(|| environment.trimmed("CORDY_TOKEN"))
+    {
+        Some(token) if !token.is_empty() => {
+            validate_login_token(token)?;
+            token.to_owned()
+        }
+        _ => {
+            run_browser_login(
+                &server_url,
+                &app_url,
+                args.callback_host.as_deref(),
+                environment,
+            )
+            .await?
+        }
+    };
+
+    let client = ApiClient::new(
+        server_url.clone(),
+        String::new(),
+        token.clone(),
+        String::new(),
+        String::new(),
+        http_timeout(environment.raw("CORDY_HTTP_TIMEOUT")),
+        CLIENT_VERSION,
+    )?;
+    let user = client
+        .get_json::<AuthUser>("/api/me")
+        .await
+        .map_err(|_| anyhow::anyhow!("could not verify the new credential"))?;
+    let workspaces = client
+        .get_json::<Vec<LoginWorkspace>>("/api/workspaces")
+        .await;
+    let (workspace_id, workspace_message) = match workspaces {
+        Ok(workspaces) => {
+            let selected = workspaces
+                .first()
+                .filter(|workspace| !workspace.id.is_empty());
+            let message = if workspaces.is_empty() {
+                "No workspaces found; create one in the web dashboard, then run 'cordy login' again.\n".into()
+            } else {
+                format!(
+                    "Found {} workspace(s); default workspace reset to {}.\n",
+                    workspaces.len(),
+                    selected
+                        .map(|workspace| workspace.name.as_str())
+                        .unwrap_or("the first workspace")
+                )
+            };
+            (
+                selected
+                    .map(|workspace| workspace.id.clone())
+                    .unwrap_or_default(),
+                message,
+            )
+        }
+        Err(error) => {
+            // Authentication is still valid when discovery is temporarily
+            // unavailable. Persist an empty workspace and make the retry
+            // actionable without printing any bearer material.
+            (
+                String::new(),
+                "Authenticated, but workspace discovery failed; run 'cordy workspace list' to retry.\n".into(),
+            )
+        }
+    };
+    environment.save_authenticated_profile(
+        &cli.profile,
+        &server_url,
+        &app_url,
+        &token,
+        &workspace_id,
+    )?;
+    Ok(RunOutput {
+        stdout: String::new(),
+        stderr: format!(
+            "Authenticated as {} ({}).\nToken saved to config.\n{}",
+            user.name, user.email, workspace_message
+        ),
+    })
+}
+
+fn validate_login_token(token: &str) -> Result<()> {
+    if token.starts_with("mul_") || token.starts_with("mcn_") {
+        return Ok(());
+    }
+    bail!("invalid token format: must start with mul_ or mcn_")
+}
+
+async fn run_browser_login(
+    server_url: &str,
+    app_url: &str,
+    callback_host: Option<&str>,
+    environment: &Environment,
+) -> Result<String> {
+    let app_url = (!app_url.trim().is_empty())
+        .then_some(app_url)
+        .context("No app URL configured. Run 'cordy setup' first.")?;
+    let callback_host = callback_host
+        .map(str::trim)
+        .filter(|host| !host.is_empty())
+        .unwrap_or("localhost");
+    let bind_addr = if callback_host_is_loopback(callback_host) {
+        "127.0.0.1:0"
+    } else {
+        "0.0.0.0:0"
+    };
+    let listener = TcpListener::bind(bind_addr)
+        .await
+        .context("start local login callback server")?;
+    let port = listener.local_addr()?.port();
+    let mut state_bytes = [0_u8; 32];
+    rand::thread_rng().fill_bytes(&mut state_bytes);
+    let state = state_bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let callback_url = format!("http://{callback_host}:{port}/callback");
+    let login_url = build_login_url(app_url, &callback_url, &state)?;
+
+    eprintln!("Opening browser to authenticate...");
+    if !open_login_url(&login_url) {
+        eprintln!("Could not open browser automatically.");
+    }
+    eprintln!("If the browser did not open, visit:\n  {login_url}");
+    if environment.trimmed("SSH_CONNECTION").is_some() && callback_host_is_loopback(callback_host) {
+        eprintln!("\nRemote SSH session detected. Forward the callback port before opening the URL:\n  ssh -L {port}:127.0.0.1:{port} <user>@<remote-host>");
+    }
+    eprintln!("\nWaiting for authentication...");
+
+    let jwt = tokio::time::timeout(
+        LOGIN_CALLBACK_TIMEOUT,
+        wait_for_login_callback(listener, state),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("timed out waiting for authentication"))??;
+    let client = ApiClient::new(
+        server_url.to_owned(),
+        String::new(),
+        jwt,
+        String::new(),
+        String::new(),
+        http_timeout(environment.raw("CORDY_HTTP_TIMEOUT")),
+        CLIENT_VERSION,
+    )?;
+    #[derive(Debug, Deserialize)]
+    struct TokenResponse {
+        token: String,
+    }
+    let hostname = std::env::var("HOSTNAME").unwrap_or_else(|_| "unknown".into());
+    let pat: TokenResponse = client
+        .post_json(
+            "/api/tokens",
+            &serde_json::json!({"name": format!("CLI ({hostname})"), "expires_in_days": 90}),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("server could not issue an access token for the CLI"))?;
+    if pat.token.trim().is_empty() {
+        bail!("server returned an empty access token")
+    }
+    validate_login_token(&pat.token)?;
+    Ok(pat.token)
+}
+
+fn build_login_url(app_url: &str, callback_url: &str, state: &str) -> Result<String> {
+    let mut login_url = Url::parse(app_url).context("parse app URL")?;
+    login_url
+        .path_segments_mut()
+        .map_err(|_| anyhow::anyhow!("app URL cannot be used for login"))?
+        .push("login");
+    login_url
+        .query_pairs_mut()
+        .append_pair("cli_callback", callback_url)
+        .append_pair("cli_state", state);
+    Ok(login_url.to_string())
+}
+
+fn callback_host_is_loopback(host: &str) -> bool {
+    let host = host.trim().trim_start_matches('[').trim_end_matches(']');
+    host.eq_ignore_ascii_case("localhost")
+        || host
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
+}
+
+fn open_login_url(url: &str) -> bool {
+    #[cfg(target_os = "macos")]
+    let command = ("open", url);
+    #[cfg(target_os = "linux")]
+    let command = ("xdg-open", url);
+    #[cfg(target_os = "windows")]
+    let command = ("rundll32", &format!("url.dll,FileProtocolHandler {url}"));
+    #[cfg(any(target_os = "macos", target_os = "linux", target_os = "windows"))]
+    {
+        std::process::Command::new(command.0)
+            .arg(command.1)
+            .spawn()
+            .is_ok()
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
+    {
+        let _ = url;
+        false
+    }
+}
+
+async fn wait_for_login_callback(listener: TcpListener, expected_state: String) -> Result<String> {
+    loop {
+        let (mut stream, _) = listener.accept().await.context("accept login callback")?;
+        let mut request = vec![0_u8; 16 * 1024];
+        let read = tokio::time::timeout(LOGIN_CALLBACK_READ_TIMEOUT, stream.read(&mut request))
+            .await
+            .map_err(|_| anyhow::anyhow!("login callback request timed out"))??;
+        let request =
+            std::str::from_utf8(&request[..read]).context("invalid login callback request")?;
+        let target = request
+            .lines()
+            .next()
+            .and_then(|line| line.strip_prefix("GET "))
+            .and_then(|line| line.split_whitespace().next())
+            .context("invalid login callback request line")?;
+        let callback = Url::parse(&format!("http://localhost{target}"))
+            .context("invalid login callback URL")?;
+        if callback.path() != "/callback" {
+            write_login_response(&mut stream, "404 Not Found", "Not found").await?;
+            continue;
+        }
+        let state = callback
+            .query_pairs()
+            .find(|(key, _)| key == "state")
+            .map(|(_, value)| value.into_owned())
+            .unwrap_or_default();
+        let token = callback
+            .query_pairs()
+            .find(|(key, _)| key == "token")
+            .map(|(_, value)| value.into_owned())
+            .unwrap_or_default();
+        if !constant_time_equal(state.as_bytes(), expected_state.as_bytes()) {
+            write_login_response(&mut stream, "400 Bad Request", "Invalid callback state").await?;
+            continue;
+        }
+        if token.trim().is_empty() {
+            write_login_response(&mut stream, "400 Bad Request", "Missing token").await?;
+            continue;
+        }
+        write_login_response(
+            &mut stream,
+            "200 OK",
+            "Authentication successful. You can close this tab and return to the terminal.",
+        )
+        .await?;
+        return Ok(token);
+    }
+}
+
+fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
+    let mut difference = left.len() ^ right.len();
+    for index in 0..left.len().max(right.len()) {
+        difference |= left.get(index).copied().unwrap_or_default()
+            ^ right.get(index).copied().unwrap_or_default();
+    }
+    difference == 0
+}
+
+async fn write_login_response(
+    stream: &mut tokio::net::TcpStream,
+    status: &str,
+    body: &str,
+) -> Result<()> {
+    let response = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream
+        .write_all(response.as_bytes())
+        .await
+        .context("write login callback response")?;
+    Ok(())
 }
 
 async fn run_auth_status(
@@ -28644,5 +29003,106 @@ mod tests {
         assert_eq!(roots[0].root, default_root.to_string_lossy().to_string());
         assert_eq!(roots[1].profile, "staging");
         assert_eq!(roots[1].root, profile_root.to_string_lossy().to_string());
+    }
+
+    #[test]
+    fn login_callback_state_comparison_is_exact_and_handles_length_mismatch() {
+        assert!(constant_time_equal(b"state", b"state"));
+        assert!(!constant_time_equal(b"state", b"attacker"));
+        assert!(!constant_time_equal(b"state", b"state\0"));
+    }
+
+    #[test]
+    fn login_url_encodes_callback_and_state_without_leaking_raw_query_delimiters() {
+        let url = build_login_url(
+            "https://cordy.example/base",
+            "http://127.0.0.1:1234/callback?reserved=yes",
+            "state+with spaces",
+        )
+        .expect("login URL");
+        let parsed = Url::parse(&url).expect("parsed login URL");
+        assert_eq!(parsed.path(), "/base/login");
+        assert_eq!(
+            parsed
+                .query_pairs()
+                .find(|(key, _)| key == "cli_state")
+                .unwrap()
+                .1,
+            "state+with spaces"
+        );
+        assert_eq!(
+            parsed
+                .query_pairs()
+                .find(|(key, _)| key == "cli_callback")
+                .unwrap()
+                .1,
+            "http://127.0.0.1:1234/callback?reserved=yes"
+        );
+        assert!(!url.contains("cli_callback=http://127.0.0.1:1234/callback?reserved"));
+    }
+
+    #[test]
+    fn authenticated_profile_save_resets_stale_workspace_atomically() {
+        let home = tempfile::tempdir().expect("home");
+        let cwd = tempfile::tempdir().expect("cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment
+            .set_profile_value("", "workspace_id", Some(Value::String("old".into())))
+            .expect("seed config");
+        environment
+            .save_authenticated_profile(
+                "",
+                "https://api.new.example",
+                "https://app.new.example",
+                "mul_new_secret",
+                "new-workspace",
+            )
+            .expect("save authenticated profile");
+        let config = environment.load_config("").expect("load config");
+        assert_eq!(config.server_url, "https://api.new.example");
+        assert_eq!(config.app_url, "https://app.new.example");
+        assert_eq!(config.workspace_id, "new-workspace");
+        assert_eq!(config.token, "mul_new_secret");
+    }
+
+    #[tokio::test]
+    async fn login_callback_rejects_wrong_state_then_accepts_matching_state() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+        let address = listener.local_addr().expect("address");
+        let waiter = tokio::spawn(wait_for_login_callback(listener, "expected".into()));
+
+        let mut attacker = tokio::net::TcpStream::connect(address)
+            .await
+            .expect("attacker connection");
+        attacker
+            .write_all(
+                b"GET /callback?state=wrong&token=mul_secret HTTP/1.1\r\nHost: localhost\r\n\r\n",
+            )
+            .await
+            .expect("attacker request");
+        let mut response = Vec::new();
+        attacker
+            .read_to_end(&mut response)
+            .await
+            .expect("attacker response");
+        assert!(String::from_utf8_lossy(&response).contains("400 Bad Request"));
+
+        let mut browser = tokio::net::TcpStream::connect(address)
+            .await
+            .expect("browser connection");
+        browser
+            .write_all(b"GET /callback?state=expected&token=mul_secret HTTP/1.1\r\nHost: localhost\r\n\r\n")
+            .await
+            .expect("browser request");
+        let mut response = Vec::new();
+        browser
+            .read_to_end(&mut response)
+            .await
+            .expect("browser response");
+        assert!(String::from_utf8_lossy(&response).contains("200 OK"));
+        assert_eq!(
+            waiter.await.expect("callback task").expect("token"),
+            "mul_secret"
+        );
     }
 }
