@@ -5,6 +5,7 @@
 //! with each vertical slice rather than exposing placeholder command trees.
 
 mod api;
+mod auth_commands;
 pub mod config;
 pub mod daemon;
 mod daemon_commands;
@@ -28,6 +29,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use url::{form_urlencoded, Url};
 
+use auth_commands::{display_token_prefix, run_auth_logout, run_auth_status};
 use daemon_commands::{
     format_daemon_status_table, known_daemon_profiles, parse_log_lines, read_daemon_log_tail,
     render_daemon_status, require_known_daemon_profile, resolve_daemon_log_path,
@@ -8373,115 +8375,6 @@ async fn run_login_with_urls(
     })
 }
 
-async fn run_auth_status(
-    cli: &Cli,
-    environment: &Environment,
-    output: OutputFormat,
-) -> Result<RunOutput> {
-    require_task_local_config_root(environment)?;
-    let task_context = environment.in_daemon_managed_execution_context();
-    let (server_url, token) = resolve_auth_status_credentials(cli, environment)?;
-    if token.is_empty() {
-        return Ok(match output {
-            OutputFormat::Table => RunOutput {
-                stdout: String::new(),
-                stderr: "Not authenticated. Run 'cordy login' to authenticate.\n".into(),
-            },
-            OutputFormat::Json => RunOutput {
-                stdout: format!(
-                    "{}\n",
-                    serde_json::to_string_pretty(&serde_json::json!({
-                        "authenticated": false,
-                        "server": server_url
-                    }))?
-                ),
-                stderr: String::new(),
-            },
-        });
-    }
-
-    let client = ApiClient::new(
-        server_url.clone(),
-        String::new(),
-        token.clone(),
-        String::new(),
-        String::new(),
-        http_timeout(environment.raw("CORDY_HTTP_TIMEOUT")),
-        CLIENT_VERSION,
-    )?;
-    let user = match client.get_json::<AuthUser>("/api/me").await {
-        Ok(user) => user,
-        Err(error) => {
-            let message = format!(
-                "Token is invalid or expired: {error}\nRun 'cordy login' to re-authenticate."
-            );
-            return Ok(match output {
-                OutputFormat::Table => RunOutput {
-                    stdout: String::new(),
-                    stderr: format!("{message}\n"),
-                },
-                OutputFormat::Json => RunOutput {
-                    stdout: format!(
-                        "{}\n",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "authenticated": false,
-                            "server": server_url,
-                            "error": message
-                        }))?
-                    ),
-                    stderr: String::new(),
-                },
-            });
-        }
-    };
-    let token_prefix = display_token_prefix(&token);
-    Ok(match output {
-        OutputFormat::Table => RunOutput {
-            stdout: String::new(),
-            stderr: if task_context {
-                format!(
-                    "Server:  {server_url}\nUser:    {} ({})\n",
-                    user.name, user.email
-                )
-            } else {
-                format!(
-                    "Server:  {server_url}\nUser:    {} ({})\nToken:   {token_prefix}\n",
-                    user.name, user.email
-                )
-            },
-        },
-        OutputFormat::Json => {
-            let mut status = serde_json::json!({
-                "authenticated": true,
-                "server": server_url,
-                "user": user
-            });
-            if !task_context {
-                status["token"] = Value::String(token_prefix);
-            }
-            RunOutput {
-                stdout: format!("{}\n", serde_json::to_string_pretty(&status)?),
-                stderr: String::new(),
-            }
-        }
-    })
-}
-
-fn run_auth_logout(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
-    require_human_local_command(environment, "logout")?;
-    let removed = environment
-        .clear_profile_token(&cli.profile)
-        .context("failed to save config")?;
-    Ok(RunOutput {
-        stdout: String::new(),
-        stderr: if removed {
-            "Token removed. You are now logged out.\n".into()
-        } else {
-            "Not authenticated.\n".into()
-        },
-    })
-}
-
 fn require_task_local_config_root(environment: &Environment) -> Result<()> {
     if !environment.in_daemon_managed_execution_context()
         || environment.trimmed(config::TASK_CONFIG_ROOT_ENV).is_some()
@@ -8503,54 +8396,6 @@ fn require_human_local_command(environment: &Environment, command: &str) -> Resu
     }
     let suffix = environment.leftover_marker_suffix().unwrap_or_default();
     bail!("{command} is not available inside a daemon-managed task{suffix}")
-}
-
-fn resolve_auth_status_credentials(
-    cli: &Cli,
-    environment: &Environment,
-) -> Result<(String, String)> {
-    let task_context = environment.in_daemon_managed_execution_context();
-    let may_read_config =
-        !task_context || environment.trimmed(config::TASK_CONFIG_ROOT_ENV).is_some();
-    let config = if may_read_config {
-        environment.load_config(&cli.profile).unwrap_or_default()
-    } else {
-        config::CliConfig::default()
-    };
-    let token = environment
-        .trimmed("CORDY_TOKEN")
-        .map(ToOwned::to_owned)
-        .or_else(|| (!task_context).then(|| config.token.clone()))
-        .unwrap_or_default();
-    if task_context && !token.starts_with("mat_") {
-        bail!("agent execution context requires CORDY_TOKEN to be a task-scoped mat_ token");
-    }
-    let explicit_server_url = cli
-        .server_url
-        .as_deref()
-        .or_else(|| environment.trimmed("CORDY_SERVER_URL"));
-    let server_url = if let Some(raw) = explicit_server_url.filter(|value| !value.is_empty()) {
-        normalize_api_base_url(raw).unwrap_or_else(|_| raw.into())
-    } else if may_read_config && !config.server_url.is_empty() {
-        normalize_api_base_url(&config.server_url).unwrap_or(config.server_url)
-    } else {
-        String::new()
-    };
-    if server_url.is_empty() {
-        bail!(
-            "No server configured. Run 'cordy setup' first{}.",
-            environment.daemon_port_only_context_hint()
-        );
-    }
-    Ok((server_url, token))
-}
-
-fn display_token_prefix(token: &str) -> String {
-    if token.chars().count() > 12 {
-        token.chars().take(12).collect::<String>() + "..."
-    } else {
-        token.into()
-    }
 }
 
 const CONFIG_SET_SUPPORTED_KEYS: &[&str] = &[
