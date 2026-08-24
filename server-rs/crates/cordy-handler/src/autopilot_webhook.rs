@@ -2,14 +2,11 @@
 //! signature-checked before dispatch and persisted before acknowledgement so
 //! provider retries are idempotent and recoverable.
 
-use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::net::SocketAddr;
 
 use axum::body::Body;
-use axum::extract::{ConnectInfo, Path, Request, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::extract::{ConnectInfo, Extension, Path, State};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
@@ -18,121 +15,16 @@ use cordy_db::queries::{autopilot, webhook_delivery};
 use cordy_service::autopilot::AutopilotQuotaExceededError;
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
-use ipnetwork::IpNetwork;
 use serde_json::{json, Value};
 use sha2::Sha256;
-use tokio::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+use crate::webhook_rate_limit::{GateDecision, SlidingWindowGate};
 use crate::{error::error_response, state::HandlerState};
 
 const MAX_BODY: usize = 256 * 1024;
 type HmacSha256 = Hmac<Sha256>;
-
-#[derive(Clone)]
-struct SlidingIpLimit {
-    hits: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
-    limit: usize,
-    window: Duration,
-}
-
-impl SlidingIpLimit {
-    fn new(limit: usize, window: Duration) -> Self {
-        Self {
-            hits: Arc::new(Mutex::new(HashMap::new())),
-            limit,
-            window,
-        }
-    }
-
-    async fn evaluate(&self, ip: &str, consume: bool) -> bool {
-        if self.limit == 0 || ip.is_empty() {
-            return true;
-        }
-        let cutoff = Instant::now() - self.window;
-        let mut hits = self.hits.lock().await;
-        hits.retain(|_, entries| {
-            entries.retain(|seen| *seen > cutoff);
-            !entries.is_empty()
-        });
-        let count = hits.get(ip).map_or(0, Vec::len);
-        if count >= self.limit {
-            return false;
-        }
-        if consume {
-            hits.entry(ip.to_string()).or_default().push(Instant::now());
-        }
-        true
-    }
-}
-
-/// Two independent webhook safety budgets. The high absolute ceiling is
-/// charged by every request; the lower budget is checked before token lookup
-/// but charged only after an unknown token or bad signature is identified.
-#[derive(Clone)]
-pub(crate) struct WebhookRateLimits {
-    absolute: SlidingIpLimit,
-    bad_credentials: SlidingIpLimit,
-    pub(crate) trusted_proxies: Vec<IpNetwork>,
-}
-
-impl WebhookRateLimits {
-    pub(crate) fn new(trusted_proxies: Vec<IpNetwork>) -> Self {
-        Self {
-            absolute: SlidingIpLimit::new(600, Duration::from_secs(60)),
-            bad_credentials: SlidingIpLimit::new(30, Duration::from_secs(60)),
-            trusted_proxies,
-        }
-    }
-
-    #[cfg(test)]
-    fn test(absolute: usize, bad_credentials: usize) -> Self {
-        Self {
-            absolute: SlidingIpLimit::new(absolute, Duration::from_secs(60)),
-            bad_credentials: SlidingIpLimit::new(bad_credentials, Duration::from_secs(60)),
-            trusted_proxies: Vec::new(),
-        }
-    }
-
-    fn client_ip(&self, request: &Request) -> String {
-        let remote = request
-            .extensions()
-            .get::<ConnectInfo<SocketAddr>>()
-            .map(|info| info.0.ip());
-        if remote.is_some_and(|ip| {
-            self.trusted_proxies
-                .iter()
-                .any(|network| network.contains(ip))
-        }) {
-            if let Some(forwarded) = request
-                .headers()
-                .get("x-forwarded-for")
-                .and_then(|value| value.to_str().ok())
-            {
-                for candidate in forwarded.rsplit(',').map(str::trim) {
-                    if let Ok(ip) = candidate.parse::<IpAddr>() {
-                        if !self
-                            .trusted_proxies
-                            .iter()
-                            .any(|network| network.contains(ip))
-                        {
-                            return ip.to_string();
-                        }
-                    }
-                }
-            }
-        }
-        remote.map(|ip| ip.to_string()).unwrap_or_default()
-    }
-
-    async fn admit(&self, ip: &str) -> bool {
-        self.absolute.evaluate(ip, true).await && self.bad_credentials.evaluate(ip, false).await
-    }
-
-    async fn charge_bad_credential(&self, ip: &str) {
-        let _ = self.bad_credentials.evaluate(ip, true).await;
-    }
-}
 
 pub fn router() -> Router<HandlerState> {
     Router::new().route("/api/webhooks/autopilots/{token}", post(webhook))
@@ -374,27 +266,43 @@ async fn duplicate_response(
 async fn webhook(
     State(state): State<HandlerState>,
     Path(token): Path<String>,
-    request: Request,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
+    headers: HeaderMap,
+    body: Body,
 ) -> Response {
-    let client_ip = state.webhook_rate_limits.client_ip(&request);
-    if !state.webhook_rate_limits.admit(&client_ip).await {
-        return error_response(StatusCode::TOO_MANY_REQUESTS, "rate limit exceeded");
-    }
     if token.is_empty() {
-        state
-            .webhook_rate_limits
-            .charge_bad_credential(&client_ip)
-            .await;
         return error_response(StatusCode::NOT_FOUND, "webhook not found");
     }
-    let (parts, body) = request.into_parts();
-    let headers = parts.headers;
+    let cancel = CancellationToken::new();
+    let ip = webhook_client_ip(&headers, peer, &state.auth_rate_limit.trusted_proxies);
+    if !ip.is_empty() {
+        if let Some(response) = limited_response(
+            state
+                .webhook_rate_limits
+                .absolute_ip
+                .allow(&ip, &cancel)
+                .await,
+            "absolute_ip",
+            state.business_metrics.as_deref(),
+        ) {
+            return response;
+        }
+        if let Some(response) = limited_response(
+            state
+                .webhook_rate_limits
+                .bad_credential_ip
+                .check(&ip, &cancel)
+                .await,
+            "bad_credential_ip",
+            state.business_metrics.as_deref(),
+        ) {
+            return response;
+        }
+    }
     let trigger = match autopilot::get_webhook_trigger_by_token(&state.pool, Some(&token)).await {
         Ok(Some(value)) => value,
         Ok(None) => {
-            state
-                .webhook_rate_limits
-                .charge_bad_credential(&client_ip)
+            consume_bad_credential(&state.webhook_rate_limits.bad_credential_ip, &ip, &cancel)
                 .await;
             return error_response(StatusCode::NOT_FOUND, "webhook not found");
         }
@@ -489,20 +397,17 @@ async fn webhook(
             }
         }
         Ok(None) | Err(_) => {
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
         }
     };
     if matches!(sig, "missing" | "invalid") {
-        state
-            .webhook_rate_limits
-            .charge_bad_credential(&client_ip)
-            .await;
         let reason = if sig == "missing" {
             "missing_signature"
         } else {
             "invalid_signature"
         };
         let response = json!({"status": "rejected", "delivery_id": delivery.id, "reason": reason});
+        consume_bad_credential(&state.webhook_rate_limits.bad_credential_ip, &ip, &cancel).await;
         if let Err(error) = terminal(
             &state,
             delivery.id,
@@ -613,9 +518,59 @@ async fn webhook(
     Json(response).into_response()
 }
 
+async fn consume_bad_credential(gate: &SlidingWindowGate, ip: &str, cancel: &CancellationToken) {
+    if !ip.is_empty() {
+        let _ = gate.allow(ip, cancel).await;
+    }
+}
+
+fn limited_response(
+    decision: GateDecision,
+    gate: &'static str,
+    metrics: Option<&cordy_metrics::BusinessMetrics>,
+) -> Option<Response> {
+    let GateDecision::Limited { retry_after } = decision else {
+        return None;
+    };
+    if let Some(metrics) = metrics {
+        metrics.record_webhook_rate_limited(gate);
+    }
+    tracing::warn!(gate, "autopilot webhook rate limited");
+    let seconds = retry_after.as_millis().div_ceil(1_000).max(1);
+    let mut response = error_response(StatusCode::TOO_MANY_REQUESTS, "rate limit exceeded");
+    if let Ok(value) = HeaderValue::from_str(&seconds.to_string()) {
+        response.headers_mut().insert(header::RETRY_AFTER, value);
+    }
+    Some(response)
+}
+
+fn webhook_client_ip(
+    headers: &HeaderMap,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
+    trusted_proxies: &[ipnetwork::IpNetwork],
+) -> String {
+    let remote = peer.map(|Extension(ConnectInfo(peer))| peer.ip());
+    cordy_middleware::ratelimit::client_ip(headers, remote, trusted_proxies)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn webhook_limiter_rejects_spoofed_forwarded_prefixes() {
+        let trusted = vec!["10.0.0.0/8".parse().unwrap()];
+        let peer = Some(Extension(ConnectInfo("10.0.0.2:443".parse().unwrap())));
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            "attacker-controlled, 198.51.100.7, 10.0.0.3"
+                .parse()
+                .unwrap(),
+        );
+
+        assert_eq!(webhook_client_ip(&headers, peer, &trusted), "198.51.100.7");
+    }
 
     #[test]
     fn signature_is_body_bound_and_header_value_is_never_selected() {
@@ -645,18 +600,5 @@ mod tests {
         let value = normalize(br#"{"action":"opened","number":1}"#, &headers).unwrap();
         assert_eq!(value["event"], "github.pull_request.opened");
         assert!(normalize(b"true", &HeaderMap::new()).is_err());
-    }
-
-    #[tokio::test]
-    async fn webhook_ip_limits_separate_absolute_traffic_from_bad_credentials() {
-        let absolute = WebhookRateLimits::test(1, 10);
-        assert!(absolute.admit("203.0.113.1").await);
-        assert!(!absolute.admit("203.0.113.1").await);
-
-        let debt = WebhookRateLimits::test(10, 1);
-        assert!(debt.admit("203.0.113.2").await);
-        assert!(debt.admit("203.0.113.2").await);
-        debt.charge_bad_credential("203.0.113.2").await;
-        assert!(!debt.admit("203.0.113.2").await);
     }
 }

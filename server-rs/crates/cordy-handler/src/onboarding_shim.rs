@@ -238,7 +238,7 @@ async fn with_runtime(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to start onboarding",
-            )
+            );
         }
     };
     let membership =
@@ -260,7 +260,7 @@ async fn with_runtime(
     let agents = match agent::list_agents(&mut *tx, workspace_id).await {
         Ok(value) => value,
         Err(_) => {
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to list agents")
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to list agents");
         }
     };
     let mut made_agent = None;
@@ -301,7 +301,7 @@ async fn with_runtime(
                 return error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "failed to create onboarding assistant",
-                )
+                );
             }
         },
     };
@@ -333,7 +333,7 @@ async fn with_runtime(
                     return error_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "failed to create onboarding issue",
-                    )
+                    );
                 }
             }
         }
@@ -341,7 +341,7 @@ async fn with_runtime(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to create onboarding issue",
-            )
+            );
         }
     };
     if complete_user(&mut tx, user_id).await.is_err() || tx.commit().await.is_err() {
@@ -501,7 +501,7 @@ async fn without_runtime(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to start onboarding",
-            )
+            );
         }
     };
     if !matches!(
@@ -536,14 +536,14 @@ async fn without_runtime(
                 return error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "failed to create onboarding issue",
-                )
+                );
             }
         },
         Err(_) => {
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to create onboarding issue",
-            )
+            );
         }
     };
     if complete_user(&mut tx, user_id).await.is_err() || tx.commit().await.is_err() {

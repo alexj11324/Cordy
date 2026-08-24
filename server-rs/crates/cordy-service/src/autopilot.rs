@@ -6,6 +6,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context as _;
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use sqlx::PgPool;
@@ -90,12 +91,12 @@ struct AutopilotRuleConfigSummary<'a> {
 /// Appends one rule-version snapshot for a substantive publish (MUL-4302
 /// §3.4). Shared by handler publish paths (tx-scoped via the caller's
 /// executor) and the failure monitor's system-pause. System publishers pass
-/// the nil UUID with type "system".
+/// `None` with type "system".
 pub async fn record_autopilot_rule_version(
     executor: &PgPool,
     ap: &Autopilot,
     published_by_type: &str,
-    published_by_id: Uuid,
+    published_by_id: Option<Uuid>,
 ) -> anyhow::Result<()> {
     let summary = AutopilotRuleConfigSummary {
         assignee_type: &ap.assignee_type,
@@ -1512,7 +1513,7 @@ impl AutopilotService {
             limit,
         )
         .await
-        .map_err(|e| anyhow::anyhow!("list recoverable quota reservations: {e}"))?;
+        .context("list recoverable quota reservations")?;
 
         let mut settled = 0usize;
         for reservation in reservations {
@@ -1522,18 +1523,16 @@ impl AutopilotService {
                 // No run ever linked: an orphaned reservation — release it.
                 Ok(None) => settle_autopilot_quota(&self.pool, Some(reservation.id), false)
                     .await
-                    .map_err(|e| anyhow::anyhow!("release orphan quota reservation: {e}"))?,
-                Err(e) => return Err(anyhow::anyhow!("load quota-linked run: {e}")),
+                    .context("release orphan quota reservation")?,
+                Err(e) => return Err(e.context("load quota-linked run")),
                 Ok(Some(run)) => match run.status.as_str() {
                     "completed" => settle_autopilot_quota(&self.pool, Some(reservation.id), true)
                         .await
-                        .map_err(|e| anyhow::anyhow!("consume completed quota reservation: {e}"))?,
+                        .context("consume completed quota reservation")?,
                     "failed" | "skipped" => {
                         settle_autopilot_quota(&self.pool, Some(reservation.id), false)
                             .await
-                            .map_err(|e| {
-                                anyhow::anyhow!("release terminal quota reservation: {e}")
-                            })?
+                            .context("release terminal quota reservation")?
                     }
                     // Abandoned manual/api runs recover their partial state;
                     // schedule and webhook retries own their own recovery, so
@@ -1545,7 +1544,7 @@ impl AutopilotService {
                     {
                         self.recover_partial_autopilot_run(run.id)
                             .await
-                            .map_err(|e| anyhow::anyhow!("recover abandoned quota run: {e}"))?
+                            .context("recover abandoned quota run")?
                     }
                     _ => false,
                 },
@@ -2267,7 +2266,7 @@ impl AutopilotService {
                 sub.user_id,
                 "issue_subscribed",
                 "info",
-                issue.id,
+                Some(issue.id),
                 &issue.title,
                 None,
                 Some("agent"),
