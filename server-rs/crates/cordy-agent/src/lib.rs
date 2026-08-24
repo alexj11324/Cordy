@@ -5,6 +5,7 @@
 //! become constructible only when their real transport implementation lands;
 //! metadata alone never manufactures a backend that cannot execute.
 
+pub mod acp;
 pub mod acp_mcp;
 pub mod antigravity;
 pub mod codebuddy;
@@ -20,6 +21,7 @@ pub mod stderr;
 pub mod stream;
 pub mod version;
 
+pub use acp::{AcpClient, AcpError, AcpNotification};
 pub use acp_mcp::{
     build_acp_mcp_servers, filter_acp_mcp_servers, parse_acp_mcp_capabilities, AcpMcpCapabilities,
     AcpMcpCapabilityDeclaration, AcpMcpServer,
