@@ -87,28 +87,19 @@ impl ChannelRuntime {
             &cancel,
             &outbound_tasks,
         );
+        let runtime_deps = ChannelRuntimeDeps {
+            state,
+            cfg,
+            router: &router,
+            storage: storage.as_ref(),
+            registry: &registry,
+            cancel: &cancel,
+            outbound_tasks: &outbound_tasks,
+        };
         let mut maintenance = Vec::new();
-        let wecom = configure_wecom(
-            state,
-            cfg,
-            &router,
-            storage.as_ref(),
-            &registry,
-            &cancel,
-            &outbound_tasks,
-            wecom_metrics,
-        )?;
+        let wecom = configure_wecom(&runtime_deps, wecom_metrics)?;
         maintenance.extend(wecom.tasks);
-        if let Some(handle) = configure_lark(
-            state,
-            cfg,
-            &router,
-            storage.as_ref(),
-            &registry,
-            &cancel,
-            &outbound_tasks,
-            lark_backfill_metrics,
-        )? {
+        if let Some(handle) = configure_lark(&runtime_deps, lark_backfill_metrics)? {
             maintenance.push(handle);
         }
 
@@ -518,16 +509,30 @@ struct WecomRuntimeSetup {
     tasks: Vec<tokio::task::JoinHandle<()>>,
 }
 
+#[derive(Clone, Copy)]
+struct ChannelRuntimeDeps<'a> {
+    state: &'a cordy_handler::HandlerState,
+    cfg: &'a cordy_config::Config,
+    router: &'a Arc<ChannelRouter>,
+    storage: Option<&'a Arc<ChannelStorage>>,
+    registry: &'a Arc<cordy_channel::Registry>,
+    cancel: &'a CancellationToken,
+    outbound_tasks: &'a Arc<cordy_channel::RuntimeTasks>,
+}
+
 fn configure_wecom(
-    state: &cordy_handler::HandlerState,
-    cfg: &cordy_config::Config,
-    router: &Arc<ChannelRouter>,
-    storage: Option<&Arc<ChannelStorage>>,
-    registry: &Arc<cordy_channel::Registry>,
-    cancel: &CancellationToken,
-    outbound_tasks: &Arc<cordy_channel::RuntimeTasks>,
+    deps: &ChannelRuntimeDeps<'_>,
     metrics: Option<Arc<cordy_metrics::WecomMetrics>>,
 ) -> anyhow::Result<WecomRuntimeSetup> {
+    let ChannelRuntimeDeps {
+        state,
+        cfg,
+        router,
+        storage,
+        registry,
+        cancel,
+        outbound_tasks,
+    } = *deps;
     let secret_box = match channel_secret_box("CORDY_WECOM_SECRET_KEY") {
         Ok(Some(secret_box)) => secret_box,
         Ok(None) => {
@@ -693,15 +698,18 @@ fn configure_wecom_security(cfg: &cordy_config::Config) {
 }
 
 fn configure_lark(
-    state: &cordy_handler::HandlerState,
-    cfg: &cordy_config::Config,
-    router: &Arc<ChannelRouter>,
-    storage: Option<&Arc<ChannelStorage>>,
-    registry: &Arc<cordy_channel::Registry>,
-    cancel: &CancellationToken,
-    outbound_tasks: &Arc<cordy_channel::RuntimeTasks>,
+    deps: &ChannelRuntimeDeps<'_>,
     backfill_metrics: Option<Arc<cordy_metrics::LarkBackfillMetrics>>,
 ) -> anyhow::Result<Option<tokio::task::JoinHandle<()>>> {
+    let ChannelRuntimeDeps {
+        state,
+        cfg,
+        router,
+        storage,
+        registry,
+        cancel,
+        outbound_tasks,
+    } = *deps;
     let secret_box = match channel_secret_box("CORDY_LARK_SECRET_KEY") {
         Ok(Some(secret_box)) => secret_box,
         Ok(None) => {
