@@ -564,6 +564,16 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy skill search <query>` to PR #129. It trims and validates the
+      query, uses URL-encoded `/api/skills/search?q=...`, and matches Go's
+      installable-skill JSON/table columns and headers. Exact head is
+      `5121aaad75fb7dcb8150a4bf48cd0eae812078ba`, parent
+      `6faf2ef64e0a3757a681d128406745478e0a14f6`, tree
+      `8c0a074b84b1d20830859334e6a4a925638d6903`, candidate
+      `a0f01368e6d08b02ce2dba435f19dbbc242d1708`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
