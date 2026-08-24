@@ -1244,6 +1244,11 @@ enum WorkspaceCommand {
     Create(CreateWorkspaceArgs),
     #[command(about = "Update workspace metadata (admin/owner only)")]
     Update(UpdateWorkspaceArgs),
+    #[command(about = "Set the default workspace for this profile")]
+    Switch {
+        #[arg(value_name = "WORKSPACE-ID|SLUG|PREFIX")]
+        workspace: String,
+    },
     #[command(about = "Manage workspace members")]
     Member(WorkspaceMemberArgs),
 }
@@ -1652,6 +1657,9 @@ async fn run_with_input<R: Read>(
         Command::Workspace(WorkspaceArgs {
             command: WorkspaceCommand::Update(args),
         }) => run_workspace_update(cli, environment, args, input).await,
+        Command::Workspace(WorkspaceArgs {
+            command: WorkspaceCommand::Switch { workspace },
+        }) => run_workspace_switch(cli, environment, workspace).await,
         Command::Workspace(WorkspaceArgs {
             command:
                 WorkspaceCommand::Member(WorkspaceMemberArgs {
@@ -7826,6 +7834,32 @@ async fn run_workspace_member_list(
             OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&members)?),
             OutputFormat::Table => format_workspace_members(&members),
         },
+        stderr: String::new(),
+    })
+}
+
+async fn run_workspace_switch(
+    cli: &Cli,
+    environment: &Environment,
+    workspace: &str,
+) -> Result<RunOutput> {
+    require_human_local_command(environment, "workspace switch")?;
+    let target = workspace.trim();
+    if target.is_empty() {
+        bail!("workspace id, slug, or id prefix is required");
+    }
+    let workspaces = fetch_workspaces(cli, environment).await?;
+    let workspace = resolve_workspace_reference(&workspaces, target)?;
+    environment.set_profile_value(
+        &cli.profile,
+        "workspace_id",
+        Some(Value::String(workspace.id.clone())),
+    )?;
+    Ok(RunOutput {
+        stdout: format!(
+            "Switched to workspace: {} ({})\n",
+            workspace.name, workspace.id
+        ),
         stderr: String::new(),
     })
 }
@@ -14242,6 +14276,52 @@ mod tests {
             invited.stdout,
             "Invitation sent to new@example.com (role: member, status: pending)\n"
         );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn workspace_switch_verifies_access_and_atomically_updates_only_current_profile() {
+        let workspace_id = "55555555-5555-5555-5555-555555555555";
+        let app = Router::new().route(
+            "/api/workspaces",
+            get(move || async move {
+                Json(vec![serde_json::json!({
+                    "id":workspace_id,"name":"Alpha","slug":"alpha"
+                })])
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let profile_dir = home.path().join(".cordy/profiles/dev");
+        fs::create_dir_all(&profile_dir).expect("profile dir");
+        fs::write(
+            profile_dir.join("config.json"),
+            r#"{"server_url":"old","unknown":{"keep":true}}"#,
+        )
+        .expect("profile config");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli =
+            Cli::try_parse_from(["cordy", "--profile", "dev", "workspace", "switch", "ALPHA"])
+                .expect("workspace switch CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("switch workspace");
+        assert_eq!(
+            output.stdout,
+            format!("Switched to workspace: Alpha ({workspace_id})\n")
+        );
+        let document: Value = serde_json::from_slice(
+            &fs::read(profile_dir.join("config.json")).expect("updated profile config"),
+        )
+        .expect("profile JSON");
+        assert_eq!(document["workspace_id"], workspace_id);
+        assert_eq!(document["unknown"]["keep"], true);
+        assert!(!home.path().join(".cordy/config.json").exists());
         server.abort();
     }
 
