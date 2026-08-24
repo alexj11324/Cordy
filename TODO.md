@@ -477,6 +477,17 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy squad member remove <squad-id>` to PR #129. It adds the
+      minimal typed DELETE-with-JSON-body API client method, validates member
+      ID/type, sends the Go-compatible body, and preserves JSON/table output.
+      Exact head is
+      `767c3a306321544af96e88b0fa15e1f665ce04df`, parent
+      `8d67f4e6b0f237111b68085161aaa0092d1114c6`, tree
+      `57db24ebf880204ddf60db6c5ad142c6def54125`, candidate
+      `b1f389981dfe9893d87f7ab7e2066ba2b617ad87`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
