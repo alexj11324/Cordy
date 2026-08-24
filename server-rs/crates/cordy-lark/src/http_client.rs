@@ -31,10 +31,10 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::client::{
-    AddReactionParams, ApiClient, BindingPromptParams, BotInfo,
-    DeleteReactionParams, DownloadResourceParams, DownloadedResource, DownloadedResourceStream,
-    InstallationCredentials, LarkMessage, LarkMessageMention, ListMessagesParams, PatchCardParams,
-    ReplyTarget, SendCardParams, SendMarkdownCardParams, SendTextParams,
+    AddReactionParams, ApiClient, BindingPromptParams, BotInfo, DeleteReactionParams,
+    DownloadResourceParams, DownloadedResource, DownloadedResourceStream, InstallationCredentials,
+    LarkMessage, LarkMessageMention, ListMessagesParams, PatchCardParams, ReplyTarget,
+    SendCardParams, SendMarkdownCardParams, SendTextParams,
 };
 use crate::types::{ChatId, OpenId};
 
@@ -516,6 +516,14 @@ impl ApiClient for HttpApiClient {
     /// ApiClientNotConfigured; the real client is the inverse contract.
     fn is_configured(&self) -> bool {
         true
+    }
+
+    async fn download_message_resource_stream(
+        &self,
+        creds: InstallationCredentials,
+        p: DownloadResourceParams,
+    ) -> anyhow::Result<DownloadedResourceStream> {
+        HttpApiClient::download_message_resource_stream(self, creds, p).await
     }
 
     /// Posts a fresh interactive card into a chat and returns Lark's
@@ -1013,7 +1021,7 @@ impl ApiClient for HttpApiClient {
         creds: InstallationCredentials,
         p: DownloadResourceParams,
     ) -> anyhow::Result<DownloadedResource> {
-        let stream = self.download_message_resource_stream(creds, p).await?;
+        let stream = HttpApiClient::download_message_resource_stream(self, creds, p).await?;
         let content_type = stream.content_type.clone();
         let filename = stream.filename.clone();
         let reported_size = stream.size_bytes;

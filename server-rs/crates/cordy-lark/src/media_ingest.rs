@@ -258,15 +258,9 @@ impl FeishuMediaResolver {
         creds: &InstallationCredentials,
         p: DownloadResourceParams,
     ) -> anyhow::Result<DownloadedResourceStream> {
-        // The transport's buffered download wraps its bytes into a reader —
-        // the same shape Go produced via io.NopCloser(bytes.NewReader(...)).
-        let got = self.api.download_message_resource(creds.clone(), p).await?;
-        Ok(DownloadedResourceStream {
-            body: Box::new(std::io::Cursor::new(got.data)),
-            content_type: got.content_type,
-            filename: got.filename,
-            size_bytes: got.size_bytes,
-        })
+        self.api
+            .download_message_resource_stream(creds.clone(), p)
+            .await
     }
 
     /// Buffers then uploads one resource. The transport already enforces the

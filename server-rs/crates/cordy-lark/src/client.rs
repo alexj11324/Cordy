@@ -56,6 +56,26 @@ pub struct DownloadedResource {
     pub size_bytes: i64,
 }
 
+impl DownloadedResource {
+    /// Adapts the buffered compatibility shape to the streaming seam. Test
+    /// doubles only need to implement `download_message_resource`; the
+    /// production HTTP client overrides the streaming method and never takes
+    /// this allocation-heavy fallback.
+    pub fn into_stream(self) -> DownloadedResourceStream {
+        let size_bytes = if self.size_bytes > 0 {
+            self.size_bytes
+        } else {
+            self.data.len() as i64
+        };
+        DownloadedResourceStream {
+            body: Box::new(std::io::Cursor::new(self.data)),
+            content_type: self.content_type,
+            filename: self.filename,
+            size_bytes,
+        }
+    }
+}
+
 /// A streaming resource download. `body` is consumed once by the reader.
 pub struct DownloadedResourceStream {
     pub body: Box<dyn tokio::io::AsyncRead + Send + Unpin>,
@@ -383,6 +403,20 @@ pub trait ApiClient: Send + Sync {
         p: DownloadResourceParams,
     ) -> anyhow::Result<DownloadedResource>;
 
+    /// Streams one message resource without first materializing the complete
+    /// body. Production overrides this method; the buffered default preserves
+    /// compatibility for narrow fakes and alternate clients.
+    async fn download_message_resource_stream(
+        &self,
+        creds: InstallationCredentials,
+        p: DownloadResourceParams,
+    ) -> anyhow::Result<DownloadedResourceStream> {
+        Ok(self
+            .download_message_resource(creds, p)
+            .await?
+            .into_stream())
+    }
+
     /// Resolves a set of user open_ids to their display names via
     /// GET /open-apis/contact/v3/users/batch. The enricher uses it to label
     /// recent-context / quoted / forwarded speakers (and the sender who
@@ -527,5 +561,41 @@ impl ApiClient for StubApiClient {
             "lark stub client: delete_message_reaction called"
         );
         Err(ApiClientNotConfigured.into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::io::AsyncReadExt as _;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn buffered_resource_adapts_to_one_shot_stream() {
+        let mut stream = DownloadedResource {
+            data: b"payload".to_vec(),
+            content_type: "application/octet-stream".into(),
+            filename: "payload.bin".into(),
+            size_bytes: 0,
+        }
+        .into_stream();
+
+        let mut body = Vec::new();
+        stream.body.read_to_end(&mut body).await.unwrap();
+        assert_eq!(body, b"payload");
+        assert_eq!(stream.size_bytes, body.len() as i64);
+        assert_eq!(stream.content_type, "application/octet-stream");
+        assert_eq!(stream.filename, "payload.bin");
+    }
+
+    #[test]
+    fn buffered_resource_preserves_authoritative_size_hint() {
+        let stream = DownloadedResource {
+            data: b"partial fixture".to_vec(),
+            size_bytes: 42,
+            ..Default::default()
+        }
+        .into_stream();
+        assert_eq!(stream.size_bytes, 42);
     }
 }
