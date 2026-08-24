@@ -808,6 +808,14 @@
       rustfmt and diff-check pass; no Cargo was run. The serial subagent
       reviewed exact head `16540c59` and found no issue (environment lacked a
       rustfmt binary for a second pass); pro owns Ready PR, gate, and merge.
+- [ ] CLI daemon status/log structural refactor is pushed at
+      `476273172ee933d60bf14c328c2099ece8954288` (parent
+      `16540c59f974b74d9d6efdfca92b45fc33e966f0`, tree
+      `2b8dfc49392cf7ad63ae91abdda1fd71fd6114852`): profile discovery, health
+      status rendering, log tail/follow, and their bounded parsers now share
+      `cordy-cli/src/daemon_commands.rs`. Scoped rustfmt/diff-check pass; no
+      Cargo was run. The serial subagent owns review/minimal fixes; pro owns
+      Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
