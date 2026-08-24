@@ -295,10 +295,10 @@
       server/app URLs; health preflight must succeed before mutation; success
       atomically replaces the whole profile (clearing stale token/workspace and
       unknown fields) while preserving lock/permission/fsync semantics. Current
-      head is now `bb2079c9c206a41a8fb0188690b9116d7381e275` (parent
-      `a5419afdd78b55e4a0886c9a93eaf57616f25fcd`, tree
-      `4c8dc7224db5b2ef674fc63a73bbbcbd3fcab532`), candidate
-      `4068e577aca519b48a6a3588ccab37e151f87f88`; the remote branch and PR
+      head is now `31ed70f6fbef53eff392c8bd861e16ff1ae25e35` (parent
+      `62aa0af57a3d97c242b51228fd0617c6b81049c8`, tree
+      `7bf7aa1794012deb3989201cb10e0091bcf61d5f`), candidate
+      `e24f805172f64d01078ca41b3a4860716d4ce30c`; the remote branch and PR
       candidate were verified at these exact SHAs. PR #129 remains
       Ready/CLEAN/MERGEABLE on base `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`.
       The slice adds the bounded unauthenticated `/health` probe (HTTP(S), no
@@ -313,11 +313,24 @@
       candidate merge ref for the new head must be refreshed after GitHub
       catches up. Scoped rustfmt/diff-check pass; Cargo/review/gate/merge
       remain with pro.
+- [x] Added the daemon disk-usage public facade to PR #129. Scan DTOs,
+      root/pattern resolution, and single/multi-root scans are now typed public
+      APIs. Parent issue statuses use an injected `ParentStatusResolver` and a
+      `ClientParentStatusResolver` that keeps batch→legacy fallback and
+      cancellation without exposing the internal repository context; per-root
+      failures remain best-effort. The legacy client fallback now treats only
+      404 as not-found and preserves other issue errors. Current exact head is
+      `31ed70f6fbef53eff392c8bd861e16ff1ae25e35`, tree
+      `7bf7aa1794012deb3989201cb10e0091bcf61d5f`, candidate
+      `e24f805172f64d01078ca41b3a4860716d4ce30c`, parent
+      `62aa0af57a3d97c242b51228fd0617c6b81049c8`; PR remains Ready and
+      mergeable on base `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`. Scoped
+      rustfmt/diff-check pass; Cargo/review/gate/merge remain with pro.
 - [x] Added the hidden `cordy daemon probe-runtimes` command through a typed
       daemon facade in PR #129. The facade reuses the complete daemon
       `load_config`/agent discovery path with `AllowNoAgents=true`, preserves
       profile command and OpenClaw overrides, and keeps tokens and resolved
-      executable paths out of the JSON report. Current head is
+      executable paths out of the JSON report. The slice checkpoint was
       `62aa0af57a3d97c242b51228fd0617c6b81049c8` (parent
       `bb2079c9c206a41a8fb0188690b9116d7381e275`, tree
       `67e4e95453d77408a7558a2b068d58f2223532f7`), candidate
