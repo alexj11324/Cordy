@@ -7,7 +7,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use sqlx::PgPool;
@@ -260,7 +260,10 @@ pub struct TaskService {
     pub pool: PgPool,
     pub bus: Arc<cordy_events::Bus>,
     pub analytics: Option<Box<dyn analytics::AnalyticsClient>>,
-    pub metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
+    /// Installed once after the metrics registry is created. The service is
+    /// already shared by `Arc` at that point, so startup configures the
+    /// existing instance instead of constructing a disconnected replacement.
+    pub metrics: OnceLock<Arc<cordy_metrics::BusinessMetrics>>,
     pub wakeup: Option<std::sync::Weak<dyn TaskWakeupNotifier>>,
     /// Server-side toggle router. `None` returns each call site's default.
     pub feature_flags: Option<Box<dyn FlagSource>>,
@@ -308,7 +311,7 @@ impl TaskService {
             pool,
             bus,
             analytics: None,
-            metrics: None,
+            metrics: OnceLock::new(),
             wakeup: None,
             feature_flags: None,
             composio: None,
@@ -316,6 +319,12 @@ impl TaskService {
             quick_actions_in_flight: Mutex::new(HashMap::new()),
             quick_actions_running: AtomicI64::new(0),
             analytics_context: Mutex::new(AnalyticsContextCache::default()),
+        }
+    }
+
+    pub fn configure_metrics(&self, metrics: Arc<cordy_metrics::BusinessMetrics>) {
+        if self.metrics.set(metrics).is_err() {
+            tracing::warn!("task service metrics already configured");
         }
     }
 
@@ -831,14 +840,14 @@ impl TaskService {
     // --- Metrics capture helpers -----------------------------------------------
 
     pub async fn capture_task_queued(&self, task: &AgentTaskQueue) {
-        if let Some(metrics) = &self.metrics {
+        if let Some(metrics) = self.metrics.get() {
             let (source, runtime_mode, _) = self.task_metrics_context(task).await;
             metrics.record_task_enqueued(&source, &runtime_mode);
         }
     }
 
     pub async fn capture_task_dispatched(&self, task: &AgentTaskQueue) {
-        if let Some(metrics) = &self.metrics {
+        if let Some(metrics) = self.metrics.get() {
             let (source, runtime_mode, _) = self.task_metrics_context(task).await;
             metrics.record_task_dispatched(
                 &task.id.to_string(),
@@ -850,14 +859,14 @@ impl TaskService {
     }
 
     pub async fn capture_task_started(&self, task: &AgentTaskQueue) {
-        if let Some(metrics) = &self.metrics {
+        if let Some(metrics) = self.metrics.get() {
             let (source, runtime_mode, provider) = self.task_metrics_context(task).await;
             metrics.record_task_started(&source, &runtime_mode, &provider);
         }
     }
 
     pub async fn capture_task_completed(&self, task: &AgentTaskQueue) {
-        if let Some(metrics) = &self.metrics {
+        if let Some(metrics) = self.metrics.get() {
             let (source, runtime_mode, _) = self.task_metrics_context(task).await;
             metrics.record_task_terminal(
                 &task.id.to_string(),
@@ -873,7 +882,7 @@ impl TaskService {
 
     pub async fn capture_task_failed(&self, task: &AgentTaskQueue) {
         let failure_reason = task_failure_reason(task);
-        if let Some(metrics) = &self.metrics {
+        if let Some(metrics) = self.metrics.get() {
             let (source, runtime_mode, _) = self.task_metrics_context(task).await;
             metrics.record_task_terminal(
                 &task.id.to_string(),
@@ -893,7 +902,7 @@ impl TaskService {
     /// deleting the token closes the window where a compromised process could
     /// keep authenticating until the 24h expiry. Failure is non-fatal.
     pub async fn capture_task_cancelled(&self, task: &AgentTaskQueue) {
-        if let Some(metrics) = &self.metrics {
+        if let Some(metrics) = self.metrics.get() {
             let (source, runtime_mode, _) = self.task_metrics_context(task).await;
             metrics.record_task_terminal(
                 &task.id.to_string(),
@@ -929,7 +938,7 @@ impl TaskService {
         cache_write_tokens: i64,
         cost_usd_ticks: i64,
     ) {
-        let Some(metrics) = &self.metrics else {
+        let Some(metrics) = self.metrics.get() else {
             return;
         };
         let (source, runtime_mode, _) = self.task_metrics_context(task).await;
@@ -947,7 +956,7 @@ impl TaskService {
     }
 
     pub async fn capture_queued_expired_tasks(&self, tasks: &[AgentTaskQueue]) {
-        let Some(metrics) = &self.metrics else {
+        let Some(metrics) = self.metrics.get() else {
             return;
         };
         for task in tasks {
@@ -957,7 +966,7 @@ impl TaskService {
     }
 
     pub async fn capture_lease_expired_tasks(&self, tasks: &[AgentTaskQueue]) {
-        let Some(metrics) = &self.metrics else {
+        let Some(metrics) = self.metrics.get() else {
             return;
         };
         for task in tasks {

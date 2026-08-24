@@ -1231,7 +1231,9 @@ impl TaskService {
 /// (MUL-4899). Lexical only: file:// URLs and the recorded work_dir prefix.
 /// No path, body text, or fragment may reach the metric or the log.
 fn observe_chat_output_local_path(svc: &TaskService, task: &AgentTaskQueue, body: &str) {
-    let Some(metrics) = &svc.metrics else { return };
+    let Some(metrics) = svc.metrics.get() else {
+        return;
+    };
     if body.trim().is_empty() {
         return;
     }

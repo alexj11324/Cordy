@@ -308,6 +308,9 @@ impl HandlerState {
         business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
         http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
     ) -> Self {
+        if let Some(metrics) = business_metrics.as_ref() {
+            self.tasks.configure_metrics(metrics.clone());
+        }
         if let (Some(hub), Some(metrics)) = (self.daemon_hub.as_ref(), business_metrics.as_ref()) {
             hub.set_message_kind_recorder(Some(Arc::new(DaemonMessageMetrics {
                 metrics: metrics.clone(),
@@ -342,7 +345,7 @@ impl HandlerState {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_attachment_ttl;
+    use super::*;
     use std::time::Duration;
 
     #[test]
@@ -362,5 +365,22 @@ mod tests {
         for invalid in ["", "0", "-1s", "30", "1d", "1hour"] {
             assert!(parse_attachment_ttl(invalid).is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn observability_wires_the_already_shared_task_service() {
+        let pool =
+            sqlx::PgPool::connect_lazy("postgres://invalid.invalid/nope").expect("lazy test pool");
+        let state = HandlerState::new(pool, PatCache::disabled(), None);
+        let original_tasks = state.tasks.clone();
+        let metrics = Arc::new(cordy_metrics::BusinessMetrics::new());
+
+        let state = state.with_observability(Some(metrics.clone()), None);
+
+        assert!(Arc::ptr_eq(&state.tasks, &original_tasks));
+        assert!(Arc::ptr_eq(
+            state.tasks.metrics.get().expect("task metrics configured"),
+            &metrics
+        ));
     }
 }

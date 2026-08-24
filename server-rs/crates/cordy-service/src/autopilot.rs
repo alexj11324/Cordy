@@ -863,7 +863,7 @@ impl AutopilotService {
         );
         cordy_metrics::business_events::record_event(
             Some(client),
-            self.task_svc.metrics.as_deref(),
+            self.task_svc.metrics.get().map(Arc::as_ref),
             &ev,
         );
     }
@@ -890,7 +890,7 @@ impl AutopilotService {
         );
         cordy_metrics::business_events::record_event(
             Some(client),
-            self.task_svc.metrics.as_deref(),
+            self.task_svc.metrics.get().map(Arc::as_ref),
             &ev,
         );
     }
@@ -912,7 +912,7 @@ impl AutopilotService {
         );
         cordy_metrics::business_events::record_event(
             Some(client),
-            self.task_svc.metrics.as_deref(),
+            self.task_svc.metrics.get().map(Arc::as_ref),
             &ev,
         );
     }
@@ -944,7 +944,7 @@ impl AutopilotService {
         );
         cordy_metrics::business_events::record_event(
             Some(client),
-            self.task_svc.metrics.as_deref(),
+            self.task_svc.metrics.get().map(Arc::as_ref),
             &ev,
         );
     }
