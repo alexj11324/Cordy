@@ -241,6 +241,19 @@ struct Inner {
     stopped: bool,
 }
 
+fn cancel_revoked_supervisors(inner: &mut Inner, active: &HashSet<String>) {
+    for (id, entry) in &inner.supervisors {
+        if !active.contains(id) {
+            entry.cancel.cancel();
+        }
+    }
+    // Keep cancelled entries owned until their task sends `done` and removes
+    // its generation. Dropping them here would also drop the only completion
+    // receiver, so a concurrent process shutdown could no longer wait for
+    // disconnect and token-fenced lease release to finish.
+    inner.contended_since.retain(|id, _| active.contains(id));
+}
+
 /// Owns the per-installation supervisor tasks that keep a long-running
 /// connection per active installation, across every channel type. It
 /// enforces the multi-replica safety rule via the WS lease CAS — at most
@@ -382,20 +395,12 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                 candidate_ids.push(row.id);
             }
         }
-        // Reap supervisors whose installation is no longer active
-        // (revoked since the last sweep). The supervisor exits on its
-        // next boundary, releases its lease, and the task returns.
+        // Cancel supervisors whose installation is no longer active
+        // (revoked since the last sweep). Their entries remain owned until
+        // the task exits so process shutdown can still await cleanup.
         {
             let mut inner = self.lock();
-            inner.supervisors.retain(|id, entry| {
-                if active.contains(id) {
-                    true
-                } else {
-                    entry.cancel.cancel();
-                    false
-                }
-            });
-            inner.contended_since.retain(|id, _| active.contains(id));
+            cancel_revoked_supervisors(&mut inner, &active);
         }
 
         if candidates.is_empty() {
@@ -1032,6 +1037,33 @@ async fn sleep(ctx: &CancellationToken, d: Duration) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn revoked_supervisor_remains_owned_until_task_completion() {
+        let cancel = CancellationToken::new();
+        let (_done_tx, done) = tokio::sync::oneshot::channel();
+        let mut inner = Inner {
+            supervisors: HashMap::from([(
+                "revoked".to_owned(),
+                SupervisorEntry {
+                    cancel: cancel.clone(),
+                    done,
+                    fingerprint: "old".to_owned(),
+                    gen: 1,
+                },
+            )]),
+            contended_since: HashMap::from([("revoked".to_owned(), Utc::now())]),
+            active_owners: 0,
+            renewal_errors: HashSet::new(),
+            stopped: false,
+        };
+
+        cancel_revoked_supervisors(&mut inner, &HashSet::new());
+
+        assert!(cancel.is_cancelled());
+        assert!(inner.supervisors.contains_key("revoked"));
+        assert!(!inner.contended_since.contains_key("revoked"));
+    }
 
     #[test]
     fn lease_token_composes_node_and_generation() {
