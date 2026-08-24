@@ -4,10 +4,12 @@
 //! pg pool, and health endpoints. Routes are ported domain-by-domain in
 //! later steps (475 routes total, see tasks/go-to-rust-migration.md).
 
+#[cfg(test)]
 use axum::Router;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+#[cfg(test)]
 fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<cordy_realtime::hub::Hub>>) -> Router {
     cordy_handler::build_router(db, hub)
 }
@@ -36,7 +38,15 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(port = cfg.server.port, "starting cordy-server");
 
     let db = cordy_db::connect(&cfg.database).await?;
-    let app = build_router(Some(db), Some(Arc::new(cordy_realtime::hub::Hub::new())));
+    let attachment_urls =
+        cordy_handler::attachment_url::AttachmentUrlPolicy::from_config(&cfg).await?;
+    let state = cordy_handler::HandlerState::new(
+        db,
+        cordy_auth::pat_cache::PatCache::disabled(),
+        Some(Arc::new(cordy_realtime::hub::Hub::new())),
+    )
+    .with_attachment_urls(attachment_urls);
+    let app = cordy_handler::build_router_from_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;

@@ -10,8 +10,10 @@
 
 #![allow(clippy::result_large_err)]
 
+pub mod attachment_url;
 pub mod claim_comments;
 pub mod claim_response;
+mod cloudfront;
 pub mod daemon;
 pub mod daemon_ws;
 pub mod error;
@@ -143,6 +145,12 @@ pub fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<Hub>>) -> Router {
         ),
     };
 
+    build_router_from_state(state)
+}
+
+/// Assemble routes from a preconfigured state. Production uses this entry
+/// point so attachment URL behavior comes from the same loaded configuration.
+pub fn build_router_from_state(state: HandlerState) -> Router {
     if let Some(hub) = state.hub.as_ref() {
         hub.set_authorizer(Arc::new(ws::DbScopeAuthorizer::new(state.tasks.clone())));
     }

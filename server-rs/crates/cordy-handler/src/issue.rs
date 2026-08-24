@@ -1577,6 +1577,7 @@ async fn get_issue(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
+    headers: HeaderMap,
 ) -> Response {
     let issue = match resolve_issue(&state, &context, &id).await {
         Ok(issue) => issue,
@@ -1597,7 +1598,7 @@ async fn get_issue(
             .await
             .unwrap_or_default()
             .iter()
-            .map(AttachmentResponse::from)
+            .map(|attachment| AttachmentResponse::from_request(&state, &headers, attachment))
             .collect();
     Json(response).into_response()
 }
@@ -1663,6 +1664,7 @@ async fn list_attachments(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
+    headers: HeaderMap,
 ) -> Response {
     let issue = match resolve_issue(&state, &context, &id).await {
         Ok(issue) => issue,
@@ -1673,7 +1675,7 @@ async fn list_attachments(
         Ok(attachments) => Json(
             attachments
                 .iter()
-                .map(AttachmentResponse::from)
+                .map(|attachment| AttachmentResponse::from_request(&state, &headers, attachment))
                 .collect::<Vec<_>>(),
         )
         .into_response(),
@@ -4046,6 +4048,16 @@ impl From<&Attachment> for AttachmentResponse {
             size_bytes: attachment.size_bytes,
             created_at: timestamp(attachment.created_at),
         }
+    }
+}
+
+impl AttachmentResponse {
+    fn from_request(state: &HandlerState, headers: &HeaderMap, attachment: &Attachment) -> Self {
+        let urls = state.attachment_urls.urls(headers, attachment);
+        let mut response = Self::from(attachment);
+        response.download_url = urls.download_url;
+        response.markdown_url = urls.markdown_url;
+        response
     }
 }
 

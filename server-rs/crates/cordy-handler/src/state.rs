@@ -52,6 +52,8 @@ pub struct HandlerState {
     /// Daemon WebSocket hub (cordy-daemon). `None` only in tests — the WS
     /// endpoint reports 503 and daemons fall back to HTTP polling.
     pub daemon_hub: Option<Arc<cordy_daemon::hub::DaemonHub>>,
+    /// Deployment-aware URL policy for attachment rows returned by issue APIs.
+    pub attachment_urls: crate::attachment_url::AttachmentUrlPolicy,
     /// Keeps the weak notifier installed in `TaskService` alive.
     _task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier>,
 }
@@ -85,8 +87,17 @@ impl HandlerState {
             local_skill_list_store: None,
             local_skill_import_store: None,
             daemon_hub: Some(daemon_hub),
+            attachment_urls: crate::attachment_url::AttachmentUrlPolicy::default(),
             _task_wakeup: task_wakeup,
         }
+    }
+
+    pub fn with_attachment_urls(
+        mut self,
+        attachment_urls: crate::attachment_url::AttachmentUrlPolicy,
+    ) -> Self {
+        self.attachment_urls = attachment_urls;
+        self
     }
 
     /// Builds the pending-request stores from a Redis client (Go
