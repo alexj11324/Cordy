@@ -122,18 +122,31 @@ impl TrackedJobs {
     }
 }
 
-/// Builds a resolver-facing token that cancels at the media deadline.
-fn deadline_token(parent: &CancellationToken, deadline: std::time::Instant) -> CancellationToken {
-    let token = parent.child_token();
-    let cancel_token = token.clone();
-    tokio::spawn(async move {
-        let now = std::time::Instant::now();
-        if deadline > now {
-            tokio::time::sleep(deadline - now).await;
+/// Polls resolver work inside its owning media job. Cancellation and deadline
+/// drop the future in-place; no detached timer or resolver task survives the
+/// tracked job.
+async fn run_media_until<F, T>(
+    parent: &CancellationToken,
+    child: &CancellationToken,
+    deadline: std::time::Instant,
+    future: F,
+) -> Option<T>
+where
+    F: Future<Output = T>,
+{
+    tokio::pin!(future);
+    tokio::select! {
+        biased;
+        _ = parent.cancelled() => {
+            child.cancel();
+            None
         }
-        cancel_token.cancel();
-    });
-    token
+        _ = tokio::time::sleep_until(tokio::time::Instant::from_std(deadline)) => {
+            child.cancel();
+            None
+        }
+        value = &mut future => Some(value),
+    }
 }
 
 /// The inbound pipeline driver. Construct with [`Router::new`], register
@@ -995,19 +1008,21 @@ impl Router {
                     if !router_media_ctx.is_cancelled() {
                         if let (Some(media), Some(chat_message_id)) = (&set.media, chat_message_id)
                         {
-                            let media_deadline_ctx = deadline_token(&router_media_ctx, deadline);
-                            resolved = media
-                                .resolve_media(
-                                    media_deadline_ctx.clone(),
-                                    &inst,
-                                    &identity,
-                                    session_id,
-                                    chat_message_id,
-                                    resolved,
-                                )
-                                .await;
-                            expired = media_deadline_ctx.is_cancelled()
-                                || std::time::Instant::now() >= deadline;
+                            let media_ctx = router_media_ctx.child_token();
+                            let resolve = media.resolve_media(
+                                media_ctx.clone(),
+                                &inst,
+                                &identity,
+                                session_id,
+                                chat_message_id,
+                                resolved.clone(),
+                            );
+                            match run_media_until(&router_media_ctx, &media_ctx, deadline, resolve)
+                                .await
+                            {
+                                Some(value) => resolved = value,
+                                None => expired = true,
+                            }
                         }
                     }
                 }
@@ -1392,4 +1407,44 @@ async fn emit_flush_reply(
             },
         )
         .await;
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn media_work_is_dropped_when_owner_is_cancelled() {
+        let parent = CancellationToken::new();
+        let child = parent.child_token();
+        parent.cancel();
+
+        let result = run_media_until(
+            &parent,
+            &child,
+            std::time::Instant::now() + Duration::from_secs(30),
+            std::future::pending::<()>(),
+        )
+        .await;
+
+        assert!(result.is_none());
+        assert!(child.is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn media_work_is_dropped_at_its_deadline() {
+        let parent = CancellationToken::new();
+        let child = parent.child_token();
+
+        let result = run_media_until(
+            &parent,
+            &child,
+            std::time::Instant::now(),
+            std::future::pending::<()>(),
+        )
+        .await;
+
+        assert!(result.is_none());
+        assert!(child.is_cancelled());
+    }
 }
