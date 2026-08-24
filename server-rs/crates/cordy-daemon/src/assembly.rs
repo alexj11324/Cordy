@@ -19,6 +19,7 @@ use crate::execenv::context::ensure_workspaces_root_marker;
 use crate::health::RepoCheckoutRegistry;
 use crate::production_services::{DaemonProductionServices, ProviderRuntimeAdapter};
 use crate::production_stack::DaemonProductionStack;
+use crate::provider_registration::RuntimeLaunchRegistry;
 use crate::registration::RuntimeRegistrationSource;
 use crate::repocache::Cache;
 use crate::types::AgentEntry;
@@ -147,6 +148,11 @@ pub struct DaemonProductionInputs {
     pub config: Config,
     pub client: Arc<Client>,
     pub repo_cache: Arc<Cache>,
+    /// Shared by the registration source and provider adapter. A provider
+    /// must resolve launches from the same accepted registration state that
+    /// the daemon publishes; creating a second registry would allow an
+    /// execution path to observe stale or unrelated commands.
+    pub launch_registry: Arc<RuntimeLaunchRegistry>,
 }
 
 /// Complete set of real services returned by the CLI-side profile/provider
@@ -263,10 +269,12 @@ impl DaemonProductionInputs {
         let repo_cache = Arc::new(Cache::new(
             std::path::Path::new(&config.workspaces_root).join(".repos"),
         ));
+        let launch_registry = Arc::new(RuntimeLaunchRegistry::default());
         Ok(Self {
             config,
             client,
             repo_cache,
+            launch_registry,
         })
     }
 
@@ -285,6 +293,7 @@ impl DaemonProductionInputs {
             Arc::clone(&self.client),
             Arc::clone(&self.repo_cache),
             Arc::clone(&checkout_registry),
+            Arc::clone(&self.launch_registry),
             provider,
             registration_source,
         ));

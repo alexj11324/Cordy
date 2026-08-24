@@ -28,6 +28,7 @@ use crate::health::{
     REPO_CHECKOUT_LOCK_WAIT_TIMEOUT,
 };
 use crate::production_stack::{ProductionRuntimeServices, RepoCheckoutFailure};
+use crate::provider_registration::RuntimeLaunchRegistry;
 use crate::reconcile::{ReconcileBroadcaster, WorkspaceChangeSignal};
 use crate::registration::{
     enqueue_repo_warmup, BuiltinRefreshReason, RepoWarmupRequest, RuntimeRegistrationService,
@@ -60,12 +61,72 @@ pub trait ProviderRuntimeAdapter: Send + Sync + 'static {
         task: Task,
         target: RuntimeExecutionTarget,
         slot: usize,
-        activity: Arc<DaemonActivity>,
-        repo_state: Arc<DaemonRepoState>,
-        checkout_registry: Arc<RepoCheckoutRegistry>,
+        runtime: ProviderRuntimeContext,
     ) -> TaskRunOutcome;
 
     fn health_snapshot(&self) -> HealthResponse;
+}
+
+/// Shared owners for one provider task execution.
+///
+/// These values are deliberately bundled so a production adapter cannot
+/// accidentally combine a client from one daemon instance with repository or
+/// launch state from another. The launch registry is the same registry fed by
+/// [`ProviderRegistrationSource`](crate::provider_registration::ProviderRegistrationSource)
+/// and therefore contains only accepted workspace registration state.
+#[derive(Clone)]
+pub struct ProviderRuntimeContext {
+    client: Arc<Client>,
+    launch_registry: Arc<RuntimeLaunchRegistry>,
+    activity: Arc<DaemonActivity>,
+    repo_state: Arc<DaemonRepoState>,
+    checkout_registry: Arc<RepoCheckoutRegistry>,
+}
+
+impl ProviderRuntimeContext {
+    pub(crate) fn new(
+        client: Arc<Client>,
+        launch_registry: Arc<RuntimeLaunchRegistry>,
+        activity: Arc<DaemonActivity>,
+        repo_state: Arc<DaemonRepoState>,
+        checkout_registry: Arc<RepoCheckoutRegistry>,
+    ) -> Self {
+        Self {
+            client,
+            launch_registry,
+            activity,
+            repo_state,
+            checkout_registry,
+        }
+    }
+
+    /// Authenticated daemon client for task transcript, usage, and lifecycle
+    /// callbacks. The returned `Arc` is the shared production owner.
+    pub fn client(&self) -> Arc<Client> {
+        Arc::clone(&self.client)
+    }
+
+    /// Resolves a launch only from the registration state accepted for this
+    /// workspace and target.
+    pub fn launch_registry(&self) -> Arc<RuntimeLaunchRegistry> {
+        Arc::clone(&self.launch_registry)
+    }
+
+    /// Process-wide activity state used to coordinate execution with update
+    /// and garbage-collection barriers.
+    pub fn activity(&self) -> Arc<DaemonActivity> {
+        Arc::clone(&self.activity)
+    }
+
+    /// Daemon-owned repository authorization and task-reference state.
+    pub fn repo_state(&self) -> Arc<DaemonRepoState> {
+        Arc::clone(&self.repo_state)
+    }
+
+    /// Task-bound localhost checkout authorization registry.
+    pub fn checkout_registry(&self) -> Arc<RepoCheckoutRegistry> {
+        Arc::clone(&self.checkout_registry)
+    }
 }
 
 pub struct DaemonProductionServices<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> {
@@ -76,6 +137,7 @@ pub struct DaemonProductionServices<P: ProviderRuntimeAdapter, R: RuntimeRegistr
     repo_cache: Arc<Cache>,
     repo_state: Arc<DaemonRepoState>,
     checkout_registry: Arc<RepoCheckoutRegistry>,
+    launch_registry: Arc<RuntimeLaunchRegistry>,
     repo_warmups: mpsc::Sender<RepoWarmupRequest>,
     repo_warmup_rx: Mutex<Option<mpsc::Receiver<RepoWarmupRequest>>>,
 }
@@ -86,6 +148,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         client: Arc<Client>,
         repo_cache: Arc<Cache>,
         checkout_registry: Arc<RepoCheckoutRegistry>,
+        launch_registry: Arc<RuntimeLaunchRegistry>,
         provider: Arc<P>,
         registration_source: Arc<R>,
     ) -> Self {
@@ -105,6 +168,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             repo_cache,
             repo_state,
             checkout_registry,
+            launch_registry,
             repo_warmups,
             repo_warmup_rx: Mutex::new(Some(repo_warmup_rx)),
         }
@@ -466,9 +530,13 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
                 task,
                 target,
                 slot,
-                activity,
-                Arc::clone(&self.repo_state),
-                Arc::clone(&self.checkout_registry),
+                ProviderRuntimeContext::new(
+                    Arc::clone(&self.client),
+                    Arc::clone(&self.launch_registry),
+                    activity,
+                    Arc::clone(&self.repo_state),
+                    Arc::clone(&self.checkout_registry),
+                ),
             )
             .await
     }
@@ -594,5 +662,30 @@ mod tests {
                 "https://example.test/workspace.git".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn provider_runtime_context_keeps_shared_daemon_owners() {
+        let client = Arc::new(Client::new("https://example.test"));
+        let launch_registry = Arc::new(RuntimeLaunchRegistry::default());
+        let activity = DaemonActivity::new();
+        let repo_state = Arc::new(DaemonRepoState::new());
+        let checkout_registry = Arc::new(RepoCheckoutRegistry::default());
+        let context = ProviderRuntimeContext::new(
+            Arc::clone(&client),
+            Arc::clone(&launch_registry),
+            Arc::clone(&activity),
+            Arc::clone(&repo_state),
+            Arc::clone(&checkout_registry),
+        );
+
+        assert!(Arc::ptr_eq(&context.client(), &client));
+        assert!(Arc::ptr_eq(&context.launch_registry(), &launch_registry));
+        assert!(Arc::ptr_eq(&context.activity(), &activity));
+        assert!(Arc::ptr_eq(&context.repo_state(), &repo_state));
+        assert!(Arc::ptr_eq(
+            &context.checkout_registry(),
+            &checkout_registry
+        ));
     }
 }
