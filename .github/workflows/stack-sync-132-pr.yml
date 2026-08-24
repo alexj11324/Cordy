@@ -1,4 +1,4 @@
-name: Trigger one-shot stack sync 132
+name: Merge reviewed channel fixes into integration
 
 on:
   pull_request:
@@ -9,41 +9,84 @@ permissions:
   contents: write
 
 jobs:
-  sync:
+  merge-fix-stack:
     if: github.head_ref == 'automation/stack-sync-132'
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
           ref: automation/stack-sync-132
           fetch-depth: 0
 
-      - name: Extract authoritative sync script
-        shell: bash
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-
-          source = Path('.github/workflows/stack-sync-132.yml').read_text().splitlines()
-          try:
-              start = next(i for i, line in enumerate(source) if line == '        run: |') + 1
-          except StopIteration as error:
-              raise SystemExit('authoritative run block not found') from error
-
-          block = []
-          for line in source[start:]:
-              if line and not line.startswith('          '):
-                  break
-              block.append(line[10:] if line.startswith('          ') else '')
-          if not block:
-              raise SystemExit('authoritative run block is empty')
-          Path('/tmp/stack-sync-132.sh').write_text('\n'.join(block) + '\n')
-          PY
-
-      - name: Execute against exact integration head
+      - name: Merge fix branches and validate
         shell: bash
         run: |
           set -euo pipefail
-          git fetch origin codex/cord-14-s8-integrations main
-          git switch --detach origin/codex/cord-14-s8-integrations
-          bash /tmp/stack-sync-132.sh
+          target=codex/cord-14-s8-integrations
+          branches=(
+            codex/cord-19-lark-install-errors
+            codex/cord-20-dingtalk-list-capability
+            codex/cord-21-channel-lease-config
+            codex/cord-22-lark-install-projection
+            codex/cord-23-wecom-install-errors
+            codex/cord-24-telegram-install-verdicts
+            codex/cord-25-slack-install-ownership
+            codex/cord-26-telegram-install-ownership
+            codex/cord-27-telegram-install-timeout
+            codex/cord-28-channel-file-delivery
+            codex/cord-29-channel-init-isolation
+            codex/cord-32-slack-socket-ack
+            codex/cord-33-slack-disconnect
+            codex/cord-34-slack-write-timeout
+            codex/cord-35-slack-handshake-timeout
+            codex/cord-36-channel-install-pool-release
+            codex/cord-37-dingtalk-media-lifecycle
+            codex/cord-39-wecom-read-cancellation
+            codex/cord-45-dingtalk-text-frames
+          )
+
+          git fetch origin "$target" "${branches[@]}"
+          expected=$(git rev-parse "origin/$target")
+          git switch --detach "$expected"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          : > /tmp/merge-conflicts.txt
+          for branch in "${branches[@]}"; do
+            head=$(git rev-parse "origin/$branch")
+            if git merge-base --is-ancestor "$head" HEAD; then
+              echo "already included: $branch $head"
+              continue
+            fi
+            echo "merging $branch $head"
+            if ! git merge --no-ff --no-edit -X ours "origin/$branch"; then
+              echo "conflict: $branch" | tee -a /tmp/merge-conflicts.txt
+              git diff --name-only --diff-filter=U | tee -a /tmp/merge-conflicts.txt
+              git checkout --ours -- .
+              git add -A
+              git commit --no-edit
+            fi
+          done
+
+          rustfmt --edition 2021 --check \
+            server-rs/crates/cordy-handler/src/connectors.rs \
+            server-rs/crates/cordy-server/src/channel_runtime.rs \
+            server-rs/crates/cordy-slack/src/socket_mode.rs \
+            server-rs/crates/cordy-wecom/src/ws.rs \
+            server-rs/crates/cordy-dingtalk/src/stream.rs
+
+          CARGO_INCREMENTAL=0 SQLX_OFFLINE=true cargo check \
+            --manifest-path server-rs/Cargo.toml --locked \
+            -p cordy-handler -p cordy-server \
+            -p cordy-lark -p cordy-wecom -p cordy-telegram \
+            -p cordy-dingtalk -p cordy-slack
+
+          CARGO_INCREMENTAL=0 SQLX_OFFLINE=true cargo test \
+            --manifest-path server-rs/Cargo.toml --locked \
+            -p cordy-lark -p cordy-wecom -p cordy-telegram \
+            -p cordy-dingtalk -p cordy-slack
+
+          echo 'Conflict resolutions retained cumulative integration versions:'
+          cat /tmp/merge-conflicts.txt
+          git push --force-with-lease="refs/heads/$target:$expected" origin "HEAD:refs/heads/$target"
