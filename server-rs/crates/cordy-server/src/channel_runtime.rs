@@ -561,6 +561,7 @@ fn configure_wecom(
             });
         }
     };
+    configure_wecom_security(cfg);
     let senders = Arc::new(cordy_wecom::senders_registry::SendersRegistry::new());
     let relay_url = std::env::var("WECOM_OUTBOUND_RELAY_REDIS_URL")
         .ok()
@@ -671,6 +672,39 @@ fn configure_wecom(
         relay,
         tasks: relay_tasks,
     })
+}
+
+fn configure_wecom_security(cfg: &cordy_config::Config) {
+    let allowed_cidrs = cfg
+        .integrations
+        .wecom_media_allow_cidrs
+        .as_deref()
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|cidr| !cidr.is_empty())
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    for error in cordy_wecom::media_guard::set_media_allowed_prefixes(&allowed_cidrs) {
+        tracing::error!(%error, "wecom: ignoring malformed media allow CIDR");
+    }
+    if !allowed_cidrs.is_empty() {
+        tracing::warn!(
+            cidrs = ?allowed_cidrs,
+            "wecom media guard has an operator allow-list; those ranges are reachable by a URL WeCom supplies"
+        );
+    }
+
+    let trace_enabled = cfg
+        .integrations
+        .wecom_trace
+        .as_deref()
+        .is_some_and(|value| value.trim() == "1");
+    if cordy_wecom::trace::set_trace(trace_enabled) {
+        tracing::warn!(
+            "wecom frame tracing ON — records bounded message text; unset CORDY_WECOM_TRACE when done"
+        );
+    }
 }
 
 fn configure_lark(
@@ -1261,7 +1295,7 @@ impl cordy_slack::slash_command::QuickCreateEnqueuer for ChannelServices {
 
 #[cfg(test)]
 mod tests {
-    use super::app_url;
+    use super::{app_url, configure_wecom_security};
 
     #[test]
     fn app_url_prefers_explicit_app_host_and_trims_slash() {
@@ -1270,5 +1304,27 @@ mod tests {
         assert_eq!(app_url(&cfg), "https://frontend.example");
         cfg.urls.app_url = Some("https://app.example///".into());
         assert_eq!(app_url(&cfg), "https://app.example");
+    }
+
+    #[test]
+    fn wecom_security_config_applies_bounded_cidrs_and_exact_trace_flag() {
+        let mut cfg = cordy_config::Config::default();
+        cfg.integrations.wecom_media_allow_cidrs = Some(" 198.18.0.0/15,not-a-network, ".into());
+        cfg.integrations.wecom_trace = Some(" 1 ".into());
+
+        configure_wecom_security(&cfg);
+
+        assert!(cordy_wecom::media_guard::public_addr_only(
+            "198.18.0.1".parse().unwrap()
+        ));
+        assert!(!cordy_wecom::media_guard::public_addr_only(
+            "127.0.0.1".parse().unwrap()
+        ));
+        assert!(cordy_wecom::trace::tracing_on());
+
+        // Restore the process globals so later server tests keep the secure
+        // production defaults regardless of execution order.
+        configure_wecom_security(&cordy_config::Config::default());
+        assert!(!cordy_wecom::trace::tracing_on());
     }
 }
