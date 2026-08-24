@@ -143,13 +143,16 @@ struct DaemonArgs {
 enum DaemonCommand {
     #[command(about = "Start the production daemon")]
     Start(DaemonStartArgs),
+    #[command(about = "Restart the production daemon")]
+    Restart,
+    #[command(about = "Stop the production daemon")]
+    Stop,
 }
 
 #[derive(Debug, Args)]
 struct DaemonStartArgs {
-    /// Only the foreground path is exposed until the lifecycle owner is
-    /// wired to the CLI start/restart preflight. It still runs the real
-    /// production stack; there is no placeholder background implementation.
+    /// Run the daemon in the current process. Without this flag the command
+    /// uses the typed lifecycle owner to launch the real foreground child.
     #[arg(long)]
     foreground: bool,
     #[arg(long)]
@@ -3005,6 +3008,12 @@ async fn run_with_input<R: Read>(
         Command::Daemon(DaemonArgs {
             command: DaemonCommand::Start(args),
         }) => run_daemon_start(cli, environment, args).await,
+        Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Restart,
+        }) => run_daemon_restart(cli, environment).await,
+        Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Stop,
+        }) => run_daemon_stop(cli, environment).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -3014,12 +3023,6 @@ async fn run_daemon_start(
     environment: &Environment,
     args: &DaemonStartArgs,
 ) -> Result<RunOutput> {
-    if !args.foreground {
-        bail!(
-            "background daemon start is not available yet; use 'cordy daemon start --foreground'"
-        );
-    }
-
     let launch_flags = config::DaemonLaunchFlags {
         daemon_id: args.daemon_id.clone(),
         device_name: args.device_name.clone(),
@@ -3045,6 +3048,18 @@ async fn run_daemon_start(
             start.launch.health_port
         );
     }
+
+    if !args.foreground {
+        let executable = std::env::current_exe().context("resolve cordy executable")?;
+        let lifecycle = cordy_daemon::lifecycle::DaemonLifecycle::assemble(
+            start.lifecycle_options(executable, CLIENT_VERSION),
+            &start.profile_input,
+        )
+        .context("assemble background daemon lifecycle")?;
+        let outcome = lifecycle.start().await.context("start daemon")?;
+        return render_daemon_start_outcome(outcome);
+    }
+
     let options = start.bootstrap_options();
     let checkout_registry = Arc::new(cordy_daemon::health::RepoCheckoutRegistry::default());
     cordy_daemon::assembly::run_production_daemon(options, move |context| {
@@ -3057,6 +3072,122 @@ async fn run_daemon_start(
         stdout: String::new(),
         stderr: String::new(),
     })
+}
+
+async fn run_daemon_restart(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
+    let flags = config::DaemonLaunchFlags {
+        server_url: cli.server_url.clone(),
+        ..config::DaemonLaunchFlags::default()
+    };
+    let start = daemon::DaemonStartAssembly::load(&cli.profile, &flags, environment)
+        .context("load daemon restart profile")?;
+    let executable = std::env::current_exe().context("resolve cordy executable")?;
+    let lifecycle = cordy_daemon::lifecycle::DaemonLifecycle::assemble(
+        start.lifecycle_options(executable, CLIENT_VERSION),
+        &start.profile_input,
+    )
+    .context("assemble daemon restart lifecycle")?;
+    let outcome = lifecycle.restart().await.context("restart daemon")?;
+    render_daemon_restart_outcome(outcome)
+}
+
+async fn run_daemon_stop(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
+    let flags = config::DaemonLaunchFlags {
+        server_url: cli.server_url.clone(),
+        ..config::DaemonLaunchFlags::default()
+    };
+    let start = daemon::DaemonStartAssembly::load_for_control(&cli.profile, &flags, environment)
+        .context("load daemon stop profile")?;
+    let executable = std::env::current_exe().context("resolve cordy executable")?;
+    let lifecycle = cordy_daemon::lifecycle::DaemonLifecycle::assemble(
+        start.lifecycle_options(executable, CLIENT_VERSION),
+        &start.profile_input,
+    )
+    .context("assemble daemon stop lifecycle")?;
+    let outcome = lifecycle.stop().await.context("stop daemon")?;
+    match outcome {
+        cordy_daemon::process_control::DaemonStopOutcome::AlreadyStopped => Ok(RunOutput {
+            stdout: "daemon already stopped\n".to_string(),
+            stderr: String::new(),
+        }),
+        cordy_daemon::process_control::DaemonStopOutcome::Stopped { .. } => Ok(RunOutput {
+            stdout: "daemon stopped\n".to_string(),
+            stderr: String::new(),
+        }),
+        cordy_daemon::process_control::DaemonStopOutcome::StillStopping { pid, .. } => {
+            bail!("daemon is still stopping (pid {pid}); refusing to report success")
+        }
+    }
+}
+
+fn render_daemon_start_outcome(
+    outcome: cordy_daemon::process_control::DaemonStartOutcome,
+) -> Result<RunOutput> {
+    let stdout = match outcome {
+        cordy_daemon::process_control::DaemonStartOutcome::AlreadyRunning(snapshot) => {
+            format!("daemon already running (pid {})\n", snapshot.response.pid)
+        }
+        cordy_daemon::process_control::DaemonStartOutcome::Launch(startup) => {
+            return render_daemon_startup(startup, "started")
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn render_daemon_restart_outcome(
+    outcome: cordy_daemon::process_control::DaemonRestartOutcome,
+) -> Result<RunOutput> {
+    match outcome {
+        cordy_daemon::process_control::DaemonRestartOutcome::StopIncomplete(stop) => match stop {
+            cordy_daemon::process_control::DaemonStopOutcome::StillStopping { pid, .. } => {
+                bail!("daemon is still stopping (pid {pid}); refusing to launch a replacement")
+            }
+            _ => bail!("daemon restart did not complete its stop phase"),
+        },
+        cordy_daemon::process_control::DaemonRestartOutcome::Launch { startup, .. } => {
+            render_daemon_startup(startup, "restarted")
+        }
+    }
+}
+
+fn render_daemon_startup(
+    startup: cordy_daemon::process_control::BackgroundStartupOutcome,
+    verb: &str,
+) -> Result<RunOutput> {
+    match startup {
+        cordy_daemon::process_control::BackgroundStartupOutcome::Ready { pid, .. } => {
+            Ok(RunOutput {
+                stdout: format!("daemon {verb} (pid {pid})\n"),
+                stderr: String::new(),
+            })
+        }
+        cordy_daemon::process_control::BackgroundStartupOutcome::Exited { pid, status, logs } => {
+            let evidence = logs.failure_evidence(8);
+            let detail = evidence
+                .structured_lines
+                .into_iter()
+                .chain(evidence.crash_lines)
+                .collect::<Vec<_>>()
+                .join("; ");
+            if detail.is_empty() {
+                bail!("daemon {verb} child exited before readiness (pid {pid}, status {status})")
+            }
+            bail!(
+                "daemon {verb} child exited before readiness (pid {pid}, status {status}): {detail}"
+            )
+        }
+        cordy_daemon::process_control::BackgroundStartupOutcome::TimedOut {
+            pid,
+            last_status,
+            ..
+        } => {
+            let status = last_status.unwrap_or_else(|| "unknown".to_string());
+            bail!("daemon {verb} timed out before readiness (pid {pid}, status {status})")
+        }
+    }
 }
 
 fn run_version(output: VersionOutput) -> Result<RunOutput> {
@@ -22182,6 +22313,27 @@ mod tests {
         assert_eq!(args.agent_timeout, Some(Duration::ZERO));
         assert_eq!(args.health_port, Some(19710));
         assert!(args.disable_auto_update);
+    }
+
+    #[test]
+    fn daemon_lifecycle_commands_parse_without_foreground_placeholder() {
+        let restart = Cli::try_parse_from(["cordy", "--profile", "staging", "daemon", "restart"])
+            .expect("daemon restart command");
+        assert!(matches!(
+            restart.command,
+            Command::Daemon(DaemonArgs {
+                command: DaemonCommand::Restart
+            })
+        ));
+
+        let stop = Cli::try_parse_from(["cordy", "--profile", "staging", "daemon", "stop"])
+            .expect("daemon stop command");
+        assert!(matches!(
+            stop.command,
+            Command::Daemon(DaemonArgs {
+                command: DaemonCommand::Stop
+            })
+        ));
     }
 
     #[test]

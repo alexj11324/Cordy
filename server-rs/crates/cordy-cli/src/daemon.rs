@@ -46,6 +46,27 @@ impl DaemonStartAssembly {
         Self::from_config(profile, flags, environment, &config)
     }
 
+    /// Loads the local profile for a stop operation without requiring a
+    /// bearer token. Stopping is a local PID/health transaction; requiring a
+    /// server credential here would make it impossible to stop a daemon after
+    /// an expired or revoked login. Restart and start continue to use
+    /// [`Self::load`] so their authenticated preflight remains fail-closed.
+    pub fn load_for_control(
+        profile: &str,
+        flags: &DaemonLaunchFlags,
+        environment: &Environment,
+    ) -> Result<Self> {
+        if environment.in_daemon_managed_execution_context() {
+            bail!("daemon lifecycle commands are not available inside a daemon-managed task");
+        }
+        let config = environment.load_config(profile)?;
+        let launch = resolve_daemon_launch_overrides(profile, flags, environment, &config)?;
+        Ok(Self {
+            launch,
+            profile_input: config.daemon_profile_input(),
+        })
+    }
+
     fn from_config(
         profile: &str,
         flags: &DaemonLaunchFlags,
@@ -198,6 +219,21 @@ mod tests {
                 .err()
                 .expect("missing token must fail");
         assert!(error.to_string().contains("cordy login --profile missing"));
+    }
+
+    #[test]
+    fn stop_profile_load_does_not_require_server_credentials() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+
+        let assembly = DaemonStartAssembly::load_for_control(
+            "missing",
+            &DaemonLaunchFlags::default(),
+            &environment,
+        )
+        .expect("local stop should not require login");
+        assert!(assembly.profile_input.token.is_empty());
     }
 
     #[test]
