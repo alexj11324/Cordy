@@ -185,6 +185,37 @@ pub fn finalize_stream(
     }
 }
 
+/// Positive-evidence predicate for the fresh-session retry path shared by
+/// resumable stream providers. An emitted different session also proves the
+/// requested transcript was not loaded.
+pub fn resume_was_rejected<'a>(
+    requested: &str,
+    emitted: &str,
+    failed: bool,
+    texts: impl IntoIterator<Item = &'a str>,
+) -> bool {
+    if !failed || requested.is_empty() {
+        return false;
+    }
+    const PHRASES: &[&str] = &[
+        "invalid conversation id",
+        "conversation not found",
+        "session not found",
+        "no conversation found",
+        "no saved session found",
+        "已绑定另外",
+        "bound to another account",
+        "bound to a different account",
+    ];
+    if texts.into_iter().any(|text| {
+        let text = text.to_lowercase();
+        PHRASES.iter().any(|phrase| text.contains(phrase))
+    }) {
+        return true;
+    }
+    !emitted.is_empty() && emitted != requested
+}
+
 #[cfg(test)]
 mod tests {
     use tokio::io::BufReader;
@@ -310,5 +341,23 @@ mod tests {
         );
         assert_eq!(finalized.error, "provider failure");
         assert!(finalized.output.is_empty());
+    }
+
+    #[test]
+    fn resume_rejection_requires_positive_failure_evidence() {
+        assert!(!resume_was_rejected(
+            "old",
+            "",
+            false,
+            ["No saved session found"]
+        ));
+        assert!(resume_was_rejected(
+            "old",
+            "",
+            true,
+            ["No saved session found with ID redacted"]
+        ));
+        assert!(resume_was_rejected("old", "fresh", true, [""]));
+        assert!(!resume_was_rejected("old", "old", true, ["network error"]));
     }
 }

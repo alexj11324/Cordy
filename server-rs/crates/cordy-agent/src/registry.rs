@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
 use crate::qwen::{QwenBackend, QwenConfig};
@@ -24,6 +25,10 @@ pub fn build_backend(
     let family = protocol_family(runtime_id)
         .ok_or_else(|| AgentError::UnsupportedRuntime(runtime_id.to_string()))?;
     match family {
+        "codebuddy" => Ok(Arc::new(CodebuddyBackend::new(CodebuddyConfig {
+            command: config.command,
+            env: config.env,
+        }))),
         "qwen" => Ok(Arc::new(QwenBackend::new(QwenConfig {
             command: config.command,
             env: config.env,
@@ -421,6 +426,9 @@ mod tests {
     fn backend_registry_constructs_only_landed_protocols() {
         let qwen = build_backend("qwen", BackendConfig::default());
         assert!(qwen.is_ok());
+
+        let codebuddy = build_backend("codebuddy", BackendConfig::default());
+        assert!(codebuddy.is_ok());
 
         let metadata_only = build_backend("claude", BackendConfig::default());
         assert!(matches!(
