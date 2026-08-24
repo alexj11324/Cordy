@@ -187,10 +187,14 @@
       not depend on `cordy-agent`; `cordy-agent::build_backend` is not wired into
       task orchestration. A visibility-only facade or no-op adapter would not
       start a real daemon, so this is a genuine assembly dependency blocker.
-      The subagent audit was stopped after this evidence; next slice is a
-      concrete provider adapter that translates the existing agent Backend /
-      Session contract into `TaskRunOutcome`, with cancellation and transcript
-      delivery tests.
+      The follow-up adapter audit found the concrete API boundary:
+      `RuntimeExecutionTarget` lacks command/fixed-arg resolution,
+      `DaemonActivity` has no transcript sink, and the adapter has no `Client`;
+      task-scoped env, prepare/reuse, worktree finalize, usage/session pinning,
+      and cancellation also need an owner. Directly calling
+      `cordy-agent::build_backend` would silently drop these contracts. The
+      next slice must inject these dependencies before the adapter is
+      implemented; no half-stub was committed.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
