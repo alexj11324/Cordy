@@ -187,6 +187,55 @@ impl Environment {
         write_json_atomically(&path, &document)
     }
 
+    pub fn set_profile_command_override(
+        &self,
+        profile: &str,
+        profile_id: &str,
+        executable_path: Option<&str>,
+    ) -> Result<bool> {
+        let path = self.config_path(profile)?;
+        let directory = path.parent().context("resolve CLI config directory")?;
+        ensure_config_directory(directory, self.trimmed(TASK_CONFIG_ROOT_ENV))?;
+        let lock_path = directory.join(".config.lock");
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .context("open CLI config lock")?;
+        restrict_file_permissions(&lock_path)?;
+        lock.lock().context("lock CLI config")?;
+
+        let mut document = read_config_document(&path)?;
+        let root = document
+            .as_object_mut()
+            .context("parse CLI config: expected a JSON object")?;
+        let mut overrides = match root.remove("profile_command_overrides") {
+            None => serde_json::Map::new(),
+            Some(Value::Object(overrides)) => overrides,
+            Some(_) => bail!("parse CLI config: profile_command_overrides must be a JSON object"),
+        };
+        let changed = match executable_path {
+            Some(executable_path) => {
+                let value = Value::String(executable_path.into());
+                overrides.insert(profile_id.into(), value.clone()).as_ref() != Some(&value)
+            }
+            None => overrides.remove(profile_id).is_some(),
+        };
+        if !changed {
+            if !overrides.is_empty() {
+                root.insert("profile_command_overrides".into(), Value::Object(overrides));
+            }
+            return Ok(false);
+        }
+        if !overrides.is_empty() {
+            root.insert("profile_command_overrides".into(), Value::Object(overrides));
+        }
+        write_json_atomically(&path, &document)?;
+        Ok(true)
+    }
+
     pub fn in_agent_execution_context(&self) -> bool {
         self.raw("CORDY_AGENT_ID")
             .is_some_and(|value| !value.is_empty())

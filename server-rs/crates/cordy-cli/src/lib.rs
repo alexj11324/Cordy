@@ -198,6 +198,22 @@ enum RuntimeProfileCommand {
         #[arg(value_name = "PROFILE-ID")]
         profile_id: String,
     },
+    #[command(about = "Pin a per-machine executable path for a runtime profile")]
+    SetPath {
+        #[arg(value_name = "PROFILE-ID")]
+        profile_id: String,
+        #[arg(
+            long,
+            value_name = "PATH",
+            help = "Absolute executable path (required)"
+        )]
+        path: Option<String>,
+    },
+    #[command(about = "Remove a per-machine executable path override")]
+    UnsetPath {
+        #[arg(value_name = "PROFILE-ID")]
+        profile_id: String,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -2670,6 +2686,18 @@ async fn run_with_input<R: Read>(
                     command: RuntimeProfileCommand::Delete { profile_id },
                 }),
         }) => run_runtime_profile_delete(cli, environment, profile_id).await,
+        Command::Runtime(RuntimeArgs {
+            command:
+                RuntimeCommand::Profile(RuntimeProfileArgs {
+                    command: RuntimeProfileCommand::SetPath { profile_id, path },
+                }),
+        }) => run_runtime_profile_set_path(cli, environment, profile_id, path.as_deref()),
+        Command::Runtime(RuntimeArgs {
+            command:
+                RuntimeCommand::Profile(RuntimeProfileArgs {
+                    command: RuntimeProfileCommand::UnsetPath { profile_id },
+                }),
+        }) => run_runtime_profile_unset_path(cli, environment, profile_id),
         Command::Version { output } => run_version(*output),
     }
 }
@@ -3200,6 +3228,52 @@ async fn run_runtime_profile_delete(
     }
     Ok(RunOutput {
         stdout: format!("Deleted runtime profile {profile_id}\n"),
+        stderr: String::new(),
+    })
+}
+
+fn run_runtime_profile_set_path(
+    cli: &Cli,
+    environment: &Environment,
+    profile_id: &str,
+    path: Option<&str>,
+) -> Result<RunOutput> {
+    require_human_local_command(environment, "runtime profile set-path")?;
+    let path = path
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .context("--path is required")?;
+    if !Path::new(path).is_absolute() {
+        bail!("--path must be an absolute path, got {path:?}");
+    }
+    environment
+        .set_profile_command_override(&cli.profile, profile_id, Some(path))
+        .context("save CLI config")?;
+    Ok(RunOutput {
+        stdout: format!(
+            "Pinned runtime profile {profile_id} to {path} on this machine.\nRestart the daemon for the change to take effect.\n"
+        ),
+        stderr: String::new(),
+    })
+}
+
+fn run_runtime_profile_unset_path(
+    cli: &Cli,
+    environment: &Environment,
+    profile_id: &str,
+) -> Result<RunOutput> {
+    require_human_local_command(environment, "runtime profile unset-path")?;
+    let changed = environment
+        .set_profile_command_override(&cli.profile, profile_id, None)
+        .context("save CLI config")?;
+    Ok(RunOutput {
+        stdout: if changed {
+            format!(
+                "Removed per-machine path override for runtime profile {profile_id}.\nRestart the daemon for the change to take effect.\n"
+            )
+        } else {
+            format!("No per-machine path override set for runtime profile {profile_id}.\n")
+        },
         stderr: String::new(),
     })
 }
@@ -13377,6 +13451,109 @@ mod tests {
             "cannot delete runtime profile profile-1: active agents remain bound"
         );
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn runtime_profile_path_overrides_are_locked_atomic_and_profile_local() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let profile_dir = home.path().join(".cordy/profiles/dev");
+        fs::create_dir_all(&profile_dir).expect("profile dir");
+        fs::write(
+            profile_dir.join("config.json"),
+            r#"{"server_url":"https://api.example","unknown":{"keep":true}}"#,
+        )
+        .expect("profile config");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let set = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            "dev",
+            "runtime",
+            "profile",
+            "set-path",
+            "profile-1",
+            "--path",
+            "/opt/bin/company-codex",
+        ])
+        .expect("runtime profile set-path CLI");
+        let output = run_with_input(&set, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("set profile path");
+        assert!(output.stdout.contains("Pinned runtime profile profile-1"));
+        let document: Value = serde_json::from_slice(
+            &fs::read(profile_dir.join("config.json")).expect("updated config"),
+        )
+        .expect("config JSON");
+        assert_eq!(document["server_url"], "https://api.example");
+        assert_eq!(document["unknown"]["keep"], true);
+        assert_eq!(
+            document["profile_command_overrides"]["profile-1"],
+            "/opt/bin/company-codex"
+        );
+        assert!(!home.path().join(".cordy/config.json").exists());
+
+        let unset = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            "dev",
+            "runtime",
+            "profile",
+            "unset-path",
+            "profile-1",
+        ])
+        .expect("runtime profile unset-path CLI");
+        let output = run_with_input(&unset, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("unset profile path");
+        assert!(output.stdout.contains("Removed per-machine path override"));
+        let document: Value = serde_json::from_slice(
+            &fs::read(profile_dir.join("config.json")).expect("updated config"),
+        )
+        .expect("config JSON");
+        assert!(document.get("profile_command_overrides").is_none());
+        assert_eq!(document["unknown"]["keep"], true);
+
+        let output = run_with_input(&unset, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("idempotent unset");
+        assert_eq!(
+            output.stdout,
+            "No per-machine path override set for runtime profile profile-1.\n"
+        );
+    }
+
+    #[tokio::test]
+    async fn runtime_profile_path_mutation_fails_closed_in_task_context() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let config_dir = home.path().join(".cordy");
+        fs::create_dir_all(&config_dir).expect("config dir");
+        let owner = br#"{"profile_command_overrides":{"owner":"/owner/bin"},"token":"mul_owner"}"#;
+        fs::write(config_dir.join("config.json"), owner).expect("owner config");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_AGENT_ID", "agent-1");
+        environment.set("CORDY_TASK_ID", "task-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "runtime",
+            "profile",
+            "set-path",
+            "profile-1",
+            "--path",
+            "/opt/bin/runtime",
+        ])
+        .expect("runtime profile set-path CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("task context denied");
+        assert!(error
+            .to_string()
+            .contains("not available inside a daemon-managed task"));
+        assert_eq!(
+            fs::read(config_dir.join("config.json")).expect("owner config"),
+            owner
+        );
     }
 
     async fn test_server() -> (String, tokio::task::JoinHandle<()>) {
