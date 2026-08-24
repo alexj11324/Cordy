@@ -757,6 +757,13 @@
       bounded Cloud PAT transport, OAuth callback state behavior, human/machine
       guards, and sensitive logging match the current Go contract. No new P0/P1
       or changed-code blocker; no implementation change was justified.
+- [x] Fixed a provider-session P1 in
+      `c3822514ae7cd91b0d7e7fdfe278826f21af51e2` (parent `804a3d11`, tree
+      `d7d888da236841ae9bd5a7d2b47a074cfd0edce6`). Codex sessions now defer
+      `pin_task_session` until the corresponding persisted rollout is visible,
+      polling at a bounded 50ms interval; non-Codex providers retain immediate
+      pinning. Added persisted/missing rollout tests. Scoped rustfmt and
+      diff-check pass; pushed for pro's Ready PR/gate/merge.
 
 ## Phase 4 — S8 route and API parity
 
