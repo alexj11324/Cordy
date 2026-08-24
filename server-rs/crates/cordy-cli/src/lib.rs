@@ -76,7 +76,8 @@ use login::{
     WORKSPACE_DISCOVERY_TIMEOUT,
 };
 use repo_commands::{
-    repo_urls, run_repo_add, run_repo_checkout, run_repo_list, run_repo_remove, WorkspaceRepo,
+    repo_checkout_retry_delay, repo_urls, run_repo_add, run_repo_checkout, run_repo_list,
+    run_repo_remove, WorkspaceRepo,
 };
 use runtime_delete::{format_runtime_delete_result, runtime_delete_conflict};
 use runtime_output::{format_runtime_rows, output_runtime_profiles};

@@ -241,7 +241,7 @@ pub(super) async fn run_repo_remove(
     })
 }
 
-fn repo_checkout_retry_delay(
+pub(super) fn repo_checkout_retry_delay(
     value: &str,
     now: chrono::DateTime<chrono::Utc>,
 ) -> std::time::Duration {
