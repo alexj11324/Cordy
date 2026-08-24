@@ -27,9 +27,10 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(35);
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CloudRuntimeRequest {
     pub method: Method,
-    pub path: &'static str,
+    pub path: String,
     pub query: Option<String>,
     pub body: Vec<u8>,
+    pub headers: HeaderMap,
     pub user_id: String,
     pub request_id: String,
 }
@@ -102,7 +103,10 @@ impl HttpCloudRuntimeProxy {
     }
 
     pub fn from_env() -> Self {
-        Self::new(fleet_url_from_env(), reqwest::Client::new())
+        Self::new(
+            std::env::var("CORDY_CLOUD_FLEET_URL").unwrap_or_default(),
+            reqwest::Client::new(),
+        )
     }
 
     #[cfg(test)]
@@ -126,22 +130,6 @@ impl HttpCloudRuntimeProxy {
     }
 }
 
-fn fleet_url_from_env() -> String {
-    select_fleet_url(
-        std::env::var("CORDY_CLOUD_FLEET_URL").ok().as_deref(),
-        std::env::var("CORDY_FLEET_URL").ok().as_deref(),
-    )
-}
-
-fn select_fleet_url(primary: Option<&str>, fallback: Option<&str>) -> String {
-    primary
-        .map(str::trim)
-        .filter(|url| !url.is_empty())
-        .or_else(|| fallback.map(str::trim))
-        .unwrap_or_default()
-        .to_string()
-}
-
 #[async_trait]
 impl CloudRuntimeProxy for HttpCloudRuntimeProxy {
     fn enabled(&self) -> bool {
@@ -152,23 +140,34 @@ impl CloudRuntimeProxy for HttpCloudRuntimeProxy {
         &self,
         request: CloudRuntimeRequest,
     ) -> Result<CloudRuntimeResponse, CloudRuntimeError> {
-        let url = self.target_url(request.path, request.query.as_deref())?;
+        let url = self.target_url(&request.path, request.query.as_deref())?;
         let has_body = !request.body.is_empty();
+        let mut forwarded_headers = request.headers;
+        forwarded_headers
+            .entry(header::ACCEPT)
+            .or_insert(HeaderValue::from_static("application/json"));
+        if has_body {
+            forwarded_headers
+                .entry(header::CONTENT_TYPE)
+                .or_insert(HeaderValue::from_static("application/json"));
+        }
+        if !request.user_id.is_empty() {
+            if let Ok(user_id) = HeaderValue::from_str(&request.user_id) {
+                forwarded_headers.insert("x-user-id", user_id);
+            }
+        }
+        if !request.request_id.is_empty() {
+            if let Ok(request_id) = HeaderValue::from_str(&request.request_id) {
+                forwarded_headers.insert("x-request-id", request_id);
+            }
+        }
         let mut upstream = self
             .client
             .request(request.method, url)
             .timeout(self.timeout)
-            .header(header::ACCEPT, "application/json");
+            .headers(forwarded_headers);
         if has_body {
-            upstream = upstream
-                .header(header::CONTENT_TYPE, "application/json")
-                .body(request.body);
-        }
-        if !request.user_id.is_empty() {
-            upstream = upstream.header("X-User-ID", request.user_id);
-        }
-        if !request.request_id.is_empty() {
-            upstream = upstream.header("X-Request-ID", request.request_id);
+            upstream = upstream.body(request.body);
         }
 
         let response = upstream.send().await.map_err(|error| {
@@ -356,9 +355,10 @@ async fn execute(
     match proxy
         .execute(CloudRuntimeRequest {
             method,
-            path,
+            path: path.to_string(),
             query,
             body,
+            headers: HeaderMap::new(),
             user_id,
             request_id,
         })
@@ -645,26 +645,6 @@ mod tests {
             url.as_str(),
             "https://fleet.test/base/api/v1/nodes?limit=20&offset=0"
         );
-    }
-
-    #[test]
-    fn fleet_url_selection_matches_go_environment_precedence() {
-        assert_eq!(
-            select_fleet_url(
-                Some(" https://cloud-fleet.test "),
-                Some("https://legacy-fleet.test")
-            ),
-            "https://cloud-fleet.test"
-        );
-        assert_eq!(
-            select_fleet_url(Some("  "), Some(" https://legacy-fleet.test ")),
-            "https://legacy-fleet.test"
-        );
-        assert_eq!(
-            select_fleet_url(None, Some(" https://legacy-fleet.test ")),
-            "https://legacy-fleet.test"
-        );
-        assert_eq!(select_fleet_url(None, Some("  ")), "");
     }
 
     fn test_state() -> HandlerState {

@@ -54,6 +54,14 @@ pub fn router() -> Router<HandlerState> {
     Router::new().route("/api/config", get(get_config))
 }
 
+pub(crate) fn workspace_creation_disabled() -> bool {
+    workspace_creation_disabled_value(std::env::var("DISABLE_WORKSPACE_CREATION").ok().as_deref())
+}
+
+fn workspace_creation_disabled_value(value: Option<&str>) -> bool {
+    value == Some("true")
+}
+
 async fn get_config(State(state): State<HandlerState>) -> Json<AppConfig> {
     let (daemon_server_url, daemon_app_url) = daemon_setup_urls_from_env();
     let analytics_disabled = matches!(
@@ -80,30 +88,20 @@ async fn get_config(State(state): State<HandlerState>) -> Json<AppConfig> {
     };
     let disabled_flags = DisabledFlags;
     let flags: &dyn FlagSource = state.feature_flags.as_deref().unwrap_or(&disabled_flags);
-    let mut public_flags = feature_flags::evaluate_frontend_public_flags(flags);
-    // These frontend surfaces must stay hidden until their complete Rust route
-    // families land in later stack layers.
-    for key in [
-        feature_flags::COMPOSIO_MCP_APPS,
-        feature_flags::BILLING_WORKSPACE_SUBSCRIPTIONS,
-    ] {
-        public_flags.insert(key.to_string(), false);
-    }
 
     Json(AppConfig {
         cdn_domain: state.public_config.cdn_domain.clone(),
         cdn_signed: state.public_config.cdn_signed,
-        allow_signup: state.auth_settings.public_signup_allowed(),
-        google_client_id: state.auth_settings.google_client_id().to_string(),
-        workspace_creation_disabled: std::env::var("DISABLE_WORKSPACE_CREATION").as_deref()
-            == Ok("true"),
+        allow_signup: std::env::var("ALLOW_SIGNUP").as_deref() != Ok("false"),
+        google_client_id: std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
+        workspace_creation_disabled: workspace_creation_disabled(),
         daemon_server_url,
         daemon_app_url,
         vcs_integration_available: state.vcs_integration_enabled,
         posthog_key,
         posthog_host,
         analytics_environment,
-        feature_flags: public_flags,
+        feature_flags: feature_flags::evaluate_frontend_public_flags(flags),
         local_worktree_supported: true,
         server_version: if is_official_cloud_deployment() {
             String::new()
@@ -190,6 +188,15 @@ mod tests {
     }
 
     #[test]
+    fn workspace_creation_flag_matches_go_exactly() {
+        // The Go server deliberately checks os.Getenv(...) == "true".
+        assert!(workspace_creation_disabled_value(Some("true")));
+        for value in [None, Some("TRUE"), Some("1"), Some("yes"), Some(" true ")] {
+            assert!(!workspace_creation_disabled_value(value));
+        }
+    }
+
+    #[test]
     fn serialized_shape_keeps_required_false_and_empty_fields() {
         let value = serde_json::to_value(AppConfig {
             cdn_domain: String::new(),
@@ -220,15 +227,11 @@ mod tests {
 
     #[tokio::test]
     async fn public_route_is_available_before_authentication() {
-        let mut loaded = cordy_config::Config::default();
-        loaded.auth.allow_signup = Some("false".into());
-        loaded.auth.google_client_id = Some("toml-client-id".into());
         let state = HandlerState::new(
             sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
             cordy_auth::pat_cache::PatCache::disabled(),
             None,
-        )
-        .with_auth_settings(crate::auth::AuthSettings::from_config(&loaded));
+        );
         let response = router()
             .with_state(state)
             .oneshot(Request::get("/api/config").body(Body::empty()).unwrap())
@@ -239,7 +242,5 @@ mod tests {
         let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(value["local_worktree_supported"], true);
         assert_eq!(value["feature_flags"]["agents_agent_builder"], true);
-        assert_eq!(value["allow_signup"], false);
-        assert_eq!(value["google_client_id"], "toml-client-id");
     }
 }

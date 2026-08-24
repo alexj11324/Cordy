@@ -10,29 +10,30 @@
 //! mirroring the Go contract exactly:
 //! - `X-User-ID` (all paths), `X-User-Email` (JWT only)
 //! - `X-Agent-ID` / `X-Task-ID` / `X-Workspace-ID` (mat_ task tokens)
-//! - `X-Actor-Source` — server-set only (`task_token` / `cloud_pat`); any
-//!   client-supplied value is stripped before the auth branches run.
+//! - `X-Actor-Source` — server-set only; any client-supplied value is
+//!   stripped before the auth branches run.
 
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use axum::extract::{Request, State};
 use axum::http::{header, HeaderValue, Method, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
-use cordy_auth::cloud_pat::{CloudPatVerifier, CLOUD_PAT_PREFIX};
 use cordy_auth::cookie::{verify_csrf_signature, AUTH_COOKIE_NAME};
 use cordy_auth::disabled_users::{is_temporarily_disabled_user, TEMPORARILY_DISABLED_USER_ERROR};
 use cordy_auth::jwt::{hash_token, jwt_secret};
 use cordy_auth::pat_cache::{ttl_for_expiry, PatCache};
-use cordy_db::queries::{personal_access_token, task_token, user};
-use uuid::Uuid;
+use cordy_db::queries::{personal_access_token, task_token};
+
+/// Cloud node PAT prefix (`auth.CloudPATPrefix`). The full Cloud Fleet
+/// verifier lands with the integrations port; until then mcn_ tokens fail
+/// closed exactly as Go does when CORDY_CLOUD_FLEET_URL is unset.
+const CLOUD_PAT_PREFIX: &str = "mcn_";
 
 #[derive(Clone)]
 pub struct AuthState {
     pub pool: sqlx::PgPool,
     pub pat_cache: PatCache,
-    pub cloud_pat: Option<Arc<CloudPatVerifier>>,
 }
 
 fn err_response(status: StatusCode, msg: &'static str) -> (StatusCode, &'static str) {
@@ -99,53 +100,6 @@ fn set_header(req: &mut Request, name: &'static str, value: &str) {
     }
 }
 
-#[derive(Debug)]
-pub(crate) enum CloudPatAuthError {
-    Invalid(String),
-    Unavailable(String),
-}
-
-impl CloudPatAuthError {
-    pub(crate) fn is_invalid(&self) -> bool {
-        matches!(self, Self::Invalid(_))
-    }
-}
-
-impl std::fmt::Display for CloudPatAuthError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Invalid(message) | Self::Unavailable(message) => formatter.write_str(message),
-        }
-    }
-}
-
-/// Fleet authenticates the token; the local user lookup ensures the returned
-/// owner is still a valid Cordy principal before it becomes `X-User-ID`.
-pub(crate) async fn verify_cloud_pat_owner(
-    pool: &sqlx::PgPool,
-    verifier: &CloudPatVerifier,
-    token: &str,
-) -> Result<String, CloudPatAuthError> {
-    let identity = verifier.verify(token).await.map_err(|error| {
-        if error.is_invalid() {
-            CloudPatAuthError::Invalid(error.to_string())
-        } else {
-            CloudPatAuthError::Unavailable(error.to_string())
-        }
-    })?;
-    let owner_id = Uuid::parse_str(&identity.owner_id)
-        .map_err(|_| CloudPatAuthError::Invalid("cloud PAT owner is unknown".to_string()))?;
-    match user::get_user(pool, owner_id).await {
-        Ok(Some(_)) => Ok(identity.owner_id),
-        Ok(None) => Err(CloudPatAuthError::Invalid(
-            "cloud PAT owner is unknown".to_string(),
-        )),
-        Err(error) => Err(CloudPatAuthError::Unavailable(format!(
-            "cloud PAT owner lookup failed: {error}"
-        ))),
-    }
-}
-
 /// Auth middleware entrypoint — use via
 /// `axum::middleware::from_fn_with_state(state, auth_middleware)`.
 pub async fn auth_middleware(
@@ -157,7 +111,7 @@ pub async fn auth_middleware(
     // untrusted and discarded before the auth branches run. Only the mat_
     // branch below re-sets it. This prevents a client from sending a normal
     // mul_ PAT plus a forged `X-Actor-Source: member` to convince downstream
-    // handlers that its request came from a human-authenticated path.
+    // handlers that its request came from a non-task-token path.
     req.headers_mut().remove("x-actor-source");
 
     // When the Next.js / Clerk frontend has already authenticated the request
@@ -230,36 +184,11 @@ pub async fn auth_middleware(
     // treating the token as a JWT/PAT — failing closed avoids a
     // misconfigured prod silently downgrading auth.
     if token.starts_with(CLOUD_PAT_PREFIX) {
-        let Some(verifier) = state.cloud_pat.as_deref() else {
-            tracing::warn!(
-                path = ?req.uri().path(),
-                "auth: mcn_ token presented but cloud verifier not configured"
-            );
-            return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
-        };
-        let owner_id = match verify_cloud_pat_owner(&state.pool, verifier, &token).await {
-            Ok(owner_id) => owner_id,
-            Err(error) if error.is_invalid() => {
-                tracing::warn!(path = ?req.uri().path(), %error, "auth: cloud rejected mcn_ token");
-                return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
-            }
-            Err(error) => {
-                tracing::warn!(path = ?req.uri().path(), %error, "auth: cloud PAT verify unavailable");
-                return Err((
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    r#"{"error":"cloud pat verifier unavailable"}"#,
-                ));
-            }
-        };
-        if reject_disabled(&owner_id, "", "cloud_pat") {
-            return Err(err_response(
-                StatusCode::FORBIDDEN,
-                TEMPORARILY_DISABLED_USER_ERROR,
-            ));
-        }
-        set_header(&mut req, "x-user-id", &owner_id);
-        set_header(&mut req, "x-actor-source", "cloud_pat");
-        return Ok(next.run(req).await);
+        tracing::warn!(
+            path = ?req.uri().path(),
+            "auth: mcn_ token presented but cloud verifier not configured"
+        );
+        return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
     }
 
     // PAT: tokens starting with "mul_".
