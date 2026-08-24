@@ -225,6 +225,17 @@ enum ProjectResourceCommand {
     },
     #[command(about = "Attach a resource to a project (e.g. --type github_repo --url <url>)")]
     Add(ProjectResourceAddArgs),
+    #[command(about = "Edit an attached resource (ref payload, label, or position)")]
+    Update(ProjectResourceUpdateArgs),
+    #[command(about = "Detach a resource from a project")]
+    Remove {
+        #[arg(value_name = "PROJECT-ID")]
+        project_id: String,
+        #[arg(value_name = "RESOURCE-ID")]
+        resource_id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -274,6 +285,45 @@ struct ProjectResourceAddArgs {
     resource_ref: Option<String>,
     #[arg(long, help = "Optional human-readable label")]
     label: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct ProjectResourceUpdateArgs {
+    #[arg(value_name = "PROJECT-ID")]
+    project_id: String,
+    #[arg(value_name = "RESOURCE-ID")]
+    resource_id: String,
+    #[arg(long, help = "Shortcut: new repo URL (github_repo)")]
+    url: Option<String>,
+    #[arg(long, help = "Shortcut: new default branch hint (github_repo)")]
+    default_branch_hint: Option<String>,
+    #[arg(long, help = "Shortcut: new absolute local path (local_directory)")]
+    local_path: Option<String>,
+    #[arg(long, help = "Shortcut: new daemon id (local_directory)")]
+    daemon_id: Option<String>,
+    #[arg(
+        long,
+        help = "Shortcut: new label embedded in resource_ref (local_directory)"
+    )]
+    ref_label: Option<String>,
+    #[arg(
+        long,
+        help = "Shortcut: new execution mode — in_place or worktree (local_directory)"
+    )]
+    execution_mode: Option<String>,
+    #[arg(
+        long = "ref",
+        help = "Generic JSON resource_ref payload, or a github_repo checkout ref"
+    )]
+    resource_ref: Option<String>,
+    #[arg(long, help = "New human-readable label; pass an empty string to clear")]
+    label: Option<String>,
+    #[arg(long, help = "Clear the human-readable label")]
+    clear_label: bool,
+    #[arg(long, help = "New display position")]
+    position: Option<i32>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
 }
@@ -1536,6 +1586,23 @@ async fn run_with_input<R: Read>(
                     command: ProjectResourceCommand::Add(args),
                 }),
         }) => run_project_resource_add(cli, environment, args).await,
+        Command::Project(ProjectArgs {
+            command:
+                ProjectCommand::Resource(ProjectResourceArgs {
+                    command: ProjectResourceCommand::Update(args),
+                }),
+        }) => run_project_resource_update(cli, environment, args).await,
+        Command::Project(ProjectArgs {
+            command:
+                ProjectCommand::Resource(ProjectResourceArgs {
+                    command:
+                        ProjectResourceCommand::Remove {
+                            project_id,
+                            resource_id,
+                            output,
+                        },
+                }),
+        }) => run_project_resource_remove(cli, environment, project_id, resource_id, *output).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -5387,6 +5454,310 @@ async fn run_project_resource_add(
     Ok(RunOutput {
         stdout,
         stderr: String::new(),
+    })
+}
+
+async fn resolve_project_resource_reference(
+    client: &ApiClient,
+    project_id: &str,
+    raw: &str,
+) -> Result<(String, String)> {
+    let input = raw.trim();
+    if is_canonical_uuid(input) {
+        return Ok((input.into(), input.into()));
+    }
+    let Some(prefix) = normalize_uuid_prefix(input) else {
+        if input.is_empty() {
+            bail!("resolve project resource: project resource id is required");
+        }
+        let compact = input.replace('-', "");
+        if compact.len() < 4 {
+            bail!(
+                "resolve project resource: expected a full UUID or at least 4 hex characters, got {raw:?}"
+            );
+        }
+        bail!(
+            "resolve project resource: expected a UUID prefix containing only hex characters, got {raw:?}"
+        );
+    };
+    let result: Value = client
+        .get_json(&format!("/api/projects/{project_id}/resources"))
+        .await
+        .context("resolve project resource")?;
+    let mut matches = project_resources(&result)
+        .iter()
+        .filter_map(|resource| {
+            let id = value_string(resource, "id");
+            if id.is_empty() || !compact_uuid(&id).starts_with(&prefix) {
+                return None;
+            }
+            let label = value_string(resource, "label");
+            let resource_type = value_string(resource, "resource_type");
+            Some((
+                id.clone(),
+                if label.is_empty() {
+                    if resource_type.is_empty() {
+                        id
+                    } else {
+                        resource_type
+                    }
+                } else {
+                    label
+                },
+            ))
+        })
+        .collect::<Vec<_>>();
+    matches.sort_by(|left, right| left.0.cmp(&right.0));
+    match matches.as_slice() {
+        [(id, display)] => Ok((id.clone(), display.clone())),
+        [] => bail!(
+            "no project resource found matching id prefix {raw:?}; run the list command with --full-id to copy the full UUID"
+        ),
+        _ => bail!(
+            "ambiguous project resource id prefix {raw:?}; matches:\n  {}\nUse more characters or run the list command with --full-id",
+            matches
+                .iter()
+                .map(|(id, _)| id.as_str())
+                .collect::<Vec<_>>()
+                .join("\n  ")
+        ),
+    }
+}
+
+fn seed_resource_ref(
+    existing: Option<&serde_json::Map<String, Value>>,
+    keys: &[&str],
+) -> serde_json::Map<String, Value> {
+    let mut resource_ref = serde_json::Map::new();
+    if let Some(existing) = existing {
+        for key in keys {
+            if let Some(value) = existing
+                .get(*key)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+            {
+                resource_ref.insert((*key).into(), Value::String(value.into()));
+            }
+        }
+    }
+    resource_ref
+}
+
+fn build_project_resource_update_ref(
+    args: &ProjectResourceUpdateArgs,
+    resource_type: &str,
+    existing: Option<&serde_json::Map<String, Value>>,
+) -> Result<Option<Value>> {
+    if let Some(raw) = &args.resource_ref {
+        let raw = raw.trim();
+        if !raw.is_empty()
+            && (resource_type != "github_repo" || raw.starts_with('{') || raw.starts_with('['))
+        {
+            return parse_generic_resource_ref(raw).map(Some);
+        }
+        if resource_type != "github_repo" {
+            bail!("--ref must be a JSON resource_ref payload for resource type {resource_type:?}");
+        }
+    }
+    match resource_type {
+        "github_repo" => {
+            if args.url.is_none()
+                && args.default_branch_hint.is_none()
+                && args.resource_ref.is_none()
+            {
+                return Ok(None);
+            }
+            let mut resource_ref =
+                seed_resource_ref(existing, &["url", "default_branch_hint", "ref"]);
+            if let Some(url) = &args.url {
+                let url = url.trim();
+                if url.is_empty() {
+                    bail!("--url cannot be empty");
+                }
+                resource_ref.insert("url".into(), Value::String(url.into()));
+            }
+            for (key, value) in [
+                ("default_branch_hint", args.default_branch_hint.as_deref()),
+                ("ref", args.resource_ref.as_deref()),
+            ] {
+                if let Some(value) = value {
+                    let value = value.trim();
+                    if value.is_empty() {
+                        resource_ref.remove(key);
+                    } else {
+                        resource_ref.insert(key.into(), Value::String(value.into()));
+                    }
+                }
+            }
+            if !resource_ref.contains_key("url") {
+                bail!("github_repo: --url is required (no existing url to merge with)");
+            }
+            Ok(Some(Value::Object(resource_ref)))
+        }
+        "local_directory" => {
+            if args.local_path.is_none()
+                && args.daemon_id.is_none()
+                && args.ref_label.is_none()
+                && args.execution_mode.is_none()
+            {
+                return Ok(None);
+            }
+            let mut resource_ref = seed_resource_ref(
+                existing,
+                &["local_path", "daemon_id", "label", "execution_mode"],
+            );
+            for (flag, key, value) in [
+                ("--local-path", "local_path", args.local_path.as_deref()),
+                ("--daemon-id", "daemon_id", args.daemon_id.as_deref()),
+            ] {
+                if let Some(value) = value {
+                    let value = value.trim();
+                    if value.is_empty() {
+                        bail!("{flag} cannot be empty");
+                    }
+                    resource_ref.insert(key.into(), Value::String(value.into()));
+                }
+            }
+            for (key, value) in [
+                ("label", args.ref_label.as_deref()),
+                ("execution_mode", args.execution_mode.as_deref()),
+            ] {
+                if let Some(value) = value {
+                    let value = value.trim();
+                    if value.is_empty() {
+                        resource_ref.remove(key);
+                    } else {
+                        resource_ref.insert(key.into(), Value::String(value.into()));
+                    }
+                }
+            }
+            if !resource_ref.contains_key("local_path") {
+                bail!("local_directory: --local-path is required (no existing local_path to merge with)");
+            }
+            if !resource_ref.contains_key("daemon_id") {
+                bail!("local_directory: --daemon-id is required (no existing daemon_id to merge with)");
+            }
+            Ok(Some(Value::Object(resource_ref)))
+        }
+        _ => {
+            if args.url.is_some()
+                || args.default_branch_hint.is_some()
+                || args.local_path.is_some()
+                || args.daemon_id.is_some()
+                || args.ref_label.is_some()
+                || args.execution_mode.is_some()
+            {
+                bail!(
+                    "no built-in shortcut for resource type {resource_type:?}; pass the full payload via --ref '<json>'"
+                );
+            }
+            Ok(None)
+        }
+    }
+}
+
+fn find_project_resource<'a>(resources: &'a [Value], resource_id: &str) -> Option<&'a Value> {
+    resources
+        .iter()
+        .find(|resource| value_string(resource, "id") == resource_id)
+}
+
+async fn run_project_resource_update(
+    cli: &Cli,
+    environment: &Environment,
+    args: &ProjectResourceUpdateArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let project_id = resolve_issue_project_id(&client, &workspace_id, &args.project_id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve project: {error}"))?;
+    let (resource_id, _) =
+        resolve_project_resource_reference(&client, &project_id, &args.resource_id)
+            .await
+            .map_err(|error| anyhow::anyhow!("resolve project resource: {error}"))?;
+    let existing: Value = client
+        .get_json(&format!("/api/projects/{project_id}/resources"))
+        .await
+        .context("list project resources")?;
+    let existing = find_project_resource(project_resources(&existing), &resource_id);
+    let resource_type = existing
+        .map(|resource| value_string(resource, "resource_type"))
+        .unwrap_or_default();
+    let existing_ref = existing
+        .and_then(|resource| resource.get("resource_ref"))
+        .and_then(Value::as_object);
+    let mut body = serde_json::Map::new();
+    if let Some(resource_ref) =
+        build_project_resource_update_ref(args, &resource_type, existing_ref)?
+    {
+        body.insert("resource_ref".into(), resource_ref);
+    }
+    if args.clear_label {
+        body.insert("label".into(), Value::Null);
+    } else if let Some(label) = &args.label {
+        body.insert("label".into(), Value::String(label.clone()));
+    }
+    if let Some(position) = args.position {
+        body.insert("position".into(), Value::from(position));
+    }
+    if body.is_empty() {
+        bail!(
+            "nothing to update — pass --ref / --url / --local-path / --label / --position / --clear-label"
+        );
+    }
+    let resource: Value = client
+        .put_json(
+            &format!("/api/projects/{project_id}/resources/{resource_id}"),
+            &body,
+        )
+        .await
+        .context("update project resource")?;
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&resource)?),
+            OutputFormat::Table => format_table(&[
+                vec!["ID".into(), "TYPE".into(), "REF".into(), "LABEL".into()],
+                vec![
+                    value_string(&resource, "id"),
+                    value_string(&resource, "resource_type"),
+                    summarize_project_resource_ref(
+                        resource.get("resource_ref").unwrap_or(&Value::Null),
+                    ),
+                    value_string(&resource, "label"),
+                ],
+            ]),
+        },
+        stderr: String::new(),
+    })
+}
+
+async fn run_project_resource_remove(
+    cli: &Cli,
+    environment: &Environment,
+    project: &str,
+    resource: &str,
+    _output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let (project_id, project_display) = resolve_project_reference(&client, &workspace_id, project)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve project: {error}"))?;
+    let (resource_id, resource_display) =
+        resolve_project_resource_reference(&client, &project_id, resource)
+            .await
+            .map_err(|error| anyhow::anyhow!("resolve project resource: {error}"))?;
+    client
+        .delete(&format!(
+            "/api/projects/{project_id}/resources/{resource_id}"
+        ))
+        .await
+        .context("remove project resource")?;
+    Ok(RunOutput {
+        stdout: String::new(),
+        stderr: format!("Resource {resource_display} removed from project {project_display}.\n"),
     })
 }
 
@@ -11279,6 +11650,145 @@ mod tests {
             .stdout
             .contains("33333333-3333-3333-3333-333333333333"));
         assert!(added.stdout.contains("/srv/cordy"));
+        task.abort();
+    }
+
+    #[test]
+    fn project_resource_update_rebuilds_opaque_refs_and_supports_clear_flags() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "project",
+            "resource",
+            "update",
+            "11111111-1111-1111-1111-111111111111",
+            "2222",
+            "--default-branch-hint",
+            "trunk",
+            "--clear-label",
+            "--position",
+            "3",
+            "--output",
+            "table",
+        ])
+        .expect("project resource update CLI");
+        let Command::Project(ProjectArgs {
+            command:
+                ProjectCommand::Resource(ProjectResourceArgs {
+                    command: ProjectResourceCommand::Update(args),
+                }),
+        }) = &cli.command
+        else {
+            panic!("expected project resource update");
+        };
+        assert!(args.clear_label);
+        assert_eq!(args.position, Some(3));
+        let existing = serde_json::json!({
+            "url":"https://github.com/acme/cordy",
+            "ref":"main",
+            "default_branch_hint":"main"
+        });
+        assert_eq!(
+            build_project_resource_update_ref(args, "github_repo", existing.as_object())
+                .expect("update ref")
+                .expect("changed ref"),
+            serde_json::json!({
+                "url":"https://github.com/acme/cordy",
+                "ref":"main",
+                "default_branch_hint":"trunk"
+            })
+        );
+    }
+
+    #[tokio::test]
+    async fn project_resource_update_and_remove_use_prefix_put_and_delete_contracts() {
+        let project_id = "11111111-1111-1111-1111-111111111111";
+        let resource_id = "22222222-2222-2222-2222-222222222222";
+        let resource_path =
+            "/api/projects/11111111-1111-1111-1111-111111111111/resources/22222222-2222-2222-2222-222222222222";
+        let app = Router::new()
+            .route(
+                "/api/projects/11111111-1111-1111-1111-111111111111/resources",
+                get(move || async move {
+                    Json(serde_json::json!({"resources":[{
+                        "id":resource_id,"resource_type":"github_repo",
+                        "resource_ref":{"url":"https://github.com/acme/cordy","ref":"main"},
+                        "label":"Cordy"
+                    }]}))
+                }),
+            )
+            .route(
+                resource_path,
+                put(|Json(body): Json<Value>| async move {
+                    assert_eq!(body["label"], Value::Null);
+                    assert_eq!(body["position"], 3);
+                    assert_eq!(
+                        body["resource_ref"],
+                        serde_json::json!({
+                            "url":"https://github.com/acme/cordy",
+                            "ref":"main",
+                            "default_branch_hint":"trunk"
+                        })
+                    );
+                    Json(serde_json::json!({
+                        "id":"22222222-2222-2222-2222-222222222222",
+                        "resource_type":"github_repo",
+                        "resource_ref":{"url":"https://github.com/acme/cordy","ref":"main","default_branch_hint":"trunk"},
+                        "label":""
+                    }))
+                })
+                .delete(|| async { axum::http::StatusCode::NO_CONTENT }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let update = Cli::try_parse_from([
+            "cordy",
+            "project",
+            "resource",
+            "update",
+            project_id,
+            "2222",
+            "--default-branch-hint",
+            "trunk",
+            "--clear-label",
+            "--position",
+            "3",
+            "--output",
+            "table",
+        ])
+        .expect("project resource update CLI");
+        let updated = run_with_input(&update, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("update project resource");
+        assert!(updated.stdout.contains(resource_id));
+        assert!(updated
+            .stdout
+            .contains("https://github.com/acme/cordy @ main"));
+
+        let remove = Cli::try_parse_from([
+            "cordy",
+            "project",
+            "resource",
+            "remove",
+            project_id,
+            resource_id,
+        ])
+        .expect("project resource remove CLI");
+        let removed = run_with_input(&remove, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("remove project resource");
+        assert!(removed.stdout.is_empty());
+        assert_eq!(
+            removed.stderr,
+            format!("Resource {resource_id} removed from project {project_id}.\n")
+        );
         task.abort();
     }
 
