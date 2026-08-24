@@ -2440,6 +2440,8 @@ enum SkillCommand {
     Refresh(SkillRefreshArgs),
     #[command(about = "Search for installable skills")]
     Search(SkillSearchArgs),
+    #[command(about = "Work with skill files")]
+    Files(SkillFilesArgs),
 }
 
 #[derive(Debug, Args)]
@@ -2517,6 +2519,26 @@ struct SkillSearchArgs {
     #[arg(value_name = "QUERY")]
     query: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct SkillFilesArgs {
+    #[command(subcommand)]
+    command: SkillFilesCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum SkillFilesCommand {
+    #[command(about = "List files for a skill")]
+    List(SkillFilesListArgs),
+}
+
+#[derive(Debug, Args)]
+struct SkillFilesListArgs {
+    #[arg(value_name = "SKILL-ID")]
+    skill_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
     output: OutputFormat,
 }
 
@@ -2939,6 +2961,12 @@ async fn run_with_input<R: Read>(
         Command::Skill(SkillArgs {
             command: SkillCommand::Search(args),
         }) => run_skill_search(cli, environment, args).await,
+        Command::Skill(SkillArgs {
+            command:
+                SkillCommand::Files(SkillFilesArgs {
+                    command: SkillFilesCommand::List(args),
+                }),
+        }) => run_skill_files_list(cli, environment, args).await,
         Command::Autopilot(AutopilotArgs {
             command:
                 AutopilotCommand::List {
@@ -6709,6 +6737,51 @@ fn format_skill_search_table(results: &[Value]) -> String {
             value_string(result, "source"),
             value_string(result, "install_count"),
             value_string(result, "description"),
+        ]
+    }));
+    format_table(&rows)
+}
+
+async fn run_skill_files_list(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SkillFilesListArgs,
+) -> Result<RunOutput> {
+    let skill_id = args.skill_id.trim();
+    if skill_id.is_empty() {
+        bail!("skill ID must not be empty");
+    }
+    let client = new_api_client(cli, environment)?;
+    let files: Vec<Value> = client
+        .get_json(&format!(
+            "/api/skills/{}/files",
+            encoded_path_segment(skill_id)
+        ))
+        .await
+        .context("list skill files")?;
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&files)?),
+        OutputFormat::Table => format_skill_files_table(&files),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn format_skill_files_table(files: &[Value]) -> String {
+    let mut rows = vec![vec![
+        "ID".into(),
+        "PATH".into(),
+        "CREATED_AT".into(),
+        "UPDATED_AT".into(),
+    ]];
+    rows.extend(files.iter().map(|file| {
+        vec![
+            value_string(file, "id"),
+            value_string(file, "path"),
+            value_string(file, "created_at"),
+            value_string(file, "updated_at"),
         ]
     }));
     format_table(&rows)
@@ -17652,6 +17725,80 @@ mod tests {
         let empty_table = format_skill_search_table(&[]);
         assert!(empty_table.starts_with("NAME"));
         assert!(empty_table.contains("DESCRIPTION"));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn skill_files_list_matches_go_path_headers_and_output_contracts() {
+        let app = Router::new().route(
+            "/api/skills/skill-1/files",
+            get(|headers: HeaderMap| async move {
+                assert_eq!(headers["authorization"], "Bearer token-1");
+                assert_eq!(headers["x-workspace-id"], "workspace-1");
+                Json(vec![serde_json::json!({
+                    "id": "file-1",
+                    "path": "SKILL.md",
+                    "created_at": "2026-08-24T00:00:00Z",
+                    "updated_at": "2026-08-24T01:00:00Z",
+                    "content": "not printed"
+                })])
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let table_cli = Cli::try_parse_from(["cordy", "skill", "files", "list", "skill-1"])
+            .expect("skill files list table CLI");
+        let Command::Skill(SkillArgs {
+            command:
+                SkillCommand::Files(SkillFilesArgs {
+                    command: SkillFilesCommand::List(args),
+                }),
+        }) = &table_cli.command
+        else {
+            panic!("expected skill files list");
+        };
+        assert_eq!(args.output, OutputFormat::Table);
+        let table = run_with_input(&table_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list skill files table");
+        assert!(table.stdout.starts_with("ID"));
+        assert!(table.stdout.contains("PATH"));
+        assert!(table.stdout.contains("CREATED_AT"));
+        assert!(table.stdout.contains("UPDATED_AT"));
+        assert!(table.stdout.contains("SKILL.md"));
+        assert!(!table.stdout.contains("not printed"));
+        assert!(table.stderr.is_empty());
+
+        let json_cli = Cli::try_parse_from([
+            "cordy", "skill", "files", "list", "skill-1", "--output", "json",
+        ])
+        .expect("skill files list JSON CLI");
+        let json = run_with_input(&json_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list skill files JSON");
+        let files: Value = serde_json::from_str(&json.stdout).expect("skill files JSON");
+        assert_eq!(files[0]["content"], "not printed");
+        assert!(json.stderr.is_empty());
+
+        let empty = SkillFilesListArgs {
+            skill_id: " ".into(),
+            output: OutputFormat::Json,
+        };
+        let error = run_skill_files_list(&json_cli, &environment, &empty)
+            .await
+            .expect_err("empty skill ID");
+        assert_eq!(error.to_string(), "skill ID must not be empty");
+        let empty_table = format_skill_files_table(&[]);
+        assert!(empty_table.starts_with("ID"));
+        assert!(empty_table.contains("UPDATED_AT"));
         server.abort();
     }
 
