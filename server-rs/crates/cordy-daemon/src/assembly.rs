@@ -14,6 +14,9 @@ use std::time::Duration;
 use crate::client::Client;
 use crate::config::{self, CliProfileConfig, Config, Overrides};
 use crate::execenv::context::ensure_workspaces_root_marker;
+use crate::health::RepoCheckoutRegistry;
+use crate::production_services::{DaemonProductionServices, ProviderRuntimeAdapter};
+use crate::production_stack::DaemonProductionStack;
 use crate::repocache::Cache;
 use crate::types::AgentEntry;
 
@@ -142,6 +145,30 @@ impl DaemonProductionInputs {
             client,
             repo_cache,
         })
+    }
+
+    /// Consumes validated inputs into the only production stack assembly
+    /// path. The provider adapter and checkout registry are mandatory shared
+    /// dependencies; there is no default or no-op service construction.
+    pub async fn into_stack<P: ProviderRuntimeAdapter>(
+        self,
+        provider: Arc<P>,
+        checkout_registry: Arc<RepoCheckoutRegistry>,
+    ) -> anyhow::Result<DaemonProductionStack<DaemonProductionServices<P>>> {
+        let config = Arc::new(self.config);
+        let services = Arc::new(DaemonProductionServices::new(
+            Arc::clone(&config),
+            Arc::clone(&self.client),
+            provider,
+        ));
+        DaemonProductionStack::new_shared(
+            config,
+            self.client,
+            self.repo_cache,
+            services,
+            checkout_registry,
+        )
+        .await
     }
 }
 

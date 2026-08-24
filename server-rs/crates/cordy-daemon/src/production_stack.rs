@@ -119,8 +119,8 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         services: Arc<S>,
         checkout_registry: Arc<RepoCheckoutRegistry>,
     ) -> anyhow::Result<Self> {
-        Self::new_with_clock(
-            config,
+        Self::new_shared_with_clock(
+            Arc::new(config),
             client,
             repo_cache,
             services,
@@ -138,6 +138,43 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         checkout_registry: Arc<RepoCheckoutRegistry>,
         clock: Arc<dyn BootstrapClock>,
     ) -> anyhow::Result<Self> {
+        Self::new_shared_with_clock(
+            Arc::new(config),
+            client,
+            repo_cache,
+            services,
+            checkout_registry,
+            clock,
+        )
+        .await
+    }
+
+    pub(crate) async fn new_shared(
+        config: Arc<Config>,
+        client: Arc<Client>,
+        repo_cache: Arc<Cache>,
+        services: Arc<S>,
+        checkout_registry: Arc<RepoCheckoutRegistry>,
+    ) -> anyhow::Result<Self> {
+        Self::new_shared_with_clock(
+            config,
+            client,
+            repo_cache,
+            services,
+            checkout_registry,
+            Arc::new(SystemBootstrapClock),
+        )
+        .await
+    }
+
+    async fn new_shared_with_clock(
+        config: Arc<Config>,
+        client: Arc<Client>,
+        repo_cache: Arc<Cache>,
+        services: Arc<S>,
+        checkout_registry: Arc<RepoCheckoutRegistry>,
+        clock: Arc<dyn BootstrapClock>,
+    ) -> anyhow::Result<Self> {
         anyhow::ensure!(
             (1..=u16::MAX as i32).contains(&config.health_port),
             "health port must be between 1 and 65535"
@@ -148,7 +185,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         );
         let update_executor = Arc::new(UpdateExecutor::detect().await?);
         Ok(Self {
-            config: Arc::new(config),
+            config,
             client,
             repo_cache,
             services,
