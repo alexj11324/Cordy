@@ -248,22 +248,19 @@ pub async fn invoke_hook(
         .min(i64::MAX as u128) as i64;
 
     result.latency_ms = latency_ms;
-    let message;
-    let call_failed;
-    match outcome {
+    let (message, call_failed) = match outcome {
         Err(call_err) => {
             result.status = hook_failure_status(&call_err).to_string();
-            message = redact_hook_error(&call_err);
+            let message = redact_hook_error(&call_err);
             result.error = message.clone();
-            call_failed = Some(call_err);
+            (message, Some(call_err))
         }
         Ok(output) => {
             result.status = "ok".to_string();
-            message = String::new();
             result.output = output;
-            call_failed = None;
+            (String::new(), None)
         }
-    }
+    };
 
     record_invocation(
         service,

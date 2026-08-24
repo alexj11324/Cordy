@@ -206,7 +206,7 @@ pub fn default_gc_artifact_patterns() -> Vec<String> {
 
 /// `Config`: all daemon configuration.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct Config {
+pub struct Config {
     pub server_base_url: String,
     pub daemon_id: String,
     /// Historical daemon_ids this machine may have registered under; reported
@@ -816,11 +816,7 @@ fn parse_shell_words(s: &str) -> Option<Vec<String>> {
             }
             '\\' => {
                 started = true;
-                if let Some(n) = chars.next() {
-                    cur.push(n);
-                } else {
-                    return None;
-                }
+                cur.push(chars.next()?);
             }
             _ => {
                 started = true;

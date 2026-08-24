@@ -1,0 +1,13 @@
+[package]
+name = "cordy-redis"
+description = "Shared lazy, recovering Redis connection for production stores"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+redis = { workspace = true }
+tokio = { workspace = true }
+
+[lints]
+workspace = true

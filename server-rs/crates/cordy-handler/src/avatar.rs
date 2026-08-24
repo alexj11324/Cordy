@@ -16,8 +16,7 @@ use sha2::{Digest, Sha256};
 use std::path::Path as FsPath;
 use uuid::Uuid;
 
-use crate::error::error_response;
-use crate::state::{AttachmentDownloadMode, HandlerState};
+use crate::state::HandlerState;
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -45,9 +44,13 @@ fn key_from_served_url(raw: &str) -> Option<String> {
     (!key.is_empty() && signature_valid(key, signature)).then(|| key.to_string())
 }
 
-fn served_url(state: &HandlerState, key: &str) -> String {
+fn served_url(key: &str) -> String {
     let path = format!("/api/avatars/{}/{key}", sign_key(key));
-    let base = &state.attachment_download.public_url;
+    let base = std::env::var("CORDY_PUBLIC_URL")
+        .unwrap_or_default()
+        .trim()
+        .trim_end_matches('/')
+        .to_string();
     if base.is_empty() {
         path
     } else {
@@ -58,12 +61,12 @@ fn served_url(state: &HandlerState, key: &str) -> String {
 /// Resolves a durable avatar object URL into the stable capability endpoint
 /// used by private object stores. Foreign URLs and local public uploads are
 /// deliberately passed through unchanged.
-pub fn resolve_url(state: &HandlerState, raw: &str) -> String {
+pub(crate) fn resolve_url(state: &HandlerState, raw: &str) -> String {
     let Some(storage) = state.attachment_storage.as_ref() else {
         return raw.to_string();
     };
     if let Some(key) = key_from_served_url(raw) {
-        return served_url(state, &key);
+        return served_url(&key);
     }
     let Some(key) = storage.key_from_url(raw) else {
         return raw.to_string();
@@ -71,13 +74,7 @@ pub fn resolve_url(state: &HandlerState, raw: &str) -> String {
     if storage.object_url(&key) != raw || content_type(&key).is_none() || storage.is_local() {
         return raw.to_string();
     }
-    if storage.has_public_base_url()
-        && state.attachment_download.cloudfront_signer.is_none()
-        && crate::attachment_access::durable_public_url(raw)
-    {
-        return raw.to_string();
-    }
-    served_url(state, &key)
+    served_url(&key)
 }
 
 /// Normalizes and validates a client-supplied avatar URL before persistence.
@@ -187,41 +184,6 @@ async fn serve(
         // attachment, and disallowed type: this endpoint is not an oracle.
         return StatusCode::NOT_FOUND.into_response();
     }
-    let object_url = storage.object_url(&key);
-    match crate::attachment_access::resolved_download_mode(&state, &object_url) {
-        AttachmentDownloadMode::CloudFront => {
-            let Some(signer) = state.attachment_download.cloudfront_signer.as_ref() else {
-                return error_response(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "cloudfront avatar downloads are not configured",
-                );
-            };
-            return match signer.signed_url(&object_url, state.attachment_download.ttl, None) {
-                Ok(url) => avatar_redirect(&url, avatar_redirect_max_age(&state)),
-                Err(error) => {
-                    tracing::warn!(%error, %key, "failed to sign avatar URL");
-                    error_response(StatusCode::BAD_GATEWAY, "failed to create avatar URL")
-                }
-            };
-        }
-        AttachmentDownloadMode::Presign => {
-            return match storage
-                .presign_get(&key, state.attachment_download.ttl, None)
-                .await
-            {
-                Ok(Some(url)) => avatar_redirect(&url, avatar_redirect_max_age(&state)),
-                Ok(None) => error_response(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "avatar storage does not support presigned downloads",
-                ),
-                Err(error) => {
-                    tracing::warn!(%error, %key, "failed to presign avatar URL");
-                    error_response(StatusCode::BAD_GATEWAY, "failed to create avatar URL")
-                }
-            };
-        }
-        AttachmentDownloadMode::Proxy | AttachmentDownloadMode::Auto => {}
-    }
     let object = match storage.get(&key, None).await {
         Ok(value) => value,
         Err(_) => return StatusCode::NOT_FOUND.into_response(),
@@ -258,104 +220,9 @@ async fn serve(
     response
 }
 
-fn avatar_redirect(url: &str, max_age: u64) -> Response {
-    let Ok(location) = HeaderValue::from_str(url) else {
-        return error_response(StatusCode::BAD_GATEWAY, "invalid avatar URL");
-    };
-    let mut response = StatusCode::FOUND.into_response();
-    response.headers_mut().insert(header::LOCATION, location);
-    let cache_control = if max_age == 0 {
-        HeaderValue::from_static("no-store")
-    } else {
-        HeaderValue::from_str(&format!("private, max-age={max_age}"))
-            .unwrap_or_else(|_| HeaderValue::from_static("no-store"))
-    };
-    response
-        .headers_mut()
-        .insert(header::CACHE_CONTROL, cache_control);
-    response.headers_mut().insert(
-        header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static("default-src 'none'; sandbox"),
-    );
-    response
-}
-
-fn avatar_redirect_max_age(state: &HandlerState) -> u64 {
-    (state.attachment_download.ttl.as_secs() / 2).min(60)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::attachment_storage::{AttachmentStorage, StoredObject};
-    use async_trait::async_trait;
-    use axum::body::Body;
-    use axum::http::Request;
-    use std::sync::Arc;
-    use std::time::Duration;
-    use tower::ServiceExt;
-
-    struct PresignStorage {
-        public: bool,
-    }
-
-    #[async_trait]
-    impl AttachmentStorage for PresignStorage {
-        async fn upload(
-            &self,
-            _key: &str,
-            _body: Vec<u8>,
-            _content_type: &str,
-            _filename: &str,
-        ) -> anyhow::Result<String> {
-            anyhow::bail!("not used")
-        }
-
-        async fn get(&self, _key: &str, _range: Option<&str>) -> anyhow::Result<StoredObject> {
-            anyhow::bail!("not used")
-        }
-
-        async fn delete(&self, _key: &str) -> anyhow::Result<()> {
-            anyhow::bail!("not used")
-        }
-
-        async fn presign_get(
-            &self,
-            key: &str,
-            _ttl: Duration,
-            _content_disposition: Option<&str>,
-        ) -> anyhow::Result<Option<String>> {
-            Ok(Some(format!("https://signed.example/{key}?sig=fresh")))
-        }
-
-        fn key_from_url(&self, raw: &str) -> Option<String> {
-            raw.strip_prefix("https://objects.example/")
-                .map(str::to_string)
-        }
-
-        fn object_url(&self, key: &str) -> String {
-            format!("https://objects.example/{key}")
-        }
-
-        fn has_public_base_url(&self) -> bool {
-            self.public
-        }
-
-        fn supports_presign(&self) -> bool {
-            true
-        }
-    }
-
-    fn state(public: bool) -> HandlerState {
-        let mut settings = crate::state::AttachmentDownloadSettings::default();
-        settings.public_url = "https://api.example".into();
-        HandlerState::new(
-            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
-            cordy_auth::pat_cache::PatCache::disabled(),
-            None,
-        )
-        .with_attachment_storage(Arc::new(PresignStorage { public }), settings)
-    }
 
     #[test]
     fn signatures_are_key_bound_and_url_safe() {
@@ -375,32 +242,5 @@ mod tests {
     #[test]
     fn forged_served_urls_are_not_normalized() {
         assert!(key_from_served_url("/api/avatars/not-valid/users/u/avatar.png").is_none());
-    }
-
-    #[tokio::test]
-    async fn private_s3_avatar_resolves_through_stable_route_then_presigns() {
-        let state = state(false);
-        let raw = "https://objects.example/users/u/avatar.png";
-        let resolved = resolve_url(&state, raw);
-        assert!(resolved.starts_with("https://api.example/api/avatars/"));
-
-        let path = resolved.strip_prefix("https://api.example").unwrap();
-        let response = router()
-            .with_state(state)
-            .oneshot(Request::get(path).body(Body::empty()).unwrap())
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::FOUND);
-        assert_eq!(
-            response.headers().get(header::LOCATION).unwrap(),
-            "https://signed.example/users/u/avatar.png?sig=fresh"
-        );
-    }
-
-    #[tokio::test]
-    async fn public_s3_avatar_stays_on_durable_object_url() {
-        let state = state(true);
-        let raw = "https://objects.example/users/u/avatar.png";
-        assert_eq!(resolve_url(&state, raw), raw);
     }
 }

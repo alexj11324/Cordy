@@ -16,7 +16,7 @@ pub async fn create_git_hub_installation(
     account_login: &str,
     account_type: &str,
     account_avatar_url: Option<&str>,
-    connected_by_id: Uuid,
+    connected_by_id: Option<Uuid>,
 ) -> anyhow::Result<Option<GithubInstallation>> {
     let row = sqlx::query(
         r#"INSERT INTO github_installation (
@@ -180,6 +180,112 @@ WHERE workspace_id = $1 AND repo_owner = $2 AND repo_name = $3 AND pr_number = $
     }))
 }
 
+pub async fn attach_git_hub_pull_request(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    installation_id: Option<i64>,
+    repo_owner: &str,
+    repo_name: &str,
+    pr_number: i32,
+    title: &str,
+    state: &str,
+    html_url: &str,
+    pr_created_at: Option<DateTime<Utc>>,
+    pr_updated_at: Option<DateTime<Utc>>,
+    head_sha: &str,
+    additions: i32,
+    deletions: i32,
+    changed_files: i32,
+    branch: Option<&str>,
+    author_login: Option<&str>,
+    author_avatar_url: Option<&str>,
+    merged_at: Option<DateTime<Utc>>,
+    closed_at: Option<DateTime<Utc>>,
+    metadata_complete: bool,
+) -> anyhow::Result<Option<GithubPullRequest>> {
+    let row = sqlx::query(
+        r#"INSERT INTO github_pull_request (
+    workspace_id, installation_id, repo_owner, repo_name, pr_number,
+    title, state, html_url, branch, author_login, author_avatar_url,
+    merged_at, closed_at, pr_created_at, pr_updated_at,
+    head_sha, mergeable_state, additions, deletions, changed_files
+) VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $15, $16, $17,
+    $18, $19, $9, $10, $11, NULL, $12, $13, $14
+)
+ON CONFLICT (workspace_id, repo_owner, repo_name, pr_number) DO UPDATE SET
+    installation_id = CASE WHEN $20::boolean THEN COALESCE(EXCLUDED.installation_id, github_pull_request.installation_id) ELSE github_pull_request.installation_id END,
+    title = CASE WHEN $20::boolean THEN EXCLUDED.title ELSE github_pull_request.title END,
+    state = CASE WHEN $20::boolean THEN EXCLUDED.state ELSE github_pull_request.state END,
+    html_url = CASE WHEN $20::boolean THEN EXCLUDED.html_url ELSE github_pull_request.html_url END,
+    branch = CASE WHEN $20::boolean THEN EXCLUDED.branch ELSE github_pull_request.branch END,
+    author_login = CASE WHEN $20::boolean THEN EXCLUDED.author_login ELSE github_pull_request.author_login END,
+    author_avatar_url = CASE WHEN $20::boolean THEN EXCLUDED.author_avatar_url ELSE github_pull_request.author_avatar_url END,
+    merged_at = CASE WHEN $20::boolean THEN EXCLUDED.merged_at ELSE github_pull_request.merged_at END,
+    closed_at = CASE WHEN $20::boolean THEN EXCLUDED.closed_at ELSE github_pull_request.closed_at END,
+    pr_updated_at = CASE WHEN $20::boolean THEN EXCLUDED.pr_updated_at ELSE github_pull_request.pr_updated_at END,
+    head_sha = CASE WHEN $20::boolean THEN EXCLUDED.head_sha ELSE github_pull_request.head_sha END,
+    additions = CASE WHEN $20::boolean THEN EXCLUDED.additions ELSE github_pull_request.additions END,
+    deletions = CASE WHEN $20::boolean THEN EXCLUDED.deletions ELSE github_pull_request.deletions END,
+    changed_files = CASE WHEN $20::boolean THEN EXCLUDED.changed_files ELSE github_pull_request.changed_files END,
+    updated_at = now()
+RETURNING id, workspace_id, installation_id, repo_owner, repo_name, pr_number, title, state, html_url, branch, author_login, author_avatar_url, merged_at, closed_at, pr_created_at, pr_updated_at, created_at, updated_at, head_sha, mergeable_state, additions, deletions, changed_files, api_mergeable, api_merge_state_status, checks_rollup_state, snapshot_head_sha, snapshot_fetched_at"#,
+    )
+    .bind(workspace_id)
+    .bind(installation_id)
+    .bind(repo_owner)
+    .bind(repo_name)
+    .bind(pr_number)
+    .bind(title)
+    .bind(state)
+    .bind(html_url)
+    .bind(pr_created_at)
+    .bind(pr_updated_at)
+    .bind(head_sha)
+    .bind(additions)
+    .bind(deletions)
+    .bind(changed_files)
+    .bind(branch)
+    .bind(author_login)
+    .bind(author_avatar_url)
+    .bind(merged_at)
+    .bind(closed_at)
+    .bind(metadata_complete)
+    .fetch_optional(executor)
+    .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(GithubPullRequest {
+        id: row.try_get(0)?,
+        workspace_id: row.try_get(1)?,
+        installation_id: row.try_get(2)?,
+        repo_owner: row.try_get(3)?,
+        repo_name: row.try_get(4)?,
+        pr_number: row.try_get(5)?,
+        title: row.try_get(6)?,
+        state: row.try_get(7)?,
+        html_url: row.try_get(8)?,
+        branch: row.try_get(9)?,
+        author_login: row.try_get(10)?,
+        author_avatar_url: row.try_get(11)?,
+        merged_at: row.try_get(12)?,
+        closed_at: row.try_get(13)?,
+        pr_created_at: row.try_get(14)?,
+        pr_updated_at: row.try_get(15)?,
+        created_at: row.try_get(16)?,
+        updated_at: row.try_get(17)?,
+        head_sha: row.try_get(18)?,
+        mergeable_state: row.try_get(19)?,
+        additions: row.try_get(20)?,
+        deletions: row.try_get(21)?,
+        changed_files: row.try_get(22)?,
+        api_mergeable: row.try_get(23)?,
+        api_merge_state_status: row.try_get(24)?,
+        checks_rollup_state: row.try_get(25)?,
+        snapshot_head_sha: row.try_get(26)?,
+        snapshot_fetched_at: row.try_get(27)?,
+    }))
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct GetIssuePullRequestCloseAggregateRow {
     pub open_count: i64,
@@ -261,9 +367,11 @@ pub async fn link_issue_to_pull_request(
     pull_request_id: Uuid,
     close_intent: bool,
     linked_by_type: Option<&str>,
-    linked_by_id: Uuid,
+    linked_by_id: Option<Uuid>,
     reference_only: bool,
     preserve_close_intent: bool,
+    preserve_reference_only: bool,
+    preserve_linked_by: bool,
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
         r#"INSERT INTO issue_pull_request (
@@ -272,12 +380,20 @@ pub async fn link_issue_to_pull_request(
     $1, $2, $4, $5, $3, $6
 )
 ON CONFLICT (issue_id, pull_request_id) DO UPDATE SET
+    linked_by_type = CASE
+        WHEN $9 THEN issue_pull_request.linked_by_type
+        ELSE EXCLUDED.linked_by_type
+    END,
+    linked_by_id = CASE
+        WHEN $9 THEN issue_pull_request.linked_by_id
+        ELSE EXCLUDED.linked_by_id
+    END,
     close_intent = CASE
         WHEN $7 THEN issue_pull_request.close_intent
         ELSE EXCLUDED.close_intent
     END,
     reference_only = CASE
-        WHEN $7 THEN issue_pull_request.reference_only
+        WHEN $8 THEN issue_pull_request.reference_only
         ELSE EXCLUDED.reference_only
     END"#,
     )
@@ -288,6 +404,8 @@ ON CONFLICT (issue_id, pull_request_id) DO UPDATE SET
     .bind(linked_by_id)
     .bind(reference_only)
     .bind(preserve_close_intent)
+    .bind(preserve_reference_only)
+    .bind(preserve_linked_by)
     .execute(executor)
     .await?;
     Ok(r.rows_affected())

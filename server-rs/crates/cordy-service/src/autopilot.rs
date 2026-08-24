@@ -6,6 +6,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use anyhow::Context as _;
 use chrono::{DateTime, Utc};
 use chrono_tz::Tz;
 use sqlx::PgPool;
@@ -52,6 +53,7 @@ pub fn default_trigger_location() -> (Tz, &'static str) {
 
 /// Domain service. Go's Queries/TxStarter pair collapses into one sqlx pool —
 /// executor-generic queries plus `pool.begin()` cover both shapes.
+#[derive(Clone)]
 pub struct AutopilotService {
     pub pool: PgPool,
     pub bus: Arc<cordy_events::Bus>,
@@ -89,12 +91,12 @@ struct AutopilotRuleConfigSummary<'a> {
 /// Appends one rule-version snapshot for a substantive publish (MUL-4302
 /// §3.4). Shared by handler publish paths (tx-scoped via the caller's
 /// executor) and the failure monitor's system-pause. System publishers pass
-/// the nil UUID with type "system".
+/// `None` with type "system".
 pub async fn record_autopilot_rule_version(
     executor: &PgPool,
     ap: &Autopilot,
     published_by_type: &str,
-    published_by_id: Uuid,
+    published_by_id: Option<Uuid>,
 ) -> anyhow::Result<()> {
     let summary = AutopilotRuleConfigSummary {
         assignee_type: &ap.assignee_type,
@@ -152,8 +154,9 @@ pub struct EntitlementGateDecision {
 /// Seam standing in for Go's `entitlement.Provider`. Cloud remains the sole
 /// authority over interval construction; implementations must not consult
 /// local quota tables.
+#[async_trait::async_trait]
 pub trait EntitlementProvider: Send + Sync {
-    fn gate_autopilot_runs(&self, workspace_id: Uuid) -> EntitlementGateDecision;
+    async fn gate_autopilot_runs(&self, workspace_id: Uuid) -> EntitlementGateDecision;
 }
 
 // --- Pure predicates --------------------------------------------------------
@@ -577,6 +580,14 @@ impl AutopilotService {
 
 pub trait AutopilotQuotaMetrics: Send + Sync {
     fn record_autopilot_quota_decision(&self, action: &str, source: &str, result: &str);
+}
+
+impl AutopilotQuotaMetrics for cordy_metrics::BusinessMetrics {
+    fn record_autopilot_quota_decision(&self, action: &str, source: &str, result: &str) {
+        cordy_metrics::BusinessMetrics::record_autopilot_quota_decision(
+            self, action, source, result,
+        );
+    }
 }
 
 /// Returned only for an enforce decision whose Cloud-provided interval is
@@ -1266,9 +1277,9 @@ impl AutopilotService {
     /// Resolves the effective quota policy for a workspace. A malformed
     /// policy is fail-open and, critically, performs no quota-table access;
     /// Cloud remains the sole authority over interval construction.
-    fn quota_policy(&self, workspace_id: Uuid) -> Option<AutopilotQuotaPolicy> {
+    async fn quota_policy(&self, workspace_id: Uuid) -> Option<AutopilotQuotaPolicy> {
         let entitlements = self.entitlements.as_ref()?;
-        let decision = entitlements.gate_autopilot_runs(workspace_id);
+        let decision = entitlements.gate_autopilot_runs(workspace_id).await;
         if decision.gate_action == EntitlementAction::Off {
             return None;
         }
@@ -1308,7 +1319,7 @@ impl AutopilotService {
         if !valid_autopilot_execution_source(source) {
             return Err(QuotaAdmissionError::InvalidSource(source.to_string()));
         }
-        let Some(policy) = self.quota_policy(workspace_id) else {
+        let Some(policy) = self.quota_policy(workspace_id).await else {
             let run = insert_run(&self.pool, params, Uuid::nil())
                 .await
                 .map_err(|e| quota_admission_internal("create autopilot run", e))?
@@ -1440,7 +1451,7 @@ impl AutopilotService {
     /// decision returns enabled=false with every fact left unset; a period row
     /// that does not exist yet reads as zeroed counters.
     pub async fn quota_usage(&self, workspace_id: Uuid) -> anyhow::Result<AutopilotQuotaUsage> {
-        let Some(policy) = self.quota_policy(workspace_id) else {
+        let Some(policy) = self.quota_policy(workspace_id).await else {
             return Ok(AutopilotQuotaUsage::default());
         };
         let (used_count, reserved_count, blocked_value) = match get_autopilot_quota_period(
@@ -1502,7 +1513,7 @@ impl AutopilotService {
             limit,
         )
         .await
-        .map_err(|e| anyhow::anyhow!("list recoverable quota reservations: {e}"))?;
+        .context("list recoverable quota reservations")?;
 
         let mut settled = 0usize;
         for reservation in reservations {
@@ -1512,18 +1523,16 @@ impl AutopilotService {
                 // No run ever linked: an orphaned reservation — release it.
                 Ok(None) => settle_autopilot_quota(&self.pool, Some(reservation.id), false)
                     .await
-                    .map_err(|e| anyhow::anyhow!("release orphan quota reservation: {e}"))?,
-                Err(e) => return Err(anyhow::anyhow!("load quota-linked run: {e}")),
+                    .context("release orphan quota reservation")?,
+                Err(e) => return Err(e.context("load quota-linked run")),
                 Ok(Some(run)) => match run.status.as_str() {
                     "completed" => settle_autopilot_quota(&self.pool, Some(reservation.id), true)
                         .await
-                        .map_err(|e| anyhow::anyhow!("consume completed quota reservation: {e}"))?,
+                        .context("consume completed quota reservation")?,
                     "failed" | "skipped" => {
                         settle_autopilot_quota(&self.pool, Some(reservation.id), false)
                             .await
-                            .map_err(|e| {
-                                anyhow::anyhow!("release terminal quota reservation: {e}")
-                            })?
+                            .context("release terminal quota reservation")?
                     }
                     // Abandoned manual/api runs recover their partial state;
                     // schedule and webhook retries own their own recovery, so
@@ -1535,7 +1544,7 @@ impl AutopilotService {
                     {
                         self.recover_partial_autopilot_run(run.id)
                             .await
-                            .map_err(|e| anyhow::anyhow!("recover abandoned quota run: {e}"))?
+                            .context("recover abandoned quota run")?
                     }
                     _ => false,
                 },
@@ -2257,7 +2266,7 @@ impl AutopilotService {
                 sub.user_id,
                 "issue_subscribed",
                 "info",
-                issue.id,
+                Some(issue.id),
                 &issue.title,
                 None,
                 Some("agent"),

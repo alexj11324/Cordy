@@ -156,7 +156,7 @@ impl CbcDecryptor {
     /// block size; chaining state carries across calls.
     pub(crate) fn decrypt_blocks(&mut self, buf: &mut [u8]) {
         use aes::cipher::{Array, BlockCipherDecrypt};
-        for chunk in buf.chunks_exact_mut(AES_BLOCK) {
+        for chunk in buf.as_chunks_mut::<AES_BLOCK>().0 {
             // The next block's chain input is this block's CIPHERTEXT, which
             // is exactly what chunk holds before the ECB pass. Snapshot it
             // while chunk is still the only borrow.
@@ -206,12 +206,9 @@ mod tests {
         let mut prev = [0u8; AES_BLOCK];
         prev.copy_from_slice(&key[..AES_BLOCK]);
         let mut out = Vec::with_capacity(padded.len());
-        for chunk in padded.chunks_exact(AES_BLOCK) {
+        for chunk in padded.as_chunks::<AES_BLOCK>().0 {
             let mut block =
-                Array::<u8, <aes::Aes256 as aes::cipher::BlockSizeUser>::BlockSize>::try_from(
-                    chunk,
-                )
-                .unwrap();
+                Array::<u8, <aes::Aes256 as aes::cipher::BlockSizeUser>::BlockSize>::from(*chunk);
             for i in 0..AES_BLOCK {
                 block[i] ^= prev[i];
             }

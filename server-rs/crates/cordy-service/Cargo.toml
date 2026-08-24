@@ -18,6 +18,7 @@ cordy-metrics = { path = "../cordy-metrics" }
 cordy-plugincontract = { path = "../cordy-plugincontract" }
 cordy-protocol = { path = "../cordy-protocol" }
 cordy-remotemcp = { path = "../cordy-remotemcp" }
+cordy-redis = { path = "../cordy-redis" }
 cordy-task-failure = { path = "../cordy-task-failure" }
 cordy-util = { path = "../cordy-util" }
 sqlx = { workspace = true }
@@ -31,6 +32,7 @@ tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { workspace = true }
+futures-util = { workspace = true }
 tokio-rustls = { workspace = true }
 rustls = { workspace = true }
 rustls-native-certs = { workspace = true }

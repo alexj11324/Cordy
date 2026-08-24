@@ -670,7 +670,7 @@ impl TaskService {
         source_task_id: Option<Uuid>,
         trigger_comment_id_in: Option<Uuid>,
         actor_user_id: Option<Uuid>,
-        can_invoke: Option<&dyn Fn(&Agent) -> bool>,
+        can_invoke: Option<&(dyn Fn(&Agent) -> bool + Sync)>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
         let issue = get_issue(&self.pool, issue_id)
             .await
@@ -1058,7 +1058,7 @@ impl TaskService {
         for agent_id in affected_agents.keys() {
             self.reconcile_agent_status(*agent_id).await;
         }
-        self.notify_tasks_finished(tasks);
+        self.notify_tasks_finished(tasks).await;
         retried_count
     }
 }

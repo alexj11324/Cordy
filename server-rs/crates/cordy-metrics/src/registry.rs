@@ -13,12 +13,13 @@ use crate::channel_lease::ChannelLeaseMetrics;
 use crate::channel_media::ChannelMediaReconcilerMetrics;
 use crate::db::DbCollector;
 use crate::http::HttpMetrics;
+use crate::lark_backfill::LarkBackfillMetrics;
 use crate::realtime::RealtimeCollector;
 use crate::wecom::WecomMetrics;
 
 pub struct RegistryOptions {
     pub pool: Option<Arc<sqlx::PgPool>>,
-    pub realtime: Option<Arc<cordy_realtime::Metrics>>,
+    pub realtime: Option<&'static cordy_realtime::Metrics>,
     pub version: String,
     pub commit: String,
     /// When `Some`, opts the registry into the scrape-time SQL sampler
@@ -35,6 +36,7 @@ pub struct Registry {
     pub channel_media: Arc<ChannelMediaReconcilerMetrics>,
     pub channel_lease: Arc<ChannelLeaseMetrics>,
     pub wecom: Arc<WecomMetrics>,
+    pub lark_backfill: Arc<LarkBackfillMetrics>,
 }
 
 fn default_label(value: &str, fallback: &str) -> String {
@@ -89,6 +91,11 @@ impl Registry {
             let _ = reg.register(c);
         }
 
+        let lark_backfill = Arc::new(LarkBackfillMetrics::new());
+        for c in lark_backfill.collectors() {
+            let _ = reg.register(c);
+        }
+
         if let Some(pool) = opts.pool {
             let _ = reg.register(Box::new(DbCollector::new(pool)));
         }
@@ -111,6 +118,7 @@ impl Registry {
             channel_media,
             channel_lease,
             wecom,
+            lark_backfill,
         }
     }
 }

@@ -466,7 +466,7 @@ impl Client {
         if resp.status().is_client_error() || resp.status().is_server_error() {
             let status = resp.status().as_u16();
             let body = resp.bytes().await.unwrap_or_default();
-            return Err(Error::Api(parse_api_error(status, &body)));
+            return Err(parse_api_error(status, &body).into());
         }
         Ok(resp)
     }
@@ -645,11 +645,17 @@ impl Client {
 #[derive(Debug, Error)]
 pub enum Error {
     #[error("{0}")]
-    Api(#[from] ApiError),
+    Api(#[source] Box<ApiError>),
     #[error("{0}")]
     Transport(String),
     #[error("{0}")]
     Other(String),
+}
+
+impl From<ApiError> for Error {
+    fn from(error: ApiError) -> Self {
+        Self::Api(Box::new(error))
+    }
 }
 
 impl Error {

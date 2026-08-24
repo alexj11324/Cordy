@@ -169,7 +169,7 @@ fn visibility(raw: Option<&str>) -> Result<String, Response> {
     }
 }
 
-async fn target(
+pub(crate) async fn target(
     state: &HandlerState,
     workspace_id: Uuid,
     assignee_type: &str,

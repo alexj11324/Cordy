@@ -24,6 +24,7 @@ use std::time::Duration;
 
 use sqlx::postgres::types::PgInterval;
 use sqlx::PgPool;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -40,6 +41,7 @@ pub const CHANNEL_MEDIA_RECONCILE_SETTLE_DELAY: Duration = Duration::from_secs(1
 
 /// Paces the reconciler loop.
 const SWEEP_INTERVAL: Duration = Duration::from_secs(60);
+pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Bounds how long a claimed row stays owned before another replica may
 /// reclaim it (crash recovery).
@@ -102,15 +104,73 @@ pub struct ChannelMediaReconciler {
     /// Overridable for deterministic tests; None falls back to
     /// [`DELETE_TIMEOUT`].
     pub delete_timeout: Option<Duration>,
+    config: ChannelMediaReconcilerConfig,
+}
+
+/// Process-lifecycle settings. The database remains the authoritative clock
+/// for settle, lease, retry, and tombstone deadlines; only loop pacing and
+/// bounded shutdown are injected here.
+#[derive(Debug, Clone, Copy)]
+pub struct ChannelMediaReconcilerConfig {
+    pub sweep_interval: Duration,
+    pub shutdown_timeout: Duration,
+}
+
+impl Default for ChannelMediaReconcilerConfig {
+    fn default() -> Self {
+        Self {
+            sweep_interval: SWEEP_INTERVAL,
+            shutdown_timeout: DEFAULT_SHUTDOWN_TIMEOUT,
+        }
+    }
 }
 
 impl ChannelMediaReconciler {
+    pub fn new(
+        pool: PgPool,
+        storage: Arc<dyn MediaObjectDeleter>,
+        metrics: Option<Arc<cordy_metrics::channel_media::ChannelMediaReconcilerMetrics>>,
+    ) -> Self {
+        Self {
+            pool,
+            storage: Some(storage),
+            metrics,
+            delete_timeout: None,
+            config: ChannelMediaReconcilerConfig::default(),
+        }
+    }
+
+    pub fn with_config(mut self, config: ChannelMediaReconcilerConfig) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            !config.sweep_interval.is_zero(),
+            "channel media reconciler sweep interval must be positive"
+        );
+        anyhow::ensure!(
+            !config.shutdown_timeout.is_zero(),
+            "channel media reconciler shutdown timeout must be positive"
+        );
+        self.config = config;
+        Ok(self)
+    }
+
+    /// Starts the independent reconciler task and returns its owned lifecycle.
+    pub fn start(self: Arc<Self>, cancel: CancellationToken) -> ChannelMediaReconcilerRuntime {
+        let shutdown_timeout = self.config.shutdown_timeout;
+        let task_cancel = cancel.clone();
+        let task = tokio::spawn(async move { self.run(task_cancel).await });
+        ChannelMediaReconcilerRuntime {
+            cancel,
+            task: Some(task),
+            shutdown_timeout,
+        }
+    }
+
     /// Loops [`run_once`](Self::run_once) until cancelled. Started as its own
     /// task from server assembly; deliberately not coupled to any other
     /// sweeper's cadence. Mirrors Go's time.NewTicker: the first sweep fires
     /// only after a full interval.
     pub async fn run(&self, cancel: CancellationToken) {
-        let mut ticker = tokio::time::interval(SWEEP_INTERVAL);
+        let mut ticker = tokio::time::interval(self.config.sweep_interval);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         // Consume tokio's immediate first tick — Go's NewTicker fires only
         // after the full interval.
@@ -434,6 +494,46 @@ impl ChannelMediaReconciler {
             }
         }
     }
+}
+
+pub struct ChannelMediaReconcilerRuntime {
+    cancel: CancellationToken,
+    task: Option<JoinHandle<()>>,
+    shutdown_timeout: Duration,
+}
+
+impl ChannelMediaReconcilerRuntime {
+    pub async fn shutdown(mut self) -> ChannelMediaShutdownOutcome {
+        self.cancel.cancel();
+        let Some(mut task) = self.task.take() else {
+            return ChannelMediaShutdownOutcome::Panicked;
+        };
+        match tokio::time::timeout(self.shutdown_timeout, &mut task).await {
+            Ok(Ok(())) => ChannelMediaShutdownOutcome::Stopped,
+            Ok(Err(_)) => ChannelMediaShutdownOutcome::Panicked,
+            Err(_) => {
+                task.abort();
+                let _ = task.await;
+                ChannelMediaShutdownOutcome::TimedOut
+            }
+        }
+    }
+}
+
+impl Drop for ChannelMediaReconcilerRuntime {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChannelMediaShutdownOutcome {
+    Stopped,
+    Panicked,
+    TimedOut,
 }
 
 /// Returns the delay before this row's next re-delete pass and the schedule

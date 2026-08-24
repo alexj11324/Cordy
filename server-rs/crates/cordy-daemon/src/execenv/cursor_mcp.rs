@@ -93,7 +93,7 @@ pub(crate) fn prepare_cursor_mcp_config(
     let approval_data =
         serde_json::to_string_pretty(&approvals).context("marshal cursor mcp approvals")?;
     write_private_file(
-        &join(&project_data_dir, "mcp-approvals.json"),
+        join(&project_data_dir, "mcp-approvals.json"),
         approval_data.as_bytes(),
     )
     .context("write cursor mcp approvals")?;
@@ -216,7 +216,7 @@ fn copy_cursor_mcp_auth_file(target: &str, source: &str) -> anyhow::Result<()> {
     let result = write_private_file(target, &data);
     if let Err(e) = result {
         let _ = std::fs::remove_file(target);
-        return Err(e.into());
+        return Err(e);
     }
     Ok(())
 }

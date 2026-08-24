@@ -158,6 +158,17 @@ impl InstallService {
             Ok(None) => anyhow::bail!("upsert slack installation: no row returned"),
             Err(err) => {
                 if is_unique_violation(&err) {
+                    // A failed statement leaves this transaction aborted, and
+                    // the owner lookup runs on the base pool. End the failed
+                    // transaction first so a burst of conflicting installs
+                    // cannot occupy every pool connection while each request
+                    // waits for a second connection to classify its conflict.
+                    if let Err(rollback_error) = tx.rollback().await {
+                        tracing::warn!(
+                            error = %rollback_error,
+                            "rollback failed Slack install conflict transaction"
+                        );
+                    }
                     return Err(self
                         .live_owner_conflict_err(&self.pool, p.ws_id, &p.app_id_key)
                         .await);

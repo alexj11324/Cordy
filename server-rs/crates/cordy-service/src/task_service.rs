@@ -6,7 +6,8 @@
 //! (Slice4).
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::future::Future;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -95,7 +96,9 @@ const TASK_ANALYTICS_CONTEXT_CACHE_MAX: usize = 4096;
 /// Signals that a run resolved to no precise accountable human and the enqueue
 /// is REFUSED rather than started (MUL-4302 §1/§3.5).
 #[derive(Debug, thiserror::Error)]
-#[error("attribution: no precise accountable human and enqueue refused (fail-closed policy, policy read failed, or no agent owner)")]
+#[error(
+    "attribution: no precise accountable human and enqueue refused (fail-closed policy, policy read failed, or no agent owner)"
+)]
 pub struct ErrAttributionFailClosed;
 
 /// A fresh enqueue lost the race to a concurrent one (#5914). Benign — a
@@ -212,8 +215,9 @@ pub trait ComposioOverlayBuilder: Send + Sync {
 }
 
 /// Wakeup seam used by dispatch to nudge runtimes.
+#[async_trait::async_trait]
 pub trait TaskWakeupNotifier: Send + Sync {
-    fn notify_task_available(&self, runtime_id: &str, task_id: &str);
+    async fn notify_task_available(&self, runtime_id: &str, task_id: &str);
 }
 
 /// Quick-create task context stored in `agent_task_queue.context`.
@@ -263,17 +267,19 @@ pub struct TaskService {
     pub metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     pub wakeup: Option<std::sync::Weak<dyn TaskWakeupNotifier>>,
     /// Server-side toggle router. `None` returns each call site's default.
-    pub feature_flags: Option<Box<dyn FlagSource>>,
+    pub feature_flags: Option<Arc<dyn FlagSource>>,
     /// Optional per-task MCP overlay builder; `None` makes the overlay step a
     /// no-op (deployments without Composio behave exactly as before).
     pub composio: Option<std::sync::Arc<dyn ComposioOverlayBuilder>>,
     /// Optional follow-up suggestion generator; `None` disables the feature.
     pub quick_actions: Option<std::sync::Arc<dyn ChatQuickActionsLlm>>,
+    empty_claim: std::sync::RwLock<crate::empty_claim_cache::EmptyClaimCache>,
 
     /// chat session id -> admitted; one suggestion pass per session plus a
     /// process-wide ceiling. Zero values are usable.
     pub(crate) quick_actions_in_flight: Mutex<HashMap<Uuid, ()>>,
     pub(crate) quick_actions_running: AtomicI64,
+    side_effect_tasks: Arc<TaskSideEffectTasks>,
 
     /// LRU-ish analytics context cache keyed by task identity columns.
     analytics_context: Mutex<AnalyticsContextCache>,
@@ -313,10 +319,44 @@ impl TaskService {
             feature_flags: None,
             composio: None,
             quick_actions: None,
+            empty_claim: std::sync::RwLock::new(
+                crate::empty_claim_cache::EmptyClaimCache::disabled(),
+            ),
             quick_actions_in_flight: Mutex::new(HashMap::new()),
             quick_actions_running: AtomicI64::new(0),
+            side_effect_tasks: Arc::new(TaskSideEffectTasks::new()),
             analytics_context: Mutex::new(AnalyticsContextCache::default()),
         }
+    }
+
+    /// Installs the production Redis-backed negative claim cache after the
+    /// shared connection manager has been established during server startup.
+    pub fn install_empty_claim_cache(&self, cache: crate::empty_claim_cache::EmptyClaimCache) {
+        match self.empty_claim.write() {
+            Ok(mut current) => *current = cache,
+            Err(poisoned) => *poisoned.into_inner() = cache,
+        }
+    }
+
+    fn empty_claim_cache(&self) -> crate::empty_claim_cache::EmptyClaimCache {
+        match self.empty_claim.read() {
+            Ok(cache) => cache.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    pub fn start_side_effect_runtime(
+        self: &Arc<Self>,
+        parent: tokio_util::sync::CancellationToken,
+    ) -> Option<TaskSideEffectRuntime> {
+        self.side_effect_tasks.start(parent)
+    }
+
+    /// Admits best-effort post-response work into the production-owned task
+    /// set. Callers must retain their own business timeout; shutdown supplies
+    /// the final process-level bound and abort fallback.
+    pub fn spawn_side_effect(&self, task: impl Future<Output = ()> + Send + 'static) {
+        self.side_effect_tasks.spawn(task);
     }
 
     // --- Trigger summary ---------------------------------------------------
@@ -997,6 +1037,115 @@ impl TaskService {
     }
 }
 
+pub const DEFAULT_SIDE_EFFECT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
+
+struct TaskSideEffectTasks {
+    cancel: tokio_util::sync::CancellationToken,
+    started: AtomicBool,
+    accepting_tasks: AtomicBool,
+    tasks: Mutex<tokio::task::JoinSet<()>>,
+}
+
+impl TaskSideEffectTasks {
+    fn new() -> Self {
+        Self {
+            cancel: tokio_util::sync::CancellationToken::new(),
+            started: AtomicBool::new(false),
+            accepting_tasks: AtomicBool::new(true),
+            tasks: Mutex::new(tokio::task::JoinSet::new()),
+        }
+    }
+
+    fn start(
+        self: &Arc<Self>,
+        parent: tokio_util::sync::CancellationToken,
+    ) -> Option<TaskSideEffectRuntime> {
+        if self.started.swap(true, Ordering::AcqRel) {
+            return None;
+        }
+        let tasks = self.clone();
+        self.spawn(async move {
+            tokio::select! {
+                _ = parent.cancelled() => {}
+                _ = tasks.cancel.cancelled() => {}
+            }
+            tasks.cancel.cancel();
+        });
+        Some(TaskSideEffectRuntime {
+            tasks: self.clone(),
+        })
+    }
+
+    fn spawn(&self, task: impl Future<Output = ()> + Send + 'static) {
+        let mut tasks = self
+            .tasks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        while let Some(result) = tasks.try_join_next() {
+            if let Err(error) = result {
+                tracing::error!(%error, "task side-effect worker panicked");
+            }
+        }
+        if self.accepting_tasks.load(Ordering::Acquire) {
+            tasks.spawn(task);
+        }
+    }
+
+    fn stop_accepting(&self) -> tokio::task::JoinSet<()> {
+        let mut tasks = self
+            .tasks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.accepting_tasks.store(false, Ordering::Release);
+        std::mem::take(&mut *tasks)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskSideEffectShutdownOutcome {
+    Stopped,
+    Panicked,
+    TimedOut,
+}
+
+pub struct TaskSideEffectRuntime {
+    tasks: Arc<TaskSideEffectTasks>,
+}
+
+impl TaskSideEffectRuntime {
+    pub async fn shutdown(self, timeout: Duration) -> TaskSideEffectShutdownOutcome {
+        self.tasks.cancel.cancel();
+        let mut tasks = self.tasks.stop_accepting();
+        let mut panicked = false;
+        let joined = tokio::time::timeout(timeout, async {
+            while let Some(result) = tasks.join_next().await {
+                if result.is_err() {
+                    panicked = true;
+                }
+            }
+        })
+        .await;
+        if joined.is_err() {
+            tasks.abort_all();
+            while tasks.join_next().await.is_some() {}
+            return TaskSideEffectShutdownOutcome::TimedOut;
+        }
+        if panicked {
+            TaskSideEffectShutdownOutcome::Panicked
+        } else {
+            TaskSideEffectShutdownOutcome::Stopped
+        }
+    }
+}
+
+impl Drop for TaskSideEffectRuntime {
+    fn drop(&mut self) {
+        self.tasks.cancel.cancel();
+        let mut tasks = self.tasks.stop_accepting();
+        tasks.abort_all();
+    }
+}
+
 fn task_analytics_context_key(task: &AgentTaskQueue) -> Option<String> {
     let task_id = task.id;
     Some(format!(
@@ -1120,18 +1269,20 @@ impl TaskService {
     /// claim cannot read a still-current "empty" verdict.
     pub async fn notify_task_enqueued(&self, task: &AgentTaskQueue) {
         self.capture_task_queued(task).await;
-        self.notify_runtime_may_have_work(task.runtime_id, Some(&task.id.to_string()));
+        self.notify_runtime_may_have_work(task.runtime_id, Some(&task.id.to_string()))
+            .await;
     }
 
     /// Best-effort daemon wakeup after a terminal state. The task ID is
     /// deliberately omitted: the completed task is not available; the hint
     /// only means a queued successor may have become claimable.
-    pub fn notify_task_finished(&self, task: &AgentTaskQueue) {
-        self.notify_runtime_may_have_work(task.runtime_id, None);
+    pub async fn notify_task_finished(&self, task: &AgentTaskQueue) {
+        self.notify_runtime_may_have_work(task.runtime_id, None)
+            .await;
     }
 
     /// Batch form used by bulk terminal transitions; coalesces by runtime.
-    pub fn notify_tasks_finished(&self, tasks: &[AgentTaskQueue]) {
+    pub async fn notify_tasks_finished(&self, tasks: &[AgentTaskQueue]) {
         let mut seen = std::collections::HashSet::new();
         for task in tasks {
             let Some(runtime_id) = task.runtime_id else {
@@ -1140,17 +1291,30 @@ impl TaskService {
             if !seen.insert(runtime_id) {
                 continue;
             }
-            self.notify_runtime_may_have_work(Some(runtime_id), None);
+            self.notify_runtime_may_have_work(Some(runtime_id), None)
+                .await;
         }
     }
 
-    fn notify_runtime_may_have_work(&self, runtime_id: Option<Uuid>, task_id: Option<&str>) {
-        // EmptyClaim cache bump goes here once the Redis-backed cache lands;
-        // the wakeup alone still unblocks the daemon's next poll.
-        if let Some(wakeup) = self.wakeup.as_ref().and_then(|w| w.upgrade()) {
-            if let Some(runtime_id) = runtime_id {
-                wakeup.notify_task_available(&runtime_id.to_string(), task_id.unwrap_or(""));
+    async fn notify_runtime_may_have_work(&self, runtime_id: Option<Uuid>, task_id: Option<&str>) {
+        let Some(runtime_id) = runtime_id else {
+            return;
+        };
+        let runtime_id = runtime_id.to_string();
+        let task_id = task_id.unwrap_or_default().to_string();
+        let empty_claim = self.empty_claim_cache();
+        let wakeup = self.wakeup.clone();
+        // Shield the post-commit tail from request cancellation. Dropping the
+        // JoinHandle does not cancel the bounded Redis bump, and the wakeup
+        // remains strictly ordered after invalidation.
+        let tail = tokio::spawn(async move {
+            empty_claim.bump(&runtime_id).await;
+            if let Some(wakeup) = wakeup.as_ref().and_then(std::sync::Weak::upgrade) {
+                wakeup.notify_task_available(&runtime_id, &task_id).await;
             }
+        });
+        if let Err(error) = tail.await {
+            tracing::warn!(%error, "task post-commit wakeup tail failed");
         }
     }
 
@@ -2184,7 +2348,7 @@ impl TaskService {
             self.broadcast_task_event(cordy_protocol::EVENT_TASK_CANCELLED, t, Default::default())
                 .await;
         }
-        self.notify_tasks_finished(&cancelled);
+        self.notify_tasks_finished(&cancelled).await;
         Ok(())
     }
 
@@ -2256,7 +2420,7 @@ impl TaskService {
                 Err(e) => {
                     return Err(TaskServiceError::Internal(format!(
                         "lock channel pending fresh: {e}"
-                    )))
+                    )));
                 }
             };
         if pending_fresh {
@@ -2311,7 +2475,7 @@ impl TaskService {
             Err(e) => {
                 return Err(TaskServiceError::Internal(format!(
                     "defer chat task for sealed pending media: {e}"
-                )))
+                )));
             }
         }
         if pending_fresh {
@@ -2611,7 +2775,11 @@ impl TaskService {
         chat_session: &ChatSession,
         expected_message_id: Uuid,
     ) -> Result<(Uuid, AgentTaskQueue), TaskServiceError> {
-        if self.quick_actions.is_none() {
+        if !self
+            .quick_actions
+            .as_ref()
+            .is_some_and(|quick_actions| quick_actions.enabled())
+        {
             return Err(TaskServiceError::ChatQuickActionsUnavailable);
         }
         // Target is the latest assistant turn; only an ordinary message turn
@@ -2820,6 +2988,48 @@ pub fn chat_input_owner_id(task: &AgentTaskQueue) -> Uuid {
     task.chat_input_task_id.unwrap_or(task.id)
 }
 
+/// Websocket-safe agent projection. Status events are workspace-wide, so they
+/// must never contain plaintext env/MCP/connected-app configuration.
+fn safe_agent_status_payload(agent: &Agent) -> serde_json::Value {
+    let env_count = agent.custom_env.as_object().map_or(0, serde_json::Map::len);
+    let mut value = serde_json::to_value(agent).unwrap_or_default();
+    let Some(map) = value.as_object_mut() else {
+        return serde_json::Value::Object(Default::default());
+    };
+    map.remove("custom_env");
+    map.insert("has_custom_env".into(), serde_json::json!(env_count > 0));
+    map.insert("custom_env_key_count".into(), serde_json::json!(env_count));
+
+    let has_mcp = map
+        .get("mcp_config")
+        .and_then(serde_json::Value::as_object)
+        .is_some_and(|config| !config.is_empty());
+    map.insert("mcp_config".into(), serde_json::json!({}));
+    map.insert("mcp_config_redacted".into(), serde_json::json!(has_mcp));
+
+    let has_composio = agent
+        .composio_toolkit_allowlist
+        .as_ref()
+        .is_some_and(|allowlist| !allowlist.is_empty());
+    map.remove("composio_toolkit_allowlist");
+    map.insert(
+        "composio_toolkit_allowlist_redacted".into(),
+        serde_json::json!(has_composio),
+    );
+    if let Some(token) = map
+        .get_mut("runtime_config")
+        .and_then(serde_json::Value::as_object_mut)
+        .and_then(|config| config.get_mut("gateway"))
+        .and_then(serde_json::Value::as_object_mut)
+        .and_then(|gateway| gateway.get_mut("token"))
+    {
+        if token.as_str().is_some_and(|token| !token.is_empty()) {
+            *token = serde_json::Value::String("***".into());
+        }
+    }
+    value
+}
+
 impl TaskService {
     /// Refreshes the agent's status from its active tasks and broadcasts
     /// agent:status. Best-effort: errors are swallowed like Go's early return.
@@ -2837,7 +3047,7 @@ impl TaskService {
             workspace_id: agent.workspace_id.to_string(),
             actor_type: "system".to_string(),
             actor_id: String::new(),
-            payload: serde_json::json!({ "agent": serde_json::to_value(agent).unwrap_or_default() }),
+            payload: serde_json::json!({ "agent": safe_agent_status_payload(agent) }),
             task_id: String::new(),
             chat_session_id: String::new(),
         });
@@ -2859,7 +3069,7 @@ impl TaskService {
         }
         // One reconcile: all rows belong to the same agent.
         self.reconcile_agent_status(agent_id).await;
-        self.notify_tasks_finished(&cancelled);
+        self.notify_tasks_finished(&cancelled).await;
         Ok(cancelled)
     }
 
@@ -2881,7 +3091,7 @@ impl TaskService {
         for agent_id in distinct_agent_ids(&cancelled) {
             self.reconcile_agent_status(agent_id).await;
         }
-        self.notify_tasks_finished(&cancelled);
+        self.notify_tasks_finished(&cancelled).await;
         Ok(cancelled)
     }
 
@@ -2906,7 +3116,7 @@ impl TaskService {
             )
             .await;
         }
-        self.notify_tasks_finished(cancelled);
+        self.notify_tasks_finished(cancelled).await;
     }
 
     /// Post-commit queue invalidation for clients.
@@ -2999,10 +3209,9 @@ impl TaskService {
             ));
         }
 
-        let task;
         let mut cancelled_chat_message = None;
 
-        if opts.queued_only {
+        let task = if opts.queued_only {
             if opts.queue_action != "edit" && opts.queue_action != "remove" {
                 return Err(TaskServiceError::Internal(
                     "queue action must be edit or remove".into(),
@@ -3024,7 +3233,7 @@ impl TaskService {
                 .settle_queued_chat_input(&mut tx, &cancelled, &opts.queue_action)
                 .await?;
             tx.commit().await.map_err(TaskServiceError::Sql)?;
-            task = cancelled;
+            cancelled
         } else {
             // The status flip and the chat resume-pointer advance commit
             // together; split apart, `cancelled` becomes visible while the
@@ -3066,8 +3275,8 @@ impl TaskService {
                     })?;
             }
             tx.commit().await.map_err(TaskServiceError::Sql)?;
-            task = cancelled;
-        }
+            cancelled
+        };
 
         tracing::info!(task_id = %task.id, issue_id = ?task.issue_id, "task cancelled");
         self.capture_task_cancelled(&task).await;
@@ -3083,7 +3292,7 @@ impl TaskService {
             Default::default(),
         )
         .await;
-        self.notify_task_finished(&task);
+        self.notify_task_finished(&task).await;
 
         Ok(CancelTaskResult {
             task,
@@ -3134,7 +3343,7 @@ impl TaskService {
             )
             .await;
         }
-        self.notify_tasks_finished(&tasks);
+        self.notify_tasks_finished(&tasks).await;
         Ok(())
     }
 
@@ -3693,18 +3902,32 @@ impl TaskService {
             Err(e) => {
                 return Err(TaskServiceError::Internal(format!(
                     "reclaim stale dispatched task: {e}"
-                )))
+                )));
             }
         }
 
-        // EmptyClaim fast path lands here once the Redis-backed cache ports;
-        // without it every claim goes through the DB, which is correct.
+        let runtime_key = runtime_id.to_string();
+        let empty_claim = self.empty_claim_cache();
+        if empty_claim.is_empty(&runtime_key).await {
+            return Ok(None);
+        }
+
+        // Sample before the candidate SELECT. A concurrent enqueue bumps the
+        // version and makes a later stale MarkEmpty untrustworthy.
+        let pre_select_version = empty_claim.current_version(&runtime_key).await;
 
         let tasks = list_queued_claim_candidates_by_runtime(&self.pool, runtime_id)
             .await
             .map_err(|e| {
                 TaskServiceError::Internal(format!("list queued claim candidates: {e}"))
             })?;
+
+        if tasks.is_empty() {
+            empty_claim
+                .mark_empty(&runtime_key, pre_select_version)
+                .await;
+            return Ok(None);
+        }
 
         let mut tried_agents = std::collections::HashSet::new();
         for candidate in &tasks {
@@ -3754,7 +3977,8 @@ impl TaskService {
             Default::default(),
         )
         .await;
-        self.notify_runtime_may_have_work(requeued.runtime_id, Some(&requeued.id.to_string()));
+        self.notify_runtime_may_have_work(requeued.runtime_id, Some(&requeued.id.to_string()))
+            .await;
         tracing::info!(
             task_id = %requeued.id,
             runtime_id = ?requeued.runtime_id,
@@ -3802,7 +4026,9 @@ impl TaskService {
                 if is_duplicate_pending_task_anyhow(&e) {
                     // One contended row must not fail the claim for EVERY
                     // runtime in the batch; promote nothing this tick.
-                    tracing::info!("promote deferred tasks (batch): slot taken by a concurrent enqueue, skipping this tick");
+                    tracing::info!(
+                        "promote deferred tasks (batch): slot taken by a concurrent enqueue, skipping this tick"
+                    );
                     vec![]
                 } else {
                     return Err(TaskServiceError::Internal(format!(
@@ -3848,10 +4074,27 @@ impl TaskService {
             return Ok(claimed);
         }
 
-        // 3-5. Candidate SELECT across the set. (EmptyClaim short-circuit and
-        // MarkEmpty land with the Redis-backed cache port.)
+        // 3. Short-circuit cached-empty runtimes and sample each remaining
+        // version before the shared SELECT, preserving the singular race
+        // closure for the batch path.
+        let empty_claim = self.empty_claim_cache();
+        let mut non_empty = Vec::with_capacity(unique_ids.len());
+        let mut versions = std::collections::HashMap::with_capacity(unique_ids.len());
+        for runtime_id in unique_ids {
+            let key = runtime_id.to_string();
+            if empty_claim.is_empty(&key).await {
+                continue;
+            }
+            versions.insert(runtime_id, empty_claim.current_version(&key).await);
+            non_empty.push(runtime_id);
+        }
+        if non_empty.is_empty() {
+            return Ok(claimed);
+        }
+
+        // 4. Query only runtimes that did not have a current empty verdict.
         let candidates =
-            list_queued_claim_candidates_by_runtimes(&self.pool, unique_ids.clone()).await;
+            list_queued_claim_candidates_by_runtimes(&self.pool, non_empty.clone()).await;
         let candidates = match candidates {
             Ok(c) => c,
             Err(e) => {
@@ -3866,6 +4109,22 @@ impl TaskService {
                 )));
             }
         };
+
+        // 5. Cache only negative results. A runtime with any candidate keeps
+        // hitting Postgres so concurrent claimers continue to race fairly.
+        let with_candidates: std::collections::HashSet<Uuid> = candidates
+            .iter()
+            .filter_map(|candidate| candidate.runtime_id)
+            .collect();
+        for runtime_id in non_empty {
+            if with_candidates.contains(&runtime_id) {
+                continue;
+            }
+            let version = versions.get(&runtime_id).copied().unwrap_or_default();
+            empty_claim
+                .mark_empty(&runtime_id.to_string(), version)
+                .await;
+        }
 
         // 6. Claim per distinct agent through the runtime-scoped helper.
         let mut tried_agents = std::collections::HashSet::new();
@@ -4433,5 +4692,29 @@ mod tests {
 
         svc.release_quick_actions_pass(session);
         assert!(svc.try_admit_quick_actions_pass(third, 2));
+    }
+
+    #[tokio::test]
+    async fn task_side_effect_runtime_is_owned_and_idempotent() {
+        let pool =
+            sqlx::PgPool::connect_lazy("postgres://invalid.invalid/nope").expect("lazy pool");
+        let svc = Arc::new(TaskService::new(pool, Arc::new(cordy_events::Bus::new())));
+        let root = tokio_util::sync::CancellationToken::new();
+        let runtime = svc
+            .start_side_effect_runtime(root.child_token())
+            .expect("first start owns runtime");
+        assert!(svc.start_side_effect_runtime(root.child_token()).is_none());
+        let completed = Arc::new(AtomicBool::new(false));
+        let task_completed = completed.clone();
+        svc.spawn_side_effect(async move {
+            task_completed.store(true, Ordering::Release);
+        });
+
+        root.cancel();
+        assert_eq!(
+            runtime.shutdown(Duration::from_secs(1)).await,
+            TaskSideEffectShutdownOutcome::Stopped
+        );
+        assert!(completed.load(Ordering::Acquire));
     }
 }

@@ -87,6 +87,64 @@ async fn generated_user_queries_roundtrip() {
         .expect("update returning row");
     assert!(onboarded.onboarded_at.is_some());
 
+    let questionnaire = serde_json::json!({
+        "role": "founder",
+        "use_case": ["coding"],
+        "version": 2
+    });
+    let patched =
+        cordy_db::queries::user::patch_user_onboarding(&pool, Some(&questionnaire), created.id)
+            .await
+            .expect("patch_user_onboarding")
+            .expect("update returning row");
+    assert_eq!(patched.onboarding_questionnaire, questionnaire);
+
+    let preserved = cordy_db::queries::user::patch_user_onboarding(&pool, None, created.id)
+        .await
+        .expect("preserve onboarding questionnaire")
+        .expect("update returning row");
+    assert_eq!(preserved.onboarding_questionnaire, questionnaire);
+
+    let waitlisted = cordy_db::queries::user::join_cloud_waitlist(
+        &pool,
+        created.id,
+        Some("waitlist@example.com"),
+        Some("evaluating for our team"),
+    )
+    .await
+    .expect("join cloud waitlist")
+    .expect("update returning row");
+    assert_eq!(
+        waitlisted.cloud_waitlist_email.as_deref(),
+        Some("waitlist@example.com")
+    );
+    assert_eq!(
+        waitlisted.cloud_waitlist_reason.as_deref(),
+        Some("evaluating for our team")
+    );
+    assert_eq!(waitlisted.onboarded_at, onboarded.onboarded_at);
+
+    let waitlisted_without_reason = cordy_db::queries::user::join_cloud_waitlist(
+        &pool,
+        created.id,
+        Some("second@example.com"),
+        None,
+    )
+    .await
+    .expect("overwrite cloud waitlist")
+    .expect("update returning row");
+    assert_eq!(
+        waitlisted_without_reason.cloud_waitlist_email.as_deref(),
+        Some("second@example.com")
+    );
+    assert!(waitlisted_without_reason.cloud_waitlist_reason.is_none());
+
+    let onboarded_again = cordy_db::queries::user::mark_user_onboarded(&pool, created.id)
+        .await
+        .expect("mark_user_onboarded idempotently")
+        .expect("update returning row");
+    assert_eq!(onboarded_again.onboarded_at, onboarded.onboarded_at);
+
     let batch = cordy_db::queries::user::get_users_by_i_ds(&pool, vec![created.id])
         .await
         .expect("generated get_users_by_i_ds");

@@ -3,7 +3,7 @@
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
-use axum::{Json, Router};
+use axum::{extract::State, Json, Router};
 
 use crate::error::error_response;
 use crate::state::HandlerState;
@@ -12,12 +12,14 @@ pub fn public_router() -> Router<HandlerState> {
     Router::new().route("/auth/logout", post(logout))
 }
 
-async fn logout() -> Response {
-    let domain = cordy_auth::cookie::configured_cookie_domain();
-    let secure = cordy_auth::cookie::configured_secure_cookie();
+async fn logout(State(state): State<HandlerState>) -> Response {
+    let domain_raw = std::env::var("COOKIE_DOMAIN").ok();
+    let domain = cordy_auth::cookie::cookie_domain(domain_raw.as_deref());
+    let frontend_origin = std::env::var("FRONTEND_ORIGIN").ok();
+    let secure = cordy_auth::cookie::is_secure_cookie(frontend_origin.as_deref());
     let mut headers = HeaderMap::new();
 
-    for value in cordy_auth::cookie::clear_auth_cookie_values(domain, secure) {
+    for value in cordy_auth::cookie::clear_auth_cookie_values(domain.as_deref(), secure) {
         let Ok(value) = HeaderValue::from_str(&value) else {
             tracing::error!("failed to construct auth cookie clearing header");
             return error_response(
@@ -26,6 +28,18 @@ async fn logout() -> Response {
             );
         };
         headers.append(header::SET_COOKIE, value);
+    }
+    if let Some(signer) = state.attachment_download.cloudfront_signer.as_ref() {
+        for value in signer.clear_cookie_headers() {
+            let Ok(value) = HeaderValue::from_str(&value) else {
+                tracing::error!("failed to construct CloudFront cookie clearing header");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to clear auth cookies",
+                );
+            };
+            headers.append(header::SET_COOKIE, value);
+        }
     }
 
     (headers, Json(serde_json::json!({"message": "logged out"}))).into_response()

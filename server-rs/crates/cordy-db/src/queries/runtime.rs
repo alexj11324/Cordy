@@ -101,14 +101,14 @@ pub async fn count_active_agents_by_runtime(
 
 pub async fn count_stale_offline_runtimes_blocked_by_tasks(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    stale_seconds: f64,
+    stale_before: DateTime<Utc>,
     max_rows: i32,
 ) -> anyhow::Result<Option<i64>> {
     let row = sqlx::query(
         r#"SELECT count(*) FROM (
   SELECT 1 FROM agent_runtime
   WHERE status = 'offline'
-    AND last_seen_at < now() - make_interval(secs => $1::double precision)
+    AND last_seen_at < $1
     AND NOT EXISTS (
       SELECT 1
       FROM agent
@@ -123,7 +123,7 @@ pub async fn count_stale_offline_runtimes_blocked_by_tasks(
   LIMIT $2::int
 ) AS blocked_runtimes"#,
     )
-    .bind(stale_seconds)
+    .bind(stale_before)
     .bind(max_rows)
     .fetch_optional(executor)
     .await?;
@@ -185,7 +185,7 @@ pub async fn delete_system_agents_by_runtime(
 
 pub async fn fail_tasks_for_offline_runtimes(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    reconnect_grace_secs: f64,
+    stale_before: chrono::DateTime<chrono::Utc>,
     max_per_tick: i32,
 ) -> anyhow::Result<Vec<AgentTaskQueue>> {
     let rows = sqlx::query(
@@ -195,8 +195,7 @@ pub async fn fail_tasks_for_offline_runtimes(
   JOIN agent_runtime runtime ON runtime.id = task.runtime_id
   WHERE task.status IN ('dispatched', 'running', 'waiting_local_directory')
     AND runtime.status = 'offline'
-    AND COALESCE(runtime.last_seen_at, runtime.updated_at) <
-        now() - make_interval(secs => $1::double precision)
+    AND COALESCE(runtime.last_seen_at, runtime.updated_at) < $1
   ORDER BY COALESCE(runtime.last_seen_at, runtime.updated_at), task.created_at
   LIMIT $2::int
   FOR UPDATE OF task SKIP LOCKED
@@ -210,7 +209,7 @@ WHERE task.id = victims.id
   AND task.status IN ('dispatched', 'running', 'waiting_local_directory')
 RETURNING task.id, task.agent_id, task.issue_id, task.status, task.priority, task.dispatched_at, task.started_at, task.completed_at, task.result, task.error, task.created_at, task.context, task.runtime_id, task.session_id, task.work_dir, task.trigger_comment_id, task.chat_session_id, task.autopilot_run_id, task.attempt, task.max_attempts, task.parent_task_id, task.failure_reason, task.trigger_summary, task.force_fresh_session, task.is_leader_task, task.wait_reason, task.initiator_user_id, task.handoff_note, task.prepare_lease_expires_at, task.squad_id, task.runtime_mcp_overlay, task.escalation_for_task_id, task.fire_at, task.originator_user_id, task.runtime_connected_apps, task.coalesced_comment_ids, task.delivered_comment_ids, task.chat_input_task_id, task.chat_finalize_deferred_at, task.originator_source, task.delegated_from_task_id, task.retry_of_task_id, task.rerun_of_task_id, task.rule_version_id, task.trigger_evidence_kind, task.trigger_evidence_ref_id, task.accountable_user_id, task.session_rollout_missing, task.retired_session_id, task.quick_actions_disabled, task.regenerate_quick_actions_for, task.branch_name, task.durable_work_dir"#
     )
-        .bind(reconnect_grace_secs)
+        .bind(stale_before)
         .bind(max_per_tick)
         .fetch_all(executor)
         .await?;
@@ -459,14 +458,14 @@ WHERE id = ANY($1::uuid[])"#
 pub async fn is_agent_runtime_eligible_for_gc(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
-    stale_seconds: f64,
+    stale_before: DateTime<Utc>,
 ) -> anyhow::Result<Option<bool>> {
     let row = sqlx::query(
         r#"SELECT EXISTS (
   SELECT 1 FROM agent_runtime
   WHERE agent_runtime.id = $1
     AND status = 'offline'
-    AND last_seen_at < now() - make_interval(secs => $2::double precision)
+    AND last_seen_at < $2
     AND NOT EXISTS (
       SELECT 1
       FROM agent
@@ -475,7 +474,7 @@ pub async fn is_agent_runtime_eligible_for_gc(
 ) AS eligible"#,
     )
     .bind(id)
-    .bind(stale_seconds)
+    .bind(stale_before)
     .fetch_optional(executor)
     .await?;
     let Some(row) = row else { return Ok(None) };
@@ -584,13 +583,13 @@ WHERE workspace_id = $1
 
 pub async fn list_stale_offline_runtime_gc_candidates(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    stale_seconds: f64,
+    stale_before: DateTime<Utc>,
     max_per_tick: i32,
 ) -> anyhow::Result<Vec<Option<Uuid>>> {
     let rows = sqlx::query(
         r#"SELECT id FROM agent_runtime
 WHERE status = 'offline'
-  AND last_seen_at < now() - make_interval(secs => $1::double precision)
+  AND last_seen_at < $1
   AND NOT EXISTS (
     SELECT 1
     FROM agent
@@ -605,7 +604,7 @@ WHERE status = 'offline'
 ORDER BY last_seen_at ASC, id ASC
 LIMIT $2::int"#,
     )
-    .bind(stale_seconds)
+    .bind(stale_before)
     .bind(max_per_tick)
     .fetch_all(executor)
     .await?;
@@ -735,18 +734,18 @@ pub struct MarkRuntimesOfflineByIDsRow {
 pub async fn mark_runtimes_offline_by_i_ds(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     ids: Vec<Uuid>,
-    stale_seconds: f64,
+    stale_before: chrono::DateTime<chrono::Utc>,
 ) -> anyhow::Result<Vec<MarkRuntimesOfflineByIDsRow>> {
     let rows = sqlx::query(
         r#"UPDATE agent_runtime
 SET status = 'offline', updated_at = now()
 WHERE status = 'online'
   AND id = ANY($1::uuid[])
-  AND last_seen_at < now() - make_interval(secs => $2::double precision)
+  AND last_seen_at < $2
 RETURNING id, workspace_id, owner_id, daemon_id, provider"#,
     )
     .bind(ids)
-    .bind(stale_seconds)
+    .bind(stale_before)
     .fetch_all(executor)
     .await?;
     let mut out = Vec::with_capacity(rows.len());
@@ -847,14 +846,18 @@ pub struct SelectStaleOnlineRuntimesRow {
 
 pub async fn select_stale_online_runtimes(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    stale_seconds: f64,
+    stale_before: chrono::DateTime<chrono::Utc>,
+    max_rows: i32,
 ) -> anyhow::Result<Vec<SelectStaleOnlineRuntimesRow>> {
     let rows = sqlx::query(
         r#"SELECT id, workspace_id, owner_id, daemon_id, provider FROM agent_runtime
 WHERE status = 'online'
-  AND last_seen_at < now() - make_interval(secs => $1::double precision)"#,
+  AND last_seen_at < $1
+ORDER BY last_seen_at, id
+LIMIT $2"#,
     )
-    .bind(stale_seconds)
+    .bind(stale_before)
+    .bind(max_rows)
     .fetch_all(executor)
     .await?;
     let mut out = Vec::with_capacity(rows.len());
@@ -1040,7 +1043,7 @@ pub async fn update_agent_runtime_custom_name_by_daemon(
     custom_name: Option<&str>,
     workspace_id: Uuid,
     daemon_id: Option<&str>,
-    owner_id: Uuid,
+    owner_id: Option<Uuid>,
 ) -> anyhow::Result<Vec<AgentRuntime>> {
     let rows = sqlx::query(
         r#"UPDATE agent_runtime

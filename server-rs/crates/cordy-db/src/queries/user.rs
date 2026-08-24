@@ -208,7 +208,7 @@ RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onb
 
 pub async fn patch_user_onboarding(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    questionnaire: &serde_json::Value,
+    questionnaire: Option<&serde_json::Value>,
     id: Uuid,
 ) -> anyhow::Result<Option<User>> {
     let row = sqlx::query(

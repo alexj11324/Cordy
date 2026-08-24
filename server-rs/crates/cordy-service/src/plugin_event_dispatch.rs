@@ -13,10 +13,13 @@
 //! product's main loop open. Agents reach hooks in PR 4 by choosing to call one
 //! as a tool, which is a call they can decline.
 
-use std::sync::atomic::{AtomicI64, Ordering};
+use std::panic::AssertUnwindSafe;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::FutureExt;
+use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -49,12 +52,15 @@ use crate::plugin_token::HookActor;
 /// because an unbounded queue turns a slow plugin into a memory leak.
 const DISPATCH_QUEUE_DEPTH: usize = 512;
 const DISPATCH_WORKERS: usize = 4;
+const DISPATCH_JOB_TIMEOUT: Duration = Duration::from_secs(2 * 60);
+pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How long a hook call stays on record. This table is operational telemetry,
 /// not history: it answers "why is this endpoint failing right now", and the
 /// circuit breaker and rate limiter only ever look minutes back.
 pub const INVOCATION_RETENTION: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const INVOCATION_SWEEP_EVERY: Duration = Duration::from_secs(60 * 60);
+const INVOCATION_SWEEP_TIMEOUT: Duration = Duration::from_secs(60);
 
 struct DispatchJob {
     workspace_id: Uuid,
@@ -73,6 +79,8 @@ pub struct PluginEventDispatcher {
     /// worker future non-Send; four workers claim jobs through it serially.
     queue_rx: tokio::sync::Mutex<tokio::sync::mpsc::Receiver<DispatchJob>>,
     stop: CancellationToken,
+    started: AtomicBool,
+    accepting: AtomicBool,
     /// Counts events shed under backpressure, surfaced for triage.
     dropped: AtomicI64,
 }
@@ -93,19 +101,59 @@ impl PluginEventDispatcher {
             queue: queue_tx,
             queue_rx: tokio::sync::Mutex::new(queue_rx),
             stop: CancellationToken::new(),
+            started: AtomicBool::new(false),
+            accepting: AtomicBool::new(true),
             dropped: AtomicI64::new(0),
         }
     }
 
-    /// Spawns the workers and the retention sweep. Call once after
-    /// construction; [`Self::close`] joins them.
-    pub fn start(self: &Arc<Self>) {
-        for _ in 0..DISPATCH_WORKERS {
-            let dispatcher = Arc::clone(self);
-            tokio::spawn(async move { dispatcher.work().await });
+    /// Starts one owned supervisor for the workers and retention sweep.
+    /// Repeated calls are harmless and do not duplicate event deliveries.
+    pub fn start(
+        self: &Arc<Self>,
+        cancel: CancellationToken,
+    ) -> Option<PluginEventDispatcherRuntime> {
+        if self.started.swap(true, Ordering::AcqRel) {
+            return None;
         }
         let dispatcher = Arc::clone(self);
-        tokio::spawn(async move { dispatcher.sweep_invocations().await });
+        let task_cancel = cancel.clone();
+        let task = tokio::spawn(async move { dispatcher.run_workers(task_cancel).await });
+        Some(PluginEventDispatcherRuntime {
+            cancel,
+            task: Some(task),
+        })
+    }
+
+    async fn run_workers(self: Arc<Self>, cancel: CancellationToken) {
+        let mut tasks = tokio::task::JoinSet::new();
+        for _ in 0..DISPATCH_WORKERS {
+            let dispatcher = Arc::clone(&self);
+            tasks.spawn(async move { dispatcher.work().await });
+        }
+        let dispatcher = Arc::clone(&self);
+        tasks.spawn(async move { dispatcher.sweep_invocations().await });
+
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => {
+                    self.close();
+                    break;
+                }
+                result = tasks.join_next() => match result {
+                    Some(Ok(())) => {}
+                    Some(Err(error)) => {
+                        tracing::error!(%error, "plugins: event dispatcher task stopped unexpectedly");
+                    }
+                    None => return,
+                },
+            }
+        }
+        while let Some(result) = tasks.join_next().await {
+            if let Err(error) = result {
+                tracing::error!(%error, "plugins: event dispatcher task stopped during shutdown");
+            }
+        }
     }
 
     /// Makes the table's "TTL-swept" description true.
@@ -118,12 +166,20 @@ impl PluginEventDispatcher {
     /// construction (Go history: an immediate sweep panicked in cmd/server's
     /// router test over an unopened pool).
     async fn sweep_invocations(&self) {
-        let mut ticker = tokio::time::interval(INVOCATION_SWEEP_EVERY);
+        let first_sweep = tokio::time::Instant::now() + INVOCATION_SWEEP_EVERY;
+        let mut ticker = tokio::time::interval_at(first_sweep, INVOCATION_SWEEP_EVERY);
         ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
             tokio::select! {
                 _ = self.stop.cancelled() => return,
-                _ = ticker.tick() => self.sweep_once().await,
+                _ = ticker.tick() => {
+                    if let Err(recovered) = AssertUnwindSafe(self.sweep_once()).catch_unwind().await {
+                        tracing::error!(
+                            recovered = %panic_detail(recovered.as_ref()),
+                            "plugins: panic while sweeping hook invocations"
+                        );
+                    }
+                },
             }
         }
     }
@@ -134,17 +190,21 @@ impl PluginEventDispatcher {
             - chrono::Duration::from_std(INVOCATION_RETENTION).unwrap_or_default())
         .to_string();
         if let Ok(cutoff) = cutoff.parse::<chrono::DateTime<chrono::Utc>>() {
-            match cordy_db::queries::plugin::delete_expired_plugin_invocations(
-                &self.service.pool,
-                Some(cutoff),
+            match tokio::time::timeout(
+                INVOCATION_SWEEP_TIMEOUT,
+                cordy_db::queries::plugin::delete_expired_plugin_invocations(
+                    &self.service.pool,
+                    Some(cutoff),
+                ),
             )
             .await
             {
-                Ok(removed) if removed > 0 => {
+                Ok(Ok(removed)) if removed > 0 => {
                     tracing::info!(removed, "plugins: swept expired hook invocations");
                 }
-                Ok(_) => {}
-                Err(e) => tracing::warn!(error = %e, "plugins: invocation sweep failed"),
+                Ok(Ok(_)) => {}
+                Ok(Err(e)) => tracing::warn!(error = %e, "plugins: invocation sweep failed"),
+                Err(_) => tracing::warn!("plugins: invocation sweep timed out"),
             }
         }
     }
@@ -157,6 +217,9 @@ impl PluginEventDispatcher {
     /// browser got its response, which is exactly when the hook is only just
     /// starting.
     pub fn dispatch(&self, event_type: &str, workspace_id: &str, payload: serde_json::Value) {
+        if !self.accepting.load(Ordering::Acquire) {
+            return;
+        }
         if workspace_id.is_empty() {
             return;
         }
@@ -174,7 +237,7 @@ impl PluginEventDispatcher {
             payload,
         }) {
             Ok(()) => {}
-            Err(_) => {
+            Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
                 let dropped = self.dropped.fetch_add(1, Ordering::Relaxed) + 1;
                 tracing::warn!(
                     event_type,
@@ -182,6 +245,7 @@ impl PluginEventDispatcher {
                     "plugins: event dispatch queue full, dropping event"
                 );
             }
+            Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {}
         }
     }
 
@@ -198,14 +262,45 @@ impl PluginEventDispatcher {
             let job = {
                 let mut rx = self.queue_rx.lock().await;
                 tokio::select! {
-                    _ = self.stop.cancelled() => return,
+                    _ = self.stop.cancelled() => {
+                        // Stop new senders, then drain everything admitted
+                        // before shutdown. `recv` returns None only after the
+                        // closed channel's buffered jobs are exhausted.
+                        rx.close();
+                        match rx.recv().await {
+                            Some(job) => job,
+                            None => return,
+                        }
+                    },
                     job = rx.recv() => match job {
                         Some(job) => job,
                         None => return,
                     }
                 }
             };
-            self.run(job).await;
+            let event_type = job.event_type.clone();
+            match tokio::time::timeout(
+                DISPATCH_JOB_TIMEOUT,
+                AssertUnwindSafe(self.run(job)).catch_unwind(),
+            )
+            .await
+            {
+                Ok(Ok(())) => {}
+                Ok(Err(recovered)) => {
+                    tracing::error!(
+                        event_type,
+                        recovered = %panic_detail(recovered.as_ref()),
+                        "plugins: panic while delivering an event hook"
+                    );
+                }
+                Err(_) => {
+                    tracing::warn!(
+                        event_type,
+                        timeout_seconds = DISPATCH_JOB_TIMEOUT.as_secs(),
+                        "plugins: event hook delivery timed out"
+                    );
+                }
+            }
         }
     }
 
@@ -220,10 +315,8 @@ impl PluginEventDispatcher {
         // It also keeps the flag-off cost at zero. Without this every
         // dispatched event ran a ListWorkspacePluginInstallations query to
         // discover there was nothing to call.
-        if let Some(flags) = &self.feature_flags {
-            if !plugins_v1_enabled(flags.as_ref()) {
-                return;
-            }
+        if !plugin_events_enabled(self.feature_flags.as_deref()) {
+            return;
         }
 
         // Only now, past the flag: the id is needed to narrow the callback
@@ -319,10 +412,7 @@ impl PluginEventDispatcher {
                         tracing::warn!(hook = %hook.key, event_type = %job.event_type, error = %redact_hook_error(&err), "plugins: event hook failed after retries");
                         return;
                     }
-                    tokio::select! {
-                        _ = self.stop.cancelled() => return,
-                        _ = tokio::time::sleep(HOOK_EVENT_BACKOFF * attempt as u32) => {}
-                    }
+                    tokio::time::sleep(HOOK_EVENT_BACKOFF * attempt as u32).await;
                 }
             }
         }
@@ -330,12 +420,67 @@ impl PluginEventDispatcher {
 
     /// Stops the workers. Safe to call more than once.
     pub fn close(&self) {
+        self.accepting.store(false, Ordering::Release);
         self.stop.cancel();
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PluginEventShutdownOutcome {
+    Stopped,
+    Panicked,
+    TimedOut,
+}
+
+/// Production-owned root for every plugin hook worker and its retention sweep.
+/// Normal shutdown is cooperative and bounded; Drop is the fail-safe abort.
+pub struct PluginEventDispatcherRuntime {
+    cancel: CancellationToken,
+    task: Option<JoinHandle<()>>,
+}
+
+impl PluginEventDispatcherRuntime {
+    pub async fn shutdown(mut self, timeout: Duration) -> PluginEventShutdownOutcome {
+        self.cancel.cancel();
+        let mut task = self
+            .task
+            .take()
+            .expect("plugin event dispatcher runtime always owns a supervisor");
+        match tokio::time::timeout(timeout, &mut task).await {
+            Ok(Ok(())) => PluginEventShutdownOutcome::Stopped,
+            Ok(Err(_)) => PluginEventShutdownOutcome::Panicked,
+            Err(_) => {
+                task.abort();
+                let _ = task.await;
+                PluginEventShutdownOutcome::TimedOut
+            }
+        }
+    }
+}
+
+impl Drop for PluginEventDispatcherRuntime {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
     }
 }
 
 fn hook_wants_event(hook: &Hook, event_type: &str) -> bool {
     hook.events.iter().any(|declared| declared == event_type)
+}
+
+fn plugin_events_enabled(flags: Option<&dyn FlagSource>) -> bool {
+    flags.is_some_and(plugins_v1_enabled)
+}
+
+fn panic_detail(payload: &(dyn std::any::Any + Send)) -> &str {
+    payload
+        .downcast_ref::<&str>()
+        .copied()
+        .or_else(|| payload.downcast_ref::<String>().map(String::as_str))
+        .unwrap_or("unknown panic")
 }
 
 // ---------------------------------------------------------------------------
@@ -354,7 +499,20 @@ fn hook_wants_event(hook: &Hook, event_type: &str) -> bool {
 /// events, in every workspace — including deployments where plugins are
 /// switched off entirely. It happens on a worker instead, after the flag
 /// check, where it costs nothing anyone is waiting for.
-pub fn subscribe_plugin_events(bus: &Bus, dispatcher: Arc<PluginEventDispatcher>) {
+pub trait PluginEventSink: Send + Sync {
+    fn dispatch(&self, event_type: &str, workspace_id: &str, payload: serde_json::Value);
+}
+
+impl PluginEventSink for PluginEventDispatcher {
+    fn dispatch(&self, event_type: &str, workspace_id: &str, payload: serde_json::Value) {
+        PluginEventDispatcher::dispatch(self, event_type, workspace_id, payload);
+    }
+}
+
+pub fn subscribe_plugin_events<S>(bus: &Bus, dispatcher: Arc<S>)
+where
+    S: PluginEventSink + ?Sized + 'static,
+{
     let forward = |plugin_event: &'static str| {
         let dispatcher = Arc::clone(&dispatcher);
         move |e: &cordy_events::Event| {
@@ -424,6 +582,90 @@ fn payload_flag(payload: &serde_json::Value, key: &str) -> bool {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::sync::Mutex;
+
+    #[derive(Default)]
+    struct RecordingSink {
+        deliveries: Mutex<Vec<(String, String, serde_json::Value)>>,
+    }
+
+    impl PluginEventSink for RecordingSink {
+        fn dispatch(&self, event_type: &str, workspace_id: &str, payload: serde_json::Value) {
+            self.deliveries.lock().unwrap().push((
+                event_type.to_string(),
+                workspace_id.to_string(),
+                payload,
+            ));
+        }
+    }
+
+    struct FixedFlags(bool);
+
+    impl FlagSource for FixedFlags {
+        fn is_enabled(&self, _key: &str, _default: bool) -> bool {
+            self.0
+        }
+    }
+
+    #[test]
+    fn bridge_maps_the_complete_plugin_event_contract() {
+        let bus = Bus::new();
+        let sink = Arc::new(RecordingSink::default());
+        subscribe_plugin_events(&bus, sink.clone());
+        let workspace_id = "11111111-1111-4111-8111-111111111111";
+
+        for (internal, payload) in [
+            (PROTOCOL_ISSUE_CREATED, json!({"sequence": 1})),
+            (PROTOCOL_COMMENT_CREATED, json!({"sequence": 2})),
+            (PROTOCOL_TASK_RUNNING, json!({"sequence": 3})),
+            (PROTOCOL_TASK_COMPLETED, json!({"sequence": 4})),
+            (PROTOCOL_TASK_FAILED, json!({"sequence": 5})),
+            (
+                PROTOCOL_ISSUE_UPDATED,
+                json!({"sequence": 6, "status_changed": false}),
+            ),
+            (
+                PROTOCOL_ISSUE_UPDATED,
+                json!({"sequence": 7, "status_changed": true}),
+            ),
+        ] {
+            bus.publish(&cordy_events::Event {
+                event_type: internal.to_string(),
+                workspace_id: workspace_id.to_string(),
+                payload,
+                ..Default::default()
+            });
+        }
+
+        let deliveries = sink.deliveries.lock().unwrap();
+        assert_eq!(
+            deliveries
+                .iter()
+                .map(|(event_type, _, _)| event_type.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                EVENT_ISSUE_CREATED,
+                EVENT_COMMENT_CREATED,
+                EVENT_TASK_STARTED,
+                EVENT_TASK_COMPLETED,
+                EVENT_TASK_FAILED,
+                EVENT_ISSUE_UPDATED,
+                EVENT_ISSUE_UPDATED,
+                EVENT_ISSUE_STATUS_CHANGED,
+            ]
+        );
+        assert!(deliveries
+            .iter()
+            .all(|(_, delivered_workspace, _)| delivered_workspace == workspace_id));
+        assert_eq!(deliveries.last().unwrap().2["sequence"], 7);
+    }
+
+    #[test]
+    fn plugin_event_gate_fails_closed_without_a_source() {
+        assert!(!plugin_events_enabled(None));
+        assert!(!plugin_events_enabled(Some(&FixedFlags(false))));
+        assert!(plugin_events_enabled(Some(&FixedFlags(true))));
+    }
 
     #[test]
     fn issue_id_from_payload_reads_the_three_documented_shapes() {

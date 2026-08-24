@@ -100,6 +100,10 @@ pub struct AuthConfig {
     pub cookie_domain: Option<String>,
     /// `CORDY_DEV_VERIFICATION_CODE` — ignored when APP_ENV=production.
     pub dev_verification_code: Option<String>,
+    /// Google OAuth public-login configuration.
+    pub google_client_id: Option<String>,
+    pub google_client_secret: Option<String>,
+    pub google_redirect_uri: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -121,7 +125,7 @@ pub struct UrlsConfig {
 pub struct StorageConfig {
     /// `ATTACHMENT_DOWNLOAD_MODE`.
     pub attachment_download_mode: Option<String>,
-    /// `ATTACHMENT_DOWNLOAD_URL_TTL` (for example `30m`).
+    /// `ATTACHMENT_DOWNLOAD_URL_TTL` — Go duration, default 30 minutes.
     pub attachment_download_url_ttl: Option<String>,
     /// `LOCAL_UPLOAD_DIR` / `LOCAL_UPLOAD_BASE_URL` (local storage driver).
     pub local_upload_dir: Option<String>,
@@ -279,6 +283,9 @@ impl Config {
             &mut self.auth.dev_verification_code,
             "CORDY_DEV_VERIFICATION_CODE",
         );
+        env_str(&mut self.auth.google_client_id, "GOOGLE_CLIENT_ID");
+        env_str(&mut self.auth.google_client_secret, "GOOGLE_CLIENT_SECRET");
+        env_str(&mut self.auth.google_redirect_uri, "GOOGLE_REDIRECT_URI");
 
         // urls
         env_str(&mut self.urls.public_url, "CORDY_PUBLIC_URL");
@@ -397,7 +404,7 @@ impl Config {
         self.server
             .app_env
             .as_deref()
-            .is_some_and(|v| v.eq_ignore_ascii_case("production"))
+            .is_some_and(|v| v.trim().eq_ignore_ascii_case("production"))
     }
 }
 
