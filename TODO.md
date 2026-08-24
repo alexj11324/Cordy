@@ -144,11 +144,12 @@
       tree `b6e95dea2ee63840e5dc0f6b75e112c9ec48f4ce`; remote
       `codex/cord-22-daemon-production-assembly` ref verified at the merge.
 - [ ] #126 → #127 → #128 → #129: process strictly in that order after daemon base moves.
-- [ ] #126 is now the active item: PR head
-      `30b90607e29f13e5c4610891fae36ec3edcc2251`, base ref
-      `codex/cord-23-daemon-runtime-registration` at `bcad0a6f335d74dea03c67ce446bfbdc6745e367`,
-      tree to verify `80fa6617c42e989d710c4c689d5b336e2d9b2c1c`, and current candidate
-      `c0900560bd7c1ee3ba9d671ae8d2d24abdc23257`. PR is Ready/CLEAN/MERGEABLE;
+- [ ] #126 is now the active item after a required non-rewriting base sync: PR head
+      `bf54b309d7459beb2bb1621986e817ffe0c55764` (parents
+      `30b90607e29f13e5c4610891fae36ec3edcc2251 + bcad0a6f335d74dea03c67ce446bfbdc6745e367`),
+      base ref `codex/cord-23-daemon-runtime-registration` at `bcad0a6f335d74dea03c67ce446bfbdc6745e367`,
+      head tree `80fa6617c42e989d710c4c689d5b336e2d9b2c1c`, and current candidate
+      `beae47759f71c35c31690f9766c6661a23ff1f91`. PR is Ready/CLEAN/MERGEABLE;
       serial subagent exact-head behavior audit is in progress before any gate.
 
 ## Phase 2 — channel/runtime chains
