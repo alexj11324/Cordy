@@ -2436,6 +2436,8 @@ enum SkillCommand {
     Update(SkillUpdateArgs),
     #[command(about = "Delete a skill")]
     Delete(SkillDeleteArgs),
+    #[command(about = "Import a skill from a URL or local archive")]
+    Import(SkillImportArgs),
     #[command(about = "Re-download a skill from its imported source")]
     Refresh(SkillRefreshArgs),
     #[command(about = "Search for installable skills")]
@@ -2504,6 +2506,27 @@ struct SkillDeleteArgs {
     skill_id: String,
     #[arg(long, help = "Skip the confirmation prompt")]
     yes: bool,
+}
+
+#[derive(Debug, Args)]
+struct SkillImportArgs {
+    #[arg(long, help = "URL or slug to import")]
+    url: Option<String>,
+    #[arg(long, value_name = "PATH", help = "Local .skill or .zip archive")]
+    file: Option<PathBuf>,
+    #[arg(
+        long,
+        default_value = "fail",
+        help = "Conflict strategy: fail, overwrite, rename, or skip"
+    )]
+    on_conflict: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+    #[arg(
+        long,
+        help = "Allow --file to read outside the current working directory"
+    )]
+    allow_external_file: bool,
 }
 
 #[derive(Debug, Args)]
@@ -2857,6 +2880,36 @@ pub struct RunOutput {
     pub stderr: String,
 }
 
+#[derive(Debug)]
+struct CommandOutputError {
+    output: RunOutput,
+    cause: anyhow::Error,
+}
+
+impl std::fmt::Display for CommandOutputError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.cause.fmt(formatter)
+    }
+}
+
+impl std::error::Error for CommandOutputError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.cause.as_ref())
+    }
+}
+
+fn command_output_error(output: RunOutput, cause: anyhow::Error) -> anyhow::Error {
+    anyhow::Error::new(CommandOutputError { output, cause })
+}
+
+pub fn command_error_output(error: &anyhow::Error) -> Option<&RunOutput> {
+    error.chain().find_map(|cause| {
+        cause
+            .downcast_ref::<CommandOutputError>()
+            .map(|error| &error.output)
+    })
+}
+
 impl Cli {
     pub fn debug_enabled(&self, environment: &Environment) -> bool {
         self.debug
@@ -2987,6 +3040,9 @@ async fn run_with_input<R: Read>(
         Command::Skill(SkillArgs {
             command: SkillCommand::Delete(args),
         }) => run_skill_delete(cli, environment, args, input).await,
+        Command::Skill(SkillArgs {
+            command: SkillCommand::Import(args),
+        }) => run_skill_import(cli, environment, args).await,
         Command::Skill(SkillArgs {
             command: SkillCommand::Refresh(args),
         }) => run_skill_refresh(cli, environment, args).await,
@@ -6705,6 +6761,192 @@ async fn run_skill_delete<R: Read>(
         stdout,
         stderr: String::new(),
     })
+}
+
+const MAX_SKILL_ARCHIVE_UPLOAD_SIZE: u64 = 16 << 20;
+const SKILL_IMPORT_TIMEOUT: Duration = Duration::from_secs(60);
+
+async fn run_skill_import(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SkillImportArgs,
+) -> Result<RunOutput> {
+    let url = args
+        .url
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let file = args
+        .file
+        .as_deref()
+        .filter(|path| !path.as_os_str().is_empty());
+    match (url, file) {
+        (None, None) => bail!("either --url or --file is required"),
+        (Some(_), Some(_)) => bail!("--url and --file are mutually exclusive"),
+        _ => {}
+    }
+    if !valid_skill_import_conflict_strategy(&args.on_conflict) {
+        bail!("--on-conflict must be one of: fail, overwrite, rename, skip");
+    }
+
+    let client = new_api_client(cli, environment)?.with_request_timeout(SKILL_IMPORT_TIMEOUT);
+    let result: Result<Value> = if let Some(path) = file {
+        let (archive, filename) = read_skill_archive(path, environment, args.allow_external_file)?;
+        client
+            .import_skill_file(archive, &filename, &args.on_conflict)
+            .await
+    } else {
+        client
+            .post_json(
+                "/api/skills/import",
+                &serde_json::json!({
+                    "url": url.expect("validated URL").to_owned(),
+                    "on_conflict": args.on_conflict,
+                }),
+            )
+            .await
+    };
+
+    match result {
+        Ok(result) => format_skill_import_result(&result, args.output),
+        Err(error) => {
+            if let Some(output) = skill_import_error_output(&error, args.output) {
+                return Err(command_output_error(output, error));
+            }
+            Err(error).context("import skill")
+        }
+    }
+}
+
+fn valid_skill_import_conflict_strategy(strategy: &str) -> bool {
+    matches!(strategy, "fail" | "overwrite" | "rename" | "skip")
+}
+
+fn read_skill_archive(
+    path: &Path,
+    environment: &Environment,
+    allow_external_file: bool,
+) -> Result<(Vec<u8>, String)> {
+    ensure_file_within_workdir(path, environment.current_dir(), allow_external_file, "file")?;
+    let read_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        environment.current_dir().join(path)
+    };
+    let metadata = fs::metadata(&read_path).context("read skill archive metadata")?;
+    if metadata.len() > MAX_SKILL_ARCHIVE_UPLOAD_SIZE {
+        bail!("skill archive exceeds the 16 MiB upload limit");
+    }
+    let mut file = fs::File::open(&read_path).context("read skill archive")?;
+    let mut archive =
+        Vec::with_capacity(metadata.len().min(MAX_SKILL_ARCHIVE_UPLOAD_SIZE) as usize);
+    file.take(MAX_SKILL_ARCHIVE_UPLOAD_SIZE + 1)
+        .read_to_end(&mut archive)
+        .context("read skill archive")?;
+    if archive.len() as u64 > MAX_SKILL_ARCHIVE_UPLOAD_SIZE {
+        bail!("skill archive exceeds the 16 MiB upload limit");
+    }
+    let filename = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .unwrap_or("skill.zip")
+        .to_owned();
+    Ok((archive, filename))
+}
+
+fn format_skill_import_result(result: &Value, output: OutputFormat) -> Result<RunOutput> {
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(result)?),
+        OutputFormat::Table => format_skill_import_table(result),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn skill_import_error_output(error: &anyhow::Error, output: OutputFormat) -> Option<RunOutput> {
+    let http = error.downcast_ref::<HttpError>()?;
+    if http.body.trim().is_empty() {
+        return None;
+    }
+    let mut payload: Value = serde_json::from_str(&http.body).ok()?;
+    if !payload.get("status").is_some() && payload.get("existing_skill").is_some() {
+        let reason = {
+            let message = value_string(&payload, "error");
+            if message.is_empty() {
+                "a skill with this name already exists".to_owned()
+            } else {
+                message
+            }
+        };
+        let existing_skill = payload
+            .get("existing_skill")
+            .cloned()
+            .unwrap_or(Value::Null);
+        payload = serde_json::json!({
+            "status": "conflict",
+            "reason": format!(
+                "{reason}; use --on-conflict overwrite to replace it or --on-conflict rename to import a copy"
+            ),
+            "existing_skill": existing_skill,
+        });
+    } else if !payload.get("status").is_some() {
+        return None;
+    }
+    format_skill_import_result(&payload, output).ok()
+}
+
+fn nested_skill_import_string(object: &Value, parent: &str, key: &str) -> String {
+    object
+        .get(parent)
+        .and_then(|value| value.get(key))
+        .map(|value| match value {
+            Value::Null => String::new(),
+            Value::String(value) => value.clone(),
+            value => value.to_string(),
+        })
+        .unwrap_or_default()
+}
+
+fn format_skill_import_table(result: &Value) -> String {
+    let status = value_string(result, "status");
+    let reason = value_string(result, "reason");
+    let line = match status.as_str() {
+        "" => format!(
+            "Skill imported: {} ({})",
+            value_string(result, "name"),
+            value_string(result, "id")
+        ),
+        "created" => format!(
+            "Skill imported: {} ({})",
+            nested_skill_import_string(result, "skill", "name"),
+            nested_skill_import_string(result, "skill", "id")
+        ),
+        "updated" => format!(
+            "Skill updated: {} ({})",
+            nested_skill_import_string(result, "skill", "name"),
+            nested_skill_import_string(result, "skill", "id")
+        ),
+        "skipped" => format!(
+            "Skill skipped: {} ({})",
+            nested_skill_import_string(result, "existing_skill", "name"),
+            nested_skill_import_string(result, "existing_skill", "id")
+        ),
+        "conflict" => format!(
+            "Skill import conflict: {} ({})",
+            nested_skill_import_string(result, "existing_skill", "name"),
+            nested_skill_import_string(result, "existing_skill", "id")
+        ),
+        "failed" => format!("Skill import failed: {reason}"),
+        other => format!("Skill import {other}"),
+    };
+    if reason.is_empty() || status == "failed" {
+        format!("{line}\n")
+    } else {
+        format!("{line}\nReason: {reason}\n")
+    }
 }
 
 async fn run_skill_refresh(
@@ -17704,6 +17946,216 @@ mod tests {
         .expect_err("empty skill id");
         assert_eq!(error.to_string(), "skill ID must not be empty");
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn skill_import_matches_go_url_and_multipart_contracts() {
+        let app = Router::new().route(
+            "/api/skills/import",
+            post(|request: Request| async move {
+                assert_eq!(request.headers()["authorization"], "Bearer token-1");
+                assert_eq!(request.headers()["x-workspace-id"], "workspace-1");
+                let content_type = request
+                    .headers()
+                    .get("content-type")
+                    .and_then(|value| value.to_str().ok())
+                    .unwrap_or_default()
+                    .to_owned();
+                let body = axum::body::to_bytes(request.into_body(), 2 << 20)
+                    .await
+                    .expect("import request body");
+                let body_text = String::from_utf8_lossy(&body);
+                if content_type == "application/json" {
+                    let body: Value = serde_json::from_slice(&body).expect("URL import JSON");
+                    assert_eq!(body["url"], "https://skills.sh/acme/repo/reviewer");
+                    assert_eq!(body["on_conflict"], "rename");
+                } else {
+                    assert!(content_type.starts_with("multipart/form-data; boundary="));
+                    assert!(body_text.contains("name=\"file\"; filename=\"review.skill\""));
+                    assert!(body_text.contains("name=\"on_conflict\""));
+                    assert!(body_text.contains("\r\n\r\nskip\r\n"));
+                    assert!(body_text.contains("archive bytes"));
+                }
+                (
+                    StatusCode::CREATED,
+                    Json(serde_json::json!({
+                        "status": "created",
+                        "skill": {"id": "skill-1", "name": "Reviewer"}
+                    })),
+                )
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        fs::write(cwd.path().join("review.skill"), b"archive bytes").expect("skill archive");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let url_cli = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "import",
+            "--url",
+            "https://skills.sh/acme/repo/reviewer",
+            "--on-conflict",
+            "rename",
+            "--output",
+            "table",
+        ])
+        .expect("URL import CLI");
+        let url_output = run_with_input(&url_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("URL import");
+        assert_eq!(url_output.stdout, "Skill imported: Reviewer (skill-1)\n");
+        assert!(url_output.stderr.is_empty());
+
+        let file_cli = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "import",
+            "--file",
+            "review.skill",
+            "--on-conflict",
+            "skip",
+        ])
+        .expect("archive import CLI");
+        let file_output =
+            run_with_input(&file_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .await
+                .expect("archive import");
+        let file_json: Value = serde_json::from_str(&file_output.stdout).expect("archive JSON");
+        assert_eq!(file_json["status"], "created");
+        assert!(file_output.stderr.is_empty());
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn skill_import_rejects_ambiguous_input_and_preserves_legacy_conflict_output() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "import",
+            "--url",
+            "https://skills.sh/acme/repo/reviewer",
+            "--file",
+            "review.skill",
+        ])
+        .expect("ambiguous import CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("ambiguous import");
+        assert_eq!(error.to_string(), "--url and --file are mutually exclusive");
+
+        let invalid = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "import",
+            "--url",
+            "https://skills.sh/acme/repo/reviewer",
+            "--on-conflict",
+            "merge",
+        ])
+        .expect("invalid conflict strategy reaches runtime");
+        let error = run_with_input(&invalid, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("invalid conflict strategy");
+        assert_eq!(
+            error.to_string(),
+            "--on-conflict must be one of: fail, overwrite, rename, skip"
+        );
+
+        let archive = cwd.path().join("review.skill");
+        fs::write(&archive, b"archive").expect("archive");
+        let outside = tempfile::tempdir().expect("outside");
+        let outside_file = outside.path().join("review.skill");
+        fs::write(&outside_file, b"outside").expect("outside archive");
+        let error = read_skill_archive(&outside_file, &environment, false)
+            .expect_err("external archive must be refused");
+        assert!(error.to_string().contains("--file path"));
+        let (bytes, filename) =
+            read_skill_archive(&archive, &environment, false).expect("workdir archive");
+        assert_eq!(bytes, b"archive");
+        assert_eq!(filename, "review.skill");
+    }
+
+    #[tokio::test]
+    async fn skill_import_legacy_conflict_is_structured_and_nonzero() {
+        let app = Router::new().route(
+            "/api/skills/import",
+            post(|| async {
+                (
+                    StatusCode::CONFLICT,
+                    Json(serde_json::json!({
+                        "error": "a skill with this name already exists",
+                        "existing_skill": {"id": "skill-1", "name": "Reviewer"}
+                    })),
+                )
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "skill",
+            "import",
+            "--url",
+            "https://skills.sh/acme/repo/reviewer",
+        ])
+        .expect("legacy conflict CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("legacy conflict");
+        let output = command_error_output(&error).expect("structured conflict output");
+        let result: Value = serde_json::from_str(&output.stdout).expect("conflict JSON");
+        assert_eq!(result["status"], "conflict");
+        assert_eq!(result["existing_skill"]["id"], "skill-1");
+        assert!(result["reason"]
+            .as_str()
+            .expect("reason")
+            .contains("--on-conflict overwrite"));
+        assert_eq!(crate::error::exit_code(&error), 1);
+        server.abort();
+    }
+
+    #[test]
+    fn skill_import_table_covers_structured_statuses() {
+        assert_eq!(
+            format_skill_import_table(&serde_json::json!({
+                "status": "updated",
+                "reason": "refreshed",
+                "skill": {"name": "Reviewer", "id": "skill-1"}
+            })),
+            "Skill updated: Reviewer (skill-1)\nReason: refreshed\n"
+        );
+        assert_eq!(
+            format_skill_import_table(&serde_json::json!({
+                "status": "skipped",
+                "existing_skill": {"name": "Reviewer", "id": "skill-1"}
+            })),
+            "Skill skipped: Reviewer (skill-1)\n"
+        );
+        assert_eq!(
+            format_skill_import_table(&serde_json::json!({
+                "status": "failed",
+                "reason": "source unavailable"
+            })),
+            "Skill import failed: source unavailable\n"
+        );
     }
 
     #[tokio::test]
