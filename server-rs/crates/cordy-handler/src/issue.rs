@@ -16,7 +16,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{NaiveDate, SecondsFormat};
 use cordy_db::models::{
     AgentTaskQueue, Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber,
@@ -32,7 +32,7 @@ use cordy_service::issue_service::{
     IssueCreateError, IssueCreateOpts, IssueCreateParams, IssueTriggerInput, IssueTriggerProbe,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -5125,13 +5125,20 @@ async fn validate_parent(
 }
 
 async fn issue_response(state: &HandlerState, issue: Issue) -> Response {
+    Json(issue_response_projection(state, &issue).await).into_response()
+}
+
+pub(crate) async fn issue_response_projection(
+    state: &HandlerState,
+    issue: &Issue,
+) -> IssueResponse {
     let mut response =
-        IssueResponse::from_issue(&issue, &issue_prefix(state, issue.workspace_id).await);
+        IssueResponse::from_issue(issue, &issue_prefix(state, issue.workspace_id).await);
     response.status_category = Some(
         cordy_service::issue_status::effective(&state.pool, issue.workspace_id, &issue.status)
             .await,
     );
-    Json(response).into_response()
+    response
 }
 
 pub(crate) async fn mutation_actor(
@@ -6588,11 +6595,7 @@ impl From<&Attachment> for AttachmentResponse {
 }
 
 fn object_or_empty(value: Value) -> Value {
-    if value.is_object() {
-        value
-    } else {
-        json!({})
-    }
+    if value.is_object() { value } else { json!({}) }
 }
 
 #[derive(Debug, Serialize)]

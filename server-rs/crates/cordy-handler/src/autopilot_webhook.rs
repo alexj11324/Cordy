@@ -2,19 +2,21 @@
 //! signature-checked before dispatch and persisted before acknowledgement so
 //! provider retries are idempotent and recoverable.
 
+use std::net::SocketAddr;
+
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Extension, Path, State};
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
 use chrono::Utc;
 use cordy_db::queries::{autopilot, webhook_delivery};
+use cordy_service::autopilot::AutopilotQuotaExceededError;
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use sha2::Sha256;
-use std::net::SocketAddr;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -223,19 +225,25 @@ async fn terminal(
     status: &str,
     code: StatusCode,
     response: &Value,
-    reason: &str,
-) {
+    error: Option<&str>,
+    reason_code: Option<&str>,
+) -> anyhow::Result<()> {
     let encoded = response.to_string();
-    let _ = webhook_delivery::update_webhook_delivery_terminal(
+    let updated = webhook_delivery::update_webhook_delivery_terminal(
         &state.pool,
         id,
         status,
-        Some(reason),
-        Some(reason),
+        error,
+        reason_code,
         Some(code.as_u16().into()),
         Some(&encoded),
     )
-    .await;
+    .await?;
+    anyhow::ensure!(
+        updated.is_some(),
+        "webhook delivery disappeared during terminal update"
+    );
+    Ok(())
 }
 
 async fn duplicate_response(
@@ -389,7 +397,7 @@ async fn webhook(
             }
         }
         Ok(None) | Err(_) => {
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error")
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
         }
     };
     if matches!(sig, "missing" | "invalid") {
@@ -400,15 +408,21 @@ async fn webhook(
         };
         let response = json!({"status": "rejected", "delivery_id": delivery.id, "reason": reason});
         consume_bad_credential(&state.webhook_rate_limits.bad_credential_ip, &ip, &cancel).await;
-        terminal(
+        if let Err(error) = terminal(
             &state,
             delivery.id,
             "rejected",
             StatusCode::UNAUTHORIZED,
             &response,
-            reason,
+            Some(reason),
+            Some(reason),
         )
-        .await;
+        .await
+        {
+            tracing::error!(%error, delivery_id = %delivery.id, "failed to reject webhook delivery");
+            state.notify_webhook_delivery();
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+        }
         return (StatusCode::UNAUTHORIZED, Json(response)).into_response();
     }
     let ignored = if !trigger.enabled {
@@ -424,15 +438,21 @@ async fn webhook(
     };
     if let Some(reason) = ignored {
         let response = json!({"status": "ignored", "delivery_id": delivery.id, "reason": reason});
-        terminal(
+        if let Err(error) = terminal(
             &state,
             delivery.id,
             "ignored",
             StatusCode::OK,
             &response,
-            reason,
+            Some(reason),
+            Some(reason),
         )
-        .await;
+        .await
+        {
+            tracing::error!(%error, delivery_id = %delivery.id, "failed to ignore webhook delivery");
+            state.notify_webhook_delivery();
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+        }
         return Json(response).into_response();
     }
     let service = cordy_service::autopilot::AutopilotService::new(
@@ -446,6 +466,34 @@ async fn webhook(
     {
         Ok(value) => value,
         Err(error) => {
+            if let Some(quota) = error.downcast_ref::<AutopilotQuotaExceededError>() {
+                let quota_error = quota.to_string();
+                let response = json!({
+                    "status": "ignored",
+                    "delivery_id": delivery.id,
+                    "reason_code": "quota_exceeded",
+                });
+                if let Err(update_error) = terminal(
+                    &state,
+                    delivery.id,
+                    "ignored",
+                    StatusCode::OK,
+                    &response,
+                    Some(&quota_error),
+                    Some("quota_exceeded"),
+                )
+                .await
+                {
+                    tracing::error!(
+                        %update_error,
+                        delivery_id = %delivery.id,
+                        "failed to persist quota-exceeded webhook delivery"
+                    );
+                    state.notify_webhook_delivery();
+                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "internal error");
+                }
+                return Json(response).into_response();
+            }
             tracing::warn!(%error, delivery_id = %delivery.id, "autopilot webhook admission failed");
             state.notify_webhook_delivery();
             return error_response(

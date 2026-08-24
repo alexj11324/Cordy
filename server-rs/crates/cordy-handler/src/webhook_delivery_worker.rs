@@ -9,7 +9,7 @@ use cordy_db::models::{AutopilotTrigger, WebhookDelivery};
 use cordy_db::queries::{autopilot, webhook_delivery};
 use cordy_service::autopilot::{AutopilotQuotaExceededError, AutopilotService};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::sync::Notify;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -82,6 +82,27 @@ impl WebhookDeliveryWorker {
         let Some(lease_token) = delivery.lease_token else {
             anyhow::bail!("claimed webhook delivery has no lease token");
         };
+
+        // Ingress persists before returning its authentication response. If
+        // that terminal update failed, the durable row can still be queued;
+        // never dispatch a payload already classified as unauthenticated.
+        if matches!(delivery.signature_status.as_str(), "missing" | "invalid") {
+            let reason = if delivery.signature_status == "missing" {
+                "missing_signature"
+            } else {
+                "invalid_signature"
+            };
+            self.complete(
+                &delivery,
+                lease_token,
+                "rejected",
+                None,
+                Some(reason),
+                Some(reason),
+            )
+            .await?;
+            return Ok(true);
+        }
 
         let cancel = CancellationToken::new();
         if let crate::webhook_rate_limit::GateDecision::Limited { retry_after } = self
@@ -323,13 +344,11 @@ fn normalize_stored_payload(delivery: &WebhookDelivery) -> Result<Value, &'stati
     if !matches!(body, Value::Object(_) | Value::Array(_)) {
         return Err("body must be a JSON object or array");
     }
-    let event = body
-        .as_object()
-        .and_then(|object| object.get("event"))
-        .and_then(Value::as_str)
-        .filter(|event| !event.is_empty())
-        .unwrap_or(&delivery.event)
-        .to_string();
+    // `delivery.event` is the normalized provider-aware value computed by
+    // ingress (for example `github.pull_request.opened`). It is authoritative
+    // during recovery; rebuilding from the raw body alone loses header-derived
+    // identity after a crash.
+    let event = delivery.event.clone();
     let payload = body
         .as_object()
         .and_then(|object| object.get("eventPayload"))

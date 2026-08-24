@@ -154,16 +154,23 @@ async fn complete_user(
     Ok(())
 }
 
-fn publish(
+async fn publish(
     state: &HandlerState,
     workspace_id: Uuid,
     user_id: Uuid,
     created_agent: Option<&Agent>,
     created_issue: Option<&Issue>,
 ) {
+    let issue_payload = if let Some(issue) = created_issue {
+        Some(json!({
+            "issue": crate::issue::issue_response_projection(state, issue).await,
+        }))
+    } else {
+        None
+    };
     for (event_type, payload) in [
         created_agent.map(|value| (cordy_protocol::EVENT_AGENT_CREATED, json!({"agent": value}))),
-        created_issue.map(|value| (cordy_protocol::EVENT_ISSUE_CREATED, json!({"issue": value}))),
+        issue_payload.map(|value| (cordy_protocol::EVENT_ISSUE_CREATED, value)),
     ]
     .into_iter()
     .flatten()
@@ -231,7 +238,7 @@ async fn with_runtime(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to start onboarding",
-            )
+            );
         }
     };
     let membership =
@@ -253,7 +260,7 @@ async fn with_runtime(
     let agents = match agent::list_agents(&mut *tx, workspace_id).await {
         Ok(value) => value,
         Err(_) => {
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to list agents")
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to list agents");
         }
     };
     let mut made_agent = None;
@@ -294,7 +301,7 @@ async fn with_runtime(
                 return error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "failed to create onboarding assistant",
-                )
+                );
             }
         },
     };
@@ -326,7 +333,7 @@ async fn with_runtime(
                     return error_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "failed to create onboarding issue",
-                    )
+                    );
                 }
             }
         }
@@ -334,7 +341,7 @@ async fn with_runtime(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to create onboarding issue",
-            )
+            );
         }
     };
     if complete_user(&mut tx, user_id).await.is_err() || tx.commit().await.is_err() {
@@ -349,10 +356,31 @@ async fn with_runtime(
         user_id,
         made_agent.as_ref(),
         made_issue.as_ref(),
-    );
+    )
+    .await;
     if let Some(created) = made_issue.as_ref() {
-        if let Err(error) = state.tasks.enqueue_task_for_issue(created, None).await {
-            tracing::warn!(%error, issue_id = %created.id, "legacy onboarding enqueue failed");
+        match cordy_service::agent_ready::agent_readiness(&state.pool, &helper).await {
+            Ok(verdict) if !verdict.blocked() => {
+                if let Err(error) = state.tasks.enqueue_task_for_issue(created, None).await {
+                    tracing::warn!(%error, issue_id = %created.id, "legacy onboarding enqueue failed");
+                }
+            }
+            Ok(verdict) => {
+                tracing::warn!(
+                    issue_id = %created.id,
+                    agent_id = %helper.id,
+                    reason = %verdict.reason,
+                    "legacy onboarding enqueue skipped because the runtime is unusable"
+                );
+            }
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    issue_id = %created.id,
+                    agent_id = %helper.id,
+                    "legacy onboarding readiness check failed"
+                );
+            }
         }
     }
     Json(json!({"workspace_id": workspace_id, "agent_id": helper.id, "issue_id": onboarding_issue.id})).into_response()
@@ -473,7 +501,7 @@ async fn without_runtime(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to start onboarding",
-            )
+            );
         }
     };
     if !matches!(
@@ -508,14 +536,14 @@ async fn without_runtime(
                 return error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "failed to create onboarding issue",
-                )
+                );
             }
         },
         Err(_) => {
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to create onboarding issue",
-            )
+            );
         }
     };
     if complete_user(&mut tx, user_id).await.is_err() || tx.commit().await.is_err() {
@@ -524,7 +552,7 @@ async fn without_runtime(
             "failed to finish onboarding",
         );
     }
-    publish(&state, workspace_id, user_id, None, made_issue.as_ref());
+    publish(&state, workspace_id, user_id, None, made_issue.as_ref()).await;
     Json(json!({"workspace_id": workspace_id, "issue_id": onboarding_issue.id})).into_response()
 }
 
