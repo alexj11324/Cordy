@@ -42,7 +42,7 @@ pub async fn create_invitation(
     workspace_id: Uuid,
     inviter_id: Uuid,
     invitee_email: &str,
-    invitee_user_id: Uuid,
+    invitee_user_id: Option<Uuid>,
     role: &str,
 ) -> anyhow::Result<Option<WorkspaceInvitation>> {
     let row = sqlx::query(

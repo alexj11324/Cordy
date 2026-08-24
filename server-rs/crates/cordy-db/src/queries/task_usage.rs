@@ -105,7 +105,7 @@ pub async fn list_dashboard_agent_run_time(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
     since: Option<DateTime<Utc>>,
-    project_id: Uuid,
+    project_id: Option<Uuid>,
 ) -> anyhow::Result<Vec<ListDashboardAgentRunTimeRow>> {
     let rows = sqlx::query(
         r#"SELECT
@@ -158,7 +158,7 @@ pub async fn list_dashboard_failures_by_agent(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
     since: Option<DateTime<Utc>>,
-    project_id: Uuid,
+    project_id: Option<Uuid>,
 ) -> anyhow::Result<Vec<ListDashboardFailuresByAgentRow>> {
     let rows = sqlx::query(
         r#"SELECT
@@ -208,7 +208,7 @@ pub async fn list_dashboard_failures_daily(
     workspace_id: Uuid,
     tz: &str,
     since: Option<DateTime<Utc>>,
-    project_id: Uuid,
+    project_id: Option<Uuid>,
 ) -> anyhow::Result<Vec<ListDashboardFailuresDailyRow>> {
     let rows = sqlx::query(
         r#"SELECT
@@ -261,7 +261,7 @@ pub async fn list_dashboard_run_time_daily(
     workspace_id: Uuid,
     tz: &str,
     since: Option<DateTime<Utc>>,
-    project_id: Uuid,
+    project_id: Option<Uuid>,
 ) -> anyhow::Result<Vec<ListDashboardRunTimeDailyRow>> {
     let rows = sqlx::query(
         r#"SELECT
@@ -325,7 +325,7 @@ pub async fn list_dashboard_usage_by_agent(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
     since: Option<DateTime<Utc>>,
-    project_id: Uuid,
+    project_id: Option<Uuid>,
 ) -> anyhow::Result<Vec<ListDashboardUsageByAgentRow>> {
     let rows = sqlx::query(
         r#"SELECT
@@ -397,7 +397,7 @@ pub async fn list_dashboard_usage_daily(
     workspace_id: Uuid,
     tz: &str,
     since: Option<DateTime<Utc>>,
-    project_id: Uuid,
+    project_id: Option<Uuid>,
 ) -> anyhow::Result<Vec<ListDashboardUsageDailyRow>> {
     let rows = sqlx::query(
         r#"SELECT
