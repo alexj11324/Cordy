@@ -532,6 +532,17 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy skill update <id>` to PR #129. It reuses the content-source
+      helper, preserves explicitly empty name/description/content fields,
+      validates JSON config, rejects no-op updates, and matches Go's PUT and
+      JSON/table outputs. Exact head is
+      `a027f1b35124caa6ea8ea815406adc27a88ce405`, parent
+      `6c1287368ef7d71d236245d3f89f57b32b9b8168`, tree
+      `c18224fb705774a131f3b73a4cb281074f07c61a`, candidate
+      `7e6e754bd2f6280f5da17bf2dacde96584e0f4c7`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
