@@ -921,6 +921,15 @@
       unchanged. Scoped rustfmt and diff-check pass; no Cargo was run. The
       serial subagent reviewed exact head `03c9c43b` and found no issue; pro
       owns push/Ready PR, gate, and merge.
+- [ ] CLI autopilot output structural refactor is committed at
+      `32ec4bb24563601cafcabc3d06b9d86984fa32b5` (parent
+      `03c9c43bf2dc6868010b8b52c3c7e3bb62366a1f`, tree
+      `84018510cc69b424820557e3fe69c89bf81efdac`): run/list tables, assignee
+      display and webhook URL fallback now live in
+      `cordy-cli/src/autopilot_output.rs`; autopilot API/resolver logic stays
+      unchanged. Scoped rustfmt and diff-check pass; no Cargo was run. The
+      serial subagent reviewed exact head `32ec4bb2` and found no issue; pro
+      owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
