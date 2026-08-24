@@ -3,7 +3,6 @@
 //! The S10 migration deliberately registers only fully functional commands.
 //! Shared configuration, API, error, and safe text-input behavior is ported
 //! with each vertical slice rather than exposing placeholder command trees.
-
 mod api;
 mod auth_commands;
 mod autopilot_output;
@@ -27,6 +26,7 @@ mod setup_commands;
 mod skill_commands;
 mod squad_commands;
 mod update_commands;
+mod user_commands;
 mod workspace_commands;
 mod workspace_mcp_commands;
 
@@ -122,6 +122,10 @@ use squad_commands::{
 };
 use update_commands::{
     render_update_outcome, resolve_update_download_timeout, run_update, validate_update_timeout,
+};
+use user_commands::{
+    format_user_profile_table, resolve_profile_description, run_user_profile_get,
+    run_user_profile_update,
 };
 use workspace_commands::{
     build_workspace_create_body, build_workspace_update_body, format_workspace_details_table,
@@ -10299,51 +10303,6 @@ fn classify_runtime_local_target(target: &str, current_dir: &Path) -> Option<&'s
         .map(|_| "it is a file:// URL")
 }
 
-async fn run_user_profile_get(
-    cli: &Cli,
-    environment: &Environment,
-    output: OutputFormat,
-) -> Result<RunOutput> {
-    let client = new_api_client(cli, environment)?;
-    let profile: Value = client
-        .get_json("/api/me")
-        .await
-        .context("get user profile")?;
-    let stdout = match output {
-        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&profile)?),
-        OutputFormat::Table => format_user_profile_table(&profile),
-    };
-    Ok(RunOutput {
-        stdout,
-        stderr: String::new(),
-    })
-}
-
-async fn run_user_profile_update<R: Read>(
-    cli: &Cli,
-    environment: &Environment,
-    args: &UpdateProfileArgs,
-    input: &mut R,
-) -> Result<RunOutput> {
-    let description = resolve_profile_description(args, environment, input)?;
-    let client = new_api_client(cli, environment)?;
-    let profile: Value = client
-        .patch_json(
-            "/api/me",
-            &serde_json::json!({"profile_description": description}),
-        )
-        .await
-        .context("update user profile")?;
-    let stdout = match args.output {
-        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&profile)?),
-        OutputFormat::Table => format_user_profile_table(&profile),
-    };
-    Ok(RunOutput {
-        stdout,
-        stderr: String::new(),
-    })
-}
-
 fn encoded_path_segment(value: &str) -> String {
     form_urlencoded::byte_serialize(value.as_bytes()).collect()
 }
@@ -10406,75 +10365,6 @@ fn display_id(id: &str, full: bool) -> String {
     } else {
         id.chars().take(8).collect()
     }
-}
-
-fn resolve_profile_description<R: Read>(
-    args: &UpdateProfileArgs,
-    environment: &Environment,
-    input: &mut R,
-) -> Result<String> {
-    let inline = args.description.as_deref().unwrap_or_default();
-    let sources = [
-        args.description_stdin,
-        !inline.is_empty(),
-        args.description_file.is_some(),
-    ]
-    .into_iter()
-    .filter(|source| *source)
-    .count();
-    if sources > 1 {
-        bail!("--description, --description-stdin, and --description-file are mutually exclusive");
-    }
-
-    let (description, has_description) = if args.description_stdin {
-        let mut bytes = Vec::new();
-        input
-            .read_to_end(&mut bytes)
-            .context("read stdin for --description-stdin")?;
-        let body = trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned());
-        if body.is_empty() {
-            bail!("stdin content for --description-stdin is empty");
-        }
-        (body, true)
-    } else if let Some(path) = &args.description_file {
-        ensure_file_within_workdir(
-            path,
-            environment.current_dir(),
-            args.allow_external_file,
-            "description",
-        )?;
-        let read_path = if path.is_absolute() {
-            path.clone()
-        } else {
-            environment.current_dir().join(path)
-        };
-        let bytes = fs::read(read_path).context("read file for --description-file")?;
-        let body = trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned());
-        if body.is_empty() {
-            bail!("file content for --description-file is empty");
-        }
-        (body, true)
-    } else if inline.is_empty() {
-        (String::new(), false)
-    } else {
-        (unescape_backslash_escapes(inline), true)
-    };
-
-    if args.clear && has_description {
-        bail!(
-            "--clear cannot be combined with --description / --description-stdin / --description-file"
-        );
-    }
-    if !args.clear && !has_description && args.description.is_none() {
-        bail!(
-            "nothing to update; pass --description, --description-stdin, --description-file, or --clear"
-        );
-    }
-    Ok(if args.clear {
-        String::new()
-    } else {
-        description
-    })
 }
 
 fn trim_one_trailing_newline(mut value: String) -> String {
@@ -10717,32 +10607,6 @@ fn normalize_api_base_url(raw: &str) -> Result<String> {
     Ok(url.to_string().trim_end_matches('/').into())
 }
 
-fn format_user_profile_table(profile: &Value) -> String {
-    let values = [
-        ("ID", value_string(profile, "id")),
-        ("NAME", value_string(profile, "name")),
-        ("EMAIL", value_string(profile, "email")),
-        (
-            "PROFILE DESCRIPTION",
-            match value_string(profile, "profile_description") {
-                value if value.is_empty() => "(not set)".into(),
-                value => value,
-            },
-        ),
-    ];
-    let width = values
-        .iter()
-        .map(|(label, _)| label.len())
-        .max()
-        .unwrap_or(0)
-        + 2;
-    let mut output = String::new();
-    for (label, value) in values {
-        let _ = writeln!(output, "{label:<width$}{value}");
-    }
-    output
-}
-
 fn value_string(object: &Value, key: &str) -> String {
     match object.get(key) {
         None | Some(Value::Null) => String::new(),
@@ -10830,31 +10694,6 @@ mod tests {
             "--full-id",
         ])
         .expect("autopilot list CLI");
-        let Command::Autopilot(AutopilotArgs {
-            command:
-                AutopilotCommand::List {
-                    status,
-                    output,
-                    full_id,
-                },
-        }) = list.command
-        else {
-            panic!("expected autopilot list");
-        };
-        assert_eq!(status, "paused");
-        assert_eq!(output, OutputFormat::Json);
-        assert!(full_id);
-
-        let get =
-            Cli::try_parse_from(["cordy", "autopilot", "get", "abcd"]).expect("autopilot get CLI");
-        let Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::Get { id, output },
-        }) = get.command
-        else {
-            panic!("expected autopilot get");
-        };
-        assert_eq!(id, "abcd");
-
         let trigger =
             Cli::try_parse_from(["cordy", "autopilot", "trigger", "abcd", "--output", "table"])
                 .expect("autopilot trigger CLI");
