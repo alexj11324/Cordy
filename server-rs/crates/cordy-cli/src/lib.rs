@@ -163,6 +163,15 @@ enum AutopilotCommand {
     },
     #[command(about = "Add a schedule or webhook trigger to an autopilot")]
     TriggerAdd(AutopilotTriggerAddArgs),
+    #[command(about = "Update an existing trigger")]
+    TriggerUpdate(AutopilotTriggerUpdateArgs),
+    #[command(about = "Delete a trigger")]
+    TriggerDelete {
+        #[arg(value_name = "AUTOPILOT-ID")]
+        autopilot_id: String,
+        #[arg(value_name = "TRIGGER-ID")]
+        trigger_id: String,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -189,6 +198,24 @@ struct AutopilotTriggerAddArgs {
     timezone: String,
     #[arg(long, default_value = "", help = "Optional human-readable label")]
     label: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct AutopilotTriggerUpdateArgs {
+    #[arg(value_name = "AUTOPILOT-ID")]
+    autopilot_id: String,
+    #[arg(value_name = "TRIGGER-ID")]
+    trigger_id: String,
+    #[arg(long, num_args = 0..=1, default_missing_value = "true")]
+    enabled: Option<bool>,
+    #[arg(long)]
+    cron: Option<String>,
+    #[arg(long)]
+    timezone: Option<String>,
+    #[arg(long)]
+    label: Option<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
 }
@@ -2415,6 +2442,16 @@ async fn run_with_input<R: Read>(
         Command::Autopilot(AutopilotArgs {
             command: AutopilotCommand::TriggerAdd(args),
         }) => run_autopilot_trigger_add(cli, environment, args).await,
+        Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::TriggerUpdate(args),
+        }) => run_autopilot_trigger_update(cli, environment, args).await,
+        Command::Autopilot(AutopilotArgs {
+            command:
+                AutopilotCommand::TriggerDelete {
+                    autopilot_id,
+                    trigger_id,
+                },
+        }) => run_autopilot_trigger_delete(cli, environment, autopilot_id, trigger_id).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -3955,6 +3992,127 @@ fn autopilot_webhook_url(trigger: &Value, base_url: &str) -> Option<String> {
     }
     let path = value_string(trigger, "webhook_path");
     (!path.is_empty()).then(|| format!("{}{path}", base_url.trim_end_matches('/')))
+}
+
+async fn run_autopilot_trigger_update(
+    cli: &Cli,
+    environment: &Environment,
+    args: &AutopilotTriggerUpdateArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let mut body = serde_json::Map::new();
+    if let Some(enabled) = args.enabled {
+        body.insert("enabled".into(), Value::Bool(enabled));
+    }
+    for (key, value) in [
+        ("cron_expression", args.cron.as_ref()),
+        ("timezone", args.timezone.as_ref()),
+        ("label", args.label.as_ref()),
+    ] {
+        if let Some(value) = value {
+            body.insert(key.into(), Value::String(value.clone()));
+        }
+    }
+    if body.is_empty() {
+        bail!("no fields to update; use --enabled, --cron, --timezone, or --label");
+    }
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, &args.autopilot_id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+    let trigger_id = resolve_autopilot_trigger_id(&client, &autopilot_id, &args.trigger_id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve trigger: {error:#}"))?;
+    let result: Value = client
+        .patch_json(
+            &format!("/api/autopilots/{autopilot_id}/triggers/{trigger_id}"),
+            &body,
+        )
+        .await
+        .context("update trigger")?;
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+            OutputFormat::Table => {
+                format!("Trigger updated: {}\n", value_string(&result, "id"))
+            }
+        },
+        stderr: String::new(),
+    })
+}
+
+async fn run_autopilot_trigger_delete(
+    cli: &Cli,
+    environment: &Environment,
+    autopilot: &str,
+    trigger: &str,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, autopilot)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+    let trigger_id = resolve_autopilot_trigger_id(&client, &autopilot_id, trigger)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve trigger: {error:#}"))?;
+    client
+        .delete(&format!(
+            "/api/autopilots/{autopilot_id}/triggers/{trigger_id}"
+        ))
+        .await
+        .context("delete trigger")?;
+    Ok(RunOutput {
+        stdout: format!("Trigger {trigger_id} deleted.\n"),
+        stderr: String::new(),
+    })
+}
+
+async fn resolve_autopilot_trigger_id(
+    client: &ApiClient,
+    autopilot_id: &str,
+    input: &str,
+) -> Result<String> {
+    let trimmed = input.trim();
+    if is_canonical_uuid(trimmed) {
+        return Ok(trimmed.into());
+    }
+    let Some(prefix) = normalize_uuid_prefix(trimmed) else {
+        if trimmed.is_empty() {
+            bail!("autopilot trigger id is required");
+        }
+        let compact = trimmed.replace('-', "");
+        if compact.len() < 4 {
+            bail!(
+                "resolve autopilot trigger: expected a full UUID or at least 4 hex characters, got {input:?}"
+            );
+        }
+        bail!(
+            "resolve autopilot trigger: expected a UUID prefix containing only hex characters, got {input:?}"
+        );
+    };
+    let response: Value = client
+        .get_json(&format!("/api/autopilots/{autopilot_id}"))
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve autopilot trigger: {error:#}"))?;
+    let mut matches = response
+        .get("triggers")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|trigger| value_string(trigger, "id"))
+        .filter(|id| !id.is_empty() && compact_uuid(id).starts_with(&prefix))
+        .collect::<Vec<_>>();
+    matches.sort();
+    match matches.as_slice() {
+        [id] => Ok(id.clone()),
+        [] => bail!(
+            "no autopilot trigger found matching id prefix {input:?}; run the list command with --full-id to copy the full UUID"
+        ),
+        _ => bail!(
+            "ambiguous autopilot trigger id prefix {input:?}; matches:\n  {}\nUse more characters or run the list command with --full-id",
+            matches.join("\n  ")
+        ),
+    }
 }
 
 async fn resolve_autopilot_agent(
@@ -12843,6 +13001,38 @@ mod tests {
         assert_eq!(args.kind, "webhook");
         assert_eq!(args.label, "GitHub");
         assert_eq!(args.output, OutputFormat::Json);
+
+        let update = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "trigger-update",
+            "abcd",
+            "beef",
+            "--enabled=false",
+            "--cron=",
+            "--label=",
+        ])
+        .expect("autopilot trigger-update CLI");
+        let Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::TriggerUpdate(args),
+        }) = update.command
+        else {
+            panic!("expected autopilot trigger-update");
+        };
+        assert_eq!(args.autopilot_id, "abcd");
+        assert_eq!(args.trigger_id, "beef");
+        assert_eq!(args.enabled, Some(false));
+        assert_eq!(args.cron.as_deref(), Some(""));
+        assert_eq!(args.label.as_deref(), Some(""));
+
+        let delete = Cli::try_parse_from(["cordy", "autopilot", "trigger-delete", "abcd", "beef"])
+            .expect("autopilot trigger-delete CLI");
+        assert!(matches!(
+            delete.command,
+            Command::Autopilot(AutopilotArgs {
+                command: AutopilotCommand::TriggerDelete { .. }
+            })
+        ));
         assert_eq!(output, OutputFormat::Json);
         assert!(Cli::try_parse_from(["cordy", "autopilot", "get"]).is_err());
         assert!(Cli::try_parse_from(["cordy", "autopilot", "list", "extra"]).is_err());
@@ -13489,6 +13679,106 @@ mod tests {
                 .expect_err("invalid trigger rejected");
             assert_eq!(error.to_string(), expected);
         }
+    }
+
+    #[tokio::test]
+    async fn autopilot_trigger_update_and_delete_resolve_prefixes_and_mutate() {
+        const AUTOPILOT_ID: &str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        const TRIGGER_ID: &str = "bbbb0000-1111-2222-3333-444444444444";
+        let captured = Arc::new(Mutex::new(None));
+        let captured_handler = Arc::clone(&captured);
+        let app = Router::new()
+            .route(
+                "/api/autopilots/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "autopilot":{"id":AUTOPILOT_ID},
+                        "triggers":[{"id":TRIGGER_ID,"kind":"schedule","label":"Morning"}]
+                    }))
+                }),
+            )
+            .route(
+                "/api/autopilots/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/triggers/bbbb0000-1111-2222-3333-444444444444",
+                patch(move |Json(body): Json<Value>| {
+                    let captured = Arc::clone(&captured_handler);
+                    async move {
+                        *captured.lock().expect("captured body") = Some(body);
+                        Json(serde_json::json!({"id":TRIGGER_ID,"enabled":false}))
+                    }
+                })
+                .delete(|| async { axum::http::StatusCode::NO_CONTENT }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+
+        let update = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "trigger-update",
+            AUTOPILOT_ID,
+            "bbbb",
+            "--enabled=false",
+            "--cron=",
+            "--timezone",
+            "UTC",
+            "--label=",
+            "--output",
+            "table",
+        ])
+        .expect("trigger-update CLI");
+        let output = run_with_input(&update, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("update trigger");
+        assert_eq!(output.stdout, format!("Trigger updated: {TRIGGER_ID}\n"));
+        assert_eq!(
+            captured.lock().expect("captured body").as_ref(),
+            Some(&serde_json::json!({
+                "enabled":false,
+                "cron_expression":"",
+                "timezone":"UTC",
+                "label":""
+            }))
+        );
+
+        let delete =
+            Cli::try_parse_from(["cordy", "autopilot", "trigger-delete", AUTOPILOT_ID, "bbbb"])
+                .expect("trigger-delete CLI");
+        let output = run_with_input(&delete, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("delete trigger");
+        assert_eq!(output.stdout, format!("Trigger {TRIGGER_ID} deleted.\n"));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn autopilot_trigger_update_rejects_no_changes_before_requests() {
+        const AUTOPILOT_ID: &str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        const TRIGGER_ID: &str = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "http://127.0.0.1:9");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "trigger-update",
+            AUTOPILOT_ID,
+            TRIGGER_ID,
+        ])
+        .expect("trigger-update CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("no-change trigger rejected");
+        assert_eq!(
+            error.to_string(),
+            "no fields to update; use --enabled, --cron, --timezone, or --label"
+        );
     }
 
     #[tokio::test]
