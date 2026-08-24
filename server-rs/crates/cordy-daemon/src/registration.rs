@@ -485,7 +485,6 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                         // The server already accepted these rows. Retain them for
                         // cleanup because the local registry rejected the reply.
                         self.pending_deregistrations.queue(&runtime_ids);
-                        error
                     })?;
                 self.pending_deregistrations.acknowledge(&runtime_ids);
                 round.registration_applied(&workspace.id);
