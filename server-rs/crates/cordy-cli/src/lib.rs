@@ -718,6 +718,7 @@ struct IssueTimelineArgs {
     #[arg(
         long,
         default_value_t = 0,
+        allow_hyphen_values = true,
         help = "Only return the N most recent entries"
     )]
     tail: i64,
