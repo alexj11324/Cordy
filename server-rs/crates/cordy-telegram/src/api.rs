@@ -164,6 +164,33 @@ impl BotApi {
         }
     }
 
+    pub async fn get_file(&self, file_id: &str) -> Result<TelegramFile> {
+        self.call("getFile", Some(&serde_json::json!({"file_id": file_id})))
+            .await?
+            .map(serde_json::from_value::<TelegramFile>)
+            .transpose()?
+            .ok_or_else(|| anyhow!("telegram: empty getFile result"))
+    }
+
+    /// Constructs Telegram's authenticated file endpoint after requiring the
+    /// returned path to remain a relative path under `/file/bot<TOKEN>/`.
+    pub fn file_url(&self, file: &TelegramFile) -> Result<url::Url> {
+        let path = file.file_path.trim();
+        if path.is_empty()
+            || path.starts_with('/')
+            || path
+                .split('/')
+                .any(|part| part.is_empty() || matches!(part, "." | ".."))
+            || path.contains('\\')
+        {
+            anyhow::bail!("telegram: invalid getFile path");
+        }
+        let base = format!("{}/file/bot{}/", self.base, self.token);
+        url::Url::parse(&base)
+            .and_then(|base| base.join(path))
+            .map_err(|_| anyhow!("telegram: invalid file endpoint"))
+    }
+
     pub async fn send_message(&self, p: &SendMessageParams) -> Result<TelegramMessage> {
         self.call("sendMessage", Some(&serde_json::to_value(p)?))
             .await?
@@ -242,8 +269,56 @@ pub struct MessageEntity {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct DocumentRef {
+    #[serde(rename = "file_id", default)]
+    pub file_id: String,
+    #[serde(rename = "file_size", default)]
+    pub file_size: i64,
     #[serde(rename = "file_name", default)]
     pub file_name: String,
+    #[serde(rename = "mime_type", default)]
+    pub mime_type: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct PhotoSize {
+    #[serde(rename = "file_id", default)]
+    pub file_id: String,
+    #[serde(rename = "file_size", default)]
+    pub file_size: i64,
+    #[serde(default)]
+    pub width: i64,
+    #[serde(default)]
+    pub height: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct VoiceRef {
+    #[serde(rename = "file_id", default)]
+    pub file_id: String,
+    #[serde(rename = "file_size", default)]
+    pub file_size: i64,
+    #[serde(rename = "mime_type", default)]
+    pub mime_type: String,
+    #[serde(default)]
+    pub duration: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct VideoRef {
+    #[serde(rename = "file_id", default)]
+    pub file_id: String,
+    #[serde(rename = "file_size", default)]
+    pub file_size: i64,
+    #[serde(rename = "file_name", default)]
+    pub file_name: String,
+    #[serde(rename = "mime_type", default)]
+    pub mime_type: String,
+    #[serde(default)]
+    pub width: i64,
+    #[serde(default)]
+    pub height: i64,
+    #[serde(default)]
+    pub duration: i64,
 }
 
 /// The subset of a Telegram message the adapter consumes. Unknown fields
@@ -288,16 +363,14 @@ pub struct TelegramMessage {
         skip_serializing_if = "std::ops::Not::not"
     )]
     pub is_topic_message: bool,
-    /// Photo sizes array; shape unused.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub photo: Vec<serde_json::Value>,
+    pub photo: Vec<PhotoSize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document: Option<DocumentRef>,
-    /// Presence-only markers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub voice: Option<serde_json::Value>,
+    pub voice: Option<VoiceRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub video: Option<serde_json::Value>,
+    pub video: Option<VideoRef>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sticker: Option<serde_json::Value>,
 }
@@ -320,6 +393,16 @@ pub struct WebhookInfo {
     pub url: String,
     #[serde(default, rename = "pending_update_count")]
     pub pending_update_count: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct TelegramFile {
+    #[serde(rename = "file_id", default)]
+    pub file_id: String,
+    #[serde(rename = "file_size", default)]
+    pub file_size: i64,
+    #[serde(rename = "file_path", default)]
+    pub file_path: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -421,6 +504,27 @@ mod tests {
             serde_json::to_value(&with_thread).unwrap()["message_thread_id"],
             3
         );
+    }
+
+    #[test]
+    fn file_endpoint_accepts_only_relative_provider_paths() {
+        let api = BotApi::new("https://api.telegram.org", "123:secret");
+        let url = api
+            .file_url(&TelegramFile {
+                file_path: "documents/file.pdf".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(url.host_str(), Some("api.telegram.org"));
+        assert!(url.path().ends_with("/documents/file.pdf"));
+        for path in ["", "/etc/passwd", "../secret", "a/../../secret", "a\\b"] {
+            assert!(api
+                .file_url(&TelegramFile {
+                    file_path: path.into(),
+                    ..Default::default()
+                })
+                .is_err());
+        }
     }
 
     #[tokio::test]

@@ -199,6 +199,13 @@ impl Dispatcher {
         }
     }
 
+    /// Cancels active jobs and queued work after an owner's graceful drain
+    /// budget expires. Workers observe this token in both semaphore waits and
+    /// in-flight job polling, then publish `drained` through the close joiner.
+    pub fn cancel(&self) {
+        self.ctx.cancel();
+    }
+
     pub fn is_closed(&self) -> bool {
         self.shared
             .inner
@@ -269,20 +276,20 @@ fn finish_worker(shared: &Shared) {
 }
 
 /// Runs one job on a child context with its own deadline, deliberately detached
-/// from the socket's run context. On timeout the child token is cancelled and
-/// the job future is awaited to completion — mirroring Go, where the handler
-/// goroutine outlives its deadline and the conversation stays ordered behind
-/// it.
+/// from the socket's run context. A graceful dispatcher close leaves accepted
+/// work alone; a lifecycle cancellation or job deadline cancels and drops the
+/// future so no worker can outlive the dispatcher's bounded shutdown.
 async fn run_job(handle: &DispatchHandle, ctx: &CancellationToken, msg: InboundMessage) {
     let job_ctx = ctx.child_token();
-    let timeout_ctx = job_ctx.clone();
+    let cancel = job_ctx.clone();
     let fut = handle(job_ctx, msg);
     tokio::pin!(fut);
     tokio::select! {
+        biased;
+        _ = ctx.cancelled() => cancel.cancel(),
         _ = &mut fut => {}
         _ = tokio::time::sleep(DISPATCH_JOB_TIMEOUT) => {
-            timeout_ctx.cancel();
-            let _ = fut.await;
+            cancel.cancel();
         }
     }
 }
@@ -397,5 +404,11 @@ mod tests {
         });
         let ok = d.wait_closed(deadline).await;
         assert!(!ok);
+        assert!(tokio::time::timeout(
+            Duration::from_secs(1),
+            d.wait_closed(CancellationToken::new())
+        )
+        .await
+        .expect("cancelled worker should publish drained"));
     }
 }

@@ -25,6 +25,7 @@ url = { workspace = true }
 chrono = { workspace = true }
 regex = { workspace = true }
 ipnetwork = { workspace = true }
+redis = { workspace = true }
 # AES-256-CBC media decryption (media_crypt.rs). The block cipher only; CBC
 # chaining and the 32-byte PKCS#7 pad are implemented in-crate because WeCom's
 # pad block is not the AES block size.
@@ -48,4 +49,6 @@ cordy-channel = { path = "../cordy-channel" }
 cordy-channel-engine = { path = "../cordy-channel-engine" }
 cordy-db = { path = "../cordy-db" }
 cordy-events = { path = "../cordy-events" }
+cordy-protocol = { path = "../cordy-protocol" }
+cordy-realtime = { path = "../cordy-realtime" }
 cordy-util = { path = "../cordy-util" }
