@@ -8,7 +8,8 @@ use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
 use crate::qoder::{
-    KiroBackend, KiroConfig, QoderBackend, QoderConfig, TraecliBackend, TraecliConfig,
+    KiroBackend, KiroConfig, QoderBackend, QoderConfig, QwenpawBackend, QwenpawConfig,
+    TraecliBackend, TraecliConfig,
 };
 use crate::qwen::{QwenBackend, QwenConfig};
 
@@ -39,6 +40,10 @@ pub fn build_backend(
             env: config.env,
         }))),
         "qwen" => Ok(Arc::new(QwenBackend::new(QwenConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "qwenpaw" => Ok(Arc::new(QwenpawBackend::new(QwenpawConfig {
             command: config.command,
             env: config.env,
         }))),
@@ -464,6 +469,7 @@ mod tests {
         assert!(build_backend("qoderclicn", BackendConfig::default()).is_ok());
         assert!(build_backend("traecli", BackendConfig::default()).is_ok());
         assert!(build_backend("kiro", BackendConfig::default()).is_ok());
+        assert!(build_backend("qwenpaw", BackendConfig::default()).is_ok());
 
         let metadata_only = build_backend("claude", BackendConfig::default());
         assert!(matches!(
