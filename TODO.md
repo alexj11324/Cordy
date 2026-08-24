@@ -696,6 +696,13 @@
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
+- [x] Bounded audit of CLI/daemon lifecycle and Slack/Telegram channel runtime
+      found no additional P0/P1, ownership, media, cancellation, shutdown, or
+      changed-code compile gap after the callback-host fixes. No P2/style-only
+      changes were added. Current cumulative implementation branch is pushed at
+      `3bc22991b0a233d8fa523d29854513d971f22eba` (tree
+      `adb20fc2bbf6386b8440281e87e8065b5185df97`); pro owns creation of its
+      Ready PR, review, Cargo gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
