@@ -101,6 +101,16 @@ impl InstallService {
             Ok(Some(installation)) => installation,
             Ok(None) => anyhow::bail!("upsert Telegram installation: no row returned"),
             Err(error) if is_unique_violation(&error) => {
+                // The owner lookup uses the base pool. Release this aborted
+                // transaction first so concurrent conflicts cannot consume
+                // every pool connection while all requests wait to acquire a
+                // second connection for classification.
+                if let Err(rollback_error) = tx.rollback().await {
+                    tracing::warn!(
+                        error = %rollback_error,
+                        "rollback failed Telegram install conflict transaction"
+                    );
+                }
                 return Err(self
                     .live_owner_conflict(params.workspace_id, &params.bot_id)
                     .await);
