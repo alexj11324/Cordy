@@ -6,7 +6,7 @@ use std::net::SocketAddr;
 
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Extension, Path, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
@@ -15,7 +15,7 @@ use cordy_db::queries::{autopilot, webhook_delivery};
 use cordy_service::autopilot::AutopilotQuotaExceededError;
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::Sha256;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -550,31 +550,27 @@ fn webhook_client_ip(
     trusted_proxies: &[ipnetwork::IpNetwork],
 ) -> String {
     let remote = peer.map(|Extension(ConnectInfo(peer))| peer.ip());
-    if remote.is_some_and(|ip| trusted_proxies.iter().any(|network| network.contains(ip))) {
-        if let Some(forwarded) = headers
-            .get("x-forwarded-for")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.split(',').next())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            return forwarded.to_string();
-        }
-        if let Some(real) = headers
-            .get("x-real-ip")
-            .and_then(|value| value.to_str().ok())
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            return real.to_string();
-        }
-    }
-    remote.map(|ip| ip.to_string()).unwrap_or_default()
+    cordy_middleware::ratelimit::client_ip(headers, remote, trusted_proxies)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn webhook_limiter_rejects_spoofed_forwarded_prefixes() {
+        let trusted = vec!["10.0.0.0/8".parse().unwrap()];
+        let peer = Some(Extension(ConnectInfo("10.0.0.2:443".parse().unwrap())));
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            "attacker-controlled, 198.51.100.7, 10.0.0.3"
+                .parse()
+                .unwrap(),
+        );
+
+        assert_eq!(webhook_client_ip(&headers, peer, &trusted), "198.51.100.7");
+    }
 
     #[test]
     fn signature_is_body_bound_and_header_value_is_never_selected() {

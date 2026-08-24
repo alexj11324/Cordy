@@ -168,34 +168,44 @@ fn extract_ip(req: &Request, trusted_proxies: &[IpNetwork]) -> String {
         .map(|info| info.0.ip().to_string())
         .unwrap_or_default();
 
-    if !trusted_proxies.is_empty() {
-        if let Ok(remote_ip) = remote_host.parse::<IpAddr>() {
-            if is_trusted_proxy(&remote_ip, trusted_proxies) {
-                if let Some(xff) = req
-                    .headers()
-                    .get("x-forwarded-for")
-                    .and_then(|v| v.to_str().ok())
-                {
-                    if !xff.is_empty() {
-                        for part in xff.rsplit(',') {
-                            let candidate = part.trim();
-                            if let Ok(ip) = candidate.parse::<IpAddr>() {
-                                if !is_trusted_proxy(&ip, trusted_proxies) {
-                                    return ip.to_string();
-                                }
-                            }
-                        }
+    client_ip(
+        req.headers(),
+        remote_host.parse::<IpAddr>().ok(),
+        trusted_proxies,
+    )
+}
+
+/// Resolves a limiter key from the peer and forwarding headers. Forwarded
+/// values are considered only for a trusted direct peer, parsed as IP
+/// addresses, and walked right-to-left to prevent a client-controlled prefix
+/// from bypassing per-IP limits.
+pub fn client_ip(
+    headers: &axum::http::HeaderMap,
+    remote_ip: Option<IpAddr>,
+    trusted_proxies: &[IpNetwork],
+) -> String {
+    if remote_ip.is_some_and(|ip| is_trusted_proxy(&ip, trusted_proxies)) {
+        if let Some(xff) = headers
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok())
+        {
+            for part in xff.rsplit(',') {
+                if let Ok(ip) = part.trim().parse::<IpAddr>() {
+                    if !is_trusted_proxy(&ip, trusted_proxies) {
+                        return ip.to_string();
                     }
                 }
             }
         }
+        if let Some(real_ip) = headers
+            .get("x-real-ip")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse::<IpAddr>().ok())
+        {
+            return real_ip.to_string();
+        }
     }
-
-    // Default: RemoteAddr in canonical form.
-    if let Ok(ip) = remote_host.parse::<IpAddr>() {
-        return ip.to_string();
-    }
-    remote_host
+    remote_ip.map(|ip| ip.to_string()).unwrap_or_default()
 }
 
 fn is_trusted_proxy(ip: &IpAddr, cidrs: &[IpNetwork]) -> bool {
