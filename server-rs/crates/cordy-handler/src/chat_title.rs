@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use cordy_db::models::ChatSession;
 use cordy_db::queries::chat;
+use futures_util::FutureExt;
 use serde_json::json;
 use uuid::Uuid;
 
@@ -41,29 +42,30 @@ pub(crate) fn generate_title_async(
     current_title: String,
     source_text: String,
 ) {
-    if !state.llm.enabled() || source_text.trim().is_empty() {
+    if !state.llm.client().enabled() || source_text.trim().is_empty() {
         return;
     }
 
-    tokio::spawn(async move {
-        let mut worker = tokio::spawn(generate_and_apply(
+    let side_effects = state.tasks.clone();
+    side_effects.spawn_side_effect(async move {
+        let worker = std::panic::AssertUnwindSafe(generate_and_apply(
             state,
             workspace_id,
             user_id,
             session_id,
             current_title,
             source_text,
-        ));
-        match tokio::time::timeout(TITLE_GENERATION_TIMEOUT, &mut worker).await {
+        ))
+        .catch_unwind();
+        match tokio::time::timeout(TITLE_GENERATION_TIMEOUT, worker).await {
             Ok(Ok(Ok(()))) => {}
             Ok(Ok(Err(error))) => {
                 tracing::warn!(%error, %session_id, "chat title generation failed; keeping original title");
             }
-            Ok(Err(error)) => {
-                tracing::error!(%error, %session_id, "chat title generation task panicked; keeping original title");
+            Ok(Err(_)) => {
+                tracing::error!(%session_id, "chat title generation task panicked; keeping original title");
             }
             Err(_) => {
-                worker.abort();
                 tracing::warn!(%session_id, "chat title generation timed out; keeping original title");
             }
         }
@@ -80,6 +82,7 @@ async fn generate_and_apply(
 ) -> anyhow::Result<()> {
     let raw = state
         .llm
+        .client()
         .generate_text("", SYSTEM_PROMPT, &source_text)
         .await?;
     let title = sanitize_chat_title(&raw);

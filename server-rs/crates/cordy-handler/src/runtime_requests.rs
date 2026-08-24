@@ -289,12 +289,13 @@ async fn initiate_model_list(
     };
     match store.create(&resolved_runtime_id).await {
         Ok(request) => {
-            if let Some(hub) = state.daemon_hub.as_ref() {
-                hub.notify_pending_work(
+            state
+                .daemon_notifier
+                .notify_pending_work(
                     &resolved_runtime_id,
                     cordy_protocol::PENDING_WORK_KIND_MODEL_LIST,
-                );
-            }
+                )
+                .await;
             Json(request).into_response()
         }
         Err(error) => error_response(
@@ -320,9 +321,10 @@ async fn revalidate_model_catalog(state: &HandlerState, runtime_id: &str) {
         tracing::debug!(%error, %runtime_id, "model catalog revalidate enqueue failed");
         return;
     }
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_pending_work(runtime_id, cordy_protocol::PENDING_WORK_KIND_MODEL_LIST);
-    }
+    state
+        .daemon_notifier
+        .notify_pending_work(runtime_id, cordy_protocol::PENDING_WORK_KIND_MODEL_LIST)
+        .await;
 }
 
 async fn get_model_list(
