@@ -105,10 +105,34 @@ enum Command {
     Autopilot(AutopilotArgs),
     #[command(about = "Work with skills")]
     Skill(SkillArgs),
+    #[command(about = "Work with squads")]
+    Squad(SquadArgs),
     #[command(about = "Print version information")]
     Version {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
         output: VersionOutput,
+    },
+}
+
+#[derive(Debug, Args)]
+struct SquadArgs {
+    #[command(subcommand)]
+    command: SquadCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum SquadCommand {
+    #[command(about = "List squads in the workspace")]
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
+    #[command(about = "Get squad details")]
+    Get {
+        #[arg(value_name = "SQUAD-ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
     },
 }
 
@@ -2681,6 +2705,12 @@ async fn run_with_input<R: Read>(
         Command::Skill(SkillArgs {
             command: SkillCommand::Import(args),
         }) => run_skill_import(cli, environment, args).await,
+        Command::Squad(SquadArgs {
+            command: SquadCommand::List { output },
+        }) => run_squad_list(cli, environment, *output).await,
+        Command::Squad(SquadArgs {
+            command: SquadCommand::Get { id, output },
+        }) => run_squad_get(cli, environment, id, *output).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -4728,6 +4758,94 @@ async fn run_skill_file_delete(
         .context("delete skill file")?;
     Ok(RunOutput {
         stdout: format!("Skill file deleted: {file_id}\n"),
+        stderr: String::new(),
+    })
+}
+
+async fn run_squad_list(
+    cli: &Cli,
+    environment: &Environment,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let squads: Vec<Value> = client
+        .get_json("/api/squads")
+        .await
+        .context("list squads")?;
+    if output == OutputFormat::Json {
+        return Ok(RunOutput {
+            stdout: format!("{}\n", serde_json::to_string_pretty(&squads)?),
+            stderr: String::new(),
+        });
+    }
+    if squads.is_empty() {
+        return Ok(RunOutput {
+            stdout: String::new(),
+            stderr: "No squads found.\n".into(),
+        });
+    }
+    let mut rows = vec![vec![
+        "ID".into(),
+        "NAME".into(),
+        "LEADER ID".into(),
+        "MEMBERS".into(),
+    ]];
+    rows.extend(squads.iter().map(|squad| {
+        vec![
+            value_string(squad, "id"),
+            value_string(squad, "name"),
+            value_string(squad, "leader_id"),
+            squad_member_count_display(squad),
+        ]
+    }));
+    Ok(RunOutput {
+        stdout: format_table(&rows),
+        stderr: String::new(),
+    })
+}
+
+fn squad_member_count_display(squad: &Value) -> String {
+    let Some(count) = squad.get("member_count").and_then(Value::as_f64) else {
+        return "-".into();
+    };
+    if count <= 0.0 {
+        "-".into()
+    } else {
+        (count as i64).to_string()
+    }
+}
+
+async fn run_squad_get(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let squad: Value = client
+        .get_json(&format!("/api/squads/{id}"))
+        .await
+        .context("get squad")?;
+    if output == OutputFormat::Json {
+        return Ok(RunOutput {
+            stdout: format!("{}\n", serde_json::to_string_pretty(&squad)?),
+            stderr: String::new(),
+        });
+    }
+    let mut stdout = format!(
+        "ID:           {}\nName:         {}\nDescription:  {}\nLeader ID:    {}\nCreated:      {}\n",
+        value_string(&squad, "id"),
+        value_string(&squad, "name"),
+        value_string(&squad, "description"),
+        value_string(&squad, "leader_id"),
+        value_string(&squad, "created_at")
+    );
+    let instructions = value_string(&squad, "instructions");
+    if !instructions.is_empty() {
+        let _ = writeln!(stdout, "Instructions: {instructions}");
+    }
+    Ok(RunOutput {
+        stdout,
         stderr: String::new(),
     })
 }
@@ -13759,6 +13877,136 @@ mod tests {
     use std::io::Cursor;
     use std::sync::{Arc, Mutex};
     use tokio::net::TcpListener;
+
+    #[test]
+    fn squad_read_parser_matches_go_registry() {
+        let list = Cli::try_parse_from(["cordy", "squad", "list", "--output", "json"])
+            .expect("squad list CLI");
+        assert!(matches!(
+            list.command,
+            Command::Squad(SquadArgs {
+                command: SquadCommand::List {
+                    output: OutputFormat::Json
+                }
+            })
+        ));
+        let get = Cli::try_parse_from(["cordy", "squad", "get", "squad-1", "--output", "table"])
+            .expect("squad get CLI");
+        assert!(matches!(
+            get.command,
+            Command::Squad(SquadArgs {
+                command: SquadCommand::Get {
+                    id,
+                    output: OutputFormat::Table
+                }
+            }) if id == "squad-1"
+        ));
+        assert!(Cli::try_parse_from(["cordy", "squad", "get"]).is_err());
+        assert!(Cli::try_parse_from(["cordy", "squad", "list", "extra"]).is_err());
+    }
+
+    #[tokio::test]
+    async fn squad_list_and_get_preserve_go_requests_and_outputs() {
+        let app = Router::new()
+            .route(
+                "/api/squads",
+                get(|| async {
+                    Json(vec![
+                        serde_json::json!({
+                            "id":"squad-1",
+                            "name":"Reviewers",
+                            "leader_id":"agent-1",
+                            "member_count":3,
+                            "server_only":"preserved"
+                        }),
+                        serde_json::json!({
+                            "id":"squad-2",
+                            "name":"Empty",
+                            "leader_id":"agent-2",
+                            "member_count":0
+                        }),
+                    ])
+                }),
+            )
+            .route(
+                "/api/squads/squad-1",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "id":"squad-1",
+                        "name":"Reviewers",
+                        "description":"Reviews code",
+                        "leader_id":"agent-1",
+                        "created_at":"2026-08-24T00:00:00Z",
+                        "instructions":"Check correctness first",
+                        "server_only":"preserved"
+                    }))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+
+        let list = Cli::try_parse_from(["cordy", "squad", "list"]).expect("squad list table CLI");
+        let output = run_with_input(&list, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list squads");
+        assert!(output.stdout.starts_with("ID"));
+        assert!(output.stdout.contains("Reviewers"));
+        assert!(output.stdout.contains("agent-1"));
+        assert!(output
+            .stdout
+            .lines()
+            .any(|line| line.contains("squad-1") && line.ends_with('3')));
+        assert!(output
+            .stdout
+            .lines()
+            .any(|line| line.contains("squad-2") && line.ends_with('-')));
+
+        let list = Cli::try_parse_from(["cordy", "squad", "list", "--output", "json"])
+            .expect("squad list JSON CLI");
+        let output = run_with_input(&list, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list squads JSON");
+        let value: Value = serde_json::from_str(&output.stdout).expect("JSON output");
+        assert_eq!(value[0]["server_only"], "preserved");
+
+        let get =
+            Cli::try_parse_from(["cordy", "squad", "get", "squad-1"]).expect("squad get table CLI");
+        let output = run_with_input(&get, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("get squad");
+        assert_eq!(
+            output.stdout,
+            "ID:           squad-1\nName:         Reviewers\nDescription:  Reviews code\nLeader ID:    agent-1\nCreated:      2026-08-24T00:00:00Z\nInstructions: Check correctness first\n"
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn squad_list_empty_table_uses_go_stderr_hint() {
+        let app = Router::new().route("/api/squads", get(|| async { Json(Vec::<Value>::new()) }));
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        let cli = Cli::try_parse_from(["cordy", "squad", "list"]).expect("squad list CLI");
+
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("empty squad list");
+        assert!(output.stdout.is_empty());
+        assert_eq!(output.stderr, "No squads found.\n");
+        server.abort();
+    }
 
     #[test]
     fn skill_read_parser_matches_go_registry() {
