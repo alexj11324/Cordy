@@ -333,6 +333,8 @@ struct IssueCommentArgs {
 
 #[derive(Debug, Subcommand)]
 enum IssueCommentCommand {
+    #[command(about = "List comments on an issue")]
+    List(IssueCommentListArgs),
     #[command(about = "Add a comment to an issue")]
     Add(IssueCommentAddArgs),
     #[command(about = "Delete a comment")]
@@ -344,6 +346,34 @@ enum IssueCommentCommand {
     Resolve(IssueCommentResolutionArgs),
     #[command(about = "Unresolve a comment thread")]
     Unresolve(IssueCommentResolutionArgs),
+}
+
+#[derive(Debug, Args)]
+struct IssueCommentListArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+    #[arg(long, help = "Only comments created after this RFC3339 timestamp")]
+    since: Option<String>,
+    #[arg(long, help = "Return the thread containing this comment UUID")]
+    thread: Option<String>,
+    #[arg(long, help = "Cap replies to the N most recent within --thread")]
+    tail: Option<i64>,
+    #[arg(long, help = "Return the N most recently active threads")]
+    recent: Option<i64>,
+    #[arg(long, help = "Only return top-level comments")]
+    roots_only: bool,
+    #[arg(long, help = "Drop redundant fields from JSON output")]
+    compact: bool,
+    #[arg(long, help = "Clip comment content to a short preview")]
+    summary: bool,
+    #[arg(long, help = "Return resolved threads without folding")]
+    full: bool,
+    #[arg(long, help = "Composite pagination timestamp cursor")]
+    before: Option<String>,
+    #[arg(long, help = "Composite pagination UUID cursor")]
+    before_id: Option<String>,
 }
 
 #[derive(Debug, Args)]
@@ -756,6 +786,12 @@ async fn run_with_input<R: Read>(
         Command::Issue(IssueArgs {
             command: IssueCommand::Reorder(args),
         }) => run_issue_reorder(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Comment(IssueCommentArgs {
+                    command: IssueCommentCommand::List(args),
+                }),
+        }) => run_issue_comment_list(cli, environment, args).await,
         Command::Issue(IssueArgs {
             command:
                 IssueCommand::Comment(IssueCommentArgs {
@@ -2972,6 +3008,206 @@ async fn run_issue_comment_add<R: Read>(
     Ok(RunOutput { stdout, stderr })
 }
 
+async fn run_issue_comment_list(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueCommentListArgs,
+) -> Result<RunOutput> {
+    let since = args.since.as_deref().unwrap_or_default();
+    let thread = args.thread.as_deref().unwrap_or_default();
+    let before = args.before.as_deref().unwrap_or_default();
+    let before_id = args.before_id.as_deref().unwrap_or_default();
+    if args.recent.is_some_and(|value| value <= 0) {
+        bail!("--recent must be a positive integer");
+    }
+    if args.tail.is_some_and(|value| value < 0) {
+        bail!("--tail must be a non-negative integer (0 returns just the thread root)");
+    }
+    if !thread.is_empty() && args.recent.is_some() {
+        bail!("--thread and --recent are mutually exclusive");
+    }
+    if args.roots_only && !thread.is_empty() {
+        bail!("--roots-only and --thread are mutually exclusive");
+    }
+    if args.roots_only && args.recent.is_some() {
+        bail!("--roots-only and --recent are mutually exclusive");
+    }
+    if args.roots_only && args.tail.is_some() {
+        bail!("--roots-only and --tail are mutually exclusive");
+    }
+    if args.roots_only && !before.is_empty() {
+        bail!("--roots-only does not support --before / --before-id");
+    }
+    if args.tail.is_some() && thread.is_empty() {
+        bail!("--tail requires --thread (it is a thread-scoped limit)");
+    }
+    if before.is_empty() != before_id.is_empty() {
+        bail!("--before and --before-id must be set together (composite cursor for stable pagination)");
+    }
+    if !before.is_empty() && args.recent.is_none() && !(args.tail.is_some() && !thread.is_empty()) {
+        bail!("--before / --before-id require --recent (thread cursor) or --thread + --tail (reply cursor)");
+    }
+
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let mut serializer = form_urlencoded::Serializer::new(String::new());
+    if !since.is_empty() {
+        serializer.append_pair("since", since);
+    }
+    if args.roots_only {
+        serializer.append_pair("roots_only", "true");
+    }
+    if args.summary {
+        serializer.append_pair("summary", "true");
+    }
+    let fold_eligible = !args.roots_only && since.is_empty() && args.tail.is_none();
+    if fold_eligible && !args.full {
+        serializer.append_pair("fold", "true");
+    }
+    if !thread.is_empty() {
+        serializer.append_pair("thread", thread);
+    }
+    if let Some(tail) = args.tail {
+        serializer.append_pair("tail", &tail.to_string());
+    }
+    if let Some(recent) = args.recent {
+        serializer.append_pair("recent", &recent.to_string());
+    }
+    if !before.is_empty() {
+        serializer.append_pair("before", before);
+        serializer.append_pair("before_id", before_id);
+    }
+    let query = serializer.finish();
+    let path = if query.is_empty() {
+        format!("/api/issues/{issue_id}/comments")
+    } else {
+        format!("/api/issues/{issue_id}/comments?{query}")
+    };
+    let (mut comments, headers): (Vec<Value>, _) = client
+        .get_json_with_headers(&path)
+        .await
+        .context("list comments")?;
+    let mut stderr = String::new();
+    let next_before = headers
+        .get("X-Cordy-Next-Before")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    let next_before_id = headers
+        .get("X-Cordy-Next-Before-Id")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default();
+    if !next_before.is_empty() && !next_before_id.is_empty() {
+        let label = if !thread.is_empty() && args.tail.is_some() {
+            "Next reply cursor"
+        } else {
+            "Next thread cursor"
+        };
+        let _ = writeln!(
+            stderr,
+            "{label}: --before {next_before} --before-id {next_before_id}"
+        );
+    }
+
+    let stdout = match args.output {
+        OutputFormat::Json => {
+            if args.compact {
+                compact_issue_comments(&mut comments);
+            }
+            format!("{}\n", serde_json::to_string_pretty(&comments)?)
+        }
+        OutputFormat::Table => {
+            let workspace_id = resolve_current_workspace_id(cli, environment);
+            let actors = load_comment_actor_names(&client, &workspace_id, &comments).await;
+            format_issue_comments_table(&comments, &actors)
+        }
+    };
+    Ok(RunOutput { stdout, stderr })
+}
+
+fn compact_issue_comments(comments: &mut [Value]) {
+    for comment in comments {
+        let Some(object) = comment.as_object_mut() else {
+            continue;
+        };
+        object.remove("issue_id");
+        object.remove("source_task_id");
+        if object.get("updated_at") == object.get("created_at") {
+            object.remove("updated_at");
+        }
+        object.retain(|_, value| match value {
+            Value::Null => false,
+            Value::Array(items) => !items.is_empty(),
+            _ => true,
+        });
+    }
+}
+
+async fn load_comment_actor_names(
+    client: &ApiClient,
+    workspace_id: &str,
+    comments: &[Value],
+) -> IssueActorNames {
+    let synthetic_issues = comments
+        .iter()
+        .map(|comment| {
+            serde_json::json!({
+                "assignee_type": comment.get("author_type").cloned().unwrap_or(Value::Null),
+                "assignee_id": comment.get("author_id").cloned().unwrap_or(Value::Null)
+            })
+        })
+        .collect::<Vec<_>>();
+    load_issue_actor_names(client, workspace_id, &synthetic_issues).await
+}
+
+fn format_issue_comments_table(comments: &[Value], actors: &IssueActorNames) -> String {
+    let mut rows = vec![vec![
+        "ID".into(),
+        "PARENT".into(),
+        "AUTHOR".into(),
+        "TYPE".into(),
+        "CONTENT".into(),
+        "CREATED".into(),
+    ]];
+    for comment in comments {
+        let content = value_string(comment, "content");
+        let content = if content.chars().count() > 80 {
+            format!("{}...", content.chars().take(77).collect::<String>())
+        } else {
+            content
+        };
+        let created = value_string(comment, "created_at")
+            .chars()
+            .take(16)
+            .collect::<String>();
+        let parent = match value_string(comment, "parent_id") {
+            value if value.is_empty() => "—".into(),
+            value => value,
+        };
+        let actor_type = value_string(comment, "author_type");
+        let actor_id = value_string(comment, "author_id");
+        let author = if actor_type.is_empty() || actor_id.is_empty() {
+            String::new()
+        } else {
+            let actor_key = format!("{actor_type}:{actor_id}");
+            actors
+                .0
+                .get(&actor_key)
+                .map_or(actor_key, |name| format!("{actor_type}:{name}"))
+        };
+        rows.push(vec![
+            value_string(comment, "id"),
+            parent,
+            author,
+            value_string(comment, "type"),
+            content,
+            created,
+        ]);
+    }
+    format_table(&rows)
+}
+
 fn resolve_issue_comment_content<R: Read>(
     args: &IssueCommentAddArgs,
     environment: &Environment,
@@ -4578,6 +4814,18 @@ mod tests {
                     }),
             }) => args,
             _ => panic!("expected issue comment add"),
+        }
+    }
+
+    fn issue_comment_list_args(cli: &Cli) -> &IssueCommentListArgs {
+        match &cli.command {
+            Command::Issue(IssueArgs {
+                command:
+                    IssueCommand::Comment(IssueCommentArgs {
+                        command: IssueCommentCommand::List(args),
+                    }),
+            }) => args,
+            _ => panic!("expected issue comment list"),
         }
     }
 
@@ -6616,6 +6864,145 @@ mod tests {
         assert!(output.stdout.is_empty());
         assert_eq!(output.stderr, "Comment comment-1 unresolved.\n");
         task.abort();
+    }
+
+    #[tokio::test]
+    async fn issue_comment_list_parser_and_validation_match_go() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "comment",
+            "list",
+            "CORD-18",
+            "--thread",
+            "comment-1",
+            "--tail",
+            "0",
+            "--summary",
+            "--compact",
+            "--full",
+            "--before",
+            "2026-08-24T00:00:00Z",
+            "--before-id",
+            "comment-2",
+            "--output",
+            "json",
+        ])
+        .expect("comment list CLI");
+        let args = issue_comment_list_args(&cli);
+        assert_eq!(args.thread.as_deref(), Some("comment-1"));
+        assert_eq!(args.tail, Some(0));
+        assert!(args.summary && args.compact && args.full);
+        assert_eq!(args.output, OutputFormat::Json);
+
+        let invalid = Cli::try_parse_from([
+            "cordy", "issue", "comment", "list", "CORD-18", "--tail", "1",
+        ])
+        .expect("combination validation is at runtime");
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let error = run_with_input(&invalid, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("tail requires thread");
+        assert!(error.to_string().contains("--tail requires --thread"));
+    }
+
+    #[tokio::test]
+    async fn issue_comment_list_sends_folded_recent_query_surfaces_cursor_and_compacts_json() {
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid/comments",
+                get(|request: Request| async move {
+                    let query = request.uri().query().unwrap_or_default();
+                    assert!(query.contains("summary=true"));
+                    assert!(query.contains("fold=true"));
+                    assert!(query.contains("recent=2"));
+                    assert!(query.contains("before=2026-08-24T00%3A00%3A00Z"));
+                    assert!(query.contains("before_id=comment-2"));
+                    let mut headers = HeaderMap::new();
+                    headers.insert(
+                        "X-Cordy-Next-Before",
+                        "2026-08-23T23:00:00Z".parse().expect("cursor"),
+                    );
+                    headers.insert(
+                        "X-Cordy-Next-Before-Id",
+                        "comment-older".parse().expect("cursor id"),
+                    );
+                    (
+                        headers,
+                        Json(vec![serde_json::json!({
+                            "id":"comment-1","issue_id":"issue-uuid","source_task_id":null,
+                            "author_type":"member","author_id":"member-1","type":"comment",
+                            "content":"summary","created_at":"2026-08-24T00:00:00Z",
+                            "updated_at":"2026-08-24T00:00:00Z","parent_id":null,
+                            "attachments":[]
+                        })]),
+                    )
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "comment",
+            "list",
+            "CORD-18",
+            "--recent",
+            "2",
+            "--summary",
+            "--compact",
+            "--before",
+            "2026-08-24T00:00:00Z",
+            "--before-id",
+            "comment-2",
+            "--output",
+            "json",
+        ])
+        .expect("comment list CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list comments");
+        assert_eq!(
+            output.stderr,
+            "Next thread cursor: --before 2026-08-23T23:00:00Z --before-id comment-older\n"
+        );
+        let comments: Value = serde_json::from_str(&output.stdout).expect("comments JSON");
+        let comment = &comments[0];
+        assert!(comment.get("issue_id").is_none());
+        assert!(comment.get("source_task_id").is_none());
+        assert!(comment.get("updated_at").is_none());
+        assert!(comment.get("parent_id").is_none());
+        assert!(comment.get("attachments").is_none());
+        task.abort();
+    }
+
+    #[test]
+    fn issue_comment_list_table_truncates_and_formats_actor_fallback() {
+        let comments = vec![serde_json::json!({
+            "id":"comment-1","parent_id":null,"author_type":"agent","author_id":"agent-1",
+            "type":"comment","content":"x".repeat(81),"created_at":"2026-08-24T12:34:56Z"
+        })];
+        let actors = IssueActorNames(HashMap::from([("agent:agent-1".into(), "CodeBot".into())]));
+        let table = format_issue_comments_table(&comments, &actors);
+        assert!(table.starts_with("ID"));
+        assert!(table.contains("agent:CodeBot"));
+        assert!(table.contains("2026-08-24T12:34"));
+        assert!(table.contains("xxx..."));
     }
 
     #[test]

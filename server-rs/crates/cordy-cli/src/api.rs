@@ -1,7 +1,7 @@
 //! HTTP client foundation ported from `server/internal/cli/client.go`.
 
 use anyhow::{Context, Result};
-use reqwest::{Client, Method, RequestBuilder, Response};
+use reqwest::{header::HeaderMap, Client, Method, RequestBuilder, Response};
 use serde::{de::DeserializeOwned, Serialize};
 use std::fmt;
 use std::time::Duration;
@@ -106,6 +106,27 @@ impl ApiClient {
     pub async fn get_json<T: DeserializeOwned>(&self, path: &str) -> Result<T> {
         self.send_json(Method::GET, path, self.request(Method::GET, path))
             .await
+    }
+
+    pub async fn get_json_with_headers<T: DeserializeOwned>(
+        &self,
+        path: &str,
+    ) -> Result<(T, HeaderMap)> {
+        let response = self
+            .request(Method::GET, path)
+            .send()
+            .await
+            .map_err(|source| NetworkError {
+                kind: classify_network_error(&source),
+                op: format!("GET {path}"),
+                source,
+            })?;
+        if response.status().is_client_error() || response.status().is_server_error() {
+            return Err(read_http_error(Method::GET, path, response).await.into());
+        }
+        let headers = response.headers().clone();
+        let value = response.json().await.context("decode API response")?;
+        Ok((value, headers))
     }
 
     pub async fn patch_json<B: Serialize + ?Sized, T: DeserializeOwned>(
