@@ -144,6 +144,8 @@ enum IssueCommand {
     Reorder(IssueReorderArgs),
     #[command(about = "Work with issue comments")]
     Comment(IssueCommentArgs),
+    #[command(about = "List execution history for an issue")]
+    Runs(IssueRunsArgs),
 }
 
 #[derive(Debug, Args)]
@@ -412,6 +414,16 @@ struct IssueCommentResolutionArgs {
     comment_id: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssueRunsArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+    #[arg(long, help = "Show full task UUIDs in table output")]
+    full_id: bool,
 }
 
 #[derive(Debug, Args)]
@@ -816,6 +828,9 @@ async fn run_with_input<R: Read>(
                     command: IssueCommentCommand::Unresolve(args),
                 }),
         }) => run_issue_comment_resolution(cli, environment, args, false).await,
+        Command::Issue(IssueArgs {
+            command: IssueCommand::Runs(args),
+        }) => run_issue_runs(cli, environment, args).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -3311,6 +3326,82 @@ async fn run_issue_comment_resolution(
     })
 }
 
+async fn run_issue_runs(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueRunsArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let runs: Vec<Value> = client
+        .get_json(&format!("/api/issues/{issue_id}/task-runs"))
+        .await
+        .context("list runs")?;
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&runs)?),
+        OutputFormat::Table => {
+            let workspace_id = resolve_current_workspace_id(cli, environment);
+            let synthetic = runs
+                .iter()
+                .map(|run| {
+                    serde_json::json!({
+                        "assignee_type":"agent",
+                        "assignee_id":run.get("agent_id").cloned().unwrap_or(Value::Null)
+                    })
+                })
+                .collect::<Vec<_>>();
+            let actors = load_issue_actor_names(&client, &workspace_id, &synthetic).await;
+            format_issue_runs_table(&runs, args.full_id, &actors)
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn format_issue_runs_table(runs: &[Value], full_id: bool, actors: &IssueActorNames) -> String {
+    let mut rows = vec![vec![
+        "ID".into(),
+        "AGENT".into(),
+        "STATUS".into(),
+        "STARTED".into(),
+        "COMPLETED".into(),
+        "ERROR".into(),
+    ]];
+    for run in runs {
+        let agent_id = value_string(run, "agent_id");
+        let agent = actors
+            .0
+            .get(&format!("agent:{agent_id}"))
+            .cloned()
+            .unwrap_or(agent_id);
+        let error = value_string(run, "error");
+        let error = if error.chars().count() > 50 {
+            format!("{}...", error.chars().take(47).collect::<String>())
+        } else {
+            error
+        };
+        let timestamp = |field| {
+            value_string(run, field)
+                .chars()
+                .take(16)
+                .collect::<String>()
+        };
+        rows.push(vec![
+            display_id(&value_string(run, "id"), full_id),
+            agent,
+            value_string(run, "status"),
+            timestamp("started_at"),
+            timestamp("completed_at"),
+            error,
+        ]);
+    }
+    format_table(&rows)
+}
+
 fn validate_issue_status(status: &str) -> Result<()> {
     let normalized = status.trim().to_ascii_lowercase();
     let bytes = normalized.as_bytes();
@@ -4826,6 +4917,15 @@ mod tests {
                     }),
             }) => args,
             _ => panic!("expected issue comment list"),
+        }
+    }
+
+    fn issue_runs_args(cli: &Cli) -> &IssueRunsArgs {
+        match &cli.command {
+            Command::Issue(IssueArgs {
+                command: IssueCommand::Runs(args),
+            }) => args,
+            _ => panic!("expected issue runs"),
         }
     }
 
@@ -7003,6 +7103,80 @@ mod tests {
         assert!(table.contains("agent:CodeBot"));
         assert!(table.contains("2026-08-24T12:34"));
         assert!(table.contains("xxx..."));
+    }
+
+    #[test]
+    fn issue_runs_parser_and_table_match_go_contract() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "runs",
+            "CORD-18",
+            "--full-id",
+            "--output",
+            "json",
+        ])
+        .expect("runs CLI");
+        let args = issue_runs_args(&cli);
+        assert_eq!(args.issue_id, "CORD-18");
+        assert!(args.full_id);
+        assert_eq!(args.output, OutputFormat::Json);
+
+        let runs = vec![serde_json::json!({
+            "id":"11111111-1111-1111-1111-111111111111","agent_id":"agent-1",
+            "status":"failed","started_at":"2026-08-24T12:34:56Z",
+            "completed_at":"2026-08-24T12:40:00Z","error":"x".repeat(51)
+        })];
+        let actors = IssueActorNames(HashMap::from([("agent:agent-1".into(), "CodeBot".into())]));
+        let short = format_issue_runs_table(&runs, false, &actors);
+        assert!(short.contains("11111111"));
+        assert!(!short.contains("11111111-1111"));
+        assert!(short.contains("CodeBot"));
+        assert!(short.contains("2026-08-24T12:34"));
+        assert!(short.contains("xxx..."));
+        let full = format_issue_runs_table(&runs, true, &actors);
+        assert!(full.contains("11111111-1111-1111-1111-111111111111"));
+    }
+
+    #[tokio::test]
+    async fn issue_runs_resolves_issue_fetches_task_runs_and_actor_names() {
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid/task-runs",
+                get(|| async {
+                    Json(vec![serde_json::json!({
+                        "id":"task-uuid","agent_id":"agent-1","status":"completed",
+                        "started_at":"2026-08-24T12:34:56Z","completed_at":"2026-08-24T12:40:00Z"
+                    })])
+                }),
+            )
+            .route(
+                "/api/agents",
+                get(|| async { Json(vec![serde_json::json!({"id":"agent-1","name":"CodeBot"})]) }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from(["cordy", "issue", "runs", "CORD-18"]).expect("runs CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("list runs");
+        assert!(output.stdout.starts_with("ID"));
+        assert!(output.stdout.contains("CodeBot"));
+        assert!(output.stdout.contains("completed"));
+        task.abort();
     }
 
     #[test]
