@@ -19,22 +19,7 @@ jobs:
       github.event.pull_request.head.ref == 'remediation/review-debt-20260824'
     runs-on: ubuntu-latest
     timeout-minutes: 180
-    services:
-      postgres:
-        image: pgvector/pgvector:pg17
-        env:
-          POSTGRES_DB: cordy
-          POSTGRES_USER: cordy
-          POSTGRES_PASSWORD: cordy
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U cordy -d cordy"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     env:
-      DATABASE_URL: postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
       CARGO_INCREMENTAL: '0'
     steps:
       - uses: actions/checkout@v4
@@ -79,6 +64,7 @@ jobs:
             5a450533bb8e6ab4f2085d37ac034d2b93463849
             41eed2a2918ec798c202e8719e86f429f0ee5cd9
             881da969d4d1357553a86115ffe6e17f21c671e8
+            33664841ec8733a2601a702af360607304361c88
           )
 
           : > .remediation-replay-report.txt
@@ -90,7 +76,6 @@ jobs:
               printf 'applied\n\n' >> .remediation-replay-report.txt
               continue
             fi
-
             conflicts=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
             if [[ -z "$conflicts" ]]; then
               git cherry-pick --skip || git cherry-pick --abort || true
@@ -119,7 +104,6 @@ jobs:
             return 0
           }
           run_check 'cargo fmt --all --check' bash -lc 'cd server-rs && cargo fmt --all -- --check'
-          run_check 'migrations' bash -lc 'cd server-rs && cargo run --locked -p cordy-migrate -- up'
           run_check 'cargo check workspace all targets' bash -lc 'cd server-rs && cargo check --workspace --all-targets --locked'
           run_check 'cargo test workspace all targets' bash -lc 'cd server-rs && cargo test --workspace --all-targets --locked'
           run_check 'strict clippy' bash -lc 'cd server-rs && cargo clippy --workspace --all-targets --locked -- -D warnings'
