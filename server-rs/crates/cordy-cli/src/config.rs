@@ -544,10 +544,11 @@ pub struct DaemonLaunchFlags {
 
 /// Resolves the CLI-owned `flag > env > profile > daemon default` layer.
 ///
-/// Environment values are intentionally represented by an empty/zero output:
-/// [`cordy_daemon::assembly::DaemonProductionInputs`] reads the same process
-/// environment through the authoritative daemon config loader. Copying the
-/// value here would create a second parser and allow the two paths to drift.
+/// Most environment values are intentionally represented by an empty/zero
+/// output: [`cordy_daemon::assembly::DaemonProductionInputs`] reads the same
+/// process environment through the authoritative daemon config loader. The
+/// server URL is the exception because background authenticated preflight
+/// consumes it before the foreground loader runs.
 pub fn resolve_daemon_launch_overrides(
     profile: &str,
     flags: &DaemonLaunchFlags,
@@ -587,7 +588,11 @@ pub fn resolve_daemon_launch_overrides(
     let agent_timeout = resolve_agent_timeout(flags.agent_timeout, environment, config)?;
 
     Ok(cordy_daemon::assembly::DaemonLaunchOverrides {
-        server_url: resolve_string(
+        // Unlike every other environment-owned field, the server URL is also
+        // consumed by the background lifecycle preflight before the child
+        // exists. Carry its effective value so preflight and foreground never
+        // target different servers.
+        server_url: resolve_effective_string(
             flags.server_url.as_deref(),
             environment,
             "CORDY_SERVER_URL",
@@ -666,6 +671,21 @@ fn resolve_string(
         return String::new();
     }
     persisted.to_string()
+}
+
+fn resolve_effective_string(
+    flag: Option<&str>,
+    environment: &Environment,
+    env_key: &str,
+    persisted: &str,
+) -> String {
+    if let Some(flag) = flag.filter(|value| !value.is_empty()) {
+        return flag.to_string();
+    }
+    environment
+        .trimmed(env_key)
+        .unwrap_or(persisted)
+        .to_string()
 }
 
 fn resolve_positive_duration(
@@ -967,7 +987,7 @@ mod tests {
             &config,
         )
         .expect("resolve launch");
-        assert!(resolved.server_url.is_empty());
+        assert_eq!(resolved.server_url, "https://env.example");
         assert!(resolved.daemon_id.is_empty());
         assert!(resolved.device_name.is_empty());
         assert!(resolved.runtime_name.is_empty());
