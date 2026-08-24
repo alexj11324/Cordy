@@ -99,7 +99,7 @@ where
         &mut self,
         method: &str,
         params: Value,
-        on_notification: impl FnMut(AcpNotification),
+        mut on_notification: impl FnMut(AcpNotification),
     ) -> Result<Value, AcpError> {
         self.request_with_permission(method, params, on_notification, default_permission_decision)
             .await
@@ -169,7 +169,7 @@ where
         &mut self,
         quiet: Duration,
         maximum: Duration,
-        mut on_notification: impl FnMut(AcpNotification),
+        on_notification: impl FnMut(AcpNotification),
     ) -> Result<(), AcpError> {
         self.drain_notifications_with_permission(
             quiet,
