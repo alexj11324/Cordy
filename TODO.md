@@ -105,6 +105,11 @@
       restack worktree is clean. External GitHub review is still delayed; local review
       is clean, so one serial subagent read-only review is the next required decision
       point before merge.
+- [x] #113 internal subagent exact-head review completed serially: PASS, no P0/P1.
+      It verified canonical workdir containment before attachment `fs::read`, the
+      outside-path regression, ACP callback mutability, Kimi reader reborrow, and
+      Qoder type inference as behavior-preserving; no files, Cargo, or remote refs
+      were changed by the subagent. External GitHub review remains advisory/delayed.
 - [ ] #113 original worktree
       `.worktrees/cord-22-daemon-production-assembly` has unrelated uncommitted CLI
       edits and must not be reset or used for the gate. Restacked tree has passed
