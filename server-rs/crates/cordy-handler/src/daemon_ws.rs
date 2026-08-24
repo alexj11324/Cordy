@@ -199,5 +199,6 @@ async fn serve_daemon_socket(hub: Arc<DaemonHub>, identity: ClientIdentity, sock
     // Reader exited: stop the writer, then unregister (cancels connection
     // context so async RPC handlers stop too).
     writer.abort();
+    let _ = writer.await;
     hub.unregister(client.id);
 }

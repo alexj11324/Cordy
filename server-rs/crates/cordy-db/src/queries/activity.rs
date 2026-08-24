@@ -55,7 +55,7 @@ pub async fn create_activity(
     workspace_id: Uuid,
     issue_id: Uuid,
     actor_type: Option<&str>,
-    actor_id: Uuid,
+    actor_id: Option<Uuid>,
     action: &str,
     details: &serde_json::Value,
     id: Uuid,

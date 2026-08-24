@@ -40,7 +40,7 @@ impl ChannelRuntime {
         media_metrics: Option<Arc<cordy_metrics::ChannelMediaReconcilerMetrics>>,
         wecom_metrics: Option<Arc<cordy_metrics::WecomMetrics>>,
         lark_backfill_metrics: Option<Arc<cordy_metrics::LarkBackfillMetrics>>,
-    ) -> anyhow::Result<Option<Self>> {
+    ) -> anyhow::Result<Self> {
         let services = Arc::new(ChannelServices {
             pool: state.pool.clone(),
             issues: state.issues.clone(),
@@ -108,55 +108,57 @@ impl ChannelRuntime {
         }
 
         let channel_types = registry.types();
-        if channel_types.is_empty() {
-            tracing::info!("channel runtime disabled: no adapter secret keys configured");
-            return Ok(None);
-        }
-
-        let store = Arc::new(PostgresChannelStore::new(state.pool.clone()));
-        let lease_store = match RuntimeLeaseStore::from_config(store.clone(), cfg).await {
-            Ok(store) => Some(Arc::new(store)),
-            Err(error) => {
-                tracing::error!(%error, "channel supervisor disabled: lease backend unavailable");
-                None
+        let supervisor = if channel_types.is_empty() {
+            tracing::info!(
+                "channel supervisor disabled: no adapter secret keys configured; maintenance ownership remains active"
+            );
+            None
+        } else {
+            let store = Arc::new(PostgresChannelStore::new(state.pool.clone()));
+            let lease_store = match RuntimeLeaseStore::from_config(store.clone(), cfg).await {
+                Ok(store) => Some(Arc::new(store)),
+                Err(error) => {
+                    tracing::error!(%error, "channel supervisor disabled: lease backend unavailable");
+                    None
+                }
+            };
+            match lease_store {
+                Some(lease_store) => {
+                    let inbound_router = router.clone();
+                    let handler = cordy_channel::InboundHandler::new(move |ctx, message| {
+                        let router = inbound_router.clone();
+                        Box::pin(async move {
+                            tokio::select! {
+                                result = router.handle(message) => result,
+                                _ = ctx.cancelled() => Ok(()),
+                            }
+                        })
+                    });
+                    match ChannelSupervisor::new(
+                        store,
+                        lease_store,
+                        registry,
+                        handler,
+                        supervisor_config_from_env(),
+                        lease_metrics.map(|metrics| {
+                            Arc::new(RuntimeLeaseMetrics(metrics)) as Arc<dyn LeaseMetrics>
+                        }),
+                    ) {
+                        Ok(supervisor) => {
+                            let run_cancel = cancel.clone();
+                            Some(tokio::spawn(supervisor.run_owned(run_cancel)))
+                        }
+                        Err(error) => {
+                            tracing::error!(%error, "channel supervisor disabled: invalid configuration");
+                            None
+                        }
+                    }
+                }
+                None => None,
             }
         };
-        let supervisor = if let Some(lease_store) = lease_store {
-            let inbound_router = router.clone();
-            let handler = cordy_channel::InboundHandler::new(move |ctx, message| {
-                let router = inbound_router.clone();
-                Box::pin(async move {
-                    tokio::select! {
-                        result = router.handle(message) => result,
-                        _ = ctx.cancelled() => Ok(()),
-                    }
-                })
-            });
-            let supervisor = ChannelSupervisor::new(
-                store,
-                lease_store,
-                registry,
-                handler,
-                supervisor_config_from_env(),
-                lease_metrics
-                    .map(|metrics| Arc::new(RuntimeLeaseMetrics(metrics)) as Arc<dyn LeaseMetrics>),
-            )?;
-            let run_cancel = cancel.clone();
-            Some(tokio::spawn(supervisor.run_owned(run_cancel)))
-        } else {
-            None
-        };
 
-        let media_reconciler = storage.map(|storage| {
-            let reconciler = cordy_service::channel_media_reconciler::ChannelMediaReconciler {
-                pool: state.pool.clone(),
-                storage: Some(storage),
-                metrics: media_metrics,
-                delete_timeout: None,
-            };
-            let run_cancel = cancel.clone();
-            tokio::spawn(async move { reconciler.run(run_cancel).await })
-        });
+        let media_reconciler = start_media_reconciler(state, storage, media_metrics);
 
         tracing::info!(
             supervisor = supervisor.is_some(),
@@ -164,7 +166,7 @@ impl ChannelRuntime {
             channels = ?channel_types,
             "channel runtime started"
         );
-        Ok(Some(Self {
+        Ok(Self {
             cancel,
             outbound_tasks,
             supervisor,
@@ -172,7 +174,7 @@ impl ChannelRuntime {
             maintenance,
             wecom_relay: wecom.relay,
             router,
-        }))
+        })
     }
 
     pub async fn shutdown(mut self) {
@@ -236,6 +238,22 @@ fn isolate_channel_setup<T>(channel: &'static str, setup: anyhow::Result<T>) -> 
             None
         }
     }
+}
+
+fn start_media_reconciler(
+    state: &cordy_handler::HandlerState,
+    storage: Option<Arc<ChannelStorage>>,
+    metrics: Option<Arc<cordy_metrics::ChannelMediaReconcilerMetrics>>,
+) -> Option<tokio::task::JoinHandle<()>> {
+    storage.map(|storage| {
+        let reconciler = cordy_service::channel_media_reconciler::ChannelMediaReconciler::new(
+            state.pool.clone(),
+            storage,
+            metrics,
+        );
+        let run_cancel = state.channel_cancel.clone();
+        tokio::spawn(async move { reconciler.run(run_cancel).await })
+    })
 }
 
 struct RuntimeLeaseMetrics(Arc<cordy_metrics::ChannelLeaseMetrics>);
