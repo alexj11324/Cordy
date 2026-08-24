@@ -11,8 +11,6 @@ use std::time::Duration;
 
 mod channel_runtime;
 
-const PENDING_STORE_CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
-
 struct VcsWebhookConfig {
     enabled: bool,
     secret_box: Option<cordy_util::secretbox::SecretBox>,
@@ -163,7 +161,7 @@ fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<cordy_realtime::hub::H
     cordy_handler::build_router(db, hub)
 }
 
-async fn install_pending_stores(
+fn install_pending_stores(
     state: cordy_handler::HandlerState,
     redis_url: Option<&str>,
 ) -> cordy_handler::HandlerState {
@@ -177,18 +175,7 @@ async fn install_pending_stores(
             return state;
         }
     };
-    match tokio::time::timeout(
-        PENDING_STORE_CONNECT_TIMEOUT,
-        state.clone().with_redis(client),
-    )
-    .await
-    {
-        Ok(Ok(wired)) => wired,
-        Ok(Err(_)) | Err(_) => {
-            tracing::warn!("Redis is unavailable; Redis caches and stores are disabled");
-            state
-        }
-    }
+    state.with_redis(client)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -267,7 +254,6 @@ async fn build_production_router(
         tracing::warn!("public-route rate limiting disabled: REDIS_URL not configured");
     }
     let state = install_pending_stores(state, redis_url)
-        .await
         .start_autopilot_quota_reconciler()
         .start_webhook_delivery_worker();
     let channel_runtime = channel_runtime::ChannelRuntime::start(
@@ -602,23 +588,23 @@ mod tests {
         assert!(validate_auth_config(&cfg).is_ok());
     }
 
-    #[tokio::test]
-    async fn invalid_redis_config_keeps_pending_stores_fail_closed() {
+    #[test]
+    fn invalid_redis_config_keeps_pending_stores_fail_closed() {
         let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
         let state = cordy_handler::HandlerState::new(
             pool,
             cordy_auth::pat_cache::PatCache::disabled(),
             None,
         );
-        let state = install_pending_stores(state, Some("not-a-redis-url")).await;
+        let state = install_pending_stores(state, Some("not-a-redis-url"));
         assert!(state.update_store.is_none());
         assert!(state.model_list_store.is_none());
         assert!(state.local_skill_list_store.is_none());
         assert!(state.local_skill_import_store.is_none());
     }
 
-    #[tokio::test]
-    async fn unreachable_redis_does_not_block_server_startup() {
+    #[test]
+    fn unreachable_redis_is_installed_lazily_for_later_recovery() {
         let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
         let state = cordy_handler::HandlerState::new(
             pool,
@@ -626,12 +612,12 @@ mod tests {
             None,
         );
         let started = tokio::time::Instant::now();
-        let state = install_pending_stores(state, Some("redis://192.0.2.1:6379/")).await;
-        assert!(started.elapsed() <= PENDING_STORE_CONNECT_TIMEOUT + Duration::from_secs(1));
-        assert!(state.update_store.is_none());
-        assert!(state.model_list_store.is_none());
-        assert!(state.local_skill_list_store.is_none());
-        assert!(state.local_skill_import_store.is_none());
+        let state = install_pending_stores(state, Some("redis://192.0.2.1:6379/"));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(state.update_store.is_some());
+        assert!(state.model_list_store.is_some());
+        assert!(state.local_skill_list_store.is_some());
+        assert!(state.local_skill_import_store.is_some());
     }
 
     #[tokio::test]

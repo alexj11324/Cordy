@@ -1,7 +1,7 @@
 //! Redis-backed daemon-token (mdt_) lookup cache — port of
 //! `server/internal/auth/daemon_token_cache.go`.
 
-use redis::aio::ConnectionManager;
+use cordy_redis::RecoveringConnection;
 use serde::{Deserialize, Serialize};
 
 /// Namespaces daemon-token cache keys separately from PAT (`mul:auth:pat:*`)
@@ -26,17 +26,16 @@ pub struct DaemonTokenIdentity {
 /// lookups (mirrors Go's nil `*DaemonTokenCache`).
 #[derive(Clone)]
 pub struct DaemonTokenCache {
-    conn: Option<ConnectionManager>,
+    conn: Option<RecoveringConnection>,
 }
 
 impl DaemonTokenCache {
     /// Builds an active cache backed by `client`'s connection manager.
     pub async fn new(client: redis::Client) -> redis::RedisResult<Self> {
-        let conn = client.get_connection_manager().await?;
-        Ok(Self::from_connection_manager(conn))
+        Ok(Self::from_connection(RecoveringConnection::new(client)))
     }
 
-    pub fn from_connection_manager(conn: ConnectionManager) -> Self {
+    pub fn from_connection(conn: RecoveringConnection) -> Self {
         Self { conn: Some(conn) }
     }
 

@@ -12,7 +12,7 @@
 
 use std::time::Duration;
 
-use redis::aio::ConnectionManager;
+use cordy_redis::RecoveringConnection;
 
 /// Bounds how long a cached "no queued task" verdict stays believable.
 /// Enqueue invalidates by bumping the per-runtime version before waking the
@@ -48,11 +48,11 @@ fn empty_claim_version(runtime_id: &str) -> String {
 /// nil-receiver safety.
 #[derive(Clone)]
 pub struct EmptyClaimCache {
-    rdb: Option<ConnectionManager>,
+    rdb: Option<RecoveringConnection>,
 }
 
 impl EmptyClaimCache {
-    pub fn new(rdb: ConnectionManager) -> Self {
+    pub fn new(rdb: RecoveringConnection) -> Self {
         Self { rdb: Some(rdb) }
     }
 

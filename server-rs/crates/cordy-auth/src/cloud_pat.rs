@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use redis::aio::ConnectionManager;
+use cordy_redis::RecoveringConnection;
 use serde::{Deserialize, Serialize};
 use tokio_util::sync::CancellationToken;
 
@@ -51,7 +51,7 @@ impl std::error::Error for CloudPatError {}
 pub struct CloudPatVerifier {
     base_url: String,
     http: reqwest::Client,
-    cache: Option<ConnectionManager>,
+    cache: Option<RecoveringConnection>,
 }
 
 #[derive(Serialize)]
@@ -84,7 +84,7 @@ impl CloudPatVerifier {
         })
     }
 
-    pub fn set_cache(&mut self, cache: ConnectionManager) {
+    pub fn set_cache(&mut self, cache: RecoveringConnection) {
         self.cache = Some(cache);
     }
 

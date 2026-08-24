@@ -2,7 +2,7 @@
 //! `runtime_liveness_store.go`.
 
 use async_trait::async_trait;
-use redis::aio::ConnectionManager;
+use cordy_redis::RecoveringConnection;
 use std::{collections::HashMap, time::Duration};
 
 pub const RUNTIME_LIVENESS_TTL: Duration = Duration::from_secs(90);
@@ -38,11 +38,11 @@ pub trait RuntimeLivenessStore: Send + Sync {
 }
 
 pub struct RedisRuntimeLivenessStore {
-    connection: ConnectionManager,
+    connection: RecoveringConnection,
 }
 
 impl RedisRuntimeLivenessStore {
-    pub fn new(connection: ConnectionManager) -> Self {
+    pub fn new(connection: RecoveringConnection) -> Self {
         Self { connection }
     }
 }

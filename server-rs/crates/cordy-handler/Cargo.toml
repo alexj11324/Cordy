@@ -32,6 +32,7 @@ cordy-metrics = { path = "../cordy-metrics" }
 cordy-plugincontract = { path = "../cordy-plugincontract" }
 cordy-protocol = { path = "../cordy-protocol" }
 cordy-realtime = { path = "../cordy-realtime" }
+cordy-redis = { path = "../cordy-redis" }
 cordy-remotemcp = { path = "../cordy-remotemcp" }
 cordy-service = { path = "../cordy-service" }
 cordy-slack = { path = "../cordy-slack" }

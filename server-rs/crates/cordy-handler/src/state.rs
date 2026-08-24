@@ -742,13 +742,13 @@ impl HandlerState {
     /// limits, and pending request stores. Callers without Redis keep the
     /// explicit disabled implementations and preserve the Go nil-store
     /// behavior.
-    pub async fn with_redis(mut self, client: redis::Client) -> Result<Self, redis::RedisError> {
+    pub fn with_redis(mut self, client: redis::Client) -> Self {
         self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
         self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client.clone());
-        let conn = client.get_connection_manager().await?;
-        self.pat_cache = PatCache::from_connection_manager(conn.clone());
-        self.daemon_token_cache = DaemonTokenCache::from_connection_manager(conn.clone());
-        self.membership_cache = MembershipCache::from_connection_manager(conn.clone());
+        let conn = cordy_redis::RecoveringConnection::new(client);
+        self.pat_cache = PatCache::from_connection(conn.clone());
+        self.daemon_token_cache = DaemonTokenCache::from_connection(conn.clone());
+        self.membership_cache = MembershipCache::from_connection(conn.clone());
         if let Some(verifier) = self.cloud_pat_verifier.as_mut() {
             verifier.set_cache(conn.clone());
         }
@@ -775,7 +775,7 @@ impl HandlerState {
         self.local_skill_import_store = Some(Arc::new(
             crate::pending_store::LocalSkillImportStore::new(conn.clone()),
         ));
-        Ok(self)
+        self
     }
 
     /// Wires only public-route rate limiting. Kept separate from `with_redis`

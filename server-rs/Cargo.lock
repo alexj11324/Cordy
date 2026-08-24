@@ -732,6 +732,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
+ "cordy-redis",
  "hex",
  "hmac 0.12.1",
  "jsonwebtoken",
@@ -971,6 +972,7 @@ dependencies = [
  "cordy-plugincontract",
  "cordy-protocol",
  "cordy-realtime",
+ "cordy-redis",
  "cordy-remotemcp",
  "cordy-service",
  "cordy-slack",
@@ -1140,6 +1142,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "cordy-redis"
+version = "0.1.0"
+dependencies = [
+ "redis",
+ "tokio",
+]
+
+[[package]]
 name = "cordy-remotemcp"
 version = "0.1.0"
 dependencies = [
@@ -1215,6 +1225,7 @@ dependencies = [
  "cordy-metrics",
  "cordy-plugincontract",
  "cordy-protocol",
+ "cordy-redis",
  "cordy-remotemcp",
  "cordy-task-failure",
  "cordy-util",

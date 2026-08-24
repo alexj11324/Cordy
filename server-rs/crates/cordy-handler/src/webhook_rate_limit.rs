@@ -4,7 +4,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use redis::aio::ConnectionManager;
+use cordy_redis::RecoveringConnection;
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -51,7 +51,7 @@ pub enum GateDecision {
 #[derive(Clone)]
 enum Backend {
     Memory(Arc<Mutex<MemoryState>>),
-    Redis(Arc<ConnectionManager>),
+    Redis(Arc<RecoveringConnection>),
 }
 
 #[derive(Default)]
@@ -79,7 +79,7 @@ impl SlidingWindowGate {
     }
 
     fn redis(
-        connection: ConnectionManager,
+        connection: RecoveringConnection,
         prefix: &'static str,
         limit: usize,
         window: Duration,
@@ -200,7 +200,7 @@ impl Default for WebhookRateLimits {
 }
 
 impl WebhookRateLimits {
-    pub fn redis(connection: ConnectionManager) -> Self {
+    pub fn redis(connection: RecoveringConnection) -> Self {
         Self {
             token: SlidingWindowGate::redis(connection.clone(), TOKEN_PREFIX, 60, WINDOW),
             bad_credential_ip: SlidingWindowGate::redis(

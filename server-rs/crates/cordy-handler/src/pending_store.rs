@@ -13,7 +13,7 @@
 //! private side fields) matches as well.
 
 use chrono::{DateTime, Utc};
-use redis::aio::ConnectionManager;
+use cordy_redis::RecoveringConnection;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::future::Future;
@@ -137,7 +137,7 @@ where
 }
 
 async fn run_claim_script(
-    conn: &mut ConnectionManager,
+    conn: &mut RecoveringConnection,
     pending_key: &str,
     record_key: &str,
     id: &str,
@@ -156,19 +156,19 @@ async fn run_claim_script(
     Ok(result == 1)
 }
 
-async fn zcard(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<i64> {
+async fn zcard(conn: &mut RecoveringConnection, key: &str) -> anyhow::Result<i64> {
     let mut command = redis::cmd("ZCARD");
     command.arg(key);
     bounded_pending_redis("zcard", command.query_async(conn)).await
 }
 
-async fn get_bytes(conn: &mut ConnectionManager, key: &str) -> anyhow::Result<Option<Vec<u8>>> {
+async fn get_bytes(conn: &mut RecoveringConnection, key: &str) -> anyhow::Result<Option<Vec<u8>>> {
     let mut command = redis::cmd("GET");
     command.arg(key);
     bounded_pending_redis("get", command.query_async(conn)).await
 }
 
-async fn zrem(conn: &mut ConnectionManager, key: &str, member: &str) -> anyhow::Result<()> {
+async fn zrem(conn: &mut RecoveringConnection, key: &str, member: &str) -> anyhow::Result<()> {
     let mut command = redis::cmd("ZREM");
     command.arg(key).arg(member);
     let _: i64 = bounded_pending_redis("zrem", command.query_async(conn)).await?;
@@ -293,11 +293,11 @@ fn apply_update_timeout(req: &mut UpdateRequest, now: DateTime<Utc>) -> bool {
 /// Redis-backed CLI-update store (Go `RedisUpdateStore`). `None` connection is
 /// never constructed in production; tests construct disabled variants.
 pub struct UpdateStore {
-    conn: ConnectionManager,
+    conn: RecoveringConnection,
 }
 
 impl UpdateStore {
-    pub fn new(conn: ConnectionManager) -> Self {
+    pub fn new(conn: RecoveringConnection) -> Self {
         Self { conn }
     }
 
@@ -679,7 +679,7 @@ pub(crate) fn model_catalog_cache_action(
 }
 
 pub struct ModelCatalogCache {
-    conn: ConnectionManager,
+    conn: RecoveringConnection,
 }
 
 async fn bounded_model_catalog_redis<T, F>(timeout: Duration, operation: F) -> anyhow::Result<T>
@@ -696,7 +696,7 @@ where
 }
 
 impl ModelCatalogCache {
-    pub fn new(conn: ConnectionManager) -> Self {
+    pub fn new(conn: RecoveringConnection) -> Self {
         Self { conn }
     }
 
@@ -838,11 +838,11 @@ fn apply_model_list_timeout(req: &mut ModelListRequest, now: DateTime<Utc>) -> b
 }
 
 pub struct ModelListStore {
-    conn: ConnectionManager,
+    conn: RecoveringConnection,
 }
 
 impl ModelListStore {
-    pub fn new(conn: ConnectionManager) -> Self {
+    pub fn new(conn: RecoveringConnection) -> Self {
         Self { conn }
     }
 
@@ -1197,11 +1197,11 @@ fn skill_timed_out(
 }
 
 pub struct LocalSkillListStore {
-    conn: ConnectionManager,
+    conn: RecoveringConnection,
 }
 
 impl LocalSkillListStore {
-    pub fn new(conn: ConnectionManager) -> Self {
+    pub fn new(conn: RecoveringConnection) -> Self {
         Self { conn }
     }
 
@@ -1376,7 +1376,7 @@ impl LocalSkillListStore {
 }
 
 async fn load_local_skill_list(
-    conn: &mut ConnectionManager,
+    conn: &mut RecoveringConnection,
     id: &str,
 ) -> anyhow::Result<Option<RuntimeLocalSkillListRequest>> {
     match get_bytes(conn, &local_skill_list_key(id)).await? {
@@ -1386,11 +1386,11 @@ async fn load_local_skill_list(
 }
 
 pub struct LocalSkillImportStore {
-    conn: ConnectionManager,
+    conn: RecoveringConnection,
 }
 
 impl LocalSkillImportStore {
-    pub fn new(conn: ConnectionManager) -> Self {
+    pub fn new(conn: RecoveringConnection) -> Self {
         Self { conn }
     }
 
@@ -1640,7 +1640,7 @@ impl LocalSkillImportStore {
 }
 
 async fn load_local_skill_import(
-    conn: &mut ConnectionManager,
+    conn: &mut RecoveringConnection,
     id: &str,
 ) -> anyhow::Result<Option<RuntimeLocalSkillImportRequest>> {
     match get_bytes(conn, &local_skill_import_key(id)).await? {

@@ -1,7 +1,7 @@
 //! Redis-backed workspace-membership cache — port of
 //! `server/internal/auth/membership_cache.go`.
 
-use redis::aio::ConnectionManager;
+use cordy_redis::RecoveringConnection;
 
 const MEMBERSHIP_CACHE_PREFIX: &str = "mul:auth:member:";
 
@@ -28,17 +28,16 @@ pub const MEMBERSHIP_CACHE_TTL_SECS: i64 = 5 * 60;
 /// `*MembershipCache`).
 #[derive(Clone)]
 pub struct MembershipCache {
-    conn: Option<ConnectionManager>,
+    conn: Option<RecoveringConnection>,
 }
 
 impl MembershipCache {
     /// Builds an active cache backed by `client`'s connection manager.
     pub async fn new(client: redis::Client) -> redis::RedisResult<Self> {
-        let conn = client.get_connection_manager().await?;
-        Ok(Self::from_connection_manager(conn))
+        Ok(Self::from_connection(RecoveringConnection::new(client)))
     }
 
-    pub fn from_connection_manager(conn: ConnectionManager) -> Self {
+    pub fn from_connection(conn: RecoveringConnection) -> Self {
         Self { conn: Some(conn) }
     }
 

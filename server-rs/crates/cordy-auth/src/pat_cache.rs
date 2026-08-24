@@ -1,7 +1,7 @@
 //! Redis-backed PAT lookup cache — port of `server/internal/auth/pat_cache.go`.
 
 use chrono::{DateTime, Utc};
-use redis::aio::ConnectionManager;
+use cordy_redis::RecoveringConnection;
 
 /// Bounds how long a token-hash lookup stays cached before auth goes back to
 /// Postgres. Short enough that revocation lag from a missed invalidation is
@@ -18,18 +18,17 @@ const PAT_CACHE_PREFIX: &str = "mul:auth:pat:";
 /// DB lookups (mirrors Go's nil `*PATCache`).
 #[derive(Clone)]
 pub struct PatCache {
-    conn: Option<ConnectionManager>,
+    conn: Option<RecoveringConnection>,
 }
 
 impl PatCache {
     /// Builds an active cache backed by `client`'s connection manager
     /// (auto-reconnecting, shared like go-redis's internal pool).
     pub async fn new(client: redis::Client) -> redis::RedisResult<Self> {
-        let conn = client.get_connection_manager().await?;
-        Ok(Self::from_connection_manager(conn))
+        Ok(Self::from_connection(RecoveringConnection::new(client)))
     }
 
-    pub fn from_connection_manager(conn: ConnectionManager) -> Self {
+    pub fn from_connection(conn: RecoveringConnection) -> Self {
         Self { conn: Some(conn) }
     }
 
