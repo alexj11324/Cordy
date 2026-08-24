@@ -313,10 +313,15 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
 
         let mut owners = JoinSet::new();
         let renewal_ctx = root_ctx.child();
+        let renewal_root = root_ctx.clone();
         let renewal_client = Arc::clone(&self.client);
         let renewal_profile = self.config.profile.clone();
         owners.spawn(async move {
-            token_renewal_loop(renewal_client, renewal_profile, renewal_ctx).await;
+            token_renewal_loop(renewal_client, renewal_profile, renewal_ctx.clone()).await;
+            if renewal_ctx.err().is_none() {
+                tracing::error!("daemon token renewal owner stopped unexpectedly");
+                renewal_root.cancel_with(CancelCause::Shutdown);
+            }
         });
         let control_ctx = root_ctx.child();
         let control_root = root_ctx.clone();
@@ -360,12 +365,24 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
             }
         });
         let gc_ctx = root_ctx.child();
+        let gc_root = root_ctx.clone();
         let gc_host = Arc::clone(&host);
-        owners.spawn(async move { gc_loop(gc_host.as_ref(), &gc_ctx).await });
+        owners.spawn(async move {
+            gc_loop(gc_host.as_ref(), &gc_ctx).await;
+            if gc_ctx.err().is_none() {
+                tracing::error!("daemon GC owner stopped unexpectedly");
+                gc_root.cancel_with(CancelCause::Shutdown);
+            }
+        });
         let update_ctx = root_ctx.child();
+        let update_root = root_ctx.clone();
         let update_host = Arc::clone(&host);
         owners.spawn(async move {
             auto_update_loop(update_host.as_ref(), &update_ctx, AutoUpdateProbes::real()).await;
+            if update_ctx.err().is_none() {
+                tracing::error!("daemon auto-update owner stopped unexpectedly");
+                update_root.cancel_with(CancelCause::Shutdown);
+            }
         });
 
         ready.store(true, Ordering::Release);
