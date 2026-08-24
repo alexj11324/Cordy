@@ -577,6 +577,10 @@ mod tests {
         request
     }
 
+    fn test_uuid(value: u128) -> Uuid {
+        Uuid::from_u128(value)
+    }
+
     #[test]
     fn spoofed_identity_cannot_bypass_jwt_pat_or_cloud_pat_paths() {
         for bearer in ["header.payload.signature", "mul_secret", "mcn_secret"] {
@@ -608,10 +612,10 @@ mod tests {
         let mut request = request(Some("10.2.3.4:8443"), "unused", MARKER);
         request
             .headers_mut()
-            .insert("x-agent-id", Uuid::new_v4().to_string().parse().unwrap());
+            .insert("x-agent-id", test_uuid(1).to_string().parse().unwrap());
         request
             .headers_mut()
-            .insert("x-task-id", Uuid::new_v4().to_string().parse().unwrap());
+            .insert("x-task-id", test_uuid(2).to_string().parse().unwrap());
         request
             .headers_mut()
             .insert("x-actor-source", "task_token".parse().unwrap());
@@ -643,10 +647,10 @@ mod tests {
             let mut request = request(Some("203.0.113.9:443"), bearer, MARKER);
             request
                 .headers_mut()
-                .insert("x-agent-id", Uuid::new_v4().to_string().parse().unwrap());
+                .insert("x-agent-id", test_uuid(3).to_string().parse().unwrap());
             request
                 .headers_mut()
-                .insert("x-task-id", Uuid::new_v4().to_string().parse().unwrap());
+                .insert("x-task-id", test_uuid(4).to_string().parse().unwrap());
             request
                 .headers_mut()
                 .insert("x-actor-source", "task_token".parse().unwrap());
@@ -672,17 +676,17 @@ mod tests {
 
     #[test]
     fn authoritative_task_token_replaces_the_complete_actor_tuple() {
-        let user_id = Uuid::new_v4();
-        let agent_id = Uuid::new_v4();
-        let task_id = Uuid::new_v4();
-        let workspace_id = Uuid::new_v4();
+        let user_id = test_uuid(5);
+        let agent_id = test_uuid(6);
+        let task_id = test_uuid(7);
+        let workspace_id = test_uuid(8);
         let mut request = request(Some("203.0.113.9:443"), "mat_secret", MARKER);
         request
             .headers_mut()
-            .insert("x-agent-id", Uuid::new_v4().to_string().parse().unwrap());
+            .insert("x-agent-id", test_uuid(9).to_string().parse().unwrap());
         request
             .headers_mut()
-            .insert("x-task-id", Uuid::new_v4().to_string().parse().unwrap());
+            .insert("x-task-id", test_uuid(10).to_string().parse().unwrap());
 
         clear_untrusted_task_identity(&mut request);
         stamp_task_identity(&mut request, user_id, agent_id, task_id, workspace_id);
