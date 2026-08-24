@@ -255,6 +255,10 @@ async fn locked_delete(
             "failed to delete runtime",
         );
     }
+    state
+        .tasks
+        .broadcast_cancelled_tasks(&found.workspace_id.to_string(), &teardown.cancelled_tasks)
+        .await;
     crate::runtime_profile::publish_teardown(
         state,
         found.workspace_id,
