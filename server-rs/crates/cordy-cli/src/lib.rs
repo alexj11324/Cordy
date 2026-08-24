@@ -161,6 +161,8 @@ enum IssueCommand {
     Search(IssueSearchArgs),
     #[command(about = "Work with issue subscribers")]
     Subscriber(IssueSubscriberArgs),
+    #[command(about = "Manage labels on an issue")]
+    Label(IssueLabelArgs),
 }
 
 #[derive(Debug, Args)]
@@ -525,6 +527,44 @@ struct IssueSubscriberMutationArgs {
     user_id: Option<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssueLabelArgs {
+    #[command(subcommand)]
+    command: IssueLabelCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum IssueLabelCommand {
+    #[command(about = "List labels on an issue")]
+    List(IssueLabelListArgs),
+    #[command(about = "Attach a label to an issue")]
+    Add(IssueLabelMutationArgs),
+    #[command(about = "Remove a label from an issue")]
+    Remove(IssueLabelMutationArgs),
+}
+
+#[derive(Debug, Args)]
+struct IssueLabelListArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+    #[arg(long, help = "Show full UUIDs in table output")]
+    full_id: bool,
+}
+
+#[derive(Debug, Args)]
+struct IssueLabelMutationArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(value_name = "LABEL-ID")]
+    label_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+    #[arg(long, help = "Show full UUIDs in table output")]
+    full_id: bool,
 }
 
 #[derive(Debug, Args)]
@@ -965,6 +1005,24 @@ async fn run_with_input<R: Read>(
                     command: IssueSubscriberCommand::Remove(args),
                 }),
         }) => run_issue_subscriber_mutation(cli, environment, args, false).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Label(IssueLabelArgs {
+                    command: IssueLabelCommand::List(args),
+                }),
+        }) => run_issue_label_list(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Label(IssueLabelArgs {
+                    command: IssueLabelCommand::Add(args),
+                }),
+        }) => run_issue_label_add(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Label(IssueLabelArgs {
+                    command: IssueLabelCommand::Remove(args),
+                }),
+        }) => run_issue_label_remove(cli, environment, args).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -2234,6 +2292,54 @@ async fn resolve_task_run_id(
         ),
         _ => bail!(
             "ambiguous task run id prefix {input:?}; matches:\n  {}\nUse more characters or run the list command with --full-id",
+            matches.join("\n  ")
+        ),
+    }
+}
+
+async fn resolve_label_id(client: &ApiClient, workspace_id: &str, input: &str) -> Result<String> {
+    let trimmed = input.trim();
+    if is_canonical_uuid(trimmed) {
+        return Ok(trimmed.into());
+    }
+    if workspace_id.is_empty() {
+        bail!("resolve label: workspace_id is required to resolve label id prefixes");
+    }
+    let Some(prefix) = normalize_uuid_prefix(trimmed) else {
+        if trimmed.is_empty() {
+            bail!("resolve label: label id is required");
+        }
+        let compact = trimmed.replace('-', "");
+        if compact.len() < 4 {
+            bail!(
+                "resolve label: expected a full UUID or at least 4 hex characters, got {input:?}"
+            );
+        }
+        bail!(
+            "resolve label: expected a UUID prefix containing only hex characters, got {input:?}"
+        );
+    };
+    let workspace = form_urlencoded::byte_serialize(workspace_id.as_bytes()).collect::<String>();
+    let result: Value = client
+        .get_json(&format!("/api/labels?workspace_id={workspace}"))
+        .await
+        .context("resolve label")?;
+    let mut matches = result
+        .get("labels")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .map(|label| value_string(label, "id"))
+        .filter(|id| !id.is_empty() && compact_uuid(id).starts_with(&prefix))
+        .collect::<Vec<_>>();
+    matches.sort();
+    match matches.as_slice() {
+        [id] => Ok(id.clone()),
+        [] => bail!(
+            "no label found matching id prefix {input:?}; run the list command with --full-id to copy the full UUID"
+        ),
+        _ => bail!(
+            "ambiguous label id prefix {input:?}; matches:\n  {}\nUse more characters or run the list command with --full-id",
             matches.join("\n  ")
         ),
     }
@@ -4037,6 +4143,111 @@ async fn run_issue_subscriber_mutation(
             OutputFormat::Table => String::new(),
         },
         stderr: format!("{verb} {target} to issue {}.\n", args.issue_id),
+    })
+}
+
+fn issue_labels(result: &Value) -> &[Value] {
+    result
+        .get("labels")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+}
+
+fn format_issue_labels(labels: &[Value], output: OutputFormat, full_id: bool) -> Result<String> {
+    match output {
+        OutputFormat::Json => Ok(format!("{}\n", serde_json::to_string_pretty(labels)?)),
+        OutputFormat::Table => Ok(format_label_table(labels, full_id)),
+    }
+}
+
+fn format_label_table(labels: &[Value], full_id: bool) -> String {
+    let mut rows = vec![vec!["ID".into(), "NAME".into(), "COLOR".into()]];
+    rows.extend(labels.iter().map(|label| {
+        vec![
+            display_id(&value_string(label, "id"), full_id),
+            value_string(label, "name"),
+            value_string(label, "color"),
+        ]
+    }));
+    format_table(&rows)
+}
+
+async fn run_issue_label_list(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueLabelListArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let result: Value = client
+        .get_json(&format!("/api/issues/{issue_id}/labels"))
+        .await
+        .context("list issue labels")?;
+    Ok(RunOutput {
+        stdout: format_issue_labels(issue_labels(&result), args.output, args.full_id)?,
+        stderr: String::new(),
+    })
+}
+
+async fn resolve_issue_and_label(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueLabelMutationArgs,
+) -> Result<(ApiClient, String, String)> {
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let label_id = resolve_label_id(&client, &workspace_id, &args.label_id)
+        .await
+        .context("resolve label")?;
+    Ok((client, issue_id, label_id))
+}
+
+async fn run_issue_label_add(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueLabelMutationArgs,
+) -> Result<RunOutput> {
+    let (client, issue_id, label_id) = resolve_issue_and_label(cli, environment, args).await?;
+    let result: Value = client
+        .post_json(
+            &format!("/api/issues/{issue_id}/labels"),
+            &serde_json::json!({"label_id":label_id}),
+        )
+        .await
+        .context("attach label")?;
+    Ok(RunOutput {
+        stdout: format_issue_labels(issue_labels(&result), args.output, args.full_id)?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_issue_label_remove(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueLabelMutationArgs,
+) -> Result<RunOutput> {
+    let (client, issue_id, label_id) = resolve_issue_and_label(cli, environment, args).await?;
+    client
+        .delete(&format!("/api/issues/{issue_id}/labels/{label_id}"))
+        .await
+        .context("detach label")?;
+    let result = client
+        .get_json::<Value>(&format!("/api/issues/{issue_id}/labels"))
+        .await;
+    let stdout = match result {
+        Ok(result) => format_issue_labels(issue_labels(&result), args.output, args.full_id)?,
+        Err(_) if args.output == OutputFormat::Json => "{\n  \"detached\": true\n}\n".into(),
+        Err(_) => "Label detached.\n".into(),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
     })
 }
 
@@ -8362,6 +8573,137 @@ mod tests {
                     "user_id":"11111111-1111-1111-1111-111111111111"
                 })
             ]
+        );
+        task.abort();
+    }
+
+    #[test]
+    fn issue_label_parser_and_table_match_go_contract() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "label",
+            "add",
+            "CORD-18",
+            "abcd",
+            "--full-id",
+            "--output",
+            "json",
+        ])
+        .expect("issue label add CLI");
+        let Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Label(IssueLabelArgs {
+                    command: IssueLabelCommand::Add(args),
+                }),
+        }) = &cli.command
+        else {
+            panic!("expected issue label add");
+        };
+        assert_eq!(args.issue_id, "CORD-18");
+        assert_eq!(args.label_id, "abcd");
+        assert!(args.full_id);
+        assert_eq!(args.output, OutputFormat::Json);
+
+        let labels = [serde_json::json!({
+            "id":"11111111-1111-1111-1111-111111111111","name":"Bug","color":"#ff0000"
+        })];
+        let short = format_label_table(&labels, false);
+        assert!(short.starts_with("ID"));
+        assert!(short.contains("11111111"));
+        assert!(!short.contains("11111111-1111"));
+        assert!(short.contains("Bug"));
+        let full = format_label_table(&labels, true);
+        assert!(full.contains("11111111-1111-1111-1111-111111111111"));
+    }
+
+    #[tokio::test]
+    async fn issue_label_add_resolves_prefix_and_returns_response_labels() {
+        let label_id = "abcd1234-0000-0000-0000-000000000000";
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/labels",
+                get(move |request: Request| async move {
+                    assert_eq!(request.uri().query(), Some("workspace_id=workspace-1"));
+                    Json(serde_json::json!({
+                        "labels":[{"id":label_id,"name":"Bug","color":"#ff0000"}]
+                    }))
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid/labels",
+                post(move |Json(body): Json<Value>| async move {
+                    assert_eq!(body["label_id"], label_id);
+                    Json(serde_json::json!({
+                        "labels":[{"id":label_id,"name":"Bug","color":"#ff0000"}]
+                    }))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy", "issue", "label", "add", "CORD-18", "abcd", "--output", "json",
+        ])
+        .expect("issue label add CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("attach label");
+        let labels: Value = serde_json::from_str(&output.stdout).expect("labels JSON");
+        assert_eq!(labels[0]["name"], "Bug");
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn issue_label_remove_preserves_success_when_refresh_fails() {
+        let issue_id = "11111111-1111-1111-1111-111111111111";
+        let label_id = "22222222-2222-2222-2222-222222222222";
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(move || async move {
+                    Json(serde_json::json!({"id":issue_id,"identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/issues/11111111-1111-1111-1111-111111111111/labels/22222222-2222-2222-2222-222222222222",
+                delete_route(|| async { axum::http::StatusCode::NO_CONTENT }),
+            )
+            .route(
+                "/api/issues/11111111-1111-1111-1111-111111111111/labels",
+                get(|| async { axum::http::StatusCode::INTERNAL_SERVER_ERROR }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy", "issue", "label", "remove", "CORD-18", label_id, "--output", "json",
+        ])
+        .expect("issue label remove CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("detach label");
+        assert_eq!(
+            serde_json::from_str::<Value>(&output.stdout).expect("detach JSON"),
+            serde_json::json!({"detached":true})
         );
         task.abort();
     }
