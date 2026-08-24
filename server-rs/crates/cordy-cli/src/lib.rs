@@ -1759,7 +1759,7 @@ async fn run_issue_pull_request_attach(
 ) -> Result<RunOutput> {
     let url = args.url.trim();
     if url.is_empty() {
-        bail!("--url is required (https://github.com/{owner}/{repo}/pull/{number})");
+        bail!("--url is required (https://github.com/{{owner}}/{{repo}}/pull/{{number}})");
     }
     let client = new_api_client(cli, environment)?;
     let issue_id = resolve_issue_ref(&client, &args.issue_id)
@@ -3554,6 +3554,30 @@ mod tests {
             }
             _ => panic!("expected issue pull-request attach"),
         }
+    }
+
+    #[tokio::test]
+    async fn issue_pull_request_attach_rejects_empty_url_with_go_guidance() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "pull-request",
+            "attach",
+            "CORD-18",
+            "--url",
+            "",
+        ])
+        .expect("empty URL reaches runtime validation");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("empty URL");
+        assert_eq!(
+            error.to_string(),
+            "--url is required (https://github.com/{owner}/{repo}/pull/{number})"
+        );
     }
 
     #[tokio::test]
