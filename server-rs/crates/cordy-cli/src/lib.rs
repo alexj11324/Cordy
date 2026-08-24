@@ -127,6 +127,62 @@ enum AgentCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
         output: OutputFormat,
     },
+    #[command(about = "Create a new agent")]
+    Create(AgentCreateArgs),
+}
+
+#[derive(Debug, Args)]
+struct AgentCreateArgs {
+    #[arg(long, help = "Agent name (required)")]
+    name: Option<String>,
+    #[arg(long, default_value = "", help = "Agent description")]
+    description: String,
+    #[arg(long, default_value = "", help = "Agent instructions")]
+    instructions: String,
+    #[arg(long, help = "Runtime ID (required)")]
+    runtime_id: Option<String>,
+    #[arg(long, help = "Runtime config as JSON string")]
+    runtime_config: Option<String>,
+    #[arg(long, help = "Model identifier")]
+    model: Option<String>,
+    #[arg(long, help = "Reasoning/effort level for the agent runtime")]
+    thinking_level: Option<String>,
+    #[arg(long, help = "Codex execution service tier")]
+    service_tier: Option<String>,
+    #[arg(long, help = "Custom CLI arguments as a JSON array")]
+    custom_args: Option<String>,
+    #[arg(long, help = "Custom environment variables as a JSON object")]
+    custom_env: Option<String>,
+    #[arg(long, help = "Read custom environment variables from stdin")]
+    custom_env_stdin: bool,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Read custom environment variables from a file"
+    )]
+    custom_env_file: Option<PathBuf>,
+    #[arg(long, help = "MCP server configuration as a JSON object")]
+    mcp_config: Option<String>,
+    #[arg(long, help = "Read MCP server configuration from stdin")]
+    mcp_config_stdin: bool,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Read MCP server configuration from a file"
+    )]
+    mcp_config_file: Option<PathBuf>,
+    #[arg(long, help = "Visibility: private or workspace")]
+    visibility: Option<String>,
+    #[arg(long, help = "Invocation permission mode: private or public_to")]
+    permission_mode: Option<String>,
+    #[arg(long, num_args = 0..=1, default_missing_value = "true", help = "Allow every workspace member to invoke this agent")]
+    public_to_workspace: Option<bool>,
+    #[arg(long, action = clap::ArgAction::Append, value_delimiter = ',', help = "Allow a workspace member ID to invoke this agent (repeatable)")]
+    public_to_member: Vec<String>,
+    #[arg(long, help = "Maximum concurrent tasks (1-50)")]
+    max_concurrent_tasks: Option<i32>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -1692,6 +1748,9 @@ async fn run_with_input<R: Read>(
         Command::Agent(AgentArgs {
             command: AgentCommand::Get { id, output },
         }) => run_agent_get(cli, environment, id, *output).await,
+        Command::Agent(AgentArgs {
+            command: AgentCommand::Create(args),
+        }) => run_agent_create(cli, environment, args, input).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -2159,6 +2218,233 @@ async fn run_agent_get(
         stdout,
         stderr: String::new(),
     })
+}
+
+async fn run_agent_create<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &AgentCreateArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let name = args
+        .name
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .context("--name is required")?;
+    let runtime_id = args
+        .runtime_id
+        .as_deref()
+        .filter(|value| !value.is_empty())
+        .context("--runtime-id is required")?;
+    if let Some(value) = args.max_concurrent_tasks {
+        if !(1..=50).contains(&value) {
+            bail!("--max-concurrent-tasks must be between 1 and 50 (got {value})");
+        }
+    }
+
+    let mut body = serde_json::Map::from_iter([
+        ("name".into(), Value::String(name.into())),
+        ("runtime_id".into(), Value::String(runtime_id.into())),
+    ]);
+    if !args.description.is_empty() {
+        body.insert(
+            "description".into(),
+            Value::String(args.description.clone()),
+        );
+    }
+    if !args.instructions.is_empty() {
+        body.insert(
+            "instructions".into(),
+            Value::String(args.instructions.clone()),
+        );
+    }
+    if let Some(raw) = &args.runtime_config {
+        body.insert(
+            "runtime_config".into(),
+            serde_json::from_str(raw).context("--runtime-config must be valid JSON")?,
+        );
+    }
+    if let Some(raw) = &args.custom_args {
+        let values: Vec<String> = serde_json::from_str(raw)
+            .map_err(|_| anyhow::anyhow!("--custom-args must be a valid JSON array of strings"))?;
+        body.insert("custom_args".into(), serde_json::to_value(values)?);
+    }
+    if let Some(value) = resolve_agent_secret_json(
+        args.custom_env.as_deref(),
+        args.custom_env_stdin,
+        args.custom_env_file.as_deref(),
+        "custom-env",
+        false,
+        environment,
+        input,
+    )? {
+        validate_agent_custom_env(&value)?;
+        body.insert("custom_env".into(), value);
+    }
+    if let Some(value) = resolve_agent_secret_json(
+        args.mcp_config.as_deref(),
+        args.mcp_config_stdin,
+        args.mcp_config_file.as_deref(),
+        "mcp-config",
+        true,
+        environment,
+        input,
+    )? {
+        body.insert("mcp_config".into(), value);
+    }
+    for (key, value) in [
+        ("model", &args.model),
+        ("thinking_level", &args.thinking_level),
+        ("service_tier", &args.service_tier),
+        ("visibility", &args.visibility),
+    ] {
+        if let Some(value) = value {
+            body.insert(key.into(), Value::String(value.clone()));
+        }
+    }
+    apply_agent_permission_args(args, &mut body);
+    if let Some(value) = args.max_concurrent_tasks {
+        body.insert("max_concurrent_tasks".into(), Value::from(value));
+    }
+
+    let agent: Value = client
+        .post_json("/api/agents", &body)
+        .await
+        .context("create agent")?;
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&agent)?),
+        OutputFormat::Table => format!(
+            "Agent created: {} ({})\n",
+            value_string(&agent, "name"),
+            value_string(&agent, "id")
+        ),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn apply_agent_permission_args(args: &AgentCreateArgs, body: &mut serde_json::Map<String, Value>) {
+    if args.permission_mode.is_none()
+        && args.public_to_workspace.is_none()
+        && args.public_to_member.is_empty()
+    {
+        return;
+    }
+    body.insert(
+        "permission_mode".into(),
+        Value::String(
+            args.permission_mode
+                .clone()
+                .unwrap_or_else(|| "public_to".into()),
+        ),
+    );
+    let mut targets = Vec::new();
+    if args.public_to_workspace == Some(true) {
+        targets.push(serde_json::json!({"target_type":"workspace"}));
+    }
+    targets.extend(
+        args.public_to_member
+            .iter()
+            .map(|member| serde_json::json!({"target_type":"member","target_id":member})),
+    );
+    body.insert("invocation_targets".into(), Value::Array(targets));
+}
+
+fn validate_agent_custom_env(value: &Value) -> Result<()> {
+    let Some(object) = value.as_object() else {
+        bail!("--custom-env must be a valid JSON object of string keys and string values");
+    };
+    if object.values().any(|value| !value.is_string()) {
+        bail!("--custom-env must be a valid JSON object of string keys and string values");
+    }
+    Ok(())
+}
+
+fn resolve_agent_secret_json<R: Read>(
+    inline: Option<&str>,
+    from_stdin: bool,
+    file: Option<&Path>,
+    flag: &str,
+    allow_null: bool,
+    environment: &Environment,
+    input: &mut R,
+) -> Result<Option<Value>> {
+    let count =
+        usize::from(inline.is_some()) + usize::from(from_stdin) + usize::from(file.is_some());
+    if count == 0 {
+        return Ok(None);
+    }
+    if count > 1 {
+        bail!("--{flag}, --{flag}-stdin, and --{flag}-file are mutually exclusive; pick one");
+    }
+    let raw = if let Some(raw) = inline {
+        raw.to_string()
+    } else if from_stdin {
+        let mut raw = String::new();
+        input
+            .read_to_string(&mut raw)
+            .with_context(|| format!("read --{flag}-stdin"))?;
+        if raw.trim().is_empty() {
+            if allow_null {
+                bail!("--{flag}-stdin: empty input; pass 'null' to clear");
+            }
+            bail!("--{flag}-stdin: empty input; pass '{{}}' to clear");
+        }
+        raw
+    } else {
+        let path = file.context("secret file path")?;
+        if path.as_os_str().is_empty() {
+            bail!("--{flag}-file: path must not be empty");
+        }
+        let path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            environment.current_dir().join(path)
+        };
+        let raw = fs::read_to_string(&path).with_context(|| format!("read --{flag}-file"))?;
+        if raw.trim().is_empty() {
+            if allow_null {
+                bail!(
+                    "--{flag}-file {:?}: empty contents; pass 'null' to clear",
+                    path
+                );
+            }
+            bail!(
+                "--{flag}-file {:?}: empty contents; pass '{{}}' to clear",
+                path
+            );
+        }
+        raw
+    };
+    if raw.trim().is_empty() {
+        if allow_null {
+            bail!("--{flag}: empty input; pass 'null' to clear or a JSON object to set");
+        }
+        bail!("--{flag}: empty input; pass '{{}}' to clear");
+    }
+    let value: Value = serde_json::from_str(raw.trim()).map_err(|_| {
+        if allow_null {
+            anyhow::anyhow!("--{flag} must be a valid JSON object, or 'null' to clear")
+        } else {
+            anyhow::anyhow!("--{flag} must be a valid JSON object of string keys and string values")
+        }
+    })?;
+    if value.is_null() && allow_null {
+        return Ok(Some(value));
+    }
+    if value.is_null() {
+        return Ok(Some(Value::Object(serde_json::Map::new())));
+    }
+    if !value.is_object() {
+        if allow_null {
+            bail!("--{flag} must be a valid JSON object, or 'null' to clear");
+        }
+        bail!("--{flag} must be a valid JSON object of string keys and string values");
+    }
+    Ok(Some(value))
 }
 
 fn format_agent_list_table(agents: &[Value]) -> String {
@@ -9892,6 +10178,206 @@ mod tests {
             error.to_string(),
             "workspace_id is required: use --workspace-id flag, set CORDY_WORKSPACE_ID env, or run 'cordy config set workspace_id <id>'"
         );
+    }
+
+    #[tokio::test]
+    async fn agent_create_preserves_go_request_and_secret_input_semantics() {
+        let captured = Arc::new(Mutex::new(None));
+        let captured_handler = Arc::clone(&captured);
+        let app = Router::new().route(
+            "/api/agents",
+            post(move |Json(body): Json<Value>| {
+                let captured = Arc::clone(&captured_handler);
+                async move {
+                    *captured.lock().expect("captured body") = Some(body);
+                    Json(serde_json::json!({"id":"agent-1","name":"Builder"}))
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        fs::write(cwd.path().join("agent.env.json"), r#"{"TOKEN":"secret"}"#).expect("env file");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "agent",
+            "create",
+            "--name",
+            "Builder",
+            "--runtime-id",
+            "runtime-1",
+            "--description",
+            "Builds things",
+            "--instructions",
+            "Be careful",
+            "--runtime-config",
+            r#"{"sandbox":true}"#,
+            "--custom-args",
+            r#"["--model","fast"]"#,
+            "--custom-env-file",
+            "agent.env.json",
+            "--mcp-config-stdin",
+            "--model",
+            "model-1",
+            "--thinking-level",
+            "high",
+            "--service-tier",
+            "priority",
+            "--visibility",
+            "workspace",
+            "--public-to-workspace",
+            "--public-to-member",
+            "user-1,user-2",
+            "--max-concurrent-tasks",
+            "50",
+            "--output",
+            "table",
+        ])
+        .expect("agent create CLI");
+        let mut input = Cursor::new(br#"{"mcpServers":{"linear":{"token":"hidden"}}}"#.to_vec());
+        let output = run_with_input(&cli, &environment, &mut input)
+            .await
+            .expect("create agent");
+        assert_eq!(output.stdout, "Agent created: Builder (agent-1)\n");
+        let body = captured
+            .lock()
+            .expect("captured body")
+            .clone()
+            .expect("request body");
+        assert_eq!(body["name"], "Builder");
+        assert_eq!(body["runtime_id"], "runtime-1");
+        assert_eq!(body["runtime_config"]["sandbox"], true);
+        assert_eq!(body["custom_args"], serde_json::json!(["--model", "fast"]));
+        assert_eq!(body["custom_env"]["TOKEN"], "secret");
+        assert_eq!(
+            body["mcp_config"]["mcpServers"]["linear"]["token"],
+            "hidden"
+        );
+        assert_eq!(body["model"], "model-1");
+        assert_eq!(body["thinking_level"], "high");
+        assert_eq!(body["service_tier"], "priority");
+        assert_eq!(body["visibility"], "workspace");
+        assert_eq!(body["permission_mode"], "public_to");
+        assert_eq!(
+            body["invocation_targets"],
+            serde_json::json!([
+                {"target_type":"workspace"},
+                {"target_type":"member","target_id":"user-1"},
+                {"target_type":"member","target_id":"user-2"}
+            ])
+        );
+        assert_eq!(body["max_concurrent_tasks"], 50);
+        server.abort();
+    }
+
+    #[test]
+    fn agent_create_rejects_invalid_and_ambiguous_secret_inputs_without_leaking() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let secret = "sk-do-not-echo";
+        let invalid = Cli::try_parse_from([
+            "cordy",
+            "agent",
+            "create",
+            "--name",
+            "Builder",
+            "--runtime-id",
+            "runtime-1",
+            "--custom-env",
+            &format!(r#"{{"TOKEN":"{secret}""#),
+        ])
+        .expect("invalid secret CLI");
+        let Command::Agent(AgentArgs {
+            command: AgentCommand::Create(args),
+        }) = &invalid.command
+        else {
+            panic!("expected agent create");
+        };
+        let error = resolve_agent_secret_json(
+            args.custom_env.as_deref(),
+            args.custom_env_stdin,
+            args.custom_env_file.as_deref(),
+            "custom-env",
+            false,
+            &environment,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .expect_err("invalid custom env");
+        assert!(error.to_string().contains("valid JSON object"));
+        assert!(!error.to_string().contains(secret));
+
+        let ambiguous = Cli::try_parse_from([
+            "cordy",
+            "agent",
+            "create",
+            "--name",
+            "Builder",
+            "--runtime-id",
+            "runtime-1",
+            "--mcp-config",
+            "{}",
+            "--mcp-config-stdin",
+        ])
+        .expect("ambiguous MCP CLI");
+        let Command::Agent(AgentArgs {
+            command: AgentCommand::Create(args),
+        }) = &ambiguous.command
+        else {
+            panic!("expected agent create");
+        };
+        assert!(resolve_agent_secret_json(
+            args.mcp_config.as_deref(),
+            args.mcp_config_stdin,
+            args.mcp_config_file.as_deref(),
+            "mcp-config",
+            true,
+            &environment,
+            &mut Cursor::new(b"{}".to_vec()),
+        )
+        .expect_err("ambiguous MCP inputs")
+        .to_string()
+        .contains("mutually exclusive"));
+    }
+
+    #[test]
+    fn agent_create_validates_required_fields_and_concurrency() {
+        let missing_name =
+            Cli::try_parse_from(["cordy", "agent", "create", "--runtime-id", "runtime-1"])
+                .expect("missing name parses for Go-compatible runtime validation");
+        let Command::Agent(AgentArgs {
+            command: AgentCommand::Create(args),
+        }) = &missing_name.command
+        else {
+            panic!("expected agent create");
+        };
+        assert!(args.name.is_none());
+
+        let invalid = Cli::try_parse_from([
+            "cordy",
+            "agent",
+            "create",
+            "--name",
+            "Builder",
+            "--runtime-id",
+            "runtime-1",
+            "--max-concurrent-tasks",
+            "51",
+        ])
+        .expect("invalid concurrency parses for runtime validation");
+        let Command::Agent(AgentArgs {
+            command: AgentCommand::Create(args),
+        }) = &invalid.command
+        else {
+            panic!("expected agent create");
+        };
+        assert_eq!(args.max_concurrent_tasks, Some(51));
     }
 
     #[test]
