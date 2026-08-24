@@ -10,6 +10,8 @@ use chrono_tz::Tz;
 use cordy_db::models::User;
 use cordy_db::queries::user;
 use serde::{Deserialize, Serialize};
+use std::io::Read;
+use std::path::{Component, Path};
 use uuid::Uuid;
 
 use crate::error::error_response;
@@ -20,6 +22,11 @@ pub fn router() -> Router<HandlerState> {
 }
 
 const MAX_PROFILE_DESCRIPTION_LEN: usize = 2_000;
+const SYSTEM_ZONEINFO_ROOTS: [&str; 3] = [
+    "/usr/share/zoneinfo",
+    "/usr/share/lib/zoneinfo",
+    "/etc/zoneinfo",
+];
 
 #[derive(Debug, Deserialize)]
 struct UpdateMeRequest {
@@ -103,7 +110,19 @@ async fn update_me(State(state): State<HandlerState>, headers: HeaderMap, body: 
         }
         None => current_user.name.clone(),
     };
-    let avatar_url = request.avatar_url.map(|value| value.trim().to_string());
+    let avatar_url = match request.avatar_url {
+        Some(value) => match crate::avatar::accept_url(
+            &state,
+            &value,
+            current_user.avatar_url.as_deref(),
+        )
+        .await
+        {
+            Ok(value) => Some(value),
+            Err(message) => return error_response(StatusCode::BAD_REQUEST, message),
+        },
+        None => None,
+    };
     let language = match request.language {
         Some(language) => {
             let language = language.trim().to_string();
@@ -130,7 +149,7 @@ async fn update_me(State(state): State<HandlerState>, headers: HeaderMap, body: 
     let timezone = match request.timezone {
         Some(timezone) => {
             let timezone = timezone.trim().to_string();
-            if !timezone.is_empty() && timezone.parse::<Tz>().is_err() {
+            if !timezone.is_empty() && !valid_timezone(&timezone) {
                 return error_response(StatusCode::BAD_REQUEST, "invalid timezone");
             }
             Some(timezone)
@@ -154,6 +173,33 @@ async fn update_me(State(state): State<HandlerState>, headers: HeaderMap, body: 
             error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update user")
         }
     }
+}
+
+fn valid_timezone(timezone: &str) -> bool {
+    let roots: Vec<&Path> = SYSTEM_ZONEINFO_ROOTS.iter().map(Path::new).collect();
+    valid_timezone_with_roots(timezone, &roots)
+}
+
+fn valid_timezone_with_roots(timezone: &str, roots: &[&Path]) -> bool {
+    if timezone.parse::<Tz>().is_ok() {
+        return true;
+    }
+    let relative = Path::new(timezone);
+    if timezone.is_empty()
+        || relative.is_absolute()
+        || relative
+            .components()
+            .any(|component| !matches!(component, Component::Normal(_)))
+    {
+        return false;
+    }
+    roots.iter().any(|root| {
+        let Ok(mut file) = std::fs::File::open(root.join(relative)) else {
+            return false;
+        };
+        let mut magic = [0_u8; 4];
+        file.read_exact(&mut magic).is_ok() && &magic == b"TZif"
+    })
 }
 
 fn authenticated_user_id(headers: &HeaderMap) -> Option<Uuid> {
@@ -283,8 +329,31 @@ mod tests {
         for language in ["en", "zh-Hans", "ko", "ja"] {
             assert!(matches!(language, "en" | "zh-Hans" | "ko" | "ja"));
         }
-        assert!("America/New_York".parse::<Tz>().is_ok());
-        assert!("not/a-timezone".parse::<Tz>().is_err());
+        assert!(valid_timezone("America/New_York"));
+        assert!(!valid_timezone("not/a-timezone"));
+    }
+
+    #[test]
+    fn timezone_validation_can_use_newer_system_tzdata_safely() {
+        let root = std::env::temp_dir().join(format!("cordy-zoneinfo-{}", Uuid::new_v4()));
+        let zone = root.join("Test/New_Zone");
+        std::fs::create_dir_all(zone.parent().unwrap()).unwrap();
+        std::fs::write(&zone, b"TZif2").unwrap();
+
+        assert!(valid_timezone_with_roots(
+            "Test/New_Zone",
+            &[root.as_path()]
+        ));
+        assert!(!valid_timezone_with_roots(
+            "../Test/New_Zone",
+            &[root.as_path()]
+        ));
+        assert!(!valid_timezone_with_roots(
+            "/Test/New_Zone",
+            &[root.as_path()]
+        ));
+
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
