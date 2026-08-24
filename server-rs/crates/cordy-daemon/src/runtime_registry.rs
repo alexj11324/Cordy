@@ -248,6 +248,24 @@ impl RuntimeRegistry {
             .any(|runtime| !incoming_providers.contains(&runtime.provider))
     }
 
+    /// Reports whether replacing a workspace with an authoritative full
+    /// registration response would remove any currently published runtime.
+    /// Callers use this before applying the response so task claims can be
+    /// paused until executions tied to the retiring identities have drained.
+    pub(crate) fn registration_demotion_required(
+        &self,
+        workspace_id: &str,
+        incoming_runtime_ids: &BTreeSet<String>,
+    ) -> bool {
+        let state = self.state.read().unwrap();
+        state.workspaces.get(workspace_id).is_some_and(|workspace| {
+            workspace
+                .runtime_ids
+                .iter()
+                .any(|runtime_id| !incoming_runtime_ids.contains(runtime_id))
+        })
+    }
+
     pub fn workspace_needs_runtime_recovery(&self, workspace_id: &str) -> bool {
         self.state
             .read()
@@ -430,5 +448,32 @@ mod tests {
 
         assert!(!registry.builtin_demotion_required("ws-1", &BTreeSet::from(["codex".to_string()])));
         assert!(registry.builtin_demotion_required("ws-1", &BTreeSet::new()));
+    }
+
+    #[test]
+    fn full_registration_demotion_detection_tracks_runtime_ids() {
+        let published = Arc::new(RuntimeSet::new());
+        let registry = RuntimeRegistry::new(published);
+        registry
+            .apply_registration(
+                "ws-1",
+                "One",
+                vec![
+                    runtime("runtime-1", "codex"),
+                    runtime("runtime-2", "claude"),
+                ],
+            )
+            .unwrap();
+
+        assert!(!registry.registration_demotion_required(
+            "ws-1",
+            &BTreeSet::from(["runtime-1".to_string(), "runtime-2".to_string()]),
+        ));
+        assert!(registry.registration_demotion_required(
+            "ws-1",
+            &BTreeSet::from(["runtime-2".to_string(), "runtime-3".to_string()]),
+        ));
+        assert!(registry.registration_demotion_required("ws-1", &BTreeSet::new()));
+        assert!(!registry.registration_demotion_required("unknown", &BTreeSet::new()));
     }
 }

@@ -125,6 +125,7 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
         reconcile: Arc<ReconcileBroadcaster>,
         workspace_changes: Arc<WorkspaceChangeSignal>,
         registry: Arc<RuntimeRegistry>,
+        activity: Arc<DaemonActivity>,
     ) {
         let mut reconcile_snapshot = reconcile.notify();
         let mut failures = 0u32;
@@ -145,7 +146,7 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
             };
             match self
                 .registration
-                .sync_once(ctx.child(), &registry, reconcile_profiles)
+                .sync_once(ctx.child(), &registry, reconcile_profiles, Some(&activity))
                 .await
             {
                 Ok(()) => failures = 0,
@@ -413,11 +414,12 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
         &self,
         ctx: Ctx,
         registry: Arc<RuntimeRegistry>,
+        activity: Arc<DaemonActivity>,
         payload: RuntimeProfilesChangedPayload,
     ) {
         if let Err(error) = self
             .registration
-            .refresh_workspace(ctx, &registry, &payload.workspace_id)
+            .refresh_workspace(ctx, &registry, &payload.workspace_id, &activity)
             .await
         {
             tracing::debug!(workspace_id = %payload.workspace_id, %error, "runtime profile refresh failed");
@@ -472,7 +474,9 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
 #[async_trait::async_trait]
 impl<P: ProviderRuntimeAdapter> ProductionRuntimeServices for DaemonProductionServices<P> {
     async fn preflight(&self, ctx: Ctx, registry: Arc<RuntimeRegistry>) -> anyhow::Result<()> {
-        self.registration.sync_once(ctx, &registry, false).await
+        self.registration
+            .sync_once(ctx, &registry, false, None)
+            .await
     }
 
     async fn run_reconcile(
@@ -495,6 +499,7 @@ impl<P: ProviderRuntimeAdapter> ProductionRuntimeServices for DaemonProductionSe
                 reconcile,
                 workspace_changes,
                 Arc::clone(&registry),
+                Arc::clone(&activity),
             ),
             self.provider_refresh_loop(ctx.child(), registry, activity),
             self.repo_warmup_loop(ctx, repo_warmup_rx),
