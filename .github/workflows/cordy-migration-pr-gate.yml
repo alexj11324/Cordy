@@ -1,0 +1,79 @@
+name: Cordy migration PR gate
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'server-rs/**'
+      - 'docker-compose.selfhost.yml'
+      - '.env.example'
+      - '.github/workflows/cordy-migration-pr-gate.yml'
+
+concurrency:
+  group: cordy-migration-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  rust-exact-head:
+    if: github.head_ref == 'codex/cord-14-s8-integrations'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: cordy
+          POSTGRES_USER: cordy
+          POSTGRES_PASSWORD: cordy
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cordy -d cordy"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
+      CARGO_INCREMENTAL: '0'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+
+      - name: Use stable Rust
+        run: rustup default stable
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server-rs -> target
+
+      - name: Check exact head
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+
+      - name: Check formatting
+        working-directory: server-rs
+        run: cargo fmt --all --check
+
+      - name: Apply migrations
+        working-directory: server-rs
+        run: cargo run --locked -p cordy-migrate -- up
+
+      - name: Check all targets
+        working-directory: server-rs
+        run: cargo check --workspace --all-targets --locked
+
+      - name: Run workspace tests
+        working-directory: server-rs
+        run: cargo test --workspace --all-targets --locked
+
+      - name: Strict Clippy
+        working-directory: server-rs
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
