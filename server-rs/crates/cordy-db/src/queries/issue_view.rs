@@ -32,7 +32,7 @@ pub async fn create_issue_view(
     owner_id: Uuid,
     name: &str,
     scope_type: &str,
-    scope_id: Uuid,
+    scope_id: Option<Uuid>,
     scope_variant: Option<&str>,
     visibility: &str,
     definition_version: i32,
@@ -204,7 +204,7 @@ pub async fn list_issue_views_for_user(
     workspace_id: Uuid,
     scope_type: &str,
     owner_id: Uuid,
-    scope_id: Uuid,
+    scope_id: Option<Uuid>,
 ) -> anyhow::Result<Vec<IssueView>> {
     let rows = sqlx::query(
         r#"SELECT id, workspace_id, owner_id, name, scope_type, scope_id, scope_variant, visibility, definition_version, query, display, revision, created_at, updated_at FROM issue_view
