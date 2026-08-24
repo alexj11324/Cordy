@@ -18,7 +18,7 @@ pub mod attachment;
 pub mod attachment_storage;
 pub mod auth;
 pub mod autopilot;
-mod autopilot_listeners;
+pub mod autopilot_listeners;
 pub mod autopilot_webhook;
 pub mod avatar;
 pub mod binding_redeem;

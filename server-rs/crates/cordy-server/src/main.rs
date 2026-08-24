@@ -26,6 +26,8 @@ struct ProductionApp {
     github_snapshots: Option<cordy_ghsnapshot::ManagerRuntime>,
     ordered_event_side_effects:
         Option<cordy_handler::ordered_event_side_effects::OrderedEventSideEffectsRuntime>,
+    autopilot_event_listeners:
+        Option<cordy_handler::autopilot_listeners::AutopilotEventListenersRuntime>,
 }
 
 struct VcsWebhookConfig {
@@ -262,7 +264,8 @@ async fn build_production_router(
     let state = install_pending_stores(state, redis_url).await;
     let (state, ordered_event_side_effects) =
         state.start_ordered_event_side_effects(root_cancel.child_token());
-    let state = state.start_autopilot_event_listeners();
+    let (state, autopilot_event_listeners) =
+        state.start_autopilot_event_listeners(root_cancel.child_token());
     let (state, plugin_events) = state.start_plugin_event_dispatcher(root_cancel.child_token());
     let github_snapshots = state.github_snapshots.start(root_cancel.child_token());
     let heartbeat_scheduler = Arc::new(
@@ -359,6 +362,7 @@ async fn build_production_router(
         plugin_events,
         github_snapshots,
         ordered_event_side_effects,
+        autopilot_event_listeners,
     })
 }
 
@@ -425,6 +429,19 @@ async fn shutdown_ordered_event_side_effects(
         Some(runtime) => Some(
             runtime
                 .shutdown(cordy_handler::ordered_event_side_effects::DEFAULT_SHUTDOWN_TIMEOUT)
+                .await,
+        ),
+        None => None,
+    }
+}
+
+async fn shutdown_autopilot_event_listeners(
+    runtime: Option<cordy_handler::autopilot_listeners::AutopilotEventListenersRuntime>,
+) -> Option<cordy_handler::autopilot_listeners::AutopilotEventShutdownOutcome> {
+    match runtime {
+        Some(runtime) => Some(
+            runtime
+                .shutdown(cordy_handler::autopilot_listeners::DEFAULT_SHUTDOWN_TIMEOUT)
                 .await,
         ),
         None => None,
@@ -539,6 +556,7 @@ async fn main() -> anyhow::Result<()> {
         plugin_events,
         github_snapshots,
         ordered_event_side_effects,
+        autopilot_event_listeners,
     } = app;
     let serve_result = axum::serve(
         listener,
@@ -573,10 +591,12 @@ async fn main() -> anyhow::Result<()> {
         shutdown_plugin_events(plugin_events),
         shutdown_github_snapshots(github_snapshots),
     );
+    let autopilot_event_listeners_shutdown =
+        shutdown_autopilot_event_listeners(autopilot_event_listeners).await;
     // Subscriber/activity/notification work consumes events from every
-    // producer above. Stop accepting only after those producers have joined,
-    // then drain already-admitted events in subscriber → activity →
-    // notification order.
+    // producer and listener above. Stop accepting only after those producers
+    // have joined, then drain already-admitted events in subscriber → activity
+    // → notification order.
     let ordered_event_side_effects_shutdown =
         shutdown_ordered_event_side_effects(ordered_event_side_effects).await;
     match failure_shutdown {
@@ -672,6 +692,16 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(cordy_handler::ordered_event_side_effects::OrderedEventShutdownOutcome::Stopped)
         | None => {}
+    }
+    match autopilot_event_listeners_shutdown {
+        Some(cordy_handler::autopilot_listeners::AutopilotEventShutdownOutcome::TimedOut) => {
+            tracing::warn!("autopilot event listeners exceeded shutdown deadline and were aborted");
+        }
+        Some(cordy_handler::autopilot_listeners::AutopilotEventShutdownOutcome::Panicked) => {
+            tracing::error!("autopilot event listener task panicked during shutdown");
+        }
+        Some(cordy_handler::autopilot_listeners::AutopilotEventShutdownOutcome::Stopped) | None => {
+        }
     }
     serve_result?;
     Ok(())

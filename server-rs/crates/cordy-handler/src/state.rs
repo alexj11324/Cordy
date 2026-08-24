@@ -79,9 +79,8 @@ pub struct HandlerState {
     /// Production event-hook workers and their bus subscriptions. `None` in
     /// lightweight tests and before production side effects are started.
     plugin_events: Option<Arc<PluginEventDispatcher>>,
-    /// Guards production Autopilot listener registration against duplicate
-    /// terminal side effects when startup builders are composed more than once.
-    autopilot_listeners_started: bool,
+    /// Owned Autopilot issue/task terminal listener set.
+    autopilot_event_listeners: Option<Arc<crate::autopilot_listeners::AutopilotEventListeners>>,
     /// Ordered subscriber → activity → notification pipeline. The bus retains
     /// its callback; this field guards registration and exposes lifecycle.
     ordered_event_side_effects:
@@ -185,7 +184,7 @@ impl HandlerState {
             callbacks: Some(Arc::new(CallbackTokens::new())),
             callback_base_url: String::new(),
             plugin_events: None,
-            autopilot_listeners_started: false,
+            autopilot_event_listeners: None,
             ordered_event_side_effects: None,
             realtime_metrics_token: std::env::var("REALTIME_METRICS_TOKEN")
                 .unwrap_or_default()
@@ -369,13 +368,23 @@ impl HandlerState {
     /// Wires the issue/task terminal events that settle linked Autopilot runs.
     /// Lightweight state construction stays side-effect free; production calls
     /// this only after the shared Autopilot service has its final dependencies.
-    pub fn start_autopilot_event_listeners(mut self) -> Self {
-        if self.autopilot_listeners_started {
-            return self;
+    pub fn start_autopilot_event_listeners(
+        mut self,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> (
+        Self,
+        Option<crate::autopilot_listeners::AutopilotEventListenersRuntime>,
+    ) {
+        if self.autopilot_event_listeners.is_some() {
+            return (self, None);
         }
-        crate::autopilot_listeners::register(self.bus.as_ref(), self.autopilots.clone());
-        self.autopilot_listeners_started = true;
-        self
+        let listeners = crate::autopilot_listeners::AutopilotEventListeners::new(
+            self.bus.clone(),
+            self.autopilots.clone(),
+        );
+        let runtime = listeners.start(cancel);
+        self.autopilot_event_listeners = Some(listeners);
+        (self, runtime)
     }
 
     /// Starts the owned subscriber → activity → notification pipeline. One
