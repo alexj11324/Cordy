@@ -566,7 +566,10 @@ async fn heartbeat(
         }
     }
 
-    record_heartbeat(&state, &rt).await;
+    if let Err(error) = record_heartbeat(&state, &rt).await {
+        tracing::warn!(%error, runtime_id = %rt.id, "heartbeat DB update failed");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "heartbeat failed");
+    }
 
     // Probe-then-claim each pending queue (Go processHeartbeat): a slow shared
     // store cannot stall the heartbeat on empty ticks; the claim runs unbounded
@@ -717,7 +720,7 @@ async fn heartbeat(
 /// offline transitions and a bounded 60-second last-seen refresh always hit
 /// Postgres. A missing or failed Redis store degrades to the original DB write
 /// on every beat.
-async fn record_heartbeat(state: &HandlerState, rt: &AgentRuntime) {
+async fn record_heartbeat(state: &HandlerState, rt: &AgentRuntime) -> anyhow::Result<()> {
     let mut need_db_write = crate::runtime_liveness::heartbeat_needs_db_write(
         state.runtime_liveness.is_some(),
         &rt.status,
@@ -737,17 +740,21 @@ async fn record_heartbeat(state: &HandlerState, rt: &AgentRuntime) {
         }
     }
     if !need_db_write {
-        return;
+        return Ok(());
     }
     if rt.status == "online" && rt.last_seen_at.is_some() {
-        match runtime::touch_agent_runtime_last_seen(&state.pool, rt.id).await {
-            Ok(n) if n > 0 => return,
-            _ => {}
+        let updated = runtime::touch_agent_runtime_last_seen(&state.pool, rt.id).await?;
+        if updated > 0 {
+            return Ok(());
         }
     }
-    if let Err(e) = runtime::mark_agent_runtime_online(&state.pool, rt.id).await {
-        tracing::warn!(error = %e, runtime_id = %rt.id, "heartbeat db update failed");
-    }
+    anyhow::ensure!(
+        runtime::mark_agent_runtime_online(&state.pool, rt.id)
+            .await?
+            .is_some(),
+        "runtime disappeared during heartbeat update"
+    );
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
