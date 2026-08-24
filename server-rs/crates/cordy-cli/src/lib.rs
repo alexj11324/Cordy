@@ -3120,7 +3120,7 @@ async fn run_with_input<R: Read>(
         Command::Daemon(DaemonArgs {
             command: DaemonCommand::Stop,
         }) => run_daemon_stop(cli, environment).await,
-        Command::Setup(args) => run_setup(cli, environment, args).await,
+        Command::Setup(args) => run_setup(cli, environment, args, input).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -3129,14 +3129,81 @@ const CLOUD_SERVER_URL: &str = "https://api.cordy.ai";
 const CLOUD_APP_URL: &str = "https://cordy.ai";
 const SETUP_HEALTH_TIMEOUT: Duration = Duration::from_secs(2);
 
-async fn run_setup(cli: &Cli, environment: &Environment, args: &SetupArgs) -> Result<RunOutput> {
-    let input = prepare_setup_profile(cli, environment, args).await?;
+async fn run_setup<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SetupArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    require_human_local_command(environment, "setup")?;
+    let setup_input = resolve_setup_profile_input(cli, environment, args)?;
+    if !confirm_setup_overwrite(cli, environment, &setup_input, input)? {
+        return Ok(RunOutput {
+            stdout: String::new(),
+            stderr: "Aborted.\n".into(),
+        });
+    }
+    let input = prepare_setup_profile_input(environment, setup_input).await?;
     let mut output = run_daemon_after_setup(cli, environment).await?;
     output.stderr = format!(
         "Configured {} for profile {:?}; token authentication preserved.\n{}",
         input.server_url, cli.profile, output.stderr
     );
     Ok(output)
+}
+
+/// Ask before replacing an existing deployment profile. The prompt is emitted
+/// before reading stdin so an interactive invocation never waits silently;
+/// persisted credentials and workspace identity are deliberately omitted.
+fn confirm_setup_overwrite<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    target: &config::SetupProfileInput,
+    input: &mut R,
+) -> Result<bool> {
+    let existing = environment.load_config(&cli.profile).unwrap_or_default();
+    if existing.server_url.trim().is_empty() {
+        return Ok(true);
+    }
+
+    let prompt = format!(
+        "Existing configuration for profile {:?} will be replaced:\n  server_url: {}\n  app_url:    {}\nContinue? [y/N] ",
+        cli.profile,
+        format_setup_value_change(&existing.server_url, &target.server_url),
+        format_setup_value_change(&existing.app_url, &target.app_url),
+    );
+    let mut stderr = std::io::stderr();
+    stderr
+        .write_all(prompt.as_bytes())
+        .context("write setup overwrite prompt")?;
+    stderr.flush().context("flush setup overwrite prompt")?;
+
+    let answer = read_setup_confirmation(input)?;
+    Ok(matches!(answer.as_str(), "y" | "yes"))
+}
+
+fn format_setup_value_change(old: &str, new: &str) -> String {
+    if old == new {
+        old.to_owned()
+    } else {
+        format!("{old}  ->  {new}")
+    }
+}
+
+fn read_setup_confirmation<R: Read>(input: &mut R) -> Result<String> {
+    const MAX_CONFIRMATION_BYTES: usize = 4096;
+    let mut answer = Vec::new();
+    let mut byte = [0_u8; 1];
+    while answer.len() < MAX_CONFIRMATION_BYTES {
+        let read = input
+            .read(&mut byte)
+            .context("read setup overwrite confirmation")?;
+        if read == 0 || byte[0] == b'\n' {
+            break;
+        }
+        answer.push(byte[0]);
+    }
+    Ok(String::from_utf8_lossy(&answer).trim().to_ascii_lowercase())
 }
 
 /// Performs the health-before-write and profile/token persistence half of
@@ -3151,6 +3218,13 @@ async fn prepare_setup_profile(
     require_human_local_command(environment, "setup")?;
     let input = resolve_setup_profile_input(cli, environment, args)?;
 
+    prepare_setup_profile_input(environment, input).await
+}
+
+async fn prepare_setup_profile_input(
+    environment: &Environment,
+    input: config::SetupProfileInput,
+) -> Result<config::SetupProfileInput> {
     // The health probe is deliberately before any config lock or write. A
     // failed target must leave the current URL and token untouched.
     ApiClient::probe_health(&input.server_url, SETUP_HEALTH_TIMEOUT)
@@ -22772,6 +22846,119 @@ mod tests {
         let error = resolve_setup_profile_input(&cli, &environment, args)
             .expect_err("remote setup must not guess app URL");
         assert!(error.to_string().contains("requires --app-url"));
+    }
+
+    #[test]
+    fn setup_overwrite_confirmation_accepts_yes() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let profile = "staging";
+        let config_path = environment.config_path(profile).expect("config path");
+        fs::create_dir_all(config_path.parent().expect("config parent")).expect("config dir");
+        fs::write(
+            &config_path,
+            r#"{"server_url":"https://old.example","app_url":"https://old.app","token":"secret","workspace_id":"workspace-1"}"#,
+        )
+        .expect("old config");
+        let cli = Cli::try_parse_from(["cordy", "--profile", profile, "setup"]).expect("setup CLI");
+        let target = config::SetupProfileInput::new("https://new.example", "https://new.app")
+            .expect("target profile");
+        let mut input = Cursor::new(b"YES\n".to_vec());
+
+        assert!(
+            confirm_setup_overwrite(&cli, &environment, &target, &mut input,)
+                .expect("confirmation")
+        );
+    }
+
+    #[test]
+    fn setup_overwrite_confirmation_rejects_without_mutating_profile() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let profile = "staging";
+        let config_path = environment.config_path(profile).expect("config path");
+        fs::create_dir_all(config_path.parent().expect("config parent")).expect("config dir");
+        let old_config = br#"{"server_url":"https://old.example","app_url":"https://old.app","token":"secret","workspace_id":"workspace-1"}"#;
+        fs::write(&config_path, old_config).expect("old config");
+        let lock_path = config_path
+            .parent()
+            .expect("config parent")
+            .join(".config.lock");
+        let cli = Cli::try_parse_from(["cordy", "--profile", profile, "setup"]).expect("setup CLI");
+        let target = config::SetupProfileInput::new("https://new.example", "https://new.app")
+            .expect("target profile");
+        let mut input = Cursor::new(b"n\n".to_vec());
+
+        assert!(
+            !confirm_setup_overwrite(&cli, &environment, &target, &mut input,)
+                .expect("confirmation")
+        );
+        assert_eq!(fs::read(&config_path).expect("config remains"), old_config);
+        assert!(!lock_path.exists(), "declining must not create the lock");
+    }
+
+    #[tokio::test]
+    async fn setup_decline_returns_aborted_before_health_or_daemon_handoff() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let profile = "staging";
+        let config_path = environment.config_path(profile).expect("config path");
+        fs::create_dir_all(config_path.parent().expect("config parent")).expect("config dir");
+        let old_config =
+            br#"{"server_url":"https://old.example","token":"secret","workspace_id":"workspace-1"}"#;
+        fs::write(&config_path, old_config).expect("old config");
+        let cli = Cli::try_parse_from(["cordy", "--profile", profile, "setup"]).expect("setup CLI");
+        let mut input = Cursor::new(b"n\n".to_vec());
+
+        let output = run_with_input(&cli, &environment, &mut input)
+            .await
+            .expect("declined setup");
+        assert_eq!(output.stderr, "Aborted.\n");
+        assert_eq!(fs::read(config_path).expect("config remains"), old_config);
+    }
+
+    #[test]
+    fn setup_overwrite_confirmation_eof_defaults_to_reject() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let profile = "staging";
+        let config_path = environment.config_path(profile).expect("config path");
+        fs::create_dir_all(config_path.parent().expect("config parent")).expect("config dir");
+        fs::write(
+            &config_path,
+            r#"{"server_url":"https://old.example","app_url":"https://old.app"}"#,
+        )
+        .expect("old config");
+        let cli = Cli::try_parse_from(["cordy", "--profile", profile, "setup"]).expect("setup CLI");
+        let target = config::SetupProfileInput::new("https://new.example", "https://new.app")
+            .expect("target profile");
+        let mut input = Cursor::new(Vec::<u8>::new());
+
+        assert!(
+            !confirm_setup_overwrite(&cli, &environment, &target, &mut input,)
+                .expect("confirmation")
+        );
+    }
+
+    #[test]
+    fn setup_overwrite_confirmation_skips_prompt_without_existing_profile() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from(["cordy", "setup"]).expect("setup CLI");
+        let target = config::SetupProfileInput::new("https://new.example", "https://new.app")
+            .expect("target profile");
+        let mut input = Cursor::new(b"not-consumed\n".to_vec());
+
+        assert!(
+            confirm_setup_overwrite(&cli, &environment, &target, &mut input,)
+                .expect("confirmation")
+        );
+        assert_eq!(input.position(), 0, "fresh setup must not prompt");
     }
 
     #[tokio::test]
