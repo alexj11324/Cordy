@@ -14,6 +14,7 @@ mod disk_usage_commands;
 mod disk_usage_output;
 pub mod error;
 mod login;
+mod runtime_output;
 mod setup_commands;
 mod update_commands;
 
@@ -61,6 +62,7 @@ use login::{
     wait_for_workspace_creation_with_opener, LoginWorkspace, WORKSPACE_DISCOVERY_INTERVAL,
     WORKSPACE_DISCOVERY_TIMEOUT,
 };
+use runtime_output::{format_runtime_rows, output_runtime_profiles};
 use setup_commands::{
     confirm_setup_overwrite, dispatch_daemon_after_setup, format_setup_value_change,
     prepare_setup_profile, prepare_setup_profile_input, read_setup_confirmation,
@@ -4392,68 +4394,6 @@ fn run_runtime_profile_unset_path(
         },
         stderr: String::new(),
     })
-}
-
-fn output_runtime_profiles(
-    profiles: &[Value],
-    output: OutputFormat,
-    single: bool,
-) -> Result<RunOutput> {
-    if output == OutputFormat::Json {
-        let value = if single {
-            &profiles[0]
-        } else {
-            return Ok(RunOutput {
-                stdout: format!("{}\n", serde_json::to_string_pretty(profiles)?),
-                stderr: String::new(),
-            });
-        };
-        return Ok(RunOutput {
-            stdout: format!("{}\n", serde_json::to_string_pretty(value)?),
-            stderr: String::new(),
-        });
-    }
-    let mut profiles = profiles.to_vec();
-    profiles.sort_by_key(|profile| value_string(profile, "display_name"));
-    let mut rows = vec![vec![
-        "ID".into(),
-        "DISPLAY_NAME".into(),
-        "PROTOCOL_FAMILY".into(),
-        "COMMAND_NAME".into(),
-        "ENABLED".into(),
-    ]];
-    rows.extend(profiles.iter().map(|profile| {
-        vec![
-            value_string(profile, "id"),
-            value_string(profile, "display_name"),
-            value_string(profile, "protocol_family"),
-            value_string(profile, "command_name"),
-            value_string(profile, "enabled"),
-        ]
-    }));
-    Ok(RunOutput {
-        stdout: format_table(&rows),
-        stderr: String::new(),
-    })
-}
-
-fn format_runtime_rows(
-    values: &[Value],
-    output: OutputFormat,
-    headers: &[&str],
-    fields: &[&str],
-) -> Result<String> {
-    if output == OutputFormat::Json {
-        return Ok(format!("{}\n", serde_json::to_string_pretty(values)?));
-    }
-    let mut rows = vec![headers.iter().map(|header| (*header).into()).collect()];
-    rows.extend(values.iter().map(|value| {
-        fields
-            .iter()
-            .map(|field| value_string(value, field))
-            .collect()
-    }));
-    Ok(format_table(&rows))
 }
 
 #[derive(Debug, Deserialize, Serialize)]
