@@ -227,12 +227,11 @@ fn start_media_reconciler(
     metrics: Option<Arc<cordy_metrics::ChannelMediaReconcilerMetrics>>,
 ) -> Option<tokio::task::JoinHandle<()>> {
     storage.map(|storage| {
-        let reconciler = cordy_service::channel_media_reconciler::ChannelMediaReconciler {
-            pool: state.pool.clone(),
-            storage: Some(storage),
+        let reconciler = cordy_service::channel_media_reconciler::ChannelMediaReconciler::new(
+            state.pool.clone(),
+            storage,
             metrics,
-            delete_timeout: None,
-        };
+        );
         let run_cancel = state.channel_cancel.clone();
         tokio::spawn(async move { reconciler.run(run_cancel).await })
     })
