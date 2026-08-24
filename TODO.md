@@ -242,11 +242,22 @@
       `ec7a02c000a76358eac9f2ab7cc10a21f27c5681`), candidate
       `e208fe4105b8520b861912c3e589bb9ba7b55858`, Ready/mergeable. Scoped
       rustfmt and diff-check pass; Cargo/review/gate/merge remain with pro.
-- [ ] Next substantive daemon slice: wire
-      `DaemonStartAssembly::production_assembly_with_local_catalog` into the
-      actual CLI/server foreground command. Do not claim the foreground
-      daemon is complete until that command owns bootstrap/PID/shutdown,
-      supplies a real shared checkout registry, and runs the assembled stack.
+- [x] Wired a real `cordy daemon start --foreground` command into PR #129.
+      It parses successor launch flags/durations, rejects background start
+      rather than pretending it works, loads the authenticated profile before
+      bootstrap, reuses `run_production_daemon` for PID/log/shutdown ownership,
+      and supplies one shared `RepoCheckoutRegistry` to the local catalog,
+      adapter, and production stack. Current head is
+      `f4ebf0606d689f357a9b10d9dbe18a99cd0c1b99` (parent
+      `3017241ddc732d75314bf2309ede3e7e05f07305`, tree
+      `bea59d319f3979b9ba366f7ae4f1c3f142d7dd96`), candidate
+      `2609fe94f6e4fa8049dc44d972bab6fdc7ab663d`; PR remains Ready and
+      MERGEABLE. Scoped rustfmt/diff-check pass; Cargo/review/gate/merge remain
+      with pro.
+- [ ] Next substantive daemon slice: complete lifecycle parity for
+      background `start/restart/stop` (including health preflight and PID-lock
+      handoff) on top of this foreground path; do not implement a second
+      provider/assembly route.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
