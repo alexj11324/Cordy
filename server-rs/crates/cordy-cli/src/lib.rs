@@ -134,6 +134,45 @@ enum AutopilotCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
         output: OutputFormat,
     },
+    #[command(about = "Create a new autopilot")]
+    Create(AutopilotCreateArgs),
+}
+
+#[derive(Debug, Args)]
+struct AutopilotCreateArgs {
+    #[arg(long, help = "Autopilot title (required)")]
+    title: Option<String>,
+    #[arg(
+        long,
+        default_value = "",
+        help = "Autopilot description (used as task prompt)"
+    )]
+    description: String,
+    #[arg(long, help = "Assignee agent (name or ID) — required")]
+    agent: Option<String>,
+    #[arg(long, help = "Execution mode: create_issue or run_only (required)")]
+    mode: Option<String>,
+    #[arg(
+        long,
+        help = "Priority for created issues (none, low, medium, high, urgent)"
+    )]
+    priority: Option<String>,
+    #[arg(long, default_value = "", help = "Project ID (optional)")]
+    project: String,
+    #[arg(
+        long,
+        default_value = "",
+        help = "Template for issue titles (create_issue mode). Only {{date}} (UTC, YYYY-MM-DD) is interpolated; any other {{...}} token is rejected at create-time."
+    )]
+    issue_title_template: String,
+    #[arg(
+        long,
+        action = clap::ArgAction::Append,
+        help = "Member subscriber to notify for issues this autopilot creates (name or user ID; repeatable)"
+    )]
+    subscriber: Vec<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -2266,6 +2305,9 @@ async fn run_with_input<R: Read>(
         Command::Autopilot(AutopilotArgs {
             command: AutopilotCommand::Get { id, output },
         }) => run_autopilot_get(cli, environment, id, *output).await,
+        Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::Create(args),
+        }) => run_autopilot_create(cli, environment, args).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -3456,6 +3498,203 @@ async fn run_autopilot_get(
         stdout,
         stderr: String::new(),
     })
+}
+
+async fn run_autopilot_create(
+    cli: &Cli,
+    environment: &Environment,
+    args: &AutopilotCreateArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = required_workspace_id(cli, environment)?;
+    let title = args.title.as_deref().unwrap_or_default();
+    if title.is_empty() {
+        bail!("--title is required");
+    }
+    let agent = args.agent.as_deref().unwrap_or_default();
+    if agent.is_empty() {
+        bail!("--agent is required (agent name or ID)");
+    }
+    let mode = args.mode.as_deref().unwrap_or_default();
+    if mode.is_empty() {
+        bail!("--mode is required (create_issue or run_only)");
+    }
+    if !matches!(mode, "create_issue" | "run_only") {
+        bail!("--mode must be create_issue or run_only");
+    }
+
+    let agent_id = resolve_autopilot_agent(&client, &workspace_id, agent)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve agent: {error:#}"))?;
+    let mut body = serde_json::Map::from_iter([
+        ("title".into(), Value::String(title.into())),
+        ("assignee_id".into(), Value::String(agent_id)),
+        ("execution_mode".into(), Value::String(mode.into())),
+    ]);
+    if !args.description.is_empty() {
+        body.insert(
+            "description".into(),
+            Value::String(args.description.clone()),
+        );
+    }
+    if let Some(priority) = &args.priority {
+        body.insert("priority".into(), Value::String(priority.clone()));
+    }
+    if !args.project.is_empty() {
+        let project_id = resolve_project_reference(&client, &workspace_id, &args.project)
+            .await
+            .map(|(id, _)| id)
+            .map_err(|error| anyhow::anyhow!("resolve project: {error:#}"))?;
+        body.insert("project_id".into(), Value::String(project_id));
+    }
+    if !args.issue_title_template.is_empty() {
+        body.insert(
+            "issue_title_template".into(),
+            Value::String(args.issue_title_template.clone()),
+        );
+    }
+    if !args.subscriber.is_empty() {
+        body.insert(
+            "subscribers".into(),
+            Value::Array(
+                resolve_autopilot_subscribers(&client, &workspace_id, &args.subscriber).await?,
+            ),
+        );
+    }
+
+    let result: Value = client
+        .post_json("/api/autopilots", &body)
+        .await
+        .context("create autopilot")?;
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+            OutputFormat::Table => format!(
+                "Autopilot created: {} ({})\n",
+                value_string(&result, "title"),
+                value_string(&result, "id")
+            ),
+        },
+        stderr: String::new(),
+    })
+}
+
+async fn resolve_autopilot_agent(
+    client: &ApiClient,
+    workspace_id: &str,
+    input: &str,
+) -> Result<String> {
+    if is_canonical_uuid(input) {
+        return Ok(input.into());
+    }
+    if workspace_id.is_empty() {
+        bail!(
+            "workspace ID is required to resolve agents; use --workspace-id or set CORDY_WORKSPACE_ID"
+        );
+    }
+    let path = format!(
+        "/api/agents?workspace_id={}",
+        form_urlencoded::byte_serialize(workspace_id.as_bytes()).collect::<String>()
+    );
+    let agents: Vec<Value> = client.get_json(&path).await.context("fetch agents")?;
+    let input_lower = input.to_ascii_lowercase();
+    let matches = agents
+        .iter()
+        .filter(|agent| {
+            value_string(agent, "name")
+                .to_ascii_lowercase()
+                .contains(&input_lower)
+        })
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [agent] => Ok(value_string(agent, "id")),
+        [] => bail!("no agent found matching {input:?}"),
+        agents => {
+            let details = agents
+                .iter()
+                .map(|agent| {
+                    format!(
+                        "  {:?} ({})",
+                        value_string(agent, "name"),
+                        display_id(&value_string(agent, "id"), false)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            bail!("ambiguous agent {input:?}; matches:\n{details}")
+        }
+    }
+}
+
+async fn resolve_autopilot_subscribers(
+    client: &ApiClient,
+    workspace_id: &str,
+    refs: &[String],
+) -> Result<Vec<Value>> {
+    for raw in refs {
+        if raw.trim().is_empty() {
+            bail!("--subscriber cannot be empty");
+        }
+    }
+    let path = format!("/api/workspaces/{workspace_id}/members");
+    let members: Vec<Value> = retry_actor_get(client, &path).await.map_err(|error| {
+        anyhow::anyhow!(
+            "resolve subscriber {:?}: failed to resolve assignee: fetch members: {error:#}",
+            refs.first().map(String::as_str).unwrap_or_default()
+        )
+    })?;
+    let mut seen = HashSet::new();
+    let mut subscribers = Vec::new();
+    for raw in refs {
+        let input = normalize_assignee_input(raw);
+        let input_lower = input.to_ascii_lowercase();
+        let mut buckets = [Vec::new(), Vec::new(), Vec::new()];
+        for member in &members {
+            let id = value_string(member, "user_id");
+            let name = value_string(member, "name");
+            let email = value_string(member, "email");
+            if id.eq_ignore_ascii_case(&input)
+                || display_id(&id, false).eq_ignore_ascii_case(&input)
+                || (!email.is_empty() && email.eq_ignore_ascii_case(&input))
+            {
+                buckets[0].push(member);
+            } else if name.eq_ignore_ascii_case(&input) {
+                buckets[1].push(member);
+            } else if name.to_ascii_lowercase().contains(&input_lower) {
+                buckets[2].push(member);
+            }
+        }
+        let member = buckets
+            .iter()
+            .find(|bucket| !bucket.is_empty())
+            .ok_or_else(|| {
+                let missing = if input.is_empty() {
+                    raw.as_str()
+                } else {
+                    input.as_str()
+                };
+                anyhow::anyhow!("resolve subscriber {raw:?}: no member found matching {missing:?}")
+            })?;
+        if member.len() > 1 {
+            let details = member
+                .iter()
+                .map(|member| {
+                    format!(
+                        "  member {:?} ({})",
+                        value_string(member, "name"),
+                        display_id(&value_string(member, "user_id"), false)
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            bail!("resolve subscriber {raw:?}: ambiguous assignee {input:?}; matches:\n{details}");
+        }
+        let user_id = value_string(member[0], "user_id");
+        if seen.insert(user_id.clone()) {
+            subscribers.push(serde_json::json!({"user_type":"member","user_id":user_id}));
+        }
+    }
+    Ok(subscribers)
 }
 
 async fn resolve_autopilot_id(
@@ -12160,6 +12399,200 @@ mod tests {
         assert_eq!(output, OutputFormat::Json);
         assert!(Cli::try_parse_from(["cordy", "autopilot", "get"]).is_err());
         assert!(Cli::try_parse_from(["cordy", "autopilot", "list", "extra"]).is_err());
+
+        let create = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "create",
+            "--title",
+            "Daily planner",
+            "--agent",
+            "Planner",
+            "--mode",
+            "create_issue",
+            "--priority",
+            "high",
+            "--subscriber",
+            "Alice",
+            "--subscriber",
+            "Bob",
+            "--output",
+            "table",
+        ])
+        .expect("autopilot create CLI");
+        let Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::Create(args),
+        }) = create.command
+        else {
+            panic!("expected autopilot create");
+        };
+        assert_eq!(args.title.as_deref(), Some("Daily planner"));
+        assert_eq!(args.agent.as_deref(), Some("Planner"));
+        assert_eq!(args.mode.as_deref(), Some("create_issue"));
+        assert_eq!(args.priority.as_deref(), Some("high"));
+        assert_eq!(args.subscriber, ["Alice", "Bob"]);
+        assert_eq!(args.output, OutputFormat::Table);
+    }
+
+    #[tokio::test]
+    async fn autopilot_create_resolves_references_and_preserves_go_body() {
+        const AGENT_ID: &str = "11111111-1111-1111-1111-111111111111";
+        const PROJECT_ID: &str = "22222222-2222-2222-2222-222222222222";
+        const USER_ID: &str = "33333333-3333-3333-3333-333333333333";
+        let captured = Arc::new(Mutex::new(None));
+        let captured_handler = Arc::clone(&captured);
+        let app = Router::new()
+            .route(
+                "/api/agents",
+                get(|request: Request| async move {
+                    assert_eq!(request.uri().query(), Some("workspace_id=workspace-1"));
+                    Json(vec![
+                        serde_json::json!({"id":AGENT_ID,"name":"Daily Planner"}),
+                    ])
+                }),
+            )
+            .route(
+                "/api/projects",
+                get(|request: Request| async move {
+                    assert_eq!(request.uri().query(), Some("workspace_id=workspace-1"));
+                    Json(serde_json::json!({
+                        "projects":[{"id":PROJECT_ID,"title":"Operations","status":"planned"}]
+                    }))
+                }),
+            )
+            .route(
+                "/api/workspaces/workspace-1/members",
+                get(|| async {
+                    Json(vec![serde_json::json!({
+                        "user_id":USER_ID,
+                        "name":"Alice",
+                        "email":"alice@example.com"
+                    })])
+                }),
+            )
+            .route(
+                "/api/autopilots",
+                post(move |Json(body): Json<Value>| {
+                    let captured = Arc::clone(&captured_handler);
+                    async move {
+                        *captured.lock().expect("captured body") = Some(body.clone());
+                        Json(serde_json::json!({
+                            "id":"autopilot-1",
+                            "title":body["title"],
+                            "server_only":"preserved"
+                        }))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "create",
+            "--title",
+            "Daily planner",
+            "--description",
+            "Plan each day",
+            "--agent",
+            "planner",
+            "--mode",
+            "create_issue",
+            "--priority",
+            "high",
+            "--project",
+            "2222",
+            "--issue-title-template",
+            "Daily {{date}}",
+            "--subscriber",
+            "Alice",
+            "--subscriber",
+            "alice@example.com",
+            "--output",
+            "table",
+        ])
+        .expect("autopilot create CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("create autopilot");
+        assert_eq!(
+            output.stdout,
+            "Autopilot created: Daily planner (autopilot-1)\n"
+        );
+        let body = captured
+            .lock()
+            .expect("captured body")
+            .clone()
+            .expect("request body");
+        assert_eq!(body["title"], "Daily planner");
+        assert_eq!(body["description"], "Plan each day");
+        assert_eq!(body["assignee_id"], AGENT_ID);
+        assert_eq!(body["execution_mode"], "create_issue");
+        assert_eq!(body["priority"], "high");
+        assert_eq!(body["project_id"], PROJECT_ID);
+        assert_eq!(body["issue_title_template"], "Daily {{date}}");
+        assert_eq!(
+            body["subscribers"],
+            serde_json::json!([{"user_type":"member","user_id":USER_ID}])
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn autopilot_create_rejects_missing_and_invalid_required_values() {
+        const AGENT_ID: &str = "11111111-1111-1111-1111-111111111111";
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "http://127.0.0.1:9");
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+
+        for (argv, expected) in [
+            (vec!["cordy", "autopilot", "create"], "--title is required"),
+            (
+                vec!["cordy", "autopilot", "create", "--title", "Daily"],
+                "--agent is required (agent name or ID)",
+            ),
+            (
+                vec![
+                    "cordy",
+                    "autopilot",
+                    "create",
+                    "--title",
+                    "Daily",
+                    "--agent",
+                    AGENT_ID,
+                ],
+                "--mode is required (create_issue or run_only)",
+            ),
+            (
+                vec![
+                    "cordy",
+                    "autopilot",
+                    "create",
+                    "--title",
+                    "Daily",
+                    "--agent",
+                    AGENT_ID,
+                    "--mode",
+                    "invalid",
+                ],
+                "--mode must be create_issue or run_only",
+            ),
+        ] {
+            let cli = Cli::try_parse_from(argv).expect("autopilot create CLI");
+            let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+                .await
+                .expect_err("invalid create rejected");
+            assert_eq!(error.to_string(), expected);
+        }
     }
 
     #[tokio::test]
