@@ -233,10 +233,9 @@ impl ChannelRuntime {
                 "wecom outbound relay stopped"
             );
         }
-        let drain = CancellationToken::new();
-        match tokio::time::timeout(ROUTER_DRAIN_TIMEOUT, self.router.drain(&drain)).await {
-            Ok(true) => {}
-            Ok(false) | Err(_) => tracing::warn!(
+        match self.router.drain(ROUTER_DRAIN_TIMEOUT).await {
+            true => {}
+            false => tracing::warn!(
                 timeout = ?ROUTER_DRAIN_TIMEOUT,
                 "channel router drain deadline reached"
             ),
