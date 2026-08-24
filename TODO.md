@@ -752,6 +752,11 @@
       range/content-disposition/SVG handling, orphan semantics, and media-ledger
       lease/tombstone cleanup match Go. No new P0/P1 or changed-code blocker;
       no implementation change was justified.
+- [x] Auth/token/OAuth audit completed: trusted proxy identity, OTP CAS and
+      attempt budget, PAT/Cloud PAT owner/disabled/revoke/cache semantics,
+      bounded Cloud PAT transport, OAuth callback state behavior, human/machine
+      guards, and sensitive logging match the current Go contract. No new P0/P1
+      or changed-code blocker; no implementation change was justified.
 
 ## Phase 4 — S8 route and API parity
 
