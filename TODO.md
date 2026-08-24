@@ -632,6 +632,19 @@
       `git diff --check` passed; rustfmt is unavailable in this execution
       image (the slice was formatted before handoff), and Cargo/review/gate/
       merge remain with pro.
+- [x] Added the missing Go-compatible `cordy autopilot trigger-rotate-url
+      <autopilot-id> <trigger-id>` CLI slice on the cumulative daemon/CLI
+      branch. It resolves UUID/prefix references inside the authenticated
+      workspace, requires explicit confirmation unless `-y/--yes` is passed,
+      calls the existing server rotate-webhook-token endpoint, and preserves
+      Go's JSON/table webhook URL output without changing server rotation
+      logic. Checkpoint `b74502316670a99925fc24b3e27617d31a4516b8`, parent
+      `12080108c9764cf5024d2a639839684cdff49211`, tree
+      `b26add6af1d2e6756ac11a532fffbe601c96387f`; scoped rustfmt and
+      `git diff --check` pass, Cargo/review/gate/merge remain with pro. PR
+      #129 was already merged at head `62b28e4a`; this post-merge checkpoint
+      is pushed on the cumulative branch and awaits pro's new Ready PR
+      candidate (no stale candidate is reused).
 - [ ] Next setup slice: port the real interactive login flow; until that lands,
       setup without `CORDY_TOKEN` returns a typed “interactive login
       unavailable” error after the verified profile replacement, and must not
