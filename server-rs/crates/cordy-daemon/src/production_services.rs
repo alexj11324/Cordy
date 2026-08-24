@@ -529,16 +529,26 @@ fn workspace_sync_backoff(base: Duration, failures: u32) -> Duration {
 }
 
 fn checkout_sync_repos(workspace_repos: Vec<RepoData>, requested_url: &str) -> Vec<RepoInfo> {
+    let requested_url = requested_url.trim();
     let mut urls: BTreeSet<String> = workspace_repos
         .into_iter()
         .map(|repo| repo.url.trim().to_string())
         .filter(|url| !url.is_empty())
         .collect();
-    let requested_url = requested_url.trim();
+    let mut repos = Vec::with_capacity(urls.len() + usize::from(!requested_url.is_empty()));
     if !requested_url.is_empty() {
-        urls.insert(requested_url.to_string());
+        // The authenticated checkout request owns this bounded synchronous
+        // round. Always attempt its exact repository first: an unrelated
+        // workspace repository may be unreachable and consume the cache
+        // sync's entire timeout before the requested task-only URL otherwise
+        // gets a chance to clone.
+        urls.remove(requested_url);
+        repos.push(RepoInfo {
+            url: requested_url.to_string(),
+        });
     }
-    urls.into_iter().map(|url| RepoInfo { url }).collect()
+    repos.extend(urls.into_iter().map(|url| RepoInfo { url }));
+    repos
 }
 
 #[cfg(test)]
@@ -611,6 +621,31 @@ mod tests {
             vec![
                 "https://example.test/task.git",
                 "https://example.test/workspace.git"
+            ]
+        );
+    }
+
+    #[test]
+    fn checkout_sync_prioritizes_requested_url_over_unrelated_workspace_repos() {
+        let repos = checkout_sync_repos(
+            vec![
+                RepoData {
+                    url: "https://example.test/a-unreachable.git".into(),
+                    ..RepoData::default()
+                },
+                RepoData {
+                    url: "https://example.test/z-requested.git".into(),
+                    ..RepoData::default()
+                },
+            ],
+            " https://example.test/z-requested.git ",
+        );
+
+        assert_eq!(
+            repos.into_iter().map(|repo| repo.url).collect::<Vec<_>>(),
+            vec![
+                "https://example.test/z-requested.git",
+                "https://example.test/a-unreachable.git"
             ]
         );
     }
