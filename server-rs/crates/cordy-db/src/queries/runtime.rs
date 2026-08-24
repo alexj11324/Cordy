@@ -1040,7 +1040,7 @@ pub async fn update_agent_runtime_custom_name_by_daemon(
     custom_name: Option<&str>,
     workspace_id: Uuid,
     daemon_id: Option<&str>,
-    owner_id: Uuid,
+    owner_id: Option<Uuid>,
 ) -> anyhow::Result<Vec<AgentRuntime>> {
     let rows = sqlx::query(
         r#"UPDATE agent_runtime

@@ -11,6 +11,97 @@ pub trait FlagSource: Send + Sync {
     fn is_enabled(&self, key: &str, default: bool) -> bool;
 }
 
+/// Startup-loaded YAML defaults with live `FF_<KEY>` environment overrides.
+/// This is the boolean projection used by current Rust call sites; it mirrors
+/// the Go provider precedence and fail-closed behavior.
+#[derive(Debug, Default)]
+pub struct ConfiguredFlags {
+    defaults: std::collections::HashMap<String, bool>,
+}
+
+#[derive(serde::Deserialize)]
+struct RuleConfig {
+    #[serde(default)]
+    default: bool,
+}
+
+impl ConfiguredFlags {
+    pub fn from_env() -> Result<Self, anyhow::Error> {
+        let path = std::env::var("CORDY_FEATURE_FLAGS_FILE")
+            .unwrap_or_default()
+            .trim()
+            .to_string();
+        if path.is_empty() {
+            return Ok(Self::default());
+        }
+        let bytes = std::fs::read(&path)
+            .map_err(|error| anyhow::anyhow!("featureflag: read {path}: {error}"))?;
+        if String::from_utf8_lossy(&bytes).trim().is_empty() {
+            return Ok(Self::default());
+        }
+        let rules: std::collections::HashMap<String, RuleConfig> =
+            serde_yaml::from_slice(&bytes)
+                .map_err(|error| anyhow::anyhow!("featureflag: parse: {error}"))?;
+        Ok(Self {
+            defaults: rules
+                .into_iter()
+                .map(|(key, rule)| (key, rule.default))
+                .collect(),
+        })
+    }
+
+    fn env_name(key: &str) -> String {
+        let mut output = String::from("FF_");
+        let mut underscore = false;
+        for character in key.chars() {
+            if character.is_ascii_alphanumeric() {
+                output.push(character.to_ascii_uppercase());
+                underscore = false;
+            } else if !underscore {
+                output.push('_');
+                underscore = true;
+            }
+        }
+        output.trim_end_matches('_').to_string()
+    }
+
+    fn env_decision(key: &str, raw: &str) -> bool {
+        let value = raw.trim();
+        match value.to_ascii_lowercase().as_str() {
+            "" | "false" | "off" | "0" | "no" => false,
+            "true" | "on" | "1" | "yes" => true,
+            // Current FlagSource has no evaluation context. Match Go's stable
+            // anonymous bucket: the empty identifier is shared by all calls.
+            _ if value.ends_with('%') => {
+                let Some(percent) = value[..value.len() - 1]
+                    .trim()
+                    .parse::<u32>()
+                    .ok()
+                    .filter(|percent| *percent <= 100)
+                else {
+                    return false;
+                };
+                let mut hash = 2_166_136_261_u32;
+                for byte in key.bytes().chain(std::iter::once(0)) {
+                    hash ^= u32::from(byte);
+                    hash = hash.wrapping_mul(16_777_619);
+                }
+                hash % 100 < percent
+            }
+            _ => true,
+        }
+    }
+}
+
+impl FlagSource for ConfiguredFlags {
+    fn is_enabled(&self, key: &str, default: bool) -> bool {
+        if let Ok(value) = std::env::var(Self::env_name(key)) {
+            return Self::env_decision(key, &value);
+        }
+        self.defaults.get(key).copied().unwrap_or(default)
+    }
+}
+
 impl<T: FlagSource + ?Sized> FlagSource for &T {
     fn is_enabled(&self, key: &str, default: bool) -> bool {
         (**self).is_enabled(key, default)
@@ -130,5 +221,17 @@ mod tests {
         assert!(map[AGENT_BUILDER_COMPAT]);
         assert!(map[AGENT_SKILL_TOGGLES_COMPAT]);
         assert!(map[RESOURCE_LABELS_COMPAT]);
+    }
+
+    #[test]
+    fn configured_flags_project_boolean_env_values() {
+        assert!(ConfiguredFlags::env_decision("flag", "yes"));
+        assert!(ConfiguredFlags::env_decision("flag", "experiment-v2"));
+        assert!(!ConfiguredFlags::env_decision("flag", "off"));
+        assert!(!ConfiguredFlags::env_decision("flag", "invalid%"));
+        assert_eq!(
+            ConfiguredFlags::env_name("checkout.new-payment"),
+            "FF_CHECKOUT_NEW_PAYMENT"
+        );
     }
 }

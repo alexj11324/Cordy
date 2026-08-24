@@ -16,9 +16,9 @@
 //! request extension for downstream handlers.
 
 use axum::extract::{MatchedPath, Request, State};
-use axum::http::StatusCode;
+use axum::http::{header, StatusCode};
 use axum::middleware::Next;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use cordy_db::models::Member;
 use cordy_db::queries::{member as member_q, workspace as ws_q};
 use uuid::Uuid;
@@ -140,8 +140,12 @@ pub async fn resolve_workspace_id_from_request(
     if header(req, "x-actor-source") == Some("task_token") {
         return header(req, "x-workspace-id").map(str::to_string);
     }
-    if let Some(slug) = header(req, "x-workspace-slug") {
-        if let Some(ws) = ws_q::get_workspace_by_slug(&state.pool, slug)
+    let header_slug = header(req, "x-workspace-slug").map(str::to_owned);
+    let query_slug = query_param(req, "workspace_slug").map(str::to_owned);
+    let header_id = header(req, "x-workspace-id").map(str::to_owned);
+    let query_id = query_param(req, "workspace_id").map(str::to_owned);
+    if let Some(slug) = header_slug {
+        if let Some(ws) = ws_q::get_workspace_by_slug(&state.pool, &slug)
             .await
             .ok()
             .flatten()
@@ -149,8 +153,8 @@ pub async fn resolve_workspace_id_from_request(
             return Some(ws.id.to_string());
         }
     }
-    if let Some(slug) = query_param(req, "workspace_slug") {
-        if let Some(ws) = ws_q::get_workspace_by_slug(&state.pool, slug)
+    if let Some(slug) = query_slug {
+        if let Some(ws) = ws_q::get_workspace_by_slug(&state.pool, &slug)
             .await
             .ok()
             .flatten()
@@ -158,10 +162,10 @@ pub async fn resolve_workspace_id_from_request(
             return Some(ws.id.to_string());
         }
     }
-    if let Some(id) = header(req, "x-workspace-id") {
-        return Some(id.to_string());
+    if let Some(id) = header_id {
+        return Some(id);
     }
-    query_param(req, "workspace_id").map(str::to_string)
+    query_id
 }
 
 enum ResolveOutcome {
@@ -170,21 +174,44 @@ enum ResolveOutcome {
     NotFound,
 }
 
+struct WorkspaceRequestIdentifiers {
+    actor_source: Option<String>,
+    header_slug: Option<String>,
+    query_slug: Option<String>,
+    header_id: Option<String>,
+    query_id: Option<String>,
+}
+
+impl WorkspaceRequestIdentifiers {
+    fn from_request(req: &Request) -> Self {
+        Self {
+            actor_source: header(req, "x-actor-source").map(str::to_owned),
+            header_slug: header(req, "x-workspace-slug").map(str::to_owned),
+            query_slug: query_param(req, "workspace_slug").map(str::to_owned),
+            header_id: header(req, "x-workspace-id").map(str::to_owned),
+            query_id: query_param(req, "workspace_id").map(str::to_owned),
+        }
+    }
+}
+
 /// Slug-first resolver used by the guard middleware
 /// (`resolveWorkspaceUUID` equivalent). Note: query precedes header here —
 /// the inverse of `resolve_workspace_id_from_request`, faithfully preserved.
-async fn resolve_workspace_uuid(state: &WorkspaceGuardState, req: &Request) -> ResolveOutcome {
+async fn resolve_workspace_uuid(
+    state: &WorkspaceGuardState,
+    identifiers: WorkspaceRequestIdentifiers,
+) -> ResolveOutcome {
     // Task-token-authenticated requests must operate on the token's bound
     // workspace; nothing on the wire can override it (MUL-2600).
-    if header(req, "x-actor-source") == Some("task_token") {
-        return match header(req, "x-workspace-id") {
-            Some(id) if !id.is_empty() => ResolveOutcome::Found(id.to_string()),
+    if identifiers.actor_source.as_deref() == Some("task_token") {
+        return match identifiers.header_id {
+            Some(id) if !id.is_empty() => ResolveOutcome::Found(id),
             _ => ResolveOutcome::NotFound,
         };
     }
     // Slug path (preferred — frontend sends this after the URL refactor).
-    if let Some(slug) = query_param(req, "workspace_slug") {
-        if let Some(ws) = ws_q::get_workspace_by_slug(&state.pool, slug)
+    if let Some(slug) = identifiers.query_slug {
+        if let Some(ws) = ws_q::get_workspace_by_slug(&state.pool, &slug)
             .await
             .ok()
             .flatten()
@@ -193,8 +220,8 @@ async fn resolve_workspace_uuid(state: &WorkspaceGuardState, req: &Request) -> R
         }
         return ResolveOutcome::NotFound;
     }
-    if let Some(slug) = header(req, "x-workspace-slug") {
-        if let Some(ws) = ws_q::get_workspace_by_slug(&state.pool, slug)
+    if let Some(slug) = identifiers.header_slug {
+        if let Some(ws) = ws_q::get_workspace_by_slug(&state.pool, &slug)
             .await
             .ok()
             .flatten()
@@ -204,11 +231,11 @@ async fn resolve_workspace_uuid(state: &WorkspaceGuardState, req: &Request) -> R
         return ResolveOutcome::NotFound;
     }
     // UUID fallback (CLI, daemon, legacy clients).
-    if let Some(id) = query_param(req, "workspace_id") {
-        return ResolveOutcome::Found(id.to_string());
+    if let Some(id) = identifiers.query_id {
+        return ResolveOutcome::Found(id);
     }
-    if let Some(id) = header(req, "x-workspace-id") {
-        return ResolveOutcome::Found(id.to_string());
+    if let Some(id) = identifiers.header_id {
+        return ResolveOutcome::Found(id);
     }
     ResolveOutcome::NoIdentifier
 }
@@ -219,25 +246,29 @@ pub async fn require_workspace(
     State(state): State<WorkspaceGuardState>,
     mut req: Request,
     next: Next,
-) -> Result<Response, (StatusCode, &'static str)> {
+) -> Response {
+    fn json_error(status: StatusCode, body: &'static str) -> Response {
+        (status, [(header::CONTENT_TYPE, "application/json")], body).into_response()
+    }
+
     let resolution = if let Some(param) = state.url_param {
         url_param(&req, param)
             .map(ResolveOutcome::Found)
             .unwrap_or(ResolveOutcome::NoIdentifier)
     } else {
-        resolve_workspace_uuid(&state, &req).await
+        resolve_workspace_uuid(&state, WorkspaceRequestIdentifiers::from_request(&req)).await
     };
 
     let workspace_id = match resolution {
         ResolveOutcome::Found(id) => id,
         ResolveOutcome::NotFound => {
-            return Err((StatusCode::NOT_FOUND, r#"{"error":"workspace not found"}"#));
+            return json_error(StatusCode::NOT_FOUND, r#"{"error":"workspace not found"}"#);
         }
         ResolveOutcome::NoIdentifier => {
-            return Err((
+            return json_error(
                 StatusCode::BAD_REQUEST,
                 r#"{"error":"workspace_id or workspace_slug is required"}"#,
-            ));
+            );
         }
     };
 
@@ -247,30 +278,30 @@ pub async fn require_workspace(
     if header(&req, "x-actor-source") == Some("task_token") {
         let bound = header(&req, "x-workspace-id").unwrap_or("");
         if bound.is_empty() || workspace_id != bound {
-            return Err((
+            return json_error(
                 StatusCode::FORBIDDEN,
                 r#"{"error":"task token is bound to a different workspace"}"#,
-            ));
+            );
         }
     }
 
     let Some(user_id) = header(&req, "x-user-id") else {
-        return Err((
+        return json_error(
             StatusCode::UNAUTHORIZED,
             r#"{"error":"user not authenticated"}"#,
-        ));
+        );
     };
     let Ok(user_uuid) = Uuid::parse_str(user_id) else {
-        return Err((
+        return json_error(
             StatusCode::UNAUTHORIZED,
             r#"{"error":"user not authenticated"}"#,
-        ));
+        );
     };
     let Ok(ws_uuid) = Uuid::parse_str(&workspace_id) else {
-        return Err((
+        return json_error(
             StatusCode::BAD_REQUEST,
             r#"{"error":"invalid workspace_id"}"#,
-        ));
+        );
     };
 
     let Some(member) = member_q::get_member_by_user_and_workspace(&state.pool, user_uuid, ws_uuid)
@@ -278,19 +309,19 @@ pub async fn require_workspace(
         .ok()
         .flatten()
     else {
-        return Err((StatusCode::NOT_FOUND, r#"{"error":"workspace not found"}"#));
+        return json_error(StatusCode::NOT_FOUND, r#"{"error":"workspace not found"}"#);
     };
 
     if !state.roles.is_empty() && !state.roles.contains(&member.role) {
-        return Err((
+        return json_error(
             StatusCode::FORBIDDEN,
             r#"{"error":"insufficient permissions"}"#,
-        ));
+        );
     }
 
     req.extensions_mut().insert(WorkspaceContext {
         workspace_id,
         member,
     });
-    Ok(next.run(req).await)
+    next.run(req).await
 }
