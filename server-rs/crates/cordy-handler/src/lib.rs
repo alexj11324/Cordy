@@ -71,6 +71,7 @@ pub mod runtime;
 pub mod runtime_liveness;
 pub mod runtime_profile;
 pub mod runtime_requests;
+pub mod runtime_sweeper;
 pub mod runtime_usage;
 pub mod session;
 pub mod skill;
