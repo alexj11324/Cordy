@@ -264,14 +264,25 @@ impl SlackChannel {
             anyhow::bail!("slack: inbound handler not configured");
         }
         let mention_re = compile_mention_re(&self.bot_user_id);
+        let run_ctx = ctx.child_token();
+        let tasks = Arc::new(cordy_channel::RuntimeTasks::new());
         // Every exit path cancels run_ctx and waits for the run task to
         // observe it and exit, so a transient failure tears the live
         // connection down before the supervisor reconnects — no leaked socket
         // consuming events into an unread queue.
         let read_loop = tokio::select! {
-            _ = ctx.cancelled() => return Ok(()),
-            res = ws.run(|envelope| self.handle_envelope(envelope, &mention_re)) => res,
+            _ = ctx.cancelled() => Ok(()),
+            res = ws.run(|envelope| {
+                self.handle_envelope(envelope, &mention_re, &run_ctx, &tasks)
+            }) => res,
         };
+        run_ctx.cancel();
+        if !tasks.shutdown(SLASH_COMMAND_TIMEOUT).await {
+            tracing::warn!(
+                app_id = %self.app_id,
+                "slack: slash command tasks exceeded connection shutdown deadline; aborted"
+            );
+        }
         match read_loop {
             Ok(()) => Ok(()),
             Err(e) => {
@@ -292,6 +303,8 @@ impl SlackChannel {
         &self,
         envelope: crate::socket_mode::Envelope,
         mention_re: &Option<regex::Regex>,
+        run_ctx: &CancellationToken,
+        tasks: &cordy_channel::RuntimeTasks,
     ) -> anyhow::Result<()> {
         use crate::socket_mode::EnvelopeKind;
         match envelope.kind {
@@ -299,7 +312,8 @@ impl SlackChannel {
                 let payload: EventsApiEnvelope =
                     serde_json::from_value(envelope.payload.clone())
                         .map_err(|e| anyhow::anyhow!("decode events api payload: {e}"))?;
-                self.dispatch_events_api(&payload, mention_re).await?;
+                self.dispatch_events_api(run_ctx, &payload, mention_re)
+                    .await?;
                 Ok(())
             }
             EnvelopeKind::SlashCommand => {
@@ -308,7 +322,7 @@ impl SlackChannel {
                 if let Ok(cmd) =
                     serde_json::from_value::<SocketSlashCommand>(envelope.payload.clone())
                 {
-                    self.dispatch_slash_command(cmd).await;
+                    self.dispatch_slash_command(run_ctx, tasks, cmd).await;
                 }
                 Ok(())
             }
@@ -323,6 +337,7 @@ impl SlackChannel {
     /// product drop returns quietly.
     async fn dispatch_events_api(
         &self,
+        ctx: &CancellationToken,
         e: &EventsApiEnvelope,
         mention_re: &Option<regex::Regex>,
     ) -> anyhow::Result<()> {
@@ -345,7 +360,7 @@ impl SlackChannel {
             _ => None,
         };
         if let Some(msg) = msg {
-            handler.call(CancellationToken::new(), msg).await?;
+            handler.call(ctx.clone(), msg).await?;
         }
         Ok(())
     }
@@ -355,7 +370,12 @@ impl SlackChannel {
     /// reply never block the socket receive loop (mirrors the router's
     /// detached outbound path). A nil processor (slash handling not wired)
     /// drops it.
-    async fn dispatch_slash_command(&self, cmd: SocketSlashCommand) {
+    async fn dispatch_slash_command(
+        &self,
+        run_ctx: &CancellationToken,
+        tasks: &cordy_channel::RuntimeTasks,
+        cmd: SocketSlashCommand,
+    ) {
         let Some(slash) = &self.slash else {
             tracing::warn!(
                 command = %cmd.command,
@@ -366,14 +386,20 @@ impl SlackChannel {
         };
         let slash = Arc::clone(slash);
         let cmd = SlashCommand::from(&cmd);
-        tokio::spawn(async move {
-            let ctx = tokio_util::sync::CancellationToken::new();
-            let cancel = ctx.clone();
-            tokio::spawn(async move {
-                tokio::time::sleep(SLASH_COMMAND_TIMEOUT).await;
-                cancel.cancel();
-            });
-            slash.handle(ctx, cmd).await;
+        let ctx = run_ctx.child_token();
+        tasks.spawn(async move {
+            tokio::select! {
+                biased;
+                _ = ctx.cancelled() => {}
+                result = tokio::time::timeout(
+                    SLASH_COMMAND_TIMEOUT,
+                    slash.handle(ctx.clone(), cmd),
+                ) => {
+                    if result.is_err() {
+                        tracing::warn!("slack: slash command processing timed out");
+                    }
+                }
+            }
         });
     }
 }
@@ -432,6 +458,7 @@ fn _app_id_of(c: &SlackChannel) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
 
     #[test]
     fn chunking_splits_on_rune_boundaries_and_keeps_short_text_whole() {
@@ -482,6 +509,49 @@ mod tests {
             Capability::TEXT | Capability::THREAD_REPLY
         );
         assert_eq!(ch.r#type().0, "slack");
+    }
+
+    #[tokio::test]
+    async fn inbound_handler_observes_connection_generation_cancellation() {
+        let observed = Arc::new(AtomicBool::new(false));
+        let handler_observed = observed.clone();
+        let channel = SlackChannel {
+            app_id: "A1".into(),
+            bot_user_id: "U_BOT".into(),
+            app_token: "xapp-".into(),
+            bot_api: SlackClient::new("xoxb-"),
+            handler: Some(InboundHandler::new(move |ctx, _message| {
+                let observed = handler_observed.clone();
+                Box::pin(async move {
+                    observed.store(ctx.is_cancelled(), Ordering::SeqCst);
+                    Ok(())
+                })
+            })),
+            slash: None,
+        };
+        let ctx = CancellationToken::new();
+        ctx.cancel();
+        channel
+            .dispatch_events_api(
+                &ctx,
+                &EventsApiEnvelope {
+                    team_id: "T1".into(),
+                    api_app_id: "A1".into(),
+                    event: serde_json::json!({
+                        "type": "message",
+                        "channel": "D1",
+                        "channel_type": "im",
+                        "user": "U1",
+                        "text": "hello",
+                        "ts": "1.0"
+                    }),
+                    event_id: "E1".into(),
+                },
+                &compile_mention_re("U_BOT"),
+            )
+            .await
+            .unwrap();
+        assert!(observed.load(Ordering::SeqCst));
     }
 
     #[tokio::test]
