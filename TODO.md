@@ -167,6 +167,10 @@
 - [ ] Process #91 and #93 only after their daemon/API dependencies are current.
 - [ ] Implement and verify missing CLI contracts: login, setup, daemon foreground,
       update, probe-runtimes, and disk-usage.
+- [ ] Active refactor slice: implement the Go `login --token` contract in the
+      existing Rust CLI branch `codex/cord-18-rust-cli`; a serial subagent owns
+      the bounded code change while this thread owns the contract scope and
+      TODO. PR review/gate/merge is delegated to the pro model.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
