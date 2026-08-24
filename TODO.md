@@ -22,7 +22,7 @@
 
 ## Current baseline (2026-08-24)
 
-- Integration remote: `8b44b1ef7b54771a19f2a658a047628d9174274c`.
+- Integration remote: `ef7e3ba9da342ca4deb4bd12d21a3c60a170c713` (after #89 merge).
 - Current local integration head: `8438d39bc1b28a561f846e83590ef1771a20dc61`.
 - Local-only commits requiring audit/version decision: `cbb0d3aa` through `8438d39b`
   (nine commits, common ancestor `881da969`; local is `9` ahead / `212` behind remote).
@@ -59,8 +59,9 @@
       with 6 unchanged environment/baseline failures; strict Clippy only the 5 known
       unchanged `heartbeat_scheduler`/`runtime_sweeper` style lints. No changed-code
       compile, test, security, or lifecycle failure. Lock released.
-- [ ] Merge #89 with GraphQL expected head, then re-verify integration parents/tree/ref.
-- [ ] #113: restack only after #89 merge; review, gate, expected-head merge.
+- [x] #89 merged with GraphQL expected head `2b7d31e5`; merge `ef7e3ba9`, parents
+      `8b44b1ef + 2b7d31e5`, tree `83c10acd`; integration ref verified.
+- [ ] #113: refresh against integration `ef7e3ba9`, then review, gate, expected-head merge.
 - [ ] #114: restack only after #113 merge; review, gate, expected-head merge.
 - [ ] #126 → #127 → #128 → #129: process strictly in that order after daemon base moves.
 
