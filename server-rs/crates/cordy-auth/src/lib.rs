@@ -4,7 +4,6 @@
 //! `jwt` (secrets + token minting), `cookie` (session/CSRF), `disabled_users`
 //! (emergency denylist), `pat_cache` (Redis-backed lookup cache).
 
-pub mod cloud_pat;
 pub mod cookie;
 pub mod daemon_token_cache;
 pub mod disabled_users;

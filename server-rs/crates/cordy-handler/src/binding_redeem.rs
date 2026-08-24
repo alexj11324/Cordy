@@ -14,7 +14,9 @@ use axum::http::{HeaderMap, Request, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
-use cordy_db::queries::channel::{consume_channel_binding_token, create_channel_user_binding};
+use cordy_db::queries::channel::{
+    consume_channel_binding_token, consume_lark_binding_token, create_channel_user_binding,
+};
 use cordy_db::queries::member::get_member_by_user_and_workspace;
 use cordy_protocol::EVENT_DINGTALK_ACCOUNT_BINDING_UPDATED;
 use serde::Deserialize;
@@ -162,10 +164,10 @@ impl Channel {
     }
 
     fn validates_token_channel(self) -> bool {
-        // Slack still accepts tokens created before the shared channel-token
-        // discriminator existed. Every other route consumes only generalized
-        // tokens and must reject a token minted for another channel.
-        !matches!(self, Self::Slack)
+        // This deliberately mirrors the authoritative Go services. The three
+        // newer generic-channel adapters validate the discriminator; the
+        // Lark and Slack services predate that guard.
+        matches!(self, Self::Wecom | Self::DingTalk | Self::Telegram)
     }
 
     fn response_key(self) -> &'static str {
@@ -348,15 +350,28 @@ async fn redeem_and_bind(
         .map_err(anyhow::Error::from)
         .map_err(RedeemError::Internal)?;
     let token_hash = hex::encode(Sha256::digest(raw_token.as_bytes()));
-    let row = consume_channel_binding_token(&mut *tx, &token_hash)
-        .await
-        .map_err(RedeemError::Internal)?
-        .ok_or(RedeemError::TokenInvalid)?;
-    let row = ConsumedToken {
-        workspace_id: row.workspace_id,
-        installation_id: row.installation_id,
-        channel_type: row.channel_type,
-        channel_user_id: row.channel_user_id,
+    let row = if channel == Channel::Lark {
+        let row = consume_lark_binding_token(&mut *tx, &token_hash)
+            .await
+            .map_err(RedeemError::Internal)?
+            .ok_or(RedeemError::TokenInvalid)?;
+        ConsumedToken {
+            workspace_id: row.workspace_id,
+            installation_id: row.installation_id,
+            channel_type: channel.channel_type().to_string(),
+            channel_user_id: row.lark_open_id,
+        }
+    } else {
+        let row = consume_channel_binding_token(&mut *tx, &token_hash)
+            .await
+            .map_err(RedeemError::Internal)?
+            .ok_or(RedeemError::TokenInvalid)?;
+        ConsumedToken {
+            workspace_id: row.workspace_id,
+            installation_id: row.installation_id,
+            channel_type: row.channel_type,
+            channel_user_id: row.channel_user_id,
+        }
     };
 
     if channel.validates_token_channel() && row.channel_type != channel.channel_type() {
@@ -513,7 +528,7 @@ mod tests {
     #[test]
     fn channel_wire_contracts_match_go() {
         let cases = [
-            (Channel::Lark, "feishu", "lark_open_id", true),
+            (Channel::Lark, "feishu", "lark_open_id", false),
             (Channel::Slack, "slack", "slack_user_id", false),
             (Channel::Wecom, "wecom", "wecom_user_id", true),
             (Channel::DingTalk, "dingtalk", "dingtalk_user_id", true),

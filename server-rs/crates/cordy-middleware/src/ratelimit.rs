@@ -72,35 +72,44 @@ impl RateLimitState {
             trusted_proxies: Vec::new(),
         }
     }
+
+    pub fn with_client(mut self, client: redis::Client) -> Self {
+        self.client = Some(client);
+        self
+    }
+
+    async fn connection(&self) -> Option<ConnectionManager> {
+        if let Some(conn) = self.conn.lock().await.clone() {
+            return Some(conn);
+        }
+        let client = self.client.as_ref()?.clone();
+        let conn =
+            match tokio::time::timeout(REDIS_OPERATION_TIMEOUT, client.get_connection_manager())
+                .await
+            {
+                Ok(Ok(conn)) => conn,
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, "ratelimit: redis connect failed; allowing request");
+                    return None;
+                }
+                Err(_) => {
+                    tracing::warn!("ratelimit: redis connect timed out; allowing request");
+                    return None;
+                }
+            };
+        *self.conn.lock().await = Some(conn.clone());
+        Some(conn)
+    }
+
+    async fn clear_connection(&self) {
+        *self.conn.lock().await = None;
+    }
 }
 
 /// Per-IP fixed-window rate limiter backed by Redis.
 pub async fn rate_limit(State(state): State<RateLimitState>, req: Request, next: Next) -> Response {
-    let Some(client) = state.client.clone() else {
+    let Some(mut conn) = state.connection().await else {
         return next.run(req).await;
-    };
-
-    let cached = state.conn.lock().await.clone();
-    let mut conn = match cached {
-        Some(conn) => conn,
-        None => {
-            match tokio::time::timeout(REDIS_OPERATION_TIMEOUT, client.get_connection_manager())
-                .await
-            {
-                Ok(Ok(conn)) => {
-                    *state.conn.lock().await = Some(conn.clone());
-                    conn
-                }
-                Ok(Err(error)) => {
-                    tracing::warn!(%error, "ratelimit: redis unavailable; allowing request");
-                    return next.run(req).await;
-                }
-                Err(_) => {
-                    tracing::warn!("ratelimit: redis connection timed out; allowing request");
-                    return next.run(req).await;
-                }
-            }
-        }
     };
 
     let ip = extract_ip(&req, &state.trusted_proxies);
@@ -116,15 +125,15 @@ pub async fn rate_limit(State(state): State<RateLimitState>, req: Request, next:
     )
     .await
     {
-        Ok(Ok(c)) => c,
-        Ok(Err(e)) => {
-            *state.conn.lock().await = None;
-            tracing::warn!(error = %e, ip = %ip, "ratelimit: redis error; allowing request");
+        Ok(Ok(count)) => count,
+        Ok(Err(error)) => {
+            state.clear_connection().await;
+            tracing::warn!(%error, ip = %ip, "ratelimit: redis error; allowing request");
             return next.run(req).await;
         }
         Err(_) => {
-            *state.conn.lock().await = None;
-            tracing::warn!(ip = %ip, "ratelimit: redis command timed out; allowing request");
+            state.clear_connection().await;
+            tracing::warn!(ip = %ip, "ratelimit: redis timed out; allowing request");
             return next.run(req).await;
         }
     };
@@ -226,5 +235,15 @@ mod tests {
         assert!(is_trusted_proxy(&ip, &nets));
         let outside: IpAddr = "11.1.2.3".parse().unwrap();
         assert!(!is_trusted_proxy(&outside, &nets));
+    }
+
+    #[tokio::test]
+    async fn unavailable_redis_connection_is_bounded_and_fail_open() {
+        let state = RateLimitState::disabled(5, 60).with_client(
+            redis::Client::open("redis://127.0.0.1:1").expect("valid unavailable Redis URL"),
+        );
+        let started = std::time::Instant::now();
+        assert!(state.connection().await.is_none());
+        assert!(started.elapsed() < Duration::from_secs(1));
     }
 }

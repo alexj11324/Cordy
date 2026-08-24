@@ -13,7 +13,7 @@
 //! connectable the moment an auth config is enabled for it in the Composio
 //! dashboard — no env var and no redeploy.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -507,6 +507,33 @@ impl Service {
         }))
     }
 
+    /// Builds the allowlist-scoped task overlay from this service's shared
+    /// connection store and SDK client.
+    pub async fn build_task_overlay(
+        &self,
+        originator_user_id: Uuid,
+        owner_user_id: Option<Uuid>,
+        toolkit_allowlist: &[String],
+    ) -> Result<crate::dispatch::OverlayResult> {
+        let active_connections = match owner_user_id {
+            Some(owner_user_id) => {
+                self.store
+                    .list_active_user_composio_connections(owner_user_id)
+                    .await?
+            }
+            None => Vec::new(),
+        };
+        crate::dispatch::build_task_overlay(
+            self,
+            Some(originator_user_id),
+            owner_user_id,
+            toolkit_allowlist,
+            &active_connections,
+            cordy_service_name,
+        )
+        .await
+    }
+
     /// Builds the browser redirect target for the callback handler. On
     /// success it points at the settings page (Integrations tab) with the
     /// connected toolkit slug; on failure it carries a stable error code.
@@ -724,6 +751,34 @@ impl Service {
             return Err(ServiceError::AccountVerification.into());
         }
         Ok(())
+    }
+}
+
+fn cordy_service_name(slug: &str) -> String {
+    slug.to_string()
+}
+
+impl crate::dispatch::SessionSpawner for Service {
+    fn create_session(
+        &self,
+        user_id: String,
+        toolkits_enable: &[String],
+        pinned: &BTreeMap<String, Vec<String>>,
+    ) -> impl std::future::Future<Output = crate::dispatch::SessionResult> + Send {
+        let toolkits = serde_json::json!({ "enable": toolkits_enable });
+        let connected_accounts = serde_json::to_value(pinned);
+        async move {
+            let response = self
+                .sdk
+                .create_session(CreateSessionRequest {
+                    user_id,
+                    toolkits: Some(toolkits),
+                    connected_accounts: Some(connected_accounts?),
+                })
+                .await
+                .map_err(|error| anyhow!("composio: create session: {error}"))?;
+            Ok(Some((response.mcp.url, self.sdk.mcp_auth_headers())))
+        }
     }
 }
 

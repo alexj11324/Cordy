@@ -1871,7 +1871,7 @@ pub async fn create_agent(
     thinking_level: Option<&str>,
     service_tier: Option<&str>,
     composio_toolkit_allowlist: &[String],
-    permission_mode: &serde_json::Value,
+    permission_mode: &str,
 ) -> anyhow::Result<Option<Agent>> {
     let row = sqlx::query(
         r#"INSERT INTO agent (
