@@ -59,6 +59,36 @@ jobs:
             41eed2a2918ec798c202e8719e86f429f0ee5cd9
             881da969d4d1357553a86115ffe6e17f21c671e8
             33664841ec8733a2601a702af360607304361c88
+            640f0363ca6de387a695171189325cccc9444a18
+            a87b8d5929c1f4a7633dfa63fd6a561e13e47e53
+            9ffefc7780090484dad6b7d9257a05172f906587
+            097a5dece80502cf3622e5f59969d1a44718d3a1
+            0155b4b6f78c33fd7114c7e67ca06ffd7bd50f50
+            1e9c8ee733a3d6197eae00df8c343ed5a175fbe5
+            c2f6c460a60c086881ec1d34d34046fd0462eb08
+            a9c2b4dbe0aacb442886a6dd92a253bef4b0ab5c
+            cd3178883ebc6f6c41d0a1bf94647d0a0bd320a1
+            a4b4df848d7c64c8f676054c638ef105fc8ea7fa
+            80ef7843999b5ed9ec0af5910e6e4470c5e0f168
+            3d5bd0f297658d614cae20a3efd5bb6f6fe72340
+            06a740174c86a172147e5df6a65aa051e2f8011b
+            82b9c31fd12139cdc10a57340bb0a6cc26c741e1
+            d5356dc2f1890a8c02917169f37862ad340d37c5
+            ff5ecd55a8aa27d249bf6203dd4e913bfb0031d2
+            207644752780713f5ca136f00e6bae6dbdffd6ba
+            905efd5e6228bc652251e0b07fa808d2ddafefbf
+            e2928b13549ba77f5f6ddc58932db6a5318070d6
+            89833e6138ba727b2c558523710aa76e5701cb08
+            b89aa826e1bd298596b5df724414b1a49ba4518a
+            ac907e01e41f8e5d261481997f2731927c410d1b
+            29a908fff75261fda9cb9bfa3c2bad326a1b1742
+            9c4ef21e1ee1fac0f1c1ab8df6ee36b5d8bb6250
+            119bf7fe7953b192f8a7707ede9868d75a775ddc
+            156c466c7e820a364a078eee21ba9dd9d773b73e
+            c984d7486b9b0ca2797e170d48c8042776f1da49
+            13facae967658456a4681c920b3265432f485fbf
+            78aed98e1dafb1072b8a12e9a66fc93f6b242124
+            bb6041e7271419a7fe5c52f1e8083dc043db0290
           )
           : > .remediation-replay-report.txt
           printf '# Review-fix replay report\n\n' >> .remediation-replay-report.txt
