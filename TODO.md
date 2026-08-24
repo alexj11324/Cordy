@@ -295,14 +295,21 @@
       server/app URLs; health preflight must succeed before mutation; success
       atomically replaces the whole profile (clearing stale token/workspace and
       unknown fields) while preserving lock/permission/fsync semantics. Current
-      head is `8044e5a6beecb26a93c07a7a45ab2ee64dbdf22f` (parent
-      `a7827a4cb39a9a09ca8f6ad88da0b636427ffe32`, tree
-      `7d382be33a072241db1d6b99d038768da33915b1`), candidate
-      `466f3184e7bf7d0b7da16657cf9bd6ce247f70ec`; scoped rustfmt/diff-check
-      pass, Cargo/review/gate/merge remain with pro.
-- [ ] Next setup slice: add the real async health probe and setup command
-      interaction/login sequencing on top of this persistence boundary; never
-      mutate the old profile before a bounded health success.
+      head is now `058d7761f7fa54c0dadea4c92858777a6a0d91ad` (parent
+      `8044e5a6beecb26a93c07a7a45ab2ee64dbdf22f`, tree
+      `ad928876c7efd93bb0c9cb8d05e88e5f96ee9b43`), candidate
+      `c5b99dc53cae300a3974d51260145eb04d952363`; PR #129 remains
+      Ready/CLEAN/MERGEABLE on base `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`.
+      The slice adds the bounded unauthenticated `/health` probe (HTTP(S), no
+      redirects, only 200, two-second request/outer timeout), self-host/cloud
+      URL precedence, and setup command dispatch. Probe failure leaves the old
+      profile untouched; an environment `CORDY_TOKEN` is persisted only after
+      the successful probe. Scoped rustfmt/diff-check pass; Cargo/review/gate/
+      merge remain with pro.
+- [ ] Next setup slice: port the real interactive login flow and then daemon
+      after-setup dispatch; until that lands, setup without `CORDY_TOKEN`
+      returns a typed “interactive login unavailable” error after the verified
+      profile replacement, and must not claim completion.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
