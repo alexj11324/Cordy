@@ -2,8 +2,7 @@
 //! `server/cmd/server/{subscriber,activity}_listeners.go`.
 
 use std::collections::HashSet;
-use std::future::Future;
-use std::sync::{Arc, OnceLock};
+use std::sync::OnceLock;
 
 use cordy_db::models::ActivityLog;
 use cordy_db::queries::{activity, agent, issue, subscriber};
@@ -36,63 +35,19 @@ struct Mention {
     user_id: String,
 }
 
-pub(crate) fn register(bus: Arc<Bus>, pool: PgPool) {
-    subscribe(
-        &bus,
-        &pool,
-        cordy_protocol::EVENT_ISSUE_CREATED,
-        |pool, bus, event| async move {
-            handle_issue_created(&pool, &bus, &event).await;
-        },
-    );
-    subscribe(
-        &bus,
-        &pool,
-        cordy_protocol::EVENT_ISSUE_UPDATED,
-        |pool, bus, event| async move {
-            handle_issue_updated(&pool, &bus, &event).await;
-        },
-    );
-    subscribe(
-        &bus,
-        &pool,
-        cordy_protocol::EVENT_COMMENT_CREATED,
-        |pool, bus, event| async move {
-            handle_comment_created(&pool, &bus, &event).await;
-        },
-    );
-    subscribe(
-        &bus,
-        &pool,
-        cordy_protocol::EVENT_TASK_COMPLETED,
-        |pool, bus, event| async move {
-            handle_task_activity(&pool, &bus, &event, "task_completed").await;
-        },
-    );
-    subscribe(
-        &bus,
-        &pool,
-        cordy_protocol::EVENT_TASK_FAILED,
-        |pool, bus, event| async move {
-            handle_task_activity(&pool, &bus, &event, "task_failed").await;
-        },
-    );
-}
-
-fn subscribe<F, Fut>(bus: &Arc<Bus>, pool: &PgPool, event_type: &'static str, handler: F)
-where
-    F: Fn(PgPool, Arc<Bus>, Event) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = ()> + Send + 'static,
-{
-    let pool = pool.clone();
-    let bus_for_handler = bus.clone();
-    bus.subscribe(event_type, move |event| {
-        tokio::spawn(handler(
-            pool.clone(),
-            bus_for_handler.clone(),
-            event.clone(),
-        ));
-    });
+pub(crate) async fn handle_event(pool: &PgPool, bus: &Bus, event: &Event) {
+    match event.event_type.as_str() {
+        cordy_protocol::EVENT_ISSUE_CREATED => handle_issue_created(pool, bus, event).await,
+        cordy_protocol::EVENT_ISSUE_UPDATED => handle_issue_updated(pool, bus, event).await,
+        cordy_protocol::EVENT_COMMENT_CREATED => handle_comment_created(pool, bus, event).await,
+        cordy_protocol::EVENT_TASK_COMPLETED => {
+            handle_task_activity(pool, bus, event, "task_completed").await;
+        }
+        cordy_protocol::EVENT_TASK_FAILED => {
+            handle_task_activity(pool, bus, event, "task_failed").await;
+        }
+        _ => {}
+    }
 }
 
 async fn handle_issue_created(pool: &PgPool, bus: &Bus, event: &Event) {

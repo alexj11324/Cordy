@@ -58,6 +58,7 @@ pub mod me;
 pub mod notification;
 mod notification_listeners;
 pub mod onboarding_shim;
+pub mod ordered_event_side_effects;
 pub mod pat;
 pub mod pending_store;
 pub mod pin;

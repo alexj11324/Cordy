@@ -24,6 +24,8 @@ struct ProductionApp {
     runtime_sweeper: cordy_handler::runtime_sweeper::RuntimeSweeperRuntime,
     plugin_events: Option<cordy_service::plugin_event_dispatch::PluginEventDispatcherRuntime>,
     github_snapshots: Option<cordy_ghsnapshot::ManagerRuntime>,
+    ordered_event_side_effects:
+        Option<cordy_handler::ordered_event_side_effects::OrderedEventSideEffectsRuntime>,
 }
 
 struct VcsWebhookConfig {
@@ -257,11 +259,10 @@ async fn build_production_router(
         tracing::warn!("public-route rate limiting disabled: REDIS_URL not configured");
     }
     let root_cancel = CancellationToken::new();
-    let state = install_pending_stores(state, redis_url)
-        .await
-        .start_subscriber_activity_listeners()
-        .start_notification_event_listeners()
-        .start_autopilot_event_listeners();
+    let state = install_pending_stores(state, redis_url).await;
+    let (state, ordered_event_side_effects) =
+        state.start_ordered_event_side_effects(root_cancel.child_token());
+    let state = state.start_autopilot_event_listeners();
     let (state, plugin_events) = state.start_plugin_event_dispatcher(root_cancel.child_token());
     let github_snapshots = state.github_snapshots.start(root_cancel.child_token());
     let heartbeat_scheduler = Arc::new(
@@ -357,6 +358,7 @@ async fn build_production_router(
         runtime_sweeper,
         plugin_events,
         github_snapshots,
+        ordered_event_side_effects,
     })
 }
 
@@ -410,6 +412,19 @@ async fn shutdown_github_snapshots(
         Some(runtime) => Some(
             runtime
                 .shutdown(cordy_ghsnapshot::DEFAULT_SHUTDOWN_TIMEOUT)
+                .await,
+        ),
+        None => None,
+    }
+}
+
+async fn shutdown_ordered_event_side_effects(
+    runtime: Option<cordy_handler::ordered_event_side_effects::OrderedEventSideEffectsRuntime>,
+) -> Option<cordy_handler::ordered_event_side_effects::OrderedEventShutdownOutcome> {
+    match runtime {
+        Some(runtime) => Some(
+            runtime
+                .shutdown(cordy_handler::ordered_event_side_effects::DEFAULT_SHUTDOWN_TIMEOUT)
                 .await,
         ),
         None => None,
@@ -523,6 +538,7 @@ async fn main() -> anyhow::Result<()> {
         runtime_sweeper,
         plugin_events,
         github_snapshots,
+        ordered_event_side_effects,
     } = app;
     let serve_result = axum::serve(
         listener,
@@ -557,6 +573,12 @@ async fn main() -> anyhow::Result<()> {
         shutdown_plugin_events(plugin_events),
         shutdown_github_snapshots(github_snapshots),
     );
+    // Subscriber/activity/notification work consumes events from every
+    // producer above. Stop accepting only after those producers have joined,
+    // then drain already-admitted events in subscriber → activity →
+    // notification order.
+    let ordered_event_side_effects_shutdown =
+        shutdown_ordered_event_side_effects(ordered_event_side_effects).await;
     match failure_shutdown {
         cordy_service::autopilot_failure_monitor::ShutdownOutcome::TimedOut => {
             tracing::warn!("autopilot failure monitor exceeded shutdown deadline and was aborted");
@@ -638,6 +660,18 @@ async fn main() -> anyhow::Result<()> {
             tracing::error!("GitHub snapshot manager task panicked during shutdown");
         }
         Some(cordy_ghsnapshot::ManagerShutdownOutcome::Stopped) | None => {}
+    }
+    match ordered_event_side_effects_shutdown {
+        Some(cordy_handler::ordered_event_side_effects::OrderedEventShutdownOutcome::TimedOut) => {
+            tracing::warn!(
+                "ordered event side effects exceeded shutdown deadline and were aborted"
+            );
+        }
+        Some(cordy_handler::ordered_event_side_effects::OrderedEventShutdownOutcome::Panicked) => {
+            tracing::error!("ordered event side-effect task panicked during shutdown");
+        }
+        Some(cordy_handler::ordered_event_side_effects::OrderedEventShutdownOutcome::Stopped)
+        | None => {}
     }
     serve_result?;
     Ok(())

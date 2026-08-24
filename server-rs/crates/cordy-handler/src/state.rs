@@ -82,12 +82,10 @@ pub struct HandlerState {
     /// Guards production Autopilot listener registration against duplicate
     /// terminal side effects when startup builders are composed more than once.
     autopilot_listeners_started: bool,
-    /// Guards subscriber/activity listener registration against duplicate
-    /// side effects when startup builders are composed more than once.
-    subscriber_activity_listeners_started: bool,
-    /// Guards production notification listener registration against duplicate
-    /// inbox rows when startup builders are composed more than once.
-    notification_listeners_started: bool,
+    /// Ordered subscriber → activity → notification pipeline. The bus retains
+    /// its callback; this field guards registration and exposes lifecycle.
+    ordered_event_side_effects:
+        Option<Arc<crate::ordered_event_side_effects::OrderedEventSideEffects>>,
     /// Boot-time bearer token for `/health/realtime`. Empty enables the
     /// direct-loopback-only development policy.
     pub realtime_metrics_token: String,
@@ -188,8 +186,7 @@ impl HandlerState {
             callback_base_url: String::new(),
             plugin_events: None,
             autopilot_listeners_started: false,
-            subscriber_activity_listeners_started: false,
-            notification_listeners_started: false,
+            ordered_event_side_effects: None,
             realtime_metrics_token: std::env::var("REALTIME_METRICS_TOKEN")
                 .unwrap_or_default()
                 .trim()
@@ -381,26 +378,26 @@ impl HandlerState {
         self
     }
 
-    /// Wires the subscriber and activity side effects in their Go registration
-    /// order. Lightweight state construction remains side-effect free.
-    pub fn start_subscriber_activity_listeners(mut self) -> Self {
-        if self.subscriber_activity_listeners_started {
-            return self;
+    /// Starts the owned subscriber → activity → notification pipeline. One
+    /// event stays ordered inside one task; independent events remain
+    /// concurrent as they are across Go request goroutines.
+    pub fn start_ordered_event_side_effects(
+        mut self,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> (
+        Self,
+        Option<crate::ordered_event_side_effects::OrderedEventSideEffectsRuntime>,
+    ) {
+        if self.ordered_event_side_effects.is_some() {
+            return (self, None);
         }
-        crate::subscriber_activity_listeners::register(self.bus.clone(), self.pool.clone());
-        self.subscriber_activity_listeners_started = true;
-        self
-    }
-
-    /// Wires inbox notification side effects after subscriber and activity
-    /// listeners, matching the Go production registration order.
-    pub fn start_notification_event_listeners(mut self) -> Self {
-        if self.notification_listeners_started {
-            return self;
-        }
-        crate::notification_listeners::register(self.bus.clone(), self.pool.clone());
-        self.notification_listeners_started = true;
-        self
+        let side_effects = crate::ordered_event_side_effects::OrderedEventSideEffects::new(
+            self.pool.clone(),
+            self.bus.clone(),
+        );
+        let runtime = side_effects.start(cancel);
+        self.ordered_event_side_effects = Some(side_effects);
+        (self, runtime)
     }
 
     /// Installs the production entitlement provider on the one shared

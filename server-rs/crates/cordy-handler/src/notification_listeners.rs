@@ -45,63 +45,21 @@ struct InboxSpec<'a> {
     details: &'a Value,
 }
 
-pub(crate) fn register(bus: Arc<Bus>, pool: PgPool) {
-    subscribe(
-        &bus,
-        &pool,
-        cordy_protocol::EVENT_ISSUE_CREATED,
-        handle_issue_created,
-    );
-    subscribe(
-        &bus,
-        &pool,
-        cordy_protocol::EVENT_ISSUE_UPDATED,
-        handle_issue_updated,
-    );
-    subscribe(
-        &bus,
-        &pool,
-        cordy_protocol::EVENT_COMMENT_CREATED,
-        handle_comment_created,
-    );
-    subscribe(
-        &bus,
-        &pool,
-        cordy_protocol::EVENT_ISSUE_REACTION_ADDED,
-        handle_issue_reaction_added,
-    );
-    subscribe(
-        &bus,
-        &pool,
-        cordy_protocol::EVENT_REACTION_ADDED,
-        handle_reaction_added,
-    );
-    subscribe(
-        &bus,
-        &pool,
-        cordy_protocol::EVENT_TASK_FAILED,
-        handle_task_failed,
-    );
-}
-
-fn subscribe(
-    bus: &Arc<Bus>,
-    pool: &PgPool,
-    event_type: &'static str,
-    handler: fn(PgPool, Arc<Bus>, Event) -> ListenerFuture,
-) {
-    let pool = pool.clone();
-    let bus_for_handler = bus.clone();
-    bus.subscribe(event_type, move |event| {
-        tokio::spawn(handler(
-            pool.clone(),
-            bus_for_handler.clone(),
-            event.clone(),
-        ));
-    });
-}
-
 type ListenerFuture = std::pin::Pin<Box<dyn Future<Output = ()> + Send>>;
+
+pub(crate) async fn handle_event(pool: PgPool, bus: Arc<Bus>, event: Event) {
+    match event.event_type.as_str() {
+        cordy_protocol::EVENT_ISSUE_CREATED => handle_issue_created(pool, bus, event).await,
+        cordy_protocol::EVENT_ISSUE_UPDATED => handle_issue_updated(pool, bus, event).await,
+        cordy_protocol::EVENT_COMMENT_CREATED => handle_comment_created(pool, bus, event).await,
+        cordy_protocol::EVENT_ISSUE_REACTION_ADDED => {
+            handle_issue_reaction_added(pool, bus, event).await;
+        }
+        cordy_protocol::EVENT_REACTION_ADDED => handle_reaction_added(pool, bus, event).await,
+        cordy_protocol::EVENT_TASK_FAILED => handle_task_failed(pool, bus, event).await,
+        _ => {}
+    }
+}
 
 fn handle_issue_created(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFuture {
     Box::pin(async move {
