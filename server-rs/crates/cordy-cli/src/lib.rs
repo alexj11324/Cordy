@@ -147,6 +147,8 @@ struct DaemonArgs {
 enum DaemonCommand {
     #[command(about = "Start the production daemon")]
     Start(DaemonStartArgs),
+    #[command(about = "Show daemon status")]
+    Status(DaemonStatusArgs),
     #[command(about = "Restart the production daemon")]
     Restart(DaemonRestartArgs),
     #[command(about = "Stop the production daemon")]
@@ -165,6 +167,12 @@ enum DaemonCommand {
 struct DaemonStartArgs {
     #[command(flatten)]
     launch: DaemonLaunchArgs,
+}
+
+#[derive(Debug, Args)]
+struct DaemonStatusArgs {
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -3151,6 +3159,9 @@ async fn run_with_input<R: Read>(
             command: DaemonCommand::Start(args),
         }) => run_daemon_start(cli, environment, args).await,
         Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Status(args),
+        }) => run_daemon_status(cli, environment, args).await,
+        Command::Daemon(DaemonArgs {
             command: DaemonCommand::Restart(args),
         }) => run_daemon_restart(cli, environment, args).await,
         Command::Daemon(DaemonArgs {
@@ -3521,6 +3532,227 @@ async fn run_daemon_stop(cli: &Cli, environment: &Environment) -> Result<RunOutp
             bail!("daemon is still stopping (pid {pid}); refusing to report success")
         }
     }
+}
+
+async fn run_daemon_status(
+    cli: &Cli,
+    environment: &Environment,
+    args: &DaemonStatusArgs,
+) -> Result<RunOutput> {
+    let port = resolve_daemon_status_port(cli, environment)?;
+    let control = cordy_daemon::control_client::DaemonControlClient::try_new()
+        .context("build daemon health client")?;
+    let health = control.health(port).await;
+    let conflict = if environment.in_daemon_task_identity_context() {
+        None
+    } else if let cordy_daemon::control_client::LocalDaemonHealth::Live(snapshot) = &health {
+        snapshot.confirm_profile(&cli.profile, port).err()
+    } else {
+        None
+    };
+    render_daemon_status(&cli.profile, args.output, health, conflict)
+}
+
+fn resolve_daemon_status_port(cli: &Cli, environment: &Environment) -> Result<u16> {
+    if !environment.in_daemon_task_identity_context() {
+        require_known_daemon_profile(environment, &cli.profile)?;
+        return Ok(cordy_daemon::control_client::health_port_for_profile(
+            &cli.profile,
+        ));
+    }
+
+    if !cli.profile.is_empty() {
+        bail!("daemon status --profile is not available inside a daemon-managed task");
+    }
+    let raw = environment.trimmed("CORDY_DAEMON_PORT").context(
+        "daemon status inside a daemon-managed task requires the daemon-injected CORDY_DAEMON_PORT",
+    )?;
+    raw.parse::<u16>()
+        .ok()
+        .filter(|port| *port > 0)
+        .context("invalid CORDY_DAEMON_PORT inside a daemon-managed task")
+}
+
+fn require_known_daemon_profile(environment: &Environment, profile: &str) -> Result<()> {
+    if profile.is_empty() {
+        return Ok(());
+    }
+    let config_path = environment.config_path(profile)?;
+    let profile_dir = config_path
+        .parent()
+        .context("resolve daemon profile directory")?;
+    if profile_dir.is_dir() {
+        return Ok(());
+    }
+
+    let known = known_daemon_profiles(environment);
+    if known.is_empty() {
+        bail!("unknown profile {profile:?}: no named profiles exist yet");
+    }
+    bail!(
+        "unknown profile {profile:?}\nKnown profiles: {}",
+        known.join(", ")
+    );
+}
+
+fn known_daemon_profiles(environment: &Environment) -> Vec<String> {
+    let Ok(config_path) = environment.config_path("") else {
+        return Vec::new();
+    };
+    let Some(config_dir) = config_path.parent() else {
+        return Vec::new();
+    };
+    let profiles_root = config_dir.join("profiles");
+    let mut names = Vec::new();
+    collect_daemon_profiles(&profiles_root, Path::new(""), &mut names);
+    names.sort();
+    names
+}
+
+fn collect_daemon_profiles(root: &Path, relative: &Path, names: &mut Vec<String>) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+        let child_relative = relative.join(entry.file_name());
+        let child = entry.path();
+        if child.join("config.json").is_file() {
+            names.push(child_relative.to_string_lossy().replace('\\', "/"));
+        }
+        collect_daemon_profiles(&child, &child_relative, names);
+    }
+}
+
+fn render_daemon_status(
+    profile: &str,
+    output: OutputFormat,
+    health: cordy_daemon::control_client::LocalDaemonHealth,
+    conflict: Option<cordy_daemon::control_client::ProfileMismatch>,
+) -> Result<RunOutput> {
+    if output == OutputFormat::Json {
+        let value = if let Some(conflict) = conflict.as_ref() {
+            let port_conflict = match &conflict.actual {
+                Some(actual) => serde_json::json!({
+                    "port": conflict.port,
+                    "profile": actual,
+                }),
+                None => serde_json::json!({
+                    "port": conflict.port,
+                    "unreadable_identity": true,
+                }),
+            };
+            serde_json::json!({
+                "status": "stopped",
+                "port_conflict": port_conflict,
+            })
+        } else {
+            match health {
+                cordy_daemon::control_client::LocalDaemonHealth::Stopped => {
+                    serde_json::json!({ "status": "stopped" })
+                }
+                cordy_daemon::control_client::LocalDaemonHealth::Live(snapshot) => {
+                    serde_json::to_value(snapshot.response)?
+                }
+            }
+        };
+        return Ok(RunOutput {
+            stdout: format!("{}\n", serde_json::to_string_pretty(&value)?),
+            stderr: String::new(),
+        });
+    }
+
+    let label = daemon_status_label(profile);
+    let stdout = if let Some(conflict) = conflict.as_ref() {
+        format!(
+            "{label}: stopped\n{}\n",
+            daemon_status_conflict_note(conflict)
+        )
+    } else {
+        match health {
+            cordy_daemon::control_client::LocalDaemonHealth::Stopped => {
+                format!("{label}: stopped\n")
+            }
+            cordy_daemon::control_client::LocalDaemonHealth::Live(snapshot) => {
+                format_daemon_status_table(&label, &snapshot.response)
+            }
+        }
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn daemon_status_label(profile: &str) -> String {
+    if profile.is_empty() {
+        "Daemon".to_string()
+    } else {
+        format!("Daemon [{profile}]")
+    }
+}
+
+fn daemon_status_conflict_note(conflict: &cordy_daemon::control_client::ProfileMismatch) -> String {
+    match &conflict.actual {
+        Some(actual) => format!(
+            "Note: port {} is serving {:?}, which hashes to the same port.",
+            conflict.port, actual
+        ),
+        None => format!(
+            "Note: port {} is serving a daemon whose profile identity could not be read.",
+            conflict.port
+        ),
+    }
+}
+
+fn format_daemon_status_table(
+    label: &str,
+    response: &cordy_daemon::health::HealthResponse,
+) -> String {
+    let mut rows = vec![(
+        label.to_string(),
+        format!(
+            "{} (pid {}, uptime {})",
+            response.status, response.pid, response.uptime
+        ),
+    )];
+    if !response.cli_version.is_empty() {
+        rows.push(("Version".to_string(), response.cli_version.clone()));
+    }
+    if !response.launched_by.is_empty() {
+        let manager = if response.launched_by == "desktop" {
+            "Cordy Desktop app (start and stop it from the app)".to_string()
+        } else {
+            response.launched_by.clone()
+        };
+        rows.push(("Managed by".to_string(), manager));
+    }
+    if !response.reload_pending_reason.is_empty() {
+        rows.push((
+            "Restart pending".to_string(),
+            response.reload_pending_reason.clone(),
+        ));
+    }
+    if !response.agents.is_empty() {
+        rows.push(("Agents".to_string(), response.agents.join(", ")));
+    }
+    rows.push((
+        "Workspaces".to_string(),
+        response.workspaces.len().to_string(),
+    ));
+
+    let width = rows.iter().map(|(key, _)| key.len()).max().unwrap_or(0) + 1;
+    let mut output = String::new();
+    for (key, value) in rows {
+        let key = format!("{key}:");
+        let _ = writeln!(output, "{key:<width$}  {value}", width = width);
+    }
+    output
 }
 
 fn run_daemon_probe_runtimes(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
@@ -23529,6 +23761,113 @@ mod tests {
                 command: DaemonCommand::ProbeRuntimes
             })
         ));
+    }
+
+    #[test]
+    fn daemon_status_parses_table_and_json_output_modes() {
+        let table =
+            Cli::try_parse_from(["cordy", "daemon", "status"]).expect("daemon status table CLI");
+        let Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Status(args),
+        }) = table.command
+        else {
+            panic!("expected daemon status");
+        };
+        assert_eq!(args.output, OutputFormat::Table);
+
+        let json = Cli::try_parse_from(["cordy", "daemon", "status", "--output", "json"])
+            .expect("daemon status JSON CLI");
+        let Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Status(args),
+        }) = json.command
+        else {
+            panic!("expected daemon status");
+        };
+        assert_eq!(args.output, OutputFormat::Json);
+    }
+
+    #[test]
+    fn daemon_status_rejects_unknown_profiles_and_lists_nested_known_profiles() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let error =
+            require_known_daemon_profile(&environment, "missing").expect_err("unknown profile");
+        assert!(error.to_string().contains("unknown profile \"missing\""));
+        assert!(error.to_string().contains("no named profiles exist yet"));
+
+        let nested = home.path().join(".cordy/profiles/team/dev");
+        fs::create_dir_all(&nested).expect("nested profile");
+        fs::write(nested.join("config.json"), "{}").expect("profile config");
+        assert_eq!(
+            known_daemon_profiles(&environment),
+            vec!["team/dev".to_string()]
+        );
+        require_known_daemon_profile(&environment, "team/dev")
+            .expect("nested profile should be accepted");
+    }
+
+    #[test]
+    fn daemon_status_task_port_uses_injected_port_and_rejects_profile_override() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_TASK_ID", "task-1");
+        environment.set("CORDY_DAEMON_PORT", "19601");
+        let cli = Cli::try_parse_from(["cordy", "daemon", "status"]).expect("status CLI");
+        assert_eq!(
+            resolve_daemon_status_port(&cli, &environment).expect("injected port"),
+            19601
+        );
+
+        let profile_cli =
+            Cli::try_parse_from(["cordy", "--profile", "staging", "daemon", "status"])
+                .expect("profile status CLI");
+        let error = resolve_daemon_status_port(&profile_cli, &environment)
+            .expect_err("task profile override");
+        assert!(error
+            .to_string()
+            .contains("--profile is not available inside a daemon-managed task"));
+    }
+
+    #[test]
+    fn daemon_status_table_and_collision_json_match_go_diagnostics() {
+        let response = cordy_daemon::health::HealthResponse {
+            status: "running".into(),
+            pid: 1234,
+            uptime: "1h2m3s".into(),
+            cli_version: "v9.9.9".into(),
+            launched_by: "desktop".into(),
+            reload_pending_reason: "waiting for active tasks".into(),
+            agents: vec!["codex".into()],
+            workspaces: vec![cordy_daemon::health::HealthWorkspace::default()],
+            ..Default::default()
+        };
+        let table = format_daemon_status_table("Daemon [staging]", &response);
+        assert!(table.contains("Daemon [staging]:  running (pid 1234, uptime 1h2m3s)"));
+        assert!(table.contains("Managed by:"));
+        assert!(table.contains("Cordy Desktop app (start and stop it from the app)"));
+        assert!(table.contains("Restart pending:"));
+        assert!(table.contains("Agents:"));
+        assert!(table.contains("Workspaces:"));
+        assert!(table.contains("  1\n"));
+
+        let conflict = cordy_daemon::control_client::ProfileMismatch {
+            expected: "ab".into(),
+            actual: Some("ba".into()),
+            port: 19710,
+        };
+        let json = render_daemon_status(
+            "ab",
+            OutputFormat::Json,
+            cordy_daemon::control_client::LocalDaemonHealth::Stopped,
+            Some(conflict),
+        )
+        .expect("collision JSON");
+        let document: Value = serde_json::from_str(&json.stdout).expect("status JSON");
+        assert_eq!(document["status"], "stopped");
+        assert_eq!(document["port_conflict"]["port"], 19710);
+        assert_eq!(document["port_conflict"]["profile"], "ba");
     }
 
     #[test]
