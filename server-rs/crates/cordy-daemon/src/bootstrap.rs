@@ -682,7 +682,7 @@ impl DaemonLogs {
             .with_writer(writer)
             .with_ansi(rotating.is_none())
             .try_init()
-            .context("install daemon tracing subscriber")?;
+            .map_err(map_subscriber_install_error)?;
         Ok(Self {
             rotating,
             crash_stdio,
@@ -702,6 +702,30 @@ impl DaemonLogs {
             None => open_bounded_crash_log(path),
         }
     }
+}
+
+#[derive(Debug)]
+struct SubscriberInstallError {
+    source: Box<dyn std::error::Error + Send + Sync + 'static>,
+}
+
+impl std::fmt::Display for SubscriberInstallError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("tracing subscriber initialization failed")
+    }
+}
+
+impl std::error::Error for SubscriberInstallError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.source.as_ref())
+    }
+}
+
+fn map_subscriber_install_error(
+    source: Box<dyn std::error::Error + Send + Sync + 'static>,
+) -> anyhow::Error {
+    anyhow::Error::new(SubscriberInstallError { source })
+        .context("install daemon tracing subscriber")
 }
 
 fn open_bounded_crash_log(path: &Path) -> io::Result<File> {
@@ -862,6 +886,18 @@ mod tests {
             fs::metadata(format!("{}.1", path.display())).unwrap().len(),
             CRASH_LOG_MAX_BYTES
         );
+    }
+
+    #[test]
+    fn subscriber_install_mapping_preserves_context_and_source() {
+        let error = map_subscriber_install_error(Box::new(io::Error::other(
+            "subscriber already installed",
+        )));
+        let chain: Vec<String> = error.chain().map(ToString::to_string).collect();
+
+        assert_eq!(chain[0], "install daemon tracing subscriber");
+        assert_eq!(chain[1], "tracing subscriber initialization failed");
+        assert_eq!(chain[2], "subscriber already installed");
     }
 
     #[tokio::test]
