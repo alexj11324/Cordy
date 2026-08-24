@@ -7,9 +7,9 @@
 
 use std::path::PathBuf;
 
-use anyhow::{bail, Result};
-use cordy_daemon::assembly::{DaemonLaunchOverrides, DaemonProfileInput};
-use cordy_daemon::bootstrap::BootstrapOptions;
+use anyhow::{bail, Context, Result};
+use cordy_daemon::assembly::{DaemonLaunchOverrides, DaemonProductionInputs, DaemonProfileInput};
+use cordy_daemon::bootstrap::{BootstrapContext, BootstrapOptions};
 use cordy_daemon::lifecycle::DaemonLifecycleOptions;
 
 use crate::config::{resolve_daemon_launch_overrides, CliConfig, DaemonLaunchFlags, Environment};
@@ -74,6 +74,24 @@ impl DaemonStartAssembly {
     /// by both auto-update and reload handoff.
     pub fn bootstrap_options(&self) -> BootstrapOptions {
         BootstrapOptions::new(self.launch.profile.clone(), self.launch.foreground_args())
+    }
+
+    /// Foreground production input. The bootstrap context is the authoritative
+    /// source for launcher identity, so the foreground daemon cannot silently
+    /// diverge from the process-level value used by successor handoff and
+    /// health registration.
+    pub fn production_inputs(
+        &self,
+        context: &BootstrapContext,
+        cli_version: impl Into<String>,
+    ) -> Result<DaemonProductionInputs> {
+        DaemonProductionInputs::resolve(
+            self.launch.clone(),
+            self.profile_input.clone(),
+            cli_version,
+            context.launched_by.clone(),
+        )
+        .context("assemble foreground daemon production inputs")
     }
 }
 
@@ -147,5 +165,37 @@ mod tests {
             .err()
             .expect("nested daemon must fail");
         assert!(error.to_string().contains("daemon-managed task"));
+    }
+
+    #[test]
+    fn foreground_assembly_rejects_missing_auth_before_touching_workspace_root() {
+        let root = tempfile::tempdir()
+            .expect("temp root")
+            .path()
+            .join("not-created");
+        let context = BootstrapContext {
+            paths: cordy_daemon::bootstrap::ProfileStatePaths {
+                directory: root.join("daemon"),
+                pid: root.join("daemon/pid"),
+                pid_lock: root.join("daemon/pid.lock"),
+                structured_log: root.join("daemon/daemon.log"),
+                crash_log: root.join("daemon/daemon.err.log"),
+            },
+            launched_by: "desktop".to_string(),
+            shutdown: tokio_util::sync::CancellationToken::new(),
+        };
+        let assembly = DaemonStartAssembly {
+            launch: DaemonLaunchOverrides {
+                workspaces_root: root.display().to_string(),
+                ..DaemonLaunchOverrides::default()
+            },
+            profile_input: DaemonProfileInput::default(),
+        };
+
+        let error = assembly
+            .production_inputs(&context, "1.2.3")
+            .expect_err("foreground assembly must require profile credentials");
+        assert!(error.to_string().contains("cordy login"));
+        assert!(!root.exists());
     }
 }
