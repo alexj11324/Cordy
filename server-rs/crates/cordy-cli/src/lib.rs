@@ -172,6 +172,8 @@ enum AutopilotCommand {
         #[arg(value_name = "TRIGGER-ID")]
         trigger_id: String,
     },
+    #[command(about = "Rotate the webhook URL of a webhook trigger")]
+    TriggerRotateUrl(AutopilotTriggerRotateUrlArgs),
 }
 
 #[derive(Debug, Args)]
@@ -216,6 +218,18 @@ struct AutopilotTriggerUpdateArgs {
     timezone: Option<String>,
     #[arg(long)]
     label: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct AutopilotTriggerRotateUrlArgs {
+    #[arg(value_name = "AUTOPILOT-ID")]
+    autopilot_id: String,
+    #[arg(value_name = "TRIGGER-ID")]
+    trigger_id: String,
+    #[arg(short = 'y', long, help = "Skip the interactive confirmation prompt")]
+    yes: bool,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
 }
@@ -2452,6 +2466,9 @@ async fn run_with_input<R: Read>(
                     trigger_id,
                 },
         }) => run_autopilot_trigger_delete(cli, environment, autopilot_id, trigger_id).await,
+        Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::TriggerRotateUrl(args),
+        }) => run_autopilot_trigger_rotate_url(cli, environment, args, input).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -4065,6 +4082,67 @@ async fn run_autopilot_trigger_delete(
         stdout: format!("Trigger {trigger_id} deleted.\n"),
         stderr: String::new(),
     })
+}
+
+async fn run_autopilot_trigger_rotate_url<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &AutopilotTriggerRotateUrlArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, &args.autopilot_id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+    let trigger_id = resolve_autopilot_trigger_id(&client, &autopilot_id, &args.trigger_id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve trigger: {error:#}"))?;
+    let mut stderr = String::new();
+    if !args.yes {
+        stderr.push_str(
+            "This will invalidate the current webhook URL immediately. Continue? [y/N] \n",
+        );
+        let mut answer = String::new();
+        input
+            .read_to_string(&mut answer)
+            .context("read webhook rotation confirmation")?;
+        let answer = answer
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase();
+        if !matches!(answer.as_str(), "y" | "yes") {
+            stderr.push_str("Aborted.\n");
+            return Ok(RunOutput {
+                stdout: String::new(),
+                stderr,
+            });
+        }
+    }
+
+    let result: Value = client
+        .post_json(
+            &format!("/api/autopilots/{autopilot_id}/triggers/{trigger_id}/rotate-webhook-token"),
+            &Value::Null,
+        )
+        .await
+        .context("rotate webhook url")?;
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+        OutputFormat::Table => {
+            let mut text = format!(
+                "Webhook URL rotated for trigger {}\n",
+                value_string(&result, "id")
+            );
+            if let Some(url) = autopilot_webhook_url(&result, client.base_url()) {
+                let _ = writeln!(text, "Webhook URL: {url}");
+            }
+            text
+        }
+    };
+    Ok(RunOutput { stdout, stderr })
 }
 
 async fn resolve_autopilot_trigger_id(
@@ -13033,6 +13111,28 @@ mod tests {
                 command: AutopilotCommand::TriggerDelete { .. }
             })
         ));
+
+        let rotate = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "trigger-rotate-url",
+            "abcd",
+            "beef",
+            "-y",
+            "--output",
+            "table",
+        ])
+        .expect("autopilot trigger-rotate-url CLI");
+        let Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::TriggerRotateUrl(args),
+        }) = rotate.command
+        else {
+            panic!("expected autopilot trigger-rotate-url");
+        };
+        assert_eq!(args.autopilot_id, "abcd");
+        assert_eq!(args.trigger_id, "beef");
+        assert!(args.yes);
+        assert_eq!(args.output, OutputFormat::Table);
         assert_eq!(output, OutputFormat::Json);
         assert!(Cli::try_parse_from(["cordy", "autopilot", "get"]).is_err());
         assert!(Cli::try_parse_from(["cordy", "autopilot", "list", "extra"]).is_err());
@@ -13779,6 +13879,88 @@ mod tests {
             error.to_string(),
             "no fields to update; use --enabled, --cron, --timezone, or --label"
         );
+    }
+
+    #[tokio::test]
+    async fn autopilot_trigger_rotate_url_is_confirmed_and_input_injectable() {
+        const AUTOPILOT_ID: &str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        const TRIGGER_ID: &str = "bbbb0000-1111-2222-3333-444444444444";
+        let posts = Arc::new(Mutex::new(0_usize));
+        let posts_handler = Arc::clone(&posts);
+        let app = Router::new()
+            .route(
+                "/api/autopilots/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "autopilot":{"id":AUTOPILOT_ID},
+                        "triggers":[{"id":TRIGGER_ID,"kind":"webhook"}]
+                    }))
+                }),
+            )
+            .route(
+                "/api/autopilots/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/triggers/bbbb0000-1111-2222-3333-444444444444/rotate-webhook-token",
+                post(move |Json(body): Json<Value>| {
+                    let posts = Arc::clone(&posts_handler);
+                    async move {
+                        assert!(body.is_null());
+                        *posts.lock().expect("post count") += 1;
+                        Json(serde_json::json!({
+                            "id":TRIGGER_ID,
+                            "webhook_path":"/api/autopilots/webhooks/new-token"
+                        }))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}/"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+
+        let rotate = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "trigger-rotate-url",
+            AUTOPILOT_ID,
+            "bbbb",
+            "--yes",
+            "--output",
+            "table",
+        ])
+        .expect("confirmed rotate CLI");
+        let output = run_with_input(&rotate, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("rotate webhook URL");
+        assert_eq!(
+            output.stdout,
+            format!(
+                "Webhook URL rotated for trigger {TRIGGER_ID}\nWebhook URL: http://{address}/api/autopilots/webhooks/new-token\n"
+            )
+        );
+        assert!(output.stderr.is_empty());
+        assert_eq!(*posts.lock().expect("post count"), 1);
+
+        let abort = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "trigger-rotate-url",
+            AUTOPILOT_ID,
+            "bbbb",
+        ])
+        .expect("interactive rotate CLI");
+        let output = run_with_input(&abort, &environment, &mut Cursor::new(b"no\n".to_vec()))
+            .await
+            .expect("abort webhook rotation");
+        assert!(output.stdout.is_empty());
+        assert_eq!(
+            output.stderr,
+            "This will invalidate the current webhook URL immediately. Continue? [y/N] \nAborted.\n"
+        );
+        assert_eq!(*posts.lock().expect("post count"), 1);
+        server.abort();
     }
 
     #[tokio::test]
