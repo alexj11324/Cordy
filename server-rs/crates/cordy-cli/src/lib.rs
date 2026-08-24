@@ -134,6 +134,8 @@ enum IssueCommand {
     },
     #[command(about = "Create a new issue")]
     Create(IssueCreateArgs),
+    #[command(about = "Update an issue")]
+    Update(IssueUpdateArgs),
 }
 
 #[derive(Debug, Args)]
@@ -200,6 +202,59 @@ struct IssueCreateArgs {
         help = "Existing attachment UUID(s) to bind"
     )]
     attachment_id: Vec<String>,
+}
+
+#[derive(Debug, Args)]
+struct IssueUpdateArgs {
+    #[arg(value_name = "ID")]
+    id: String,
+    #[arg(long, help = "New title")]
+    title: Option<String>,
+    #[arg(
+        long,
+        help = "New description (decodes \\n, \\r, \\t, \\\\; pipe via --description-stdin to preserve literal backslashes)"
+    )]
+    description: Option<String>,
+    #[arg(long, help = "Read new description from stdin")]
+    description_stdin: bool,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Read new description from a UTF-8 file"
+    )]
+    description_file: Option<PathBuf>,
+    #[arg(
+        long,
+        help = "Allow --description-file outside the current working directory"
+    )]
+    allow_external_file: bool,
+    #[arg(long, help = "New status")]
+    status: Option<String>,
+    #[arg(long, help = "New priority")]
+    priority: Option<String>,
+    #[arg(
+        long,
+        help = "New assignee name (member, agent, or squad; fuzzy match)"
+    )]
+    assignee: Option<String>,
+    #[arg(long, help = "New assignee UUID — member, agent, or squad")]
+    assignee_id: Option<String>,
+    #[arg(long, help = "Project ID; pass an empty string to clear")]
+    project: Option<String>,
+    #[arg(long, help = "New start date; pass an empty string to clear")]
+    start_date: Option<String>,
+    #[arg(long, help = "New due date; pass an empty string to clear")]
+    due_date: Option<String>,
+    #[arg(long, help = "Parent issue ID; pass an empty string to clear")]
+    parent: Option<String>,
+    #[arg(long, help = "Stage ordinal (>=1) for this sub-issue")]
+    stage: Option<i64>,
+    #[arg(long, help = "Ordering position within the board column")]
+    position: Option<f64>,
+    #[arg(long, help = "Apply the update without starting an agent run")]
+    no_start: bool,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -562,6 +617,9 @@ async fn run_with_input<R: Read>(
         Command::Issue(IssueArgs {
             command: IssueCommand::Create(args),
         }) => run_issue_create(cli, environment, args, input).await,
+        Command::Issue(IssueArgs {
+            command: IssueCommand::Update(args),
+        }) => run_issue_update(cli, environment, args, input).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -2069,7 +2127,11 @@ async fn run_issue_create<R: Read>(
     let mut body = serde_json::Map::new();
     body.insert("title".into(), Value::String(title.into()));
     if let Some(description) = resolve_issue_create_description(args, environment, input)? {
-        guard_issue_description_local_links(&description, environment)?;
+        guard_issue_description_local_links(
+            &description,
+            environment,
+            "Deliver the file itself with `cordy issue create --attachment <path>` (repeatable) and drop the link.",
+        )?;
         body.insert("description".into(), Value::String(description));
     }
     if let Some(status) = args.status.as_deref().filter(|value| !value.is_empty()) {
@@ -2197,6 +2259,142 @@ async fn run_issue_create<R: Read>(
     Ok(RunOutput { stdout, stderr })
 }
 
+async fn run_issue_update<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueUpdateArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    if let Some(status) = &args.status {
+        validate_issue_status(status)?;
+    }
+    if let Some(priority) = &args.priority {
+        validate_issue_priority(priority)?;
+    }
+    if args.assignee.is_some() && args.assignee_id.is_some() {
+        bail!("--assignee and --assignee-id are mutually exclusive");
+    }
+
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.id)
+        .await
+        .context("resolve issue")?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let mut body = serde_json::Map::new();
+    if let Some(title) = &args.title {
+        body.insert("title".into(), Value::String(title.clone()));
+    }
+    if args.description.is_some() || args.description_stdin || args.description_file.is_some() {
+        let description = resolve_issue_update_description(args, environment, input)?;
+        guard_issue_description_local_links(
+            &description,
+            environment,
+            "`cordy issue update` cannot carry files — deliver the file with `cordy issue comment add <issue-id> --attachment <path>` instead, and drop the link.",
+        )?;
+        body.insert("description".into(), Value::String(description));
+    }
+    if let Some(status) = &args.status {
+        body.insert("status".into(), Value::String(status.clone()));
+    }
+    if let Some(priority) = &args.priority {
+        body.insert("priority".into(), Value::String(priority.clone()));
+    }
+    if let Some(project) = &args.project {
+        if project.is_empty() {
+            body.insert("project_id".into(), Value::Null);
+        } else {
+            let project_id = resolve_issue_project_id(&client, &workspace_id, project)
+                .await
+                .context("resolve project")?;
+            body.insert("project_id".into(), Value::String(project_id));
+        }
+    }
+    if let Some(start_date) = &args.start_date {
+        body.insert("start_date".into(), Value::String(start_date.clone()));
+    }
+    if let Some(due_date) = &args.due_date {
+        body.insert("due_date".into(), Value::String(due_date.clone()));
+    }
+    let assignee = if let Some(id) = &args.assignee_id {
+        Some(
+            resolve_issue_assignee_id(&client, &workspace_id, id)
+                .await
+                .context("resolve assignee")?,
+        )
+    } else if let Some(name) = &args.assignee {
+        Some(
+            resolve_issue_assignee_name(&client, &workspace_id, name)
+                .await
+                .context("resolve assignee")?,
+        )
+    } else {
+        None
+    };
+    if let Some(assignee) = assignee {
+        body.insert("assignee_type".into(), Value::String(assignee.actor_type));
+        body.insert("assignee_id".into(), Value::String(assignee.id));
+    }
+    if let Some(parent) = &args.parent {
+        if parent.is_empty() {
+            body.insert("parent_issue_id".into(), Value::Null);
+        } else {
+            let parent_id = resolve_issue_ref(&client, parent)
+                .await
+                .context("resolve parent issue")?;
+            body.insert("parent_issue_id".into(), Value::String(parent_id));
+        }
+    }
+    if let Some(stage) = args.stage {
+        if stage < 1 {
+            bail!("--stage must be >= 1");
+        }
+        body.insert("stage".into(), Value::Number(stage.into()));
+    }
+    if let Some(position) = args.position {
+        let position =
+            serde_json::Number::from_f64(position).context("--position must be a finite number")?;
+        body.insert("position".into(), Value::Number(position));
+    }
+    if body.is_empty() {
+        bail!(
+            "no fields to update; use flags like --title, --status, --priority, --assignee, etc."
+        );
+    }
+    if args.no_start {
+        body.insert("suppress_run".into(), Value::Bool(true));
+    }
+
+    let issue: Value = client
+        .put_json(&format!("/api/issues/{issue_id}"), &body)
+        .await
+        .context("update issue")?;
+    let issue_key = match value_string(&issue, "identifier") {
+        value if value.is_empty() => value_string(&issue, "id"),
+        value => value,
+    };
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&issue)?),
+        OutputFormat::Table => format_table(&[
+            vec![
+                "KEY".into(),
+                "TITLE".into(),
+                "STATUS".into(),
+                "PRIORITY".into(),
+            ],
+            vec![
+                issue_key,
+                value_string(&issue, "title"),
+                value_string(&issue, "status"),
+                value_string(&issue, "priority"),
+            ],
+        ]),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
 fn validate_issue_status(status: &str) -> Result<()> {
     let normalized = status.trim().to_ascii_lowercase();
     let bytes = normalized.as_bytes();
@@ -2282,6 +2480,62 @@ fn resolve_issue_create_description<R: Read>(
         return Ok(Some(body));
     }
     Ok((!inline.is_empty()).then(|| unescape_backslash_escapes(inline)))
+}
+
+fn resolve_issue_update_description<R: Read>(
+    args: &IssueUpdateArgs,
+    environment: &Environment,
+    input: &mut R,
+) -> Result<String> {
+    let inline = args.description.as_deref().unwrap_or_default();
+    let description_file = args
+        .description_file
+        .as_ref()
+        .filter(|path| !path.as_os_str().is_empty());
+    let sources = [
+        args.description_stdin,
+        args.description
+            .as_ref()
+            .is_some_and(|_| !inline.is_empty()),
+        description_file.is_some(),
+    ]
+    .into_iter()
+    .filter(|source| *source)
+    .count();
+    if sources > 1 {
+        bail!("--description, --description-stdin, and --description-file are mutually exclusive");
+    }
+    if args.description_stdin {
+        let mut bytes = Vec::new();
+        input
+            .read_to_end(&mut bytes)
+            .context("read stdin for --description-stdin")?;
+        let body = trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned());
+        if body.is_empty() {
+            bail!("stdin content for --description-stdin is empty");
+        }
+        return Ok(body);
+    }
+    if let Some(path) = description_file {
+        ensure_file_within_workdir(
+            path,
+            environment.current_dir(),
+            args.allow_external_file,
+            "description",
+        )?;
+        let path = if path.is_absolute() {
+            path.clone()
+        } else {
+            environment.current_dir().join(path)
+        };
+        let bytes = fs::read(path).context("read file for --description-file")?;
+        let body = trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned());
+        if body.is_empty() {
+            bail!("file content for --description-file is empty");
+        }
+        return Ok(body);
+    }
+    Ok(unescape_backslash_escapes(inline))
 }
 
 fn append_unique_strings(values: impl IntoIterator<Item = String>) -> Vec<String> {
@@ -2372,7 +2626,11 @@ fn active_duplicate_issue_message(error: &anyhow::Error) -> Option<String> {
         .filter(|message| !message.is_empty())
 }
 
-fn guard_issue_description_local_links(description: &str, environment: &Environment) -> Result<()> {
+fn guard_issue_description_local_links(
+    description: &str,
+    environment: &Environment,
+    remediation: &str,
+) -> Result<()> {
     if !environment.in_agent_execution_context() {
         return Ok(());
     }
@@ -2388,8 +2646,10 @@ fn guard_issue_description_local_links(description: &str, environment: &Environm
         let _ = writeln!(message, "  - {target:?} — {reason}");
     }
     message.push_str(
-        "\nThe path exists only on the machine running you; for everyone else the link is dead. Deliver the file itself with `cordy issue create --attachment <path>` (repeatable) and drop the link.\nTo merely reference a code location, use inline code instead of a link (`path/to/file.ts:42`) — code spans and fenced blocks are not checked.",
+        "\nThe path exists only on the machine running you; for everyone else the link is dead. ",
     );
+    message.push_str(remediation);
+    message.push_str("\nTo merely reference a code location, use inline code instead of a link (`path/to/file.ts:42`) — code spans and fenced blocks are not checked.");
     bail!("{message}")
 }
 
@@ -3439,7 +3699,7 @@ mod tests {
     use super::*;
     use axum::extract::Request;
     use axum::http::HeaderMap;
-    use axum::routing::{get, patch, post};
+    use axum::routing::{get, patch, post, put};
     use axum::{Json, Router};
     use clap::Parser;
     use std::fs;
@@ -3587,6 +3847,15 @@ mod tests {
                 command: IssueCommand::Create(args),
             }) => args,
             _ => panic!("expected issue create"),
+        }
+    }
+
+    fn issue_update_args(cli: &Cli) -> &IssueUpdateArgs {
+        match &cli.command {
+            Command::Issue(IssueArgs {
+                command: IssueCommand::Update(args),
+            }) => args,
+            _ => panic!("expected issue update"),
         }
     }
 
@@ -4563,12 +4832,13 @@ mod tests {
         let markdown = format!("[result]({})", artifact.display());
 
         let human = Environment::for_test(home.path().into(), cwd.path().into());
-        guard_issue_description_local_links(&markdown, &human).expect("human links are allowed");
+        guard_issue_description_local_links(&markdown, &human, "attach it")
+            .expect("human links are allowed");
 
         let mut agent = Environment::for_test(home.path().into(), cwd.path().into());
         agent.set("CORDY_AGENT_ID", "agent-1");
-        let error =
-            guard_issue_description_local_links(&markdown, &agent).expect_err("agent local link");
+        let error = guard_issue_description_local_links(&markdown, &agent, "attach it")
+            .expect_err("agent local link");
         assert!(error.to_string().contains("runtime-local path"));
         assert!(error.to_string().contains("--attachment"));
         guard_issue_description_local_links(
@@ -4578,6 +4848,7 @@ mod tests {
                 artifact.display()
             ),
             &agent,
+            "attach it",
         )
         .expect("code spans and fences are ignored");
     }
@@ -4796,6 +5067,239 @@ mod tests {
         assert_eq!(*issue_posts.lock().expect("posts"), 1);
         assert_eq!(*uploads.lock().expect("uploads"), 1);
         assert!(output.stderr.contains("issue already created, CORD-1"));
+        task.abort();
+    }
+
+    #[test]
+    fn issue_update_parser_matches_go_registry_flags() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "update",
+            "CORD-18",
+            "--title",
+            "Updated",
+            "--description",
+            "one\\ntwo",
+            "--status",
+            "in_review",
+            "--priority",
+            "urgent",
+            "--assignee-id",
+            "11111111-1111-1111-1111-111111111111",
+            "--project",
+            "",
+            "--start-date",
+            "",
+            "--due-date",
+            "2026-08-31",
+            "--parent",
+            "",
+            "--stage",
+            "2",
+            "--position",
+            "1.5",
+            "--no-start",
+            "--output",
+            "table",
+        ])
+        .expect("issue update CLI");
+        let args = issue_update_args(&cli);
+        assert_eq!(args.id, "CORD-18");
+        assert_eq!(args.title.as_deref(), Some("Updated"));
+        assert_eq!(args.description.as_deref(), Some("one\\ntwo"));
+        assert_eq!(args.project.as_deref(), Some(""));
+        assert_eq!(args.start_date.as_deref(), Some(""));
+        assert_eq!(args.parent.as_deref(), Some(""));
+        assert_eq!(args.stage, Some(2));
+        assert_eq!(args.position, Some(1.5));
+        assert!(args.no_start);
+        assert_eq!(args.output, OutputFormat::Table);
+    }
+
+    #[tokio::test]
+    async fn issue_update_rejects_invalid_enums_before_client_creation() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from(["cordy", "issue", "update", "CORD-18", "--priority", "P1"])
+            .expect("update CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("priority is rejected locally");
+        assert!(error.to_string().contains("valid values"));
+    }
+
+    #[tokio::test]
+    async fn issue_update_resolves_references_and_puts_only_changed_fields() {
+        let captured = Arc::new(Mutex::new(None::<Value>));
+        let captured_by_update = Arc::clone(&captured);
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async { Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"})) }),
+            )
+            .route(
+                "/api/issues/PARENT-1",
+                get(|| async { Json(serde_json::json!({"id":"parent-uuid","identifier":"CORD-1"})) }),
+            )
+            .route(
+                "/api/projects",
+                get(|| async { Json(serde_json::json!({"projects":[{"id":"project-uuid","title":"Migration","status":"active"}]})) }),
+            )
+            .route(
+                "/api/workspaces/workspace-1/members",
+                get(|| async { Json(serde_json::json!([{"user_id":"member-uuid","name":"Ada","email":"ada@example.com"}])) }),
+            )
+            .route("/api/agents", get(|| async { Json(serde_json::json!([])) }))
+            .route("/api/squads", get(|| async { Json(serde_json::json!([])) }))
+            .route(
+                "/api/issues/issue-uuid",
+                put(move |headers: HeaderMap, Json(body): Json<Value>| {
+                    let captured = Arc::clone(&captured_by_update);
+                    async move {
+                        assert_eq!(headers["authorization"], "Bearer token-1");
+                        *captured.lock().expect("capture update") = Some(body.clone());
+                        Json(serde_json::json!({
+                            "id":"issue-uuid","identifier":"CORD-18","title":body["title"],
+                            "status":body["status"],"priority":body["priority"]
+                        }))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "update",
+            "CORD-18",
+            "--title",
+            "Updated",
+            "--description",
+            "one\\ntwo",
+            "--status",
+            "in_review",
+            "--priority",
+            "urgent",
+            "--assignee",
+            "Ada",
+            "--project",
+            "project",
+            "--start-date",
+            "",
+            "--due-date",
+            "2026-08-31",
+            "--parent",
+            "PARENT-1",
+            "--stage",
+            "2",
+            "--position",
+            "1.5",
+            "--no-start",
+            "--output",
+            "table",
+        ])
+        .expect("update CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("update issue");
+        assert!(output.stdout.starts_with("KEY"));
+        assert!(output.stdout.contains("CORD-18"));
+        let body = captured
+            .lock()
+            .expect("body")
+            .clone()
+            .expect("captured body");
+        assert_eq!(body["title"], "Updated");
+        assert_eq!(body["description"], "one\ntwo");
+        assert_eq!(body["status"], "in_review");
+        assert_eq!(body["priority"], "urgent");
+        assert_eq!(body["assignee_type"], "member");
+        assert_eq!(body["assignee_id"], "member-uuid");
+        assert_eq!(body["project_id"], "project-uuid");
+        assert_eq!(body["start_date"], "");
+        assert_eq!(body["due_date"], "2026-08-31");
+        assert_eq!(body["parent_issue_id"], "parent-uuid");
+        assert_eq!(body["stage"], 2);
+        assert_eq!(body["position"], 1.5);
+        assert_eq!(body["suppress_run"], true);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn issue_update_supports_explicit_clears_and_rejects_no_changes() {
+        let captured = Arc::new(Mutex::new(None::<Value>));
+        let captured_by_update = Arc::clone(&captured);
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid",
+                put(move |Json(body): Json<Value>| {
+                    let captured = Arc::clone(&captured_by_update);
+                    async move {
+                        *captured.lock().expect("capture update") = Some(body);
+                        Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let clear = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "update",
+            "CORD-18",
+            "--description",
+            "",
+            "--project",
+            "",
+            "--parent",
+            "",
+        ])
+        .expect("clear CLI");
+        run_with_input(&clear, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("clear fields");
+        let body = captured
+            .lock()
+            .expect("body")
+            .clone()
+            .expect("captured body");
+        assert_eq!(body["description"], "");
+        assert_eq!(body["project_id"], Value::Null);
+        assert_eq!(body["parent_issue_id"], Value::Null);
+
+        let no_changes =
+            Cli::try_parse_from(["cordy", "issue", "update", "CORD-18"]).expect("no changes CLI");
+        let error = run_with_input(
+            &no_changes,
+            &environment,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .await
+        .expect_err("no fields");
+        assert!(error.to_string().contains("no fields to update"));
         task.abort();
     }
 
