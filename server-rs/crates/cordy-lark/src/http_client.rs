@@ -31,10 +31,10 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::client::{
-    AddReactionParams, ApiClient, BindingPromptParams, BotInfo,
-    DeleteReactionParams, DownloadResourceParams, DownloadedResource, DownloadedResourceStream,
-    InstallationCredentials, LarkMessage, LarkMessageMention, ListMessagesParams, PatchCardParams,
-    ReplyTarget, SendCardParams, SendMarkdownCardParams, SendTextParams,
+    AddReactionParams, ApiClient, BindingPromptParams, BotInfo, DeleteReactionParams,
+    DownloadResourceParams, DownloadedResource, DownloadedResourceStream, InstallationCredentials,
+    LarkMessage, LarkMessageMention, ListMessagesParams, PatchCardParams, ReplyTarget,
+    SendCardParams, SendMarkdownCardParams, SendTextParams,
 };
 use crate::types::{ChatId, OpenId};
 
@@ -1013,7 +1013,7 @@ impl ApiClient for HttpApiClient {
         creds: InstallationCredentials,
         p: DownloadResourceParams,
     ) -> anyhow::Result<DownloadedResource> {
-        let stream = self.download_message_resource_stream(creds, p).await?;
+        let stream = HttpApiClient::download_message_resource_stream(self, creds, p).await?;
         let content_type = stream.content_type.clone();
         let filename = stream.filename.clone();
         let reported_size = stream.size_bytes;
@@ -1032,6 +1032,14 @@ impl ApiClient for HttpApiClient {
             filename,
             size_bytes,
         })
+    }
+
+    async fn download_message_resource_stream(
+        &self,
+        creds: InstallationCredentials,
+        p: DownloadResourceParams,
+    ) -> anyhow::Result<DownloadedResourceStream> {
+        HttpApiClient::download_message_resource_stream(self, creds, p).await
     }
 
     /// Adds an emoji reaction to a message via POST
@@ -1270,10 +1278,8 @@ impl HttpApiClient {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .to_string();
-        if resp
-            .content_length()
-            .is_some_and(|size| size > MAX_MESSAGE_RESOURCE_BYTES as u64)
-        {
+        let content_length = resp.content_length();
+        if content_length.is_some_and(|size| size > MAX_MESSAGE_RESOURCE_BYTES as u64) {
             anyhow::bail!(
                 "lark http client: download resource: resource exceeds {} bytes",
                 MAX_MESSAGE_RESOURCE_BYTES
@@ -1339,7 +1345,9 @@ impl HttpApiClient {
             body: Box::new(reader),
             content_type,
             filename: filename_from_content_disposition(&disposition),
-            size_bytes: 0,
+            size_bytes: content_length
+                .and_then(|size| i64::try_from(size).ok())
+                .unwrap_or_default(),
         })
     }
 }
