@@ -14,6 +14,13 @@ pub const DEFAULT_AUTH_TOKEN_TTL_SECS: i64 = 30 * 24 * 3600;
 
 const TEN_YEARS_SECS: i64 = 10 * 365 * 24 * 3600;
 static AUTH_TOKEN_TTL_SECS: OnceLock<i64> = OnceLock::new();
+static COOKIE_SETTINGS: OnceLock<CookieSettings> = OnceLock::new();
+
+#[derive(Debug)]
+struct CookieSettings {
+    domain: Option<String>,
+    secure: bool,
+}
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -108,8 +115,17 @@ pub fn auth_token_ttl_secs(raw: Option<&str>) -> i64 {
     DEFAULT_AUTH_TOKEN_TTL_SECS
 }
 
-/// Process-wide effective auth token lifetime. The environment is read once,
-/// matching Go's `sync.Once` configuration contract.
+/// Installs the effective server configuration before any token is minted.
+/// This keeps TOML-backed configuration on the same singleton path as the
+/// environment fallback instead of silently using the 30-day default.
+pub fn configure_auth_token_ttl(raw: Option<&str>) -> anyhow::Result<()> {
+    AUTH_TOKEN_TTL_SECS
+        .set(auth_token_ttl_secs(raw))
+        .map_err(|_| anyhow::anyhow!("auth token TTL was already initialized"))
+}
+
+/// Process-wide effective auth token lifetime. The environment is read once
+/// when startup did not install the merged TOML/environment configuration.
 pub fn auth_token_ttl() -> i64 {
     *AUTH_TOKEN_TTL_SECS.get_or_init(|| {
         let raw = std::env::var("AUTH_TOKEN_TTL").ok();
@@ -117,19 +133,37 @@ pub fn auth_token_ttl() -> i64 {
     })
 }
 
-/// Resolves the cookie Domain attribute. An IP literal (optionally
-/// dot-prefixed) is rejected with a warning — RFC 6265 §4.1.2.3 forbids IP
-/// literals there and browsers silently drop such Set-Cookie headers.
+/// Resolves the cookie Domain attribute. Invalid domains are omitted so the
+/// caller still emits a valid host-only cookie, matching Go's net/http path.
 pub fn cookie_domain(raw: Option<&str>) -> Option<String> {
     let raw = raw?.trim();
     if raw.is_empty() {
         return None;
     }
     let bare = raw.strip_prefix('.').unwrap_or(raw);
-    if bare.parse::<std::net::IpAddr>().is_ok() {
+    let valid = bare.len() <= 253
+        && !bare.is_empty()
+        && !bare.ends_with('.')
+        && bare.parse::<std::net::IpAddr>().is_err()
+        && bare.split('.').all(|label| {
+            label.len() <= 63
+                && !label.is_empty()
+                && label
+                    .as_bytes()
+                    .first()
+                    .is_some_and(u8::is_ascii_alphanumeric)
+                && label
+                    .as_bytes()
+                    .last()
+                    .is_some_and(u8::is_ascii_alphanumeric)
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        });
+    if !valid {
         tracing::warn!(
             value = %raw,
-            "COOKIE_DOMAIN looks like an IP address; ignoring. RFC 6265 forbids IP literals in the cookie Domain attribute, so browsers would drop the Set-Cookie. Leave COOKIE_DOMAIN empty for single-host deployments, or use a real domain."
+            "COOKIE_DOMAIN is not a valid DNS domain; omitting the Domain attribute"
         );
         return None;
     }
@@ -148,6 +182,38 @@ pub fn is_secure_cookie(frontend_origin: Option<&str>) -> bool {
         Some((scheme, _)) => scheme.eq_ignore_ascii_case("https"),
         None => false,
     }
+}
+
+/// Installs the merged TOML/environment cookie settings during startup.
+pub fn configure_cookie_settings(
+    domain: Option<&str>,
+    frontend_origin: Option<&str>,
+) -> anyhow::Result<()> {
+    COOKIE_SETTINGS
+        .set(CookieSettings {
+            domain: cookie_domain(domain),
+            secure: is_secure_cookie(frontend_origin),
+        })
+        .map_err(|_| anyhow::anyhow!("cookie settings were already initialized"))
+}
+
+fn effective_cookie_settings() -> &'static CookieSettings {
+    COOKIE_SETTINGS.get_or_init(|| {
+        let domain = std::env::var("COOKIE_DOMAIN").ok();
+        let frontend_origin = std::env::var("FRONTEND_ORIGIN").ok();
+        CookieSettings {
+            domain: cookie_domain(domain.as_deref()),
+            secure: is_secure_cookie(frontend_origin.as_deref()),
+        }
+    })
+}
+
+pub fn configured_cookie_domain() -> Option<&'static str> {
+    effective_cookie_settings().domain.as_deref()
+}
+
+pub fn configured_secure_cookie() -> bool {
+    effective_cookie_settings().secure
 }
 
 /// Values for the two `Set-Cookie` headers that clear the session and CSRF
@@ -261,26 +327,33 @@ mod tests {
         let csrf = generate_csrf_token(auth_token).unwrap();
 
         assert!(verify_csrf_signature(auth_token, &csrf));
-        // Wrong auth token must fail.
         assert!(!verify_csrf_signature("mul_other", &csrf));
-        // Tampered signature must fail.
         let mut tampered = csrf.clone();
         tampered.replace_range(
             csrf.len() - 1..,
             if csrf.ends_with('0') { "1" } else { "0" },
         );
         assert!(!verify_csrf_signature(auth_token, &tampered));
-        // Malformed shapes must fail.
         assert!(!verify_csrf_signature(auth_token, "no-dot"));
         assert!(!verify_csrf_signature(auth_token, "zz.zz"));
     }
 
     #[test]
-    fn cookie_domain_rejects_ip_literals() {
+    fn cookie_domain_rejects_invalid_values() {
         assert_eq!(cookie_domain(None), None);
         assert_eq!(cookie_domain(Some("")), None);
-        assert_eq!(cookie_domain(Some("192.168.1.1")), None);
-        assert_eq!(cookie_domain(Some(".127.0.0.1")), None);
+        for invalid in [
+            "192.168.1.1",
+            ".127.0.0.1",
+            "bad domain",
+            "bad_domain.example",
+            "-bad.example",
+            "bad-.example",
+            "bad..example",
+            "example.com.",
+        ] {
+            assert_eq!(cookie_domain(Some(invalid)), None, "{invalid}");
+        }
         assert_eq!(
             cookie_domain(Some("example.com")),
             Some("example.com".to_string())
@@ -288,6 +361,10 @@ mod tests {
         assert_eq!(
             cookie_domain(Some(".example.com")),
             Some(".example.com".to_string())
+        );
+        assert_eq!(
+            cookie_domain(Some("xn--bcher-kva.example")),
+            Some("xn--bcher-kva.example".to_string())
         );
     }
 
