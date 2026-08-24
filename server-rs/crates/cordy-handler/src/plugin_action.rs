@@ -449,7 +449,18 @@ WHERE id=$1 AND workspace_id=$4"#,
         );
     }
     match issue_q::get_issue_in_workspace(&state.pool, issue.id, caller.workspace_id).await {
-        Ok(Some(issue)) => Json(issue_json(&state, &issue).await).into_response(),
+        Ok(Some(updated)) => {
+            crate::issue::publish_issue_updated(
+                &state,
+                &issue,
+                &updated,
+                "plugin",
+                caller.installation.id,
+                None,
+            )
+            .await;
+            Json(issue_json(&state, &updated).await).into_response()
+        }
         _ => error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to update the issue",
