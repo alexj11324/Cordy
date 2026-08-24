@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use cordy_auth::pat_cache::PatCache;
 use cordy_realtime::hub::Hub;
+use cordy_service::email::EmailService;
 use cordy_service::issue_service::IssueService;
 use cordy_service::plugin::PluginService;
 use cordy_service::plugin_token::CallbackTokens;
@@ -234,6 +235,11 @@ pub struct HandlerState {
     pub analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
     /// HTTP request metrics. None when METRICS_ADDR is disabled.
     pub http_metrics: Option<Arc<cordy_metrics::HttpMetrics>>,
+    /// Public authentication dependencies and boot-time policy.
+    pub auth_settings: crate::auth::AuthSettings,
+    pub email_service: Arc<EmailService>,
+    pub auth_rate_limit: cordy_middleware::ratelimit::RateLimitState,
+    pub auth_verify_rate_limit: cordy_middleware::ratelimit::RateLimitState,
     /// GitHub GraphQL snapshot refresh pipeline. Disabled in lightweight tests.
     pub github_snapshots: Arc<cordy_ghsnapshot::Manager>,
     /// Feature flag source. `None` fails closed for rollout-gated writes.
@@ -287,6 +293,19 @@ impl HandlerState {
         let tasks = Arc::new(task_service);
         let issues = Arc::new(IssueService::new(pool.clone(), bus.clone(), tasks.clone()));
         let plugins = Arc::new(PluginService::with_pool(pool.clone()));
+        let trusted_proxies = cordy_middleware::ratelimit::parse_trusted_proxies(
+            &std::env::var("RATE_LIMIT_TRUSTED_PROXIES").unwrap_or_default(),
+        );
+        let mut auth_rate_limit = cordy_middleware::ratelimit::RateLimitState::disabled(
+            positive_env_i64("RATE_LIMIT_AUTH", 5),
+            60,
+        );
+        auth_rate_limit.trusted_proxies = trusted_proxies.clone();
+        let mut auth_verify_rate_limit = cordy_middleware::ratelimit::RateLimitState::disabled(
+            positive_env_i64("RATE_LIMIT_AUTH_VERIFY", 20),
+            60,
+        );
+        auth_verify_rate_limit.trusted_proxies = trusted_proxies;
         Self {
             pool,
             pat_cache,
@@ -295,6 +314,10 @@ impl HandlerState {
             business_metrics: None,
             analytics: Arc::new(cordy_analytics::NoopClient),
             http_metrics: None,
+            auth_settings: crate::auth::AuthSettings::from_env(),
+            email_service: Arc::new(EmailService::new()),
+            auth_rate_limit,
+            auth_verify_rate_limit,
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
             feature_flags: None,
             tasks,
@@ -360,6 +383,22 @@ impl HandlerState {
         self
     }
 
+    pub fn with_auth_settings(mut self, settings: crate::auth::AuthSettings) -> Self {
+        self.auth_settings = settings;
+        self
+    }
+
+    pub fn with_email_service(mut self, email_service: Arc<EmailService>) -> Self {
+        self.email_service = email_service;
+        self
+    }
+
+    pub fn with_rate_limit_trusted_proxies(mut self, raw: Option<&str>) -> Self {
+        let trusted = cordy_middleware::ratelimit::parse_trusted_proxies(raw.unwrap_or_default());
+        self.auth_rate_limit.trusted_proxies = trusted.clone();
+        self.auth_verify_rate_limit.trusted_proxies = trusted;
+        self
+    }
     /// Installs and starts the S7 GitHub snapshot manager. Applied snapshots
     /// are broadcast with the same weakest-role PR payload as the Go handler.
     pub fn with_github_snapshots(mut self, client: Option<cordy_ghsnapshot::Client>) -> Self {
@@ -422,6 +461,8 @@ impl HandlerState {
     /// Redis keep `None` fields — the disabled path degrades exactly like Go's
     /// nil-store behavior.
     pub async fn with_redis(mut self, client: redis::Client) -> Result<Self, redis::RedisError> {
+        self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
+        self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client.clone());
         let conn = client.get_connection_manager().await?;
         self.update_store = Some(Arc::new(crate::pending_store::UpdateStore::new(
             conn.clone(),
@@ -451,6 +492,21 @@ impl HandlerState {
         self.rate_limit_client = Some(client);
         self
     }
+
+    /// Installs lazy, fail-open Redis auth limiting without connecting during boot.
+    pub fn with_auth_redis(mut self, client: redis::Client) -> Self {
+        self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
+        self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client);
+        self
+    }
+}
+
+fn positive_env_i64(name: &str, default: i64) -> i64 {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(default)
 }
 
 #[cfg(test)]

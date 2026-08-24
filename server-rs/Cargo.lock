@@ -1152,6 +1152,7 @@ dependencies = [
  "cordy-handler",
  "cordy-metrics",
  "cordy-realtime",
+ "cordy-service",
  "cordy-util",
  "redis",
  "serde_json",

@@ -54,7 +54,7 @@ async fn build_production_router(
     download: cordy_handler::state::AttachmentDownloadSettings,
     realtime_metrics_token: Option<&str>,
     github_client: Option<cordy_ghsnapshot::Client>,
-    redis_url: Option<&str>,
+    cfg: &cordy_config::Config,
 ) -> Router {
     let analytics: Arc<dyn cordy_analytics::AnalyticsClient> =
         Arc::from(cordy_analytics::new_from_env());
@@ -67,14 +67,33 @@ async fn build_production_router(
     .with_realtime_metrics_token(realtime_metrics_token)
     .with_observability(business_metrics, http_metrics)
     .with_analytics(analytics)
-    .with_github_snapshots(github_client);
-    if let Some(redis_url) = redis_url.filter(|value| !value.trim().is_empty()) {
+    .with_github_snapshots(github_client)
+    .with_auth_settings(cordy_handler::auth::AuthSettings::from_config(cfg))
+    .with_email_service(Arc::new(
+        cordy_service::email::EmailService::from_config_values(
+            cfg.email.resend_api_key.as_deref(),
+            cfg.email.smtp_host.as_deref(),
+        ),
+    ))
+    .with_rate_limit_trusted_proxies(cfg.urls.rate_limit_trusted_proxies.as_deref());
+    let redis_url = cfg
+        .redis
+        .url
+        .as_deref()
+        .filter(|value| !value.trim().is_empty());
+    if let Some(redis_url) = redis_url {
         match redis::Client::open(redis_url) {
-            Ok(client) => state = state.with_rate_limit_redis(client),
+            Ok(client) => {
+                state = state
+                    .with_rate_limit_redis(client.clone())
+                    .with_auth_redis(client);
+            }
             Err(error) => {
-                tracing::warn!(%error, "contact-sales rate limiter configuration invalid; allowing requests");
+                tracing::warn!(%error, "invalid REDIS_URL; public-route rate limiting disabled");
             }
         }
+    } else {
+        tracing::warn!("public-route rate limiting disabled: REDIS_URL not configured");
     }
     let state = install_pending_stores(state, redis_url).await;
     cordy_handler::build_router_from_state(state)
@@ -101,6 +120,7 @@ async fn main() -> anyhow::Result<()> {
     cfg.validate()?;
     validate_auth_config(&cfg)?;
     cordy_auth::jwt::configure_jwt_secret(cfg.auth.jwt_secret.as_deref())?;
+    cordy_auth::cookie::configure_auth_token_ttl(cfg.auth.auth_token_ttl.as_deref())?;
     tracing::info!(port = cfg.server.port, "starting cordy-server");
 
     let db = cordy_db::connect(&cfg.database).await?;
@@ -156,7 +176,7 @@ async fn main() -> anyhow::Result<()> {
         download,
         cfg.redis.realtime_metrics_token.as_deref(),
         github_client,
-        cfg.redis.url.as_deref(),
+        &cfg,
     )
     .await;
 
@@ -212,6 +232,8 @@ mod tests {
     async fn unavailable_rate_limit_redis_fails_open() {
         let db = sqlx::PgPool::connect_lazy("postgres://invalid/invalid")
             .unwrap_or_else(|_| unreachable!("static test URL is valid"));
+        let mut cfg = cordy_config::Config::default();
+        cfg.redis.url = Some("redis://127.0.0.1:1/".into());
         let router = build_production_router(
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
@@ -221,7 +243,7 @@ mod tests {
             cordy_handler::state::AttachmentDownloadSettings::default(),
             None,
             None,
-            Some("redis://127.0.0.1:1/"),
+            &cfg,
         )
         .await;
         let response = tokio::time::timeout(
@@ -253,6 +275,8 @@ mod tests {
         let db = sqlx::PgPool::connect_lazy("postgres://invalid/invalid")
             .unwrap_or_else(|_| unreachable!("static test URL is valid"));
         let redis_url = format!("redis://{address}/");
+        let mut cfg = cordy_config::Config::default();
+        cfg.redis.url = Some(redis_url);
         let router = build_production_router(
             db,
             Arc::new(cordy_realtime::hub::Hub::new()),
@@ -262,7 +286,7 @@ mod tests {
             cordy_handler::state::AttachmentDownloadSettings::default(),
             None,
             None,
-            Some(&redis_url),
+            &cfg,
         )
         .await;
         let response = tokio::time::timeout(
@@ -325,5 +349,25 @@ mod tests {
         assert!(state.model_list_store.is_none());
         assert!(state.local_skill_list_store.is_none());
         assert!(state.local_skill_import_store.is_none());
+    }
+
+    #[tokio::test]
+    async fn malformed_redis_url_disables_auth_limiting_without_blocking_router_build() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let mut cfg = cordy_config::Config::default();
+        cfg.redis.url = Some("not a redis URL".into());
+        cfg.urls.rate_limit_trusted_proxies = Some("10.0.0.0/8".into());
+        let _router = build_production_router(
+            pool,
+            Arc::new(cordy_realtime::hub::Hub::new()),
+            None,
+            None,
+            test_storage(),
+            cordy_handler::state::AttachmentDownloadSettings::default(),
+            None,
+            None,
+            &cfg,
+        )
+        .await;
     }
 }
