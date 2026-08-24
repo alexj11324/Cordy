@@ -12,15 +12,18 @@ path = "src/main.rs"
 [dependencies]
 cordy-config = { path = "../cordy-config" }
 cordy-auth = { path = "../cordy-auth" }
+cordy-analytics = { path = "../cordy-analytics" }
 cordy-db = { path = "../cordy-db" }
 cordy-handler = { path = "../cordy-handler" }
 cordy-ghsnapshot = { path = "../cordy-ghsnapshot" }
 cordy-metrics = { path = "../cordy-metrics" }
 cordy-realtime = { path = "../cordy-realtime" }
+cordy-service = { path = "../cordy-service" }
 cordy-util = { path = "../cordy-util" }
 
 anyhow = { workspace = true }
 axum = { workspace = true }
+redis = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
