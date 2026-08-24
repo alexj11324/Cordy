@@ -14,6 +14,62 @@ use cordy_service::plugin_event_dispatch::PluginEventDispatcher;
 use cordy_service::plugin_token::CallbackTokens;
 use cordy_service::task_service::TaskService;
 
+/// One replaceable client shared by handler assists and TaskService quick
+/// actions. Builder-time configuration happens after domain services already
+/// hold their `Arc`s, so the indirection keeps both consumers on one policy.
+pub struct HandlerAssistLlm {
+    client: std::sync::RwLock<Arc<cordy_llm::Client>>,
+}
+
+impl HandlerAssistLlm {
+    fn new(client: cordy_llm::Client) -> Self {
+        Self {
+            client: std::sync::RwLock::new(Arc::new(client)),
+        }
+    }
+
+    pub fn client(&self) -> Arc<cordy_llm::Client> {
+        self.client
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+    }
+
+    fn replace(&self, client: Arc<cordy_llm::Client>) {
+        *self
+            .client
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = client;
+    }
+}
+
+#[async_trait::async_trait]
+impl cordy_service::task_service::ChatQuickActionsLlm for HandlerAssistLlm {
+    fn enabled(&self) -> bool {
+        self.client().enabled()
+    }
+
+    async fn generate_json(
+        &self,
+        model: &str,
+        system_prompt: &str,
+        user_prompt: &str,
+        temperature: f64,
+        max_completion_tokens: i64,
+    ) -> anyhow::Result<String> {
+        Ok(self
+            .client()
+            .generate_json(
+                model,
+                system_prompt,
+                user_prompt,
+                temperature,
+                max_completion_tokens,
+            )
+            .await?)
+    }
+}
+
 struct DaemonTaskWakeup {
     hub: Arc<cordy_daemon::hub::DaemonHub>,
 }
@@ -116,7 +172,7 @@ pub struct HandlerState {
     pub slack_history: Option<Arc<cordy_slack::history::History>>,
     /// Server-internal assist LLM. An unconfigured client is deliberately
     /// inert and guarantees that private chat content produces no egress.
-    pub llm: Arc<cordy_llm::Client>,
+    pub llm: Arc<HandlerAssistLlm>,
     /// Low-latency hint for the durable webhook worker. PostgreSQL polling is
     /// authoritative and recovers missed notifications or process restarts.
     webhook_delivery_notify: Option<Arc<tokio::sync::Notify>>,
@@ -132,8 +188,12 @@ impl HandlerState {
             Arc::new(DaemonTaskWakeup {
                 hub: daemon_hub.clone(),
             });
+        let llm = Arc::new(HandlerAssistLlm::new(cordy_llm::Client::new(
+            cordy_llm::Config::default(),
+        )));
         let mut task_service = TaskService::new(pool.clone(), bus.clone());
         task_service.wakeup = Some(Arc::downgrade(&task_wakeup));
+        task_service.quick_actions = Some(llm.clone());
         let tasks = Arc::new(task_service);
         let autopilots = Arc::new(AutopilotService::new(
             pool.clone(),
@@ -157,7 +217,6 @@ impl HandlerState {
             60,
         );
         auth_verify_rate_limit.trusted_proxies = trusted_proxies;
-        let llm = cordy_llm::Client::new(cordy_llm::Config::default());
         Self {
             pool,
             pat_cache,
@@ -202,7 +261,7 @@ impl HandlerState {
             attachment_storage: None,
             attachment_frame_ancestors: Vec::new(),
             slack_history: None,
-            llm: Arc::new(llm),
+            llm,
             webhook_delivery_notify: None,
             _task_wakeup: task_wakeup,
         }
@@ -228,16 +287,17 @@ impl HandlerState {
             );
             Some(parsed)
         };
-        self.llm = Arc::new(cordy_llm::Client::new(cordy_llm::Config {
+        let client = Arc::new(cordy_llm::Client::new(cordy_llm::Config {
             api_key: std::env::var("CORDY_LLM_API_KEY").unwrap_or_default(),
             base_url: std::env::var("CORDY_LLM_BASE_URL").unwrap_or_default(),
             default_model: std::env::var("CORDY_LLM_DEFAULT_MODEL").unwrap_or_default(),
             max_retries,
         }));
+        self.llm.replace(client.clone());
         tracing::info!(
-            enabled = self.llm.enabled(),
-            max_retries = self.llm.max_retries(),
-            default_model = self.llm.default_model(),
+            enabled = client.enabled(),
+            max_retries = client.max_retries(),
+            default_model = client.default_model(),
             "llm assist policy"
         );
         Ok(self)

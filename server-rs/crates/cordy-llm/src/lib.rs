@@ -126,8 +126,6 @@ impl Client {
         system_prompt: &str,
         user_prompt: &str,
     ) -> Result<String, Error> {
-        let transport = self.transport.as_ref().ok_or(Error::ClientUnavailable)?;
-
         let mut messages = Vec::with_capacity(2);
         if !system_prompt.trim().is_empty() {
             messages.push(Message {
@@ -146,23 +144,144 @@ impl Client {
                 model.trim()
             },
             messages,
+            response_format: None,
+            temperature: None,
+            max_completion_tokens: None,
+            max_tokens: None,
+            reasoning_effort: None,
         };
+
+        let response = self.post_with_retries(&request).await?;
+        if !response.status.is_success() {
+            return Err(Error::Upstream(response.status));
+        }
+        first_choice(&response.body)
+    }
+
+    /// Structured sibling of [`Client::generate_text`]. The preferred request
+    /// matches Go's quick-actions contract and narrowly negotiates legacy
+    /// gateways only when their 400 response identifies an unsupported field.
+    pub async fn generate_json(
+        &self,
+        model: &str,
+        system_prompt: &str,
+        user_prompt: &str,
+        temperature: f64,
+        max_completion_tokens: i64,
+    ) -> Result<String, Error> {
+        if !self.enabled {
+            return Err(Error::NotConfigured);
+        }
+        match tokio::time::timeout(
+            DEFAULT_REQUEST_TIMEOUT,
+            self.generate_json_inner(
+                model,
+                system_prompt,
+                user_prompt,
+                temperature,
+                max_completion_tokens,
+            ),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(Error::Timeout),
+        }
+    }
+
+    async fn generate_json_inner(
+        &self,
+        model: &str,
+        system_prompt: &str,
+        user_prompt: &str,
+        temperature: f64,
+        max_completion_tokens: i64,
+    ) -> Result<String, Error> {
+        let mut messages = Vec::with_capacity(2);
+        if !system_prompt.trim().is_empty() {
+            messages.push(Message {
+                role: "system",
+                content: system_prompt,
+            });
+        }
+        messages.push(Message {
+            role: "user",
+            content: user_prompt,
+        });
+        let effective_model = if model.trim().is_empty() {
+            self.default_model.as_str()
+        } else {
+            model.trim()
+        };
+        let mut request = CompletionRequest {
+            model: effective_model,
+            messages,
+            response_format: Some(ResponseFormat {
+                type_: "json_object",
+            }),
+            temperature: (temperature > 0.0 && !is_gpt_56_family(effective_model))
+                .then_some(temperature),
+            max_completion_tokens: (max_completion_tokens > 0).then_some(max_completion_tokens),
+            max_tokens: None,
+            reasoning_effort: is_gpt_56_family(effective_model).then_some("none"),
+        };
+
+        for compatibility_retries in 0..=2 {
+            let response = self.post_with_retries(&request).await?;
+            if response.status.is_success() {
+                let completion: CompletionResponse = serde_json::from_slice(&response.body)
+                    .map_err(|error| Error::InvalidResponse(error.to_string()))?;
+                let choice = completion
+                    .choices
+                    .into_iter()
+                    .next()
+                    .ok_or(Error::NoChoices)?;
+                if choice.finish_reason.as_deref() == Some("length") {
+                    return Err(Error::InvalidResponse(
+                        "upstream reached the max completion token limit before producing complete JSON"
+                            .into(),
+                    ));
+                }
+                if choice.message.content.trim().is_empty() {
+                    return Err(Error::InvalidResponse(
+                        "upstream returned empty JSON content".into(),
+                    ));
+                }
+                return Ok(choice.message.content);
+            }
+
+            if compatibility_retries < 2
+                && request.max_completion_tokens.is_some()
+                && is_unsupported_parameter(&response.body, "max_completion_tokens")
+            {
+                request.max_completion_tokens = None;
+                request.max_tokens = (max_completion_tokens > 0).then_some(max_completion_tokens);
+                continue;
+            }
+            if compatibility_retries < 2
+                && request.reasoning_effort.is_some()
+                && is_unsupported_parameter(&response.body, "reasoning_effort")
+            {
+                request.reasoning_effort = None;
+                continue;
+            }
+            return Err(Error::Upstream(response.status));
+        }
+        unreachable!("bounded compatibility loop always returns")
+    }
+
+    async fn post_with_retries(
+        &self,
+        request: &CompletionRequest<'_>,
+    ) -> Result<TransportResponse, Error> {
+        let transport = self.transport.as_ref().ok_or(Error::ClientUnavailable)?;
 
         for attempt in 0..=self.max_retries {
             match transport
                 .post(&self.endpoint, &self.api_key, &request)
                 .await
             {
-                Ok(response) if response.status.is_success() => {
-                    let completion: CompletionResponse = serde_json::from_slice(&response.body)
-                        .map_err(|error| Error::InvalidResponse(error.to_string()))?;
-                    return completion
-                        .choices
-                        .into_iter()
-                        .next()
-                        .map(|choice| choice.message.content)
-                        .ok_or(Error::NoChoices);
-                }
+                Ok(response) if response.status.is_success() => return Ok(response),
                 Ok(response) => {
                     let status = response.status;
                     let retry_after = retry_after(&response.headers);
@@ -171,7 +290,7 @@ impl Client {
                     // Never retain or expose the response body: gateways can
                     // echo private prompts or sensitive diagnostics there.
                     if attempt == self.max_retries || !should_retry {
-                        return Err(Error::Upstream(status));
+                        return Ok(response);
                     }
                     tokio::time::sleep(retry_after.unwrap_or_else(|| retry_delay(attempt))).await;
                 }
@@ -185,6 +304,17 @@ impl Client {
         }
         unreachable!("inclusive retry loop always returns")
     }
+}
+
+fn first_choice(body: &[u8]) -> Result<String, Error> {
+    let completion: CompletionResponse =
+        serde_json::from_slice(body).map_err(|error| Error::InvalidResponse(error.to_string()))?;
+    completion
+        .choices
+        .into_iter()
+        .next()
+        .map(|choice| choice.message.content)
+        .ok_or(Error::NoChoices)
 }
 
 struct TransportResponse {
@@ -220,11 +350,10 @@ impl Transport for ReqwestTransport {
         let response = builder.send().await?;
         let status = response.status();
         let headers = response.headers().clone();
-        let body = if status.is_success() {
-            response.bytes().await?.to_vec()
-        } else {
-            Vec::new()
-        };
+        // Error bodies are retained only long enough to inspect the structured
+        // `param`/`code` compatibility signal. They are never exposed through
+        // [`Error`] or logs because gateways can echo private prompts.
+        let body = response.bytes().await?.to_vec();
         Ok(TransportResponse {
             status,
             headers,
@@ -284,6 +413,22 @@ fn retry_delay(attempt: u32) -> Duration {
 struct CompletionRequest<'a> {
     model: &'a str,
     messages: Vec<Message<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    response_format: Option<ResponseFormat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<&'static str>,
+}
+
+#[derive(Serialize)]
+struct ResponseFormat {
+    #[serde(rename = "type")]
+    type_: &'static str,
 }
 
 #[derive(Serialize)]
@@ -300,11 +445,55 @@ struct CompletionResponse {
 #[derive(Deserialize)]
 struct Choice {
     message: CompletionMessage,
+    #[serde(default)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct CompletionMessage {
     content: String,
+}
+
+#[derive(Deserialize)]
+struct UpstreamErrorEnvelope {
+    error: UpstreamErrorDetail,
+}
+
+#[derive(Deserialize)]
+struct UpstreamErrorDetail {
+    #[serde(default)]
+    message: Option<String>,
+    #[serde(default)]
+    param: Option<String>,
+    #[serde(default)]
+    code: Option<String>,
+}
+
+fn is_unsupported_parameter(body: &[u8], parameter: &str) -> bool {
+    let Ok(envelope) = serde_json::from_slice::<UpstreamErrorEnvelope>(body) else {
+        return false;
+    };
+    envelope.error.param.as_deref() == Some(parameter)
+        && (envelope.error.code.as_deref() == Some("unsupported_parameter")
+            || (envelope
+                .error
+                .code
+                .as_deref()
+                .unwrap_or_default()
+                .is_empty()
+                && envelope
+                    .error
+                    .message
+                    .as_deref()
+                    .unwrap_or_default()
+                    .trim()
+                    .to_ascii_lowercase()
+                    .starts_with("unsupported parameter")))
+}
+
+fn is_gpt_56_family(model: &str) -> bool {
+    let model = model.trim().to_ascii_lowercase();
+    model == "gpt-5.6" || model.starts_with("gpt-5.6-")
 }
 
 #[cfg(test)]

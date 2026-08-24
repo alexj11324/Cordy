@@ -42,7 +42,7 @@ pub(crate) fn generate_title_async(
     current_title: String,
     source_text: String,
 ) {
-    if !state.llm.enabled() || source_text.trim().is_empty() {
+    if !state.llm.client().enabled() || source_text.trim().is_empty() {
         return;
     }
 
@@ -82,6 +82,7 @@ async fn generate_and_apply(
 ) -> anyhow::Result<()> {
     let raw = state
         .llm
+        .client()
         .generate_text("", SYSTEM_PROMPT, &source_text)
         .await?;
     let title = sanitize_chat_title(&raw);

@@ -2737,7 +2737,11 @@ impl TaskService {
         chat_session: &ChatSession,
         expected_message_id: Uuid,
     ) -> Result<(Uuid, AgentTaskQueue), TaskServiceError> {
-        if self.quick_actions.is_none() {
+        if !self
+            .quick_actions
+            .as_ref()
+            .is_some_and(|quick_actions| quick_actions.enabled())
+        {
             return Err(TaskServiceError::ChatQuickActionsUnavailable);
         }
         // Target is the latest assistant turn; only an ordinary message turn
