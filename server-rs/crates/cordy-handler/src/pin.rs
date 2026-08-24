@@ -134,7 +134,7 @@ async fn create(
     let exists = match request.item_type.as_str() {
         "issue" => sqlx::query("SELECT 1 FROM issue WHERE id=$1 AND workspace_id=$2").bind(item_id).bind(workspace_id).fetch_optional(&state.pool).await,
         "project" => sqlx::query("SELECT 1 FROM project WHERE id=$1 AND workspace_id=$2").bind(item_id).bind(workspace_id).fetch_optional(&state.pool).await,
-        _ => sqlx::query("SELECT 1 FROM issue_view WHERE id=$1 AND workspace_id=$2 AND (user_id=$3 OR is_shared=TRUE)").bind(item_id).bind(workspace_id).bind(context.member.user_id).fetch_optional(&state.pool).await,
+        _ => sqlx::query("SELECT 1 FROM issue_view WHERE id=$1 AND workspace_id=$2 AND (owner_id=$3 OR visibility='workspace')").bind(item_id).bind(workspace_id).bind(context.member.user_id).fetch_optional(&state.pool).await,
     };
     match exists {
         Ok(Some(_)) => {}
