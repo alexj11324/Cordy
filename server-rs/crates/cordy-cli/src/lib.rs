@@ -113,9 +113,10 @@ use skill_commands::{
     run_skill_refresh, run_skill_search, run_skill_update,
 };
 use squad_commands::{
-    format_squad_details_table, format_squad_list_table, run_squad_activity, run_squad_create,
-    run_squad_delete, run_squad_get, run_squad_list, run_squad_member_add, run_squad_member_list,
-    run_squad_member_remove, run_squad_member_set_role, run_squad_update,
+    format_squad_details_table, format_squad_list_table, render_squad_member_output,
+    run_squad_activity, run_squad_create, run_squad_delete, run_squad_get, run_squad_list,
+    run_squad_member_add, run_squad_member_list, run_squad_member_remove,
+    run_squad_member_set_role, run_squad_update, squad_member_count_display,
 };
 use update_commands::{
     render_update_outcome, resolve_update_download_timeout, run_update, validate_update_timeout,

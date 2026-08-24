@@ -389,7 +389,10 @@ pub(super) async fn run_squad_activity(
     })
 }
 
-fn render_squad_member_output(members: &[Value], output: OutputFormat) -> Result<RunOutput> {
+pub(super) fn render_squad_member_output(
+    members: &[Value],
+    output: OutputFormat,
+) -> Result<RunOutput> {
     if output == OutputFormat::Json {
         return Ok(RunOutput {
             stdout: format!("{}\n", serde_json::to_string_pretty(members)?),
@@ -438,7 +441,7 @@ pub(super) fn format_squad_list_table(squads: &[Value]) -> String {
     format_table(&rows)
 }
 
-fn squad_member_count_display(squad: &Value) -> String {
+pub(super) fn squad_member_count_display(squad: &Value) -> String {
     let Some(count) = squad.get("member_count") else {
         return "-".into();
     };
