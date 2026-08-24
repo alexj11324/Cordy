@@ -254,10 +254,23 @@
       `2609fe94f6e4fa8049dc44d972bab6fdc7ab663d`; PR remains Ready and
       MERGEABLE. Scoped rustfmt/diff-check pass; Cargo/review/gate/merge remain
       with pro.
-- [ ] Next substantive daemon slice: complete lifecycle parity for
-      background `start/restart/stop` (including health preflight and PID-lock
-      handoff) on top of this foreground path; do not implement a second
-      provider/assembly route.
+- [x] Completed background lifecycle parity on the same assembly route:
+      `cordy daemon start` now uses the real `DaemonLifecycle`, while
+      `daemon restart` and `daemon stop` reuse its health identity checks,
+      bounded readiness, graceful/forced shutdown, and PID-lock handoff.
+      Stop is local-control-only and does not require a server token; start and
+      restart retain authenticated preflight. Incomplete stop/readiness is
+      reported as failure rather than a false success. Current PR #129 head is
+      `e72c28b51c9139ab19ac4bc6da2e3a19387a8706` (parent
+      `f4ebf0606d689f357a9b10d9dbe18a99cd0c1b99`, tree
+      `dd8c84524801e7aea82beed6e82f94ceccb0fdea`), candidate
+      `574d9101f5bc5715a469feb1c7b6bf918df881fb`; PR remains Ready and
+      CLEAN/MERGEABLE. Scoped rustfmt/diff-check pass; Cargo/review/gate/merge
+      remain with pro.
+- [ ] Next substantive daemon slice: audit production background shutdown and
+      successor handoff under real CLI invocation (including auto-update/reload
+      argv and restart flag precedence) and then move to the next Go→Rust
+      domain. Do not create a second lifecycle or provider assembly path.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
