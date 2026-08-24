@@ -44,8 +44,8 @@ pub use cursor::{build_cursor_args, CursorBackend, CursorConfig};
 pub use deveco::{build_deveco_args, DevecoBackend, DevecoConfig};
 pub use dsh::{build_dsh_args, DshBackend, DshConfig};
 pub use model::{
-    Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelServiceTier, ModelThinking,
-    ThinkingLevel,
+    parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey,
+    ModelServiceTier, ModelThinking, ThinkingLevel,
 };
 pub use openclaw::{build_openclaw_args, OpenclawBackend, OpenclawConfig};
 pub use opencode::{build_opencode_args, OpencodeBackend, OpencodeConfig};
