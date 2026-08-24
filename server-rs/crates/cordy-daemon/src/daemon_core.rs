@@ -27,6 +27,7 @@ use crate::gc::{
     GcConfig, GcHost, IssueGCCheckResult, IssueGCCheckStatus, RequestError as GcRequestError,
 };
 use crate::repocache::{Cache, CancelCause, Ctx};
+use crate::runtime_registry::RuntimeRegistry;
 use crate::task_execution::{DaemonTaskExecutionHost, TaskRunOutcome};
 use crate::types::Task;
 use crate::update_executor::UpdateExecutor;
@@ -43,20 +44,26 @@ const UPDATE_REPORT_BACKOFFS: &[Duration] = &[
 /// operation explicitly.
 #[async_trait::async_trait]
 pub trait DaemonCoreServices: Send + Sync + 'static {
-    async fn handle_runtime_gone(&self, ctx: Ctx, runtime_id: String);
+    async fn handle_runtime_gone(
+        &self,
+        ctx: Ctx,
+        registry: Arc<RuntimeRegistry>,
+        runtime_id: String,
+    );
     async fn refresh_workspace_runtime_profiles(
         &self,
         ctx: Ctx,
+        registry: Arc<RuntimeRegistry>,
         payload: RuntimeProfilesChangedPayload,
     );
     async fn handle_non_update_heartbeat_actions(
         &self,
         ctx: Ctx,
+        registry: Arc<RuntimeRegistry>,
         runtime_id: String,
         ack: DaemonHeartbeatAckPayload,
     );
 
-    fn provider_for_runtime(&self, runtime_id: &str) -> Option<String>;
     async fn run_task(
         &self,
         ctx: Ctx,
@@ -74,6 +81,7 @@ pub(crate) struct DaemonCoreHost<S: DaemonCoreServices> {
     client: Arc<Client>,
     repo_cache: Arc<Cache>,
     services: Arc<S>,
+    registry: Arc<RuntimeRegistry>,
     update_executor: Arc<UpdateExecutor>,
     activity: Arc<DaemonActivity>,
     root_ctx: Ctx,
@@ -90,6 +98,7 @@ impl<S: DaemonCoreServices> DaemonCoreHost<S> {
         client: Arc<Client>,
         repo_cache: Arc<Cache>,
         services: Arc<S>,
+        registry: Arc<RuntimeRegistry>,
         update_executor: Arc<UpdateExecutor>,
         activity: Arc<DaemonActivity>,
         root_ctx: Ctx,
@@ -122,6 +131,7 @@ impl<S: DaemonCoreServices> DaemonCoreHost<S> {
             client,
             repo_cache,
             services,
+            registry,
             update_executor,
             activity,
             root_ctx,
@@ -285,7 +295,9 @@ impl<S: DaemonCoreServices> DaemonCoreHost<S> {
 #[async_trait::async_trait]
 impl<S: DaemonCoreServices> DaemonControlLifecycle for DaemonCoreHost<S> {
     async fn handle_runtime_gone(&self, ctx: Ctx, runtime_id: String) {
-        self.services.handle_runtime_gone(ctx, runtime_id).await;
+        self.services
+            .handle_runtime_gone(ctx, Arc::clone(&self.registry), runtime_id)
+            .await;
     }
 
     async fn refresh_workspace_runtime_profiles(
@@ -294,7 +306,7 @@ impl<S: DaemonCoreServices> DaemonControlLifecycle for DaemonCoreHost<S> {
         payload: RuntimeProfilesChangedPayload,
     ) {
         self.services
-            .refresh_workspace_runtime_profiles(ctx, payload)
+            .refresh_workspace_runtime_profiles(ctx, Arc::clone(&self.registry), payload)
             .await;
     }
 
@@ -305,9 +317,12 @@ impl<S: DaemonCoreServices> DaemonControlLifecycle for DaemonCoreHost<S> {
         mut ack: DaemonHeartbeatAckPayload,
     ) {
         let update = ack.pending_update.take();
-        let other =
-            self.services
-                .handle_non_update_heartbeat_actions(ctx.child(), runtime_id.clone(), ack);
+        let other = self.services.handle_non_update_heartbeat_actions(
+            ctx.child(),
+            Arc::clone(&self.registry),
+            runtime_id.clone(),
+            ack,
+        );
         let update = async {
             if let Some(update) = update {
                 self.handle_server_update(ctx, runtime_id, update).await;
@@ -320,7 +335,7 @@ impl<S: DaemonCoreServices> DaemonControlLifecycle for DaemonCoreHost<S> {
 #[async_trait::async_trait]
 impl<S: DaemonCoreServices> DaemonTaskExecutionHost for DaemonCoreHost<S> {
     fn provider_for_runtime(&self, runtime_id: &str) -> Option<String> {
-        self.services.provider_for_runtime(runtime_id)
+        self.registry.provider_for_runtime(runtime_id)
     }
 
     async fn cancel_repository_maintenance(&self) {

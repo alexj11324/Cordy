@@ -37,6 +37,7 @@ use crate::health::{
 use crate::manager::{ControlEvent, DaemonControl};
 use crate::reconcile::{ReconcileBroadcaster, WorkspaceChangeSignal};
 use crate::repocache::{Cache, CancelCause, Ctx};
+use crate::runtime_registry::RuntimeRegistry;
 use crate::runtime_set::RuntimeSet;
 use crate::task_execution::{TaskExecutionConfig, TaskExecutionOrchestrator};
 use crate::update_executor::UpdateExecutor;
@@ -53,9 +54,10 @@ const CHECKOUT_MODE_ISOLATED: &str = "isolated";
 pub trait ProductionRuntimeServices: DaemonCoreServices {
     /// Initial workspace sync, agent probing, and runtime registration.
     /// Authentication renewal is owned by the production stack and completes
-    /// its best-effort first attempt before this method is called. Returned
-    /// IDs become the authoritative control set.
-    async fn preflight(&self, ctx: Ctx) -> anyhow::Result<Vec<String>>;
+    /// its best-effort first attempt before this method is called.
+    /// Implementations apply every accepted registration response to the
+    /// supplied daemon-owned registry before returning.
+    async fn preflight(&self, ctx: Ctx, registry: Arc<RuntimeRegistry>) -> anyhow::Result<()>;
 
     /// Owns workspace consistency and agent-discovery reconciliation. It must
     /// observe both signals and return only after `ctx` cancellation.
@@ -64,12 +66,11 @@ pub trait ProductionRuntimeServices: DaemonCoreServices {
         ctx: Ctx,
         reconcile: Arc<ReconcileBroadcaster>,
         workspace_changes: Arc<WorkspaceChangeSignal>,
-        runtime_set: Arc<RuntimeSet>,
+        registry: Arc<RuntimeRegistry>,
     ) -> anyhow::Result<()>;
 
-    /// Provider-owned health fields: workspaces, agents, skipped-agent
-    /// diagnostics, and task execution counters not represented by
-    /// `DaemonActivity`.
+    /// Provider-owned health fields: agents, skipped-agent diagnostics, and
+    /// task execution counters not represented by `DaemonActivity`.
     fn health_snapshot(&self) -> HealthResponse;
 
     /// Performs the real ensure-repo/default-ref/worktree operation after the
@@ -172,6 +173,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         let (events_tx, events_rx) = tokio::sync::mpsc::unbounded_channel::<ControlEvent>();
         let (task_wakeups_tx, task_wakeups_rx) = tokio::sync::mpsc::channel(TASK_WAKEUP_CAPACITY);
         let runtime_set = Arc::new(RuntimeSet::new());
+        let registry = Arc::new(RuntimeRegistry::new(Arc::clone(&runtime_set)));
         let control = DaemonControl::with_runtime_set(
             Arc::clone(&self.client),
             self.config.server_base_url.clone(),
@@ -185,6 +187,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
             Arc::clone(&self.client),
             Arc::clone(&self.repo_cache),
             Arc::clone(&self.services),
+            Arc::clone(&registry),
             Arc::clone(&self.update_executor),
             Arc::clone(&activity),
             root_ctx.clone(),
@@ -209,6 +212,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
             host: Arc::clone(&host),
             repo_cache: Arc::clone(&self.repo_cache),
             checkout_registry: Arc::clone(&self.checkout_registry),
+            registry: Arc::clone(&registry),
             ready: Arc::clone(&ready),
             root_ctx: root_ctx.clone(),
             started_at,
@@ -224,16 +228,19 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         // Go renews the PAT synchronously before the first workspace request.
         // Renewal itself is best-effort; preflight remains the readiness gate.
         renew_token_once(&self.client, &self.config.profile, &root_ctx.child()).await;
-        let runtime_ids = match self.services.preflight(root_ctx.child()).await {
-            Ok(runtime_ids) => runtime_ids,
+        match self
+            .services
+            .preflight(root_ctx.child(), Arc::clone(&registry))
+            .await
+        {
+            Ok(()) => {}
             Err(error) => {
                 root_ctx.cancel_with(CancelCause::Shutdown);
                 bridge.abort();
                 stop_health_task(&mut health_task).await;
                 return Err(error).context("daemon preflight failed");
             }
-        };
-        runtime_set.replace(runtime_ids);
+        }
         let registered_control = Arc::clone(&control);
 
         let consumer = Arc::new(ControlEventConsumer::new(
@@ -296,14 +303,14 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         let reconcile_services = Arc::clone(&self.services);
         let reconcile_signal = Arc::clone(&reconcile);
         let workspace_signal = Arc::clone(&workspace_changes);
-        let reconcile_runtimes = Arc::clone(&runtime_set);
+        let reconcile_registry = Arc::clone(&registry);
         owners.spawn(async move {
             let result = reconcile_services
                 .run_reconcile(
                     reconcile_ctx.clone(),
                     reconcile_signal,
                     workspace_signal,
-                    reconcile_runtimes,
+                    reconcile_registry,
                 )
                 .await;
             if reconcile_ctx.err().is_none() {
@@ -419,6 +426,7 @@ struct HealthState<S: ProductionRuntimeServices> {
     host: Arc<DaemonCoreHost<S>>,
     repo_cache: Arc<Cache>,
     checkout_registry: Arc<RepoCheckoutRegistry>,
+    registry: Arc<RuntimeRegistry>,
     ready: Arc<AtomicBool>,
     root_ctx: Ctx,
     started_at: SystemTime,
@@ -433,6 +441,7 @@ impl<S: ProductionRuntimeServices> Clone for HealthState<S> {
             host: Arc::clone(&self.host),
             repo_cache: Arc::clone(&self.repo_cache),
             checkout_registry: Arc::clone(&self.checkout_registry),
+            registry: Arc::clone(&self.registry),
             ready: Arc::clone(&self.ready),
             root_ctx: self.root_ctx.clone(),
             started_at: self.started_at,
@@ -503,6 +512,7 @@ async fn health_handler<S: ProductionRuntimeServices>(
     response.repo_maintenance_active = cache_activity.maintenance_active as i64;
     response.repo_checkout_waiters = cache_activity.foreground_waiters as i64;
     response.reload_pending_reason = state.host.reload_pending_reason().unwrap_or_default();
+    response.workspaces = state.registry.health_workspaces();
     Json(response)
 }
 
