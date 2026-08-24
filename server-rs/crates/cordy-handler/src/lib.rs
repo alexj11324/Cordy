@@ -212,11 +212,13 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
     let auth_state = AuthState {
         pool: state.pool.clone(),
         pat_cache: state.pat_cache.clone(),
+        cloud_pat_verifier: state.cloud_pat_verifier.clone(),
     };
     let daemon_auth_state = DaemonAuthState {
         pool: state.pool.clone(),
         pat_cache: state.pat_cache.clone(),
         daemon_cache: state.daemon_token_cache.clone(),
+        cloud_pat_verifier: state.cloud_pat_verifier.clone(),
     };
     let cloudfront_signer = state.attachment_download.cloudfront_signer.clone();
     let public_auth = auth::public_router(
@@ -543,6 +545,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         AuthState {
             pool: state.pool.clone(),
             pat_cache: state.pat_cache.clone(),
+            cloud_pat_verifier: state.cloud_pat_verifier.clone(),
         },
         cordy_middleware::plugin_auth::plugin_auth,
     ));

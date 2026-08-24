@@ -208,6 +208,7 @@ async fn build_production_router(
     .with_github_snapshots(github_client)
     .with_analytics(Arc::from(cordy_analytics::new_from_env()))
     .with_auth_settings(cordy_handler::auth::AuthSettings::from_config(cfg))
+    .with_cloud_pat_fleet_url(cfg.fleet.cloud_fleet_url.as_deref())
     .with_email_service(Arc::new(
         cordy_service::email::EmailService::from_config_values(
             cfg.email.resend_api_key.as_deref(),

@@ -216,6 +216,7 @@ pub struct HandlerState {
     pub pat_cache: PatCache,
     pub daemon_token_cache: DaemonTokenCache,
     pub membership_cache: MembershipCache,
+    pub cloud_pat_verifier: Option<cordy_auth::cloud_pat::CloudPatVerifier>,
     /// Realtime WS hub (cordy-realtime). `None` only in tests.
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
@@ -331,6 +332,7 @@ impl HandlerState {
             pat_cache,
             daemon_token_cache: DaemonTokenCache::disabled(),
             membership_cache: MembershipCache::disabled(),
+            cloud_pat_verifier: None,
             hub,
             bus,
             business_metrics: None,
@@ -572,6 +574,11 @@ impl HandlerState {
         self
     }
 
+    pub fn with_cloud_pat_fleet_url(mut self, fleet_url: Option<&str>) -> Self {
+        self.cloud_pat_verifier = fleet_url.and_then(cordy_auth::cloud_pat::CloudPatVerifier::new);
+        self
+    }
+
     pub fn with_email_service(mut self, email_service: Arc<EmailService>) -> Self {
         self.email_service = email_service;
         self
@@ -647,6 +654,9 @@ impl HandlerState {
         self.pat_cache = PatCache::from_connection_manager(conn.clone());
         self.daemon_token_cache = DaemonTokenCache::from_connection_manager(conn.clone());
         self.membership_cache = MembershipCache::from_connection_manager(conn.clone());
+        if let Some(verifier) = self.cloud_pat_verifier.as_mut() {
+            verifier.set_cache(conn.clone());
+        }
         self.tasks.install_empty_claim_cache(
             cordy_service::empty_claim_cache::EmptyClaimCache::new(conn.clone()),
         );

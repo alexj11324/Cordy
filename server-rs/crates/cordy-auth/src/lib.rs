@@ -5,6 +5,7 @@
 //! (emergency denylist), plus the Redis-backed `pat_cache`,
 //! `daemon_token_cache`, and `membership_cache` modules.
 
+pub mod cloud_pat;
 pub mod cookie;
 pub mod daemon_token_cache;
 pub mod disabled_users;
