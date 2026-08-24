@@ -214,11 +214,12 @@ async fn build_production_router(
     let entitlements = autopilot_entitlements(cfg);
     let analytics: Arc<dyn cordy_analytics::AnalyticsClient> =
         Arc::from(cordy_analytics::new_from_env());
-    let mut state = cordy_handler::HandlerState::new_with_analytics(
+    let mut state = cordy_handler::HandlerState::new_with_production_dependencies(
         db,
         cordy_auth::pat_cache::PatCache::disabled(),
         Some(hub),
         analytics.clone(),
+        feature_flags,
     )
     .with_observability(business_metrics, http_metrics)
     .with_autopilot_entitlements(entitlements)
@@ -235,7 +236,6 @@ async fn build_production_router(
     .with_plugins_from_env()
     .with_slack_history_from_env()
     .with_llm_from_env()?
-    .with_feature_flags(feature_flags)
     .with_public_config(cordy_handler::config::PublicConfigSettings {
         cdn_domain: cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
         cdn_signed: cfg.storage.cloudfront_key_pair_id.is_some()

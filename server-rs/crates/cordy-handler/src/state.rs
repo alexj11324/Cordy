@@ -133,6 +133,9 @@ pub struct HandlerState {
     pub github_snapshots: Arc<cordy_ghsnapshot::Manager>,
     /// Feature flag source. `None` fails closed for rollout-gated writes.
     pub feature_flags: Option<Arc<dyn cordy_service::feature_flags::FlagSource>>,
+    /// Shared Composio service used by both HTTP connection management and
+    /// task overlay generation. None when its flag/configuration is disabled.
+    pub composio: Option<Arc<cordy_composio::Service>>,
     /// Task domain service (Go h.TaskService).
     pub tasks: Arc<TaskService>,
     /// Shared Autopilot service. It must be reused by HTTP paths and durable
@@ -205,6 +208,42 @@ impl HandlerState {
         hub: Option<Arc<Hub>>,
         analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
     ) -> Self {
+        Self::new_with_dependencies(pool, pat_cache, hub, analytics, None, None)
+    }
+
+    pub fn new_with_production_dependencies(
+        pool: sqlx::PgPool,
+        pat_cache: PatCache,
+        hub: Option<Arc<Hub>>,
+        analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
+        feature_flags: Arc<dyn cordy_service::feature_flags::FlagSource>,
+    ) -> Self {
+        let composio =
+            if cordy_service::feature_flags::composio_mcp_apps_enabled(feature_flags.as_ref()) {
+                crate::composio::build_service(pool.clone())
+                    .ok()
+                    .map(Arc::new)
+            } else {
+                None
+            };
+        Self::new_with_dependencies(
+            pool,
+            pat_cache,
+            hub,
+            analytics,
+            Some(feature_flags),
+            composio,
+        )
+    }
+
+    fn new_with_dependencies(
+        pool: sqlx::PgPool,
+        pat_cache: PatCache,
+        hub: Option<Arc<Hub>>,
+        analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
+        feature_flags: Option<Arc<dyn cordy_service::feature_flags::FlagSource>>,
+        composio: Option<Arc<cordy_composio::Service>>,
+    ) -> Self {
         let bus = Arc::new(cordy_events::Bus::new());
         let daemon_hub = Arc::new(cordy_daemon::hub::DaemonHub::new());
         let task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier> =
@@ -218,6 +257,10 @@ impl HandlerState {
         task_service.analytics = Some(Box::new(SharedAnalyticsClient(analytics.clone())));
         task_service.wakeup = Some(Arc::downgrade(&task_wakeup));
         task_service.quick_actions = Some(llm.clone());
+        task_service.feature_flags = feature_flags.clone();
+        task_service.composio = composio
+            .as_ref()
+            .map(|service| crate::composio::task_overlay_builder(service.clone()));
         let tasks = Arc::new(task_service);
         let autopilots = Arc::new(AutopilotService::new(
             pool.clone(),
@@ -263,7 +306,8 @@ impl HandlerState {
             invitation_admission: crate::invitation::InvitationAdmission::default(),
             public_config: crate::config::PublicConfigSettings::default(),
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
-            feature_flags: None,
+            feature_flags,
+            composio,
             tasks,
             autopilots,
             issues,
@@ -362,14 +406,6 @@ impl HandlerState {
 
     pub fn with_public_config(mut self, settings: crate::config::PublicConfigSettings) -> Self {
         self.public_config = settings;
-        self
-    }
-
-    pub fn with_feature_flags(
-        mut self,
-        flags: Arc<dyn cordy_service::feature_flags::FlagSource>,
-    ) -> Self {
-        self.feature_flags = Some(flags);
         self
     }
 

@@ -264,7 +264,7 @@ pub struct TaskService {
     pub metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     pub wakeup: Option<std::sync::Weak<dyn TaskWakeupNotifier>>,
     /// Server-side toggle router. `None` returns each call site's default.
-    pub feature_flags: Option<Box<dyn FlagSource>>,
+    pub feature_flags: Option<Arc<dyn FlagSource>>,
     /// Optional per-task MCP overlay builder; `None` makes the overlay step a
     /// no-op (deployments without Composio behave exactly as before).
     pub composio: Option<std::sync::Arc<dyn ComposioOverlayBuilder>>,

@@ -13,7 +13,7 @@
 //! connectable the moment an auth config is enabled for it in the Composio
 //! dashboard — no env var and no redeploy.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -410,6 +410,34 @@ impl Service {
         Ok(rows.iter().map(row_to_connection).collect())
     }
 
+    /// Builds the owner-scoped task MCP overlay from the same service and
+    /// connection store used by the HTTP integration routes.
+    pub async fn build_task_overlay(
+        &self,
+        originator_user_id: Option<Uuid>,
+        owner_user_id: Option<Uuid>,
+        toolkit_allowlist: &[String],
+        display_name_for_slug: impl Fn(&str) -> String,
+    ) -> Result<crate::dispatch::OverlayResult> {
+        let rows = match owner_user_id {
+            Some(owner_id) => {
+                self.store
+                    .list_active_user_composio_connections(owner_id)
+                    .await?
+            }
+            None => Vec::new(),
+        };
+        crate::dispatch::build_task_overlay(
+            self,
+            originator_user_id,
+            owner_user_id,
+            toolkit_allowlist,
+            &rows,
+            display_name_for_slug,
+        )
+        .await
+    }
+
     /// Revokes and deletes the connection at Composio, then marks the local
     /// row revoked. It is idempotent: a Composio 404 (already gone) is
     /// treated as success, and re-revoking an already-revoked local row is
@@ -724,6 +752,26 @@ impl Service {
             return Err(ServiceError::AccountVerification.into());
         }
         Ok(())
+    }
+}
+
+impl crate::dispatch::SessionSpawner for Service {
+    async fn create_session(
+        &self,
+        user_id: String,
+        toolkits_enable: &[String],
+        pinned: &BTreeMap<String, Vec<String>>,
+    ) -> crate::dispatch::SessionResult {
+        let response = self
+            .sdk
+            .create_session(CreateSessionRequest {
+                user_id,
+                toolkits: Some(serde_json::json!({"enable": toolkits_enable})),
+                connected_accounts: Some(serde_json::to_value(pinned)?),
+            })
+            .await
+            .map_err(|error| anyhow!("composio: create session: {error}"))?;
+        Ok(Some((response.mcp.url, self.sdk.mcp_auth_headers())))
     }
 }
 
