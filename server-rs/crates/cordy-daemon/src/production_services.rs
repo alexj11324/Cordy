@@ -5,6 +5,7 @@
 //! registration ordering, runtime-gone recovery, profile refresh, and the
 //! reconcile lifecycle remain daemon responsibilities.
 
+use std::collections::BTreeSet;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -36,7 +37,7 @@ use crate::repo_state::DaemonRepoState;
 use crate::repocache::{is_repo_busy, Cache, Ctx, RepoInfo, WorktreeParams};
 use crate::runtime_registry::RuntimeRegistry;
 use crate::task_execution::TaskRunOutcome;
-use crate::types::Task;
+use crate::types::{RepoData, Task};
 use crate::wakeup::jitter_duration;
 
 const REPO_WARMUP_QUEUE_CAPACITY: usize = 64;
@@ -224,12 +225,11 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
             return Ok(());
         }
 
-        let repos: Vec<RepoInfo> = response
-            .repos
-            .into_iter()
-            .filter(|repo| !repo.url.is_empty())
-            .map(|repo| RepoInfo { url: repo.url })
-            .collect();
+        // A claimed task may authorize a repository that is absent from the
+        // workspace-level response. Warmup delivery is deliberately
+        // best-effort, so the checkout miss itself must include that exact
+        // authorized URL in the synchronous cache round.
+        let repos = checkout_sync_repos(response.repos, repo_url);
         match self.repo_cache.sync_ctx(ctx, workspace_id, &repos).await {
             Ok(()) => self.repo_state.set_sync_error(workspace_id, String::new()),
             Err(error) => self
@@ -528,6 +528,19 @@ fn workspace_sync_backoff(base: Duration, failures: u32) -> Duration {
     interval
 }
 
+fn checkout_sync_repos(workspace_repos: Vec<RepoData>, requested_url: &str) -> Vec<RepoInfo> {
+    let mut urls: BTreeSet<String> = workspace_repos
+        .into_iter()
+        .map(|repo| repo.url.trim().to_string())
+        .filter(|url| !url.is_empty())
+        .collect();
+    let requested_url = requested_url.trim();
+    if !requested_url.is_empty() {
+        urls.insert(requested_url.to_string());
+    }
+    urls.into_iter().map(|url| RepoInfo { url }).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -545,6 +558,60 @@ mod tests {
         assert_eq!(
             workspace_sync_backoff(DEFAULT_WORKSPACE_SYNC_INTERVAL, 0),
             DEFAULT_WORKSPACE_SYNC_INTERVAL
+        );
+    }
+
+    #[test]
+    fn checkout_sync_includes_task_only_url_after_warmup_is_dropped() {
+        let task_url = "https://example.test/task-only.git";
+        for queue_unavailable in ["full", "closed"] {
+            let (tx, rx) = mpsc::channel(1);
+            if queue_unavailable == "full" {
+                enqueue_repo_warmup(
+                    &tx,
+                    "other-workspace",
+                    vec![RepoInfo {
+                        url: "https://example.test/already-queued.git".into(),
+                    }],
+                );
+            } else {
+                drop(rx);
+            }
+            enqueue_repo_warmup(
+                &tx,
+                "workspace-1",
+                vec![RepoInfo {
+                    url: task_url.into(),
+                }],
+            );
+
+            let repos = checkout_sync_repos(Vec::new(), task_url);
+            assert_eq!(repos.len(), 1, "{queue_unavailable}");
+            assert_eq!(repos[0].url, task_url, "{queue_unavailable}");
+        }
+    }
+
+    #[test]
+    fn checkout_sync_trims_and_deduplicates_requested_url() {
+        let repos = checkout_sync_repos(
+            vec![
+                RepoData {
+                    url: " https://example.test/task.git ".into(),
+                    ..RepoData::default()
+                },
+                RepoData {
+                    url: "https://example.test/workspace.git".into(),
+                    ..RepoData::default()
+                },
+            ],
+            "https://example.test/task.git",
+        );
+        assert_eq!(
+            repos.into_iter().map(|repo| repo.url).collect::<Vec<_>>(),
+            vec![
+                "https://example.test/task.git",
+                "https://example.test/workspace.git"
+            ]
         );
     }
 }
