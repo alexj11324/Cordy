@@ -1062,6 +1062,54 @@ ORDER BY ci.created_at ASC"#
     Ok(out)
 }
 
+/// Pages active installations that still need the Lark bot union-id upgrade.
+/// The cursor follows the same created_at ordering as the legacy all-rows
+/// query, with id as the stable tie-breaker.
+pub async fn list_active_channel_installations_missing_bot_union_id_after(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    channel_type: &str,
+    after_created_at: Option<DateTime<Utc>>,
+    after_id: Option<Uuid>,
+    limit: i64,
+) -> anyhow::Result<Vec<ChannelInstallation>> {
+    let rows = sqlx::query(
+        r#"SELECT ci.id, ci.workspace_id, ci.agent_id, ci.channel_type, ci.config, ci.status, ci.ws_lease_token, ci.ws_lease_expires_at, ci.installer_user_id, ci.installed_at, ci.created_at, ci.updated_at
+FROM channel_installation ci
+JOIN workspace w ON w.id = ci.workspace_id
+JOIN agent a ON a.id = ci.agent_id
+WHERE ci.status = 'active'
+  AND ci.channel_type = $1
+  AND COALESCE(ci.config ->> 'bot_union_id', '') = ''
+  AND ($2::timestamptz IS NULL OR (ci.created_at, ci.id) > ($2, $3))
+ORDER BY ci.created_at ASC, ci.id ASC
+LIMIT $4"#,
+    )
+    .bind(channel_type)
+    .bind(after_created_at)
+    .bind(after_id)
+    .bind(limit)
+    .fetch_all(executor)
+    .await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for row in &rows {
+        out.push(ChannelInstallation {
+            id: row.try_get(0)?,
+            workspace_id: row.try_get(1)?,
+            agent_id: row.try_get(2)?,
+            channel_type: row.try_get(3)?,
+            config: row.try_get(4)?,
+            status: row.try_get(5)?,
+            ws_lease_token: row.try_get(6)?,
+            ws_lease_expires_at: row.try_get(7)?,
+            installer_user_id: row.try_get(8)?,
+            installed_at: row.try_get(9)?,
+            created_at: row.try_get(10)?,
+            updated_at: row.try_get(11)?,
+        });
+    }
+    Ok(out)
+}
+
 pub async fn list_all_active_channel_installations(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
 ) -> anyhow::Result<Vec<ChannelInstallation>> {
@@ -1503,6 +1551,33 @@ WHERE id = $1"#,
     .execute(executor)
     .await?;
     Ok(r.rows_affected())
+}
+
+/// Atomically stamps bot_union_id only while it is still absent. Unlike the
+/// legacy read/modify/write helper this cannot overwrite a concurrent secret
+/// rotation or reinstall, and a concurrent backfill winner returns false.
+pub async fn set_channel_installation_bot_union_id_if_missing(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+    channel_type: &str,
+    bot_union_id: &str,
+) -> anyhow::Result<bool> {
+    let row = sqlx::query(
+        r#"UPDATE channel_installation
+SET config = jsonb_set(config, '{bot_union_id}', to_jsonb($3::text)),
+    updated_at = now()
+WHERE id = $1
+  AND channel_type = $2
+  AND status = 'active'
+  AND COALESCE(config ->> 'bot_union_id', '') = ''
+RETURNING id"#,
+    )
+    .bind(id)
+    .bind(channel_type)
+    .bind(bot_union_id)
+    .fetch_optional(executor)
+    .await?;
+    Ok(row.is_some())
 }
 
 pub async fn set_channel_installation_status(

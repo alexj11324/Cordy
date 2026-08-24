@@ -468,3 +468,92 @@ impl WsRpcClient {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use tokio::sync::oneshot;
+
+    fn sender_that_reports_outbound(
+        tx: oneshot::Sender<Arc<WsOutbound>>,
+        mark_sent: bool,
+    ) -> SendFrame {
+        let tx = Mutex::new(Some(tx));
+        Arc::new(move |_frame| {
+            let outbound = Arc::new(WsOutbound::default());
+            if mark_sent {
+                assert!(outbound.begin_write());
+            }
+            if let Some(tx) = tx.lock().unwrap().take() {
+                let _ = tx.send(Arc::clone(&outbound));
+            }
+            Ok(outbound)
+        })
+    }
+
+    #[tokio::test]
+    async fn detach_after_write_is_uncertain_not_safe_fallback() {
+        let client = Arc::new(WsRpcClient::new(Duration::from_secs(1)));
+        let (sent_tx, sent_rx) = oneshot::channel();
+        client.attach(Some(sender_that_reports_outbound(sent_tx, true)));
+        let call_client = Arc::clone(&client);
+        let call = tokio::spawn(async move {
+            call_client
+                .call::<_, serde_json::Value>(
+                    &crate::repocache::Ctx::new(),
+                    "tasks.claim",
+                    Duration::from_secs(30),
+                    Some(&json!({})),
+                )
+                .await
+        });
+        sent_rx.await.unwrap();
+        client.attach(None);
+
+        assert!(is_uncertain(&call.await.unwrap().unwrap_err()));
+    }
+
+    #[tokio::test]
+    async fn detach_before_write_is_definitively_unavailable() {
+        let client = Arc::new(WsRpcClient::new(Duration::from_secs(1)));
+        let (queued_tx, queued_rx) = oneshot::channel();
+        client.attach(Some(sender_that_reports_outbound(queued_tx, false)));
+        let call_client = Arc::clone(&client);
+        let call = tokio::spawn(async move {
+            call_client
+                .call::<_, serde_json::Value>(
+                    &crate::repocache::Ctx::new(),
+                    "tasks.claim",
+                    Duration::from_secs(30),
+                    Some(&json!({})),
+                )
+                .await
+        });
+        let outbound = queued_rx.await.unwrap();
+        client.attach(None);
+
+        let err = call.await.unwrap().unwrap_err();
+        assert!(is_unavailable(&err));
+        assert!(
+            !outbound.begin_write(),
+            "detached caller must cancel queued frame"
+        );
+    }
+
+    #[test]
+    fn capability_is_scoped_to_connection_generation() {
+        let client = WsRpcClient::new(Duration::ZERO);
+        let sender: SendFrame = Arc::new(|_| Ok(Arc::new(WsOutbound::default())));
+        let first = client.attach(Some(Arc::clone(&sender)));
+        client.mark_rpc_v1_supported(first);
+        assert!(client.supports_rpc_v1());
+
+        let second = client.attach(Some(sender));
+        assert!(!client.supports_rpc_v1());
+        client.mark_rpc_v1_supported(first);
+        assert!(!client.supports_rpc_v1());
+        client.mark_rpc_v1_supported(second);
+        assert!(client.supports_rpc_v1());
+    }
+}

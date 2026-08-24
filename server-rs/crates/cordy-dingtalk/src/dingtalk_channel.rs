@@ -35,12 +35,13 @@ use crate::outbound_send::{SendTarget, Sender};
 use crate::replier::{is_addressed_issue_command, target_from_message};
 use crate::ws_connector::{OnMessage, WsConnector};
 
-/// Bounds the detached dispatch-error reply send.
+/// Bounds the dispatch-error reply inside its accepted dispatcher job.
 const ISSUE_ERROR_REPLY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Shutdown budget for draining accepted jobs when the Channel trait's
 /// ctx-less disconnect fires (Go used the supervisor's ctx deadline).
-const DISPATCH_DRAIN_BUDGET: Duration = Duration::from_secs(30);
+const DISPATCH_DRAIN_BUDGET: Duration = Duration::from_secs(20);
+const DISPATCH_CANCEL_BUDGET: Duration = Duration::from_secs(5);
 
 const ISSUE_DISPATCH_FAILED_TEXT: &str =
     "⚠️ I couldn't create that issue because an internal error occurred. Please try again.";
@@ -66,19 +67,21 @@ impl ChannelJobRunner {
         let Some(handler) = &self.handler else {
             return;
         };
-        if let Err(err) = handler.call(ctx, msg.clone()).await {
+        if let Err(err) = handler.call(ctx.clone(), msg.clone()).await {
             tracing::warn!(
                 error = %err,
                 app_id = %self.app_id,
                 "dingtalk: inbound handler error"
             );
             notify_issue_dispatch_error(
+                &ctx,
                 &self.client,
                 &self.robot_code,
                 &self.app_key,
                 &self.app_secret,
                 &msg,
-            );
+            )
+            .await;
         }
     }
 }
@@ -87,8 +90,11 @@ impl ChannelJobRunner {
 /// inside the engine pipeline (a transient resolver / DB error, before the
 /// shared issue-command path could report a Result). The frame is already ACKed
 /// and never redelivered, so without this the command would vanish silently.
-/// Detached so the ingest path returns promptly.
-fn notify_issue_dispatch_error(
+/// The conversation dispatcher already runs off the socket read loop, so this
+/// stays in that owned job: lifecycle drain can then cancel or join it instead
+/// of leaving a second detached task behind.
+async fn notify_issue_dispatch_error(
+    ctx: &CancellationToken,
     client: &Arc<Client>,
     robot_code: &str,
     app_key: &str,
@@ -105,10 +111,12 @@ fn notify_issue_dispatch_error(
         robot_code: robot_code.to_string(),
         app_secret: app_secret.to_string(),
     };
-    tokio::spawn(async move {
-        let sender = Sender::new(client, creds);
-        let send = sender.send(&target, ISSUE_DISPATCH_FAILED_TEXT);
-        match tokio::time::timeout(ISSUE_ERROR_REPLY_TIMEOUT, send).await {
+    let sender = Sender::new(client, creds);
+    let send = sender.send(&target, ISSUE_DISPATCH_FAILED_TEXT);
+    tokio::select! {
+        biased;
+        _ = ctx.cancelled() => {}
+        result = tokio::time::timeout(ISSUE_ERROR_REPLY_TIMEOUT, send) => match result {
             Ok(Ok(_)) => {}
             Ok(Err(send_err)) => {
                 tracing::warn!(error = %send_err, "dingtalk: issue dispatch-error reply failed")
@@ -117,7 +125,7 @@ fn notify_issue_dispatch_error(
                 tracing::warn!("dingtalk: issue dispatch-error reply timed out")
             }
         }
-    });
+    }
 }
 
 /// Keeps one conversation dispatcher alive across the channel objects the
@@ -230,6 +238,18 @@ impl Channel for DingTalkChannel {
             self.dispatch.wait_closed(CancellationToken::new()),
         )
         .await;
+        let drained = match drained {
+            Ok(drained) => Some(drained),
+            Err(_) => {
+                self.dispatch.cancel();
+                tokio::time::timeout(
+                    DISPATCH_CANCEL_BUDGET,
+                    self.dispatch.wait_closed(CancellationToken::new()),
+                )
+                .await
+                .ok()
+            }
+        };
         // Clear our claim whether or not the drain finished (Go's deferred CAS).
         {
             let mut current = self.slot.state.lock().unwrap_or_else(|e| e.into_inner());
@@ -241,8 +261,8 @@ impl Channel for DingTalkChannel {
             }
         }
         match drained {
-            Ok(true) => Ok(()),
-            Ok(false) | Err(_) => anyhow::bail!("dingtalk: dispatcher drain timed out"),
+            Some(true) => Ok(()),
+            Some(false) | None => anyhow::bail!("dingtalk: dispatcher drain timed out"),
         }
     }
 

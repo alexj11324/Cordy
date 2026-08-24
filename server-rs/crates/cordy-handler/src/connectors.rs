@@ -20,7 +20,10 @@ use serde_json::{json, Value};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::{error::error_response, state::HandlerState};
+use crate::{
+    error::{error_code_response, error_response},
+    state::HandlerState,
+};
 
 const BODY_LIMIT: usize = 16 * 1024;
 
@@ -179,12 +182,20 @@ fn public_config(provider: Provider, config: &Value) -> Value {
         Provider::DingTalk => {
             json!({"app_id": config.get("app_id").and_then(Value::as_str).unwrap_or("")})
         }
-        Provider::Lark => json!({
-            "app_id": config.get("app_id").and_then(Value::as_str).unwrap_or(""),
-            "tenant_key": config.get("tenant_key").and_then(Value::as_str),
-            "bot_open_id": config.get("bot_open_id").and_then(Value::as_str).unwrap_or(""),
-            "region": config.get("region").and_then(Value::as_str).unwrap_or("feishu"),
-        }),
+        Provider::Lark => {
+            let mut value = json!({
+                "app_id": config.get("app_id").and_then(Value::as_str).unwrap_or(""),
+                "bot_open_id": config.get("bot_open_id").and_then(Value::as_str).unwrap_or(""),
+                "region": config.get("region").and_then(Value::as_str).unwrap_or("feishu"),
+            });
+            if let (Some(target), Some(tenant_key)) = (
+                value.as_object_mut(),
+                config.get("tenant_key").and_then(Value::as_str),
+            ) {
+                target.insert("tenant_key".into(), Value::String(tenant_key.into()));
+            }
+            value
+        }
         Provider::Slack => {
             let value = cordy_slack::config::decode_public_config(config);
             json!({"team_id": value.team_id, "bot_user_id": value.bot_user_id})
@@ -229,15 +240,25 @@ async fn list(state: HandlerState, context: WorkspaceContext, provider: Provider
         Ok(value) => value,
         Err(response) => return response,
     };
-    match channel::list_channel_installations_by_workspace(&state.pool, workspace_id, provider.channel_type()).await {
+    match channel::list_channel_installations_by_workspace(
+        &state.pool,
+        workspace_id,
+        provider.channel_type(),
+    )
+    .await
+    {
         Ok(rows) => Json(json!({
             "installations": rows.into_iter().map(|row| installation_response(provider, row)).collect::<Vec<_>>(),
             "configured": true,
             "install_supported": true,
-        })).into_response(),
+        }))
+        .into_response(),
         Err(error) => {
             tracing::error!(%error, provider = provider.label(), "list connector installations failed");
-            error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to list installations")
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list installations",
+            )
         }
     }
 }
@@ -252,11 +273,113 @@ macro_rules! list_handler {
         }
     };
 }
-list_handler!(list_dingtalk, Provider::DingTalk);
 list_handler!(list_lark, Provider::Lark);
 list_handler!(list_slack, Provider::Slack);
 list_handler!(list_telegram, Provider::Telegram);
 list_handler!(list_wecom, Provider::WeCom);
+
+async fn list_dingtalk(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    if secret_box(Provider::DingTalk).is_none() {
+        return Json(json!({
+            "installations": [],
+            "configured": false,
+            "install_supported": false,
+            "group_routing_supported": false,
+        }))
+        .into_response();
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let rows = match channel::list_channel_installations_by_workspace(
+        &state.pool,
+        workspace_id,
+        Provider::DingTalk.channel_type(),
+    )
+    .await
+    {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::error!(%error, "list DingTalk installations failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list installations",
+            );
+        }
+    };
+    let bindings = if matches!(context.member.role.as_str(), "owner" | "admin") {
+        match dingtalk::list_ding_talk_user_bindings_for_member(
+            &state.pool,
+            workspace_id,
+            context.member.user_id,
+        )
+        .await
+        {
+            Ok(rows) => {
+                let mut by_installation = HashMap::<Uuid, Vec<String>>::new();
+                for row in rows {
+                    if let Some(installation_id) = row.installation_id {
+                        by_installation
+                            .entry(installation_id)
+                            .or_default()
+                            .push(row.channel_user_id);
+                    }
+                }
+                Some(by_installation)
+            }
+            Err(error) => {
+                tracing::error!(%error, "list DingTalk member bindings failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to list dingtalk user bindings",
+                );
+            }
+        }
+    } else {
+        None
+    };
+    let installations = rows
+        .into_iter()
+        .map(|row| dingtalk_installation_response(row, bindings.as_ref()))
+        .collect::<Vec<_>>();
+    Json(json!({
+        "installations": installations,
+        "configured": true,
+        "install_supported": true,
+        "group_routing_supported": true,
+    }))
+    .into_response()
+}
+
+fn dingtalk_installation_response(
+    row: ChannelInstallation,
+    bindings: Option<&HashMap<Uuid, Vec<String>>>,
+) -> Value {
+    let installation_id = row.id;
+    dingtalk_installation_bindings(
+        installation_response(Provider::DingTalk, row),
+        installation_id,
+        bindings,
+    )
+}
+
+fn dingtalk_installation_bindings(
+    mut value: Value,
+    installation_id: Uuid,
+    bindings: Option<&HashMap<Uuid, Vec<String>>>,
+) -> Value {
+    if let (Some(target), Some(bindings)) = (value.as_object_mut(), bindings) {
+        target.insert(
+            "bound_dingtalk_user_ids".into(),
+            json!(bindings.get(&installation_id).cloned().unwrap_or_default()),
+        );
+    }
+    value
+}
 
 #[derive(Clone)]
 struct LarkSession {
@@ -267,6 +390,40 @@ struct LarkSession {
     error_reason: Option<String>,
     error_message: Option<String>,
     expires_at: Instant,
+}
+
+struct LarkRegistrationRuntime {
+    pool: sqlx::PgPool,
+    bus: Arc<cordy_events::Bus>,
+    http_base_url: String,
+    cancel: CancellationToken,
+}
+
+fn can_manage_lark_agent(role: &str, owner_id: Option<Uuid>, actor: Uuid) -> bool {
+    matches!(role, "owner" | "admin") || owner_id == Some(actor)
+}
+
+async fn lark_finalize_authorized(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    workspace_id: Uuid,
+    agent_id: Uuid,
+    actor: Uuid,
+) -> anyhow::Result<bool> {
+    let current = sqlx::query_as::<_, (String, Option<Uuid>)>(
+        r#"SELECT m.role, a.owner_id
+FROM member m
+JOIN agent a ON a.id = $3 AND a.workspace_id = m.workspace_id AND a.kind = 'user'
+WHERE m.workspace_id = $1 AND m.user_id = $2
+FOR SHARE OF m, a"#,
+    )
+    .bind(workspace_id)
+    .bind(actor)
+    .bind(agent_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(current.is_some_and(|(role, owner_id)| {
+        can_manage_lark_agent(&role, owner_id, actor)
+    }))
 }
 
 fn lark_sessions() -> &'static Mutex<HashMap<String, LarkSession>> {
@@ -317,7 +474,19 @@ async fn begin_lark_install(
         format!("{} - Cordy", target.name.trim())
     };
     let client = Arc::new(cordy_lark::registration::RegistrationClient::new(
-        cordy_lark::registration::RegistrationConfig::default(),
+        cordy_lark::registration::RegistrationConfig {
+            domain: state
+                .integrations
+                .lark_registration_domain
+                .clone()
+                .unwrap_or_default(),
+            lark_domain: state
+                .integrations
+                .lark_registration_lark_domain
+                .clone()
+                .unwrap_or_default(),
+            ..Default::default()
+        },
     ));
     let begun = match client.begin(&preset, region).await {
         Ok(value) => value,
@@ -349,23 +518,41 @@ async fn begin_lark_install(
     let task_session = session_id.clone();
     let poll_interval = begun.interval.as_secs().max(1);
     let expires = begun.expires_in;
-    tokio::spawn(run_lark_registration(
-        state,
+    let runtime = LarkRegistrationRuntime {
+        pool: state.pool.clone(),
+        bus: state.bus.clone(),
+        http_base_url: state
+            .integrations
+            .lark_http_base_url
+            .clone()
+            .unwrap_or_default(),
+        cancel: state.channel_cancel.clone(),
+    };
+    if !state.channel_tasks.spawn(run_lark_registration(
+        runtime,
         client,
         task_session,
         (workspace_id, agent_id, actor),
         region,
         begun.clone(),
-    ));
-    Json(
-        json!({"session_id": session_id, "qr_code_url": begun.qr_code_url,
-        "expires_in_seconds": expires.as_secs(), "poll_interval_seconds": poll_interval}),
-    )
+    )) {
+        lark_sessions().lock().unwrap().remove(&session_id);
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "channel runtime is shutting down",
+        );
+    }
+    Json(json!({
+        "session_id": session_id,
+        "qr_code_url": begun.qr_code_url,
+        "expires_in_seconds": expires.as_secs(),
+        "poll_interval_seconds": poll_interval
+    }))
     .into_response()
 }
 
 async fn run_lark_registration(
-    state: HandlerState,
+    runtime: LarkRegistrationRuntime,
     client: Arc<cordy_lark::registration::RegistrationClient>,
     session_id: String,
     identity: (Uuid, Uuid, Uuid),
@@ -377,6 +564,9 @@ async fn run_lark_registration(
     let mut domain = begun.domain;
     let mut interval = begun.interval.max(std::time::Duration::from_secs(1));
     loop {
+        if runtime.cancel.is_cancelled() {
+            return;
+        }
         if tokio::time::Instant::now() >= deadline {
             finish_lark_session(
                 &session_id,
@@ -386,17 +576,32 @@ async fn run_lark_registration(
             );
             return;
         }
-        tokio::time::sleep(interval).await;
-        let result = match client.poll(&domain, &begun.device_code).await {
+        tokio::select! {
+            _ = runtime.cancel.cancelled() => return,
+            _ = tokio::time::sleep(interval) => {}
+        }
+        let poll = tokio::select! {
+            _ = runtime.cancel.cancelled() => return,
+            result = client.poll(&domain, &begun.device_code) => result,
+        };
+        let result = match poll {
             Ok(value) => value,
-            Err(error) => {
+            Err(error) if lark_poll_protocol_error(&error) => {
                 finish_lark_session(
                     &session_id,
                     None,
-                    Some("poll_failed"),
+                    Some("lark_protocol_error"),
                     Some(&format!("{error:#}")),
                 );
                 return;
+            }
+            Err(error) => {
+                tracing::warn!(
+                    session_id = %session_id,
+                    %error,
+                    "Lark registration transport error; retrying"
+                );
+                continue;
             }
         };
         if !result.switched_domain.is_empty() {
@@ -424,7 +629,7 @@ async fn run_lark_registration(
         }
         let api = cordy_lark::http_client::HttpApiClient::new(
             cordy_lark::http_client::HttpClientConfig {
-                base_url: std::env::var("CORDY_LARK_HTTP_BASE_URL").unwrap_or_default(),
+                base_url: runtime.http_base_url.clone(),
                 ..Default::default()
             },
         );
@@ -470,77 +675,132 @@ async fn run_lark_registration(
                 return;
             }
         };
-        let mut tx = match state.pool.begin().await {
+        let mut tx = match runtime.pool.begin().await {
             Ok(value) => value,
             Err(error) => {
                 finish_lark_session(
                     &session_id,
                     None,
-                    Some("persist_failed"),
+                    Some("internal_error"),
                     Some(&error.to_string()),
                 );
                 return;
             }
         };
-        let persisted = async {
-            cordy_lark::channel_store::reclaim_dead_installation_with(
-                &mut *tx,
+        let authorized =
+            match lark_finalize_authorized(&mut tx, workspace_id, agent_id, actor).await {
+                Ok(authorized) => authorized,
+                Err(error) => {
+                    let _ = tx.rollback().await;
+                    finish_lark_session(
+                        &session_id,
+                        None,
+                        Some("internal_error"),
+                        Some(&error.to_string()),
+                    );
+                    return;
+                }
+            };
+        if !authorized {
+            let _ = tx.rollback().await;
+            finish_lark_session(
+                &session_id,
+                None,
+                Some("authorization_revoked"),
+                Some("workspace membership or agent-management permission changed"),
+            );
+            return;
+        }
+        let app_id = result.client_id.clone();
+        if let Err(error) = cordy_lark::channel_store::reclaim_dead_installation_with(
+            &mut *tx,
+            workspace_id,
+            agent_id,
+            &app_id,
+        )
+        .await
+        {
+            let _ = tx.rollback().await;
+            finish_lark_session(
+                &session_id,
+                None,
+                Some("internal_error"),
+                Some(&format!("{error:#}")),
+            );
+            return;
+        }
+        let installation = match cordy_lark::channel_store::upsert_lark_installation_with(
+            &mut *tx,
+            cordy_lark::params::UpsertInstallationParams {
                 workspace_id,
                 agent_id,
-                &result.client_id,
-            )
-            .await?;
-            let installation = cordy_lark::channel_store::upsert_lark_installation_with(
-                &mut *tx,
-                cordy_lark::params::UpsertInstallationParams {
-                    workspace_id,
-                    agent_id,
-                    app_id: result.client_id,
-                    app_secret_encrypted: sealed,
-                    bot_open_id: bot.open_id.0,
-                    installer_user_id: actor,
-                    tenant_key: None,
-                    bot_union_id: (!bot.union_id.is_empty()).then_some(bot.union_id),
-                    region: region.as_str().into(),
-                },
-            )
-            .await?;
-            cordy_lark::channel_store::create_lark_user_binding_with(
-                &mut *tx,
-                cordy_lark::params::CreateUserBindingParams {
-                    workspace_id,
-                    cordy_user_id: actor,
-                    installation_id: installation.id,
-                    channel_user_id: result.open_id.0,
-                    union_id: None,
-                },
-            )
-            .await?;
-            Ok::<_, anyhow::Error>(installation)
-        }
-        .await;
-        let installation = match persisted {
-            Ok(value) if tx.commit().await.is_ok() => value,
-            Ok(_) => {
-                finish_lark_session(
-                    &session_id,
-                    None,
-                    Some("persist_failed"),
-                    Some("failed to commit installation"),
-                );
-                return;
-            }
+                app_id: app_id.clone(),
+                app_secret_encrypted: sealed,
+                bot_open_id: bot.open_id.0,
+                installer_user_id: actor,
+                tenant_key: None,
+                bot_union_id: (!bot.union_id.is_empty()).then_some(bot.union_id),
+                region: region.as_str().into(),
+            },
+        )
+        .await
+        {
+            Ok(value) => value,
             Err(error) => {
-                finish_lark_session(
-                    &session_id,
-                    None,
-                    Some("persist_failed"),
-                    Some(&format!("{error:#}")),
-                );
+                let is_conflict = cordy_lark::channel_store::is_unique_violation(&error);
+                let _ = tx.rollback().await;
+                if is_conflict {
+                    let message =
+                        lark_live_owner_conflict_message(&runtime.pool, workspace_id, &app_id)
+                            .await;
+                    finish_lark_session(
+                        &session_id,
+                        None,
+                        Some("installation_conflict"),
+                        Some(&message),
+                    );
+                } else {
+                    finish_lark_session(
+                        &session_id,
+                        None,
+                        Some("internal_error"),
+                        Some(&format!("{error:#}")),
+                    );
+                }
                 return;
             }
         };
-        state.bus.publish(&cordy_events::Event {
+        if let Err(error) = cordy_lark::channel_store::create_lark_user_binding_with(
+            &mut *tx,
+            cordy_lark::params::CreateUserBindingParams {
+                workspace_id,
+                cordy_user_id: actor,
+                installation_id: installation.id,
+                channel_user_id: result.open_id.0,
+                union_id: None,
+            },
+        )
+        .await
+        {
+            let _ = tx.rollback().await;
+            finish_lark_session(
+                &session_id,
+                None,
+                Some("installer_bind_failed"),
+                Some(&format!("{error:#}")),
+            );
+            return;
+        }
+        if let Err(error) = tx.commit().await {
+            finish_lark_session(
+                &session_id,
+                None,
+                Some("internal_error"),
+                Some(&format!("{error:#}")),
+            );
+            return;
+        }
+        runtime.bus.publish(&cordy_events::Event {
             event_type: cordy_protocol::EVENT_LARK_INSTALLATION_CREATED.into(),
             workspace_id: workspace_id.to_string(),
             actor_type: "system".into(),
@@ -550,6 +810,46 @@ async fn run_lark_registration(
         finish_lark_session(&session_id, Some(installation.id), None, None);
         return;
     }
+}
+
+fn lark_poll_protocol_error(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<cordy_lark::registration::RegistrationError>()
+        .is_some()
+}
+
+async fn lark_live_owner_conflict_message(
+    pool: &sqlx::PgPool,
+    requesting_workspace_id: Uuid,
+    app_id: &str,
+) -> String {
+    let owner = cordy_lark::channel_store::ChannelStore::new(pool.clone())
+        .installation_owner_by_app_id(app_id)
+        .await
+        .ok()
+        .flatten();
+    lark_owner_conflict_message(requesting_workspace_id, owner.as_ref())
+}
+
+fn lark_owner_conflict_message(
+    requesting_workspace_id: Uuid,
+    owner: Option<&cordy_db::queries::channel::GetChannelInstallationOwnerByAppIDRow>,
+) -> String {
+    match owner {
+        Some(owner) if owner.workspace_id != Some(requesting_workspace_id) => {
+            "This Feishu app is already connected to a different Cordy workspace. Disconnect it there before connecting it here."
+        }
+        Some(owner) if owner.agent_archived_at.is_some() => {
+            "This Feishu app is connected to an archived agent in this workspace. Restore that agent, or disconnect its bot, before connecting it here."
+        }
+        Some(_) => {
+            "This Feishu app is already connected to another agent in this workspace. Disconnect it there first, then connect it here."
+        }
+        None => {
+            "This Feishu app is already connected to another agent. Disconnect it there first, then connect it here."
+        }
+    }
+    .into()
 }
 
 fn finish_lark_session(
@@ -594,10 +894,12 @@ async fn lark_install_status(
     if session.initiator_id != actor && !matches!(context.member.role.as_str(), "owner" | "admin") {
         return error_response(StatusCode::NOT_FOUND, "install session not found");
     }
-    Json(
-        json!({"status": session.status, "installation_id": session.installation_id,
-        "error_reason": session.error_reason, "error_message": session.error_message}),
-    )
+    Json(json!({
+        "status": session.status,
+        "installation_id": session.installation_id,
+        "error_reason": session.error_reason,
+        "error_message": session.error_message
+    }))
     .into_response()
 }
 
@@ -696,7 +998,7 @@ async fn update_dingtalk_group_route(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to update dingtalk group route",
-            )
+            );
         }
     };
     state.bus.publish(&cordy_events::Event {
@@ -707,10 +1009,17 @@ async fn update_dingtalk_group_route(
         payload: json!({"id": route_id}),
         ..Default::default()
     });
-    Json(json!({"id": row.id, "workspace_id": row.workspace_id, "installation_id": row.installation_id,
-        "conversation_id": row.conversation_id, "conversation_title": row.conversation_title,
-        "agent_id": row.agent_id, "discovered_at": row.discovered_at.map(crate::timefmt::rfc3339),
-        "updated_at": row.updated_at.map(crate::timefmt::rfc3339)})).into_response()
+    Json(json!({
+        "id": row.id,
+        "workspace_id": row.workspace_id,
+        "installation_id": row.installation_id,
+        "conversation_id": row.conversation_id,
+        "conversation_title": row.conversation_title,
+        "agent_id": row.agent_id,
+        "discovered_at": row.discovered_at.map(crate::timefmt::rfc3339),
+        "updated_at": row.updated_at.map(crate::timefmt::rfc3339)
+    }))
+    .into_response()
 }
 
 async fn revoke(
@@ -752,13 +1061,16 @@ async fn revoke(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to load installation",
-            )
+            );
         }
     };
     if matches!(provider, Provider::Lark)
         && !matches!(context.member.role.as_str(), "owner" | "admin")
     {
-        let owns_agent = matches!(agent::get_agent_in_workspace(&state.pool, installation.agent_id, workspace_id).await, Ok(Some(value)) if value.owner_id == Some(actor));
+        let owns_agent = matches!(
+            agent::get_agent_in_workspace(&state.pool, installation.agent_id, workspace_id).await,
+            Ok(Some(value)) if value.owner_id == Some(actor)
+        );
         if !owns_agent {
             return error_response(StatusCode::FORBIDDEN, "not allowed to manage this agent");
         }
@@ -864,8 +1176,45 @@ fn publish_created(
 
 #[derive(Deserialize)]
 struct DingTalkBody {
-    app_key: String,
-    app_secret: String,
+    #[serde(alias = "app_key")]
+    client_id: String,
+    #[serde(alias = "app_secret")]
+    client_secret: String,
+}
+
+fn dingtalk_install_error(error: &anyhow::Error) -> (StatusCode, String) {
+    use cordy_dingtalk::byo_install::ByoError;
+    use cordy_dingtalk::install::InstallError;
+
+    match error.downcast_ref::<ByoError>() {
+        Some(ByoError::InvalidAppKey | ByoError::InvalidAppSecret) => {
+            (StatusCode::BAD_REQUEST, error.to_string())
+        }
+        Some(ByoError::CredentialValidation(_)) => (
+            StatusCode::BAD_REQUEST,
+            "could not verify the DingTalk credentials — check the AppKey (client id) and AppSecret (client secret), and that the robot is a Stream-mode robot in your organization".into(),
+        ),
+        Some(ByoError::Install(InstallError::RobotOwnedBySameWorkspace)) => (
+            StatusCode::CONFLICT,
+            "this DingTalk robot is already connected to another agent in this workspace — disconnect it there first, then connect it here".into(),
+        ),
+        Some(ByoError::Install(InstallError::RobotOwnedByArchivedAgent)) => (
+            StatusCode::CONFLICT,
+            "this DingTalk robot is connected to an archived agent in this workspace — restore that agent, or disconnect its robot, before connecting it here".into(),
+        ),
+        Some(ByoError::Install(InstallError::RobotOwnedByAnotherWorkspace)) => (
+            StatusCode::CONFLICT,
+            "this DingTalk robot is already connected to a different Cordy workspace — disconnect it there before connecting it here".into(),
+        ),
+        Some(ByoError::Install(InstallError::InstallationNotFound)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "could not connect the DingTalk robot".into(),
+        ),
+        None => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "could not connect the DingTalk robot".into(),
+        ),
+    }
 }
 
 async fn install_dingtalk(
@@ -901,8 +1250,8 @@ async fn install_dingtalk(
             workspace_id,
             agent_id,
             initiator_id: actor,
-            app_key: input.app_key,
-            app_secret: input.app_secret,
+            app_key: input.client_id,
+            app_secret: input.client_secret,
         })
         .await
     {
@@ -912,10 +1261,8 @@ async fn install_dingtalk(
         }
         Err(error) => {
             tracing::warn!(error = %error, "DingTalk installation rejected");
-            error_response(
-                StatusCode::BAD_REQUEST,
-                "could not verify the DingTalk credentials",
-            )
+            let (status, message) = dingtalk_install_error(&error);
+            error_response(status, &message)
         }
     }
 }
@@ -980,29 +1327,106 @@ async fn install_wecom(
                     return error_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "failed to load installation",
-                    )
+                    );
                 }
             };
             publish_created(&state, Provider::WeCom, &row, actor);
             Json(installation_response(Provider::WeCom, row)).into_response()
         }
         Err(error) => {
-            let status = if error
-                .downcast_ref::<cordy_wecom::installation::InvalidInstallationParams>()
-                .is_some()
-                || cordy_wecom::credential_probe::is_credentials_rejected(&error)
-            {
-                StatusCode::BAD_REQUEST
-            } else if cordy_wecom::credential_probe::is_credentials_unverifiable(&error) {
-                StatusCode::SERVICE_UNAVAILABLE
-            } else if cordy_wecom::installation::as_bot_ownership_error(&error).is_some() {
-                StatusCode::CONFLICT
-            } else {
-                StatusCode::INTERNAL_SERVER_ERROR
-            };
-            tracing::warn!(error = %error, "WeCom installation failed");
-            error_response(status, "could not connect the WeCom bot")
+            let failure = classify_wecom_install_error(&error);
+            match failure.log {
+                WecomInstallLog::None => {}
+                WecomInstallLog::Warn => tracing::warn!(
+                    %error,
+                    %workspace_id,
+                    %agent_id,
+                    "WeCom installation could not verify the bot"
+                ),
+                WecomInstallLog::Error => tracing::error!(
+                    %error,
+                    %workspace_id,
+                    %agent_id,
+                    "WeCom installation failed"
+                ),
+            }
+            error_code_response(failure.status, failure.code, failure.message)
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WecomInstallLog {
+    None,
+    Warn,
+    Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WecomInstallFailure {
+    status: StatusCode,
+    code: &'static str,
+    message: &'static str,
+    log: WecomInstallLog,
+}
+
+fn classify_wecom_install_error(error: &anyhow::Error) -> WecomInstallFailure {
+    use cordy_wecom::installation::BotOwnershipError;
+
+    let (status, code, message, log) =
+        match cordy_wecom::installation::as_bot_ownership_error(error) {
+            Some(BotOwnershipError::SameWorkspace) => (
+                StatusCode::CONFLICT,
+                "wecom_bot_owned_by_same_workspace",
+                "this bot is already connected to another agent in this workspace — disconnect it there first, then connect it here",
+                WecomInstallLog::None,
+            ),
+            Some(BotOwnershipError::ArchivedAgent) => (
+                StatusCode::CONFLICT,
+                "wecom_bot_owned_by_archived_agent",
+                "this bot is connected to an archived agent in this workspace — restore that agent, or disconnect its bot, before connecting it here",
+                WecomInstallLog::None,
+            ),
+            Some(BotOwnershipError::AnotherWorkspace) => (
+                StatusCode::CONFLICT,
+                "wecom_bot_owned_by_another_workspace",
+                "this bot is already connected to a different Cordy workspace — disconnect it there before connecting it here",
+                WecomInstallLog::None,
+            ),
+            None if error.chain().any(|cause| {
+                cause
+                    .downcast_ref::<cordy_wecom::installation::InvalidInstallationParams>()
+                    .is_some()
+            }) => (
+                StatusCode::BAD_REQUEST,
+                "wecom_install_rejected",
+                "could not connect the WeCom bot — check the Bot ID and secret from the WeCom admin console, and that the bot is a smart bot with the long connection enabled",
+                WecomInstallLog::None,
+            ),
+            None if cordy_wecom::credential_probe::is_credentials_rejected(error) => (
+                StatusCode::BAD_REQUEST,
+                "wecom_credentials_rejected",
+                "WeCom rejected this Bot ID and secret — check both on the WeCom admin console, and that the bot is a smart bot with the long connection enabled",
+                WecomInstallLog::None,
+            ),
+            None if cordy_wecom::credential_probe::is_credentials_unverifiable(error) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "wecom_credentials_unverifiable",
+                "could not reach WeCom to verify this bot — the credentials were not changed; try again in a moment",
+                WecomInstallLog::Warn,
+            ),
+            None => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "wecom_install_failed",
+                "could not save this bot — something went wrong on our side. Your credentials were not changed; please try again, and contact support if it keeps failing",
+                WecomInstallLog::Error,
+            ),
+        };
+    WecomInstallFailure {
+        status,
+        code,
+        message,
+        log,
     }
 }
 
@@ -1040,37 +1464,36 @@ async fn install_telegram(
             return error_response(
                 StatusCode::BAD_REQUEST,
                 "telegram: bot token must look like 123456:ABC-DEF…",
-            )
+            );
         }
     };
     let api = cordy_telegram::BotApi::new("", token);
     let me = match api.get_me().await {
         Ok(value) if value.is_bot && !value.username.is_empty() => value,
         Ok(_) => {
-            return error_response(StatusCode::BAD_REQUEST, "Telegram rejected this bot token")
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "Telegram rejected this bot token — generate a current token in @BotFather and try again",
+            );
         }
         Err(error) => {
+            let failure = classify_telegram_verification_error(&error);
             tracing::warn!(%error, "Telegram credential verification failed");
-            return error_response(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "could not reach Telegram to verify this bot",
-            );
+            return error_response(failure.status, failure.message);
         }
     };
     match api.get_webhook_info().await {
         Ok(value) if !value.url.is_empty() => {
             return error_response(
                 StatusCode::BAD_REQUEST,
-                "this Telegram bot has a webhook configured",
-            )
+                "this Telegram bot has a webhook configured — remove the webhook before connecting it with long polling",
+            );
         }
         Ok(_) => {}
         Err(error) => {
+            let failure = classify_telegram_verification_error(&error);
             tracing::warn!(%error, "Telegram webhook verification failed");
-            return error_response(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "could not reach Telegram to verify this bot",
-            );
+            return error_response(failure.status, failure.message);
         }
     }
     let sealed = match box_.seal(token.as_bytes()) {
@@ -1079,26 +1502,101 @@ async fn install_telegram(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to encrypt bot token",
-            )
+            );
         }
     };
-    let config = json!({"app_id": bot_id, "bot_username": me.username, "bot_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed)});
-    match persist(
-        &state,
-        Provider::Telegram,
+    let config = json!({
+        "app_id": bot_id,
+        "bot_username": me.username,
+        "bot_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed)
+    });
+    let persist = match cordy_telegram::install::InstallPersist::new(
         workspace_id,
         agent_id,
         actor,
-        &bot_id,
-        &config,
-    )
-    .await
+        bot_id,
+        config,
+    ) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(%error, "failed to compose Telegram installation");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to save Telegram installation",
+            );
+        }
+    };
+    match cordy_telegram::install::InstallService::new(state.pool.clone())
+        .persist_install(&persist)
+        .await
     {
         Ok(row) => {
             publish_created(&state, Provider::Telegram, &row, actor);
             Json(installation_response(Provider::Telegram, row)).into_response()
         }
-        Err(response) => response,
+        Err(error) => {
+            let failure = classify_telegram_install_persist_error(&error);
+            if failure.status == StatusCode::INTERNAL_SERVER_ERROR {
+                tracing::error!(%error, %workspace_id, %agent_id, "Telegram installation persist failed");
+            }
+            error_response(failure.status, failure.message)
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TelegramVerificationFailure {
+    status: StatusCode,
+    message: &'static str,
+}
+
+fn classify_telegram_verification_error(error: &anyhow::Error) -> TelegramVerificationFailure {
+    let rejected = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<cordy_telegram::api::ApiError>())
+        .is_some_and(|api| api.code == StatusCode::UNAUTHORIZED.as_u16());
+    if rejected {
+        TelegramVerificationFailure {
+            status: StatusCode::BAD_REQUEST,
+            message: "Telegram rejected this bot token — generate a current token in @BotFather and try again",
+        }
+    } else {
+        TelegramVerificationFailure {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            message: "could not reach Telegram to verify this bot — check the server network or proxy and try again; the token was not saved",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TelegramInstallPersistFailure {
+    status: StatusCode,
+    message: &'static str,
+}
+
+fn classify_telegram_install_persist_error(error: &anyhow::Error) -> TelegramInstallPersistFailure {
+    use cordy_telegram::install::InstallError;
+
+    match error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<InstallError>())
+    {
+        Some(InstallError::BotOwnedBySameWorkspace) => TelegramInstallPersistFailure {
+            status: StatusCode::CONFLICT,
+            message: "this Telegram bot is already connected to another agent in this workspace — disconnect it there first, then connect it here",
+        },
+        Some(InstallError::BotOwnedByArchivedAgent) => TelegramInstallPersistFailure {
+            status: StatusCode::CONFLICT,
+            message: "this Telegram bot is connected to an archived agent in this workspace — restore that agent, or disconnect its bot, before connecting it here",
+        },
+        Some(InstallError::BotOwnedByAnotherWorkspace) => TelegramInstallPersistFailure {
+            status: StatusCode::CONFLICT,
+            message: "this Telegram bot is already connected to a different Cordy workspace — disconnect it there before connecting it here",
+        },
+        None => TelegramInstallPersistFailure {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "could not save this Telegram bot — something went wrong on the server; the token was not saved",
+        },
     }
 }
 
@@ -1197,7 +1695,7 @@ async fn install_slack(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to initialize Slack verification",
-            )
+            );
         }
     };
     let auth = match slack_call(&client, "auth.test", bot_token, &[]).await {
@@ -1209,7 +1707,7 @@ async fn install_slack(
             value
         }
         Ok(_) | Err(_) => {
-            return error_response(StatusCode::BAD_REQUEST, "could not verify the Slack tokens")
+            return error_response(StatusCode::BAD_REQUEST, "could not verify the Slack tokens");
         }
     };
     let bot = match slack_call(
@@ -1222,7 +1720,7 @@ async fn install_slack(
     {
         Ok(value) => value,
         Err(_) => {
-            return error_response(StatusCode::BAD_REQUEST, "could not verify the Slack tokens")
+            return error_response(StatusCode::BAD_REQUEST, "could not verify the Slack tokens");
         }
     };
     if bot.bot.app_id != app_id {
@@ -1243,7 +1741,7 @@ async fn install_slack(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to encrypt Slack token",
-            )
+            );
         }
     };
     let sealed_app = match box_.seal(app_token.as_bytes()) {
@@ -1252,95 +1750,79 @@ async fn install_slack(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to encrypt Slack token",
-            )
+            );
         }
     };
-    let config = json!({"app_id": app_id, "team_id": auth.team_id, "bot_user_id": auth.user_id, "bot_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed_bot), "app_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed_app)});
-    match persist(
-        &state,
-        Provider::Slack,
+    let config = json!({
+        "app_id": app_id,
+        "team_id": auth.team_id,
+        "bot_user_id": auth.user_id,
+        "bot_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed_bot),
+        "app_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed_app)
+    });
+    let persist = match cordy_slack::install::InstallPersist::from_config(
         workspace_id,
         agent_id,
         actor,
-        app_id,
-        &config,
-    )
-    .await
+        config,
+    ) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(%error, "failed to compose Slack installation");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to save Slack installation",
+            );
+        }
+    };
+    match cordy_slack::install::InstallService::new(state.pool.clone())
+        .persist_install(&persist)
+        .await
     {
         Ok(row) => {
             publish_created(&state, Provider::Slack, &row, actor);
             Json(installation_response(Provider::Slack, row)).into_response()
         }
-        Err(response) => response,
+        Err(error) => {
+            let failure = classify_slack_install_persist_error(&error);
+            if failure.status == StatusCode::INTERNAL_SERVER_ERROR {
+                tracing::error!(%error, %workspace_id, %agent_id, "Slack installation persist failed");
+            }
+            error_response(failure.status, failure.message)
+        }
     }
 }
 
-async fn persist(
-    state: &HandlerState,
-    provider: Provider,
-    workspace_id: Uuid,
-    agent_id: Uuid,
-    actor: Uuid,
-    app_id: &str,
-    config: &Value,
-) -> Result<ChannelInstallation, Response> {
-    let mut tx = state.pool.begin().await.map_err(|_| {
-        error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to start install")
-    })?;
-    channel::reclaim_dead_channel_installation_by_app_id(
-        &mut *tx,
-        provider.channel_type(),
-        app_id,
-        workspace_id,
-        agent_id,
-    )
-    .await
-    .map_err(|_| {
-        error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to prepare installation",
-        )
-    })?;
-    let row = channel::upsert_channel_installation(
-        &mut *tx,
-        workspace_id,
-        agent_id,
-        provider.channel_type(),
-        config,
-        actor,
-    )
-    .await
-    .map_err(|error| {
-        if error.chain().any(|cause| {
-            cause
-                .downcast_ref::<sqlx::Error>()
-                .and_then(sqlx::Error::as_database_error)
-                .is_some_and(|db| db.code().as_deref() == Some("23505"))
-        }) {
-            error_response(
-                StatusCode::CONFLICT,
-                "this bot is already connected to another agent or workspace",
-            )
-        } else {
-            error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to save installation",
-            )
-        }
-    })?
-    .ok_or_else(|| {
-        error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to save installation",
-        )
-    })?;
-    tx.commit().await.map_err(|_| {
-        error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to finish install",
-        )
-    })?;
-    Ok(row)
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct SlackInstallPersistFailure {
+    status: StatusCode,
+    message: &'static str,
+}
+
+fn classify_slack_install_persist_error(error: &anyhow::Error) -> SlackInstallPersistFailure {
+    use cordy_slack::install::InstallError;
+
+    let ownership = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<InstallError>());
+    match ownership {
+        Some(InstallError::TeamOwnedBySameWorkspace) => SlackInstallPersistFailure {
+            status: StatusCode::CONFLICT,
+            message: "this Slack app is already connected to another agent in this workspace — disconnect it there first, then connect it here",
+        },
+        Some(InstallError::TeamOwnedByArchivedAgent) => SlackInstallPersistFailure {
+            status: StatusCode::CONFLICT,
+            message: "this Slack app is connected to an archived agent in this workspace — restore that agent, or disconnect its bot, before connecting it here",
+        },
+        Some(InstallError::TeamOwnedByAnotherWorkspace) => SlackInstallPersistFailure {
+            status: StatusCode::CONFLICT,
+            message: "this Slack app is already connected to a different Cordy workspace — disconnect it there before connecting it here",
+        },
+        Some(InstallError::InstallationNotFound) | None => SlackInstallPersistFailure {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "failed to save Slack installation",
+        },
+    }
 }
 
 #[cfg(test)]
@@ -1370,8 +1852,278 @@ mod tests {
     }
 
     #[test]
+    fn lark_public_projection_omits_absent_tenant_key() {
+        let without_tenant = public_config(
+            Provider::Lark,
+            &json!({"app_id":"cli_1", "bot_open_id":"ou_1", "region":"lark"}),
+        );
+        assert!(!without_tenant
+            .as_object()
+            .unwrap()
+            .contains_key("tenant_key"));
+
+        let with_tenant = public_config(
+            Provider::Lark,
+            &json!({"app_id":"cli_1", "tenant_key":"tenant-1"}),
+        );
+        assert_eq!(with_tenant["tenant_key"], "tenant-1");
+    }
+
+    #[test]
+    fn dingtalk_list_projection_scopes_member_bindings() {
+        let installation_id = Uuid::new_v4();
+        let mut bindings = HashMap::new();
+        bindings.insert(installation_id, vec!["staff-1001".into()]);
+
+        let admin = dingtalk_installation_bindings(
+            json!({"id": installation_id}),
+            installation_id,
+            Some(&bindings),
+        );
+        assert_eq!(admin["bound_dingtalk_user_ids"], json!(["staff-1001"]));
+
+        let member =
+            dingtalk_installation_bindings(json!({"id": installation_id}), installation_id, None);
+        assert!(member.get("bound_dingtalk_user_ids").is_none());
+    }
+
+    #[test]
     fn body_limit_is_enforced_before_deserialization() {
         assert!(decode_body::<TelegramBody>(&vec![b'x'; BODY_LIMIT + 1]).is_err());
+    }
+
+    #[test]
+    fn dingtalk_body_accepts_established_client_field_names() {
+        let parsed = decode_body::<DingTalkBody>(
+            br#"{"client_id":"ding-key","client_secret":"ding-secret"}"#,
+        )
+        .unwrap();
+        assert_eq!(parsed.client_id, "ding-key");
+        assert_eq!(parsed.client_secret, "ding-secret");
+
+        let legacy =
+            decode_body::<DingTalkBody>(br#"{"app_key":"old-key","app_secret":"old-secret"}"#)
+                .unwrap();
+        assert_eq!(legacy.client_id, "old-key");
+        assert_eq!(legacy.client_secret, "old-secret");
+    }
+
+    #[test]
+    fn lark_finalize_uses_current_management_authority() {
+        let actor = Uuid::now_v7();
+        let other = Uuid::now_v7();
+
+        assert!(can_manage_lark_agent("owner", Some(other), actor));
+        assert!(can_manage_lark_agent("admin", Some(other), actor));
+        assert!(can_manage_lark_agent("member", Some(actor), actor));
+        assert!(!can_manage_lark_agent("member", Some(other), actor));
+        assert!(!can_manage_lark_agent("member", None, actor));
+    }
+
+    #[test]
+    fn dingtalk_install_errors_preserve_client_and_server_classifications() {
+        use cordy_dingtalk::byo_install::ByoError;
+        use cordy_dingtalk::install::InstallError;
+
+        let conflict =
+            anyhow::Error::new(ByoError::Install(InstallError::RobotOwnedBySameWorkspace));
+        assert_eq!(dingtalk_install_error(&conflict).0, StatusCode::CONFLICT);
+
+        let credentials = anyhow::Error::new(ByoError::CredentialValidation("denied".into()));
+        assert_eq!(
+            dingtalk_install_error(&credentials).0,
+            StatusCode::BAD_REQUEST
+        );
+
+        let internal = anyhow::anyhow!("encrypt failed");
+        assert_eq!(
+            dingtalk_install_error(&internal).0,
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[test]
+    fn lark_install_conflicts_name_the_live_owner_scope() {
+        use chrono::Utc;
+        use cordy_db::queries::channel::GetChannelInstallationOwnerByAppIDRow;
+
+        let workspace_id = Uuid::new_v4();
+        let other_workspace_id = Uuid::new_v4();
+        let mut owner = GetChannelInstallationOwnerByAppIDRow {
+            workspace_id: Some(other_workspace_id),
+            agent_id: Some(Uuid::new_v4()),
+            agent_archived_at: None,
+        };
+        assert!(lark_owner_conflict_message(workspace_id, Some(&owner))
+            .contains("different Cordy workspace"));
+
+        owner.workspace_id = Some(workspace_id);
+        assert!(lark_owner_conflict_message(workspace_id, Some(&owner))
+            .contains("another agent in this workspace"));
+
+        owner.agent_archived_at = Some(Utc::now());
+        assert!(lark_owner_conflict_message(workspace_id, Some(&owner)).contains("archived agent"));
+
+        assert!(lark_owner_conflict_message(workspace_id, None).contains("another agent"));
+    }
+
+    #[test]
+    fn wecom_install_errors_preserve_recovery_semantics() {
+        use cordy_wecom::credential_probe::CredentialError;
+        use cordy_wecom::installation::{BotOwnershipError, InvalidInstallationParams};
+
+        let cases = [
+            (
+                anyhow::Error::new(BotOwnershipError::SameWorkspace),
+                StatusCode::CONFLICT,
+                "wecom_bot_owned_by_same_workspace",
+                WecomInstallLog::None,
+            ),
+            (
+                anyhow::Error::new(BotOwnershipError::ArchivedAgent),
+                StatusCode::CONFLICT,
+                "wecom_bot_owned_by_archived_agent",
+                WecomInstallLog::None,
+            ),
+            (
+                anyhow::Error::new(BotOwnershipError::AnotherWorkspace),
+                StatusCode::CONFLICT,
+                "wecom_bot_owned_by_another_workspace",
+                WecomInstallLog::None,
+            ),
+            (
+                anyhow::Error::new(InvalidInstallationParams("secret")),
+                StatusCode::BAD_REQUEST,
+                "wecom_install_rejected",
+                WecomInstallLog::None,
+            ),
+            (
+                anyhow::Error::new(CredentialError::Rejected {
+                    code: 40_001,
+                    msg: "invalid secret".into(),
+                }),
+                StatusCode::BAD_REQUEST,
+                "wecom_credentials_rejected",
+                WecomInstallLog::None,
+            ),
+            (
+                anyhow::Error::new(CredentialError::Unverifiable("timeout".into())),
+                StatusCode::SERVICE_UNAVAILABLE,
+                "wecom_credentials_unverifiable",
+                WecomInstallLog::Warn,
+            ),
+            (
+                anyhow::anyhow!("database unavailable"),
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "wecom_install_failed",
+                WecomInstallLog::Error,
+            ),
+        ];
+
+        for (error, status, code, log) in cases {
+            let failure = classify_wecom_install_error(&error);
+            assert_eq!(failure.status, status);
+            assert_eq!(failure.code, code);
+            assert_eq!(failure.log, log);
+            assert!(!failure.message.is_empty());
+        }
+    }
+
+    #[test]
+    fn telegram_verification_distinguishes_rejection_from_no_verdict() {
+        let rejected = anyhow::Error::new(cordy_telegram::api::ApiError {
+            code: StatusCode::UNAUTHORIZED.as_u16(),
+            description: "Unauthorized".into(),
+            retry_after: 0,
+        });
+        let rejected = classify_telegram_verification_error(&rejected);
+        assert_eq!(rejected.status, StatusCode::BAD_REQUEST);
+        assert!(rejected.message.contains("@BotFather"));
+
+        let unavailable = classify_telegram_verification_error(&anyhow::anyhow!(
+            "telegram: getMe request failed"
+        ));
+        assert_eq!(unavailable.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert!(unavailable.message.contains("token was not saved"));
+
+        let rate_limited = anyhow::Error::new(cordy_telegram::api::ApiError {
+            code: StatusCode::TOO_MANY_REQUESTS.as_u16(),
+            description: "Too Many Requests".into(),
+            retry_after: 1,
+        });
+        assert_eq!(
+            classify_telegram_verification_error(&rate_limited).status,
+            StatusCode::SERVICE_UNAVAILABLE
+        );
+    }
+
+    #[test]
+    fn telegram_persist_errors_preserve_owner_recovery_path() {
+        use cordy_telegram::install::InstallError;
+
+        let cases = [
+            (
+                InstallError::BotOwnedBySameWorkspace,
+                "another agent in this workspace",
+            ),
+            (
+                InstallError::BotOwnedByArchivedAgent,
+                "archived agent in this workspace",
+            ),
+            (
+                InstallError::BotOwnedByAnotherWorkspace,
+                "different Cordy workspace",
+            ),
+        ];
+        for (error, recovery_scope) in cases {
+            let failure = classify_telegram_install_persist_error(&anyhow::Error::new(error));
+            assert_eq!(failure.status, StatusCode::CONFLICT);
+            assert!(failure.message.contains(recovery_scope));
+        }
+
+        let internal = classify_telegram_install_persist_error(&anyhow::anyhow!("database down"));
+        assert_eq!(internal.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(internal.message.contains("token was not saved"));
+    }
+
+    #[test]
+    fn slack_persist_errors_preserve_owner_recovery_path() {
+        use cordy_slack::install::InstallError;
+
+        let cases = [
+            (
+                InstallError::TeamOwnedBySameWorkspace,
+                "another agent in this workspace",
+            ),
+            (
+                InstallError::TeamOwnedByArchivedAgent,
+                "archived agent in this workspace",
+            ),
+            (
+                InstallError::TeamOwnedByAnotherWorkspace,
+                "different Cordy workspace",
+            ),
+        ];
+        for (error, recovery_scope) in cases {
+            let failure = classify_slack_install_persist_error(&anyhow::Error::new(error));
+            assert_eq!(failure.status, StatusCode::CONFLICT);
+            assert!(failure.message.contains(recovery_scope));
+        }
+
+        let internal = classify_slack_install_persist_error(&anyhow::anyhow!("database down"));
+        assert_eq!(internal.status, StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[test]
+    fn lark_poll_errors_retry_only_transport_failures() {
+        let protocol = anyhow::Error::new(cordy_lark::registration::RegistrationError {
+            code: "http_502".into(),
+            description: "invalid response".into(),
+        });
+        assert!(lark_poll_protocol_error(&protocol));
+
+        let transport = anyhow::anyhow!("registration: http do: connection reset");
+        assert!(!lark_poll_protocol_error(&transport));
     }
 
     #[tokio::test]

@@ -9,9 +9,12 @@ license.workspace = true
 anyhow = { workspace = true }
 axum = { workspace = true, features = ["ws", "multipart"] }
 async-trait = { workspace = true }
+aws-config = { workspace = true }
+aws-credential-types = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
 chrono-tz = { workspace = true }
+crc32fast = { workspace = true }
 cordy-analytics = { path = "../cordy-analytics" }
 cordy-auth = { path = "../cordy-auth" }
 cordy-channel = { path = "../cordy-channel" }
@@ -29,6 +32,7 @@ cordy-metrics = { path = "../cordy-metrics" }
 cordy-plugincontract = { path = "../cordy-plugincontract" }
 cordy-protocol = { path = "../cordy-protocol" }
 cordy-realtime = { path = "../cordy-realtime" }
+cordy-redis = { path = "../cordy-redis" }
 cordy-remotemcp = { path = "../cordy-remotemcp" }
 cordy-service = { path = "../cordy-service" }
 cordy-slack = { path = "../cordy-slack" }
@@ -40,20 +44,23 @@ cordy-wecom = { path = "../cordy-wecom" }
 futures-util = { workspace = true }
 hex = { workspace = true }
 hmac = { workspace = true }
+http-body-util = { workspace = true }
 ipnetwork = { workspace = true }
 percent-encoding = { workspace = true }
 rand = { workspace = true }
 redis = { workspace = true }
 reqwest = { workspace = true }
 regex = { workspace = true }
+rsa = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }
 serde_yaml = { workspace = true }
+sha1 = { workspace = true }
 sha2 = { workspace = true }
 sqlx = { workspace = true }
 structured-email-address = { workspace = true }
 tokio = { workspace = true }
-tokio-util = { workspace = true }
+tokio-util = { workspace = true, features = ["io"] }
 tracing = { workspace = true }
 tower-http = { workspace = true }
 url = { workspace = true }
@@ -62,5 +69,4 @@ zip = { workspace = true }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
-http-body-util = { workspace = true }
 tempfile = { workspace = true }

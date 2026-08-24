@@ -26,6 +26,7 @@ use serde_json::Value;
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use cordy_channel::RuntimeTasks;
 use cordy_channel_engine::provenance::task_input_is_channel_ingested;
 use cordy_db::queries::agent::{get_agent, get_agent_task};
 use cordy_events::{Bus, Event};
@@ -398,13 +399,14 @@ impl LarkPatcher {
     /// early-return). Leaving task:completed unsubscribed also avoids the prior
     /// "Done." overwrite regression where the no-content payload would wipe the
     /// real reply.
-    pub fn register(self: &Arc<Self>, bus: &Bus) {
+    pub fn register(self: &Arc<Self>, bus: &Bus, tasks: Arc<RuntimeTasks>) {
         for event_type in [
             cordy_protocol::EVENT_TASK_FAILED,
             cordy_protocol::EVENT_CHAT_DONE,
             cordy_protocol::EVENT_TASK_CANCELLED,
         ] {
             let me = Arc::clone(self);
+            let tasks = tasks.clone();
             bus.subscribe(event_type, move |e: &Event| {
                 // Use a fresh budgeted context: bus delivery is synchronous so
                 // a stuck Lark HTTP call would otherwise wedge the whole
@@ -412,21 +414,23 @@ impl LarkPatcher {
                 // this workspace.
                 let me = Arc::clone(&me);
                 let e = e.clone();
-                tokio::spawn(async move {
+                tasks.spawn(async move {
                     let ctx = CancellationToken::new();
-                    let cancel = ctx.clone();
-                    tokio::spawn(async move {
-                        tokio::time::sleep(EVENT_BUDGET).await;
-                        cancel.cancel();
-                    });
-                    if let Err(err) = me.process_event(&ctx, &e).await {
-                        tracing::warn!(
+                    match tokio::time::timeout(EVENT_BUDGET, me.process_event(&ctx, &e)).await {
+                        Err(_) => tracing::warn!(
+                            event_type = %e.event_type,
+                            task_id = %e.task_id,
+                            chat_session_id = %e.chat_session_id,
+                            "lark patcher: event handling timed out"
+                        ),
+                        Ok(Err(err)) => tracing::warn!(
                             event_type = %e.event_type,
                             task_id = %e.task_id,
                             chat_session_id = %e.chat_session_id,
                             error = %err,
                             "lark patcher: event handling failed"
-                        );
+                        ),
+                        Ok(Ok(())) => {}
                     }
                 });
             });

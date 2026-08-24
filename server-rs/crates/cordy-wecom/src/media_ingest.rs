@@ -71,8 +71,9 @@ pub trait MediaStorage: Send + Sync {
 pub trait MediaStreamStorage: Send + Sync {
     async fn upload_stream(
         &self,
+        ctx: CancellationToken,
         key: &str,
-        data: Box<dyn std::io::Read + Send>,
+        data: Box<dyn tokio::io::AsyncRead + Send + Unpin>,
         size_bytes: i64,
         content_type: &str,
         filename: &str,
@@ -193,7 +194,7 @@ impl WecomMediaResolver {
     #[allow(clippy::too_many_arguments)]
     async fn ingest_streaming(
         &self,
-        _ctx: &CancellationToken,
+        ctx: &CancellationToken,
         streamer: &dyn MediaStreamStorage,
         wm: &WecomInboundMessage,
         index: usize,
@@ -223,8 +224,16 @@ impl WecomMediaResolver {
         let head = peek_file(&mut file, 512)?;
         let (filename, content_type) = describe_media(wm, index, m, &headers.filename, &head);
 
+        let file = tokio::fs::File::from_std(file);
         streamer
-            .upload_stream(key, Box::new(file), size, &content_type, &filename)
+            .upload_stream(
+                ctx.clone(),
+                key,
+                Box::new(file),
+                size,
+                &content_type,
+                &filename,
+            )
             .await
             .map_err(|e| anyhow::anyhow!("upload media: {e}"))?;
         Ok(MediaRef {

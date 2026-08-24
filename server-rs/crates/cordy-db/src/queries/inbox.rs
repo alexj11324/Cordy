@@ -210,11 +210,11 @@ pub async fn create_inbox_item(
     recipient_id: Uuid,
     type_: &str,
     severity: &str,
-    issue_id: Uuid,
+    issue_id: Option<Uuid>,
     title: &str,
     body: Option<&str>,
     actor_type: Option<&str>,
-    actor_id: Uuid,
+    actor_id: impl Into<Option<Uuid>>,
     details: &serde_json::Value,
     id: Uuid,
 ) -> anyhow::Result<Option<InboxItem>> {
@@ -235,7 +235,7 @@ RETURNING id, workspace_id, recipient_type, recipient_id, type, severity, issue_
         .bind(title)
         .bind(body)
         .bind(actor_type)
-        .bind(actor_id)
+        .bind(actor_id.into())
         .bind(details)
         .bind(id)
         .fetch_optional(executor)

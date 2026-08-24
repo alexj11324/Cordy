@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
 	"github.com/cordy-ai/cordy/server/internal/auth"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -115,6 +115,130 @@ func TestAuth_InvalidToken(t *testing.T) {
 	}
 }
 
+func TestIdentityProxyTrustConfigurationFailsClosed(t *testing.T) {
+	const marker = "0123456789abcdef0123456789abcdef"
+	for _, tc := range []struct {
+		name   string
+		cidrs  string
+		marker string
+	}{
+		{name: "missing CIDR", marker: marker},
+		{name: "missing marker", cidrs: "10.0.0.0/8"},
+		{name: "short marker", cidrs: "10.0.0.0/8", marker: "short"},
+		{name: "invalid CIDR", cidrs: "not-a-cidr", marker: marker},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := configuredIdentityProxyTrust(tc.cidrs, tc.marker); err == nil {
+				t.Fatal("expected invalid identity proxy trust configuration")
+			}
+		})
+	}
+
+	trust, err := configuredIdentityProxyTrust("10.0.0.0/8, 2001:db8::/32", marker)
+	if err != nil {
+		t.Fatalf("configure identity proxy trust: %v", err)
+	}
+	if len(trust.trustedPeers) != 2 {
+		t.Fatalf("trusted peers = %d, want 2", len(trust.trustedPeers))
+	}
+}
+
+func TestAuth_IdentityProxyRequiresTrustedPeerAndMarker(t *testing.T) {
+	const marker = "0123456789abcdef0123456789abcdef"
+	trust, err := configuredIdentityProxyTrust("10.0.0.0/8", marker)
+	if err != nil {
+		t.Fatalf("configure identity proxy trust: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name       string
+		remoteAddr string
+		marker     string
+	}{
+		{name: "untrusted direct peer", remoteAddr: "203.0.113.9:443", marker: marker},
+		{name: "wrong marker", remoteAddr: "10.2.3.4:443", marker: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"},
+		{name: "missing marker", remoteAddr: "10.2.3.4:443"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handler := authWithIdentityProxyTrust(nil, nil, nil, trust)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				t.Fatal("untrusted proxy identity must not reach next")
+			}))
+			req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+			req.RemoteAddr = tc.remoteAddr
+			req.Header.Set("X-User-ID", "victim-user")
+			req.Header.Set("X-User-Email", "victim@example.com")
+			if tc.marker != "" {
+				req.Header.Set(identityProxyMarkerHeader, tc.marker)
+			}
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, req)
+
+			if w.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", w.Code)
+			}
+			for _, header := range []string{"X-User-ID", "X-User-Email", identityProxyMarkerHeader} {
+				if got := req.Header.Get(header); got != "" {
+					t.Errorf("%s survived auth boundary: %q", header, got)
+				}
+			}
+		})
+	}
+}
+
+func TestAuth_TrustedIdentityProxyPreservesManagedClerkPath(t *testing.T) {
+	const marker = "0123456789abcdef0123456789abcdef"
+	trust, err := configuredIdentityProxyTrust("10.0.0.0/8", marker)
+	if err != nil {
+		t.Fatalf("configure identity proxy trust: %v", err)
+	}
+
+	var gotUserID, gotEmail, gotMarker string
+	handler := authWithIdentityProxyTrust(nil, nil, nil, trust)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotUserID = r.Header.Get("X-User-ID")
+		gotEmail = r.Header.Get("X-User-Email")
+		gotMarker = r.Header.Get(identityProxyMarkerHeader)
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	req.RemoteAddr = "10.2.3.4:443"
+	req.Header.Set("X-User-ID", " clerk-user ")
+	req.Header.Set("X-User-Email", " clerk@example.com ")
+	req.Header.Set(identityProxyMarkerHeader, marker)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if gotUserID != "clerk-user" || gotEmail != "clerk@example.com" {
+		t.Fatalf("managed identity = (%q, %q), want trimmed Clerk identity", gotUserID, gotEmail)
+	}
+	if gotMarker != "" {
+		t.Fatalf("private identity marker reached downstream: %q", gotMarker)
+	}
+}
+
+func TestAuth_TrustedIdentityProxyStillRejectsDisabledUser(t *testing.T) {
+	const marker = "0123456789abcdef0123456789abcdef"
+	trust, err := configuredIdentityProxyTrust("10.0.0.0/8", marker)
+	if err != nil {
+		t.Fatalf("configure identity proxy trust: %v", err)
+	}
+	handler := authWithIdentityProxyTrust(nil, nil, nil, trust)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("disabled proxy identity must not reach next")
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	req.RemoteAddr = "10.2.3.4:443"
+	req.Header.Set("X-User-ID", "514492f7-b30f-4147-bd33-c0e8ce5d6d4f")
+	req.Header.Set(identityProxyMarkerHeader, marker)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403: %s", w.Code, w.Body.String())
+	}
+}
+
 func TestAuth_ExpiredToken(t *testing.T) {
 	handler := authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		t.Fatal("next handler should not be called")
@@ -171,16 +295,26 @@ func TestAuth_WrongSigningMethod(t *testing.T) {
 }
 
 func TestAuth_ValidToken(t *testing.T) {
-	var gotUserID, gotEmail string
-	handler := authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	const marker = "0123456789abcdef0123456789abcdef"
+	trust, err := configuredIdentityProxyTrust("10.0.0.0/8", marker)
+	if err != nil {
+		t.Fatalf("configure identity proxy trust: %v", err)
+	}
+	var gotUserID, gotEmail, gotMarker string
+	handler := authWithIdentityProxyTrust(nil, nil, nil, trust)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotUserID = r.Header.Get("X-User-ID")
 		gotEmail = r.Header.Get("X-User-Email")
+		gotMarker = r.Header.Get(identityProxyMarkerHeader)
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	token := generateToken(validClaims(), auth.JWTSecret())
 
 	req := httptest.NewRequest("GET", "/api/me", nil)
+	req.RemoteAddr = "203.0.113.9:443"
+	req.Header.Set("X-User-ID", "victim-user")
+	req.Header.Set("X-User-Email", "victim@example.com")
+	req.Header.Set(identityProxyMarkerHeader, marker)
 	req.Header.Set("Authorization", "Bearer "+token)
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -193,6 +327,9 @@ func TestAuth_ValidToken(t *testing.T) {
 	}
 	if gotEmail != "test@cordy.ai" {
 		t.Fatalf("expected X-User-Email 'test@cordy.ai', got '%s'", gotEmail)
+	}
+	if gotMarker != "" {
+		t.Fatalf("private identity marker reached downstream: %q", gotMarker)
 	}
 }
 
@@ -376,15 +513,29 @@ func TestAuth_MCN_ValidTokenSetsUserID(t *testing.T) {
 
 	verifier := auth.NewCloudPATVerifier(auth.CloudPATVerifierConfig{FleetBaseURL: srv.URL})
 
-	var gotUser, gotActorSource string
-	mw := Auth(nil, nil, verifier)
+	const marker = "0123456789abcdef0123456789abcdef"
+	trust, err := configuredIdentityProxyTrust("10.0.0.0/8", marker)
+	if err != nil {
+		t.Fatalf("configure identity proxy trust: %v", err)
+	}
+	var gotUser, gotEmail, gotActorSource, gotMarker string
+	mw := authWithIdentityProxyTrust(nil, nil, verifier, trust)
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotUser = r.Header.Get("X-User-ID")
+		gotEmail = r.Header.Get("X-User-Email")
 		gotActorSource = r.Header.Get("X-Actor-Source")
+		gotMarker = r.Header.Get(identityProxyMarkerHeader)
 		w.WriteHeader(http.StatusOK)
 	}))
 
 	req := httptest.NewRequest("GET", "/api/me", nil)
+	req.RemoteAddr = "203.0.113.9:443"
+	// An untrusted client cannot use these headers to skip the mcn_
+	// verifier or impersonate a victim. Auth must clear them, verify the
+	// bearer, and stamp the Cloud-owned identity and machine actor source.
+	req.Header.Set("X-User-ID", "victim-user")
+	req.Header.Set("X-User-Email", "victim@example.com")
+	req.Header.Set(identityProxyMarkerHeader, marker)
 	req.Header.Set("Authorization", "Bearer mcn_x")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
@@ -402,6 +553,12 @@ func TestAuth_MCN_ValidTokenSetsUserID(t *testing.T) {
 	// stamp would silently let an mcn_ holder reach billing.
 	if gotActorSource != "cloud_pat" {
 		t.Errorf("expected X-Actor-Source=cloud_pat, got %q", gotActorSource)
+	}
+	if gotEmail != "" {
+		t.Errorf("forged X-User-Email reached downstream: %q", gotEmail)
+	}
+	if gotMarker != "" {
+		t.Errorf("private identity marker reached downstream: %q", gotMarker)
 	}
 }
 

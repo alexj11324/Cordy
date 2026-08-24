@@ -21,6 +21,7 @@ const DEFAULT_QUEUE_SIZE: usize = 1024;
 const DEFAULT_BATCH_SIZE: usize = 64;
 const DEFAULT_FLUSH_EVERY: Duration = Duration::from_secs(10);
 const DEFAULT_FLUSH_TIMEOUT: Duration = Duration::from_secs(5);
+const DEFAULT_CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Configures the live PostHog client. Zero-value optional fields fall back to
 /// sensible defaults.
@@ -147,8 +148,18 @@ impl AnalyticsClient for PostHogClient {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .take();
-        if let Some(handle) = handle {
-            let _ = handle.await;
+        if let Some(mut handle) = handle {
+            if tokio::time::timeout(DEFAULT_CLOSE_TIMEOUT, &mut handle)
+                .await
+                .is_err()
+            {
+                handle.abort();
+                let _ = handle.await;
+                tracing::warn!(
+                    timeout_ms = DEFAULT_CLOSE_TIMEOUT.as_millis(),
+                    "analytics: flush worker exceeded shutdown deadline and was aborted"
+                );
+            }
         }
         tracing::info!(
             sent = self.sent(),

@@ -439,6 +439,12 @@ fn agent_response(
     })
 }
 
+/// Workspace-wide agent events must never expose fields whose visibility is
+/// scoped to an owner or administrator response.
+pub(crate) fn agent_event_response(state: &HandlerState, target: &Agent) -> Value {
+    agent_response(Some(state), target.clone(), false, false)
+}
+
 #[derive(Default, Deserialize)]
 struct ListParams {
     #[serde(default)]
@@ -2226,7 +2232,7 @@ fn publish(state: &HandlerState, event_type: &str, target: &Agent, actor_id: Uui
         workspace_id: target.workspace_id.to_string(),
         actor_type: "member".into(),
         actor_id: actor_id.to_string(),
-        payload: json!({"agent":agent_response(Some(state),target.clone(),false,false)}),
+        payload: json!({"agent":agent_event_response(state,target)}),
         ..Default::default()
     });
 }
@@ -2297,7 +2303,9 @@ mod tests {
 
     #[test]
     fn agent_actor_projection_redacts_every_secret_surface() {
-        let response = agent_response(None, agent_fixture(), false, false);
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None);
+        let response = agent_event_response(&state, &agent_fixture());
         assert_eq!(response["runtime_config"]["gateway"]["token"], "***");
         assert_eq!(response["mcp_config"], json!({}));
         assert_eq!(response["mcp_config_redacted"], true);
