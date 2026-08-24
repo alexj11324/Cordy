@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::client::SlackClient;
 
+const SOCKET_HANDSHAKE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(45);
 const SOCKET_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 /// The subset of Socket Mode envelope types this adapter reacts to. Disconnect
@@ -111,8 +112,14 @@ impl SocketModeStream {
         }
         let (ws, _resp) = tokio::select! {
             _ = ctx.cancelled() => anyhow::bail!("slack: dial cancelled"),
-            r = tokio_tungstenite::connect_async(&url) => r
-                .map_err(|e| anyhow::anyhow!("slack: socket mode handshake: {e}"))?,
+            result = tokio::time::timeout(
+                SOCKET_HANDSHAKE_TIMEOUT,
+                tokio_tungstenite::connect_async(&url),
+            ) => result
+                .map_err(|_| anyhow::anyhow!(
+                    "slack: socket mode handshake timed out after {SOCKET_HANDSHAKE_TIMEOUT:?}"
+                ))?
+                .map_err(|error| anyhow::anyhow!("slack: socket mode handshake: {error}"))?,
         };
         Ok(Self { ws })
     }
