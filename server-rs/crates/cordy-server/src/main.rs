@@ -64,6 +64,18 @@ async fn build_production_router(
         Some(hub),
     )
     .with_attachment_storage(storage, download)
+    .with_attachment_frame_ancestors(
+        cfg.urls
+            .cors_allowed_origins
+            .as_deref()
+            .unwrap_or_default()
+            .split(',')
+            .chain(cfg.urls.frontend_origin.as_deref())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .collect(),
+    )
     .with_realtime_metrics_token(realtime_metrics_token)
     .with_observability(business_metrics, http_metrics)
     .with_analytics(analytics)

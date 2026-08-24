@@ -12,6 +12,7 @@
 
 pub mod agent_aggregation;
 pub mod agent_builder;
+pub mod attachment;
 pub mod attachment_access;
 pub mod attachment_storage;
 pub mod auth;
@@ -213,6 +214,11 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             WorkspaceGuardState::member_only(state.pool.clone()),
             issue::require_issue_workspace,
         ));
+    let attachment_mutation_routes =
+        attachment::workspace_router().route_layer(middleware::from_fn_with_state(
+            WorkspaceGuardState::member_only(state.pool.clone()),
+            cordy_middleware::workspace::require_workspace,
+        ));
     let comment_routes = comment::router().route_layer(middleware::from_fn_with_state(
         WorkspaceGuardState::member_only(state.pool.clone()),
         issue::require_issue_workspace,
@@ -280,8 +286,10 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .merge(pat::router())
+        .merge(attachment::authenticated_router())
         .merge(attachment_access::authenticated_router())
         .merge(attachment_routes)
+        .merge(attachment_mutation_routes)
         .merge(
             project::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),

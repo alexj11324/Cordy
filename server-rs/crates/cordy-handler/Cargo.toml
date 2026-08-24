@@ -35,6 +35,7 @@ cordy-util = { path = "../cordy-util" }
 futures-util = { workspace = true }
 hex = { workspace = true }
 hmac = { workspace = true }
+infer = { workspace = true }
 percent-encoding = { workspace = true }
 ipnetwork = { workspace = true }
 rand = { workspace = true }

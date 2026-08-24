@@ -276,6 +276,7 @@ pub struct HandlerState {
     /// #70 extends this seam; it must not create a second policy or signer.
     pub attachment_storage: Option<Arc<dyn crate::attachment_storage::AttachmentStorage>>,
     pub attachment_download: AttachmentDownloadSettings,
+    pub attachment_frame_ancestors: Vec<String>,
     /// Keeps the weak notifier installed in `TaskService` alive.
     _task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier>,
 }
@@ -338,6 +339,7 @@ impl HandlerState {
             daemon_hub: Some(daemon_hub),
             attachment_storage: None,
             attachment_download: AttachmentDownloadSettings::default(),
+            attachment_frame_ancestors: Vec::new(),
             _task_wakeup: task_wakeup,
         }
     }
@@ -349,6 +351,11 @@ impl HandlerState {
     ) -> Self {
         self.attachment_storage = Some(storage);
         self.attachment_download = download;
+        self
+    }
+
+    pub fn with_attachment_frame_ancestors(mut self, origins: Vec<String>) -> Self {
+        self.attachment_frame_ancestors = origins;
         self
     }
 
