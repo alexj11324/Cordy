@@ -69,8 +69,7 @@ async fn empty_claim_cache_rejects_stale_verdict_after_bump() -> anyhow::Result<
         return Ok(());
     };
     let client = redis::Client::open(server.url.as_str())?;
-    let manager = client.get_connection_manager().await?;
-    let cache = EmptyClaimCache::new(manager);
+    let cache = EmptyClaimCache::new(cordy_redis::RecoveringConnection::new(client));
     let runtime_id = "runtime-a";
 
     let observed = cache.current_version(runtime_id).await;
