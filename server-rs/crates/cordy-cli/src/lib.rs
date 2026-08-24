@@ -136,6 +136,8 @@ enum AutopilotCommand {
     },
     #[command(about = "Create a new autopilot")]
     Create(AutopilotCreateArgs),
+    #[command(about = "Update an autopilot")]
+    Update(AutopilotUpdateArgs),
 }
 
 #[derive(Debug, Args)]
@@ -171,6 +173,37 @@ struct AutopilotCreateArgs {
         help = "Member subscriber to notify for issues this autopilot creates (name or user ID; repeatable)"
     )]
     subscriber: Vec<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct AutopilotUpdateArgs {
+    #[arg(value_name = "ID")]
+    id: String,
+    #[arg(long)]
+    title: Option<String>,
+    #[arg(long)]
+    description: Option<String>,
+    #[arg(long, help = "New assignee agent (name or ID)")]
+    agent: Option<String>,
+    #[arg(long, help = "New project ID (use empty string to clear)")]
+    project: Option<String>,
+    #[arg(long)]
+    priority: Option<String>,
+    #[arg(long, help = "New status (active, paused)")]
+    status: Option<String>,
+    #[arg(long, help = "New execution mode (create_issue or run_only)")]
+    mode: Option<String>,
+    #[arg(
+        long,
+        help = "New issue title template. Only {{date}} is interpolated."
+    )]
+    issue_title_template: Option<String>,
+    #[arg(long, action = clap::ArgAction::Append, help = "Replace subscribers with this member (repeatable)")]
+    subscriber: Vec<String>,
+    #[arg(long, help = "Remove all autopilot subscribers")]
+    clear_subscribers: bool,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
 }
@@ -2308,6 +2341,9 @@ async fn run_with_input<R: Read>(
         Command::Autopilot(AutopilotArgs {
             command: AutopilotCommand::Create(args),
         }) => run_autopilot_create(cli, environment, args).await,
+        Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::Update(args),
+        }) => run_autopilot_update(cli, environment, args).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -3571,6 +3607,90 @@ async fn run_autopilot_create(
             OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
             OutputFormat::Table => format!(
                 "Autopilot created: {} ({})\n",
+                value_string(&result, "title"),
+                value_string(&result, "id")
+            ),
+        },
+        stderr: String::new(),
+    })
+}
+
+async fn run_autopilot_update(
+    cli: &Cli,
+    environment: &Environment,
+    args: &AutopilotUpdateArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let autopilot_id = resolve_autopilot_id(&client, &workspace_id, &args.id)
+        .await
+        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+
+    let mut body = serde_json::Map::new();
+    for (key, value) in [
+        ("title", args.title.as_ref()),
+        ("description", args.description.as_ref()),
+        ("priority", args.priority.as_ref()),
+        ("status", args.status.as_ref()),
+        ("issue_title_template", args.issue_title_template.as_ref()),
+    ] {
+        if let Some(value) = value {
+            body.insert(key.into(), Value::String(value.clone()));
+        }
+    }
+    if let Some(agent) = &args.agent {
+        let agent_id = resolve_autopilot_agent(&client, &workspace_id, agent)
+            .await
+            .map_err(|error| anyhow::anyhow!("resolve agent: {error:#}"))?;
+        body.insert("assignee_type".into(), Value::String("agent".into()));
+        body.insert("assignee_id".into(), Value::String(agent_id));
+    }
+    if let Some(project) = &args.project {
+        let value = if project.is_empty() {
+            Value::Null
+        } else {
+            let id = resolve_project_reference(&client, &workspace_id, project)
+                .await
+                .map(|(id, _)| id)
+                .map_err(|error| anyhow::anyhow!("resolve project: {error:#}"))?;
+            Value::String(id)
+        };
+        body.insert("project_id".into(), value);
+    }
+    if let Some(mode) = &args.mode {
+        if !matches!(mode.as_str(), "create_issue" | "run_only") {
+            bail!("--mode must be create_issue or run_only");
+        }
+        body.insert("execution_mode".into(), Value::String(mode.clone()));
+    }
+    if args.clear_subscribers && !args.subscriber.is_empty() {
+        bail!("--subscriber and --clear-subscribers are mutually exclusive");
+    }
+    if args.clear_subscribers {
+        body.insert("subscribers".into(), Value::Array(Vec::new()));
+    } else if !args.subscriber.is_empty() {
+        body.insert(
+            "subscribers".into(),
+            Value::Array(
+                resolve_autopilot_subscribers(&client, &workspace_id, &args.subscriber).await?,
+            ),
+        );
+    }
+    if body.is_empty() {
+        bail!(
+            "no fields to update; use flags like --title, --description, --agent, --status, --mode, etc."
+        );
+    }
+
+    let result: Value = client
+        .patch_json(&format!("/api/autopilots/{autopilot_id}"), &body)
+        .await
+        .context("update autopilot")?;
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+            OutputFormat::Table => format!(
+                "Autopilot updated: {} ({})\n",
                 value_string(&result, "title"),
                 value_string(&result, "id")
             ),
@@ -12432,6 +12552,26 @@ mod tests {
         assert_eq!(args.priority.as_deref(), Some("high"));
         assert_eq!(args.subscriber, ["Alice", "Bob"]);
         assert_eq!(args.output, OutputFormat::Table);
+
+        let update = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "update",
+            "abcd",
+            "--project=",
+            "--clear-subscribers",
+        ])
+        .expect("autopilot update CLI");
+        let Command::Autopilot(AutopilotArgs {
+            command: AutopilotCommand::Update(args),
+        }) = update.command
+        else {
+            panic!("expected autopilot update");
+        };
+        assert_eq!(args.id, "abcd");
+        assert_eq!(args.project.as_deref(), Some(""));
+        assert!(args.clear_subscribers);
+        assert_eq!(args.output, OutputFormat::Json);
     }
 
     #[tokio::test]
@@ -12593,6 +12733,178 @@ mod tests {
                 .expect_err("invalid create rejected");
             assert_eq!(error.to_string(), expected);
         }
+    }
+
+    #[tokio::test]
+    async fn autopilot_update_resolves_references_and_patches_only_changed_fields() {
+        const AUTOPILOT_ID: &str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        const AGENT_ID: &str = "11111111-1111-1111-1111-111111111111";
+        const PROJECT_ID: &str = "22222222-2222-2222-2222-222222222222";
+        const USER_ID: &str = "33333333-3333-3333-3333-333333333333";
+        let captured = Arc::new(Mutex::new(None));
+        let captured_handler = Arc::clone(&captured);
+        let app = Router::new()
+            .route(
+                "/api/agents",
+                get(|| async {
+                    Json(vec![
+                        serde_json::json!({"id":AGENT_ID,"name":"Codex Agent"}),
+                    ])
+                }),
+            )
+            .route(
+                "/api/projects",
+                get(|| async {
+                    Json(serde_json::json!({"projects":[{"id":PROJECT_ID,"title":"Ops"}]}))
+                }),
+            )
+            .route(
+                "/api/workspaces/workspace-1/members",
+                get(|| async { Json(vec![serde_json::json!({"user_id":USER_ID,"name":"Alice"})]) }),
+            )
+            .route(
+                "/api/autopilots/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                patch(move |Json(body): Json<Value>| {
+                    let captured = Arc::clone(&captured_handler);
+                    async move {
+                        *captured.lock().expect("captured body") = Some(body);
+                        Json(serde_json::json!({"id":AUTOPILOT_ID,"title":"Updated"}))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "update",
+            AUTOPILOT_ID,
+            "--title",
+            "Updated",
+            "--description=",
+            "--agent",
+            "Codex",
+            "--project",
+            "2222",
+            "--priority",
+            "urgent",
+            "--status",
+            "paused",
+            "--mode",
+            "run_only",
+            "--issue-title-template=",
+            "--subscriber",
+            "Alice",
+            "--output",
+            "table",
+        ])
+        .expect("autopilot update CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("update autopilot");
+        assert_eq!(
+            output.stdout,
+            format!("Autopilot updated: Updated ({AUTOPILOT_ID})\n")
+        );
+        let body = captured
+            .lock()
+            .expect("captured body")
+            .clone()
+            .expect("request body");
+        assert_eq!(body["title"], "Updated");
+        assert_eq!(body["description"], "");
+        assert_eq!(body["assignee_type"], "agent");
+        assert_eq!(body["assignee_id"], AGENT_ID);
+        assert_eq!(body["project_id"], PROJECT_ID);
+        assert_eq!(body["priority"], "urgent");
+        assert_eq!(body["status"], "paused");
+        assert_eq!(body["execution_mode"], "run_only");
+        assert_eq!(body["issue_title_template"], "");
+        assert_eq!(
+            body["subscribers"],
+            serde_json::json!([{"user_type":"member","user_id":USER_ID}])
+        );
+        assert_eq!(body.as_object().map(serde_json::Map::len), Some(10));
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn autopilot_update_preserves_clear_and_no_change_semantics() {
+        const ID: &str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
+        let captured = Arc::new(Mutex::new(None));
+        let captured_handler = Arc::clone(&captured);
+        let app = Router::new().route(
+            "/api/autopilots/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            patch(move |Json(body): Json<Value>| {
+                let captured = Arc::clone(&captured_handler);
+                async move {
+                    *captured.lock().expect("captured body") = Some(body);
+                    Json(serde_json::json!({"id":ID,"title":"Daily"}))
+                }
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        let clear = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "update",
+            ID,
+            "--project=",
+            "--clear-subscribers",
+        ])
+        .expect("autopilot clear CLI");
+        run_with_input(&clear, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("clear autopilot fields");
+        let body = captured
+            .lock()
+            .expect("captured body")
+            .clone()
+            .expect("request body");
+        assert!(body["project_id"].is_null());
+        assert_eq!(body["subscribers"], serde_json::json!([]));
+
+        let no_change = Cli::try_parse_from(["cordy", "autopilot", "update", ID])
+            .expect("autopilot no-change CLI");
+        let error = run_with_input(&no_change, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("no-change update rejected");
+        assert_eq!(
+            error.to_string(),
+            "no fields to update; use flags like --title, --description, --agent, --status, --mode, etc."
+        );
+
+        let conflict = Cli::try_parse_from([
+            "cordy",
+            "autopilot",
+            "update",
+            ID,
+            "--subscriber",
+            "Alice",
+            "--clear-subscribers",
+        ])
+        .expect("autopilot subscriber conflict CLI");
+        let error = run_with_input(&conflict, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("subscriber conflict rejected");
+        assert_eq!(
+            error.to_string(),
+            "--subscriber and --clear-subscribers are mutually exclusive"
+        );
+        server.abort();
     }
 
     #[tokio::test]
