@@ -605,7 +605,8 @@ mod tests {
         let response = tokio::spawn(async move {
             let (mut stream, _) = redirect.accept().await.unwrap();
             let mut request = [0u8; 2048];
-            let _ = stream.read(&mut request).await.unwrap();
+            let read = stream.read(&mut request).await.unwrap();
+            assert!(read > 0, "redirect source received an empty request");
             stream
                 .write_all(
                     format!(
