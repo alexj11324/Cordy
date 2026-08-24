@@ -1,0 +1,103 @@
+name: Remediate review debt
+
+on:
+  push:
+    branches:
+      - remediation/review-debt-20260824
+
+permissions:
+  contents: write
+
+concurrency:
+  group: remediate-review-debt-20260824
+  cancel-in-progress: false
+
+jobs:
+  replay:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Replay reviewed fixes that were lost from the final tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          commits=(
+            6b52dddb5744e4649a1e665999543b3e4b018995
+            b0641e6e789978c0e0dc89c8776dd055995b3835
+            dd105d0b47d0b64d0a1c13ff70e71e8d60c49c00
+            2dbdb9c6e51043bf6a19da085c160f39898d0fd0
+            20972daaf71b6c126a6bcf8799ac016f765d8ae5
+            27f93aab3596c85b1fca52492a113ebe7df3ccc5
+            301f3ce4bf9356cc9396a8eb6d3b9755e3d1226e
+            9f2ed44a08270c58c1cf40f623130425e1096c20
+            31c7080227b81bba523a91b709eba39359745d66
+            2f0c54594f0755a2327da2232e744dbea7805043
+            5402efab8930fbdb408a787fef19bacb4988a77d
+            ed95d6ef3639bcfdad28a57a81f198ec64dbe23e
+            2513d90c12656e9549a18ac6b360d199c10e8fe0
+            5a450533bb8e6ab4f2085d37ac034d2b93463849
+            41eed2a2918ec798c202e8719e86f429f0ee5cd9
+            92e5a112de11ab7fca40d28c00c76bda1dc62762
+            881da969d4d1357553a86115ffe6e17f21c671e8
+          )
+
+          for commit in "${commits[@]}"; do
+            echo "==> replay $commit"
+            if git cherry-pick -x "$commit"; then
+              continue
+            fi
+
+            # An already-effective patch can become an empty cherry-pick.
+            if git diff --quiet && git diff --cached --quiet; then
+              git cherry-pick --skip
+              echo "    already effective; skipped"
+              continue
+            fi
+
+            echo "CONFLICT while replaying $commit"
+            git status --short
+            exit 1
+          done
+
+      - name: Remove one-shot workflow from the deliverable
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/remediate-review-debt.yml
+          git commit -m "chore: remove one-shot remediation workflow"
+
+      - name: Rust formatting gate
+        working-directory: server-rs
+        run: cargo fmt --all -- --check
+
+      - name: Core Rust compile gate
+        working-directory: server-rs
+        env:
+          CARGO_INCREMENTAL: "0"
+        run: cargo check -p cordy-handler -p cordy-server -p cordy-auth -p cordy-middleware --locked
+
+      - name: Handler regression tests
+        working-directory: server-rs
+        env:
+          CARGO_INCREMENTAL: "0"
+        run: cargo test -p cordy-handler --lib --locked
+
+      - name: Strict Clippy for touched server surfaces
+        working-directory: server-rs
+        env:
+          CARGO_INCREMENTAL: "0"
+        run: cargo clippy -p cordy-handler -p cordy-server -p cordy-auth -p cordy-middleware --all-targets --no-deps --locked -- -D warnings
+
+      - name: Push remediation branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git push origin HEAD:remediation/review-debt-20260824
