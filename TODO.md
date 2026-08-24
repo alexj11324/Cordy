@@ -1002,6 +1002,17 @@
       diff-check pass; Cargo was not run. The serial subagent reviewed exact
       head `53bd13f7` and found no issue; pro owns push/Ready PR, gate, and
       merge.
+- [ ] CLI workspace command structural refactor is committed at
+      `e84766ace06d96b04d25ad9fb1f9026fbe0ff62d` (parent
+      `6b676579c44fc6c20df543a875be03beb4a1b8e4`, tree
+      `8c938a017d734ca496bd4c7f477845ce261c0c34`): workspace list/get/create,
+      update/switch/member operations, input resolution, workspace reference
+      resolution, and table rendering now live in
+      `cordy-cli/src/workspace_commands.rs`; parent dispatch and tests retain
+      their existing contracts. The serial subagent removed duplicate parent
+      renderers that would have blocked compilation. Scoped rustfmt and
+      diff-check pass; Cargo was not run. Pro owns push/Ready PR, gate, and
+      merge.
 
 ## Phase 4 — S8 route and API parity
 
