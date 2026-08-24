@@ -97,9 +97,13 @@ impl ChannelRuntime {
             outbound_tasks: &outbound_tasks,
         };
         let mut maintenance = Vec::new();
-        let wecom = configure_wecom(&runtime_deps, wecom_metrics)?;
+        let wecom = isolate_channel_setup("wecom", configure_wecom(&runtime_deps, wecom_metrics))
+            .unwrap_or_default();
         maintenance.extend(wecom.tasks);
-        if let Some(handle) = configure_lark(&runtime_deps, lark_backfill_metrics)? {
+        if let Some(handle) =
+            isolate_channel_setup("lark", configure_lark(&runtime_deps, lark_backfill_metrics))
+                .flatten()
+        {
             maintenance.push(handle);
         }
 
@@ -215,6 +219,21 @@ impl ChannelRuntime {
                 timeout = ?ROUTER_DRAIN_TIMEOUT,
                 "channel router drain deadline reached"
             ),
+        }
+    }
+}
+
+/// Keeps one malformed channel adapter from taking the entire server down.
+/// The setup functions return before registering their factory, resolver, or
+/// owned tasks on every error path, so dropping the error result leaves the
+/// failed channel fully disabled rather than partially wired or downgraded to
+/// a fake local/noop transport.
+fn isolate_channel_setup<T>(channel: &'static str, setup: anyhow::Result<T>) -> Option<T> {
+    match setup {
+        Ok(value) => Some(value),
+        Err(error) => {
+            tracing::error!(%error, channel, "channel runtime disabled: initialization failed");
+            None
         }
     }
 }
@@ -504,6 +523,7 @@ fn configure_telegram(
     );
 }
 
+#[derive(Default)]
 struct WecomRuntimeSetup {
     relay: Option<Arc<cordy_wecom::outbound_relay::OutboundRelay>>,
     tasks: Vec<tokio::task::JoinHandle<()>>,
@@ -1338,7 +1358,19 @@ impl cordy_slack::slash_command::QuickCreateEnqueuer for ChannelServices {
 
 #[cfg(test)]
 mod tests {
-    use super::{app_url, configure_wecom_security, lease_backend_settings, LeaseBackendSettings};
+    use super::{
+        app_url, configure_wecom_security, isolate_channel_setup, lease_backend_settings,
+        LeaseBackendSettings,
+    };
+
+    #[test]
+    fn adapter_init_failure_isolated_from_other_channels() {
+        let failed = isolate_channel_setup::<u8>("wecom", Err(anyhow::anyhow!("bad relay")));
+        let healthy = isolate_channel_setup("lark", Ok(7_u8));
+
+        assert_eq!(failed, None);
+        assert_eq!(healthy, Some(7));
+    }
 
     #[test]
     fn app_url_prefers_explicit_app_host_and_trims_slash() {
