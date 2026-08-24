@@ -238,6 +238,55 @@ impl CloudPatVerifier {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn fleet_server(
+        status: &str,
+        body: Vec<u8>,
+    ) -> (String, tokio::task::JoinHandle<Vec<u8>>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let status = status.to_string();
+        let task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let header_end = loop {
+                let mut chunk = [0u8; 1024];
+                let read = stream.read(&mut chunk).await.unwrap();
+                assert_ne!(read, 0, "Fleet request ended before its headers");
+                request.extend_from_slice(&chunk[..read]);
+                if let Some(position) = request.windows(4).position(|value| value == b"\r\n\r\n") {
+                    break position + 4;
+                }
+            };
+            let headers = std::str::from_utf8(&request[..header_end]).unwrap();
+            let content_length = headers
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().unwrap())
+                })
+                .unwrap_or_default();
+            while request.len() < header_end + content_length {
+                let mut chunk = [0u8; 1024];
+                let read = stream.read(&mut chunk).await.unwrap();
+                assert_ne!(read, 0, "Fleet request ended before its body");
+                request.extend_from_slice(&chunk[..read]);
+            }
+            let response = format!(
+                "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                body.len()
+            );
+            // The response-cap test deliberately makes the client stop
+            // reading early, so a reset after the request has been captured
+            // is expected and must not make the mock task fail.
+            let _ = stream.write_all(response.as_bytes()).await;
+            let _ = stream.write_all(&body).await;
+            request
+        });
+        (format!("http://{address}"), task)
+    }
 
     #[test]
     fn namespace_ttl_and_wire_shape_match_go() {
@@ -252,5 +301,84 @@ mod tests {
             serde_json::to_string(&identity).unwrap(),
             r#"{"o":"owner","i":"instance","r":"record"}"#
         );
+    }
+
+    #[tokio::test]
+    async fn fleet_success_returns_uncached_owner_binding() {
+        let (url, request) = fleet_server(
+            "200 OK",
+            br#"{"valid":true,"owner_id":"owner","instance_id":"instance","instance_record_id":"record"}"#
+                .to_vec(),
+        )
+        .await;
+        let verifier = CloudPatVerifier::new(&url).unwrap();
+        let verified = verifier
+            .verify("mcn_secret", &CancellationToken::new())
+            .await
+            .unwrap();
+        assert_eq!(
+            verified,
+            VerifiedCloudPat {
+                identity: CloudPatIdentity {
+                    owner_id: "owner".into(),
+                    instance_id: "instance".into(),
+                    instance_record_id: "record".into(),
+                },
+                owner_already_validated: false,
+            }
+        );
+        let request = String::from_utf8(request.await.unwrap()).unwrap();
+        assert!(request.starts_with("POST /api/v1/pat/verify HTTP/1.1\r\n"));
+        assert!(request.ends_with(r#"{"token":"mcn_secret"}"#));
+    }
+
+    #[tokio::test]
+    async fn fleet_invalid_and_non_200_fail_closed() {
+        let (url, request) = fleet_server("200 OK", br#"{"valid":false}"#.to_vec()).await;
+        let error = CloudPatVerifier::new(&url)
+            .unwrap()
+            .verify("mcn_revoked", &CancellationToken::new())
+            .await
+            .unwrap_err();
+        assert!(matches!(error, CloudPatError::Invalid));
+        request.await.unwrap();
+
+        let (url, request) = fleet_server("503 Service Unavailable", Vec::new()).await;
+        let error = CloudPatVerifier::new(&url)
+            .unwrap()
+            .verify("mcn_unknown", &CancellationToken::new())
+            .await
+            .unwrap_err();
+        assert!(matches!(error, CloudPatError::Unavailable));
+        request.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn request_response_caps_and_cancellation_fail_closed() {
+        let verifier = CloudPatVerifier::new("http://127.0.0.1:9").unwrap();
+        let oversized_token = format!("mcn_{}", "x".repeat(REQUEST_MAX));
+        assert!(matches!(
+            verifier
+                .verify(&oversized_token, &CancellationToken::new())
+                .await,
+            Err(CloudPatError::Unavailable)
+        ));
+
+        let (url, request) = fleet_server("200 OK", vec![b' '; RESPONSE_MAX + 1]).await;
+        assert!(matches!(
+            CloudPatVerifier::new(&url)
+                .unwrap()
+                .verify("mcn_large_response", &CancellationToken::new())
+                .await,
+            Err(CloudPatError::Unavailable)
+        ));
+        request.await.unwrap();
+
+        let cancel = CancellationToken::new();
+        cancel.cancel();
+        assert!(matches!(
+            verifier.verify("mcn_cancelled", &cancel).await,
+            Err(CloudPatError::Unavailable)
+        ));
     }
 }
