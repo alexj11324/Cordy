@@ -180,21 +180,24 @@
       guard tests were added; scoped rustfmt check and diff-check pass.
       Cargo/review/gate/merge remain with the pro model and are not duplicated
       here.
-- [ ] Next substantive refactor slice: daemon foreground production assembly.
-      Audit of `codex/cord-50-daemon-command-assembly` shows
-      `DaemonProductionInputs::into_stack` still requires a generic
-      `ProviderRuntimeAdapter`, but `cordy-daemon` has no concrete impl and does
-      not depend on `cordy-agent`; `cordy-agent::build_backend` is not wired into
-      task orchestration. A visibility-only facade or no-op adapter would not
-      start a real daemon, so this is a genuine assembly dependency blocker.
-      The follow-up adapter audit found the concrete API boundary:
-      `RuntimeExecutionTarget` lacks command/fixed-arg resolution,
-      `DaemonActivity` has no transcript sink, and the adapter has no `Client`;
-      task-scoped env, prepare/reuse, worktree finalize, usage/session pinning,
-      and cancellation also need an owner. Directly calling
-      `cordy-agent::build_backend` would silently drop these contracts. The
-      next slice must inject these dependencies before the adapter is
-      implemented; no half-stub was committed.
+- [x] Daemon foreground/adapter dependency boundary slice completed on
+      `codex/cord-50-daemon-command-assembly` (PR #129). Commits
+      `637712cf` (`feat(cli): assemble foreground daemon inputs`) and
+      `3dcd0a7e` (`refactor(daemon): pass shared runtime owners to adapter`) are
+      pushed; latest head `3dcd0a7e`, parent `637712cf`, and scoped
+      rustfmt/diff-check pass. The CLI now carries one authenticated profile
+      snapshot through lifecycle/bootstrap/foreground production input
+      assembly. `ProviderRuntimeContext` now injects the same client,
+      accepted `RuntimeLaunchRegistry`, activity, repo state, and checkout
+      registry into the adapter boundary, preventing cross-instance state
+      assembly. PR review/gate/merge are delegated to the pro model.
+- [ ] Next substantive daemon slice: implement the real provider execution
+      adapter. The dependency boundary is now explicit, but `cordy-daemon`
+      still has no concrete `ProviderRuntimeAdapter` and does not depend on
+      `cordy-agent`; task-scoped env, prepare/reuse, worktree finalize,
+      transcript/usage/session pinning, and cancellation must be implemented
+      together. Do not call `cordy-agent::build_backend` as a half-stub or
+      silently drop those contracts.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
