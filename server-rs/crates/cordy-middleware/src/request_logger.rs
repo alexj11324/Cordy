@@ -256,11 +256,10 @@ mod tests {
 
     #[test]
     fn valid_jwt_identity_is_available_to_outer_logger() {
-        let secret = crate::auth::tests::jwt_test_secret();
         let token = encode(
             &Header::new(Algorithm::HS256),
             &json!({"sub":"user-1","exp":chrono::Utc::now().timestamp()+60}),
-            &EncodingKey::from_secret(secret.as_bytes()),
+            &EncodingKey::from_secret(cordy_auth::jwt::jwt_secret().as_bytes()),
         )
         .unwrap();
         let request = Request::builder()
