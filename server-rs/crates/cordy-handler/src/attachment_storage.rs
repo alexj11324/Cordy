@@ -28,6 +28,8 @@ const UNSIGNED_PAYLOAD: &str = "UNSIGNED-PAYLOAD";
 const CRC32_TRAILER: &str = "x-amz-checksum-crc32";
 const S3_MAX_ATTEMPTS: usize = 3;
 const S3_MAX_ERROR_BODY: usize = 64 << 10;
+const S3_CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
+const S3_READ_TIMEOUT: Duration = Duration::from_secs(60);
 const S3_MAX_RETRY_DELAY: Duration = Duration::from_secs(20);
 const S3_CORRECTION_TTL: Duration = Duration::from_secs(15 * 60);
 const S3_MAX_CLOCK_SKEW_SECONDS: i64 = 24 * 60 * 60;
@@ -516,7 +518,9 @@ fn prepare_buffered_put(
 }
 
 fn s3_http_client(custom_endpoint: bool) -> anyhow::Result<reqwest::Client> {
-    let mut builder = reqwest::Client::builder();
+    let mut builder = reqwest::Client::builder()
+        .connect_timeout(S3_CONNECT_TIMEOUT)
+        .read_timeout(S3_READ_TIMEOUT);
     if !custom_endpoint {
         builder = builder.redirect(reqwest::redirect::Policy::none());
     }
@@ -2098,6 +2102,8 @@ mod tests {
 
     #[test]
     fn retry_policy_is_bounded_and_honors_retry_after() {
+        assert_eq!(S3_CONNECT_TIMEOUT, Duration::from_secs(30));
+        assert_eq!(S3_READ_TIMEOUT, Duration::from_secs(60));
         assert_eq!(
             retry_delay(1, Some(Duration::from_secs(7)), 0),
             Duration::from_secs(7)
