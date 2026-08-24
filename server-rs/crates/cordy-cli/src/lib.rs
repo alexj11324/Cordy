@@ -138,6 +138,8 @@ enum IssueCommand {
     Update(IssueUpdateArgs),
     #[command(about = "Assign an issue to a member, agent, or squad")]
     Assign(IssueAssignArgs),
+    #[command(about = "Change issue status")]
+    Status(IssueStatusArgs),
 }
 
 #[derive(Debug, Args)]
@@ -272,6 +274,18 @@ struct IssueAssignArgs {
     #[arg(long, help = "Assign ownership without starting an agent run")]
     no_start: bool,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssueStatusArgs {
+    #[arg(value_name = "ID")]
+    id: String,
+    #[arg(value_name = "STATUS")]
+    status: String,
+    #[arg(long, help = "Change status without starting an agent run")]
+    no_start: bool,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
     output: OutputFormat,
 }
 
@@ -641,6 +655,9 @@ async fn run_with_input<R: Read>(
         Command::Issue(IssueArgs {
             command: IssueCommand::Assign(args),
         }) => run_issue_assign(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command: IssueCommand::Status(args),
+        }) => run_issue_status(cli, environment, args).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -2496,6 +2513,39 @@ async fn run_issue_assign(
     Ok(RunOutput { stdout, stderr })
 }
 
+async fn run_issue_status(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueStatusArgs,
+) -> Result<RunOutput> {
+    validate_issue_status(&args.status)?;
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.id)
+        .await
+        .context("resolve issue")?;
+    let mut body =
+        serde_json::Map::from_iter([("status".into(), Value::String(args.status.clone()))]);
+    if args.no_start {
+        body.insert("suppress_run".into(), Value::Bool(true));
+    }
+    let issue: Value = client
+        .put_json(&format!("/api/issues/{issue_id}"), &body)
+        .await
+        .context("update status")?;
+    let issue_key = match value_string(&issue, "identifier") {
+        value if value.is_empty() => value_string(&issue, "id"),
+        value => value,
+    };
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&issue)?),
+        OutputFormat::Table => String::new(),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: format!("Issue {issue_key} status changed to {}.\n", args.status),
+    })
+}
+
 fn validate_issue_status(status: &str) -> Result<()> {
     let normalized = status.trim().to_ascii_lowercase();
     let bytes = normalized.as_bytes();
@@ -3966,6 +4016,15 @@ mod tests {
                 command: IssueCommand::Assign(args),
             }) => args,
             _ => panic!("expected issue assign"),
+        }
+    }
+
+    fn issue_status_args(cli: &Cli) -> &IssueStatusArgs {
+        match &cli.command {
+            Command::Issue(IssueArgs {
+                command: IssueCommand::Status(args),
+            }) => args,
+            _ => panic!("expected issue status"),
         }
     }
 
@@ -5546,6 +5605,99 @@ mod tests {
             .await
             .expect_err("invalid no-start unassign");
         assert!(error.to_string().contains("--no-start"));
+    }
+
+    #[test]
+    fn issue_status_parser_matches_go_registry_flags() {
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "status",
+            "CORD-18",
+            "custom_status",
+            "--no-start",
+            "--output",
+            "json",
+        ])
+        .expect("status CLI");
+        let args = issue_status_args(&cli);
+        assert_eq!(args.id, "CORD-18");
+        assert_eq!(args.status, "custom_status");
+        assert!(args.no_start);
+        assert_eq!(args.output, OutputFormat::Json);
+    }
+
+    #[tokio::test]
+    async fn issue_status_validates_then_puts_status_and_suppress_run() {
+        let captured = Arc::new(Mutex::new(None::<Value>));
+        let captured_by_update = Arc::clone(&captured);
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async { Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"})) }),
+            )
+            .route(
+                "/api/issues/issue-uuid",
+                put(move |Json(body): Json<Value>| {
+                    let captured = Arc::clone(&captured_by_update);
+                    async move {
+                        *captured.lock().expect("capture status") = Some(body);
+                        Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18","status":"custom_status"}))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "status",
+            "CORD-18",
+            "custom_status",
+            "--no-start",
+            "--output",
+            "json",
+        ])
+        .expect("status CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("status update");
+        assert_eq!(
+            output.stderr,
+            "Issue CORD-18 status changed to custom_status.\n"
+        );
+        assert_eq!(
+            serde_json::from_str::<Value>(&output.stdout).expect("status JSON")["status"],
+            "custom_status"
+        );
+        let body = captured
+            .lock()
+            .expect("body")
+            .clone()
+            .expect("captured body");
+        assert_eq!(body["status"], "custom_status");
+        assert_eq!(body["suppress_run"], true);
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn issue_status_rejects_malformed_status_before_network() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let cli = Cli::try_parse_from(["cordy", "issue", "status", "CORD-18", "not a status"])
+            .expect("status CLI");
+        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect_err("malformed status");
+        assert!(error.to_string().contains("status key"));
     }
 
     #[test]
