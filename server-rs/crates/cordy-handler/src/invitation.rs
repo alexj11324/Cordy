@@ -46,6 +46,8 @@ redis.call('EXPIRE', KEYS[1], ARGV[4])
 return 1
 "#;
 
+const INVITATION_REDIS_TIMEOUT: Duration = Duration::from_millis(250);
+
 #[derive(Debug)]
 enum AdmissionError {
     Limited {
@@ -140,13 +142,22 @@ impl InvitationAdmission {
     ) -> Result<(), AdmissionError> {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        let mut conn = client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|error| {
+        let mut conn = match tokio::time::timeout(
+            INVITATION_REDIS_TIMEOUT,
+            client.get_multiplexed_async_connection(),
+        )
+        .await
+        {
+            Ok(Ok(conn)) => conn,
+            Ok(Err(error)) => {
                 tracing::error!(%error, "invitation rate limiter unavailable");
-                AdmissionError::Unavailable
-            })?;
+                return Err(AdmissionError::Unavailable);
+            }
+            Err(_) => {
+                tracing::error!("invitation rate limiter connection timed out");
+                return Err(AdmissionError::Unavailable);
+            }
+        };
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default();
@@ -156,16 +167,23 @@ impl InvitationAdmission {
         for gate in gates {
             let cutoff =
                 now_nanos.saturating_sub(gate.window.as_nanos().min(i64::MAX as u128) as i64);
-            let allowed = redis::Script::new(REDIS_CHECK_SCRIPT)
+            let check = redis::Script::new(REDIS_CHECK_SCRIPT);
+            let operation = check
                 .key(&gate.key)
                 .arg(cutoff)
                 .arg(gate.limit)
-                .invoke_async::<i64>(&mut conn)
-                .await
-                .map_err(|error| {
+                .invoke_async::<i64>(&mut conn);
+            let allowed = match tokio::time::timeout(INVITATION_REDIS_TIMEOUT, operation).await {
+                Ok(Ok(allowed)) => allowed,
+                Ok(Err(error)) => {
                     tracing::error!(%error, gate = gate.name, "invitation rate limiter unavailable");
-                    AdmissionError::Unavailable
-                })?;
+                    return Err(AdmissionError::Unavailable);
+                }
+                Err(_) => {
+                    tracing::error!(gate = gate.name, "invitation rate limiter check timed out");
+                    return Err(AdmissionError::Unavailable);
+                }
+            };
             if allowed == 0 {
                 denied.push(gate.name);
                 retry_after = retry_after.max(gate.window.as_secs().max(1));
@@ -181,17 +199,23 @@ impl InvitationAdmission {
         for gate in gates {
             let cutoff =
                 now_nanos.saturating_sub(gate.window.as_nanos().min(i64::MAX as u128) as i64);
-            let result = redis::Script::new(REDIS_CONSUME_SCRIPT)
+            let consume = redis::Script::new(REDIS_CONSUME_SCRIPT);
+            let operation = consume
                 .key(&gate.key)
                 .arg(now_nanos)
                 .arg(cutoff)
                 .arg(gate.limit)
                 .arg(gate.window.as_secs().saturating_mul(2).max(1))
                 .arg(Uuid::new_v4().to_string())
-                .invoke_async::<i64>(&mut conn)
-                .await;
-            if let Err(error) = result {
-                tracing::warn!(%error, gate = gate.name, "invitation rate limiter consume failed after successful checks; allowing bounded overshoot");
+                .invoke_async::<i64>(&mut conn);
+            match tokio::time::timeout(INVITATION_REDIS_TIMEOUT, operation).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, gate = gate.name, "invitation rate limiter consume failed after successful checks; allowing bounded overshoot");
+                }
+                Err(_) => {
+                    tracing::warn!(gate = gate.name, "invitation rate limiter consume timed out after successful checks; allowing bounded overshoot");
+                }
             }
         }
         Ok(())
