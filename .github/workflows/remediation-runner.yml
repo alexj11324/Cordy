@@ -1,6 +1,8 @@
 name: Scoped review remediation runner
 
 on:
+  push:
+    branches: [remediation/review-debt-20260824]
   pull_request_target:
     branches: [main]
     types: [opened, reopened, synchronize, ready_for_review]
@@ -9,14 +11,16 @@ permissions:
   contents: write
 
 concurrency:
-  group: review-remediation-${{ github.event.pull_request.number }}
+  group: review-remediation-135
   cancel-in-progress: true
 
 jobs:
   remediate:
     if: >-
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'remediation/review-debt-20260824'
+      (github.event_name == 'push' && github.ref_name == 'remediation/review-debt-20260824') ||
+      (github.event_name == 'pull_request_target' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.head.ref == 'remediation/review-debt-20260824')
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
@@ -31,7 +35,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+          else
+            test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
+          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git fetch --all --prune
