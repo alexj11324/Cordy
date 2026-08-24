@@ -107,6 +107,17 @@ enum IssueCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
         output: OutputFormat,
     },
+    #[command(
+        name = "pull-requests",
+        alias = "prs",
+        about = "List pull requests linked to an issue"
+    )]
+    PullRequests {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -413,6 +424,9 @@ async fn run_with_input<R: Read>(
         Command::Issue(IssueArgs {
             command: IssueCommand::Get { id, output },
         }) => run_issue_get(cli, environment, id, *output).await,
+        Command::Issue(IssueArgs {
+            command: IssueCommand::PullRequests { id, output },
+        }) => run_issue_pull_requests(cli, environment, id, *output).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -1607,6 +1621,58 @@ fn format_issue_get_table(issue: &Value, actors: &IssueActorNames) -> String {
             value_string(issue, "description"),
         ],
     ])
+}
+
+async fn run_issue_pull_requests(
+    cli: &Cli,
+    environment: &Environment,
+    input: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, input)
+        .await
+        .context("resolve issue")?;
+    let result: Value = client
+        .get_json(&format!("/api/issues/{issue_id}/pull-requests"))
+        .await
+        .context("list issue pull requests")?;
+    let stdout = match output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
+        OutputFormat::Table => format_issue_pull_requests_table(&result),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn format_issue_pull_requests_table(result: &Value) -> String {
+    let pull_requests = result
+        .get("pull_requests")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let mut rows = Vec::with_capacity(pull_requests.len() + 1);
+    rows.push(vec![
+        "NUMBER".into(),
+        "STATE".into(),
+        "TITLE".into(),
+        "URL".into(),
+    ]);
+    rows.extend(pull_requests.iter().map(|pull_request| {
+        let url = match value_string(pull_request, "url") {
+            value if value.is_empty() => value_string(pull_request, "html_url"),
+            value => value,
+        };
+        vec![
+            value_string(pull_request, "number"),
+            value_string(pull_request, "state"),
+            value_string(pull_request, "title"),
+            url,
+        ]
+    }));
+    format_table(&rows)
 }
 
 async fn run_user_profile_get(
@@ -3060,6 +3126,125 @@ mod tests {
         assert!(table.contains("2026-08-24"));
         assert!(table.contains("2026-08-31"));
         assert!(table.contains("Preserve the complete description"));
+    }
+
+    #[test]
+    fn issue_pull_requests_parser_supports_go_name_alias_and_defaults() {
+        for name in ["pull-requests", "prs"] {
+            let cli = Cli::try_parse_from(["cordy", "issue", name, "CORD-18"])
+                .expect("pull requests CLI");
+            match cli.command {
+                Command::Issue(IssueArgs {
+                    command: IssueCommand::PullRequests { id, output },
+                }) => {
+                    assert_eq!(id, "CORD-18");
+                    assert_eq!(output, OutputFormat::Table);
+                }
+                _ => panic!("expected issue pull-requests"),
+            }
+        }
+        assert!(Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "pull-requests",
+            "CORD-18",
+            "--output",
+            "json"
+        ])
+        .is_ok());
+    }
+
+    #[tokio::test]
+    async fn issue_pull_requests_resolves_issue_and_preserves_json_wrapper() {
+        let hits = Arc::new(Mutex::new(Vec::<String>::new()));
+        let resolve_hits = Arc::clone(&hits);
+        let pull_request_hits = Arc::clone(&hits);
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(move || {
+                    let hits = Arc::clone(&resolve_hits);
+                    async move {
+                        hits.lock().expect("hits").push("resolve".into());
+                        Json(serde_json::json!({
+                            "id": "11111111-1111-1111-1111-111111111111",
+                            "identifier": "CORD-18"
+                        }))
+                    }
+                }),
+            )
+            .route(
+                "/api/issues/11111111-1111-1111-1111-111111111111/pull-requests",
+                get(move |request: Request| {
+                    let hits = Arc::clone(&pull_request_hits);
+                    async move {
+                        assert_eq!(request.headers()["authorization"], "Bearer token-1");
+                        assert_eq!(request.headers()["x-workspace-id"], "workspace-1");
+                        hits.lock().expect("hits").push("pull-requests".into());
+                        Json(serde_json::json!({
+                            "pull_requests": [{
+                                "number": 42,
+                                "state": "open",
+                                "title": "Rust CLI",
+                                "url": "https://github.example/pr/42"
+                            }],
+                            "count": 1
+                        }))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from(["cordy", "issue", "prs", "CORD-18", "--output", "json"])
+            .expect("pull requests CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("pull requests");
+        let result: Value = serde_json::from_str(&output.stdout).expect("pull request JSON");
+        assert_eq!(result["count"], 1);
+        assert_eq!(result["pull_requests"][0]["number"], 42);
+        assert_eq!(
+            *hits.lock().expect("hits"),
+            vec![String::from("resolve"), String::from("pull-requests")]
+        );
+        task.abort();
+    }
+
+    #[test]
+    fn issue_pull_requests_table_uses_url_then_html_url_fallback() {
+        let result = serde_json::json!({
+            "pull_requests": [
+                {
+                    "number": 42,
+                    "state": "open",
+                    "title": "Direct URL",
+                    "url": "https://github.example/pr/42",
+                    "html_url": "https://ignored.example/pr/42"
+                },
+                {
+                    "number": 43,
+                    "state": "merged",
+                    "title": "Fallback URL",
+                    "html_url": "https://github.example/pr/43"
+                }
+            ]
+        });
+        let table = format_issue_pull_requests_table(&result);
+        assert!(table.starts_with("NUMBER"));
+        assert!(table.contains("Direct URL"));
+        assert!(table.contains("https://github.example/pr/42"));
+        assert!(!table.contains("https://ignored.example/pr/42"));
+        assert!(table.contains("Fallback URL"));
+        assert!(table.contains("https://github.example/pr/43"));
     }
 
     #[test]
