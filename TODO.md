@@ -386,6 +386,18 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added the independent `cordy squad list` CLI slice to PR #129. It uses
+      the existing authenticated/workspace-scoped API client, preserves Go's
+      JSON and table columns (`ID`, `NAME`, `LEADER ID`, `MEMBERS`), keeps the
+      empty-list notice on stderr, and has parser, rendering, and HTTP header
+      contract tests. Exact head is
+      `878852c90a09507a75273b1884cf60bd6b76d1d2`, parent
+      `c584029b6bae4fee5654e4cc2e4827cd3aa28fa1`, tree
+      `b8f663d32fecf520a190a414e523dc71ce34db15`, candidate
+      `bd3aad00766aacd84c62d13fffe2be63d1b7d45e`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready/CLEAN/MERGEABLE were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
