@@ -21,7 +21,8 @@ use crate::auto_update::is_release_version;
 const CHECKSUM_MANIFEST: &str = "checksums.txt";
 const GITHUB_USER_AGENT: &str = concat!("cordy-daemon/", env!("CARGO_PKG_VERSION"));
 const METADATA_TIMEOUT: Duration = Duration::from_secs(10);
-const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
+pub const DEFAULT_UPDATE_DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(120);
+const DOWNLOAD_TIMEOUT: Duration = DEFAULT_UPDATE_DOWNLOAD_TIMEOUT;
 const BREW_PREFIX_TIMEOUT: Duration = Duration::from_secs(10);
 const BREW_UPDATE_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const MAX_ARCHIVE_BYTES: usize = 256 * 1024 * 1024;
@@ -33,6 +34,7 @@ pub enum UpdateFailureKind {
     ResolveExecutable,
     DetectInstall,
     InvalidVersion,
+    InvalidTimeout,
     Metadata,
     AssetSelection,
     Download,
@@ -49,6 +51,7 @@ impl UpdateFailureKind {
             Self::ResolveExecutable => "resolve-executable",
             Self::DetectInstall => "detect-install",
             Self::InvalidVersion => "invalid-version",
+            Self::InvalidTimeout => "invalid-timeout",
             Self::Metadata => "metadata",
             Self::AssetSelection => "asset-selection",
             Self::Download => "download",
@@ -85,6 +88,53 @@ impl fmt::Display for UpdateExecutorError {
 impl std::error::Error for UpdateExecutorError {}
 
 type Result<T> = std::result::Result<T, UpdateExecutorError>;
+
+/// Typed input for the daemon's self-update operation. `target_version =
+/// None` means resolve the latest GitHub release for direct installs. Homebrew
+/// always upgrades its tap's latest formula; the latest query is advisory
+/// there and never prevents the upgrade from being attempted.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct UpdateRequest {
+    pub target_version: Option<String>,
+    pub download_timeout: Option<Duration>,
+}
+
+impl UpdateRequest {
+    pub fn latest() -> Self {
+        Self::default()
+    }
+
+    pub fn for_target(target_version: impl Into<String>) -> Self {
+        Self {
+            target_version: Some(target_version.into()),
+            ..Self::default()
+        }
+    }
+
+    pub fn with_download_timeout(mut self, timeout: Duration) -> Self {
+        self.download_timeout = Some(timeout);
+        self
+    }
+}
+
+/// Installation method reported by the typed update boundary. It intentionally
+/// does not expose the executor's private paths or command details.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateInstallMethod {
+    Direct,
+    Homebrew,
+}
+
+/// Safe update result for callers such as the future CLI facade. Messages are
+/// deliberately path-free; callers can render them without leaking the
+/// running binary location or release URL.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpdateOutcome {
+    pub method: UpdateInstallMethod,
+    pub resolved_version: Option<String>,
+    pub latest_query_failed: bool,
+    pub message: String,
+}
 
 #[derive(Debug, Clone)]
 enum InstallMethod {
@@ -153,23 +203,87 @@ impl UpdateExecutor {
         }
     }
 
-    pub async fn update(&self, target_version: &str) -> anyhow::Result<String> {
-        if !is_release_version(target_version) {
-            return Err(UpdateExecutorError::new(
-                UpdateFailureKind::InvalidVersion,
-                "update target is not a three-component release version",
-            )
-            .into());
+    /// Executes a typed update request. The direct-install path resolves the
+    /// latest release when no target is supplied; Homebrew deliberately keeps
+    /// upgrading even when that advisory latest-release lookup fails.
+    pub async fn update_with_request(
+        &self,
+        request: UpdateRequest,
+    ) -> anyhow::Result<UpdateOutcome> {
+        let timeout =
+            validate_download_timeout(request.download_timeout.unwrap_or(DOWNLOAD_TIMEOUT))?;
+
+        if let Some(target) = request.target_version.as_deref() {
+            validate_target_version(target)?;
         }
+
         match &self.install_method {
             InstallMethod::Homebrew { .. } => {
-                self.update_homebrew().await.map_err(anyhow::Error::from)
+                let (latest_tag, latest_query_failed) =
+                    resolve_homebrew_latest(self.fetch_latest_release_tag().await);
+                let message = self.update_homebrew().await.map_err(anyhow::Error::from)?;
+                Ok(UpdateOutcome {
+                    method: UpdateInstallMethod::Homebrew,
+                    resolved_version: latest_tag,
+                    latest_query_failed,
+                    message,
+                })
             }
-            InstallMethod::Direct => self
-                .update_direct(target_version)
-                .await
-                .map_err(anyhow::Error::from),
+            InstallMethod::Direct => {
+                let target = match request.target_version {
+                    Some(target) => normalize_release_tag(&target),
+                    None => self.fetch_latest_release_tag().await?,
+                };
+                let message = self
+                    .update_direct_with_timeout(&target, timeout)
+                    .await
+                    .map_err(anyhow::Error::from)?;
+                Ok(UpdateOutcome {
+                    method: UpdateInstallMethod::Direct,
+                    resolved_version: Some(target),
+                    latest_query_failed: false,
+                    message,
+                })
+            }
         }
+    }
+
+    /// Alias kept as the concise facade entry point for CLI/service callers.
+    pub async fn update_request(&self, request: UpdateRequest) -> anyhow::Result<UpdateOutcome> {
+        self.update_with_request(request).await
+    }
+
+    pub async fn update(&self, target_version: &str) -> anyhow::Result<String> {
+        Ok(self
+            .update_with_request(UpdateRequest::for_target(target_version))
+            .await?
+            .message)
+    }
+
+    async fn fetch_latest_release_tag(&self) -> Result<String> {
+        let endpoint = "https://api.github.com/repos/cordy-ai/cordy/releases/latest";
+        let response = self
+            .metadata_client
+            .get(endpoint)
+            .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+            .send()
+            .await
+            .map_err(|err| {
+                network_error(UpdateFailureKind::Metadata, "fetch latest release", &err)
+            })?;
+        if !response.status().is_success() {
+            return Err(UpdateExecutorError::new(
+                UpdateFailureKind::Metadata,
+                format!(
+                    "GitHub latest-release API returned HTTP {}",
+                    response.status().as_u16()
+                ),
+            ));
+        }
+        let release: Release = response.json().await.map_err(|err| {
+            network_error(UpdateFailureKind::Metadata, "decode latest release", &err)
+        })?;
+        release_tag(&release.tag_name)
     }
 
     async fn update_homebrew(&self) -> Result<String> {
@@ -204,6 +318,15 @@ impl UpdateExecutor {
     }
 
     async fn update_direct(&self, target_version: &str) -> Result<String> {
+        self.update_direct_with_timeout(target_version, DOWNLOAD_TIMEOUT)
+            .await
+    }
+
+    async fn update_direct_with_timeout(
+        &self,
+        target_version: &str,
+        download_timeout: Duration,
+    ) -> Result<String> {
         let tag = normalize_release_tag(target_version);
         let endpoint = format!("https://api.github.com/repos/cordy-ai/cordy/releases/tags/{tag}");
         let response = self
@@ -258,24 +381,38 @@ impl UpdateExecutor {
                 )
             })?;
 
-        let manifest_bytes = self.fetch_asset(manifest, 2 * 1024 * 1024).await?;
+        let manifest_bytes = self
+            .fetch_asset_with_timeout(manifest, 2 * 1024 * 1024, download_timeout)
+            .await?;
         let expected = checksum_for_asset(&manifest_bytes, &asset.name)?;
-        let archive = self.fetch_asset(asset, MAX_ARCHIVE_BYTES).await?;
+        let archive = self
+            .fetch_asset_with_timeout(asset, MAX_ARCHIVE_BYTES, download_timeout)
+            .await?;
         verify_checksum(&archive, &expected, &asset.name)?;
         let binary = extract_binary(&archive)?;
         install_binary(&self.executable, &binary)?;
         Ok(format!(
-            "Downloaded {} and replaced {}",
-            asset.name,
-            self.executable.display()
+            "Downloaded {} and replaced the current executable",
+            asset.name
         ))
     }
 
     async fn fetch_asset(&self, asset: &ReleaseAsset, limit: usize) -> Result<Vec<u8>> {
+        self.fetch_asset_with_timeout(asset, limit, DOWNLOAD_TIMEOUT)
+            .await
+    }
+
+    async fn fetch_asset_with_timeout(
+        &self,
+        asset: &ReleaseAsset,
+        limit: usize,
+        timeout: Duration,
+    ) -> Result<Vec<u8>> {
         validate_download_url(&asset.download_url)?;
         let mut response = self
             .download_client
             .get(&asset.download_url)
+            .timeout(timeout)
             .send()
             .await
             .map_err(|err| {
@@ -385,6 +522,38 @@ fn normalize_release_tag(version: &str) -> String {
     } else {
         format!("v{version}")
     }
+}
+
+fn validate_target_version(version: &str) -> Result<()> {
+    if !is_release_version(version) {
+        return Err(UpdateExecutorError::new(
+            UpdateFailureKind::InvalidVersion,
+            "update target is not a three-component release version",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_download_timeout(timeout: Duration) -> Result<Duration> {
+    if timeout.is_zero() {
+        return Err(UpdateExecutorError::new(
+            UpdateFailureKind::InvalidTimeout,
+            "download timeout must be greater than zero",
+        ));
+    }
+    Ok(timeout)
+}
+
+fn resolve_homebrew_latest(latest: Result<String>) -> (Option<String>, bool) {
+    match latest {
+        Ok(tag) => (Some(tag), false),
+        Err(_) => (None, true),
+    }
+}
+
+fn release_tag(raw_tag: &str) -> Result<String> {
+    validate_target_version(raw_tag)?;
+    Ok(normalize_release_tag(raw_tag))
 }
 
 fn release_asset_candidates(version: &str) -> Result<Vec<String>> {
@@ -902,6 +1071,41 @@ mod tests {
             known_brew_prefix(Path::new("/srv/cordy/Cellar/cordy")),
             None
         );
+    }
+
+    #[test]
+    fn typed_update_request_resolves_release_tags_and_rejects_dev_versions() {
+        assert_eq!(release_tag("1.2.3").unwrap(), "v1.2.3");
+        assert_eq!(release_tag(" v1.2.3 ").unwrap(), "v1.2.3");
+        let error = release_tag("v1.2.3-17-gdeadbeef").expect_err("dev build tag");
+        assert_eq!(error.kind, UpdateFailureKind::InvalidVersion);
+
+        let request =
+            UpdateRequest::for_target("1.2.3").with_download_timeout(Duration::from_secs(7));
+        assert_eq!(request.target_version.as_deref(), Some("1.2.3"));
+        assert_eq!(request.download_timeout, Some(Duration::from_secs(7)));
+        assert_eq!(UpdateRequest::latest(), UpdateRequest::default());
+    }
+
+    #[test]
+    fn typed_update_request_rejects_zero_download_timeout() {
+        let error = validate_download_timeout(Duration::ZERO).expect_err("zero timeout");
+        assert_eq!(error.kind, UpdateFailureKind::InvalidTimeout);
+        assert!(error.to_string().contains("greater than zero"));
+    }
+
+    #[test]
+    fn homebrew_latest_lookup_failure_keeps_upgrade_plan_runnable() {
+        let (latest, failed) = resolve_homebrew_latest(Err(UpdateExecutorError::new(
+            UpdateFailureKind::Metadata,
+            "network unavailable",
+        )));
+        assert!(latest.is_none());
+        assert!(failed);
+
+        let (latest, failed) = resolve_homebrew_latest(Ok("v1.2.3".into()));
+        assert_eq!(latest.as_deref(), Some("v1.2.3"));
+        assert!(!failed);
     }
 
     #[test]
