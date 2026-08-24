@@ -903,10 +903,11 @@ impl S3Storage {
         if response.status().is_success() {
             return Ok(());
         }
-        Err(parse_s3_failure("PutObjectStream", response)
-            .await
-            .error
-            .into())
+        let failure = parse_s3_failure("PutObjectStream", response).await;
+        // The reader is not replayable, so never retry this request. Retain a
+        // bounded AWS correction for the next upload instead.
+        let _ = self.apply_aws_correction(&failure);
+        Err(failure.error.into())
     }
 
     async fn presigned_get(
@@ -1718,6 +1719,10 @@ mod tests {
                     response
                         .headers_mut()
                         .insert(reqwest::header::RETRY_AFTER, HeaderValue::from_static("0"));
+                    response.headers_mut().insert(
+                        "x-amz-bucket-region",
+                        HeaderValue::from_static("eu-central-1"),
+                    );
                     response
                 }
             }
@@ -2187,7 +2192,8 @@ mod tests {
     async fn non_replayable_streaming_put_is_never_retried() {
         let (endpoint, attempts) =
             s3_status_server(vec![reqwest::StatusCode::SERVICE_UNAVAILABLE]).await;
-        let store = test_s3(&endpoint, true, true);
+        let mut store = test_s3(&endpoint, true, true);
+        store.custom_endpoint = false;
         let error = store
             .upload_stream(
                 "object",
@@ -2202,6 +2208,7 @@ mod tests {
         assert_eq!(error.code.as_deref(), Some("SlowDown"));
         assert_eq!(error.request_id.as_deref(), Some("REQ123"));
         assert_eq!(attempts.load(Ordering::SeqCst), 1);
+        assert_eq!(store.correction().region.as_deref(), Some("eu-central-1"));
     }
 
     #[test]
