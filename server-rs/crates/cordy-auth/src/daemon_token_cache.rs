@@ -53,17 +53,16 @@ impl DaemonTokenCache {
     /// Redis / decode error — a dead Redis must not take down auth.
     pub async fn get(&self, hash: &str) -> Option<DaemonTokenIdentity> {
         let mut conn = self.conn.clone()?;
-        let raw: Option<String> = match redis::cmd("GET")
-            .arg(Self::key(hash))
-            .query_async(&mut conn)
-            .await
+        let raw: Option<String> = match crate::bounded_redis(
+            redis::cmd("GET")
+                .arg(Self::key(hash))
+                .query_async(&mut conn),
+        )
+        .await
         {
             Ok(raw) => raw,
-            Err(e) => {
-                tracing::warn!(
-                    error = %e,
-                    "daemon_token_cache: get failed; falling back to DB"
-                );
+            Err(error) => {
+                tracing::warn!(?error, "daemon_token_cache: get failed; falling back to DB");
                 return None;
             }
         };
@@ -97,15 +96,17 @@ impl DaemonTokenCache {
             tracing::warn!("daemon_token_cache: marshal failed");
             return;
         };
-        let result = redis::cmd("SET")
-            .arg(Self::key(hash))
-            .arg(raw)
-            .arg("EX")
-            .arg(ttl_secs)
-            .query_async::<()>(&mut conn)
-            .await;
-        if let Err(e) = result {
-            tracing::warn!(error = %e, "daemon_token_cache: set failed");
+        let result = crate::bounded_redis(
+            redis::cmd("SET")
+                .arg(Self::key(hash))
+                .arg(raw)
+                .arg("EX")
+                .arg(ttl_secs)
+                .query_async::<()>(&mut conn),
+        )
+        .await;
+        if let Err(error) = result {
+            tracing::warn!(?error, "daemon_token_cache: set failed");
         }
     }
 
@@ -115,13 +116,15 @@ impl DaemonTokenCache {
         let Some(mut conn) = self.conn.clone() else {
             return;
         };
-        let result = redis::cmd("DEL")
-            .arg(Self::key(hash))
-            .query_async::<i64>(&mut conn)
-            .await;
-        if let Err(e) = result {
+        let result = crate::bounded_redis(
+            redis::cmd("DEL")
+                .arg(Self::key(hash))
+                .query_async::<i64>(&mut conn),
+        )
+        .await;
+        if let Err(error) = result {
             tracing::warn!(
-                error = %e,
+                ?error,
                 "daemon_token_cache: invalidate failed; entry will expire on TTL"
             );
         }

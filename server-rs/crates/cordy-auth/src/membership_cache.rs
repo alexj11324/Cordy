@@ -57,18 +57,17 @@ impl MembershipCache {
         let Some(mut conn) = self.conn.clone() else {
             return false;
         };
-        let result: Result<Option<String>, _> = redis::cmd("GET")
-            .arg(Self::key(user_id, workspace_id))
-            .query_async(&mut conn)
-            .await;
+        let result = crate::bounded_redis(
+            redis::cmd("GET")
+                .arg(Self::key(user_id, workspace_id))
+                .query_async::<Option<String>>(&mut conn),
+        )
+        .await;
         match result {
             Ok(Some(_)) => true,
             Ok(None) => false,
-            Err(e) => {
-                tracing::warn!(
-                    error = %e,
-                    "membership_cache: get failed; falling back to DB"
-                );
+            Err(error) => {
+                tracing::warn!(?error, "membership_cache: get failed; falling back to DB");
                 false
             }
         }
@@ -79,15 +78,17 @@ impl MembershipCache {
         let Some(mut conn) = self.conn.clone() else {
             return;
         };
-        let result = redis::cmd("SET")
-            .arg(Self::key(user_id, workspace_id))
-            .arg("1")
-            .arg("EX")
-            .arg(MEMBERSHIP_CACHE_TTL_SECS)
-            .query_async::<()>(&mut conn)
-            .await;
-        if let Err(e) = result {
-            tracing::warn!(error = %e, "membership_cache: set failed");
+        let result = crate::bounded_redis(
+            redis::cmd("SET")
+                .arg(Self::key(user_id, workspace_id))
+                .arg("1")
+                .arg("EX")
+                .arg(MEMBERSHIP_CACHE_TTL_SECS)
+                .query_async::<()>(&mut conn),
+        )
+        .await;
+        if let Err(error) = result {
+            tracing::warn!(?error, "membership_cache: set failed");
         }
     }
 
@@ -96,12 +97,14 @@ impl MembershipCache {
         let Some(mut conn) = self.conn.clone() else {
             return;
         };
-        let result = redis::cmd("DEL")
-            .arg(Self::key(user_id, workspace_id))
-            .query_async::<i64>(&mut conn)
-            .await;
-        if let Err(e) = result {
-            tracing::warn!(error = %e, "membership_cache: invalidate failed");
+        let result = crate::bounded_redis(
+            redis::cmd("DEL")
+                .arg(Self::key(user_id, workspace_id))
+                .query_async::<i64>(&mut conn),
+        )
+        .await;
+        if let Err(error) = result {
+            tracing::warn!(?error, "membership_cache: invalidate failed");
         }
     }
 }
