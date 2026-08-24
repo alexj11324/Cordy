@@ -21,6 +21,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::client::{Client, TaskMessageData};
 use crate::config::Config;
+use crate::execenv::codex_home::codex_resume_rollout_present;
 use crate::execenv::context::{
     cleanup_sidecars, TaskContextMarkerFile, TASK_CONTEXT_MARKER_MANAGED_BY,
     TASK_CONTEXT_MARKER_REL_PATH,
@@ -54,6 +55,7 @@ const TOOL_INPUT_BYTES: usize = 64 * 1024;
 const PREPARE_LEASE_REFRESH: Duration = Duration::from_secs(15);
 const PREPARE_LEASE_TIMEOUT: Duration = Duration::from_secs(10);
 const PREPARE_LEASE_STOP_TIMEOUT: Duration = Duration::from_secs(1);
+const CODEX_ROLLOUT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 /// Real provider adapter for protocol families implemented by `cordy-agent`.
 /// Metadata-only runtimes fail at `build_backend`; no provider can turn into a
@@ -273,7 +275,15 @@ impl ProductionProviderAdapter {
                 .await
                 .map_err(|error| anyhow::anyhow!("execute {}: {error}", target.provider))?;
             let _running = CounterGuard::new(&self.running_tasks);
-            drain_session(&ctx, &client, &task.id, &environment.work_dir, session).await
+            drain_session(
+                &ctx,
+                &client,
+                &task.id,
+                &environment.work_dir,
+                &environment.codex_home,
+                session,
+            )
+            .await
         }
         .await;
 
@@ -498,6 +508,7 @@ async fn drain_session(
     client: &Client,
     task_id: &str,
     work_dir: &str,
+    codex_home: &str,
     session: Session,
 ) -> anyhow::Result<ExecutionResult> {
     let Session {
@@ -511,8 +522,11 @@ async fn drain_session(
     let mut cancelled = false;
     let mut messages_closed = false;
     let mut result_closed = false;
+    let mut pending_session_id: Option<String> = None;
     let mut drain_deadline = Box::pin(tokio::time::sleep(Duration::from_secs(365 * 24 * 3600)));
     let mut drain_armed = false;
+    let mut rollout_ticker = tokio::time::interval(CODEX_ROLLOUT_POLL_INTERVAL);
+    rollout_ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
         if messages_closed && terminal.is_some() {
@@ -533,13 +547,8 @@ async fn drain_session(
                 match received {
                     Some(message) => {
                         if let Some(session_id) = transcript.push(message) {
-                            let pin_ctx = Ctx::new();
-                            let pin = client.pin_task_session(&pin_ctx, task_id, &session_id, work_dir);
-                            match tokio::time::timeout(TRANSCRIPT_REQUEST_TIMEOUT, pin).await {
-                                Ok(Ok(())) => {}
-                                Ok(Err(error)) => tracing::debug!(task = %task_id, %error, "pin task session failed"),
-                                Err(_) => tracing::debug!(task = %task_id, "pin task session timed out"),
-                            }
+                            pending_session_id = Some(session_id);
+                            pin_session_if_ready(client, task_id, work_dir, codex_home, &mut pending_session_id).await;
                         }
                         if transcript.ready() {
                             flush_transcript(client, task_id, &mut transcript).await;
@@ -566,18 +575,64 @@ async fn drain_session(
                 drain_armed = true;
             }
             _ = ticker.tick() => flush_transcript(client, task_id, &mut transcript).await,
+            _ = rollout_ticker.tick() => {
+                pin_session_if_ready(
+                    client,
+                    task_id,
+                    work_dir,
+                    codex_home,
+                    &mut pending_session_id,
+                )
+                .await;
+            }
             () = &mut drain_deadline, if drain_armed => {
                 tracing::warn!(task = %task_id, "provider transcript did not close within drain grace");
                 break;
             }
         }
     }
+    pin_session_if_ready(
+        client,
+        task_id,
+        work_dir,
+        codex_home,
+        &mut pending_session_id,
+    )
+    .await;
     flush_transcript(client, task_id, &mut transcript).await;
     Ok(terminal.unwrap_or_else(|| ExecutionResult {
         status: "failed".to_string(),
         error: "provider messages closed without a terminal result".to_string(),
         ..ExecutionResult::default()
     }))
+}
+
+fn session_pin_ready(codex_home: &str, session_id: &str) -> bool {
+    !session_id.is_empty()
+        && (codex_home.is_empty() || codex_resume_rollout_present(codex_home, session_id))
+}
+
+async fn pin_session_if_ready(
+    client: &Client,
+    task_id: &str,
+    work_dir: &str,
+    codex_home: &str,
+    pending_session_id: &mut Option<String>,
+) {
+    let Some(session_id) = pending_session_id.as_deref() else {
+        return;
+    };
+    if !session_pin_ready(codex_home, session_id) {
+        return;
+    }
+    let session_id = pending_session_id.take().unwrap_or_default();
+    let pin_ctx = Ctx::new();
+    let pin = client.pin_task_session(&pin_ctx, task_id, &session_id, work_dir);
+    match tokio::time::timeout(TRANSCRIPT_REQUEST_TIMEOUT, pin).await {
+        Ok(Ok(())) => {}
+        Ok(Err(error)) => tracing::debug!(task = %task_id, %error, "pin task session failed"),
+        Err(_) => tracing::debug!(task = %task_id, "pin task session timed out"),
+    }
 }
 
 #[derive(Default)]
@@ -1034,5 +1089,25 @@ mod tests {
         );
         assert_eq!(outcome.result.failure_reason, "resume_rejected");
         assert_eq!(outcome.result.retired_session_id, "session-poisoned");
+    }
+
+    #[test]
+    fn codex_session_pin_requires_a_persisted_rollout() {
+        assert!(session_pin_ready("", "provider-session"));
+        assert!(!session_pin_ready(
+            "/missing-codex-home",
+            "provider-session"
+        ));
+
+        let home = tempfile::tempdir().unwrap();
+        let rollout = home
+            .path()
+            .join("sessions/2026/08/24/rollout-2026-08-24T00-00-00-provider-session.jsonl");
+        std::fs::create_dir_all(rollout.parent().unwrap()).unwrap();
+        std::fs::write(&rollout, b"{}\n").unwrap();
+        assert!(session_pin_ready(
+            home.path().to_str().unwrap(),
+            "provider-session"
+        ));
     }
 }
