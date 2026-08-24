@@ -60,6 +60,7 @@ struct DispatchJob {
     workspace_id: Uuid,
     event_type: String,
     payload: serde_json::Value,
+    source_installation_id: Option<Uuid>,
 }
 
 /// Fans domain events out to the hooks that asked for them.
@@ -156,7 +157,13 @@ impl PluginEventDispatcher {
     /// the request that triggered it would cancel the hook the moment the
     /// browser got its response, which is exactly when the hook is only just
     /// starting.
-    pub fn dispatch(&self, event_type: &str, workspace_id: &str, payload: serde_json::Value) {
+    pub fn dispatch(
+        &self,
+        event_type: &str,
+        workspace_id: &str,
+        payload: serde_json::Value,
+        source_installation_id: Option<Uuid>,
+    ) {
         if workspace_id.is_empty() {
             return;
         }
@@ -172,6 +179,7 @@ impl PluginEventDispatcher {
             workspace_id: parsed_workspace,
             event_type: event_type.to_string(),
             payload,
+            source_installation_id,
         }) {
             Ok(()) => {}
             Err(_) => {
@@ -243,7 +251,7 @@ impl PluginEventDispatcher {
             }
         };
         for installation in &installations {
-            if !installation.enabled {
+            if !installation.enabled || job.source_installation_id == Some(installation.id) {
                 continue;
             }
             let manifest = match parse_installation_manifest(&crate::plugin::json_bytes(
@@ -358,7 +366,12 @@ pub fn subscribe_plugin_events(bus: &Bus, dispatcher: Arc<PluginEventDispatcher>
     let forward = |plugin_event: &'static str| {
         let dispatcher = Arc::clone(&dispatcher);
         move |e: &cordy_events::Event| {
-            dispatcher.dispatch(plugin_event, &e.workspace_id, e.payload.clone());
+            dispatcher.dispatch(
+                plugin_event,
+                &e.workspace_id,
+                e.payload.clone(),
+                source_plugin_installation(e),
+            );
         }
     };
 
@@ -375,16 +388,29 @@ pub fn subscribe_plugin_events(bus: &Bus, dispatcher: Arc<PluginEventDispatcher>
     // instead of filtering every field change itself.
     let status_dispatcher = Arc::clone(&dispatcher);
     bus.subscribe(PROTOCOL_ISSUE_UPDATED, move |e: &cordy_events::Event| {
-        status_dispatcher.dispatch(EVENT_ISSUE_UPDATED, &e.workspace_id, e.payload.clone());
+        let source = source_plugin_installation(e);
+        status_dispatcher.dispatch(
+            EVENT_ISSUE_UPDATED,
+            &e.workspace_id,
+            e.payload.clone(),
+            source,
+        );
         // A map lookup, not a parse: cheap enough for the request task.
         if payload_flag(&e.payload, "status_changed") {
             status_dispatcher.dispatch(
                 EVENT_ISSUE_STATUS_CHANGED,
                 &e.workspace_id,
                 e.payload.clone(),
+                source,
             );
         }
     });
+}
+
+fn source_plugin_installation(event: &cordy_events::Event) -> Option<Uuid> {
+    (event.actor_type == "plugin")
+        .then(|| parse_uuid_value(&event.actor_id).ok())
+        .flatten()
 }
 
 /// Finds the issue an event is about, so the callback token issued for the hook
@@ -471,6 +497,24 @@ mod tests {
         ));
         assert!(!payload_flag(&json!({}), "status_changed"));
         assert!(!payload_flag(&serde_json::Value::Null, "status_changed"));
+    }
+
+    #[test]
+    fn plugin_event_source_is_the_originating_installation() {
+        let installation_id = Uuid::now_v7();
+        let event = cordy_events::Event {
+            actor_type: "plugin".into(),
+            actor_id: installation_id.to_string(),
+            ..Default::default()
+        };
+        assert_eq!(source_plugin_installation(&event), Some(installation_id));
+
+        let member_event = cordy_events::Event {
+            actor_type: "member".into(),
+            actor_id: installation_id.to_string(),
+            ..Default::default()
+        };
+        assert_eq!(source_plugin_installation(&member_event), None);
     }
 
     #[test]
