@@ -297,8 +297,9 @@
       unknown fields) while preserving lock/permission/fsync semantics. Current
       head is now `a5419afdd78b55e4a0886c9a93eaf57616f25fcd` (parent
       `058d7761f7fa54c0dadea4c92858777a6a0d91ad`, tree
-      `2763de641477a8537d6a84d556258570deb66c04`); the remote branch was
-      verified at this exact SHA. PR #129 remains
+      `2763de641477a8537d6a84d556258570deb66c04`), candidate
+      `510fe43797e79695a22687d0d323234f621e64db`; the remote branch and PR
+      candidate were verified at these exact SHAs. PR #129 remains
       Ready/CLEAN/MERGEABLE on base `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`.
       The slice adds the bounded unauthenticated `/health` probe (HTTP(S), no
       redirects, only 200, two-second request/outer timeout), self-host/cloud
