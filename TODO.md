@@ -543,6 +543,17 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy skill delete <id>` to PR #129. It preserves Go's explicit
+      confirmation/`--yes` behavior, fail-closed empty IDs, encoded DELETE
+      path, and success/abort output; tests cover accept, decline, EOF, and
+      authenticated request headers. Exact head is
+      `a9b047ff40ccf7365847a4f740f1e5f21d4c86f4`, parent
+      `a027f1b35124caa6ea8ea815406adc27a88ce405`, tree
+      `eee1ad4740be2c2d3f9da54aad5f360e910d93e2`, candidate
+      `cfd05feefc65c8146e9e55275ba0b9f718e15878`, base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
+      Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
+      Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
