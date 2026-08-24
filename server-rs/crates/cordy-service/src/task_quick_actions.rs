@@ -31,7 +31,7 @@ pub(crate) async fn chat_quick_actions_eligible(
     task: &AgentTaskQueue,
     msg: Option<&ChatMessage>,
 ) -> bool {
-    let enabled = match &svc.quick_actions {
+    let enabled = match svc.quick_actions() {
         Some(qa) => qa.enabled(),
         None => false,
     };
@@ -158,7 +158,7 @@ impl TaskService {
     ) -> Result<(), crate::task_service::TaskServiceError> {
         use crate::task_service::TaskServiceError;
 
-        let enabled = match &self.quick_actions {
+        let enabled = match self.quick_actions() {
             Some(qa) => qa.enabled(),
             None => false,
         };
@@ -189,8 +189,7 @@ impl TaskService {
         let prompt = self.build_chat_quick_actions_prompt(task, &target).await?;
 
         let raw = self
-            .quick_actions
-            .as_ref()
+            .quick_actions()
             .expect("enabled gate checked above")
             .generate_json(
                 "",
@@ -243,7 +242,7 @@ impl TaskService {
         task: AgentTaskQueue,
         origin: ChatQuickActionsOrigin,
     ) {
-        let enabled = match &self.quick_actions {
+        let enabled = match self.quick_actions() {
             Some(qa) => qa.enabled(),
             None => false,
         };
