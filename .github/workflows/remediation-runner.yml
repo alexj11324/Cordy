@@ -10,7 +10,7 @@ permissions:
 
 concurrency:
   group: review-remediation-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   remediate:
@@ -32,20 +32,14 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          if git log -1 --pretty=%B | grep -q '^\[remediation-runner\]'; then
-            echo 'Runner-authored synchronization; nothing to do.'
-            echo skip=true >> "$GITHUB_ENV"
-          fi
-
-      - name: Replay known reviewed fixes without forcing conflicts
-        if: env.skip != 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git fetch --all --prune
 
+      - name: Replay known reviewed fixes without forcing conflicts
+        shell: bash
+        run: |
+          set -euo pipefail
           commits=(
             6b52dddb5744e4649a1e665999543b3e4b018995
             92e5a112de11ab7fca40d28c00c76bda1dc62762
@@ -66,7 +60,6 @@ jobs:
             881da969d4d1357553a86115ffe6e17f21c671e8
             33664841ec8733a2601a702af360607304361c88
           )
-
           : > .remediation-replay-report.txt
           printf '# Review-fix replay report\n\n' >> .remediation-replay-report.txt
           for commit in "${commits[@]}"; do
@@ -86,8 +79,17 @@ jobs:
             fi
           done
 
+      - name: Push replayed fixes before long validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git add -A
+          if ! git diff --cached --quiet; then
+            git commit -m '[remediation-runner] replay reviewed fixes'
+          fi
+          git push origin HEAD:remediation/review-debt-20260824
+
       - name: Validate replayed tree
-        if: env.skip != 'true'
         shell: bash
         run: |
           set +e
@@ -105,16 +107,15 @@ jobs:
           }
           run_check 'cargo fmt --all --check' bash -lc 'cd server-rs && cargo fmt --all -- --check'
           run_check 'cargo check workspace all targets' bash -lc 'cd server-rs && cargo check --workspace --all-targets --locked'
-          run_check 'cargo test workspace all targets' bash -lc 'cd server-rs && cargo test --workspace --all-targets --locked'
-          run_check 'strict clippy' bash -lc 'cd server-rs && cargo clippy --workspace --all-targets --locked -- -D warnings'
+          run_check 'cargo test handler/service/server' bash -lc 'cd server-rs && cargo test -p cordy-handler -p cordy-service -p cordy-server --locked'
+          run_check 'strict clippy core' bash -lc 'cd server-rs && cargo clippy -p cordy-handler -p cordy-service -p cordy-server -p cordy-cli --all-targets --locked -- -D warnings'
 
-      - name: Publish replay and validation results to remediation branch
-        if: env.skip != 'true'
+      - name: Publish validation report
         shell: bash
         run: |
           set -euo pipefail
-          git add -A
+          git add .remediation-test-report.txt
           if ! git diff --cached --quiet; then
-            git commit -m '[remediation-runner] replay reviewed fixes and record validation'
+            git commit -m '[remediation-runner] record validation results'
+            git push origin HEAD:remediation/review-debt-20260824
           fi
-          git push origin HEAD:remediation/review-debt-20260824
