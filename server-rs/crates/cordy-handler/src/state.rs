@@ -467,7 +467,7 @@ impl HandlerState {
         self
     }
 
-    /// Installs and starts the S7 GitHub snapshot manager. Applied snapshots
+    /// Installs the S7 GitHub snapshot manager. Applied snapshots
     /// are broadcast with the same weakest-role PR payload as the Go handler.
     pub fn with_github_snapshots(mut self, client: Option<cordy_ghsnapshot::Client>) -> Self {
         let pool = self.pool.clone();
@@ -513,7 +513,6 @@ impl HandlerState {
             Some(pool),
             Some(on_applied),
         ));
-        manager.start();
         self.github_snapshots = manager;
         self
     }

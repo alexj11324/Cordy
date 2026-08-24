@@ -23,6 +23,7 @@ struct ProductionApp {
     heartbeat_scheduler: cordy_handler::heartbeat_scheduler::HeartbeatSchedulerRuntime,
     runtime_sweeper: cordy_handler::runtime_sweeper::RuntimeSweeperRuntime,
     plugin_events: Option<cordy_service::plugin_event_dispatch::PluginEventDispatcherRuntime>,
+    github_snapshots: Option<cordy_ghsnapshot::ManagerRuntime>,
 }
 
 struct VcsWebhookConfig {
@@ -262,6 +263,7 @@ async fn build_production_router(
         .start_notification_event_listeners()
         .start_autopilot_event_listeners();
     let (state, plugin_events) = state.start_plugin_event_dispatcher(root_cancel.child_token());
+    let github_snapshots = state.github_snapshots.start(root_cancel.child_token());
     let heartbeat_scheduler = Arc::new(
         cordy_handler::heartbeat_scheduler::BatchedHeartbeatScheduler::new(
             state.pool.clone(),
@@ -340,6 +342,7 @@ async fn build_production_router(
         heartbeat_scheduler,
         runtime_sweeper,
         plugin_events,
+        github_snapshots,
     })
 }
 
@@ -381,6 +384,19 @@ async fn shutdown_plugin_events(
         Some(runtime) => Some(
             runtime
                 .shutdown(cordy_service::plugin_event_dispatch::DEFAULT_SHUTDOWN_TIMEOUT)
+                .await,
+        ),
+        None => None,
+    }
+}
+
+async fn shutdown_github_snapshots(
+    runtime: Option<cordy_ghsnapshot::ManagerRuntime>,
+) -> Option<cordy_ghsnapshot::ManagerShutdownOutcome> {
+    match runtime {
+        Some(runtime) => Some(
+            runtime
+                .shutdown(cordy_ghsnapshot::DEFAULT_SHUTDOWN_TIMEOUT)
                 .await,
         ),
         None => None,
@@ -493,6 +509,7 @@ async fn main() -> anyhow::Result<()> {
         heartbeat_scheduler,
         runtime_sweeper,
         plugin_events,
+        github_snapshots,
     } = app;
     let serve_result = axum::serve(
         listener,
@@ -510,6 +527,7 @@ async fn main() -> anyhow::Result<()> {
         heartbeat_shutdown,
         runtime_sweeper_shutdown,
         plugin_events_shutdown,
+        github_snapshots_shutdown,
     ) = tokio::join!(
         failure_monitor
             .shutdown(cordy_service::autopilot_failure_monitor::DEFAULT_SHUTDOWN_TIMEOUT),
@@ -521,6 +539,7 @@ async fn main() -> anyhow::Result<()> {
         heartbeat_scheduler.shutdown(),
         runtime_sweeper.shutdown(),
         shutdown_plugin_events(plugin_events),
+        shutdown_github_snapshots(github_snapshots),
     );
     match failure_shutdown {
         cordy_service::autopilot_failure_monitor::ShutdownOutcome::TimedOut => {
@@ -594,6 +613,15 @@ async fn main() -> anyhow::Result<()> {
             tracing::error!("plugin event dispatcher supervisor panicked during shutdown");
         }
         Some(cordy_service::plugin_event_dispatch::PluginEventShutdownOutcome::Stopped) | None => {}
+    }
+    match github_snapshots_shutdown {
+        Some(cordy_ghsnapshot::ManagerShutdownOutcome::TimedOut) => {
+            tracing::warn!("GitHub snapshot manager exceeded shutdown deadline and was aborted");
+        }
+        Some(cordy_ghsnapshot::ManagerShutdownOutcome::Panicked) => {
+            tracing::error!("GitHub snapshot manager task panicked during shutdown");
+        }
+        Some(cordy_ghsnapshot::ManagerShutdownOutcome::Stopped) | None => {}
     }
     serve_result?;
     Ok(())
