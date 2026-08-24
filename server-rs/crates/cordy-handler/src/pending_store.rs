@@ -16,6 +16,8 @@ use chrono::{DateTime, Utc};
 use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::future::Future;
+use std::time::Duration;
 
 // Key namespaces (identical to Go).
 pub const UPDATE_KEY_PREFIX: &str = "mul:{runtime_pending}:update:req:";
@@ -70,6 +72,8 @@ const MODEL_LIST_RUNNING_TIMEOUT_SECS: i64 = 60;
 const MODEL_LIST_STORE_RETENTION_SECS: i64 = 2 * 60;
 pub const MODEL_CATALOG_REVALIDATE_AFTER_SECS: i64 = 60;
 const MODEL_CATALOG_SERVE_WINDOW_SECS: i64 = 24 * 60 * 60;
+/// Bounds cache I/O so a half-open Redis connection cannot stall the model picker.
+const MODEL_CATALOG_REDIS_TIMEOUT: Duration = Duration::from_millis(250);
 const LOCAL_SKILL_PENDING_TIMEOUT_SECS: i64 = 3 * 60;
 const LOCAL_SKILL_RUNNING_TIMEOUT_SECS: i64 = 60;
 const LOCAL_SKILL_STORE_RETENTION_SECS: i64 = 5 * 60;
@@ -647,6 +651,19 @@ pub struct ModelCatalogCache {
     conn: ConnectionManager,
 }
 
+async fn bounded_model_catalog_redis<T, F>(timeout: Duration, operation: F) -> anyhow::Result<T>
+where
+    F: Future<Output = redis::RedisResult<T>>,
+{
+    match tokio::time::timeout(timeout, operation).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(anyhow::anyhow!(
+            "model catalog Redis operation failed: {error}"
+        )),
+        Err(_) => Err(anyhow::anyhow!("model catalog Redis operation timed out")),
+    }
+}
+
 impl ModelCatalogCache {
     pub fn new(conn: ConnectionManager) -> Self {
         Self { conn }
@@ -657,16 +674,27 @@ impl ModelCatalogCache {
             return Ok(None);
         }
         let key = model_catalog_key(runtime_id);
-        let Some(raw) = get_bytes(&mut self.conn.clone(), &key).await? else {
+        let mut conn = self.conn.clone();
+        let mut get = redis::cmd("GET");
+        get.arg(&key);
+        let raw: Option<Vec<u8>> =
+            bounded_model_catalog_redis(MODEL_CATALOG_REDIS_TIMEOUT, get.query_async(&mut conn))
+                .await
+                .map_err(|error| anyhow::anyhow!("get model catalog: {error}"))?;
+        let Some(raw) = raw else {
             return Ok(None);
         };
         let snapshot: ModelCatalogSnapshot = match serde_json::from_slice(&raw) {
             Ok(snapshot) => snapshot,
             Err(error) => {
-                let _: Result<i64, _> = redis::cmd("DEL")
-                    .arg(&key)
-                    .query_async(&mut self.conn.clone())
-                    .await;
+                let mut conn = self.conn.clone();
+                let mut del = redis::cmd("DEL");
+                del.arg(&key);
+                let _: anyhow::Result<i64> = bounded_model_catalog_redis(
+                    MODEL_CATALOG_REDIS_TIMEOUT,
+                    del.query_async(&mut conn),
+                )
+                .await;
                 return Err(anyhow::anyhow!("decode model catalog: {error}"));
             }
         };
@@ -697,14 +725,16 @@ impl ModelCatalogCache {
         };
         let data = serde_json::to_string(&snapshot)
             .map_err(|error| anyhow::anyhow!("marshal model catalog: {error}"))?;
-        let (): () = redis::cmd("SET")
-            .arg(model_catalog_key(runtime_id))
+        let mut conn = self.conn.clone();
+        let mut set = redis::cmd("SET");
+        set.arg(model_catalog_key(runtime_id))
             .arg(data)
             .arg("EX")
-            .arg(MODEL_CATALOG_SERVE_WINDOW_SECS)
-            .query_async(&mut self.conn.clone())
-            .await
-            .map_err(|error| anyhow::anyhow!("persist model catalog: {error}"))?;
+            .arg(MODEL_CATALOG_SERVE_WINDOW_SECS);
+        let (): () =
+            bounded_model_catalog_redis(MODEL_CATALOG_REDIS_TIMEOUT, set.query_async(&mut conn))
+                .await
+                .map_err(|error| anyhow::anyhow!("persist model catalog: {error}"))?;
         Ok(())
     }
 
@@ -712,11 +742,13 @@ impl ModelCatalogCache {
         if runtime_id.is_empty() {
             return Ok(());
         }
-        let _: i64 = redis::cmd("DEL")
-            .arg(model_catalog_key(runtime_id))
-            .query_async(&mut self.conn.clone())
-            .await
-            .map_err(|error| anyhow::anyhow!("invalidate model catalog: {error}"))?;
+        let mut conn = self.conn.clone();
+        let mut del = redis::cmd("DEL");
+        del.arg(model_catalog_key(runtime_id));
+        let _: i64 =
+            bounded_model_catalog_redis(MODEL_CATALOG_REDIS_TIMEOUT, del.query_async(&mut conn))
+                .await
+                .map_err(|error| anyhow::anyhow!("invalidate model catalog: {error}"))?;
         Ok(())
     }
 }
@@ -1600,6 +1632,17 @@ async fn load_local_skill_import(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn model_catalog_redis_operation_has_a_hard_deadline() {
+        let error = bounded_model_catalog_redis(
+            Duration::from_millis(1),
+            std::future::pending::<redis::RedisResult<()>>(),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.to_string(), "model catalog Redis operation timed out");
+    }
 
     #[test]
     fn local_skill_list_uses_the_direct_go_wire_shape() {
