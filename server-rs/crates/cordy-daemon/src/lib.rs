@@ -32,6 +32,7 @@ pub mod diskusage;
 pub mod health;
 pub mod helpers;
 pub mod identity;
+pub mod lifecycle;
 pub mod manager;
 pub mod poisoned;
 pub mod process_control;
