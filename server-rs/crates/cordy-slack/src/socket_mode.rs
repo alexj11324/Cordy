@@ -11,12 +11,14 @@ use tokio_util::sync::CancellationToken;
 
 use crate::client::SlackClient;
 
-/// The subset of Socket Mode envelope types this adapter reacts to. Everything
-/// else (hello, disconnect, incoming errors) is lifecycle noise.
+/// The subset of Socket Mode envelope types this adapter reacts to. Disconnect
+/// requests end the stream so its owner can reconnect; hello and incoming
+/// error frames remain lifecycle noise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnvelopeKind {
     EventsApi,
     SlashCommand,
+    Disconnect,
     Other,
 }
 
@@ -29,6 +31,8 @@ pub struct Envelope {
     /// The inner payload (the Events API envelope or the slash-command form
     /// object).
     pub payload: serde_json::Value,
+    /// Slack's lifecycle reason for a disconnect control frame.
+    pub disconnect_reason: Option<String>,
     /// Whether the envelope carries an id that must be ACKed.
     pub needs_ack: bool,
 }
@@ -39,6 +43,7 @@ impl Envelope {
         let kind = match v.get("type").and_then(|t| t.as_str())? {
             "events_api" => EnvelopeKind::EventsApi,
             "slash_commands" => EnvelopeKind::SlashCommand,
+            "disconnect" => EnvelopeKind::Disconnect,
             _ => EnvelopeKind::Other,
         };
         let envelope_id = v
@@ -50,6 +55,10 @@ impl Envelope {
             kind,
             envelope_id: envelope_id.clone(),
             payload: v.get("payload").cloned().unwrap_or(serde_json::Value::Null),
+            disconnect_reason: v
+                .get("reason")
+                .and_then(|reason| reason.as_str())
+                .map(str::to_owned),
             needs_ack: !envelope_id.is_empty(),
         })
     }
@@ -65,6 +74,13 @@ impl Envelope {
             })
             .to_string(),
         )
+    }
+
+    fn disconnect_error(&self) -> Option<anyhow::Error> {
+        (self.kind == EnvelopeKind::Disconnect).then(|| {
+            let reason = self.disconnect_reason.as_deref().unwrap_or("unknown");
+            anyhow::anyhow!("slack: socket mode disconnect requested: {reason}")
+        })
     }
 }
 
@@ -143,6 +159,9 @@ impl SocketModeStream {
                     .await
                     .map_err(|e| anyhow::anyhow!("slack: ack failed: {e}"))?;
             }
+            if let Some(error) = envelope.disconnect_error() {
+                return Err(error);
+            }
             handler(envelope).await?;
         }
     }
@@ -169,6 +188,18 @@ mod tests {
         .unwrap();
         assert_eq!(e.kind, EnvelopeKind::SlashCommand);
         assert_eq!(e.payload["command"], "/issue");
+
+        let e = Envelope::parse(
+            r#"{"type":"disconnect","reason":"refresh_requested","debug_info":{"host":"wss-111.slack.com"}}"#,
+        )
+        .unwrap();
+        assert_eq!(e.kind, EnvelopeKind::Disconnect);
+        assert_eq!(e.disconnect_reason.as_deref(), Some("refresh_requested"));
+        assert!(!e.needs_ack);
+        assert_eq!(
+            e.disconnect_error().unwrap().to_string(),
+            "slack: socket mode disconnect requested: refresh_requested"
+        );
 
         let e = Envelope::parse(r#"{"type":"hello"}"#).unwrap();
         assert_eq!(e.kind, EnvelopeKind::Other);

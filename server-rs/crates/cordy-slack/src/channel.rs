@@ -326,8 +326,10 @@ impl SlackChannel {
                 }
                 Ok(())
             }
-            // hello/connecting/incoming-errors are lifecycle noise.
-            EnvelopeKind::Other => Ok(()),
+            // The transport turns disconnect frames into connection errors so
+            // the supervisor reconnects before they reach the channel. Other
+            // hello/connecting/incoming-error frames are lifecycle noise.
+            EnvelopeKind::Disconnect | EnvelopeKind::Other => Ok(()),
         }
     }
 
