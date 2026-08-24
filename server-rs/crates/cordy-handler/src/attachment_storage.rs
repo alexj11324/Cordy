@@ -265,17 +265,25 @@ impl S3Storage {
         if key.is_empty() || key.split('/').any(|v| v == "." || v == "..") {
             anyhow::bail!("invalid storage key")
         }
-        let encoded = key.split('/').map(aws_encode).collect::<Vec<_>>().join("/");
         let mut url = self.endpoint.clone();
-        if self.path_style {
-            url.set_path(&format!("/{}/{encoded}", aws_encode(&self.bucket)));
-        } else {
+        if !self.path_style {
             let host = self
                 .endpoint
                 .host_str()
                 .ok_or_else(|| anyhow::anyhow!("S3 endpoint has no host"))?;
             url.set_host(Some(&format!("{}.{host}", self.bucket)))?;
-            url.set_path(&format!("/{encoded}"));
+        }
+        {
+            let mut segments = url
+                .path_segments_mut()
+                .map_err(|_| anyhow::anyhow!("S3 endpoint cannot be a base URL"))?;
+            // Custom S3 gateways may be mounted below a path prefix. Retain
+            // those configured segments and append the bucket/key beneath it.
+            segments.pop_if_empty();
+            if self.path_style {
+                segments.push(&self.bucket);
+            }
+            segments.extend(key.split('/'));
         }
         Ok(url)
     }
@@ -498,7 +506,7 @@ impl AttachmentStorage for S3Storage {
     }
     fn key_from_url(&self, raw: &str) -> Option<String> {
         let url = Url::parse(raw).ok()?;
-        let decoded = url
+        let mut segments = url
             .path_segments()?
             .map(|part| {
                 percent_encoding::percent_decode_str(part)
@@ -506,14 +514,36 @@ impl AttachmentStorage for S3Storage {
                     .ok()
                     .map(|v| v.into_owned())
             })
-            .collect::<Option<Vec<_>>>()?
-            .join("/");
-        let mut path = decoded.trim_start_matches('/');
-        if self.path_style && path.starts_with(&format!("{}/", self.bucket)) {
-            path = &path[self.bucket.len() + 1..];
+            .collect::<Option<Vec<_>>>()?;
+        let endpoint_host = self.endpoint.host_str()?;
+        let raw_host = url.host_str()?;
+        let endpoint_origin = raw_host.eq_ignore_ascii_case(endpoint_host);
+        let virtual_origin = raw_host
+            .strip_suffix(endpoint_host)
+            .is_some_and(|prefix| prefix.trim_end_matches('.') == self.bucket);
+        if endpoint_origin || virtual_origin {
+            let endpoint_segments = self
+                .endpoint
+                .path_segments()?
+                .filter(|part| !part.is_empty())
+                .map(|part| {
+                    percent_encoding::percent_decode_str(part)
+                        .decode_utf8()
+                        .ok()
+                        .map(|value| value.into_owned())
+                })
+                .collect::<Option<Vec<_>>>()?;
+            if segments.starts_with(&endpoint_segments) {
+                segments.drain(..endpoint_segments.len());
+            }
         }
-        (!path.is_empty() && !path.split('/').any(|p| p == "." || p == ".."))
-            .then(|| path.to_string())
+        // A persisted path-style URL remains readable after switching the
+        // current client to virtual-hosted addressing.
+        if endpoint_origin && segments.first().is_some_and(|part| part == &self.bucket) {
+            segments.remove(0);
+        }
+        let path = segments.join("/");
+        (!path.is_empty() && !path.split('/').any(|p| p == "." || p == "..")).then_some(path)
     }
     fn object_url(&self, key: &str) -> String {
         if let Some(domain) = &self.cdn_domain {
@@ -726,6 +756,29 @@ mod tests {
     }
 
     #[test]
+    fn custom_endpoint_path_is_preserved_for_requests_and_key_recovery() {
+        let store = test_s3_store("https://gateway.example/s3/", true);
+        let key = "workspaces/w/file.txt";
+        let url = store.request_url(key).unwrap();
+        assert_eq!(
+            url.as_str(),
+            "https://gateway.example/s3/bucket/workspaces/w/file.txt"
+        );
+        assert_eq!(store.key_from_url(url.as_str()).as_deref(), Some(key));
+    }
+
+    #[test]
+    fn persisted_path_style_url_survives_virtual_hosted_switch() {
+        let store = test_s3_store("https://s3.us-west-2.amazonaws.com", false);
+        assert_eq!(
+            store
+                .key_from_url("https://s3.us-west-2.amazonaws.com/bucket/workspaces/w/file.txt")
+                .as_deref(),
+            Some("workspaces/w/file.txt")
+        );
+    }
+
+    #[test]
     fn local_key_recovery_does_not_depend_on_current_public_origin() {
         let dir = tempfile::tempdir().unwrap();
         let store =
@@ -744,6 +797,24 @@ mod tests {
         assert!(use_path_style("my.bucket", false, Some(false)));
         assert!(!use_path_style("my-bucket", false, None));
         assert!(!use_path_style("my.bucket", true, Some(false)));
+    }
+
+    fn test_s3_store(endpoint: &str, path_style: bool) -> S3Storage {
+        S3Storage {
+            client: reqwest::Client::new(),
+            bucket: "bucket".into(),
+            region: "us-west-2".into(),
+            endpoint: Url::parse(endpoint).unwrap(),
+            path_style,
+            credentials: SharedCredentialsProvider::new(aws_credential_types::Credentials::new(
+                "key",
+                "secret",
+                None,
+                None,
+                "attachment-test",
+            )),
+            cdn_domain: None,
+        }
     }
 
     #[test]
