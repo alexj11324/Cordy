@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::antigravity::{AntigravityBackend, AntigravityConfig};
 use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
@@ -25,6 +26,11 @@ pub fn build_backend(
     let family = protocol_family(runtime_id)
         .ok_or_else(|| AgentError::UnsupportedRuntime(runtime_id.to_string()))?;
     match family {
+        "antigravity" => Ok(Arc::new(AntigravityBackend::new(AntigravityConfig {
+            command: config.command,
+            env: config.env,
+            ..AntigravityConfig::default()
+        }))),
         "codebuddy" => Ok(Arc::new(CodebuddyBackend::new(CodebuddyConfig {
             command: config.command,
             env: config.env,
@@ -429,6 +435,9 @@ mod tests {
 
         let codebuddy = build_backend("codebuddy", BackendConfig::default());
         assert!(codebuddy.is_ok());
+
+        let antigravity = build_backend("antigravity", BackendConfig::default());
+        assert!(antigravity.is_ok());
 
         let metadata_only = build_backend("claude", BackendConfig::default());
         assert!(matches!(

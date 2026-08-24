@@ -5,6 +5,7 @@
 //! become constructible only when their real transport implementation lands;
 //! metadata alone never manufactures a backend that cannot execute.
 
+pub mod antigravity;
 pub mod codebuddy;
 pub mod codebuddy_discovery;
 pub mod command;
@@ -18,6 +19,7 @@ pub mod stderr;
 pub mod stream;
 pub mod version;
 
+pub use antigravity::{AntigravityBackend, AntigravityConfig};
 pub use codebuddy::{CodebuddyBackend, CodebuddyConfig};
 pub use command::{BlockedArgMode, FilteredArgs, RuntimeCommand};
 pub use contract::{
