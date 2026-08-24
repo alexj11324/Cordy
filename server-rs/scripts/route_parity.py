@@ -20,7 +20,9 @@ QUALIFIED_CALL_PATTERN = re.compile(
     r"(?:::(?:r#)?[A-Za-z_][A-Za-z0-9_]*)+)"
     r"\s*(?:::<[^{}()]*>)?\s*\("
 )
-CFG_TEST_PATTERN = re.compile(r"#\s*\[\s*cfg\s*\(\s*test\s*\)\s*\]")
+CFG_PATTERN = re.compile(
+    r"#\s*\[\s*cfg\s*\((?P<predicate>[^\]]*)\)\s*\]", re.DOTALL
+)
 WILDCARD_PARAMETER_PATTERN = re.compile(r"\{\*[^{}]+\}")
 PARAMETER_PATTERN = re.compile(r"\{[^{}]+\}")
 EXPECTED_CONTRACT_SIZE = 424
@@ -145,7 +147,7 @@ def extract_routes(source: str) -> set[tuple[str, str]]:
         if not match:
             continue
         route, methods = match.groups()
-        for method in METHOD_PATTERN.findall(methods):
+        for method in top_level_routing_methods(methods):
             routes.add((method.upper(), normalize_route(route)))
     return routes
 
@@ -249,7 +251,7 @@ def matching_brace(masked: str, opening: int) -> int:
 
 
 def production_source(source: str) -> str:
-    """Blank exact `#[cfg(test)]` items and blocks while preserving offsets."""
+    """Blank code that is not guaranteed to exist in a production build."""
     masked = rust_code_mask(source)
     production = list(source)
 
@@ -258,7 +260,20 @@ def production_source(source: str) -> str:
             "\n" if char == "\n" else " " for char in production[start:end]
         ]
 
-    for attribute in CFG_TEST_PATTERN.finditer(masked):
+    for attribute in CFG_PATTERN.finditer(masked):
+        if all(
+            char.isspace()
+            for char in production[attribute.start() : attribute.end()]
+        ):
+            continue
+        predicate = attribute.group("predicate")
+        normalized_predicate = re.sub(r"\s+", "", predicate)
+        if normalized_predicate == "not(test)":
+            continue
+        if normalized_predicate != "test":
+            compact = " ".join(predicate.split())
+            raise ValueError(f"unsupported cfg predicate: {compact}")
+
         cursor = attribute.end()
         while cursor < len(masked) and masked[cursor].isspace():
             cursor += 1
@@ -288,6 +303,30 @@ def production_source(source: str) -> str:
         blank(attribute.start(), end)
 
     return "".join(production)
+
+
+def top_level_routing_methods(expression: str):
+    """Yield HTTP method constructors on a MethodRouter's outer chain."""
+    masked = rust_code_mask(expression)
+    depth_at = [0] * (len(masked) + 1)
+    round_depth = square_depth = brace_depth = 0
+    for index, char in enumerate(masked):
+        depth_at[index] = round_depth + square_depth + brace_depth
+        if char == "(":
+            round_depth += 1
+        elif char == ")":
+            round_depth -= 1
+        elif char == "[":
+            square_depth += 1
+        elif char == "]":
+            square_depth -= 1
+        elif char == "{":
+            brace_depth += 1
+        elif char == "}":
+            brace_depth -= 1
+    for match in METHOD_PATTERN.finditer(masked):
+        if depth_at[match.start()] == 0:
+            yield match.group(1)
 
 
 def top_level_method_calls(source: str, method: str):
@@ -330,7 +369,7 @@ def extract_mounted_routes(expression: str) -> set[tuple[str, str]]:
         if not match:
             continue
         route, methods = match.groups()
-        for method in METHOD_PATTERN.findall(methods):
+        for method in top_level_routing_methods(methods):
             routes.add((method.upper(), normalize_route(route)))
     return routes
 
@@ -512,6 +551,31 @@ def match_arm_expressions(expression: str) -> list[str]:
     return expressions
 
 
+def passthrough_router_base(expression: str) -> str | None:
+    """Return the shared Router binding for a route-preserving outer chain."""
+    masked = rust_code_mask(expression)
+    base = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*)", masked)
+    if base is None:
+        return None
+    cursor = base.end()
+    while True:
+        while cursor < len(masked) and masked[cursor].isspace():
+            cursor += 1
+        if cursor == len(masked):
+            return base.group(1)
+        if masked[cursor] != ".":
+            return None
+        method = re.match(r"\.([A-Za-z_][A-Za-z0-9_]*)\s*\(", masked[cursor:])
+        if method is None or method.group(1) not in {
+            "layer",
+            "route_layer",
+            "with_state",
+        }:
+            return None
+        opening = cursor + method.end() - 1
+        cursor = matching_delimiter(masked, opening, "(", ")") + 1
+
+
 def extract_rust_routes(source_root: Path) -> set[tuple[str, str]]:
     """Extract routes reachable from the production `build_router` entrypoint."""
     root_source = source_root / "lib.rs"
@@ -561,11 +625,23 @@ def extract_rust_routes(source_root: Path) -> set[tuple[str, str]]:
 
             match_arms = match_arm_expressions(expression)
             if match_arms:
-                for arm in match_arms:
-                    if not walk_expression(arm, True):
-                        raise ValueError(
-                            f"{source_path}: unresolved Router-valued match arm"
-                        )
+                bases = [passthrough_router_base(arm) for arm in match_arms]
+                if (
+                    any(base is None or base not in bindings for base in bases)
+                    or len(set(bases)) != 1
+                ):
+                    raise ValueError(
+                        f"{source_path}: runtime-dependent Router match branches "
+                        "are unsupported"
+                    )
+                name = bases[0]
+                assert name is not None
+                if name in seen_bindings:
+                    raise ValueError(f"{source_path}: cyclic router binding {name}")
+                seen_bindings.add(name)
+                if not walk_expression(bindings[name], True):
+                    raise ValueError(f"{source_path}: unresolved Router match base {name}")
+                seen_bindings.remove(name)
                 found_router = True
             elif stripped.startswith("if "):
                 raise ValueError(

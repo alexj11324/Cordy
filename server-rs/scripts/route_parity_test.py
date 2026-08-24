@@ -30,6 +30,60 @@ class RouteParityTest(unittest.TestCase):
             },
         )
 
+    def test_extracts_only_outer_method_router_verbs(self):
+        source = """
+                Router::new()
+                    .route("/layered", post(handler).layer(state.get()))
+                    .route("/inline", get(|| async { client.delete().await }))
+                    .route(
+                        "/chained",
+                        axum::routing::post(create)
+                            .delete(remove)
+                            .layer(state.get()),
+                    );
+                """
+
+        self.assertEqual(
+            route_parity.extract_routes(source),
+            {
+                ("POST", "/layered"),
+                ("GET", "/inline"),
+                ("POST", "/chained"),
+                ("DELETE", "/chained"),
+            },
+        )
+
+    def test_rejects_compound_test_cfg_predicates(self):
+        for predicate in (
+            "all(test, unix)",
+            'any(test, feature = "test-utils")',
+            'feature = "optional-router"',
+        ):
+            with self.subTest(predicate=predicate):
+                source = f"""
+                        #[cfg({predicate})]
+                        fn guarded() -> Router {{
+                            Router::new().route("/guarded", get(handler))
+                        }}
+                        """
+                with self.assertRaisesRegex(ValueError, "unsupported cfg predicate"):
+                    route_parity.production_source(source)
+
+        filtered = route_parity.production_source(
+            """
+            #[cfg(test)]
+            mod tests {
+                #[cfg(all(test, unix))]
+                fn nested_test_only() {}
+            }
+
+            #[cfg(not(test))]
+            fn production() {}
+            """
+        )
+        self.assertNotIn("nested_test_only", filtered)
+        self.assertIn("fn production", filtered)
+
     def test_extracts_only_routes_reachable_from_build_router(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -95,6 +149,47 @@ class RouteParityTest(unittest.TestCase):
                 route_parity.extract_rust_routes(root),
                 {("GET", "/direct"), ("GET", "/mounted")},
             )
+
+    def test_accepts_match_arms_that_only_layer_the_same_router(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "lib.rs").write_text(
+                """
+                pub fn build_router() -> Router {
+                    let app = Router::new().route("/mounted", get(handler));
+                    match metrics {
+                        Some(metrics) => app.layer(with_metrics(metrics)),
+                        None => app,
+                    }
+                }
+                """,
+                encoding="utf-8",
+            )
+
+            self.assertEqual(
+                route_parity.extract_rust_routes(root),
+                {("GET", "/mounted")},
+            )
+
+    def test_rejects_match_arms_with_different_router_bindings(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "lib.rs").write_text(
+                """
+                pub fn build_router() -> Router {
+                    let primary = Router::new().route("/primary", get(handler));
+                    let fallback = Router::new().route("/fallback", get(handler));
+                    match use_primary {
+                        true => primary,
+                        false => fallback,
+                    }
+                }
+                """,
+                encoding="utf-8",
+            )
+
+            with self.assertRaisesRegex(ValueError, "runtime-dependent Router match"):
+                route_parity.extract_rust_routes(root)
 
     def test_rejects_duplicate_contract_entries_after_normalization(self):
         with tempfile.TemporaryDirectory() as directory:
