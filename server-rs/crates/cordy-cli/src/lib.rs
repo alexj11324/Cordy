@@ -118,6 +118,44 @@ enum IssueCommand {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
         output: OutputFormat,
     },
+    #[command(about = "Manage pull requests linked to an issue")]
+    PullRequest(IssuePullRequestArgs),
+}
+
+#[derive(Debug, Args)]
+struct IssuePullRequestArgs {
+    #[command(subcommand)]
+    command: IssuePullRequestCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum IssuePullRequestCommand {
+    #[command(about = "Attach an existing GitHub pull request to an issue")]
+    Attach(IssuePullRequestAttachArgs),
+}
+
+#[derive(Debug, Args)]
+struct IssuePullRequestAttachArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(
+        long,
+        help = "GitHub pull request URL: https://github.com/{owner}/{repo}/pull/{number}"
+    )]
+    url: String,
+    #[arg(
+        long,
+        help = "Optional PR title, used only when the workspace has no GitHub App installed"
+    )]
+    title: Option<String>,
+    #[arg(long, help = "Optional PR state: open, closed, merged, or draft")]
+    state: Option<String>,
+    #[arg(long, help = "Optional head branch name")]
+    branch: Option<String>,
+    #[arg(long, help = "Optional head commit SHA")]
+    head_sha: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -427,6 +465,12 @@ async fn run_with_input<R: Read>(
         Command::Issue(IssueArgs {
             command: IssueCommand::PullRequests { id, output },
         }) => run_issue_pull_requests(cli, environment, id, *output).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::PullRequest(IssuePullRequestArgs {
+                    command: IssuePullRequestCommand::Attach(args),
+                }),
+        }) => run_issue_pull_request_attach(cli, environment, args).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -1673,6 +1717,64 @@ fn format_issue_pull_requests_table(result: &Value) -> String {
         ]
     }));
     format_table(&rows)
+}
+
+#[derive(Debug, Serialize)]
+struct AttachPullRequestBody {
+    url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    branch: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    head_sha: Option<String>,
+}
+
+async fn run_issue_pull_request_attach(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssuePullRequestAttachArgs,
+) -> Result<RunOutput> {
+    let url = args.url.trim();
+    if url.is_empty() {
+        bail!("--url is required (https://github.com/{owner}/{repo}/pull/{number})");
+    }
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let optional = |value: &Option<String>| {
+        value
+            .as_ref()
+            .filter(|value| !value.trim().is_empty())
+            .cloned()
+    };
+    let body = AttachPullRequestBody {
+        url: url.into(),
+        title: optional(&args.title),
+        state: optional(&args.state),
+        branch: optional(&args.branch),
+        head_sha: optional(&args.head_sha),
+    };
+    let result: Value = client
+        .post_json(&format!("/api/issues/{issue_id}/pull-requests"), &body)
+        .await
+        .context("attach pull request")?;
+    let wrapped = serde_json::json!({
+        "pull_request": result.get("pull_request").cloned().unwrap_or(Value::Null)
+    });
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&wrapped)?),
+        OutputFormat::Table => format_issue_pull_requests_table(&serde_json::json!({
+            "pull_requests": [wrapped["pull_request"].clone()]
+        })),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
 }
 
 async fn run_user_profile_get(
@@ -3245,6 +3347,129 @@ mod tests {
         assert!(!table.contains("https://ignored.example/pr/42"));
         assert!(table.contains("Fallback URL"));
         assert!(table.contains("https://github.example/pr/43"));
+    }
+
+    #[test]
+    fn issue_pull_request_attach_parser_requires_url_and_matches_go_flags() {
+        assert!(
+            Cli::try_parse_from(["cordy", "issue", "pull-request", "attach", "CORD-18"]).is_err()
+        );
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "pull-request",
+            "attach",
+            "CORD-18",
+            "--url",
+            "https://github.com/owner/repo/pull/42",
+            "--title",
+            "Rust CLI",
+            "--state",
+            "open",
+            "--branch",
+            "cli",
+            "--head-sha",
+            "abc123",
+            "--output",
+            "json",
+        ])
+        .expect("attach CLI");
+        match cli.command {
+            Command::Issue(IssueArgs {
+                command:
+                    IssueCommand::PullRequest(IssuePullRequestArgs {
+                        command: IssuePullRequestCommand::Attach(args),
+                    }),
+            }) => {
+                assert_eq!(args.issue_id, "CORD-18");
+                assert_eq!(args.url, "https://github.com/owner/repo/pull/42");
+                assert_eq!(args.title.as_deref(), Some("Rust CLI"));
+                assert_eq!(args.state.as_deref(), Some("open"));
+                assert_eq!(args.branch.as_deref(), Some("cli"));
+                assert_eq!(args.head_sha.as_deref(), Some("abc123"));
+                assert_eq!(args.output, OutputFormat::Json);
+            }
+            _ => panic!("expected issue pull-request attach"),
+        }
+    }
+
+    #[tokio::test]
+    async fn issue_pull_request_attach_posts_trimmed_url_and_optional_metadata() {
+        let captured = Arc::new(Mutex::new(None::<Value>));
+        let captured_by_handler = Arc::clone(&captured);
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({
+                        "id": "11111111-1111-1111-1111-111111111111",
+                        "identifier": "CORD-18"
+                    }))
+                }),
+            )
+            .route(
+                "/api/issues/11111111-1111-1111-1111-111111111111/pull-requests",
+                post(move |headers: HeaderMap, Json(body): Json<Value>| {
+                    let captured = Arc::clone(&captured_by_handler);
+                    async move {
+                        assert_eq!(headers["authorization"], "Bearer token-1");
+                        *captured.lock().expect("capture body") = Some(body);
+                        Json(serde_json::json!({
+                            "pull_request": {
+                                "number": 42,
+                                "state": "open",
+                                "title": "Rust CLI",
+                                "url": "https://github.com/owner/repo/pull/42"
+                            }
+                        }))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("serve");
+        });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "issue",
+            "pull-request",
+            "attach",
+            "CORD-18",
+            "--url",
+            "  https://github.com/owner/repo/pull/42  ",
+            "--title",
+            "Rust CLI",
+            "--state",
+            "   ",
+            "--branch",
+            "cli",
+            "--output",
+            "json",
+        ])
+        .expect("attach CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("attach pull request");
+        let result: Value = serde_json::from_str(&output.stdout).expect("attach JSON");
+        assert_eq!(result["pull_request"]["number"], 42);
+        let body = captured
+            .lock()
+            .expect("captured body")
+            .clone()
+            .expect("body");
+        assert_eq!(body["url"], "https://github.com/owner/repo/pull/42");
+        assert_eq!(body["title"], "Rust CLI");
+        assert_eq!(body["branch"], "cli");
+        assert!(body.get("state").is_none());
+        assert!(body.get("head_sha").is_none());
+        task.abort();
     }
 
     #[test]
