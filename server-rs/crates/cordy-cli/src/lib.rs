@@ -2281,6 +2281,8 @@ enum SquadCommand {
     },
     #[command(about = "Create a new squad")]
     Create(SquadCreateArgs),
+    #[command(about = "Update a squad")]
+    Update(SquadUpdateArgs),
 }
 
 #[derive(Debug, Args)]
@@ -2291,6 +2293,24 @@ struct SquadCreateArgs {
     description: String,
     #[arg(long, help = "Leader agent (name or ID) — required")]
     leader: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct SquadUpdateArgs {
+    #[arg(value_name = "SQUAD-ID")]
+    squad_id: String,
+    #[arg(long, help = "New name")]
+    name: Option<String>,
+    #[arg(long, help = "New description")]
+    description: Option<String>,
+    #[arg(long, help = "New instructions")]
+    instructions: Option<String>,
+    #[arg(long, help = "New leader agent (name or ID)")]
+    leader: Option<String>,
+    #[arg(long, help = "New avatar URL")]
+    avatar_url: Option<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
 }
@@ -3000,6 +3020,9 @@ async fn run_with_input<R: Read>(
         Command::Squad(SquadArgs {
             command: SquadCommand::Create(args),
         }) => run_squad_create(cli, environment, args).await,
+        Command::Squad(SquadArgs {
+            command: SquadCommand::Update(args),
+        }) => run_squad_update(cli, environment, args).await,
         Command::Label(LabelArgs {
             command: LabelCommand::List { output, full_id },
         }) => run_label_list(cli, environment, *output, *full_id).await,
@@ -13839,6 +13862,72 @@ async fn run_squad_create(
     })
 }
 
+async fn run_squad_update(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SquadUpdateArgs,
+) -> Result<RunOutput> {
+    let squad_id = args.squad_id.trim();
+    if squad_id.is_empty() {
+        bail!("squad ID must not be empty");
+    }
+    let mut body = serde_json::Map::new();
+    if let Some(name) = &args.name {
+        body.insert("name".into(), Value::String(name.clone()));
+    }
+    if let Some(description) = &args.description {
+        body.insert("description".into(), Value::String(description.clone()));
+    }
+    if let Some(instructions) = &args.instructions {
+        body.insert("instructions".into(), Value::String(instructions.clone()));
+    }
+    if let Some(avatar_url) = &args.avatar_url {
+        body.insert("avatar_url".into(), Value::String(avatar_url.clone()));
+    }
+    if body.is_empty() && args.leader.is_none() {
+        bail!(
+            "no fields to update; use flags like --name, --description, --instructions, --leader"
+        );
+    }
+
+    let client = new_api_client(cli, environment)?;
+    if let Some(leader) = &args.leader {
+        let leader = leader.trim();
+        if leader.is_empty() {
+            bail!("--leader must not be empty");
+        }
+        let workspace_id = resolve_current_workspace_id(cli, environment);
+        let leader_id = resolve_autopilot_agent(&client, &workspace_id, leader)
+            .await
+            .context("resolve leader")?;
+        body.insert("leader_id".into(), Value::String(leader_id));
+    }
+    if body.is_empty() {
+        bail!(
+            "no fields to update; use flags like --name, --description, --instructions, --leader"
+        );
+    }
+
+    let squad: Value = client
+        .put_json(
+            &format!("/api/squads/{}", encoded_path_segment(squad_id)),
+            &body,
+        )
+        .await
+        .context("update squad")?;
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&squad)?),
+            OutputFormat::Table => format!(
+                "Squad updated: {} ({})\n",
+                value_string(&squad, "name"),
+                value_string(&squad, "id")
+            ),
+        },
+        stderr: String::new(),
+    })
+}
+
 fn format_squad_list_table(squads: &[Value]) -> String {
     let mut rows = vec![vec![
         "ID".into(),
@@ -24570,6 +24659,99 @@ mod tests {
             .await
             .expect_err("missing leader");
         assert_eq!(error.to_string(), "--leader is required (name or ID)");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn squad_update_sends_only_explicit_fields_and_resolves_leader() {
+        let app = Router::new()
+            .route(
+                "/api/agents",
+                get(|request: Request| async move {
+                    assert_eq!(request.headers()["authorization"], "Bearer token-1");
+                    assert_eq!(request.headers()["x-workspace-id"], "workspace-1");
+                    assert_eq!(request.uri().query(), Some("workspace_id=workspace-1"));
+                    Json(serde_json::json!([{"id":"agent-1","name":"Lambda"}]))
+                }),
+            )
+            .route(
+                "/api/squads/squad-1",
+                put(|headers: HeaderMap, Json(body): Json<Value>| async move {
+                    assert_eq!(headers["authorization"], "Bearer token-1");
+                    assert_eq!(headers["x-workspace-id"], "workspace-1");
+                    assert_eq!(
+                        body,
+                        serde_json::json!({
+                            "name": "Updated",
+                            "description": "",
+                            "instructions": "Check tests",
+                            "leader_id": "agent-1",
+                            "avatar_url": "https://example.test/avatar.png"
+                        })
+                    );
+                    Json(serde_json::json!({"id":"squad-1","name":"Updated"}))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let cli = Cli::try_parse_from([
+            "cordy",
+            "squad",
+            "update",
+            "squad-1",
+            "--name",
+            "Updated",
+            "--description",
+            "",
+            "--instructions",
+            "Check tests",
+            "--leader",
+            "Lambda",
+            "--avatar-url",
+            "https://example.test/avatar.png",
+            "--output",
+            "table",
+        ])
+        .expect("squad update CLI");
+        let Command::Squad(SquadArgs {
+            command: SquadCommand::Update(args),
+        }) = &cli.command
+        else {
+            panic!("expected squad update");
+        };
+        assert_eq!(args.description.as_deref(), Some(""));
+        assert_eq!(
+            args.avatar_url.as_deref(),
+            Some("https://example.test/avatar.png")
+        );
+
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("squad update");
+        assert_eq!(output.stdout, "Squad updated: Updated (squad-1)\n");
+        assert!(output.stderr.is_empty());
+
+        let no_fields = SquadUpdateArgs {
+            squad_id: "squad-1".into(),
+            name: None,
+            description: None,
+            instructions: None,
+            leader: None,
+            avatar_url: None,
+            output: OutputFormat::Json,
+        };
+        let error = run_squad_update(&cli, &environment, &no_fields)
+            .await
+            .expect_err("no fields");
+        assert!(error.to_string().contains("no fields to update"));
         server.abort();
     }
 
