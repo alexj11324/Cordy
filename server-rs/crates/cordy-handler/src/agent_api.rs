@@ -1021,6 +1021,26 @@ async fn update_agent(
         Ok(value) => value,
         Err(response) => return response,
     };
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to start agent update transaction",
+            )
+        }
+    };
+    let existing = match agent::get_agent_for_update(&mut *tx, existing.id).await {
+        Ok(Some(existing)) if existing.workspace_id == ws => existing,
+        Ok(Some(_)) | Ok(None) => return error_response(StatusCode::NOT_FOUND, "agent not found"),
+        Err(error) => {
+            tracing::warn!(%error, "failed to lock agent for update");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load agent");
+        }
+    };
+    if let Err(response) = manage_or_forbidden(&context, &existing) {
+        return response;
+    }
     let runtime_id = match request.runtime_id.as_deref() {
         Some(v) => match Uuid::parse_str(v) {
             Ok(v) => v,
@@ -1032,7 +1052,7 @@ async fn update_agent(
         },
     };
     let target_runtime =
-        match runtime::get_agent_runtime_for_workspace(&state.pool, runtime_id, ws).await {
+        match runtime::get_agent_runtime_for_workspace(&mut *tx, runtime_id, ws).await {
             Ok(Some(runtime)) => runtime,
             _ => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
         };
@@ -1058,8 +1078,7 @@ async fn update_agent(
     let effective_targets = if request.invocation_targets.is_some() {
         request.invocation_targets.clone()
     } else if permission_touched {
-        match agent_invocation_target::list_agent_invocation_targets(&state.pool, existing.id).await
-        {
+        match agent_invocation_target::list_agent_invocation_targets(&mut *tx, existing.id).await {
             Ok(targets) => Some(
                 targets
                     .into_iter()
@@ -1206,15 +1225,6 @@ async fn update_agent(
         Some("")
     } else {
         None
-    };
-    let mut tx = match state.pool.begin().await {
-        Ok(tx) => tx,
-        Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to start agent update transaction",
-            )
-        }
     };
     let updated = agent::update_agent(
         &mut *tx,
