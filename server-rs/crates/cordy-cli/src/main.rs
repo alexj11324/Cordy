@@ -17,6 +17,10 @@ async fn main() {
             eprint!("{}", output.stderr);
         }
         Err(cause) => {
+            if let Some(output) = cordy_cli::output_for_error(&cause) {
+                print!("{}", output.stdout);
+                eprint!("{}", output.stderr);
+            }
             eprintln!(
                 "{}",
                 error::format_error(&cause, cli.debug_enabled(&environment))
