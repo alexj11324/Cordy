@@ -84,6 +84,8 @@ enum Command {
     User(UserArgs),
     #[command(about = "Work with workspaces")]
     Workspace(WorkspaceArgs),
+    #[command(about = "Work with issue labels")]
+    Label(LabelArgs),
     #[command(about = "Print version information")]
     Version {
         #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
@@ -95,6 +97,63 @@ enum Command {
 struct IssueArgs {
     #[command(subcommand)]
     command: IssueCommand,
+}
+
+#[derive(Debug, Args)]
+struct LabelArgs {
+    #[command(subcommand)]
+    command: LabelCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum LabelCommand {
+    #[command(about = "List labels in the workspace")]
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+        #[arg(long, help = "Show full UUIDs in table output")]
+        full_id: bool,
+    },
+    #[command(about = "Get label details")]
+    Get {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
+    #[command(about = "Create a new label")]
+    Create(LabelCreateArgs),
+    #[command(about = "Update a label")]
+    Update(LabelUpdateArgs),
+    #[command(about = "Delete a label")]
+    Delete {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
+}
+
+#[derive(Debug, Args)]
+struct LabelCreateArgs {
+    #[arg(long, help = "Label name (required)")]
+    name: Option<String>,
+    #[arg(long, help = "Hex color like #3b82f6 (required)")]
+    color: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct LabelUpdateArgs {
+    #[arg(value_name = "ID")]
+    id: String,
+    #[arg(long, help = "New name")]
+    name: Option<String>,
+    #[arg(long, help = "New hex color")]
+    color: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Subcommand)]
@@ -1255,6 +1314,21 @@ async fn run_with_input<R: Read>(
         Command::Workspace(WorkspaceArgs {
             command: WorkspaceCommand::Update(args),
         }) => run_workspace_update(cli, environment, args, input).await,
+        Command::Label(LabelArgs {
+            command: LabelCommand::List { output, full_id },
+        }) => run_label_list(cli, environment, *output, *full_id).await,
+        Command::Label(LabelArgs {
+            command: LabelCommand::Get { id, output },
+        }) => run_label_get(cli, environment, id, *output).await,
+        Command::Label(LabelArgs {
+            command: LabelCommand::Create(args),
+        }) => run_label_create(cli, environment, args).await,
+        Command::Label(LabelArgs {
+            command: LabelCommand::Update(args),
+        }) => run_label_update(cli, environment, args).await,
+        Command::Label(LabelArgs {
+            command: LabelCommand::Delete { id, output },
+        }) => run_label_delete(cli, environment, id, *output).await,
         Command::Version { output } => run_version(*output),
     }
 }
@@ -2491,9 +2565,19 @@ async fn resolve_task_run_id(
 }
 
 async fn resolve_label_id(client: &ApiClient, workspace_id: &str, input: &str) -> Result<String> {
+    resolve_label_reference(client, workspace_id, input)
+        .await
+        .map(|(id, _)| id)
+}
+
+async fn resolve_label_reference(
+    client: &ApiClient,
+    workspace_id: &str,
+    input: &str,
+) -> Result<(String, String)> {
     let trimmed = input.trim();
     if is_canonical_uuid(trimmed) {
-        return Ok(trimmed.into());
+        return Ok((trimmed.into(), trimmed.into()));
     }
     if workspace_id.is_empty() {
         bail!("resolve label: workspace_id is required to resolve label id prefixes");
@@ -2522,18 +2606,29 @@ async fn resolve_label_id(client: &ApiClient, workspace_id: &str, input: &str) -
         .and_then(Value::as_array)
         .into_iter()
         .flatten()
-        .map(|label| value_string(label, "id"))
-        .filter(|id| !id.is_empty() && compact_uuid(id).starts_with(&prefix))
+        .map(|label| (value_string(label, "id"), value_string(label, "name")))
+        .filter(|(id, _)| !id.is_empty() && compact_uuid(id).starts_with(&prefix))
         .collect::<Vec<_>>();
-    matches.sort();
+    matches.sort_by(|left, right| left.0.cmp(&right.0));
     match matches.as_slice() {
-        [id] => Ok(id.clone()),
+        [(id, display)] => Ok((
+            id.clone(),
+            if display.is_empty() {
+                id.clone()
+            } else {
+                display.clone()
+            },
+        )),
         [] => bail!(
             "no label found matching id prefix {input:?}; run the list command with --full-id to copy the full UUID"
         ),
         _ => bail!(
             "ambiguous label id prefix {input:?}; matches:\n  {}\nUse more characters or run the list command with --full-id",
-            matches.join("\n  ")
+            matches
+                .iter()
+                .map(|(id, _)| id.as_str())
+                .collect::<Vec<_>>()
+                .join("\n  ")
         ),
     }
 }
@@ -4364,6 +4459,173 @@ fn format_label_table(labels: &[Value], full_id: bool) -> String {
         ]
     }));
     format_table(&rows)
+}
+
+fn format_workspace_label_table(labels: &[Value], full_id: bool) -> String {
+    let mut rows = vec![vec![
+        "ID".into(),
+        "NAME".into(),
+        "COLOR".into(),
+        "CREATED".into(),
+    ]];
+    rows.extend(labels.iter().map(|label| {
+        vec![
+            display_id(&value_string(label, "id"), full_id),
+            value_string(label, "name"),
+            value_string(label, "color"),
+            value_string(label, "created_at").chars().take(10).collect(),
+        ]
+    }));
+    format_table(&rows)
+}
+
+fn format_label_result(
+    label: &Value,
+    output: OutputFormat,
+    include_created: bool,
+) -> Result<String> {
+    match output {
+        OutputFormat::Json => Ok(format!("{}\n", serde_json::to_string_pretty(label)?)),
+        OutputFormat::Table if include_created => Ok(format_workspace_label_table(
+            std::slice::from_ref(label),
+            true,
+        )),
+        OutputFormat::Table => Ok(format_label_table(std::slice::from_ref(label), true)),
+    }
+}
+
+async fn run_label_list(
+    cli: &Cli,
+    environment: &Environment,
+    output: OutputFormat,
+    full_id: bool,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let path = if workspace_id.is_empty() {
+        "/api/labels".into()
+    } else {
+        format!(
+            "/api/labels?workspace_id={}",
+            form_urlencoded::byte_serialize(workspace_id.as_bytes()).collect::<String>()
+        )
+    };
+    let result: Value = client.get_json(&path).await.context("list labels")?;
+    let labels = issue_labels(&result);
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(labels)?),
+            OutputFormat::Table => format_workspace_label_table(labels, full_id),
+        },
+        stderr: String::new(),
+    })
+}
+
+async fn run_label_get(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let label_id = resolve_label_id(&client, &workspace_id, id)
+        .await
+        .context("resolve label")?;
+    let label: Value = client
+        .get_json(&format!("/api/labels/{label_id}"))
+        .await
+        .context("get label")?;
+    Ok(RunOutput {
+        stdout: format_label_result(&label, output, true)?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_label_create(
+    cli: &Cli,
+    environment: &Environment,
+    args: &LabelCreateArgs,
+) -> Result<RunOutput> {
+    let name = args
+        .name
+        .as_deref()
+        .filter(|name| !name.is_empty())
+        .context("--name is required")?;
+    let color = args
+        .color
+        .as_deref()
+        .filter(|color| !color.is_empty())
+        .context("--color is required (e.g. #3b82f6)")?;
+    let client = new_api_client(cli, environment)?;
+    let label: Value = client
+        .post_json(
+            "/api/labels",
+            &serde_json::json!({"name":name,"color":color}),
+        )
+        .await
+        .context("create label")?;
+    Ok(RunOutput {
+        stdout: format_label_result(&label, args.output, false)?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_label_update(
+    cli: &Cli,
+    environment: &Environment,
+    args: &LabelUpdateArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let label_id = resolve_label_id(&client, &workspace_id, &args.id)
+        .await
+        .context("resolve label")?;
+    let mut body = serde_json::Map::new();
+    if let Some(name) = args.name.as_deref().filter(|name| !name.is_empty()) {
+        body.insert("name".into(), Value::String(name.into()));
+    }
+    if let Some(color) = args.color.as_deref().filter(|color| !color.is_empty()) {
+        body.insert("color".into(), Value::String(color.into()));
+    }
+    if body.is_empty() {
+        bail!("nothing to update — provide --name and/or --color");
+    }
+    let label: Value = client
+        .put_json(&format!("/api/labels/{label_id}"), &body)
+        .await
+        .context("update label")?;
+    Ok(RunOutput {
+        stdout: format_label_result(&label, args.output, false)?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_label_delete(
+    cli: &Cli,
+    environment: &Environment,
+    id: &str,
+    output: OutputFormat,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    let (label_id, display) = resolve_label_reference(&client, &workspace_id, id)
+        .await
+        .context("resolve label")?;
+    client
+        .delete(&format!("/api/labels/{label_id}"))
+        .await
+        .context("delete label")?;
+    Ok(RunOutput {
+        stdout: match output {
+            OutputFormat::Json => format!(
+                "{}\n",
+                serde_json::to_string_pretty(&serde_json::json!({"id":label_id,"deleted":true}))?
+            ),
+            OutputFormat::Table => format!("Label {display} deleted.\n"),
+        },
+        stderr: String::new(),
+    })
 }
 
 async fn run_issue_label_list(
@@ -9761,6 +10023,102 @@ mod tests {
             serde_json::from_str::<Value>(&output.stdout).expect("detach JSON"),
             serde_json::json!({"detached":true})
         );
+        task.abort();
+    }
+
+    #[test]
+    fn label_parser_and_tables_match_go_registry_contract() {
+        let create = Cli::try_parse_from([
+            "cordy", "label", "create", "--name", "Bug", "--color", "#ff0000", "--output", "table",
+        ])
+        .expect("label create CLI");
+        let Command::Label(LabelArgs {
+            command: LabelCommand::Create(args),
+        }) = &create.command
+        else {
+            panic!("expected label create");
+        };
+        assert_eq!(args.name.as_deref(), Some("Bug"));
+        assert_eq!(args.color.as_deref(), Some("#ff0000"));
+        assert_eq!(args.output, OutputFormat::Table);
+
+        let label = serde_json::json!({
+            "id":"11111111-1111-1111-1111-111111111111","name":"Bug","color":"#ff0000",
+            "created_at":"2026-08-24T12:34:56Z"
+        });
+        let short = format_workspace_label_table(std::slice::from_ref(&label), false);
+        assert!(short.starts_with("ID"));
+        assert!(short.contains("11111111"));
+        assert!(short.contains("2026-08-24"));
+        let details = format_label_result(&label, OutputFormat::Table, true).expect("details");
+        assert!(details.contains("11111111-1111-1111-1111-111111111111"));
+    }
+
+    #[tokio::test]
+    async fn label_create_update_and_delete_use_go_http_and_output_contracts() {
+        let label_id = "11111111-1111-1111-1111-111111111111";
+        let app = Router::new()
+            .route(
+                "/api/labels",
+                post(|Json(body): Json<Value>| async move {
+                    assert_eq!(body, serde_json::json!({"name":"Bug","color":"#ff0000"}));
+                    Json(serde_json::json!({
+                        "id":"11111111-1111-1111-1111-111111111111",
+                        "name":"Bug","color":"#ff0000"
+                    }))
+                }),
+            )
+            .route(
+                "/api/labels/11111111-1111-1111-1111-111111111111",
+                put(|Json(body): Json<Value>| async move {
+                    assert_eq!(body, serde_json::json!({"name":"Defect"}));
+                    Json(serde_json::json!({
+                        "id":"11111111-1111-1111-1111-111111111111",
+                        "name":"Defect","color":"#ff0000"
+                    }))
+                })
+                .delete(|| async { axum::http::StatusCode::NO_CONTENT }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let create = Cli::try_parse_from([
+            "cordy", "label", "create", "--name", "Bug", "--color", "#ff0000",
+        ])
+        .expect("label create CLI");
+        let created = run_with_input(&create, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("create label");
+        assert_eq!(
+            serde_json::from_str::<Value>(&created.stdout).expect("created JSON")["name"],
+            "Bug"
+        );
+
+        let update = Cli::try_parse_from([
+            "cordy", "label", "update", label_id, "--name", "Defect", "--output", "table",
+        ])
+        .expect("label update CLI");
+        let updated = run_with_input(&update, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("update label");
+        assert!(updated.stdout.contains("Defect"));
+
+        let delete =
+            Cli::try_parse_from(["cordy", "label", "delete", label_id, "--output", "json"])
+                .expect("label delete CLI");
+        let deleted = run_with_input(&delete, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("delete label");
+        let deleted: Value = serde_json::from_str(&deleted.stdout).expect("deleted JSON");
+        assert_eq!(deleted["id"], label_id);
+        assert_eq!(deleted["deleted"], true);
         task.abort();
     }
 
