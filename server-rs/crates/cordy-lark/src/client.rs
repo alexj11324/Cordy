@@ -383,6 +383,25 @@ pub trait ApiClient: Send + Sync {
         p: DownloadResourceParams,
     ) -> anyhow::Result<DownloadedResource>;
 
+    /// Streams one binary message resource when the transport supports it.
+    /// The default preserves compatibility for test and alternate clients by
+    /// adapting the existing bounded download into an in-memory reader. The
+    /// production HTTP client overrides this so the resolver does not hold a
+    /// second full-size copy of the resource while downloading it.
+    async fn download_message_resource_stream(
+        &self,
+        creds: InstallationCredentials,
+        p: DownloadResourceParams,
+    ) -> anyhow::Result<DownloadedResourceStream> {
+        let got = self.download_message_resource(creds, p).await?;
+        Ok(DownloadedResourceStream {
+            body: Box::new(std::io::Cursor::new(got.data)),
+            content_type: got.content_type,
+            filename: got.filename,
+            size_bytes: got.size_bytes,
+        })
+    }
+
     /// Resolves a set of user open_ids to their display names via
     /// GET /open-apis/contact/v3/users/batch. The enricher uses it to label
     /// recent-context / quoted / forwarded speakers (and the sender who

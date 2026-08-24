@@ -31,10 +31,10 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::client::{
-    AddReactionParams, ApiClient, BindingPromptParams, BotInfo,
-    DeleteReactionParams, DownloadResourceParams, DownloadedResource, DownloadedResourceStream,
-    InstallationCredentials, LarkMessage, LarkMessageMention, ListMessagesParams, PatchCardParams,
-    ReplyTarget, SendCardParams, SendMarkdownCardParams, SendTextParams,
+    AddReactionParams, ApiClient, BindingPromptParams, BotInfo, DeleteReactionParams,
+    DownloadResourceParams, DownloadedResource, DownloadedResourceStream, InstallationCredentials,
+    LarkMessage, LarkMessageMention, ListMessagesParams, PatchCardParams, ReplyTarget,
+    SendCardParams, SendMarkdownCardParams, SendTextParams,
 };
 use crate::types::{ChatId, OpenId};
 
@@ -1034,6 +1034,14 @@ impl ApiClient for HttpApiClient {
         })
     }
 
+    async fn download_message_resource_stream(
+        &self,
+        creds: InstallationCredentials,
+        p: DownloadResourceParams,
+    ) -> anyhow::Result<DownloadedResourceStream> {
+        HttpApiClient::download_message_resource_stream(self, creds, p).await
+    }
+
     /// Adds an emoji reaction to a message via POST
     /// /open-apis/im/v1/messages/{message_id}/reactions. Returns the
     /// reaction_id so it can be deleted later.
@@ -1270,10 +1278,8 @@ impl HttpApiClient {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .to_string();
-        if resp
-            .content_length()
-            .is_some_and(|size| size > MAX_MESSAGE_RESOURCE_BYTES as u64)
-        {
+        let content_length = resp.content_length();
+        if content_length.is_some_and(|size| size > MAX_MESSAGE_RESOURCE_BYTES as u64) {
             anyhow::bail!(
                 "lark http client: download resource: resource exceeds {} bytes",
                 MAX_MESSAGE_RESOURCE_BYTES
@@ -1339,7 +1345,7 @@ impl HttpApiClient {
             body: Box::new(reader),
             content_type,
             filename: filename_from_content_disposition(&disposition),
-            size_bytes: 0,
+            size_bytes: content_length.unwrap_or_default() as i64,
         })
     }
 }
@@ -1660,6 +1666,20 @@ mod tests {
     fn stub_client_refuses_every_call() {
         let stub = crate::client::StubApiClient::new();
         assert!(!stub.is_configured());
+    }
+
+    #[tokio::test]
+    async fn api_trait_object_exposes_resource_streaming() {
+        let api: Arc<dyn ApiClient> = Arc::new(HttpApiClient::new(HttpClientConfig::default()));
+        let error = api
+            .download_message_resource_stream(
+                InstallationCredentials::default(),
+                DownloadResourceParams::default(),
+            )
+            .await
+            .expect_err("empty resource identity must fail before network I/O");
+
+        assert!(error.to_string().contains("missing message_id"));
     }
 
     #[test]

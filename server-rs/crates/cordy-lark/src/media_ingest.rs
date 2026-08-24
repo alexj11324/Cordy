@@ -258,20 +258,14 @@ impl FeishuMediaResolver {
         creds: &InstallationCredentials,
         p: DownloadResourceParams,
     ) -> anyhow::Result<DownloadedResourceStream> {
-        // The transport's buffered download wraps its bytes into a reader —
-        // the same shape Go produced via io.NopCloser(bytes.NewReader(...)).
-        let got = self.api.download_message_resource(creds.clone(), p).await?;
-        Ok(DownloadedResourceStream {
-            body: Box::new(std::io::Cursor::new(got.data)),
-            content_type: got.content_type,
-            filename: got.filename,
-            size_bytes: got.size_bytes,
-        })
+        self.api
+            .download_message_resource_stream(creds.clone(), p)
+            .await
     }
 
-    /// Buffers then uploads one resource. The transport already enforces the
-    /// 100 MiB resource cap, so buffering is bounded; the returned count is
-    /// the byte length actually transferred.
+    /// Buffers the bounded transport stream once, then uploads it through the
+    /// shared storage API. This avoids the previous buffered-download plus
+    /// upload-buffer copy while preserving the storage lane's current API.
     async fn upload_resource(
         &self,
         _ctx: CancellationToken,
