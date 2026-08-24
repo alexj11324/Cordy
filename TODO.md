@@ -585,6 +585,17 @@
       `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`; remote head and PR
       Ready (`draft=false`) were verified. Scoped rustfmt/diff-check pass;
       Cargo/review/gate/merge remain with pro.
+- [x] Added `cordy skill files upsert <skill-id>` to PR #129. It validates the
+      required path/content, preserves mutually exclusive UTF-8 content
+      sources, sends the Go-compatible PUT body, and renders JSON or table
+      output. Exact head is
+      `b4cda54b7228f65eb421d29320fc6794209dfc03`, parent
+      `ef5cc6370c2bce1cc4fc1fa3b0cee0bce9bde098`, tree
+      `b549ef34993666507733ae4c9385ef30384b1caa`; the PR base had externally
+      advanced to `f78aa57fb09e8db0d6cc79c823658d0789cdb3ed` and GitHub
+      temporarily reported `candidate=null`, `mergeable=dirty` (restack is
+      delegated to pro). Remote head and `draft=false` were verified. Scoped
+      rustfmt/diff-check pass; Cargo/review/gate/merge remain with pro.
 - [x] Closed the update facade's already-current behavior gap on PR #129:
       explicit/latest targets are normalized against an optional current
       version and return a typed no-op before download or Homebrew execution;
