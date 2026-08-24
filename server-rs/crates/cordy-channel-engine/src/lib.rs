@@ -30,6 +30,7 @@ pub mod fresh_command;
 pub mod ids;
 pub mod issue_command;
 pub mod lease;
+pub mod postgres_store;
 pub mod provenance;
 pub mod redis_lease_store;
 pub mod resolvers;

@@ -9,6 +9,7 @@ license.workspace = true
 axum = { workspace = true }
 cordy-auth = { path = "../cordy-auth" }
 cordy-db = { path = "../cordy-db" }
+cordy-redis = { path = "../cordy-redis" }
 chrono = { workspace = true }
 ipnetwork = { workspace = true }
 jsonwebtoken = { workspace = true }
@@ -16,5 +17,6 @@ redis = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }
+tokio-util = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }

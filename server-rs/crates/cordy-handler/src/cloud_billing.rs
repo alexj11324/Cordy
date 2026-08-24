@@ -7,10 +7,10 @@ use std::time::{Duration, Instant};
 
 use axum::body::{Body, Bytes};
 use axum::extract::{ConnectInfo, Extension, Path, Request, State};
-use axum::http::{header, HeaderMap, HeaderValue, Method, StatusCode, Uri};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
-use axum::{middleware, Router};
+use axum::{Router, middleware};
 use cordy_middleware::workspace::WorkspaceContext;
 use futures_util::StreamExt;
 use ipnetwork::IpNetwork;
@@ -103,8 +103,11 @@ impl StripeIpLimiter {
         let now = Instant::now();
         let cutoff = now - self.window;
         let mut hits = self.hits.lock().await;
+        hits.retain(|_, entries| {
+            entries.retain(|seen| *seen > cutoff);
+            !entries.is_empty()
+        });
         let entries = hits.entry(ip.to_string()).or_default();
-        entries.retain(|seen| *seen > cutoff);
         if entries.len() >= self.limit {
             return false;
         }
@@ -438,7 +441,7 @@ async fn create_subscription_checkout(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to build subscription request",
-            )
+            );
         }
     };
     proxy_call(
@@ -792,15 +795,19 @@ mod tests {
     }
 
     fn test_state(flags: bool) -> HandlerState {
-        let state = HandlerState::new(
-            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
-            cordy_auth::pat_cache::PatCache::disabled(),
-            None,
-        );
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let pat_cache = cordy_auth::pat_cache::PatCache::disabled();
         if flags {
-            state.with_feature_flags(Arc::new(EnabledFlags))
+            HandlerState::new_with_production_dependencies(
+                pool,
+                pat_cache,
+                None,
+                Arc::new(cordy_analytics::NoopClient),
+                Arc::new(EnabledFlags),
+                None,
+            )
         } else {
-            state
+            HandlerState::new(pool, pat_cache, None)
         }
     }
 
@@ -902,6 +909,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn stripe_limiter_evicts_expired_client_entries() {
+        let limiter = StripeIpLimiter::test(2);
+        limiter.hits.lock().await.insert(
+            "198.51.100.9".into(),
+            vec![Instant::now() - Duration::from_secs(120)],
+        );
+
+        assert!(limiter.allow("203.0.113.7").await);
+
+        let hits = limiter.hits.lock().await;
+        assert!(!hits.contains_key("198.51.100.9"));
+        assert_eq!(hits.len(), 1);
+    }
+
+    #[tokio::test]
     async fn subscription_checkout_injects_workspace_and_preserves_idempotency() {
         let cloud = Arc::new(FakeProxy::default());
         let workspace_id = Uuid::new_v4();
@@ -939,13 +961,16 @@ mod tests {
     #[test]
     fn stripe_checkout_ids_reject_path_retargeting() {
         for id in ["cs_test/../admin", "cs?inject=1", "cs#frag"] {
-            assert!(!id
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'));
+            assert!(
+                !id.bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+            );
         }
-        assert!("cs_test_abc"
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'));
+        assert!(
+            "cs_test_abc"
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        );
     }
 
     #[test]

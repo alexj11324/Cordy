@@ -5,12 +5,10 @@ use axum::extract::{Request, State};
 use axum::http::{header, HeaderValue, StatusCode};
 use axum::middleware::Next;
 use axum::response::Response;
+use cordy_redis::RecoveringConnection;
 use ipnetwork::IpNetwork;
-use redis::aio::ConnectionManager;
 use std::net::IpAddr;
-use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
 
 /// Atomically increments the counter and sets the TTL on first access. The
 /// Lua script ensures INCR and EXPIRE cannot be split by a network failure —
@@ -50,12 +48,11 @@ pub fn parse_trusted_proxies(raw: &str) -> Vec<IpNetwork> {
 
 /// Configuration for the rate-limit middleware.
 ///
-/// `client: None` makes the middleware a no-op (fail-open), mirroring Go's nil
-/// `*redis.Client`.
+/// A missing connection makes the middleware a no-op (fail-open), mirroring
+/// Go's nil `*redis.Client`.
 #[derive(Clone)]
 pub struct RateLimitState {
-    pub client: Option<redis::Client>,
-    pub conn: Arc<Mutex<Option<ConnectionManager>>>,
+    connection: Option<RecoveringConnection>,
     pub limit: i64,
     pub window_secs: i64,
     pub trusted_proxies: Vec<IpNetwork>,
@@ -65,8 +62,7 @@ impl RateLimitState {
     /// Fail-open limiter used when REDIS_URL is unset.
     pub fn disabled(limit: i64, window_secs: i64) -> Self {
         Self {
-            client: None,
-            conn: Arc::new(Mutex::new(None)),
+            connection: None,
             limit,
             window_secs,
             trusted_proxies: Vec::new(),
@@ -74,41 +70,29 @@ impl RateLimitState {
     }
 
     pub fn with_client(mut self, client: redis::Client) -> Self {
-        self.client = Some(client);
+        self.connection = Some(RecoveringConnection::new(client));
         self
     }
 
-    async fn connection(&self) -> Option<ConnectionManager> {
-        if let Some(conn) = self.conn.lock().await.clone() {
-            return Some(conn);
+    /// Builds an optionally Redis-backed limiter without network I/O.
+    pub fn configured(
+        client: Option<redis::Client>,
+        limit: i64,
+        window_secs: i64,
+        trusted_proxies: Vec<IpNetwork>,
+    ) -> Self {
+        Self {
+            connection: client.map(RecoveringConnection::new),
+            limit,
+            window_secs,
+            trusted_proxies,
         }
-        let client = self.client.as_ref()?.clone();
-        let conn =
-            match tokio::time::timeout(REDIS_OPERATION_TIMEOUT, client.get_connection_manager())
-                .await
-            {
-                Ok(Ok(conn)) => conn,
-                Ok(Err(error)) => {
-                    tracing::warn!(%error, "ratelimit: redis connect failed; allowing request");
-                    return None;
-                }
-                Err(_) => {
-                    tracing::warn!("ratelimit: redis connect timed out; allowing request");
-                    return None;
-                }
-            };
-        *self.conn.lock().await = Some(conn.clone());
-        Some(conn)
-    }
-
-    async fn clear_connection(&self) {
-        *self.conn.lock().await = None;
     }
 }
 
 /// Per-IP fixed-window rate limiter backed by Redis.
 pub async fn rate_limit(State(state): State<RateLimitState>, req: Request, next: Next) -> Response {
-    let Some(mut conn) = state.connection().await else {
+    let Some(mut conn) = state.connection.clone() else {
         return next.run(req).await;
     };
 
@@ -127,12 +111,10 @@ pub async fn rate_limit(State(state): State<RateLimitState>, req: Request, next:
     {
         Ok(Ok(count)) => count,
         Ok(Err(error)) => {
-            state.clear_connection().await;
             tracing::warn!(%error, ip = %ip, "ratelimit: redis error; allowing request");
             return next.run(req).await;
         }
         Err(_) => {
-            state.clear_connection().await;
             tracing::warn!(ip = %ip, "ratelimit: redis timed out; allowing request");
             return next.run(req).await;
         }
@@ -168,34 +150,44 @@ fn extract_ip(req: &Request, trusted_proxies: &[IpNetwork]) -> String {
         .map(|info| info.0.ip().to_string())
         .unwrap_or_default();
 
-    if !trusted_proxies.is_empty() {
-        if let Ok(remote_ip) = remote_host.parse::<IpAddr>() {
-            if is_trusted_proxy(&remote_ip, trusted_proxies) {
-                if let Some(xff) = req
-                    .headers()
-                    .get("x-forwarded-for")
-                    .and_then(|v| v.to_str().ok())
-                {
-                    if !xff.is_empty() {
-                        for part in xff.rsplit(',') {
-                            let candidate = part.trim();
-                            if let Ok(ip) = candidate.parse::<IpAddr>() {
-                                if !is_trusted_proxy(&ip, trusted_proxies) {
-                                    return ip.to_string();
-                                }
-                            }
-                        }
+    client_ip(
+        req.headers(),
+        remote_host.parse::<IpAddr>().ok(),
+        trusted_proxies,
+    )
+}
+
+/// Resolves a limiter key from the peer and forwarding headers. Forwarded
+/// values are considered only for a trusted direct peer, parsed as IP
+/// addresses, and walked right-to-left to prevent a client-controlled prefix
+/// from bypassing per-IP limits.
+pub fn client_ip(
+    headers: &axum::http::HeaderMap,
+    remote_ip: Option<IpAddr>,
+    trusted_proxies: &[IpNetwork],
+) -> String {
+    if remote_ip.is_some_and(|ip| is_trusted_proxy(&ip, trusted_proxies)) {
+        if let Some(xff) = headers
+            .get("x-forwarded-for")
+            .and_then(|value| value.to_str().ok())
+        {
+            for part in xff.rsplit(',') {
+                if let Ok(ip) = part.trim().parse::<IpAddr>() {
+                    if !is_trusted_proxy(&ip, trusted_proxies) {
+                        return ip.to_string();
                     }
                 }
             }
         }
+        if let Some(real_ip) = headers
+            .get("x-real-ip")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.trim().parse::<IpAddr>().ok())
+        {
+            return real_ip.to_string();
+        }
     }
-
-    // Default: RemoteAddr in canonical form.
-    if let Ok(ip) = remote_host.parse::<IpAddr>() {
-        return ip.to_string();
-    }
-    remote_host
+    remote_ip.map(|ip| ip.to_string()).unwrap_or_default()
 }
 
 fn is_trusted_proxy(ip: &IpAddr, cidrs: &[IpNetwork]) -> bool {
@@ -237,13 +229,11 @@ mod tests {
         assert!(!is_trusted_proxy(&outside, &nets));
     }
 
-    #[tokio::test]
-    async fn unavailable_redis_connection_is_bounded_and_fail_open() {
+    #[test]
+    fn configured_redis_connection_is_installed_without_network_io() {
         let state = RateLimitState::disabled(5, 60).with_client(
-            redis::Client::open("redis://127.0.0.1:1").expect("valid unavailable Redis URL"),
+            redis::Client::open("redis://192.0.2.1:6379/").expect("valid unavailable Redis URL"),
         );
-        let started = std::time::Instant::now();
-        assert!(state.connection().await.is_none());
-        assert!(started.elapsed() < Duration::from_secs(1));
+        assert!(state.connection.is_some());
     }
 }

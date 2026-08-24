@@ -357,9 +357,10 @@ async fn join_by_share_link(
         payload: serde_json::json!({"member": &member_response}),
         ..Default::default()
     });
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_workspaces_changed(&user_id.to_string());
-    }
+    state
+        .daemon_notifier
+        .notify_workspaces_changed(&user_id.to_string())
+        .await;
 
     Json(JoinByShareLinkResponse {
         member: member_response,
@@ -576,9 +577,10 @@ async fn create_workspace(
     if let Some(metrics) = state.business_metrics.as_deref() {
         metrics.inc_for_event(&event);
     }
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_workspaces_changed(&user_id.to_string());
-    }
+    state
+        .daemon_notifier
+        .notify_workspaces_changed(&user_id.to_string())
+        .await;
     (
         StatusCode::CREATED,
         Json(workspace_response(&state, created)),
@@ -728,12 +730,12 @@ async fn update_workspace(
         ..Default::default()
     });
     if request.name.is_some() {
-        if let (Ok(members), Some(hub)) = (
-            member::list_members(&state.pool, updated.id).await,
-            state.daemon_hub.as_ref(),
-        ) {
+        if let Ok(members) = member::list_members(&state.pool, updated.id).await {
             for member in members {
-                hub.notify_workspaces_changed(&member.user_id.to_string());
+                state
+                    .daemon_notifier
+                    .notify_workspaces_changed(&member.user_id.to_string())
+                    .await;
             }
         }
     }
@@ -844,6 +846,13 @@ async fn update_member(
         Ok(Some(updated)) => updated,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update member"),
     };
+    state
+        .membership_cache
+        .invalidate(
+            &target.user_id.to_string(),
+            &target.workspace_id.to_string(),
+        )
+        .await;
     let found_user = match user::get_user(&state.pool, updated.user_id).await {
         Ok(Some(user)) => user,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load member"),
@@ -1054,6 +1063,13 @@ async fn remove_member_common(
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete member");
         }
     };
+    state
+        .membership_cache
+        .invalidate(
+            &target.user_id.to_string(),
+            &target.workspace_id.to_string(),
+        )
+        .await;
     publish_member_revocation(
         state,
         target.workspace_id,
@@ -1068,9 +1084,10 @@ async fn remove_member_common(
         payload: serde_json::json!({"member_id": target.id, "workspace_id": workspace_id, "user_id": target.user_id}),
         ..Default::default()
     });
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_workspaces_changed(&target.user_id.to_string());
-    }
+    state
+        .daemon_notifier
+        .notify_workspaces_changed(&target.user_id.to_string())
+        .await;
     StatusCode::NO_CONTENT.into_response()
 }
 
@@ -1480,6 +1497,12 @@ async fn delete_workspace(
         .into_iter()
         .map(|member| member.user_id)
         .collect::<Vec<_>>();
+    for user_id in &affected_users {
+        state
+            .membership_cache
+            .invalidate(&user_id.to_string(), &workspace_id.to_string())
+            .await;
+    }
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(_) => {
@@ -1670,10 +1693,11 @@ async fn delete_workspace(
         payload: serde_json::json!({"workspace_id": workspace_id}),
         ..Default::default()
     });
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        for user_id in affected_users {
-            hub.notify_workspaces_changed(&user_id.to_string());
-        }
+    for user_id in affected_users {
+        state
+            .daemon_notifier
+            .notify_workspaces_changed(&user_id.to_string())
+            .await;
     }
     StatusCode::NO_CONTENT.into_response()
 }

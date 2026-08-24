@@ -16,7 +16,7 @@ use cordy_db::queries::{agent, channel, dingtalk};
 use cordy_lark::client::ApiClient as _;
 use cordy_middleware::workspace::WorkspaceContext;
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -269,6 +269,13 @@ struct LarkSession {
     expires_at: Instant,
 }
 
+struct LarkRegistrationRuntime {
+    pool: sqlx::PgPool,
+    bus: Arc<cordy_events::Bus>,
+    http_base_url: String,
+    cancel: CancellationToken,
+}
+
 fn lark_sessions() -> &'static Mutex<HashMap<String, LarkSession>> {
     static SESSIONS: OnceLock<Mutex<HashMap<String, LarkSession>>> = OnceLock::new();
     SESSIONS.get_or_init(|| Mutex::new(HashMap::new()))
@@ -317,7 +324,19 @@ async fn begin_lark_install(
         format!("{} - Cordy", target.name.trim())
     };
     let client = Arc::new(cordy_lark::registration::RegistrationClient::new(
-        cordy_lark::registration::RegistrationConfig::default(),
+        cordy_lark::registration::RegistrationConfig {
+            domain: state
+                .integrations
+                .lark_registration_domain
+                .clone()
+                .unwrap_or_default(),
+            lark_domain: state
+                .integrations
+                .lark_registration_lark_domain
+                .clone()
+                .unwrap_or_default(),
+            ..Default::default()
+        },
     ));
     let begun = match client.begin(&preset, region).await {
         Ok(value) => value,
@@ -349,14 +368,30 @@ async fn begin_lark_install(
     let task_session = session_id.clone();
     let poll_interval = begun.interval.as_secs().max(1);
     let expires = begun.expires_in;
-    tokio::spawn(run_lark_registration(
-        state,
+    let runtime = LarkRegistrationRuntime {
+        pool: state.pool.clone(),
+        bus: state.bus.clone(),
+        http_base_url: state
+            .integrations
+            .lark_http_base_url
+            .clone()
+            .unwrap_or_default(),
+        cancel: state.channel_cancel.clone(),
+    };
+    if !state.channel_tasks.spawn(run_lark_registration(
+        runtime,
         client,
         task_session,
         (workspace_id, agent_id, actor),
         region,
         begun.clone(),
-    ));
+    )) {
+        lark_sessions().lock().unwrap().remove(&session_id);
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "channel runtime is shutting down",
+        );
+    }
     Json(
         json!({"session_id": session_id, "qr_code_url": begun.qr_code_url,
         "expires_in_seconds": expires.as_secs(), "poll_interval_seconds": poll_interval}),
@@ -365,7 +400,7 @@ async fn begin_lark_install(
 }
 
 async fn run_lark_registration(
-    state: HandlerState,
+    runtime: LarkRegistrationRuntime,
     client: Arc<cordy_lark::registration::RegistrationClient>,
     session_id: String,
     identity: (Uuid, Uuid, Uuid),
@@ -377,6 +412,9 @@ async fn run_lark_registration(
     let mut domain = begun.domain;
     let mut interval = begun.interval.max(std::time::Duration::from_secs(1));
     loop {
+        if runtime.cancel.is_cancelled() {
+            return;
+        }
         if tokio::time::Instant::now() >= deadline {
             finish_lark_session(
                 &session_id,
@@ -386,17 +424,38 @@ async fn run_lark_registration(
             );
             return;
         }
-        tokio::time::sleep(interval).await;
-        let result = match client.poll(&domain, &begun.device_code).await {
+        tokio::select! {
+            _ = runtime.cancel.cancelled() => return,
+            _ = tokio::time::sleep(interval) => {}
+        }
+        let poll = tokio::select! {
+            _ = runtime.cancel.cancelled() => return,
+            result = client.poll(&domain, &begun.device_code) => result,
+        };
+        let result = match poll {
             Ok(value) => value,
-            Err(error) => {
+            Err(error) if lark_poll_protocol_error(&error) => {
                 finish_lark_session(
                     &session_id,
                     None,
-                    Some("poll_failed"),
+                    Some("lark_protocol_error"),
                     Some(&format!("{error:#}")),
                 );
                 return;
+            }
+            Err(error) => {
+                // A short-lived DNS, connect, timeout, or response-body read
+                // failure must not invalidate an otherwise live device code.
+                // Keep the original Lark deadline and retry on the next tick,
+                // matching the Go registration service. Typed protocol errors
+                // remain terminal above because another poll cannot repair a
+                // malformed or explicitly rejected exchange.
+                tracing::warn!(
+                    session_id = %session_id,
+                    %error,
+                    "Lark registration transport error; retrying"
+                );
+                continue;
             }
         };
         if !result.switched_domain.is_empty() {
@@ -424,7 +483,7 @@ async fn run_lark_registration(
         }
         let api = cordy_lark::http_client::HttpApiClient::new(
             cordy_lark::http_client::HttpClientConfig {
-                base_url: std::env::var("CORDY_LARK_HTTP_BASE_URL").unwrap_or_default(),
+                base_url: runtime.http_base_url.clone(),
                 ..Default::default()
             },
         );
@@ -470,7 +529,7 @@ async fn run_lark_registration(
                 return;
             }
         };
-        let mut tx = match state.pool.begin().await {
+        let mut tx = match runtime.pool.begin().await {
             Ok(value) => value,
             Err(error) => {
                 finish_lark_session(
@@ -540,7 +599,7 @@ async fn run_lark_registration(
                 return;
             }
         };
-        state.bus.publish(&cordy_events::Event {
+        runtime.bus.publish(&cordy_events::Event {
             event_type: cordy_protocol::EVENT_LARK_INSTALLATION_CREATED.into(),
             workspace_id: workspace_id.to_string(),
             actor_type: "system".into(),
@@ -550,6 +609,12 @@ async fn run_lark_registration(
         finish_lark_session(&session_id, Some(installation.id), None, None);
         return;
     }
+}
+
+fn lark_poll_protocol_error(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<cordy_lark::registration::RegistrationError>()
+        .is_some()
 }
 
 fn finish_lark_session(
@@ -696,7 +761,7 @@ async fn update_dingtalk_group_route(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to update dingtalk group route",
-            )
+            );
         }
     };
     state.bus.publish(&cordy_events::Event {
@@ -752,7 +817,7 @@ async fn revoke(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to load installation",
-            )
+            );
         }
     };
     if matches!(provider, Provider::Lark)
@@ -864,8 +929,45 @@ fn publish_created(
 
 #[derive(Deserialize)]
 struct DingTalkBody {
-    app_key: String,
-    app_secret: String,
+    #[serde(alias = "app_key")]
+    client_id: String,
+    #[serde(alias = "app_secret")]
+    client_secret: String,
+}
+
+fn dingtalk_install_error(error: &anyhow::Error) -> (StatusCode, String) {
+    use cordy_dingtalk::byo_install::ByoError;
+    use cordy_dingtalk::install::InstallError;
+
+    match error.downcast_ref::<ByoError>() {
+        Some(ByoError::InvalidAppKey | ByoError::InvalidAppSecret) => {
+            (StatusCode::BAD_REQUEST, error.to_string())
+        }
+        Some(ByoError::CredentialValidation(_)) => (
+            StatusCode::BAD_REQUEST,
+            "could not verify the DingTalk credentials — check the AppKey (client id) and AppSecret (client secret), and that the robot is a Stream-mode robot in your organization".into(),
+        ),
+        Some(ByoError::Install(InstallError::RobotOwnedBySameWorkspace)) => (
+            StatusCode::CONFLICT,
+            "this DingTalk robot is already connected to another agent in this workspace — disconnect it there first, then connect it here".into(),
+        ),
+        Some(ByoError::Install(InstallError::RobotOwnedByArchivedAgent)) => (
+            StatusCode::CONFLICT,
+            "this DingTalk robot is connected to an archived agent in this workspace — restore that agent, or disconnect its robot, before connecting it here".into(),
+        ),
+        Some(ByoError::Install(InstallError::RobotOwnedByAnotherWorkspace)) => (
+            StatusCode::CONFLICT,
+            "this DingTalk robot is already connected to a different Cordy workspace — disconnect it there before connecting it here".into(),
+        ),
+        Some(ByoError::Install(InstallError::InstallationNotFound)) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "could not connect the DingTalk robot".into(),
+        ),
+        None => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "could not connect the DingTalk robot".into(),
+        ),
+    }
 }
 
 async fn install_dingtalk(
@@ -901,8 +1003,8 @@ async fn install_dingtalk(
             workspace_id,
             agent_id,
             initiator_id: actor,
-            app_key: input.app_key,
-            app_secret: input.app_secret,
+            app_key: input.client_id,
+            app_secret: input.client_secret,
         })
         .await
     {
@@ -912,10 +1014,8 @@ async fn install_dingtalk(
         }
         Err(error) => {
             tracing::warn!(error = %error, "DingTalk installation rejected");
-            error_response(
-                StatusCode::BAD_REQUEST,
-                "could not verify the DingTalk credentials",
-            )
+            let (status, message) = dingtalk_install_error(&error);
+            error_response(status, &message)
         }
     }
 }
@@ -980,7 +1080,7 @@ async fn install_wecom(
                     return error_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
                         "failed to load installation",
-                    )
+                    );
                 }
             };
             publish_created(&state, Provider::WeCom, &row, actor);
@@ -1040,14 +1140,14 @@ async fn install_telegram(
             return error_response(
                 StatusCode::BAD_REQUEST,
                 "telegram: bot token must look like 123456:ABC-DEF…",
-            )
+            );
         }
     };
     let api = cordy_telegram::BotApi::new("", token);
     let me = match api.get_me().await {
         Ok(value) if value.is_bot && !value.username.is_empty() => value,
         Ok(_) => {
-            return error_response(StatusCode::BAD_REQUEST, "Telegram rejected this bot token")
+            return error_response(StatusCode::BAD_REQUEST, "Telegram rejected this bot token");
         }
         Err(error) => {
             tracing::warn!(%error, "Telegram credential verification failed");
@@ -1062,7 +1162,7 @@ async fn install_telegram(
             return error_response(
                 StatusCode::BAD_REQUEST,
                 "this Telegram bot has a webhook configured",
-            )
+            );
         }
         Ok(_) => {}
         Err(error) => {
@@ -1079,7 +1179,7 @@ async fn install_telegram(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to encrypt bot token",
-            )
+            );
         }
     };
     let config = json!({"app_id": bot_id, "bot_username": me.username, "bot_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed)});
@@ -1197,7 +1297,7 @@ async fn install_slack(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to initialize Slack verification",
-            )
+            );
         }
     };
     let auth = match slack_call(&client, "auth.test", bot_token, &[]).await {
@@ -1209,7 +1309,7 @@ async fn install_slack(
             value
         }
         Ok(_) | Err(_) => {
-            return error_response(StatusCode::BAD_REQUEST, "could not verify the Slack tokens")
+            return error_response(StatusCode::BAD_REQUEST, "could not verify the Slack tokens");
         }
     };
     let bot = match slack_call(
@@ -1222,7 +1322,7 @@ async fn install_slack(
     {
         Ok(value) => value,
         Err(_) => {
-            return error_response(StatusCode::BAD_REQUEST, "could not verify the Slack tokens")
+            return error_response(StatusCode::BAD_REQUEST, "could not verify the Slack tokens");
         }
     };
     if bot.bot.app_id != app_id {
@@ -1243,7 +1343,7 @@ async fn install_slack(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to encrypt Slack token",
-            )
+            );
         }
     };
     let sealed_app = match box_.seal(app_token.as_bytes()) {
@@ -1252,7 +1352,7 @@ async fn install_slack(
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to encrypt Slack token",
-            )
+            );
         }
     };
     let config = json!({"app_id": app_id, "team_id": auth.team_id, "bot_user_id": auth.user_id, "bot_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed_bot), "app_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed_app)});
@@ -1372,6 +1472,56 @@ mod tests {
     #[test]
     fn body_limit_is_enforced_before_deserialization() {
         assert!(decode_body::<TelegramBody>(&vec![b'x'; BODY_LIMIT + 1]).is_err());
+    }
+
+    #[test]
+    fn dingtalk_body_accepts_established_client_field_names() {
+        let parsed = decode_body::<DingTalkBody>(
+            br#"{"client_id":"ding-key","client_secret":"ding-secret"}"#,
+        )
+        .unwrap();
+        assert_eq!(parsed.client_id, "ding-key");
+        assert_eq!(parsed.client_secret, "ding-secret");
+
+        let legacy =
+            decode_body::<DingTalkBody>(br#"{"app_key":"old-key","app_secret":"old-secret"}"#)
+                .unwrap();
+        assert_eq!(legacy.client_id, "old-key");
+        assert_eq!(legacy.client_secret, "old-secret");
+    }
+
+    #[test]
+    fn dingtalk_install_errors_preserve_client_and_server_classifications() {
+        use cordy_dingtalk::byo_install::ByoError;
+        use cordy_dingtalk::install::InstallError;
+
+        let conflict =
+            anyhow::Error::new(ByoError::Install(InstallError::RobotOwnedBySameWorkspace));
+        assert_eq!(dingtalk_install_error(&conflict).0, StatusCode::CONFLICT);
+
+        let credentials = anyhow::Error::new(ByoError::CredentialValidation("denied".into()));
+        assert_eq!(
+            dingtalk_install_error(&credentials).0,
+            StatusCode::BAD_REQUEST
+        );
+
+        let internal = anyhow::anyhow!("encrypt failed");
+        assert_eq!(
+            dingtalk_install_error(&internal).0,
+            StatusCode::INTERNAL_SERVER_ERROR
+        );
+    }
+
+    #[test]
+    fn lark_poll_errors_retry_only_transport_failures() {
+        let protocol = anyhow::Error::new(cordy_lark::registration::RegistrationError {
+            code: "http_502".into(),
+            description: "invalid response".into(),
+        });
+        assert!(lark_poll_protocol_error(&protocol));
+
+        let transport = anyhow::anyhow!("registration: http do: connection reset");
+        assert!(!lark_poll_protocol_error(&transport));
     }
 
     #[tokio::test]

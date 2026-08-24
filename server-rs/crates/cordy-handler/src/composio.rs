@@ -33,6 +33,57 @@ pub struct ComposioState {
     flags: Option<Arc<dyn FlagSource>>,
 }
 
+struct TaskOverlayBuilder {
+    service: Arc<Service>,
+}
+
+#[async_trait::async_trait]
+impl cordy_service::task_service::ComposioOverlayBuilder for TaskOverlayBuilder {
+    async fn build_task_overlay(
+        &self,
+        _pool: &sqlx::PgPool,
+        originator_user_id: Uuid,
+        agent: &cordy_db::models::Agent,
+    ) -> Result<cordy_service::runtime_apps::McpOverlayResult> {
+        let result = self
+            .service
+            .build_task_overlay(
+                Some(originator_user_id),
+                agent.owner_id,
+                agent
+                    .composio_toolkit_allowlist
+                    .as_deref()
+                    .unwrap_or_default(),
+                cordy_service::runtime_apps::display_name_for_toolkit_slug,
+            )
+            .await?;
+        let mcp_overlay = if result.mcp_overlay.is_empty() {
+            None
+        } else {
+            Some(serde_json::from_slice(&result.mcp_overlay)?)
+        };
+        Ok(cordy_service::runtime_apps::McpOverlayResult {
+            mcp_overlay,
+            connected_apps: result
+                .connected_apps
+                .into_iter()
+                .map(|app| cordy_service::runtime_apps::ConnectedApp {
+                    provider: app.provider,
+                    server_name: app.server_name,
+                    toolkit_slug: app.toolkit_slug,
+                    toolkit_name: app.toolkit_name,
+                })
+                .collect(),
+        })
+    }
+}
+
+pub(crate) fn task_overlay_builder(
+    service: Arc<Service>,
+) -> Arc<dyn cordy_service::task_service::ComposioOverlayBuilder> {
+    Arc::new(TaskOverlayBuilder { service })
+}
+
 impl ComposioState {
     pub fn new(
         service: Option<Arc<Service>>,
@@ -50,11 +101,7 @@ impl ComposioState {
     /// disables the integration while leaving the rest of the server healthy.
     pub fn from_handler(state: &HandlerState) -> Self {
         let flags = state.feature_flags.clone();
-        let service = flags
-            .as_deref()
-            .filter(|flags| composio_mcp_apps_enabled(*flags))
-            .and_then(|_| build_service(state.pool.clone()).ok())
-            .map(Arc::new);
+        let service = state.composio.clone();
         Self::new(service, state.pool.clone(), flags)
     }
 
@@ -86,7 +133,7 @@ pub fn authenticated_router() -> Router<ComposioState> {
         )
 }
 
-fn build_service(pool: sqlx::PgPool) -> Result<Service> {
+pub(crate) fn build_service(pool: sqlx::PgPool) -> Result<Service> {
     let api_key = env_trimmed("COMPOSIO_API_KEY");
     if api_key.is_empty() {
         anyhow::bail!("COMPOSIO_API_KEY is required");

@@ -13,7 +13,7 @@ use std::time::Duration;
 
 use sqlx::PgPool;
 
-use cordy_channel::OutboundMessage;
+use cordy_channel::{OutboundMessage, RuntimeTasks};
 use cordy_channel_engine::provenance::task_input_is_channel_ingested;
 use cordy_db::queries::agent::get_agent_task;
 use cordy_db::queries::channel::{
@@ -40,7 +40,7 @@ impl Outbound {
     }
 
     /// Subscribes to the chat-done event on the bus.
-    pub fn register(self: &Arc<Self>, bus: &Bus) {
+    pub fn register(self: &Arc<Self>, bus: &Bus, tasks: Arc<RuntimeTasks>) {
         let me = Arc::clone(self);
         bus.subscribe(cordy_protocol::EVENT_CHAT_DONE, move |e: &Event| {
             // Bus delivery is synchronous, so a stuck Slack HTTP call must not
@@ -48,17 +48,11 @@ impl Outbound {
             // timeout instead of the publisher's.
             let me = Arc::clone(&me);
             let e = e.clone();
-            tokio::spawn(async move {
+            tasks.spawn(async move {
                 let ctx = tokio_util::sync::CancellationToken::new();
-                let cancel = ctx.clone();
-                tokio::spawn(async move {
-                    tokio::time::sleep(REPLY_BUDGET).await;
-                    cancel.cancel();
-                });
-                let result = tokio::select! {
-                    result = me.process_event(&ctx, &e) => result,
-                    _ = ctx.cancelled() => Err(anyhow::anyhow!("reply deadline exceeded")),
-                };
+                let result = tokio::time::timeout(REPLY_BUDGET, me.process_event(&ctx, &e))
+                    .await
+                    .unwrap_or_else(|_| Err(anyhow::anyhow!("reply deadline exceeded")));
                 if let Err(err) = result {
                     tracing::warn!(
                         error = %err,
