@@ -172,6 +172,58 @@ enum AgentCommand {
     Env(AgentEnvArgs),
     #[command(about = "Manage which workspace MCP servers an agent uses")]
     Mcp(AgentMcpArgs),
+    #[command(about = "Copy an existing agent into a new one")]
+    Copy(AgentCopyArgs),
+}
+
+#[derive(Debug, Args)]
+struct AgentCopyArgs {
+    #[arg(value_name = "SOURCE-AGENT-ID")]
+    source_agent_id: String,
+    #[arg(long, help = "Name for the new agent")]
+    name: Option<String>,
+    #[arg(long, help = "Target runtime ID")]
+    runtime_id: Option<String>,
+    #[arg(long, help = "Override the copied description")]
+    description: Option<String>,
+    #[arg(long, help = "Override the copied instructions")]
+    instructions: Option<String>,
+    #[arg(long, help = "Model identifier for the copy")]
+    model: Option<String>,
+    #[arg(long, help = "Override thinking level")]
+    thinking_level: Option<String>,
+    #[arg(long, help = "Override Codex service tier")]
+    service_tier: Option<String>,
+    #[arg(long, help = "Override custom CLI arguments as a JSON array")]
+    custom_args: Option<String>,
+    #[arg(long, help = "Override maximum concurrent tasks")]
+    max_concurrent_tasks: Option<i32>,
+    #[arg(long, help = "Override visibility: private or workspace")]
+    visibility: Option<String>,
+    #[arg(long, help = "Override invocation permission mode")]
+    permission_mode: Option<String>,
+    #[arg(long, num_args = 0..=1, default_missing_value = "true", help = "Allow every workspace member to invoke the copy")]
+    public_to_workspace: Option<bool>,
+    #[arg(long, action = clap::ArgAction::Append, value_delimiter = ',', help = "Allow a workspace member ID to invoke the copy")]
+    public_to_member: Vec<String>,
+    #[arg(long, help = "Do not copy workspace skill assignments")]
+    no_skills: bool,
+    #[arg(long, help = "Set custom_env on the copy as a JSON object")]
+    custom_env: Option<String>,
+    #[arg(long, help = "Read custom_env from stdin")]
+    custom_env_stdin: bool,
+    #[arg(long, value_name = "PATH", help = "Read custom_env from a file")]
+    custom_env_file: Option<PathBuf>,
+    #[arg(long, help = "Set mcp_config on the copy as a JSON object")]
+    mcp_config: Option<String>,
+    #[arg(long, help = "Read mcp_config from stdin")]
+    mcp_config_stdin: bool,
+    #[arg(long, value_name = "PATH", help = "Read mcp_config from a file")]
+    mcp_config_file: Option<PathBuf>,
+    #[arg(long, help = "Set runtime_config on the copy as JSON")]
+    runtime_config: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -2032,6 +2084,9 @@ async fn run_with_input<R: Read>(
                     command: AgentMcpCommand::Remove(args),
                 }),
         }) => run_agent_mcp_mutation(cli, environment, args, AgentMcpAction::Remove).await,
+        Command::Agent(AgentArgs {
+            command: AgentCommand::Copy(args),
+        }) => run_agent_copy(cli, environment, args, input).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
@@ -3061,6 +3116,193 @@ async fn run_agent_mcp_mutation(
         stdout: format_workspace_mcp_servers(&servers, args.output)?,
         stderr: String::new(),
     })
+}
+
+async fn run_agent_copy<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &AgentCopyArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    if let Some(value) = args.max_concurrent_tasks {
+        if !(1..=50).contains(&value) {
+            bail!("--max-concurrent-tasks must be between 1 and 50 (got {value})");
+        }
+    }
+    let client = new_api_client(cli, environment)?;
+    let source: Value = client
+        .get_json(&format!("/api/agents/{}", args.source_agent_id))
+        .await
+        .context("get source agent")?;
+    let source_runtime_id = value_string(&source, "runtime_id");
+    let target_runtime_id = match &args.runtime_id {
+        Some(value) if value.is_empty() => bail!("--runtime-id must not be empty"),
+        Some(value) => value.clone(),
+        None if source_runtime_id.is_empty() => {
+            bail!("source agent has no runtime; pass --runtime-id to choose a target runtime")
+        }
+        None => source_runtime_id.clone(),
+    };
+    let same_runtime = target_runtime_id == source_runtime_id;
+    let name = match &args.name {
+        Some(value) if value.is_empty() => bail!("--name must not be empty"),
+        Some(value) => value.clone(),
+        None => format!("{} (copy)", value_string(&source, "name")),
+    };
+    let mut body = serde_json::Map::from_iter([
+        ("name".into(), Value::String(name)),
+        ("runtime_id".into(), Value::String(target_runtime_id)),
+        (
+            "description".into(),
+            Value::String(
+                args.description
+                    .clone()
+                    .unwrap_or_else(|| value_string(&source, "description")),
+            ),
+        ),
+        (
+            "instructions".into(),
+            Value::String(
+                args.instructions
+                    .clone()
+                    .unwrap_or_else(|| value_string(&source, "instructions")),
+            ),
+        ),
+    ]);
+    if let Some(avatar) = source.get("avatar_url").filter(|value| !value.is_null()) {
+        body.insert("avatar_url".into(), avatar.clone());
+    }
+    if let Some(raw) = &args.custom_args {
+        let custom_args: Vec<String> = serde_json::from_str(raw)
+            .map_err(|_| anyhow::anyhow!("--custom-args must be a valid JSON array of strings"))?;
+        body.insert("custom_args".into(), serde_json::to_value(custom_args)?);
+    } else if let Some(custom_args) = source
+        .get("custom_args")
+        .and_then(Value::as_array)
+        .filter(|values| !values.is_empty())
+    {
+        body.insert("custom_args".into(), Value::Array(custom_args.clone()));
+    }
+    if let Some(value) = args.max_concurrent_tasks {
+        body.insert("max_concurrent_tasks".into(), Value::from(value));
+    } else if let Some(value) =
+        copied_agent_max_concurrent_tasks(source.get("max_concurrent_tasks"))
+    {
+        body.insert("max_concurrent_tasks".into(), Value::from(value));
+    }
+
+    if same_runtime {
+        for key in ["model", "thinking_level", "service_tier"] {
+            let value = value_string(&source, key);
+            if !value.is_empty() {
+                body.insert(key.into(), Value::String(value));
+            }
+        }
+    } else if args.model.is_none() {
+        bail!("copying to a different runtime (--runtime-id) requires --model, because the source model may not exist on the target runtime; pass --model \"\" to accept the target runtime default");
+    }
+    for (key, value) in [
+        ("model", &args.model),
+        ("thinking_level", &args.thinking_level),
+        ("service_tier", &args.service_tier),
+    ] {
+        if let Some(value) = value {
+            body.insert(key.into(), Value::String(value.clone()));
+        }
+    }
+
+    let permission_override = args.permission_mode.is_some()
+        || args.public_to_workspace.is_some()
+        || !args.public_to_member.is_empty()
+        || args.visibility.is_some();
+    if permission_override {
+        if let Some(visibility) = &args.visibility {
+            body.insert("visibility".into(), Value::String(visibility.clone()));
+        }
+        apply_agent_permission_args(
+            args.permission_mode.as_deref(),
+            args.public_to_workspace,
+            &args.public_to_member,
+            &mut body,
+        );
+    } else {
+        let permission_mode = value_string(&source, "permission_mode");
+        if !permission_mode.is_empty() {
+            body.insert("permission_mode".into(), Value::String(permission_mode));
+        }
+        if let Some(targets) = source
+            .get("invocation_targets")
+            .filter(|value| !value.is_null())
+        {
+            body.insert("invocation_targets".into(), targets.clone());
+        }
+    }
+    if !args.no_skills {
+        let skill_ids = source
+            .get("skills")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|skill| skill.get("id").and_then(Value::as_str))
+            .filter(|id| !id.is_empty())
+            .collect::<Vec<_>>();
+        if !skill_ids.is_empty() {
+            body.insert("skill_ids".into(), serde_json::to_value(skill_ids)?);
+        }
+    }
+    if let Some(custom_env) = resolve_agent_secret_json(
+        args.custom_env.as_deref(),
+        args.custom_env_stdin,
+        args.custom_env_file.as_deref(),
+        "custom-env",
+        false,
+        environment,
+        input,
+    )? {
+        validate_agent_custom_env(&custom_env)?;
+        body.insert("custom_env".into(), custom_env);
+    }
+    if let Some(mcp_config) = resolve_agent_secret_json(
+        args.mcp_config.as_deref(),
+        args.mcp_config_stdin,
+        args.mcp_config_file.as_deref(),
+        "mcp-config",
+        true,
+        environment,
+        input,
+    )? {
+        body.insert("mcp_config".into(), mcp_config);
+    }
+    if let Some(runtime_config) = &args.runtime_config {
+        body.insert(
+            "runtime_config".into(),
+            serde_json::from_str(runtime_config).context("--runtime-config must be valid JSON")?,
+        );
+    }
+
+    let agent: Value = client
+        .post_json("/api/agents", &body)
+        .await
+        .context("copy agent")?;
+    Ok(RunOutput {
+        stdout: match args.output {
+            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&agent)?),
+            OutputFormat::Table => format!(
+                "Agent copied: {} ({})\n",
+                value_string(&agent, "name"),
+                value_string(&agent, "id")
+            ),
+        },
+        stderr: String::new(),
+    })
+}
+
+fn copied_agent_max_concurrent_tasks(value: Option<&Value>) -> Option<i32> {
+    let value = value?.as_f64()?;
+    if value.fract() != 0.0 || !(1.0..=50.0).contains(&value) {
+        return None;
+    }
+    Some(value as i32)
 }
 
 fn apply_agent_permission_args(
@@ -11648,6 +11890,167 @@ mod tests {
             .await
             .expect("remove agent MCP server");
         assert_eq!(removed.stdout, "no MCP servers\n");
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn agent_copy_copies_only_portable_same_runtime_fields() {
+        let source = serde_json::json!({
+            "id":"agent-source","name":"Source","runtime_id":"runtime-1",
+            "description":"description","instructions":"instructions",
+            "avatar_url":"https://cdn.example/avatar.png",
+            "custom_args":["--foo"],"max_concurrent_tasks":9,
+            "model":"model-1","thinking_level":"high","service_tier":"priority",
+            "permission_mode":"public_to",
+            "invocation_targets":[{"target_type":"workspace"}],
+            "skills":[{"id":"skill-1"},{"id":"skill-2"}],
+            "has_custom_env":true,"custom_env_key_count":2,"mcp_config_redacted":true,
+            "runtime_config":{"machine":"must-not-copy"}
+        });
+        let captured = Arc::new(Mutex::new(None));
+        let captured_handler = Arc::clone(&captured);
+        let app = Router::new()
+            .route(
+                "/api/agents/agent-source",
+                get(move || {
+                    let source = source.clone();
+                    async move { Json(source) }
+                }),
+            )
+            .route(
+                "/api/agents",
+                post(move |Json(body): Json<Value>| {
+                    let captured = Arc::clone(&captured_handler);
+                    async move {
+                        *captured.lock().expect("captured body") = Some(body);
+                        Json(serde_json::json!({"id":"agent-copy","name":"Source (copy)"}))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from(["cordy", "agent", "copy", "agent-source"])
+            .expect("agent copy CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("copy agent");
+        assert_eq!(
+            serde_json::from_str::<Value>(&output.stdout).expect("JSON")["id"],
+            "agent-copy"
+        );
+        let body = captured
+            .lock()
+            .expect("captured body")
+            .clone()
+            .expect("body");
+        assert_eq!(body["name"], "Source (copy)");
+        assert_eq!(body["runtime_id"], "runtime-1");
+        assert_eq!(body["description"], "description");
+        assert_eq!(body["instructions"], "instructions");
+        assert_eq!(body["avatar_url"], "https://cdn.example/avatar.png");
+        assert_eq!(body["custom_args"], serde_json::json!(["--foo"]));
+        assert_eq!(body["max_concurrent_tasks"], 9);
+        assert_eq!(body["model"], "model-1");
+        assert_eq!(body["thinking_level"], "high");
+        assert_eq!(body["service_tier"], "priority");
+        assert_eq!(body["permission_mode"], "public_to");
+        assert_eq!(body["skill_ids"], serde_json::json!(["skill-1", "skill-2"]));
+        for forbidden in [
+            "custom_env",
+            "mcp_config",
+            "runtime_config",
+            "has_custom_env",
+            "custom_env_key_count",
+            "mcp_config_redacted",
+        ] {
+            assert!(body.get(forbidden).is_none(), "copied {forbidden}");
+        }
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn agent_copy_cross_runtime_requires_model_and_drops_runtime_fields() {
+        let posts = Arc::new(Mutex::new(Vec::<Value>::new()));
+        let posts_handler = Arc::clone(&posts);
+        let source = serde_json::json!({
+            "id":"agent-source","name":"Source","runtime_id":"runtime-1",
+            "model":"old-model","thinking_level":"high","service_tier":"priority",
+            "max_concurrent_tasks":0
+        });
+        let app = Router::new()
+            .route(
+                "/api/agents/agent-source",
+                get(move || {
+                    let source = source.clone();
+                    async move { Json(source) }
+                }),
+            )
+            .route(
+                "/api/agents",
+                post(move |Json(body): Json<Value>| {
+                    let posts = Arc::clone(&posts_handler);
+                    async move {
+                        posts.lock().expect("posts").push(body);
+                        Json(serde_json::json!({"id":"agent-copy","name":"Source (copy)"}))
+                    }
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let missing_model = Cli::try_parse_from([
+            "cordy",
+            "agent",
+            "copy",
+            "agent-source",
+            "--runtime-id",
+            "runtime-2",
+        ])
+        .expect("cross-runtime copy CLI");
+        let error = run_with_input(
+            &missing_model,
+            &environment,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .await
+        .expect_err("model required");
+        assert!(error.to_string().contains("requires --model"));
+        assert!(posts.lock().expect("posts").is_empty());
+
+        let copy = Cli::try_parse_from([
+            "cordy",
+            "agent",
+            "copy",
+            "agent-source",
+            "--runtime-id",
+            "runtime-2",
+            "--model",
+            "",
+            "--no-skills",
+        ])
+        .expect("cross-runtime copy with model CLI");
+        run_with_input(&copy, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("copy across runtime");
+        let body = posts.lock().expect("posts")[0].clone();
+        assert_eq!(body["runtime_id"], "runtime-2");
+        assert_eq!(body["model"], "");
+        assert!(body.get("thinking_level").is_none());
+        assert!(body.get("service_tier").is_none());
+        assert!(body.get("max_concurrent_tasks").is_none());
+        assert!(body.get("skill_ids").is_none());
         server.abort();
     }
 
