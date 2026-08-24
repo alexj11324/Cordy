@@ -2434,6 +2434,8 @@ enum SkillCommand {
     Create(SkillCreateArgs),
     #[command(about = "Update a skill")]
     Update(SkillUpdateArgs),
+    #[command(about = "Delete a skill")]
+    Delete(SkillDeleteArgs),
 }
 
 #[derive(Debug, Args)]
@@ -2488,6 +2490,14 @@ struct SkillUpdateArgs {
     config: Option<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
     output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct SkillDeleteArgs {
+    #[arg(value_name = "SKILL-ID")]
+    skill_id: String,
+    #[arg(long, help = "Skip the confirmation prompt")]
+    yes: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -2900,6 +2910,9 @@ async fn run_with_input<R: Read>(
         Command::Skill(SkillArgs {
             command: SkillCommand::Update(args),
         }) => run_skill_update(cli, environment, args, input).await,
+        Command::Skill(SkillArgs {
+            command: SkillCommand::Delete(args),
+        }) => run_skill_delete(cli, environment, args, input).await,
         Command::Autopilot(AutopilotArgs {
             command:
                 AutopilotCommand::List {
@@ -6557,6 +6570,42 @@ async fn run_skill_update<R: Read>(
             ),
             stderr: String::new(),
         },
+    })
+}
+
+async fn run_skill_delete<R: Read>(
+    cli: &Cli,
+    environment: &Environment,
+    args: &SkillDeleteArgs,
+    input: &mut R,
+) -> Result<RunOutput> {
+    let skill_id = args.skill_id.trim();
+    if skill_id.is_empty() {
+        bail!("skill ID must not be empty");
+    }
+    let prompt =
+        format!("Are you sure you want to delete skill {skill_id}? This cannot be undone. [y/N] ");
+    let mut stdout = String::new();
+    if !args.yes {
+        stdout.push_str(&prompt);
+        let answer = read_setup_confirmation(input)?;
+        if !matches!(answer.as_str(), "y" | "yes") {
+            stdout.push_str("Aborted.\n");
+            return Ok(RunOutput {
+                stdout,
+                stderr: String::new(),
+            });
+        }
+    }
+    let client = new_api_client(cli, environment)?;
+    client
+        .delete(&format!("/api/skills/{}", encoded_path_segment(skill_id)))
+        .await
+        .context("delete skill")?;
+    stdout.push_str(&format!("Skill deleted: {skill_id}\n"));
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
     })
 }
 
@@ -17263,6 +17312,97 @@ mod tests {
             error.to_string(),
             "--content, --content-stdin, and --content-file are mutually exclusive"
         );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn skill_delete_matches_go_confirmation_and_request_contracts() {
+        let app = Router::new().route(
+            "/api/skills/skill-1",
+            delete_route(|headers: HeaderMap| async move {
+                assert_eq!(headers["authorization"], "Bearer token-1");
+                assert_eq!(headers["x-workspace-id"], "workspace-1");
+                axum::http::StatusCode::NO_CONTENT
+            }),
+        );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+
+        let confirmed = Cli::try_parse_from(["cordy", "skill", "delete", "skill-1"])
+            .expect("skill delete confirmation CLI");
+        let Command::Skill(SkillArgs {
+            command: SkillCommand::Delete(args),
+        }) = &confirmed.command
+        else {
+            panic!("expected skill delete");
+        };
+        assert!(!args.yes);
+        let output = run_with_input(
+            &confirmed,
+            &environment,
+            &mut Cursor::new(b"YeS\n".to_vec()),
+        )
+        .await
+        .expect("confirmed skill delete");
+        assert_eq!(
+            output.stdout,
+            "Are you sure you want to delete skill skill-1? This cannot be undone. [y/N] Skill deleted: skill-1\n"
+        );
+        assert!(output.stderr.is_empty());
+
+        let yes_cli = Cli::try_parse_from(["cordy", "skill", "delete", "skill-1", "--yes"])
+            .expect("skill delete --yes CLI");
+        let Command::Skill(SkillArgs {
+            command: SkillCommand::Delete(args),
+        }) = &yes_cli.command
+        else {
+            panic!("expected skill delete --yes");
+        };
+        assert!(args.yes);
+        let output = run_with_input(&yes_cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("skill delete --yes");
+        assert_eq!(output.stdout, "Skill deleted: skill-1\n");
+        assert!(output.stderr.is_empty());
+
+        let declined = run_with_input(&confirmed, &environment, &mut Cursor::new(b"n\n".to_vec()))
+            .await
+            .expect("declined skill delete");
+        assert_eq!(
+            declined.stdout,
+            "Are you sure you want to delete skill skill-1? This cannot be undone. [y/N] Aborted.\n"
+        );
+        assert!(declined.stderr.is_empty());
+
+        let eof = run_with_input(&confirmed, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("EOF skill delete");
+        assert_eq!(
+            eof.stdout,
+            "Are you sure you want to delete skill skill-1? This cannot be undone. [y/N] Aborted.\n"
+        );
+        assert!(eof.stderr.is_empty());
+
+        let empty = SkillDeleteArgs {
+            skill_id: " ".into(),
+            yes: true,
+        };
+        let error = run_skill_delete(
+            &yes_cli,
+            &environment,
+            &empty,
+            &mut Cursor::new(Vec::<u8>::new()),
+        )
+        .await
+        .expect_err("empty skill id");
+        assert_eq!(error.to_string(), "skill ID must not be empty");
         server.abort();
     }
 
