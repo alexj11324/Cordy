@@ -54,6 +54,14 @@ pub fn router() -> Router<HandlerState> {
     Router::new().route("/api/config", get(get_config))
 }
 
+pub(crate) fn workspace_creation_disabled() -> bool {
+    workspace_creation_disabled_value(std::env::var("DISABLE_WORKSPACE_CREATION").ok().as_deref())
+}
+
+fn workspace_creation_disabled_value(value: Option<&str>) -> bool {
+    value == Some("true")
+}
+
 async fn get_config(State(state): State<HandlerState>) -> Json<AppConfig> {
     let (daemon_server_url, daemon_app_url) = daemon_setup_urls_from_env();
     let analytics_disabled = matches!(
@@ -86,8 +94,7 @@ async fn get_config(State(state): State<HandlerState>) -> Json<AppConfig> {
         cdn_signed: state.public_config.cdn_signed,
         allow_signup: std::env::var("ALLOW_SIGNUP").as_deref() != Ok("false"),
         google_client_id: std::env::var("GOOGLE_CLIENT_ID").unwrap_or_default(),
-        workspace_creation_disabled: std::env::var("DISABLE_WORKSPACE_CREATION").as_deref()
-            == Ok("true"),
+        workspace_creation_disabled: workspace_creation_disabled(),
         daemon_server_url,
         daemon_app_url,
         vcs_integration_available: state.vcs_integration_enabled,
@@ -178,6 +185,15 @@ mod tests {
         }
         assert!(!url_host_equals("https://evil.example", "cordy.ai"));
         assert!(!url_host_equals("", "cordy.ai"));
+    }
+
+    #[test]
+    fn workspace_creation_flag_matches_go_exactly() {
+        // The Go server deliberately checks os.Getenv(...) == "true".
+        assert!(workspace_creation_disabled_value(Some("true")));
+        for value in [None, Some("TRUE"), Some("1"), Some("yes"), Some(" true ")] {
+            assert!(!workspace_creation_disabled_value(value));
+        }
     }
 
     #[test]
