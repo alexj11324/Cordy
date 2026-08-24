@@ -43,6 +43,11 @@ pub struct HandlerState {
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
     pub bus: Arc<cordy_events::Bus>,
+    /// Owned background work started by channel HTTP/event surfaces. The
+    /// production ChannelRuntime closes admission and joins/aborts this group
+    /// during shutdown.
+    pub channel_tasks: Arc<cordy_channel::RuntimeTasks>,
+    pub channel_cancel: tokio_util::sync::CancellationToken,
     /// Prometheus business counters. None when METRICS_ADDR is disabled.
     pub business_metrics: Option<Arc<cordy_metrics::BusinessMetrics>>,
     /// HTTP request metrics. None when METRICS_ADDR is disabled.
@@ -154,6 +159,8 @@ impl HandlerState {
             daemon_token_cache: DaemonTokenCache::disabled(),
             hub,
             bus,
+            channel_tasks: Arc::new(cordy_channel::RuntimeTasks::new()),
+            channel_cancel: tokio_util::sync::CancellationToken::new(),
             business_metrics: None,
             http_metrics: None,
             auth_settings: crate::auth::AuthSettings::from_env(),

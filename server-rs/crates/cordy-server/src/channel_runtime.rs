@@ -58,8 +58,8 @@ impl ChannelRuntime {
             .clone()
             .map(|inner| Arc::new(ChannelStorage { inner }));
         let registry = Arc::new(cordy_channel::Registry::new());
-        let cancel = CancellationToken::new();
-        let outbound_tasks = Arc::new(cordy_channel::RuntimeTasks::new());
+        let cancel = state.channel_cancel.clone();
+        let outbound_tasks = state.channel_tasks.clone();
 
         configure_slack(
             state,
