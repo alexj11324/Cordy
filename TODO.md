@@ -746,6 +746,12 @@
       terminal idempotence, retry ceilings/backoff, successor dedupe, orphan
       recovery, and failure/event reconciliation match Go. No new P0/P1 or
       changed-code blocker; no implementation change was justified.
+- [x] Attachment/media route and channel-adapter audit completed: membership
+      before upload/download/presign, task/agent scope, key containment,
+      bounded streaming and cancellation cleanup, signed capability scope,
+      range/content-disposition/SVG handling, orphan semantics, and media-ledger
+      lease/tombstone cleanup match Go. No new P0/P1 or changed-code blocker;
+      no implementation change was justified.
 
 ## Phase 4 — S8 route and API parity
 
