@@ -313,6 +313,20 @@
       candidate merge ref for the new head must be refreshed after GitHub
       catches up. Scoped rustfmt/diff-check pass; Cargo/review/gate/merge
       remain with pro.
+- [x] Added the hidden `cordy daemon probe-runtimes` command through a typed
+      daemon facade in PR #129. The facade reuses the complete daemon
+      `load_config`/agent discovery path with `AllowNoAgents=true`, preserves
+      profile command and OpenClaw overrides, and keeps tokens and resolved
+      executable paths out of the JSON report. Current head is
+      `62aa0af57a3d97c242b51228fd0617c6b81049c8` (parent
+      `bb2079c9c206a41a8fb0188690b9116d7381e275`, tree
+      `67e4e95453d77408a7558a2b068d58f2223532f7`), candidate
+      `cd8a715cf5b6a5a6380598dab89148e53c19b434` (parents base
+      `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c` + head), remote and PR
+      `head/base/draft/mergeable` were verified exact and Ready/CLEAN. Scoped
+      `git diff --check` passed; rustfmt is unavailable in this execution
+      image (the slice was formatted before handoff), and Cargo/review/gate/
+      merge remain with pro.
 - [ ] Next setup slice: port the real interactive login flow; until that lands,
       setup without `CORDY_TOKEN` returns a typed “interactive login
       unavailable” error after the verified profile replacement, and must not
