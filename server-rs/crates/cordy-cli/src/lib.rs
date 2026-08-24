@@ -144,13 +144,32 @@ enum DaemonCommand {
     #[command(about = "Start the production daemon")]
     Start(DaemonStartArgs),
     #[command(about = "Restart the production daemon")]
-    Restart,
+    Restart(DaemonRestartArgs),
     #[command(about = "Stop the production daemon")]
     Stop,
 }
 
 #[derive(Debug, Args)]
 struct DaemonStartArgs {
+    #[command(flatten)]
+    launch: DaemonLaunchArgs,
+}
+
+#[derive(Debug, Args)]
+struct DaemonRestartArgs {
+    #[command(flatten)]
+    launch: DaemonLaunchArgs,
+}
+
+/// Launch flags shared by `daemon start` and `daemon restart`.
+///
+/// Restart remains a background lifecycle operation, but it must resolve the
+/// same launch contract as start so the replacement process cannot silently
+/// inherit a different daemon identity, workspace root, timeout, or reload
+/// policy. The root `--server-url`/`--profile` options remain global and are
+/// included by `to_launch_flags` below.
+#[derive(Debug, Args)]
+struct DaemonLaunchArgs {
     /// Run the daemon in the current process. Without this flag the command
     /// uses the typed lifecycle owner to launch the real foreground child.
     #[arg(long)]
@@ -186,6 +205,49 @@ struct DaemonStartArgs {
     auto_update_interval: Option<Duration>,
     #[arg(long = "no-auto-reload")]
     disable_auto_reload: bool,
+}
+
+impl DaemonLaunchArgs {
+    fn to_launch_flags(&self, server_url: Option<String>) -> config::DaemonLaunchFlags {
+        config::DaemonLaunchFlags {
+            server_url,
+            daemon_id: self.daemon_id.clone(),
+            device_name: self.device_name.clone(),
+            runtime_name: self.runtime_name.clone(),
+            workspaces_root: self.workspaces_root.clone(),
+            poll_interval: self.poll_interval,
+            heartbeat_interval: self.heartbeat_interval,
+            agent_timeout: self.agent_timeout,
+            codex_semantic_inactivity_timeout: self.codex_semantic_inactivity_timeout,
+            codex_handshake_timeout: self.codex_handshake_timeout,
+            max_concurrent_tasks: self.max_concurrent_tasks,
+            disable_auto_update: self.disable_auto_update,
+            auto_update_check_interval: self.auto_update_interval,
+            disable_auto_reload: self.disable_auto_reload,
+        }
+    }
+}
+
+fn ensure_restart_is_background(launch: &DaemonLaunchArgs) -> Result<()> {
+    anyhow::ensure!(
+        !launch.foreground,
+        "daemon restart does not support --foreground; use 'daemon start --foreground'"
+    );
+    Ok(())
+}
+
+fn validate_daemon_health_port(
+    requested: Option<u16>,
+    resolved: &cordy_daemon::assembly::DaemonLaunchOverrides,
+) -> Result<()> {
+    if let Some(health_port) = requested {
+        anyhow::ensure!(
+            i32::from(health_port) == resolved.health_port,
+            "--health-port must match the profile-derived daemon health port ({})",
+            resolved.health_port
+        );
+    }
+    Ok(())
 }
 
 fn parse_cli_duration(value: &str) -> std::result::Result<Duration, String> {
@@ -3009,8 +3071,8 @@ async fn run_with_input<R: Read>(
             command: DaemonCommand::Start(args),
         }) => run_daemon_start(cli, environment, args).await,
         Command::Daemon(DaemonArgs {
-            command: DaemonCommand::Restart,
-        }) => run_daemon_restart(cli, environment).await,
+            command: DaemonCommand::Restart(args),
+        }) => run_daemon_restart(cli, environment, args).await,
         Command::Daemon(DaemonArgs {
             command: DaemonCommand::Stop,
         }) => run_daemon_stop(cli, environment).await,
@@ -3023,33 +3085,13 @@ async fn run_daemon_start(
     environment: &Environment,
     args: &DaemonStartArgs,
 ) -> Result<RunOutput> {
-    let launch_flags = config::DaemonLaunchFlags {
-        daemon_id: args.daemon_id.clone(),
-        device_name: args.device_name.clone(),
-        runtime_name: args.runtime_name.clone(),
-        workspaces_root: args.workspaces_root.clone(),
-        poll_interval: args.poll_interval,
-        heartbeat_interval: args.heartbeat_interval,
-        agent_timeout: args.agent_timeout,
-        codex_semantic_inactivity_timeout: args.codex_semantic_inactivity_timeout,
-        codex_handshake_timeout: args.codex_handshake_timeout,
-        max_concurrent_tasks: args.max_concurrent_tasks,
-        disable_auto_update: args.disable_auto_update,
-        auto_update_check_interval: args.auto_update_interval,
-        disable_auto_reload: args.disable_auto_reload,
-        server_url: cli.server_url.clone(),
-    };
+    let launch = &args.launch;
+    let launch_flags = launch.to_launch_flags(cli.server_url.clone());
     let start = daemon::DaemonStartAssembly::load(&cli.profile, &launch_flags, environment)
         .context("load daemon start profile")?;
-    if let Some(health_port) = args.health_port {
-        anyhow::ensure!(
-            i32::from(health_port) == start.launch.health_port,
-            "--health-port must match the profile-derived daemon health port ({})",
-            start.launch.health_port
-        );
-    }
+    validate_daemon_health_port(launch.health_port, &start.launch)?;
 
-    if !args.foreground {
+    if !launch.foreground {
         let executable = std::env::current_exe().context("resolve cordy executable")?;
         let lifecycle = cordy_daemon::lifecycle::DaemonLifecycle::assemble(
             start.lifecycle_options(executable, CLIENT_VERSION),
@@ -3074,13 +3116,16 @@ async fn run_daemon_start(
     })
 }
 
-async fn run_daemon_restart(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
-    let flags = config::DaemonLaunchFlags {
-        server_url: cli.server_url.clone(),
-        ..config::DaemonLaunchFlags::default()
-    };
+async fn run_daemon_restart(
+    cli: &Cli,
+    environment: &Environment,
+    args: &DaemonRestartArgs,
+) -> Result<RunOutput> {
+    ensure_restart_is_background(&args.launch)?;
+    let flags = args.launch.to_launch_flags(cli.server_url.clone());
     let start = daemon::DaemonStartAssembly::load(&cli.profile, &flags, environment)
         .context("load daemon restart profile")?;
+    validate_daemon_health_port(args.launch.health_port, &start.launch)?;
     let executable = std::env::current_exe().context("resolve cordy executable")?;
     let lifecycle = cordy_daemon::lifecycle::DaemonLifecycle::assemble(
         start.lifecycle_options(executable, CLIENT_VERSION),
@@ -22307,24 +22352,119 @@ mod tests {
         else {
             panic!("expected daemon start command");
         };
-        assert!(args.foreground);
-        assert_eq!(args.daemon_id.as_deref(), Some("daemon-1"));
-        assert_eq!(args.poll_interval, Some(Duration::from_secs(3)));
-        assert_eq!(args.agent_timeout, Some(Duration::ZERO));
-        assert_eq!(args.health_port, Some(19710));
-        assert!(args.disable_auto_update);
+        assert!(args.launch.foreground);
+        assert_eq!(args.launch.daemon_id.as_deref(), Some("daemon-1"));
+        assert_eq!(args.launch.poll_interval, Some(Duration::from_secs(3)));
+        assert_eq!(args.launch.agent_timeout, Some(Duration::ZERO));
+        assert_eq!(args.launch.health_port, Some(19710));
+        assert!(args.launch.disable_auto_update);
     }
 
     #[test]
-    fn daemon_lifecycle_commands_parse_without_foreground_placeholder() {
-        let restart = Cli::try_parse_from(["cordy", "--profile", "staging", "daemon", "restart"])
-            .expect("daemon restart command");
-        assert!(matches!(
-            restart.command,
-            Command::Daemon(DaemonArgs {
-                command: DaemonCommand::Restart
-            })
-        ));
+    fn daemon_restart_reuses_start_flags_and_rejects_foreground() {
+        let restart = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            "staging",
+            "daemon",
+            "restart",
+            "--foreground",
+            "--daemon-id",
+            "daemon-2",
+            "--device-name",
+            "laptop",
+            "--runtime-name",
+            "codex",
+            "--workspaces-root",
+            "/srv/workspaces",
+            "--poll-interval",
+            "2s",
+            "--heartbeat-interval",
+            "7s",
+            "--agent-timeout",
+            "0s",
+            "--codex-semantic-inactivity-timeout",
+            "13s",
+            "--codex-handshake-timeout",
+            "5s",
+            "--max-concurrent-tasks",
+            "4",
+            "--health-port",
+            "19711",
+            "--no-auto-update",
+            "--auto-update-interval",
+            "8h",
+            "--no-auto-reload",
+            "--server-url",
+            "https://staging.example",
+        ])
+        .expect("daemon restart command");
+        assert_eq!(
+            restart.server_url.as_deref(),
+            Some("https://staging.example")
+        );
+        let Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Restart(args),
+        }) = restart.command
+        else {
+            panic!("expected daemon restart command");
+        };
+        assert!(args.launch.foreground);
+        assert_eq!(args.launch.daemon_id.as_deref(), Some("daemon-2"));
+        assert_eq!(args.launch.device_name.as_deref(), Some("laptop"));
+        assert_eq!(args.launch.runtime_name.as_deref(), Some("codex"));
+        assert_eq!(
+            args.launch.workspaces_root.as_deref(),
+            Some("/srv/workspaces")
+        );
+        assert_eq!(args.launch.poll_interval, Some(Duration::from_secs(2)));
+        assert_eq!(args.launch.heartbeat_interval, Some(Duration::from_secs(7)));
+        assert_eq!(args.launch.agent_timeout, Some(Duration::ZERO));
+        assert_eq!(
+            args.launch.codex_semantic_inactivity_timeout,
+            Some(Duration::from_secs(13))
+        );
+        assert_eq!(
+            args.launch.codex_handshake_timeout,
+            Some(Duration::from_secs(5))
+        );
+        assert_eq!(args.launch.max_concurrent_tasks, Some(4));
+        assert_eq!(args.launch.health_port, Some(19711));
+        assert!(args.launch.disable_auto_update);
+        assert_eq!(
+            args.launch.auto_update_interval,
+            Some(Duration::from_secs(8 * 60 * 60))
+        );
+        assert!(args.launch.disable_auto_reload);
+        let flags = args
+            .launch
+            .to_launch_flags(Some("https://staging.example".to_string()));
+        assert_eq!(flags.server_url, "https://staging.example");
+        assert_eq!(flags.daemon_id, "daemon-2");
+        assert_eq!(flags.workspaces_root, "/srv/workspaces");
+        let error = ensure_restart_is_background(&args.launch)
+            .expect_err("restart foreground must fail closed");
+        assert!(error
+            .to_string()
+            .contains("daemon restart does not support"));
+
+        let restart = Cli::try_parse_from([
+            "cordy",
+            "--profile",
+            "staging",
+            "daemon",
+            "restart",
+            "--daemon-id",
+            "daemon-2",
+        ])
+        .expect("background daemon restart command");
+        let Command::Daemon(DaemonArgs {
+            command: DaemonCommand::Restart(args),
+        }) = restart.command
+        else {
+            panic!("expected daemon restart command");
+        };
+        ensure_restart_is_background(&args.launch).expect("background restart is valid");
 
         let stop = Cli::try_parse_from(["cordy", "--profile", "staging", "daemon", "stop"])
             .expect("daemon stop command");
