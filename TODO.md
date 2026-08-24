@@ -709,6 +709,12 @@
       checkout containment/locking/cancellation, and bounded git operations
       are covered. Remaining JSON-shape/trim differences are non-P1; no code
       or Cargo change was justified.
+- [x] Workspace/member route audit completed: authentication, role and
+      task-token workspace fences, transactional create/delete/leave cleanup,
+      owner constraints, bounded workspace deletion locks, invitation state,
+      Redis admission, cache invalidation, events, and runtime/task side
+      effects match the Go contract. No P0/P1 or changed-code compile gap;
+      no implementation change was justified.
 
 ## Phase 4 — S8 route and API parity
 
