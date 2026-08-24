@@ -24,8 +24,19 @@ const CAPTURED_ENV_KEYS: &[&str] = &[
     "CORDY_HTTP_TIMEOUT",
     "CORDY_DEBUG",
     "CORDY_REPO_CHECKOUT_MODE",
+    "CORDY_QUICK_CREATE_TASK_ID",
+    "CORDY_QUICK_CREATE_ATTACHMENT_IDS",
     TASK_CONFIG_ROOT_ENV,
 ];
+
+fn capture_environment_values(
+    mut read: impl FnMut(&str) -> Option<String>,
+) -> HashMap<String, String> {
+    CAPTURED_ENV_KEYS
+        .iter()
+        .filter_map(|key| read(key).map(|value| ((*key).into(), value)))
+        .collect()
+}
 
 #[derive(Clone, Debug)]
 pub struct Environment {
@@ -36,10 +47,7 @@ pub struct Environment {
 
 impl Environment {
     pub fn from_process() -> Result<Self> {
-        let values = CAPTURED_ENV_KEYS
-            .iter()
-            .filter_map(|key| std::env::var(key).ok().map(|value| ((*key).into(), value)))
-            .collect();
+        let values = capture_environment_values(|key| std::env::var(key).ok());
         Ok(Self {
             values,
             current_dir: std::env::current_dir().context("resolve current directory")?,
@@ -463,6 +471,28 @@ fn validate_task_local_profile(profile: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn process_environment_captures_quick_create_context() {
+        let values = capture_environment_values(|key| match key {
+            "CORDY_QUICK_CREATE_TASK_ID" => Some("task-quick".into()),
+            "CORDY_QUICK_CREATE_ATTACHMENT_IDS" => {
+                Some(r#"["attachment-1","attachment-2"]"#.into())
+            }
+            _ => None,
+        });
+
+        assert_eq!(
+            values.get("CORDY_QUICK_CREATE_TASK_ID").map(String::as_str),
+            Some("task-quick")
+        );
+        assert_eq!(
+            values
+                .get("CORDY_QUICK_CREATE_ATTACHMENT_IDS")
+                .map(String::as_str),
+            Some(r#"["attachment-1","attachment-2"]"#)
+        );
+    }
 
     #[test]
     fn profile_paths_match_go_layouts() {
