@@ -277,10 +277,10 @@ impl RuntimeSweeper {
                 count = failed_tasks.len(),
                 "runtime sweeper failed tasks beyond reconnect grace"
             );
-            cancellable(cancel, async {
-                Ok(self.state.tasks.handle_failed_tasks(&failed_tasks).await)
-            })
-            .await?;
+            // The database transition has committed. Finish its idempotent
+            // side effects even if root cancellation arrives; owned shutdown
+            // still bounds the enclosing worker and aborts after its grace.
+            self.state.tasks.handle_failed_tasks(&failed_tasks).await;
         }
         Ok(failed_tasks.len())
     }
@@ -312,7 +312,7 @@ impl RuntimeSweeper {
                 "runtime sweeper expired reconnect retries"
             );
         }
-        self.handle_failed(cancel, &failed).await?;
+        self.handle_failed(&failed).await;
         Ok(failed.len())
     }
 
@@ -340,13 +340,9 @@ impl RuntimeSweeper {
         .await?;
         if !failed.is_empty() {
             tracing::info!(count = failed.len(), "runtime sweeper failed stale tasks");
-            cancellable(cancel, async {
-                self.state.tasks.capture_lease_expired_tasks(&failed).await;
-                Ok(())
-            })
-            .await?;
+            self.state.tasks.capture_lease_expired_tasks(&failed).await;
         }
-        self.handle_failed(cancel, &failed).await?;
+        self.handle_failed(&failed).await;
         Ok(failed.len())
     }
 
@@ -366,29 +362,17 @@ impl RuntimeSweeper {
         .await?;
         if !failed.is_empty() {
             tracing::info!(count = failed.len(), "runtime sweeper expired queued tasks");
-            cancellable(cancel, async {
-                self.state.tasks.capture_queued_expired_tasks(&failed).await;
-                Ok(())
-            })
-            .await?;
+            self.state.tasks.capture_queued_expired_tasks(&failed).await;
         }
-        self.handle_failed(cancel, &failed).await?;
+        self.handle_failed(&failed).await;
         Ok(failed.len())
     }
 
-    async fn handle_failed(
-        &self,
-        cancel: &CancellationToken,
-        failed: &[cordy_db::models::AgentTaskQueue],
-    ) -> anyhow::Result<()> {
+    async fn handle_failed(&self, failed: &[cordy_db::models::AgentTaskQueue]) {
         if failed.is_empty() {
-            return Ok(());
+            return;
         }
-        cancellable(cancel, async {
-            self.state.tasks.handle_failed_tasks(failed).await;
-            Ok(())
-        })
-        .await
+        self.state.tasks.handle_failed_tasks(failed).await;
     }
 
     async fn sweep_delegated_failure_recovery(
