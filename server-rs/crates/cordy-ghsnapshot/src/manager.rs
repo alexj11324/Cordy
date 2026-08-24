@@ -31,6 +31,7 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use sqlx::PgPool;
 use tokio::sync::mpsc;
+use tokio::task::JoinSet;
 use uuid::Uuid;
 
 use cordy_db::queries::github_snapshot as dbq;
@@ -59,6 +60,7 @@ const DEFAULT_SWEEP_MAX_ROWS: i32 = 200;
 const MAX_CHASE_ATTEMPTS: u32 = 12;
 const QUEUE_BUFFER: usize = 2048;
 const MAX_JITTER_MS: u64 = 250;
+pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// The refresh unit and the dedup / single-in-flight key: one (installation,
 /// owner, repo, number) tuple, which may fan out to multiple
@@ -76,9 +78,11 @@ type FetchFuture = Pin<Box<dyn Future<Output = anyhow::Result<PrSnapshot>> + Sen
 /// without a live GitHub. Defaults to [`fetch_pr_snapshot`].
 type FetchFn = Arc<dyn Fn(Arc<Client>, Address) -> FetchFuture + Send + Sync>;
 /// Called once per PR row whose snapshot was actually written (guard passed),
-/// so the handler can broadcast a realtime PR update. Long-running work can
-/// be spawned inside; do not block the worker.
-pub type OnApplied = Arc<dyn Fn(Uuid) + Send + Sync>;
+/// so the handler can broadcast a realtime PR update. The worker awaits this
+/// future, matching Go's callback ordering and keeping it inside the manager's
+/// cancellation and bounded-shutdown boundary.
+pub type OnAppliedFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
+pub type OnApplied = Arc<dyn Fn(Uuid) -> OnAppliedFuture + Send + Sync>;
 
 fn default_fetch() -> FetchFn {
     Arc::new(|client, addr| {
@@ -156,6 +160,8 @@ pub struct Manager {
     state: Mutex<State>,
     cancel: tokio_util::sync::CancellationToken,
     started: std::sync::atomic::AtomicBool,
+    accepting_tasks: std::sync::atomic::AtomicBool,
+    tasks: Mutex<JoinSet<()>>,
 }
 
 impl Manager {
@@ -186,6 +192,8 @@ impl Manager {
             state: Mutex::new(State::default()),
             cancel: tokio_util::sync::CancellationToken::new(),
             started: std::sync::atomic::AtomicBool::new(false),
+            accepting_tasks: std::sync::atomic::AtomicBool::new(false),
+            tasks: Mutex::new(JoinSet::new()),
         }
     }
 
@@ -219,19 +227,35 @@ impl Manager {
     /// Launches the worker pool and the TTL sweeper under the manager's
     /// shutdown token. No-op (and safe) when the manager is disabled or
     /// already started.
-    pub fn start(self: &Arc<Self>) {
+    pub fn start(
+        self: &Arc<Self>,
+        parent: tokio_util::sync::CancellationToken,
+    ) -> Option<ManagerRuntime> {
         if !self.enabled() {
-            return;
+            return None;
         }
         if self.started.swap(true, std::sync::atomic::Ordering::SeqCst) {
-            return;
+            return None;
         }
+        self.accepting_tasks
+            .store(true, std::sync::atomic::Ordering::Release);
+        let m = Arc::clone(self);
+        self.spawn_task(async move {
+            tokio::select! {
+                _ = parent.cancelled() => {}
+                _ = m.cancel.cancelled() => {}
+            }
+            m.cancel.cancel();
+        });
         for _ in 0..self.concurrency {
             let m = Arc::clone(self);
-            tokio::spawn(m.worker());
+            self.spawn_task(m.worker());
         }
         let m = Arc::clone(self);
-        tokio::spawn(m.sweep_loop());
+        self.spawn_task(m.sweep_loop());
+        Some(ManagerRuntime {
+            manager: Arc::clone(self),
+        })
     }
 
     /// Schedules a refresh for a PR address. Repeated events coalesce, but
@@ -405,7 +429,7 @@ impl Manager {
                         any_open_applied = true;
                     }
                     if let Some(on_applied) = &self.on_applied {
-                        on_applied(pr_id);
+                        on_applied(pr_id).await;
                     }
                 }
             }
@@ -455,7 +479,7 @@ impl Manager {
     /// fetch.
     fn defer_active(self: &Arc<Self>, addr: Address, delay: Duration) {
         let m = Arc::clone(self);
-        tokio::spawn(async move {
+        self.spawn_task(async move {
             tokio::select! {
                 _ = m.cancel.cancelled() => {}
                 _ = tokio::time::sleep(delay) => {}
@@ -575,7 +599,7 @@ impl Manager {
     /// down.
     fn schedule_retry(self: &Arc<Self>, addr: Address, delay: Duration) {
         let m = Arc::clone(self);
-        tokio::spawn(async move {
+        self.spawn_task(async move {
             tokio::select! {
                 _ = m.cancel.cancelled() => return,
                 _ = tokio::time::sleep(delay) => {}
@@ -648,6 +672,80 @@ impl Manager {
         self.state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn spawn_task(&self, task: impl Future<Output = ()> + Send + 'static) {
+        let mut tasks = self
+            .tasks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        while let Some(result) = tasks.try_join_next() {
+            if let Err(error) = result {
+                tracing::error!(%error, "ghsnapshot: background task stopped unexpectedly");
+            }
+        }
+        if self
+            .accepting_tasks
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            tasks.spawn(task);
+        }
+    }
+
+    fn stop_accepting_tasks(&self) -> JoinSet<()> {
+        let mut tasks = self
+            .tasks
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.accepting_tasks
+            .store(false, std::sync::atomic::Ordering::Release);
+        std::mem::take(&mut *tasks)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManagerShutdownOutcome {
+    Stopped,
+    Panicked,
+    TimedOut,
+}
+
+/// Production-owned root for workers, the TTL sweep, and every retry timer.
+pub struct ManagerRuntime {
+    manager: Arc<Manager>,
+}
+
+impl ManagerRuntime {
+    pub async fn shutdown(self, timeout: Duration) -> ManagerShutdownOutcome {
+        self.manager.cancel.cancel();
+        let mut tasks = self.manager.stop_accepting_tasks();
+        let mut panicked = false;
+        let joined = tokio::time::timeout(timeout, async {
+            while let Some(result) = tasks.join_next().await {
+                if result.is_err() {
+                    panicked = true;
+                }
+            }
+        })
+        .await;
+        if joined.is_err() {
+            tasks.abort_all();
+            while tasks.join_next().await.is_some() {}
+            return ManagerShutdownOutcome::TimedOut;
+        }
+        if panicked {
+            ManagerShutdownOutcome::Panicked
+        } else {
+            ManagerShutdownOutcome::Stopped
+        }
+    }
+}
+
+impl Drop for ManagerRuntime {
+    fn drop(&mut self) {
+        self.manager.cancel.cancel();
+        let mut tasks = self.manager.stop_accepting_tasks();
+        tasks.abort_all();
     }
 }
 
@@ -736,7 +834,23 @@ mod tests {
         assert_eq!(m.queued_len().await, 0, "disabled manager must not enqueue");
         // Start must be a safe no-op (no workers, no panic).
         let m = Arc::new(m);
-        m.start();
+        assert!(m
+            .start(tokio_util::sync::CancellationToken::new())
+            .is_none());
+    }
+
+    #[tokio::test]
+    async fn manager_runtime_is_owned_and_start_is_idempotent() {
+        let m = Arc::new(Manager::new(Some(enabled_client()), None, None));
+        let root = tokio_util::sync::CancellationToken::new();
+        let runtime = m.start(root.child_token()).expect("enabled manager starts");
+        assert!(m.start(root.child_token()).is_none());
+
+        root.cancel();
+        assert_eq!(
+            runtime.shutdown(Duration::from_secs(1)).await,
+            ManagerShutdownOutcome::Stopped
+        );
     }
 
     /// TestEnqueueCoalesces: the same PR address enqueued repeatedly coalesces
@@ -941,7 +1055,9 @@ mod tests {
         m.enqueue(2, "o", "r", 1);
 
         let m = Arc::new(m);
-        m.start();
+        let _runtime = m
+            .start(tokio_util::sync::CancellationToken::new())
+            .expect("enabled manager starts");
 
         let got_other = tokio::time::timeout(Duration::from_millis(500), other_rx.recv()).await;
         assert!(
@@ -1268,7 +1384,10 @@ mod tests {
             Some(enabled_client()),
             Some(pool.clone()),
             Some(Arc::new(move |id| {
-                let _ = applied_tx.try_send(id);
+                let applied_tx = applied_tx.clone();
+                Box::pin(async move {
+                    let _ = applied_tx.try_send(id);
+                })
             })),
         );
         m.concurrency = 2;
@@ -1302,7 +1421,9 @@ mod tests {
         m.set_fetch(fetch);
 
         let m = Arc::new(m);
-        m.start();
+        let _runtime = m
+            .start(tokio_util::sync::CancellationToken::new())
+            .expect("enabled manager starts");
         m.enqueue(987_654, "o", "r", 4242);
         tokio::time::timeout(Duration::from_secs(2), first_started_rx.recv())
             .await

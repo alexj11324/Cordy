@@ -19,6 +19,8 @@ use cordy_auth::jwt::hash_token;
 use cordy_auth::pat_cache::{ttl_for_expiry, PatCache};
 use cordy_db::queries::{daemon_token, personal_access_token};
 
+use crate::auth::AuthSideEffectSpawner;
+
 /// Cloud node PAT prefix. Fail-closed until the Cloud Fleet verifier lands
 /// with the integrations port — mirrors Go when CORDY_CLOUD_FLEET_URL unset.
 const CLOUD_PAT_PREFIX: &str = "mcn_";
@@ -48,6 +50,7 @@ pub struct DaemonAuthState {
     /// human CLI and a daemon converges on one DB round-trip per TTL window.
     pub pat_cache: PatCache,
     pub daemon_cache: DaemonTokenCache,
+    pub side_effects: std::sync::Arc<dyn AuthSideEffectSpawner>,
 }
 
 fn reject_disabled(user_id: &str, email: &str, auth_path: &str) -> bool {
@@ -207,13 +210,13 @@ pub async fn daemon_auth_middleware(
         // asynchronously, subsequent hits skip the write entirely.
         let pool = state.pool.clone();
         let pat_id = pat.id;
-        tokio::spawn(async move {
+        state.side_effects.spawn(Box::pin(async move {
             if let Err(e) =
                 personal_access_token::update_personal_access_token_last_used(&pool, pat_id).await
             {
                 tracing::warn!(error = %e, "daemon_auth: failed to refresh PAT last_used_at");
             }
-        });
+        }));
 
         req.extensions_mut().insert(DaemonContext {
             workspace_id: None,
