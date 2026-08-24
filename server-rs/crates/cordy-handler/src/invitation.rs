@@ -262,6 +262,9 @@ pub fn workspace_admin_router() -> Router<HandlerState> {
             "/api/workspaces/{id}/invitations/{invitation_id}",
             axum::routing::delete(revoke),
         )
+        .route_layer(axum::middleware::from_fn(
+            crate::workspace::require_human_admin_actor,
+        ))
 }
 
 #[derive(Debug, Serialize)]
