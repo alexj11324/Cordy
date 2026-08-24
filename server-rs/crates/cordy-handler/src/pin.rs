@@ -15,6 +15,11 @@ use uuid::Uuid;
 use crate::error::error_response;
 use crate::state::HandlerState;
 
+const VIEW_PIN_TARGET_QUERY: &str = r#"SELECT 1 FROM issue_view
+WHERE id = $1
+  AND workspace_id = $2
+  AND (owner_id = $3 OR visibility = 'workspace')"#;
+
 #[derive(Debug, Serialize)]
 struct PinnedItemResponse {
     id: Uuid,
@@ -132,9 +137,28 @@ async fn create(
         Err(r) => return r,
     };
     let exists = match request.item_type.as_str() {
-        "issue" => sqlx::query("SELECT 1 FROM issue WHERE id=$1 AND workspace_id=$2").bind(item_id).bind(workspace_id).fetch_optional(&state.pool).await,
-        "project" => sqlx::query("SELECT 1 FROM project WHERE id=$1 AND workspace_id=$2").bind(item_id).bind(workspace_id).fetch_optional(&state.pool).await,
-        _ => sqlx::query("SELECT 1 FROM issue_view WHERE id=$1 AND workspace_id=$2 AND (user_id=$3 OR is_shared=TRUE)").bind(item_id).bind(workspace_id).bind(context.member.user_id).fetch_optional(&state.pool).await,
+        "issue" => {
+            sqlx::query("SELECT 1 FROM issue WHERE id=$1 AND workspace_id=$2")
+                .bind(item_id)
+                .bind(workspace_id)
+                .fetch_optional(&state.pool)
+                .await
+        }
+        "project" => {
+            sqlx::query("SELECT 1 FROM project WHERE id=$1 AND workspace_id=$2")
+                .bind(item_id)
+                .bind(workspace_id)
+                .fetch_optional(&state.pool)
+                .await
+        }
+        _ => {
+            sqlx::query(VIEW_PIN_TARGET_QUERY)
+                .bind(item_id)
+                .bind(workspace_id)
+                .bind(context.member.user_id)
+                .fetch_optional(&state.pool)
+                .await
+        }
     };
     match exists {
         Ok(Some(_)) => {}
@@ -185,6 +209,19 @@ async fn create(
             error_response(StatusCode::CONFLICT, "item already pinned")
         }
         Err(error) => db_error(error, "failed to create pin"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn view_pin_validation_uses_issue_view_schema_and_visibility_contract() {
+        assert!(VIEW_PIN_TARGET_QUERY.contains("owner_id = $3"));
+        assert!(VIEW_PIN_TARGET_QUERY.contains("visibility = 'workspace'"));
+        assert!(!VIEW_PIN_TARGET_QUERY.contains("user_id"));
+        assert!(!VIEW_PIN_TARGET_QUERY.contains("is_shared"));
     }
 }
 

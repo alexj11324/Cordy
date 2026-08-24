@@ -61,6 +61,26 @@ where
     Value::deserialize(deserializer).map(JsonInput::Present)
 }
 
+#[derive(Debug, Default)]
+enum OptionalStringInput {
+    #[default]
+    Missing,
+    Null,
+    Value(String),
+}
+
+fn deserialize_optional_string_input<'de, D>(
+    deserializer: D,
+) -> Result<OptionalStringInput, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<String>::deserialize(deserializer).map(|value| match value {
+        Some(value) => OptionalStringInput::Value(value),
+        None => OptionalStringInput::Null,
+    })
+}
+
 #[derive(Debug, Default, Deserialize)]
 struct CreateRequest {
     #[serde(default, deserialize_with = "deserialize_null_string")]
@@ -90,7 +110,8 @@ struct ListParams {
 struct UpdateRequest {
     name: Option<String>,
     visibility: Option<String>,
-    scope_variant: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_optional_string_input")]
+    scope_variant: OptionalStringInput,
     #[serde(default, deserialize_with = "deserialize_json_input")]
     query: JsonInput,
     #[serde(default, deserialize_with = "deserialize_json_input")]
@@ -171,6 +192,18 @@ fn validate_variant(scope_type: &str, variant: Option<&str>) -> Result<Option<St
         None | Some("") | Some("all") => Ok(None),
         Some(value) if WORKSPACE_VARIANTS.contains(&value) => Ok(Some(value.to_string())),
         Some(_) => Err(()),
+    }
+}
+
+fn updated_variant(
+    scope_type: &str,
+    current: Option<String>,
+    input: OptionalStringInput,
+) -> Result<Option<String>, ()> {
+    match input {
+        OptionalStringInput::Missing => Ok(current),
+        OptionalStringInput::Null => validate_variant(scope_type, None),
+        OptionalStringInput::Value(value) => validate_variant(scope_type, Some(&value)),
     }
 }
 
@@ -446,17 +479,18 @@ async fn update(
             }
         },
     };
-    let scope_variant = match request.scope_variant {
-        Some(variant) => match validate_variant(&view.scope_type, Some(&variant)) {
-            Ok(variant) => variant,
-            Err(()) => {
-                return error_response(
-                    StatusCode::BAD_REQUEST,
-                    "invalid scope_variant for this scope_type",
-                )
-            }
-        },
-        None => view.scope_variant.clone(),
+    let scope_variant = match updated_variant(
+        &view.scope_type,
+        view.scope_variant.clone(),
+        request.scope_variant,
+    ) {
+        Ok(variant) => variant,
+        Err(()) => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid scope_variant for this scope_type",
+            )
+        }
     };
     match issue_view::update_issue_view(
         &state.pool,
@@ -530,6 +564,34 @@ mod tests {
             Ok(Some("agents".into()))
         );
         assert!(validate_variant("workspace", Some("assigned")).is_err());
+    }
+
+    #[test]
+    fn update_variant_distinguishes_omitted_null_and_value() {
+        let omitted: UpdateRequest = decode(br#"{"expected_revision":1}"#).unwrap();
+        assert!(matches!(
+            omitted.scope_variant,
+            OptionalStringInput::Missing
+        ));
+
+        let cleared: UpdateRequest =
+            decode(br#"{"scope_variant":null,"expected_revision":1}"#).unwrap();
+        assert!(matches!(&cleared.scope_variant, OptionalStringInput::Null));
+        assert_eq!(
+            updated_variant("workspace", Some("members".into()), cleared.scope_variant),
+            Ok(None)
+        );
+
+        let changed: UpdateRequest =
+            decode(br#"{"scope_variant":"agents","expected_revision":1}"#).unwrap();
+        assert!(matches!(
+            &changed.scope_variant,
+            OptionalStringInput::Value(value) if value == "agents"
+        ));
+        assert_eq!(
+            updated_variant("workspace", None, changed.scope_variant),
+            Ok(Some("agents".into()))
+        );
     }
 
     #[test]
