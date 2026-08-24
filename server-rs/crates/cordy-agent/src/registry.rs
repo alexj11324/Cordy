@@ -15,10 +15,20 @@ use crate::qoder::{
 use crate::qwen::{QwenBackend, QwenConfig};
 
 /// Provider-neutral launch inputs resolved by daemon profile/runtime loading.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct BackendConfig {
     pub command: RuntimeCommand,
     pub env: BTreeMap<String, String>,
+}
+
+impl std::fmt::Debug for BackendConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("BackendConfig")
+            .field("command_path", &self.command.path)
+            .field("environment_variable_count", &self.env.len())
+            .finish_non_exhaustive()
+    }
 }
 
 /// Constructs only protocol families with a real implementation in this

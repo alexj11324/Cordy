@@ -197,7 +197,7 @@ pub struct ActiveSiblingRunData {
 
 /// Task represents a claimed task from the server (types.go:72–169). Agent data
 /// (name, skills) is populated by the claim endpoint.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Task {
     #[serde(rename = "id")]
@@ -511,6 +511,33 @@ pub struct Task {
     pub auth_token: String,
 }
 
+impl std::fmt::Debug for Task {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("Task")
+            .field("id", &self.id)
+            .field("agent_id", &self.agent_id)
+            .field("runtime_id", &self.runtime_id)
+            .field("workspace_id", &self.workspace_id)
+            .field("issue_id", &self.issue_id)
+            .field("chat_session_id", &self.chat_session_id)
+            .field("autopilot_run_id", &self.autopilot_run_id)
+            .field(
+                "has_quick_create_prompt",
+                &!self.quick_create_prompt.is_empty(),
+            )
+            .field("agent", &self.agent)
+            .field("repo_count", &self.repos.len())
+            .field("project_resource_count", &self.project_resources.len())
+            .field("has_task_auth_token", &!self.auth_token.is_empty())
+            .field(
+                "has_remote_mcp_daemon_token",
+                &!self.remote_mcp_daemon_token.is_empty(),
+            )
+            .finish_non_exhaustive()
+    }
+}
+
 /// Serde helper mirroring Go's `omitempty` for int fields (0 omitted).
 fn is_zero_i64(v: &i64) -> bool {
     *v == 0
@@ -545,6 +572,38 @@ mod tests {
         .unwrap();
 
         assert!(runtime.profile_id.is_empty());
+    }
+
+    #[test]
+    fn task_and_agent_debug_redact_claim_credentials() {
+        let task = Task {
+            id: "task-1".to_string(),
+            auth_token: "mat_task_secret".to_string(),
+            remote_mcp_daemon_token: "daemon_secret".to_string(),
+            agent: Some(AgentData {
+                custom_env: Some(std::collections::HashMap::from([(
+                    "API_KEY".to_string(),
+                    "env_secret".to_string(),
+                )])),
+                custom_args: vec!["--token=arg_secret".to_string()],
+                mcp_config: Some(serde_json::json!({"token":"mcp_secret"})),
+                runtime_config: Some(serde_json::json!({"token":"runtime_secret"})),
+                ..AgentData::default()
+            }),
+            ..Task::default()
+        };
+
+        let rendered = format!("{task:?}");
+        for secret in [
+            "mat_task_secret",
+            "daemon_secret",
+            "env_secret",
+            "arg_secret",
+            "mcp_secret",
+            "runtime_secret",
+        ] {
+            assert!(!rendered.contains(secret), "Debug leaked {secret}");
+        }
     }
 }
 
@@ -586,7 +645,7 @@ pub struct CoalescedCommentData {
 
 /// AgentData holds agent details returned by the claim endpoint
 /// (types.go:196–214).
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct AgentData {
     #[serde(rename = "id")]
     pub id: String,
@@ -621,6 +680,31 @@ pub struct AgentData {
     /// endpoint, see issue #3260); other backends ignore it.
     #[serde(rename = "runtime_config", skip_serializing_if = "Option::is_none")]
     pub runtime_config: Option<serde_json::Value>,
+}
+
+impl std::fmt::Debug for AgentData {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("AgentData")
+            .field("id", &self.id)
+            .field("name", &self.name)
+            .field("skill_count", &self.skills.len())
+            .field("skill_ref_count", &self.skill_refs.len())
+            .field(
+                "custom_env_variable_count",
+                &self
+                    .custom_env
+                    .as_ref()
+                    .map_or(0, std::collections::HashMap::len),
+            )
+            .field("custom_arg_count", &self.custom_args.len())
+            .field("has_mcp_config", &self.mcp_config.is_some())
+            .field("model", &self.model)
+            .field("thinking_level", &self.thinking_level)
+            .field("service_tier", &self.service_tier)
+            .field("has_runtime_config", &self.runtime_config.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 /// DisabledRuntimeSkillData is the task-wire identity of one runtime-local

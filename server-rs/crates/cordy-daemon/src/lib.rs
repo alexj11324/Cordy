@@ -29,6 +29,7 @@ pub mod control_client;
 pub mod control_lifecycle;
 pub mod daemon_core;
 pub mod diskusage;
+pub mod execution_plan;
 pub mod health;
 pub mod helpers;
 pub mod identity;
