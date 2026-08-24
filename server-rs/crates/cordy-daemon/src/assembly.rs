@@ -8,6 +8,7 @@
 //! workspace-root safety have been established.
 
 use std::collections::BTreeMap;
+use std::ffi::OsString;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -42,6 +43,84 @@ pub struct DaemonLaunchOverrides {
     pub disable_auto_update: bool,
     pub auto_update_check_interval: Duration,
     pub disable_auto_reload: bool,
+}
+
+impl DaemonLaunchOverrides {
+    /// Constructs the one canonical foreground child/successor invocation.
+    /// Authentication stays in profile storage and is never copied to argv.
+    pub fn foreground_args(&self) -> Vec<OsString> {
+        let mut args = vec![
+            OsString::from("daemon"),
+            OsString::from("start"),
+            OsString::from("--foreground"),
+        ];
+        push_string_arg(&mut args, "--daemon-id", &self.daemon_id);
+        push_string_arg(&mut args, "--device-name", &self.device_name);
+        push_string_arg(&mut args, "--runtime-name", &self.runtime_name);
+        push_string_arg(&mut args, "--workspaces-root", &self.workspaces_root);
+        push_duration_arg(&mut args, "--poll-interval", self.poll_interval, false);
+        push_duration_arg(
+            &mut args,
+            "--heartbeat-interval",
+            self.heartbeat_interval,
+            false,
+        );
+        if let Some(timeout) = self.agent_timeout {
+            push_duration_arg(&mut args, "--agent-timeout", timeout, true);
+        }
+        push_duration_arg(
+            &mut args,
+            "--codex-semantic-inactivity-timeout",
+            self.codex_semantic_inactivity_timeout,
+            false,
+        );
+        push_duration_arg(
+            &mut args,
+            "--codex-handshake-timeout",
+            self.codex_handshake_timeout,
+            false,
+        );
+        if self.max_concurrent_tasks > 0 {
+            push_string_arg(
+                &mut args,
+                "--max-concurrent-tasks",
+                &self.max_concurrent_tasks.to_string(),
+            );
+        }
+        if self.disable_auto_update {
+            args.push(OsString::from("--no-auto-update"));
+        }
+        push_duration_arg(
+            &mut args,
+            "--auto-update-interval",
+            self.auto_update_check_interval,
+            false,
+        );
+        if self.disable_auto_reload {
+            args.push(OsString::from("--no-auto-reload"));
+        }
+        push_string_arg(&mut args, "--server-url", &self.server_url);
+        push_string_arg(&mut args, "--profile", &self.profile);
+        args
+    }
+}
+
+fn push_string_arg(args: &mut Vec<OsString>, flag: &str, value: &str) {
+    if !value.is_empty() {
+        args.push(OsString::from(flag));
+        args.push(OsString::from(value));
+    }
+}
+
+fn push_duration_arg(args: &mut Vec<OsString>, flag: &str, value: Duration, include_zero: bool) {
+    if include_zero || !value.is_zero() {
+        args.push(OsString::from(flag));
+        args.push(OsString::from(if value.is_zero() {
+            "0s".to_string()
+        } else {
+            format!("{value:?}")
+        }));
+    }
 }
 
 /// Profile data read by `cordy-cli` and consumed during daemon assembly.
@@ -221,6 +300,41 @@ mod tests {
                 model: String::new(),
             },
         )])
+    }
+
+    #[test]
+    fn foreground_args_preserve_explicit_zero_without_credentials() {
+        let launch = DaemonLaunchOverrides {
+            server_url: "https://cordy.example".to_string(),
+            poll_interval: Duration::from_secs(3),
+            agent_timeout: Some(Duration::ZERO),
+            max_concurrent_tasks: 4,
+            profile: "staging".to_string(),
+            disable_auto_update: true,
+            disable_auto_reload: true,
+            ..DaemonLaunchOverrides::default()
+        };
+        let args = launch
+            .foreground_args()
+            .into_iter()
+            .map(|arg| arg.into_string().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(&args[..3], ["daemon", "start", "--foreground"]);
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--agent-timeout" && pair[1] == "0s"));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--poll-interval" && pair[1] == "3s"));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--max-concurrent-tasks" && pair[1] == "4"));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair[0] == "--profile" && pair[1] == "staging"));
+        assert!(args.contains(&"--no-auto-update".to_string()));
+        assert!(args.contains(&"--no-auto-reload".to_string()));
+        assert!(!args.iter().any(|arg| arg.contains("token")));
     }
 
     #[test]
