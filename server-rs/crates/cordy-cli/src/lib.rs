@@ -163,6 +163,8 @@ enum IssueCommand {
     Subscriber(IssueSubscriberArgs),
     #[command(about = "Manage labels on an issue")]
     Label(IssueLabelArgs),
+    #[command(about = "Manage per-issue metadata (KV)")]
+    Metadata(IssueMetadataArgs),
 }
 
 #[derive(Debug, Args)]
@@ -565,6 +567,66 @@ struct IssueLabelMutationArgs {
     output: OutputFormat,
     #[arg(long, help = "Show full UUIDs in table output")]
     full_id: bool,
+}
+
+#[derive(Debug, Args)]
+struct IssueMetadataArgs {
+    #[command(subcommand)]
+    command: IssueMetadataCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum IssueMetadataCommand {
+    #[command(about = "List all metadata keys on an issue")]
+    List(IssueMetadataListArgs),
+    #[command(about = "Get a single metadata key value")]
+    Get(IssueMetadataKeyArgs),
+    #[command(about = "Set a single metadata key value")]
+    Set(IssueMetadataSetArgs),
+    #[command(about = "Delete a single metadata key")]
+    Delete(IssueMetadataDeleteArgs),
+}
+
+#[derive(Debug, Args)]
+struct IssueMetadataListArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssueMetadataKeyArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(long, help = "Metadata key (required)")]
+    key: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssueMetadataDeleteArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(long, help = "Metadata key (required)")]
+    key: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct IssueMetadataSetArgs {
+    #[arg(value_name = "ISSUE-ID")]
+    issue_id: String,
+    #[arg(long, help = "Metadata key (required)")]
+    key: Option<String>,
+    #[arg(long, help = "Metadata value (required)")]
+    value: Option<String>,
+    #[arg(long = "type", help = "Force value type: string, number, or bool")]
+    value_type: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
@@ -1023,6 +1085,30 @@ async fn run_with_input<R: Read>(
                     command: IssueLabelCommand::Remove(args),
                 }),
         }) => run_issue_label_remove(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Metadata(IssueMetadataArgs {
+                    command: IssueMetadataCommand::List(args),
+                }),
+        }) => run_issue_metadata_list(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Metadata(IssueMetadataArgs {
+                    command: IssueMetadataCommand::Get(args),
+                }),
+        }) => run_issue_metadata_get(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Metadata(IssueMetadataArgs {
+                    command: IssueMetadataCommand::Set(args),
+                }),
+        }) => run_issue_metadata_set(cli, environment, args).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Metadata(IssueMetadataArgs {
+                    command: IssueMetadataCommand::Delete(args),
+                }),
+        }) => run_issue_metadata_delete(cli, environment, args).await,
         Command::Auth(AuthArgs {
             command: AuthCommand::Status { output },
         }) => run_auth_status(cli, environment, *output).await,
@@ -4244,6 +4330,200 @@ async fn run_issue_label_remove(
         Ok(result) => format_issue_labels(issue_labels(&result), args.output, args.full_id)?,
         Err(_) if args.output == OutputFormat::Json => "{\n  \"detached\": true\n}\n".into(),
         Err(_) => "Label detached.\n".into(),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+fn metadata_object(result: &Value) -> serde_json::Map<String, Value> {
+    result
+        .get("metadata")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn metadata_value_type(value: &Value) -> &'static str {
+    match value {
+        Value::String(_) => "string",
+        Value::Bool(_) => "bool",
+        Value::Number(_) => "number",
+        _ => "unknown",
+    }
+}
+
+fn format_metadata_table(metadata: &serde_json::Map<String, Value>) -> String {
+    let mut keys = metadata.keys().collect::<Vec<_>>();
+    keys.sort();
+    let mut rows = vec![vec!["KEY".into(), "VALUE".into(), "TYPE".into()]];
+    rows.extend(keys.into_iter().map(|key| {
+        let value = &metadata[key];
+        vec![
+            key.clone(),
+            format_metadata_value(Some(value)),
+            metadata_value_type(value).into(),
+        ]
+    }));
+    format_table(&rows)
+}
+
+fn format_metadata_output(
+    metadata: &serde_json::Map<String, Value>,
+    output: OutputFormat,
+) -> Result<String> {
+    match output {
+        OutputFormat::Json => Ok(format!("{}\n", serde_json::to_string_pretty(metadata)?)),
+        OutputFormat::Table => Ok(format_metadata_table(metadata)),
+    }
+}
+
+fn parse_metadata_value(raw: &str, forced_type: Option<&str>) -> Result<Value> {
+    match forced_type.unwrap_or_default() {
+        "string" => Ok(Value::String(raw.into())),
+        "number" => match serde_json::from_str::<Value>(raw) {
+            Ok(value @ Value::Number(_)) => Ok(value),
+            _ => bail!("value {raw:?} is not a valid number"),
+        },
+        "bool" => match raw {
+            "true" => Ok(Value::Bool(true)),
+            "false" => Ok(Value::Bool(false)),
+            _ => bail!("value {raw:?} is not a valid bool (expected true or false)"),
+        },
+        "" => match serde_json::from_str::<Value>(raw) {
+            Ok(value @ (Value::String(_) | Value::Bool(_) | Value::Number(_))) => Ok(value),
+            _ => Ok(Value::String(raw.into())),
+        },
+        value_type => {
+            bail!("unknown --type {value_type:?} (expected string, number, or bool)")
+        }
+    }
+}
+
+async fn run_issue_metadata_list(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueMetadataListArgs,
+) -> Result<RunOutput> {
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let result = client
+        .get_json::<Value>(&format!("/api/issues/{issue_id}/metadata"))
+        .await;
+    let metadata = match result {
+        Ok(result) => metadata_object(&result),
+        Err(error)
+            if error
+                .downcast_ref::<HttpError>()
+                .is_some_and(|error| error.status_code == 404) =>
+        {
+            serde_json::Map::new()
+        }
+        Err(error) => return Err(error).context("list metadata"),
+    };
+    Ok(RunOutput {
+        stdout: format_metadata_output(&metadata, args.output)?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_issue_metadata_get(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueMetadataKeyArgs,
+) -> Result<RunOutput> {
+    let key = args
+        .key
+        .as_deref()
+        .filter(|key| !key.is_empty())
+        .context("--key is required")?;
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let result: Value = client
+        .get_json(&format!("/api/issues/{issue_id}/metadata"))
+        .await
+        .context("get metadata")?;
+    let metadata = metadata_object(&result);
+    let value = metadata
+        .get(key)
+        .with_context(|| format!("key {key:?} not found on issue"))?;
+    let stdout = match args.output {
+        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(value)?),
+        OutputFormat::Table => format_table(&[
+            vec!["KEY".into(), "VALUE".into(), "TYPE".into()],
+            vec![
+                key.into(),
+                format_metadata_value(Some(value)),
+                metadata_value_type(value).into(),
+            ],
+        ]),
+    };
+    Ok(RunOutput {
+        stdout,
+        stderr: String::new(),
+    })
+}
+
+async fn run_issue_metadata_set(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueMetadataSetArgs,
+) -> Result<RunOutput> {
+    let key = args
+        .key
+        .as_deref()
+        .filter(|key| !key.is_empty())
+        .context("--key is required")?;
+    let raw = args.value.as_deref().context("--value is required")?;
+    let value = parse_metadata_value(raw, args.value_type.as_deref())?;
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    let result: Value = client
+        .put_json(
+            &format!("/api/issues/{issue_id}/metadata/{key}"),
+            &serde_json::json!({"value":value}),
+        )
+        .await
+        .context("set metadata")?;
+    let metadata = metadata_object(&result);
+    Ok(RunOutput {
+        stdout: format_metadata_output(&metadata, args.output)?,
+        stderr: String::new(),
+    })
+}
+
+async fn run_issue_metadata_delete(
+    cli: &Cli,
+    environment: &Environment,
+    args: &IssueMetadataDeleteArgs,
+) -> Result<RunOutput> {
+    let key = args
+        .key
+        .as_deref()
+        .filter(|key| !key.is_empty())
+        .context("--key is required")?;
+    let client = new_api_client(cli, environment)?;
+    let issue_id = resolve_issue_ref(&client, &args.issue_id)
+        .await
+        .context("resolve issue")?;
+    client
+        .delete(&format!("/api/issues/{issue_id}/metadata/{key}"))
+        .await
+        .context("delete metadata")?;
+    let result = client
+        .get_json::<Value>(&format!("/api/issues/{issue_id}/metadata"))
+        .await;
+    let stdout = match result {
+        Ok(result) => format_metadata_output(&metadata_object(&result), args.output)?,
+        Err(_) if args.output == OutputFormat::Json => "{\n  \"deleted\": true\n}\n".into(),
+        Err(_) => "Key deleted.\n".into(),
     };
     Ok(RunOutput {
         stdout,
@@ -8705,6 +8985,128 @@ mod tests {
             serde_json::from_str::<Value>(&output.stdout).expect("detach JSON"),
             serde_json::json!({"detached":true})
         );
+        task.abort();
+    }
+
+    #[test]
+    fn issue_metadata_parser_value_types_and_table_match_go_contract() {
+        let cli = Cli::try_parse_from([
+            "cordy", "issue", "metadata", "set", "CORD-18", "--key", "attempt", "--value=",
+            "--type", "string", "--output", "json",
+        ])
+        .expect("metadata set CLI");
+        let Command::Issue(IssueArgs {
+            command:
+                IssueCommand::Metadata(IssueMetadataArgs {
+                    command: IssueMetadataCommand::Set(args),
+                }),
+        }) = &cli.command
+        else {
+            panic!("expected metadata set");
+        };
+        assert_eq!(args.key.as_deref(), Some("attempt"));
+        assert_eq!(args.value.as_deref(), Some(""));
+        assert_eq!(args.value_type.as_deref(), Some("string"));
+        assert_eq!(
+            parse_metadata_value("true", None).expect("bool"),
+            Value::Bool(true)
+        );
+        assert_eq!(
+            parse_metadata_value("3.5", None).expect("number"),
+            serde_json::json!(3.5)
+        );
+        assert_eq!(
+            parse_metadata_value("42", Some("string")).expect("forced string"),
+            Value::String("42".into())
+        );
+        assert!(parse_metadata_value("yes", Some("bool"))
+            .expect_err("invalid bool")
+            .to_string()
+            .contains("expected true or false"));
+
+        let metadata = serde_json::Map::from_iter([
+            ("zeta".into(), serde_json::json!(2)),
+            ("alpha".into(), serde_json::json!(true)),
+        ]);
+        let table = format_metadata_table(&metadata);
+        assert!(table.starts_with("KEY"));
+        assert!(table.find("alpha").expect("alpha") < table.find("zeta").expect("zeta"));
+        assert!(table.contains("bool"));
+        assert!(table.contains("number"));
+    }
+
+    #[tokio::test]
+    async fn issue_metadata_list_degrades_only_not_found_to_empty() {
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid/metadata",
+                get(|| async { axum::http::StatusCode::NOT_FOUND }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy", "issue", "metadata", "list", "CORD-18", "--output", "json",
+        ])
+        .expect("metadata list CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("metadata list fallback");
+        assert_eq!(
+            serde_json::from_str::<Value>(&output.stdout).expect("metadata JSON"),
+            serde_json::json!({})
+        );
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn issue_metadata_set_puts_typed_value_and_returns_full_map() {
+        let app = Router::new()
+            .route(
+                "/api/issues/CORD-18",
+                get(|| async {
+                    Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
+                }),
+            )
+            .route(
+                "/api/issues/issue-uuid/metadata/attempt",
+                put(|Json(body): Json<Value>| async move {
+                    assert_eq!(body, serde_json::json!({"value":3}));
+                    Json(serde_json::json!({"metadata":{"attempt":3,"ready":true}}))
+                }),
+            );
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let address = listener.local_addr().expect("address");
+        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
+        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from([
+            "cordy", "issue", "metadata", "set", "CORD-18", "--key", "attempt", "--value", "3",
+            "--type", "number", "--output", "json",
+        ])
+        .expect("metadata set CLI");
+        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
+            .await
+            .expect("set metadata");
+        let metadata: Value = serde_json::from_str(&output.stdout).expect("metadata JSON");
+        assert_eq!(metadata["attempt"], 3);
+        assert_eq!(metadata["ready"], true);
         task.abort();
     }
 
