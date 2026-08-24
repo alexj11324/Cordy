@@ -6,6 +6,7 @@
 
 mod api;
 mod auth_commands;
+mod autopilot_output;
 pub mod config;
 mod config_commands;
 pub mod daemon;
@@ -39,6 +40,9 @@ use std::time::Duration;
 use url::{form_urlencoded, Url};
 
 use auth_commands::{display_token_prefix, run_auth_logout, run_auth_status};
+use autopilot_output::{
+    autopilot_webhook_url, format_autopilot_runs_table, format_autopilot_table,
+};
 use config_commands::{
     config_display_values, format_config_table, run_config_set, run_config_show,
     validate_config_set,
@@ -4349,28 +4353,6 @@ async fn run_autopilot_runs(
     })
 }
 
-fn format_autopilot_runs_table(runs: &[Value]) -> String {
-    let mut rows = vec![vec![
-        "ID".into(),
-        "SOURCE".into(),
-        "STATUS".into(),
-        "ISSUE".into(),
-        "TRIGGERED_AT".into(),
-        "COMPLETED_AT".into(),
-    ]];
-    rows.extend(runs.iter().map(|run| {
-        vec![
-            value_string(run, "id"),
-            value_string(run, "source"),
-            value_string(run, "status"),
-            value_string(run, "issue_id"),
-            value_string(run, "triggered_at"),
-            value_string(run, "completed_at"),
-        ]
-    }));
-    format_table(&rows)
-}
-
 async fn run_autopilot_trigger_add(
     cli: &Cli,
     environment: &Environment,
@@ -4433,15 +4415,6 @@ async fn run_autopilot_trigger_add(
         stdout,
         stderr: String::new(),
     })
-}
-
-fn autopilot_webhook_url(trigger: &Value, base_url: &str) -> Option<String> {
-    let url = value_string(trigger, "webhook_url");
-    if !url.is_empty() {
-        return Some(url);
-    }
-    let path = value_string(trigger, "webhook_path");
-    (!path.is_empty()).then(|| format!("{}{path}", base_url.trim_end_matches('/')))
 }
 
 async fn run_autopilot_trigger_update(
@@ -4867,33 +4840,6 @@ async fn load_autopilot_agent_names(
             (!id.is_empty() && !name.is_empty()).then_some((id, name))
         })
         .collect()
-}
-
-fn format_autopilot_table(
-    autopilots: &[Value],
-    full_id: bool,
-    agents: &HashMap<String, String>,
-) -> String {
-    let mut rows = vec![vec![
-        "ID".into(),
-        "TITLE".into(),
-        "STATUS".into(),
-        "MODE".into(),
-        "ASSIGNEE".into(),
-        "LAST_RUN".into(),
-    ]];
-    rows.extend(autopilots.iter().map(|autopilot| {
-        let assignee_id = value_string(autopilot, "assignee_id");
-        vec![
-            display_id(&value_string(autopilot, "id"), full_id),
-            value_string(autopilot, "title"),
-            value_string(autopilot, "status"),
-            value_string(autopilot, "execution_mode"),
-            agents.get(&assignee_id).cloned().unwrap_or(assignee_id),
-            value_string(autopilot, "last_run_at"),
-        ]
-    }));
-    format_table(&rows)
 }
 
 fn chat_reply_count(message: &Value) -> String {
