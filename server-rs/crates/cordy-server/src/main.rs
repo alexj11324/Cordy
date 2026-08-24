@@ -21,6 +21,7 @@ struct ProductionApp {
     scheduler: cordy_scheduler::ManagerRuntime,
     channel_media: Option<cordy_service::channel_media_reconciler::ChannelMediaReconcilerRuntime>,
     heartbeat_scheduler: cordy_handler::heartbeat_scheduler::HeartbeatSchedulerRuntime,
+    runtime_sweeper: cordy_handler::runtime_sweeper::RuntimeSweeperRuntime,
 }
 
 struct VcsWebhookConfig {
@@ -269,6 +270,15 @@ async fn build_production_router(
     let (state, webhook_worker) = state.prepare_webhook_delivery_worker();
     let root_cancel = CancellationToken::new();
     let heartbeat_scheduler = heartbeat_scheduler.start(root_cancel.child_token());
+    let runtime_sweeper = Arc::new(cordy_handler::runtime_sweeper::RuntimeTaskSweeper::new(
+        state.pool.clone(),
+        state.liveness_store.clone(),
+        state.tasks.clone(),
+        state.bus.clone(),
+        state.business_metrics.clone(),
+        Duration::from_secs(3 * 60 * 60),
+    ))
+    .start(root_cancel.child_token());
     let failure_metrics = state.business_metrics.clone().map(|metrics| {
         metrics as Arc<dyn cordy_service::autopilot_failure_monitor::FailureMonitorMetrics>
     });
@@ -327,6 +337,7 @@ async fn build_production_router(
         scheduler,
         channel_media,
         heartbeat_scheduler,
+        runtime_sweeper,
     })
 }
 
@@ -465,6 +476,7 @@ async fn main() -> anyhow::Result<()> {
         scheduler,
         channel_media,
         heartbeat_scheduler,
+        runtime_sweeper,
     } = app;
     let serve_result = axum::serve(
         listener,
@@ -480,6 +492,7 @@ async fn main() -> anyhow::Result<()> {
         scheduler_shutdown,
         channel_media_shutdown,
         heartbeat_shutdown,
+        runtime_sweeper_shutdown,
     ) = tokio::join!(
         failure_monitor
             .shutdown(cordy_service::autopilot_failure_monitor::DEFAULT_SHUTDOWN_TIMEOUT),
@@ -489,6 +502,7 @@ async fn main() -> anyhow::Result<()> {
         scheduler.shutdown(),
         shutdown_channel_media(channel_media),
         heartbeat_scheduler.shutdown(),
+        runtime_sweeper.shutdown(),
     );
     match failure_shutdown {
         cordy_service::autopilot_failure_monitor::ShutdownOutcome::TimedOut => {
@@ -544,6 +558,15 @@ async fn main() -> anyhow::Result<()> {
             tracing::error!("heartbeat scheduler task panicked during shutdown");
         }
         cordy_handler::heartbeat_scheduler::HeartbeatShutdownOutcome::Stopped => {}
+    }
+    match runtime_sweeper_shutdown {
+        cordy_handler::runtime_sweeper::RuntimeSweeperShutdownOutcome::TimedOut => {
+            tracing::warn!("runtime sweeper exceeded shutdown deadline and was aborted");
+        }
+        cordy_handler::runtime_sweeper::RuntimeSweeperShutdownOutcome::Panicked => {
+            tracing::error!("runtime sweeper task panicked during shutdown");
+        }
+        cordy_handler::runtime_sweeper::RuntimeSweeperShutdownOutcome::Stopped => {}
     }
     serve_result?;
     Ok(())

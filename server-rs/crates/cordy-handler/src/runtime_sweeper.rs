@@ -7,6 +7,8 @@ use cordy_events::{Bus, Event};
 use cordy_service::task_service::TaskService;
 use serde_json::json;
 use sqlx::PgPool;
+use tokio::task::JoinHandle;
+use tokio_util::sync::CancellationToken;
 
 use crate::runtime_liveness::LivenessStore;
 
@@ -25,6 +27,8 @@ const GC_BATCH: i32 = 100;
 const GC_BLOCKED_LIMIT: i32 = 1000;
 const GC_TICK_TIMEOUT: Duration = Duration::from_secs(15);
 const GC_OPERATION_TIMEOUT: Duration = Duration::from_secs(5);
+pub const DEFAULT_SWEEP_INTERVAL: Duration = Duration::from_secs(30);
+pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RuntimeTaskSweepReport {
@@ -34,6 +38,7 @@ pub struct RuntimeTaskSweepReport {
     pub recoveries_replayed: usize,
     pub recoveries_exhausted: usize,
     pub chats_finalized: usize,
+    pub runtimes_gc_deleted: usize,
 }
 
 pub struct RuntimeTaskSweeper {
@@ -301,6 +306,33 @@ impl RuntimeTaskSweeper {
         report
     }
 
+    pub async fn run_full_once(&self) -> RuntimeTaskSweepReport {
+        let mut report = self.run_once().await;
+        report.runtimes_gc_deleted = self.gc_once().await;
+        report
+    }
+
+    pub fn start(self: Arc<Self>, cancel: CancellationToken) -> RuntimeSweeperRuntime {
+        let task_cancel = cancel.clone();
+        let task = tokio::spawn(async move { self.run(task_cancel).await });
+        RuntimeSweeperRuntime {
+            cancel,
+            task: Some(task),
+        }
+    }
+
+    async fn run(&self, cancel: CancellationToken) {
+        let mut ticker = tokio::time::interval(DEFAULT_SWEEP_INTERVAL);
+        ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        ticker.tick().await;
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => return,
+                _ = ticker.tick() => { self.run_full_once().await; }
+            }
+        }
+    }
+
     async fn sweep_stale_runtimes(&self) -> usize {
         let candidates =
             match runtime::select_stale_online_runtimes(&self.pool, STALE_SECONDS).await {
@@ -356,4 +388,43 @@ impl RuntimeTaskSweeper {
         }
         rows.len()
     }
+}
+
+pub struct RuntimeSweeperRuntime {
+    cancel: CancellationToken,
+    task: Option<JoinHandle<()>>,
+}
+
+impl RuntimeSweeperRuntime {
+    pub async fn shutdown(mut self) -> RuntimeSweeperShutdownOutcome {
+        self.cancel.cancel();
+        let Some(mut task) = self.task.take() else {
+            return RuntimeSweeperShutdownOutcome::Panicked;
+        };
+        match tokio::time::timeout(DEFAULT_SHUTDOWN_TIMEOUT, &mut task).await {
+            Ok(Ok(())) => RuntimeSweeperShutdownOutcome::Stopped,
+            Ok(Err(_)) => RuntimeSweeperShutdownOutcome::Panicked,
+            Err(_) => {
+                task.abort();
+                let _ = task.await;
+                RuntimeSweeperShutdownOutcome::TimedOut
+            }
+        }
+    }
+}
+
+impl Drop for RuntimeSweeperRuntime {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        if let Some(task) = self.task.take() {
+            task.abort();
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeSweeperShutdownOutcome {
+    Stopped,
+    Panicked,
+    TimedOut,
 }
