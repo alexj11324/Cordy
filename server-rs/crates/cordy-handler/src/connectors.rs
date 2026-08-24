@@ -434,14 +434,28 @@ async fn run_lark_registration(
         };
         let result = match poll {
             Ok(value) => value,
-            Err(error) => {
+            Err(error) if lark_poll_protocol_error(&error) => {
                 finish_lark_session(
                     &session_id,
                     None,
-                    Some("poll_failed"),
+                    Some("lark_protocol_error"),
                     Some(&format!("{error:#}")),
                 );
                 return;
+            }
+            Err(error) => {
+                // A short-lived DNS, connect, timeout, or response-body read
+                // failure must not invalidate an otherwise live device code.
+                // Keep the original Lark deadline and retry on the next tick,
+                // matching the Go registration service. Typed protocol errors
+                // remain terminal above because another poll cannot repair a
+                // malformed or explicitly rejected exchange.
+                tracing::warn!(
+                    session_id = %session_id,
+                    %error,
+                    "Lark registration transport error; retrying"
+                );
+                continue;
             }
         };
         if !result.switched_domain.is_empty() {
@@ -595,6 +609,12 @@ async fn run_lark_registration(
         finish_lark_session(&session_id, Some(installation.id), None, None);
         return;
     }
+}
+
+fn lark_poll_protocol_error(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<cordy_lark::registration::RegistrationError>()
+        .is_some()
 }
 
 fn finish_lark_session(
@@ -1490,6 +1510,18 @@ mod tests {
             dingtalk_install_error(&internal).0,
             StatusCode::INTERNAL_SERVER_ERROR
         );
+    }
+
+    #[test]
+    fn lark_poll_errors_retry_only_transport_failures() {
+        let protocol = anyhow::Error::new(cordy_lark::registration::RegistrationError {
+            code: "http_502".into(),
+            description: "invalid response".into(),
+        });
+        assert!(lark_poll_protocol_error(&protocol));
+
+        let transport = anyhow::anyhow!("registration: http do: connection reset");
+        assert!(!lark_poll_protocol_error(&transport));
     }
 
     #[tokio::test]
