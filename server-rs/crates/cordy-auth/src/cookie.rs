@@ -124,19 +124,37 @@ pub fn configure_auth_token_ttl(raw: Option<&str>) -> anyhow::Result<()> {
         .map_err(|_| anyhow::anyhow!("auth token TTL was already initialized"))
 }
 
-/// Resolves the cookie Domain attribute. An IP literal (optionally
-/// dot-prefixed) is rejected with a warning — RFC 6265 §4.1.2.3 forbids IP
-/// literals there and browsers silently drop such Set-Cookie headers.
+/// Resolves the cookie Domain attribute. Invalid values are omitted so callers
+/// still emit a valid host-only cookie instead of a tombstone browsers reject.
 pub fn cookie_domain(raw: Option<&str>) -> Option<String> {
     let raw = raw?.trim();
     if raw.is_empty() {
         return None;
     }
     let bare = raw.strip_prefix('.').unwrap_or(raw);
-    if bare.parse::<std::net::IpAddr>().is_ok() {
+    let valid = bare.len() <= 253
+        && !bare.is_empty()
+        && !bare.ends_with('.')
+        && bare.parse::<std::net::IpAddr>().is_err()
+        && bare.split('.').all(|label| {
+            label.len() <= 63
+                && !label.is_empty()
+                && label
+                    .as_bytes()
+                    .first()
+                    .is_some_and(u8::is_ascii_alphanumeric)
+                && label
+                    .as_bytes()
+                    .last()
+                    .is_some_and(u8::is_ascii_alphanumeric)
+                && label
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        });
+    if !valid {
         tracing::warn!(
             value = %raw,
-            "COOKIE_DOMAIN looks like an IP address; ignoring. RFC 6265 forbids IP literals in the cookie Domain attribute, so browsers would drop the Set-Cookie. Leave COOKIE_DOMAIN empty for single-host deployments, or use a real domain."
+            "COOKIE_DOMAIN is not a valid DNS domain; omitting the Domain attribute"
         );
         return None;
     }
@@ -321,26 +339,33 @@ mod tests {
         let csrf = generate_csrf_token(auth_token).unwrap();
 
         assert!(verify_csrf_signature(auth_token, &csrf));
-        // Wrong auth token must fail.
         assert!(!verify_csrf_signature("mul_other", &csrf));
-        // Tampered signature must fail.
         let mut tampered = csrf.clone();
         tampered.replace_range(
             csrf.len() - 1..,
             if csrf.ends_with('0') { "1" } else { "0" },
         );
         assert!(!verify_csrf_signature(auth_token, &tampered));
-        // Malformed shapes must fail.
         assert!(!verify_csrf_signature(auth_token, "no-dot"));
         assert!(!verify_csrf_signature(auth_token, "zz.zz"));
     }
 
     #[test]
-    fn cookie_domain_rejects_ip_literals() {
+    fn cookie_domain_rejects_invalid_values() {
         assert_eq!(cookie_domain(None), None);
         assert_eq!(cookie_domain(Some("")), None);
-        assert_eq!(cookie_domain(Some("192.168.1.1")), None);
-        assert_eq!(cookie_domain(Some(".127.0.0.1")), None);
+        for invalid in [
+            "192.168.1.1",
+            ".127.0.0.1",
+            "bad domain",
+            "bad_domain.example",
+            "-bad.example",
+            "bad-.example",
+            "bad..example",
+            "example.com.",
+        ] {
+            assert_eq!(cookie_domain(Some(invalid)), None, "{invalid}");
+        }
         assert_eq!(
             cookie_domain(Some("example.com")),
             Some("example.com".to_string())
@@ -348,6 +373,10 @@ mod tests {
         assert_eq!(
             cookie_domain(Some(".example.com")),
             Some(".example.com".to_string())
+        );
+        assert_eq!(
+            cookie_domain(Some("xn--bcher-kva.example")),
+            Some("xn--bcher-kva.example".to_string())
         );
     }
 

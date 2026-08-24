@@ -28,8 +28,8 @@ pub struct AuthSettings {
     google_client_id: String,
     google_client_secret: String,
     google_redirect_uri: String,
-    cookie_domain: String,
-    frontend_origin: String,
+    pub(crate) cookie_domain: String,
+    pub(crate) frontend_origin: String,
 }
 
 impl AuthSettings {
@@ -292,11 +292,15 @@ async fn verify_code(
             verification_code::increment_verification_code_attempts(&state.pool, db_code.id).await;
         return error_response(StatusCode::BAD_REQUEST, "invalid or expired code");
     }
-    if verification_code::mark_verification_code_used(&state.pool, db_code.id)
-        .await
-        .is_err()
-    {
-        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to verify code");
+    match verification_code::mark_verification_code_used(&state.pool, db_code.id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            return error_response(StatusCode::BAD_REQUEST, "invalid or expired code");
+        }
+        Err(error) => {
+            tracing::warn!(%error, "auth: failed to consume verification code");
+            return error_response(StatusCode::BAD_REQUEST, "invalid or expired code");
+        }
     }
     complete_login(&state, &headers, &email, None).await
 }

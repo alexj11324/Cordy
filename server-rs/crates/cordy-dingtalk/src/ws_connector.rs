@@ -230,14 +230,11 @@ impl WsConnector {
         sink: &Arc<tokio::sync::Mutex<WsSink>>,
         resp: DataFrameResponse,
     ) -> anyhow::Result<()> {
-        let payload = serde_json::to_vec(&resp)?;
+        let message = response_message(&resp)?;
         let mut guard = sink.lock().await;
-        tokio::time::timeout(
-            self.write_timeout,
-            guard.send(Message::Binary(payload.into())),
-        )
-        .await
-        .map_err(|_| anyhow::anyhow!("dingtalk stream: write timed out"))??;
+        tokio::time::timeout(self.write_timeout, guard.send(message))
+            .await
+            .map_err(|_| anyhow::anyhow!("dingtalk stream: write timed out"))??;
         Ok(())
     }
 
@@ -267,6 +264,13 @@ impl WsConnector {
     }
 }
 
+/// DingTalk Stream responses are JSON WebSocket text messages. The gateway's
+/// official SDK uses `WriteJSON`, which selects the text opcode; a binary JSON
+/// frame is not an equivalent acknowledgement at the protocol boundary.
+fn response_message(resp: &DataFrameResponse) -> anyhow::Result<Message> {
+    Ok(Message::Text(serde_json::to_string(resp)?.into()))
+}
+
 async fn ping_loop(
     sink: Arc<tokio::sync::Mutex<WsSink>>,
     ctx: CancellationToken,
@@ -288,5 +292,21 @@ async fn ping_loop(
         {
             return;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stream_response_uses_text_frame() {
+        let message = response_message(&new_ack_response("mid-1")).unwrap();
+        let Message::Text(payload) = message else {
+            panic!("DingTalk Stream ACK must use a WebSocket text frame");
+        };
+        let value: serde_json::Value = serde_json::from_str(&payload).unwrap();
+        assert_eq!(value["code"], 200);
+        assert_eq!(value["headers"]["messageId"], "mid-1");
     }
 }

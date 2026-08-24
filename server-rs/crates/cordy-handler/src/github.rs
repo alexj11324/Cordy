@@ -1,6 +1,7 @@
 //! GitHub App installation management and signed webhook ingress.
 
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 use axum::body::Body;
 use axum::extract::{Extension, Path, Query, State};
@@ -14,9 +15,9 @@ use cordy_db::queries::{github, member};
 use cordy_middleware::workspace::WorkspaceContext;
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
-use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
-use rand::RngCore;
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use rand::rngs::OsRng;
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::Sha256;
@@ -26,6 +27,9 @@ use crate::{error::error_response, state::HandlerState};
 
 type HmacSha256 = Hmac<Sha256>;
 const MAX_WEBHOOK_BODY: usize = 10 << 20;
+const GITHUB_STATE_TTL_SECS: i64 = 10 * 60;
+const GITHUB_STATE_REDIS_TIMEOUT: Duration = Duration::from_secs(1);
+const GITHUB_STATE_REPLAY_PREFIX: &str = "mul:{github_callback_state}:";
 
 pub fn public_router() -> Router<HandlerState> {
     Router::new()
@@ -70,18 +74,31 @@ fn allowed_return(value: &str) -> bool {
 }
 
 fn state_token(workspace_id: Uuid, connected_by: Uuid, return_to: &str) -> Option<String> {
+    state_token_at(
+        workspace_id,
+        connected_by,
+        return_to,
+        Utc::now().timestamp(),
+    )
+}
+
+fn state_token_at(
+    workspace_id: Uuid,
+    connected_by: Uuid,
+    return_to: &str,
+    now: i64,
+) -> Option<String> {
     let secret = env("GITHUB_WEBHOOK_SECRET");
     if secret.is_empty() || !allowed_return(return_to) {
         return None;
     }
     let mut nonce = [0_u8; 12];
     OsRng.fill_bytes(&mut nonce);
-    // The callback is public, so the connecting identity must travel inside
-    // the authenticated state rather than in a client-controlled header.
-    // The version marker also lets us continue accepting legacy state tokens
-    // (which intentionally yield no connected_by attribution).
+    let expires_at = now.checked_add(GITHUB_STATE_TTL_SECS)?;
+    // The public callback trusts only the current, expiring state format. Old
+    // formats omitted either the actor or expiry and must fail closed.
     let payload = format!(
-        "v2.{workspace_id}.{connected_by}.{return_to}.{}",
+        "v3.{workspace_id}.{connected_by}.{return_to}.{expires_at}.{}",
         hex::encode(nonce)
     );
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).ok()?;
@@ -95,38 +112,78 @@ fn state_token(workspace_id: Uuid, connected_by: Uuid, return_to: &str) -> Optio
 struct VerifiedState<'a> {
     workspace_id: Uuid,
     return_to: &'a str,
-    connected_by: Option<Uuid>,
+    connected_by: Uuid,
+    expires_at: i64,
+    nonce: &'a str,
 }
 
 fn verify_state(token: &str) -> Option<VerifiedState<'_>> {
+    verify_state_at(token, Utc::now().timestamp())
+}
+
+fn verify_state_at(token: &str, now: i64) -> Option<VerifiedState<'_>> {
     let secret = env("GITHUB_WEBHOOK_SECRET");
     let parts = token.split('.').collect::<Vec<_>>();
-    if secret.is_empty() || !matches!(parts.len(), 3 | 4 | 6) {
+    if secret.is_empty() || parts.len() != 7 || parts[0] != "v3" {
         return None;
     }
-    let (workspace_index, return_to, nonce_index, connected_by) = if parts.len() == 6 {
-        if parts[0] != "v2" {
-            return None;
-        }
-        (1, parts[3], 4, Some(Uuid::parse_str(parts[2]).ok()?))
-    } else if parts.len() == 4 {
-        (0, parts[1], 2, None)
-    } else {
-        (0, "github", 1, None)
-    };
+    let return_to = parts[3];
     if !allowed_return(return_to) {
         return None;
     }
-    let payload = parts[..=nonce_index].join(".");
-    let signature = hex::decode(parts[nonce_index + 1]).ok()?;
+    let expires_at = parts[4].parse::<i64>().ok()?;
+    if expires_at <= now {
+        return None;
+    }
+    let nonce = parts[5];
+    if hex::decode(nonce).ok()?.len() != 12 {
+        return None;
+    }
+    let payload = parts[..=5].join(".");
+    let signature = hex::decode(parts[6]).ok()?;
     let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).ok()?;
     mac.update(payload.as_bytes());
     mac.verify_slice(&signature).ok()?;
     Some(VerifiedState {
-        workspace_id: Uuid::parse_str(parts[workspace_index]).ok()?,
+        workspace_id: Uuid::parse_str(parts[1]).ok()?,
         return_to,
-        connected_by,
+        connected_by: Uuid::parse_str(parts[2]).ok()?,
+        expires_at,
+        nonce,
     })
+}
+
+async fn consume_state_once(
+    client: Option<&redis::Client>,
+    verified: &VerifiedState<'_>,
+    now: i64,
+) -> bool {
+    let Some(client) = client else {
+        return false;
+    };
+    let Some(ttl) = verified.expires_at.checked_sub(now).filter(|ttl| *ttl > 0) else {
+        return false;
+    };
+    let key = format!("{GITHUB_STATE_REPLAY_PREFIX}{}", verified.nonce);
+    let operation = async {
+        let mut connection = client.get_multiplexed_async_connection().await?;
+        redis::cmd("SET")
+            .arg(key)
+            .arg("1")
+            .arg("NX")
+            .arg("EX")
+            .arg(ttl)
+            .query_async::<Option<String>>(&mut connection)
+            .await
+    };
+    matches!(
+        tokio::time::timeout(GITHUB_STATE_REDIS_TIMEOUT, operation).await,
+        Ok(Ok(Some(_)))
+    )
+}
+
+fn can_manage_github(role: &str) -> bool {
+    matches!(role, "owner" | "admin")
 }
 
 fn settings_url(return_to: &str) -> String {
@@ -147,6 +204,7 @@ struct ConnectQuery {
 }
 
 async fn connect(
+    State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Query(query): Query<ConnectQuery>,
 ) -> Response {
@@ -156,6 +214,12 @@ async fn connect(
     };
     if !configured() {
         return Json(json!({"url": "", "configured": false})).into_response();
+    }
+    if state.rate_limit_client.is_none() {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "github callback state store unavailable",
+        );
     }
     let return_to = query.return_to.as_deref().unwrap_or("github").trim();
     if !allowed_return(return_to) {
@@ -203,6 +267,16 @@ async fn setup(State(state): State<HandlerState>, Query(query): Query<SetupQuery
         };
         return Redirect::temporary(&format!("{target}&github_error={error}")).into_response();
     };
+    if !consume_state_once(
+        state.rate_limit_client.as_ref(),
+        &verified,
+        Utc::now().timestamp(),
+    )
+    .await
+    {
+        return Redirect::temporary(&format!("{target}&github_error=invalid_state"))
+            .into_response();
+    }
     let account = match cordy_ghsnapshot::Client::new_from_env() {
         Ok(Some(client)) => client.installation_account(installation_id).await.ok(),
         _ => None,
@@ -212,17 +286,15 @@ async fn setup(State(state): State<HandlerState>, Query(query): Query<SetupQuery
         .unwrap_or_else(|| ("unknown".into(), "User".into(), None));
     let workspace_id = verified.workspace_id;
     let connected_by = verified.connected_by;
-    if let Some(user_id) = connected_by {
-        let still_authorized =
-            member::get_member_by_user_and_workspace(&state.pool, user_id, workspace_id)
-                .await
-                .ok()
-                .flatten()
-                .is_some_and(|membership| matches!(membership.role.as_str(), "owner" | "admin"));
-        if !still_authorized {
-            return Redirect::temporary(&format!("{target}&github_error=authorization_changed"))
-                .into_response();
-        }
+    let still_authorized =
+        member::get_member_by_user_and_workspace(&state.pool, connected_by, workspace_id)
+            .await
+            .ok()
+            .flatten()
+            .is_some_and(|membership| can_manage_github(&membership.role));
+    if !still_authorized {
+        return Redirect::temporary(&format!("{target}&github_error=authorization_changed"))
+            .into_response();
     }
     let mut installation = match github::create_git_hub_installation(
         &state.pool,
@@ -231,7 +303,7 @@ async fn setup(State(state): State<HandlerState>, Query(query): Query<SetupQuery
         &login,
         &account_type,
         avatar.as_deref(),
-        connected_by,
+        Some(connected_by),
     )
     .await
     {
@@ -251,7 +323,7 @@ async fn setup(State(state): State<HandlerState>, Query(query): Query<SetupQuery
             &pending.account_login,
             &pending.account_type,
             pending.account_avatar_url.as_deref(),
-            connected_by,
+            Some(connected_by),
         )
         .await
         {
@@ -295,7 +367,7 @@ async fn list_installations(
         Ok(value) => value,
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid workspace id"),
     };
-    let can_manage = matches!(context.member.role.as_str(), "owner" | "admin");
+    let can_manage = can_manage_github(&context.member.role);
     match github::list_git_hub_installations_by_workspace(&state.pool, workspace_id).await {
         Ok(rows) => Json(json!({
             "installations": rows.into_iter().map(|row| installation_response(row, can_manage)).collect::<Vec<_>>(),
@@ -1004,17 +1076,26 @@ mod tests {
     use super::*;
     use axum::http::Request;
     use tower::ServiceExt;
+
+    fn signed_state(payload: &str) -> String {
+        let mut mac = HmacSha256::new_from_slice(b"test-secret").unwrap();
+        mac.update(payload.as_bytes());
+        format!("{payload}.{}", hex::encode(mac.finalize().into_bytes()))
+    }
+
     #[test]
     fn state_and_webhook_signatures_are_tamper_evident() {
         std::env::set_var("GITHUB_WEBHOOK_SECRET", "test-secret");
         let workspace = Uuid::new_v4();
         let user = Uuid::new_v4();
-        let token = state_token(workspace, user, "repositories").unwrap();
-        let verified = verify_state(&token).unwrap();
+        let now = 1_700_000_000;
+        let token = state_token_at(workspace, user, "repositories", now).unwrap();
+        let verified = verify_state_at(&token, now).unwrap();
         assert_eq!(verified.workspace_id, workspace);
         assert_eq!(verified.return_to, "repositories");
-        assert_eq!(verified.connected_by, Some(user));
-        assert!(verify_state(&format!("{token}x")).is_none());
+        assert_eq!(verified.connected_by, user);
+        assert_eq!(verified.expires_at, now + GITHUB_STATE_TTL_SECS);
+        assert!(verify_state_at(&format!("{token}x"), now).is_none());
         let mut mac = HmacSha256::new_from_slice(b"test-secret").unwrap();
         mac.update(b"{}");
         let header = format!("sha256={}", hex::encode(mac.finalize().into_bytes()));
@@ -1027,9 +1108,46 @@ mod tests {
         std::env::set_var("GITHUB_WEBHOOK_SECRET", "test-secret");
         let workspace = Uuid::new_v4();
         let user = Uuid::new_v4();
-        let token = state_token(workspace, user, "github").unwrap();
+        let now = 1_700_000_000;
+        let token = state_token_at(workspace, user, "github", now).unwrap();
         let forged = token.replacen(&user.to_string(), &Uuid::new_v4().to_string(), 1);
-        assert!(verify_state(&forged).is_none());
+        assert!(verify_state_at(&forged, now).is_none());
+    }
+
+    #[test]
+    fn callback_state_expires_and_legacy_shapes_fail_closed() {
+        std::env::set_var("GITHUB_WEBHOOK_SECRET", "test-secret");
+        let workspace = Uuid::new_v4();
+        let user = Uuid::new_v4();
+        let now = 1_700_000_000;
+        let token = state_token_at(workspace, user, "github", now).unwrap();
+        assert!(verify_state_at(&token, now + GITHUB_STATE_TTL_SECS - 1).is_some());
+        assert!(verify_state_at(&token, now + GITHUB_STATE_TTL_SECS).is_none());
+
+        for payload in [
+            format!("{workspace}.nonce"),
+            format!("{workspace}.github.nonce"),
+            format!("v2.{workspace}.{user}.github.nonce"),
+        ] {
+            assert!(verify_state_at(&signed_state(&payload), now).is_none());
+        }
+    }
+
+    #[tokio::test]
+    async fn callback_state_consumption_fails_closed_without_shared_store() {
+        std::env::set_var("GITHUB_WEBHOOK_SECRET", "test-secret");
+        let now = 1_700_000_000;
+        let token = state_token_at(Uuid::new_v4(), Uuid::new_v4(), "github", now).unwrap();
+        let verified = verify_state_at(&token, now).unwrap();
+        assert!(!consume_state_once(None, &verified, now).await);
+    }
+
+    #[test]
+    fn github_callback_requires_current_admin_role() {
+        assert!(can_manage_github("owner"));
+        assert!(can_manage_github("admin"));
+        assert!(!can_manage_github("member"));
+        assert!(!can_manage_github("guest"));
     }
 
     #[test]
