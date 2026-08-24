@@ -281,7 +281,7 @@ pub async fn update_workspace_mcp_server(
     id: Uuid,
     workspace_id: Uuid,
     name: Option<&str>,
-    config: &serde_json::Value,
+    config: Option<&serde_json::Value>,
 ) -> anyhow::Result<Option<WorkspaceMcpServer>> {
     let row = sqlx::query(
         r#"UPDATE workspace_mcp_server SET
