@@ -64,6 +64,13 @@ static KIRO_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = Laz
 });
 static KIMI_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
     LazyLock::new(|| BTreeMap::from([("acp", BlockedArgMode::Standalone)]));
+static QWENPAW_BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
+    LazyLock::new(|| {
+        BTreeMap::from([
+            ("acp", BlockedArgMode::Standalone),
+            ("--workspace", BlockedArgMode::WithValue),
+        ])
+    });
 static TERMINAL_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:(?:⚠️|❌|\[ERROR\]).*(?:BadRequestError|AuthenticationError|RateLimitError|HTTP \d{3}|Non-retryable|API call failed)|API call failed after \d+ retr(?:y|ies))")
         .unwrap_or_else(|error| panic!("invalid Qoder provider-error regex: {error}"))
@@ -83,6 +90,11 @@ pub struct QoderConfig {
     pub discovery_args: Vec<String>,
     pub resume_method: String,
     pub prompt_content_alias: bool,
+    pub model_selection: bool,
+    pub reject_failed_load: bool,
+    pub coding_project_meta: Option<String>,
+    pub full_text_output: bool,
+    pub usage_model_unknown: bool,
 }
 
 impl Default for QoderConfig {
@@ -96,6 +108,11 @@ impl Default for QoderConfig {
             discovery_args: vec!["--yolo".to_string(), "--acp".to_string()],
             resume_method: "session/resume".to_string(),
             prompt_content_alias: false,
+            model_selection: true,
+            reject_failed_load: false,
+            coding_project_meta: None,
+            full_text_output: false,
+            usage_model_unknown: false,
         }
     }
 }
@@ -143,6 +160,11 @@ impl TraecliBackend {
                 discovery_args: ["acp", "serve", "--yolo"].map(str::to_string).to_vec(),
                 resume_method: "session/load".to_string(),
                 prompt_content_alias: false,
+                model_selection: true,
+                reject_failed_load: false,
+                coding_project_meta: None,
+                full_text_output: false,
+                usage_model_unknown: false,
             }),
         }
     }
@@ -189,6 +211,11 @@ impl KiroBackend {
                 discovery_args: vec!["acp".to_string()],
                 resume_method: "session/load".to_string(),
                 prompt_content_alias: true,
+                model_selection: true,
+                reject_failed_load: false,
+                coding_project_meta: None,
+                full_text_output: false,
+                usage_model_unknown: false,
             }),
         }
     }
@@ -207,6 +234,46 @@ impl KiroBackend {
 
 #[async_trait]
 impl Backend for KiroBackend {
+    async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
+        self.inner.execute(prompt, options).await
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct QwenpawConfig {
+    pub command: RuntimeCommand,
+    pub env: BTreeMap<String, String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct QwenpawBackend {
+    inner: QoderBackend,
+}
+
+impl QwenpawBackend {
+    pub fn new(config: QwenpawConfig) -> Self {
+        Self {
+            inner: QoderBackend::new(QoderConfig {
+                command: config.command,
+                env: config.env,
+                default_command: "qwenpaw".to_string(),
+                provider: "qwenpaw".to_string(),
+                launch_args: vec!["acp".to_string()],
+                discovery_args: Vec::new(),
+                resume_method: "session/load".to_string(),
+                prompt_content_alias: false,
+                model_selection: false,
+                reject_failed_load: true,
+                coding_project_meta: Some("qwenpaw.coding_project_dir".to_string()),
+                full_text_output: true,
+                usage_model_unknown: true,
+            }),
+        }
+    }
+}
+
+#[async_trait]
+impl Backend for QwenpawBackend {
     async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
         self.inner.execute(prompt, options).await
     }
@@ -291,11 +358,31 @@ pub fn build_kimi_args(options: &ExecOptions) -> Vec<String> {
     )
 }
 
+pub fn build_qwenpaw_args(options: &ExecOptions) -> Vec<String> {
+    build_session_args(
+        &QoderConfig {
+            provider: "qwenpaw".to_string(),
+            launch_args: vec!["acp".to_string()],
+            default_command: "qwenpaw".to_string(),
+            model_selection: false,
+            reject_failed_load: true,
+            coding_project_meta: Some("qwenpaw.coding_project_dir".to_string()),
+            full_text_output: true,
+            usage_model_unknown: true,
+            ..QoderConfig::default()
+        },
+        options,
+    )
+}
+
 fn build_session_args(config: &QoderConfig, options: &ExecOptions) -> Vec<String> {
     let blocked = blocked_args(&config.provider);
     let mut args = config.launch_args.clone();
     args.extend(filter_custom_args(&options.extra_args, blocked).args);
     args.extend(filter_custom_args(&options.custom_args, blocked).args);
+    if config.provider == "qwenpaw" && !options.qwenpaw_workspace.is_empty() {
+        args.extend(["--workspace".to_string(), options.qwenpaw_workspace.clone()]);
+    }
     args
 }
 
@@ -304,6 +391,7 @@ fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMod
         "traecli" => &TRAECLI_BLOCKED_ARGS,
         "kiro" => &KIRO_BLOCKED_ARGS,
         "kimi" => &KIMI_BLOCKED_ARGS,
+        "qwenpaw" => &QWENPAW_BLOCKED_ARGS,
         _ => &BLOCKED_ARGS,
     }
 }
@@ -456,6 +544,11 @@ impl Backend for QoderBackend {
         let provider = self.config.provider.clone();
         let resume_method = self.config.resume_method.clone();
         let prompt_content_alias = self.config.prompt_content_alias;
+        let model_selection = self.config.model_selection;
+        let reject_failed_load = self.config.reject_failed_load;
+        let coding_project_meta = self.config.coding_project_meta.clone();
+        let full_text_output = self.config.full_text_output;
+        let usage_model_unknown = self.config.usage_model_unknown;
         let kimi_home = self.config.env.get("KIMI_CODE_HOME").cloned();
         let resumed = !options.resume_session_id.is_empty();
         let fallback_model = if options.model.is_empty() {
@@ -486,6 +579,11 @@ impl Backend for QoderBackend {
                 provider.clone(),
                 resume_method,
                 prompt_content_alias,
+                model_selection,
+                reject_failed_load,
+                coding_project_meta,
+                full_text_output,
+                usage_model_unknown,
             ));
             let end = if timeout.is_zero() {
                 tokio::select! {
@@ -612,6 +710,11 @@ async fn run_protocol(
     provider: String,
     resume_method: String,
     prompt_content_alias: bool,
+    model_selection: bool,
+    reject_failed_load: bool,
+    coding_project_meta: Option<String>,
+    full_text_output: bool,
+    usage_model_unknown: bool,
 ) -> ProtocolOutcome {
     let mut client = AcpClient::new(BufReader::new(stdout), stdin);
     let initialize = match client
@@ -636,7 +739,7 @@ async fn run_protocol(
         match client
             .request(
                 "session/new",
-                serde_json::json!({"cwd":cwd,"mcpServers":mcp_servers}),
+                session_params(cwd, None, mcp_servers, coding_project_meta.as_deref()),
                 |_| {},
             )
             .await
@@ -658,27 +761,41 @@ async fn run_protocol(
         match client
             .request(
                 &resume_method,
-                serde_json::json!({"cwd":cwd,"sessionId":options.resume_session_id,"mcpServers":mcp_servers}),
+                session_params(
+                    cwd,
+                    Some(&options.resume_session_id),
+                    mcp_servers,
+                    coding_project_meta.as_deref(),
+                ),
                 |_| {},
             )
             .await
         {
             Ok(result) => {
                 let returned = extract_session_id(&result);
-                let session_id = if returned.is_empty() { options.resume_session_id.clone() } else { returned };
+                let session_id = if returned.is_empty() {
+                    options.resume_session_id.clone()
+                } else {
+                    returned
+                };
                 (result, session_id)
             }
-            Err(error) => return protocol_failure(&provider, &resume_method, error, String::new(), false),
+            Err(error) => {
+                let rejected = reject_failed_load && error.is_session_not_found();
+                return protocol_failure(&provider, &resume_method, error, String::new(), rejected);
+            }
         }
     };
-    let mut effective_model = if provider == "kimi" {
+    let mut effective_model = if usage_model_unknown || !model_selection {
+        "unknown".to_string()
+    } else if provider == "kimi" {
         options.model.clone()
     } else if options.model.is_empty() {
         extract_current_model(&session_result)
     } else {
         options.model.clone()
     };
-    if !options.model.is_empty() {
+    if model_selection && !options.model.is_empty() {
         if let Err(error) = client
             .request(
                 "session/set_model",
@@ -767,7 +884,10 @@ async fn run_protocol(
                 && is_kiro_close_error(&error)
                 && state.last_finishing_status == "completed"
             {
-                let (output, full_output) = state.deliverable.finish();
+                let (mut output, full_output) = state.deliverable.finish();
+                if full_text_output {
+                    output.clone_from(&full_output);
+                }
                 return ProtocolOutcome {
                     status: "completed".to_string(),
                     output,
@@ -800,7 +920,10 @@ async fn run_protocol(
     if turn_usage != TokenUsage::default() {
         usage.insert(effective_model, turn_usage);
     }
-    let (output, full_output) = state.deliverable.finish();
+    let (mut output, full_output) = state.deliverable.finish();
+    if full_text_output {
+        output.clone_from(&full_output);
+    }
     ProtocolOutcome {
         status: if stop_reason == "cancelled" {
             "aborted"
@@ -819,6 +942,26 @@ async fn run_protocol(
         usage,
         resume_rejected: false,
     }
+}
+
+fn session_params(
+    cwd: &str,
+    session_id: Option<&str>,
+    mcp_servers: Vec<AcpMcpServer>,
+    coding_project_meta: Option<&str>,
+) -> Value {
+    let mut params = serde_json::json!({"cwd":cwd,"mcpServers":mcp_servers});
+    if let Some(session_id) = session_id {
+        params["sessionId"] = Value::String(session_id.to_string());
+    }
+    if cwd != "." {
+        if let Some(key) = coding_project_meta {
+            let mut meta = serde_json::Map::new();
+            meta.insert(key.to_string(), Value::String(cwd.to_string()));
+            params["_meta"] = Value::Object(meta);
+        }
+    }
+    params
 }
 
 fn protocol_failure(
@@ -1381,6 +1524,24 @@ mod tests {
     }
 
     #[test]
+    fn qwenpaw_arguments_keep_workspace_owned() {
+        let args = build_qwenpaw_args(&ExecOptions {
+            extra_args: ["acp", "--verbose"].map(str::to_string).to_vec(),
+            custom_args: ["--workspace", "/wrong", "--debug"]
+                .map(str::to_string)
+                .to_vec(),
+            qwenpaw_workspace: "/owned".to_string(),
+            ..ExecOptions::default()
+        });
+        assert_eq!(args[0], "acp");
+        assert_eq!(args.iter().filter(|arg| arg.as_str() == "acp").count(), 1);
+        assert!(!args.iter().any(|arg| arg == "/wrong"));
+        assert_eq!(&args[args.len() - 2..], ["--workspace", "/owned"]);
+        assert!(args.iter().any(|arg| arg == "--verbose"));
+        assert!(args.iter().any(|arg| arg == "--debug"));
+    }
+
+    #[test]
     fn kiro_arguments_keep_protocol_and_trust_mode_owned() {
         let args = build_kiro_args(&ExecOptions {
             custom_args: [
@@ -1537,6 +1698,27 @@ mod tests {
                     kimi_home.to_string_lossy().into_owned(),
                 ),
             ]),
+        });
+        (directory, requests, backend)
+    }
+
+    #[cfg(unix)]
+    fn fake_qwenpaw_backend(
+        script: &str,
+    ) -> (tempfile::TempDir, std::path::PathBuf, QwenpawBackend) {
+        let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
+        let executable = directory.path().join("qwenpaw");
+        let requests = directory.path().join("requests.jsonl");
+        std::fs::write(&executable, script)
+            .unwrap_or_else(|error| panic!("write fake QwenPaw: {error}"));
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|error| panic!("chmod fake QwenPaw: {error}"));
+        let backend = QwenpawBackend::new(QwenpawConfig {
+            command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
+            env: BTreeMap::from([(
+                "QWENPAW_REQUESTS".to_string(),
+                requests.to_string_lossy().into_owned(),
+            )]),
         });
         (directory, requests, backend)
     }
@@ -1706,6 +1888,100 @@ done
             .find("\"method\":\"session/prompt\"")
             .unwrap_or_else(|| panic!("Kimi prompt missing"));
         assert!(set_model < set_thinking && set_thinking < prompt);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn qwenpaw_executes_with_project_meta_without_mutating_model() {
+        let (directory, requests, backend) = fake_qwenpaw_backend(
+            r#"#!/bin/sh
+printf '%s\n' "$@" > "$QWENPAW_REQUESTS.args"
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$QWENPAW_REQUESTS"
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"paw-1","models":{"currentModelId":"shared-model"}}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"before tool"}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"ToolCall","toolCallId":"t1","name":"read","rawInput":{"path":"README.md"}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"ToolCallUpdate","toolCallId":"t1","status":"completed","output":"ok"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":" after tool"}}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","usage":{"inputTokens":9,"outputTokens":3}}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let cwd = directory.path().to_string_lossy().into_owned();
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    cwd: cwd.clone(),
+                    model: "must-not-be-written".to_string(),
+                    qwenpaw_workspace: "/managed/workspace".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute QwenPaw: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("QwenPaw result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "before tool after tool");
+        assert_eq!(result.usage["unknown"].input_tokens, 9);
+        let requests_content = std::fs::read_to_string(&requests)
+            .unwrap_or_else(|error| panic!("read QwenPaw requests: {error}"));
+        assert!(!requests_content.contains("session/set_model"));
+        let session_new: Value = serde_json::from_str(
+            requests_content
+                .lines()
+                .find(|line| line.contains("\"method\":\"session/new\""))
+                .unwrap_or_else(|| panic!("QwenPaw session/new missing")),
+        )
+        .unwrap_or_else(|error| panic!("parse QwenPaw session/new: {error}"));
+        assert_eq!(
+            session_new["params"]["_meta"]["qwenpaw.coding_project_dir"],
+            cwd
+        );
+        let args = std::fs::read_to_string(format!("{}.args", requests.display()))
+            .unwrap_or_else(|error| panic!("read QwenPaw args: {error}"));
+        assert_eq!(args, "acp\n--workspace\n/managed/workspace\n");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn qwenpaw_missing_loaded_session_is_marked_rejected() {
+        let (_directory, _requests, backend) = fake_qwenpaw_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/load"'*) printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"No session found with id stale"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute(
+                "continue",
+                ExecOptions {
+                    resume_session_id: "stale".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute QwenPaw: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("QwenPaw result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert!(result.resume_rejected);
+        assert!(result.session_id.is_empty());
     }
 
     #[cfg(unix)]
