@@ -68,7 +68,8 @@
       Ready/CLEAN, exact-head review requested at `5395491572`.
 - [ ] #113 gate remains pending review; original worktree
       `.worktrees/cord-22-daemon-production-assembly` has unrelated uncommitted CLI
-      edits and must not be reset or used for the gate.
+      edits and must not be reset or used for the gate. Restacked tree has passed
+      `git diff --check` and changed-Rust `rustfmt --check`.
 - [ ] #114: restack only after #113 merge; review, gate, expected-head merge.
 - [ ] #126 → #127 → #128 → #129: process strictly in that order after daemon base moves.
 
