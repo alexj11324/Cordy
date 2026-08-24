@@ -34,6 +34,7 @@ pub mod identity;
 pub mod manager;
 pub mod poisoned;
 pub mod production_stack;
+pub mod production_services;
 pub mod registration;
 pub mod reconcile;
 pub mod runtime_registry;

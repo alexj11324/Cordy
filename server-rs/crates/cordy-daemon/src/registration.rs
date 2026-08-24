@@ -157,6 +157,33 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         .await
     }
 
+    /// Re-registers one tracked workspace for an on-demand runtime-profile
+    /// notification. This path deliberately does not recover orphans: existing
+    /// tasks on surviving runtimes remain valid, while dropped rows are taken
+    /// offline by the ordered registration cleanup.
+    pub async fn refresh_workspace(
+        &self,
+        ctx: Ctx,
+        registry: &RuntimeRegistry,
+        workspace_id: &str,
+    ) -> anyhow::Result<()> {
+        let workspace = registry
+            .workspace(workspace_id)
+            .ok_or_else(|| anyhow::anyhow!("workspace {workspace_id} is not tracked"))?;
+        let round = self.source.begin_round(ctx.child()).await?;
+        self.register_workspace(
+            ctx,
+            registry,
+            &WorkspaceInfo {
+                id: workspace.id,
+                name: workspace.name,
+            },
+            round,
+            false,
+        )
+        .await
+    }
+
     async fn register_workspace(
         &self,
         ctx: Ctx,
