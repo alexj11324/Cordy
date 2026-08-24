@@ -44,7 +44,7 @@ const REPO_WARMUP_CONCURRENCY: usize = 2;
 const REPO_WARMUP_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[async_trait::async_trait]
-pub trait ProviderRuntimeAdapter: RuntimeRegistrationSource {
+pub trait ProviderRuntimeAdapter: Send + Sync + 'static {
     async fn handle_non_update_heartbeat_actions(
         &self,
         ctx: Ctx,
@@ -67,11 +67,11 @@ pub trait ProviderRuntimeAdapter: RuntimeRegistrationSource {
     fn health_snapshot(&self) -> HealthResponse;
 }
 
-pub struct DaemonProductionServices<P: ProviderRuntimeAdapter> {
+pub struct DaemonProductionServices<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> {
     config: Arc<Config>,
     client: Arc<Client>,
     provider: Arc<P>,
-    registration: RuntimeRegistrationService<P>,
+    registration: RuntimeRegistrationService<R>,
     repo_cache: Arc<Cache>,
     repo_state: Arc<DaemonRepoState>,
     checkout_registry: Arc<RepoCheckoutRegistry>,
@@ -79,13 +79,14 @@ pub struct DaemonProductionServices<P: ProviderRuntimeAdapter> {
     repo_warmup_rx: Mutex<Option<mpsc::Receiver<RepoWarmupRequest>>>,
 }
 
-impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
+impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionServices<P, R> {
     pub fn new(
         config: Arc<Config>,
         client: Arc<Client>,
         repo_cache: Arc<Cache>,
         checkout_registry: Arc<RepoCheckoutRegistry>,
         provider: Arc<P>,
+        registration_source: Arc<R>,
     ) -> Self {
         let repo_state = Arc::new(DaemonRepoState::new());
         let (repo_warmups, repo_warmup_rx) = mpsc::channel(REPO_WARMUP_QUEUE_CAPACITY);
@@ -95,7 +96,7 @@ impl<P: ProviderRuntimeAdapter> DaemonProductionServices<P> {
                 Arc::clone(&client),
                 Arc::clone(&repo_state),
                 repo_warmups.clone(),
-                Arc::clone(&provider),
+                registration_source,
             ),
             config,
             client,
@@ -388,7 +389,9 @@ fn checkout_failure(status_code: u16, message: impl Into<String>) -> RepoCheckou
 }
 
 #[async_trait::async_trait]
-impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<P> {
+impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
+    for DaemonProductionServices<P, R>
+{
     async fn handle_runtime_gone(
         &self,
         ctx: Ctx,
@@ -465,7 +468,9 @@ impl<P: ProviderRuntimeAdapter> DaemonCoreServices for DaemonProductionServices<
 }
 
 #[async_trait::async_trait]
-impl<P: ProviderRuntimeAdapter> ProductionRuntimeServices for DaemonProductionServices<P> {
+impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeServices
+    for DaemonProductionServices<P, R>
+{
     async fn preflight(&self, ctx: Ctx, registry: Arc<RuntimeRegistry>) -> anyhow::Result<()> {
         self.registration.sync_once(ctx, &registry, false).await
     }

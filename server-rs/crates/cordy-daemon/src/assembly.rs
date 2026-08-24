@@ -19,6 +19,7 @@ use crate::execenv::context::ensure_workspaces_root_marker;
 use crate::health::RepoCheckoutRegistry;
 use crate::production_services::{DaemonProductionServices, ProviderRuntimeAdapter};
 use crate::production_stack::DaemonProductionStack;
+use crate::registration::RuntimeRegistrationSource;
 use crate::repocache::Cache;
 use crate::types::AgentEntry;
 
@@ -147,9 +148,10 @@ pub struct DaemonProductionInputs {
 
 /// Complete set of real services returned by the CLI-side profile/provider
 /// loader after bootstrap has established process ownership and logging.
-pub struct DaemonProductionAssembly<P: ProviderRuntimeAdapter> {
+pub struct DaemonProductionAssembly<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> {
     pub inputs: DaemonProductionInputs,
     pub provider: Arc<P>,
+    pub registration_source: Arc<R>,
     pub checkout_registry: Arc<RepoCheckoutRegistry>,
 }
 
@@ -159,19 +161,24 @@ pub struct DaemonProductionAssembly<P: ProviderRuntimeAdapter> {
 /// must load the active CLI profile and construct a real provider adapter; the
 /// returned stack then owns all background services until bounded shutdown and
 /// optional successor handoff complete.
-pub async fn run_production_daemon<P, Build>(
+pub async fn run_production_daemon<P, R, Build>(
     options: BootstrapOptions,
     build: Build,
 ) -> anyhow::Result<BootstrapOutcome>
 where
     P: ProviderRuntimeAdapter,
-    Build: FnOnce(&BootstrapContext) -> anyhow::Result<DaemonProductionAssembly<P>>,
+    R: RuntimeRegistrationSource,
+    Build: FnOnce(&BootstrapContext) -> anyhow::Result<DaemonProductionAssembly<P, R>>,
 {
     bootstrap::run_once(options, move |context| async move {
         let assembly = build(&context)?;
         let stack = assembly
             .inputs
-            .into_stack(assembly.provider, assembly.checkout_registry)
+            .into_stack(
+                assembly.provider,
+                assembly.registration_source,
+                assembly.checkout_registry,
+            )
             .await?;
         stack.run(context.shutdown).await
     })
@@ -261,13 +268,14 @@ impl DaemonProductionInputs {
     }
 
     /// Consumes validated inputs into the only production stack assembly
-    /// path. The provider adapter and checkout registry are mandatory shared
-    /// dependencies; there is no default or no-op service construction.
-    pub async fn into_stack<P: ProviderRuntimeAdapter>(
+    /// path. Registration, provider execution, and checkout are mandatory
+    /// shared dependencies; there is no default or no-op construction.
+    pub async fn into_stack<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource>(
         self,
         provider: Arc<P>,
+        registration_source: Arc<R>,
         checkout_registry: Arc<RepoCheckoutRegistry>,
-    ) -> anyhow::Result<DaemonProductionStack<DaemonProductionServices<P>>> {
+    ) -> anyhow::Result<DaemonProductionStack<DaemonProductionServices<P, R>>> {
         let config = Arc::new(self.config);
         let services = Arc::new(DaemonProductionServices::new(
             Arc::clone(&config),
@@ -275,6 +283,7 @@ impl DaemonProductionInputs {
             Arc::clone(&self.repo_cache),
             Arc::clone(&checkout_registry),
             provider,
+            registration_source,
         ));
         DaemonProductionStack::new_shared(
             config,
