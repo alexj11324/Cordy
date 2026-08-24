@@ -295,21 +295,25 @@
       server/app URLs; health preflight must succeed before mutation; success
       atomically replaces the whole profile (clearing stale token/workspace and
       unknown fields) while preserving lock/permission/fsync semantics. Current
-      head is now `058d7761f7fa54c0dadea4c92858777a6a0d91ad` (parent
-      `8044e5a6beecb26a93c07a7a45ab2ee64dbdf22f`, tree
-      `ad928876c7efd93bb0c9cb8d05e88e5f96ee9b43`), candidate
-      `c5b99dc53cae300a3974d51260145eb04d952363`; PR #129 remains
+      head is now `a5419afdd78b55e4a0886c9a93eaf57616f25fcd` (parent
+      `058d7761f7fa54c0dadea4c92858777a6a0d91ad`, tree
+      `2763de641477a8537d6a84d556258570deb66c04`); the remote branch was
+      verified at this exact SHA. PR #129 remains
       Ready/CLEAN/MERGEABLE on base `a4fbdd040bd8de34ee780fd1e5407bab8cceb17c`.
       The slice adds the bounded unauthenticated `/health` probe (HTTP(S), no
       redirects, only 200, two-second request/outer timeout), self-host/cloud
       URL precedence, and setup command dispatch. Probe failure leaves the old
       profile untouched; an environment `CORDY_TOKEN` is persisted only after
-      the successful probe. Scoped rustfmt/diff-check pass; Cargo/review/gate/
-      merge remain with pro.
-- [ ] Next setup slice: port the real interactive login flow and then daemon
-      after-setup dispatch; until that lands, setup without `CORDY_TOKEN`
-      returns a typed “interactive login unavailable” error after the verified
-      profile replacement, and must not claim completion.
+      the successful probe. After authentication, daemon health selects a
+      real background start, an idle-daemon restart, or a fail-safe
+      active-task deferral; lifecycle/readiness failures are propagated. The
+      candidate merge ref for the new head must be refreshed after GitHub
+      catches up. Scoped rustfmt/diff-check pass; Cargo/review/gate/merge
+      remain with pro.
+- [ ] Next setup slice: port the real interactive login flow; until that lands,
+      setup without `CORDY_TOKEN` returns a typed “interactive login
+      unavailable” error after the verified profile replacement, and must not
+      claim completion.
 - [ ] Audit Go-only background workers, schedulers, reconcilers, event side effects,
       Redis behavior, metrics, and shutdown lifecycle; implement each missing Rust
       production path in the current thread.
