@@ -3,8 +3,10 @@
 
 use std::sync::Arc;
 
+use cordy_auth::daemon_token_cache::DaemonTokenCache;
 use cordy_auth::pat_cache::PatCache;
 use cordy_realtime::hub::Hub;
+use cordy_service::autopilot::{AutopilotService, EntitlementProvider};
 use cordy_service::email::EmailService;
 use cordy_service::issue_service::IssueService;
 use cordy_service::plugin::PluginService;
@@ -75,6 +77,7 @@ impl cordy_service::feature_flags::FlagSource for SharedFlagSource {
 pub struct HandlerState {
     pub pool: sqlx::PgPool,
     pub pat_cache: PatCache,
+    pub daemon_token_cache: DaemonTokenCache,
     /// Realtime WS hub (cordy-realtime). `None` only in tests.
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
@@ -89,6 +92,7 @@ pub struct HandlerState {
     pub analytics: Arc<dyn cordy_analytics::AnalyticsClient>,
     pub auth_rate_limit: cordy_middleware::ratelimit::RateLimitState,
     pub auth_verify_rate_limit: cordy_middleware::ratelimit::RateLimitState,
+    pub invitation_admission: crate::invitation::InvitationAdmission,
     /// Anonymous frontend capability/configuration response.
     pub public_config: crate::config::PublicConfigSettings,
     /// GitHub GraphQL snapshot refresh pipeline. Disabled in lightweight tests.
@@ -99,6 +103,9 @@ pub struct HandlerState {
     pub composio_service: Option<Arc<cordy_composio::Service>>,
     /// Task domain service (Go h.TaskService).
     pub tasks: Arc<TaskService>,
+    /// Shared Autopilot service. It must be reused by HTTP paths and durable
+    /// workers so entitlement/quota configuration cannot disappear per request.
+    pub autopilots: Arc<AutopilotService>,
     /// Issue domain service (Go h.IssueService).
     pub issues: Arc<IssueService>,
     /// Plugin service (Go h.PluginService).
@@ -139,6 +146,9 @@ pub struct HandlerState {
     /// Server-internal assist LLM. An unconfigured client is deliberately
     /// inert and guarantees that private chat content produces no egress.
     pub llm: Arc<cordy_llm::Client>,
+    /// Low-latency hint for the durable webhook worker. PostgreSQL polling is
+    /// authoritative and recovers missed notifications or process restarts.
+    webhook_delivery_notify: Option<Arc<tokio::sync::Notify>>,
     /// Keeps the weak notifier installed in `TaskService` alive.
     _task_wakeup: Arc<dyn cordy_service::task_service::TaskWakeupNotifier>,
 }
@@ -172,6 +182,11 @@ impl HandlerState {
                 as Arc<dyn cordy_service::task_service::ComposioOverlayBuilder>
         });
         let tasks = Arc::new(task_service);
+        let autopilots = Arc::new(AutopilotService::new(
+            pool.clone(),
+            bus.clone(),
+            tasks.clone(),
+        ));
         let issues = Arc::new(IssueService::new(pool.clone(), bus.clone(), tasks.clone()));
         let plugins = Arc::new(PluginService::with_pool(pool.clone()));
         let trusted_proxies = cordy_middleware::ratelimit::parse_trusted_proxies(
@@ -191,6 +206,7 @@ impl HandlerState {
         Self {
             pool,
             pat_cache,
+            daemon_token_cache: DaemonTokenCache::disabled(),
             hub,
             bus,
             business_metrics: None,
@@ -200,11 +216,13 @@ impl HandlerState {
             analytics: Arc::new(cordy_analytics::NoopClient),
             auth_rate_limit,
             auth_verify_rate_limit,
+            invitation_admission: crate::invitation::InvitationAdmission::default(),
             public_config: crate::config::PublicConfigSettings::default(),
             github_snapshots: Arc::new(cordy_ghsnapshot::Manager::new(None, None, None)),
             feature_flags,
             composio_service,
             tasks,
+            autopilots,
             issues,
             plugins,
             callbacks: Some(Arc::new(CallbackTokens::new())),
@@ -226,6 +244,7 @@ impl HandlerState {
             attachment_frame_ancestors: Vec::new(),
             slack_history: None,
             llm: Arc::new(llm),
+            webhook_delivery_notify: None,
             _task_wakeup: task_wakeup,
         }
     }
@@ -353,6 +372,74 @@ impl HandlerState {
         self
     }
 
+    /// Installs the production entitlement provider on the one shared
+    /// Autopilot service. `None` is the self-hosted/off policy and deliberately
+    /// avoids all quota-table reads.
+    pub fn with_autopilot_entitlements(
+        mut self,
+        entitlements: Option<Arc<dyn EntitlementProvider>>,
+    ) -> Self {
+        let mut service =
+            AutopilotService::new(self.pool.clone(), self.bus.clone(), self.tasks.clone());
+        service.entitlements = entitlements;
+        service.quota_metrics = self
+            .business_metrics
+            .clone()
+            .map(|metrics| metrics as Arc<dyn cordy_service::autopilot::AutopilotQuotaMetrics>);
+        self.autopilots = Arc::new(service);
+        self
+    }
+
+    /// Starts the bounded PostgreSQL-leased webhook worker pool. Call only
+    /// from production startup after all Autopilot service wiring is complete.
+    pub fn start_webhook_delivery_worker(mut self) -> Self {
+        let notify = Arc::new(tokio::sync::Notify::new());
+        crate::webhook_delivery_worker::WebhookDeliveryWorker::new(
+            self.pool.clone(),
+            self.autopilots.clone(),
+            notify.clone(),
+        )
+        .start();
+        self.webhook_delivery_notify = Some(notify);
+        self
+    }
+
+    pub fn start_autopilot_quota_reconciler(self) -> Self {
+        if !self.autopilots.quota_enabled() {
+            return self;
+        }
+        let service = self.autopilots.clone();
+        tokio::spawn(async move {
+            loop {
+                let now = chrono::Utc::now();
+                match service
+                    .reconcile_quota_reservations(
+                        now - chrono::Duration::minutes(10),
+                        now - chrono::Duration::hours(6),
+                        100,
+                    )
+                    .await
+                {
+                    Ok(settled) if settled > 0 => {
+                        tracing::info!(settled, "autopilot quota reconciler settled reservations");
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, "autopilot quota reconciler failed");
+                    }
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            }
+        });
+        self
+    }
+
+    pub fn notify_webhook_delivery(&self) {
+        if let Some(notify) = &self.webhook_delivery_notify {
+            notify.notify_one();
+        }
+    }
+
     pub fn with_analytics(mut self, analytics: Arc<dyn cordy_analytics::AnalyticsClient>) -> Self {
         self.analytics = analytics;
         self
@@ -433,6 +520,7 @@ impl HandlerState {
     pub async fn with_redis(mut self, client: redis::Client) -> Result<Self, redis::RedisError> {
         self.auth_rate_limit = self.auth_rate_limit.with_client(client.clone());
         self.auth_verify_rate_limit = self.auth_verify_rate_limit.with_client(client.clone());
+        self.daemon_token_cache = DaemonTokenCache::new(client.clone()).await?;
         let conn = client.get_connection_manager().await?;
         self.update_store = Some(Arc::new(crate::pending_store::UpdateStore::new(
             conn.clone(),

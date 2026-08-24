@@ -1487,11 +1487,11 @@ impl TaskService {
             tracing::warn!(issue_id = %issue.id, agent_id = %assignee_id, "task enqueue refused: attribution fail-closed");
         })?;
         let originator_user_id = attr.user_id;
-        let runtime_mcp_overlay = match originator_user_id {
-            Some(originator) if build_overlay => {
-                self.build_runtime_mcp_overlay(originator, &agent).await
-            }
-            _ => RuntimeMcpOverlayData::default(),
+        let runtime_mcp_overlay = if build_overlay {
+            self.build_runtime_mcp_overlay(originator_user_id.unwrap_or_else(Uuid::nil), &agent)
+                .await
+        } else {
+            RuntimeMcpOverlayData::default()
         };
         let (attr_source, attr_delegated_from, attr_evidence_kind, attr_evidence_ref) =
             attribution_create_params(&attr);
@@ -1877,10 +1877,9 @@ impl TaskService {
             tracing::warn!(issue_id = %issue.id, agent_id = %agent_id, "mention task enqueue refused: attribution fail-closed");
         })?;
         let originator_user_id = attr.user_id;
-        let runtime_mcp_overlay = match originator_user_id {
-            Some(originator) => self.build_runtime_mcp_overlay(originator, &agent).await,
-            None => RuntimeMcpOverlayData::default(),
-        };
+        let runtime_mcp_overlay = self
+            .build_runtime_mcp_overlay(originator_user_id.unwrap_or_else(Uuid::nil), &agent)
+            .await;
         let (attr_source, attr_delegated_from, attr_evidence_kind, attr_evidence_ref) =
             attribution_create_params(&attr);
         let trigger_summary = self

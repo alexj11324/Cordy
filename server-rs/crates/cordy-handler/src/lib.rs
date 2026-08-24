@@ -17,6 +17,7 @@ pub mod agent_mcp;
 pub mod attachment;
 pub mod attachment_storage;
 pub mod auth;
+pub mod autopilot;
 pub mod binding_redeem;
 pub mod chat_api;
 mod chat_title;
@@ -72,6 +73,7 @@ pub mod task;
 pub mod task_json;
 pub mod timefmt;
 pub mod vcs_webhook;
+pub mod webhook_delivery_worker;
 pub mod workspace;
 pub mod workspace_mcp;
 pub mod ws;
@@ -82,7 +84,6 @@ use std::time::Duration;
 use axum::http::{header, HeaderName, HeaderValue, Method};
 use axum::routing::get;
 use axum::{middleware, Router};
-use cordy_auth::daemon_token_cache::DaemonTokenCache;
 use cordy_middleware::auth::{auth_middleware, AuthState};
 use cordy_middleware::daemon_auth::{daemon_auth_middleware, DaemonAuthState};
 use cordy_middleware::workspace::WorkspaceGuardState;
@@ -205,7 +206,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
     let daemon_auth_state = DaemonAuthState {
         pool: state.pool.clone(),
         pat_cache: state.pat_cache.clone(),
-        daemon_cache: DaemonTokenCache::disabled(),
+        daemon_cache: state.daemon_token_cache.clone(),
     };
     let public_auth = auth::public_router(
         state.auth_rate_limit.clone(),
@@ -228,6 +229,22 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         Arc::new(cloud_runtime::HttpCloudRuntimeProxy::from_env());
     let composio_state = composio::ComposioState::from_handler(&state);
     let authenticated = workspace::authenticated_router()
+        .merge(
+            workspace::member_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(state.pool.clone(), "id"),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            workspace::admin_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url_with_roles(
+                    state.pool.clone(),
+                    "id",
+                    vec!["owner".into(), "admin".into()],
+                ),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
         .merge(composio::authenticated_router().with_state::<HandlerState>(composio_state.clone()))
         .merge(
             binding_redeem::router()
@@ -292,6 +309,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         )
         .merge(
             chat_api::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            autopilot::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 cordy_middleware::workspace::require_workspace,
             )),
@@ -563,6 +586,8 @@ mod tests {
     async fn authenticated_issue_collection_rejects_anonymous_requests() {
         for uri in [
             "/api/issues",
+            "/api/issues/search?q=router",
+            "/api/issues/grouped",
             "/api/issues/children?parent_ids=018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/issues/child-progress",
             "/api/assignee-frequency",
@@ -571,6 +596,7 @@ mod tests {
             "/api/issues/CORD-14/active-task",
             "/api/issues/CORD-14/task-runs",
             "/api/issues/CORD-14/comments",
+            "/api/issues/CORD-14/timeline",
             "/api/issues/CORD-14/pull-requests",
             "/api/tasks/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/messages",
             "/api/me",
@@ -600,6 +626,14 @@ mod tests {
             "/api/chat/pinned-agents",
             "/api/chat/history?session_id=018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/chat/thread?session_id=018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
+            "/api/autopilots",
+            "/api/autopilots/cron-preview?expression=0+9+*+*+*",
+            "/api/autopilots/usage",
+            "/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
+            "/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runs",
+            "/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/runs/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
+            "/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/deliveries",
+            "/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/deliveries/018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
             "/api/agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/mcp-servers",
             "/api/skills",
             "/api/skills/018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
@@ -674,6 +708,59 @@ mod tests {
     #[tokio::test]
     async fn authenticated_issue_mutations_reject_anonymous_requests() {
         for request in [
+            Request::post("/api/issues/table/groups")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"query":{},"group":{"kind":"status"}}"#))
+                .unwrap(),
+            Request::post("/api/issues/table/rows")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"query":{}}"#))
+                .unwrap(),
+            Request::post("/api/issues/table/facets")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"query":{},"facets":[{"kind":"status"}]}"#))
+                .unwrap(),
+            Request::post("/api/issues/quick-create")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"agent_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f11","prompt":"make it"}"#))
+                .unwrap(),
+            Request::post("/api/issues/preview-trigger")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"issue_ids":[]}"#))
+                .unwrap(),
+            Request::post("/api/issues/batch-delete")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"issue_ids":[]}"#))
+                .unwrap(),
+            Request::delete("/api/issues/CORD-14").body(Body::empty()).unwrap(),
+            Request::post("/api/issues/CORD-14/comments")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"content":"hello"}"#))
+                .unwrap(),
+            Request::post("/api/issues/CORD-14/comments/trigger-preview")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"content":"hello"}"#))
+                .unwrap(),
+            Request::put("/api/comments/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"content":"edited"}"#))
+                .unwrap(),
+            Request::delete("/api/comments/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/issues/CORD-14/rerun")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/issues/CORD-14/quick-actions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/render")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/issues/CORD-14/quick-actions/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/run")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/issues/CORD-14/squad-evaluated")
+                .header("content-type", "application/json")
+                .body(Body::from(r#"{"outcome":"no_action"}"#))
+                .unwrap(),
             Request::put("/api/issues/CORD-14/")
                 .header("content-type", "application/json")
                 .body(Body::from(r#"{"status":"in_review"}"#))
@@ -919,6 +1006,42 @@ mod tests {
                 .body(Body::from(r#"{"agent_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f11"}"#))
                 .unwrap(),
             Request::delete("/api/chat/pinned-agents/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/autopilots")
+                .body(Body::from(r#"{"name":"Daily triage"}"#))
+                .unwrap(),
+            Request::patch("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::from(r#"{"name":"Daily review"}"#))
+                .unwrap(),
+            Request::delete("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/trigger")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/deliveries/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/replay")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers")
+                .body(Body::from(r#"{"type":"manual"}"#))
+                .unwrap(),
+            Request::patch("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
+                .body(Body::from(r#"{"enabled":true}"#))
+                .unwrap(),
+            Request::delete("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
+                .body(Body::empty())
+                .unwrap(),
+            Request::post("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/rotate-webhook-token")
+                .body(Body::empty())
+                .unwrap(),
+            Request::put("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/triggers/018f03a0-c4d2-7a37-ae4d-5aa45de12f12/signing-secret")
+                .body(Body::from(r#"{"secret":"secret"}"#))
+                .unwrap(),
+            Request::post("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/collaborators")
+                .body(Body::from(r#"{"user_id":"018f03a0-c4d2-7a37-ae4d-5aa45de12f12"}"#))
+                .unwrap(),
+            Request::delete("/api/autopilots/018f03a0-c4d2-7a37-ae4d-5aa45de12f11/collaborators/018f03a0-c4d2-7a37-ae4d-5aa45de12f12")
                 .body(Body::empty())
                 .unwrap(),
             Request::post(

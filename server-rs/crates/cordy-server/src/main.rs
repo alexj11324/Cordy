@@ -26,6 +26,123 @@ impl VcsWebhookConfig {
     }
 }
 
+fn parse_go_bool(raw: Option<&str>, default: bool) -> bool {
+    match raw.map(str::trim).filter(|value| !value.is_empty()) {
+        None => default,
+        Some("1" | "t" | "T" | "true" | "TRUE" | "True") => true,
+        Some("0" | "f" | "F" | "false" | "FALSE" | "False") => false,
+        Some(value) => {
+            tracing::warn!(
+                value,
+                default,
+                "invalid boolean environment value; using default"
+            );
+            default
+        }
+    }
+}
+
+fn parse_go_duration(raw: &str) -> Option<Duration> {
+    let raw = raw.trim();
+    if raw.is_empty() || raw.starts_with('-') {
+        return None;
+    }
+    if raw == "0" {
+        return Some(Duration::ZERO);
+    }
+    let bytes = raw.as_bytes();
+    let mut cursor = 0;
+    let mut seconds = 0.0_f64;
+    while cursor < bytes.len() {
+        let number_start = cursor;
+        while cursor < bytes.len() && (bytes[cursor].is_ascii_digit() || bytes[cursor] == b'.') {
+            cursor += 1;
+        }
+        if cursor == number_start {
+            return None;
+        }
+        let value = raw[number_start..cursor].parse::<f64>().ok()?;
+        let units = [
+            ("ns", 1e-9),
+            ("us", 1e-6),
+            ("µs", 1e-6),
+            ("ms", 1e-3),
+            ("s", 1.0),
+            ("m", 60.0),
+            ("h", 3600.0),
+        ];
+        let (unit, multiplier) = units
+            .into_iter()
+            .find(|(unit, _)| raw[cursor..].starts_with(unit))?;
+        cursor += unit.len();
+        seconds += value * multiplier;
+    }
+    (seconds.is_finite() && seconds >= 0.0 && seconds < Duration::MAX.as_secs_f64())
+        .then(|| Duration::from_secs_f64(seconds))
+}
+
+fn duration_env(name: &str, default: Duration, allow_zero: bool) -> Duration {
+    let Ok(raw) = std::env::var(name) else {
+        return default;
+    };
+    match parse_go_duration(&raw).filter(|duration| allow_zero || !duration.is_zero()) {
+        Some(duration) => duration,
+        None => {
+            tracing::warn!(
+                name,
+                value = raw,
+                ?default,
+                "invalid duration environment value; using default"
+            );
+            default
+        }
+    }
+}
+
+fn autopilot_entitlements(
+    cfg: &cordy_config::Config,
+) -> Option<Arc<dyn cordy_service::autopilot::EntitlementProvider>> {
+    let enabled = parse_go_bool(
+        std::env::var("CORDY_ENTITLEMENT_POLICY_ENABLED")
+            .ok()
+            .as_deref(),
+        false,
+    );
+    let emergency_disabled = parse_go_bool(
+        std::env::var("CORDY_ENTITLEMENT_EMERGENCY_DISABLED")
+            .ok()
+            .as_deref(),
+        false,
+    );
+    let service_token = std::env::var("CORDY_ENTITLEMENT_SERVICE_TOKEN")
+        .ok()
+        .or_else(|| cfg.entitlement.service_token.clone())
+        .unwrap_or_default();
+    let config = cordy_service::entitlement::EntitlementClientConfig {
+        enabled,
+        base_url: cfg.entitlement.policy_url.clone().unwrap_or_default(),
+        service_token,
+        timeout: duration_env(
+            "CORDY_ENTITLEMENT_POLICY_TIMEOUT",
+            Duration::from_secs(3),
+            false,
+        ),
+        stale_grace: duration_env(
+            "CORDY_ENTITLEMENT_STALE_GRACE",
+            Duration::from_secs(15 * 60),
+            true,
+        ),
+        emergency_disabled,
+    };
+    match cordy_service::entitlement::HttpEntitlementProvider::new(config) {
+        Ok(provider) => provider.map(|provider| provider as Arc<_>),
+        Err(error) => {
+            tracing::error!(%error, "entitlement policy client disabled by invalid configuration");
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 fn build_router(db: Option<sqlx::PgPool>, hub: Option<Arc<cordy_realtime::hub::Hub>>) -> Router {
     cordy_handler::build_router(db, hub)
@@ -72,6 +189,7 @@ async fn build_production_router(
     vcs: VcsWebhookConfig,
 ) -> anyhow::Result<Router> {
     let feature_flags = Arc::new(cordy_service::feature_flags::ConfiguredFlags::from_env()?);
+    let entitlements = autopilot_entitlements(cfg);
     let composio_service =
         if cordy_service::feature_flags::composio_mcp_apps_enabled(feature_flags.as_ref()) {
             match cordy_handler::composio::build_service_from_config(db.clone(), cfg) {
@@ -92,6 +210,7 @@ async fn build_production_router(
         composio_service,
     )
     .with_observability(business_metrics, http_metrics)
+    .with_autopilot_entitlements(entitlements)
     .with_github_snapshots(github_client)
     .with_analytics(Arc::from(cordy_analytics::new_from_env()))
     .with_auth_settings(cordy_handler::auth::AuthSettings::from_config(cfg))
@@ -133,7 +252,10 @@ async fn build_production_router(
     } else {
         tracing::warn!("public-route rate limiting disabled: REDIS_URL not configured");
     }
-    let state = install_pending_stores(state, redis_url).await;
+    let state = install_pending_stores(state, redis_url)
+        .await
+        .start_autopilot_quota_reconciler()
+        .start_webhook_delivery_worker();
     Ok(cordy_handler::build_router_from_state(state))
 }
 
