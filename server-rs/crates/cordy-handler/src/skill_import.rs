@@ -371,6 +371,11 @@ fn detect_source(raw: &str) -> Result<(Source, String), ImportError> {
     if parsed.scheme() != "https" {
         return Err(ImportError::Bad("skill source must use https".into()));
     }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(ImportError::Bad(
+            "skill source URL must not contain credentials".into(),
+        ));
+    }
     let host = parsed.host_str().unwrap_or_default().to_ascii_lowercase();
     match host.as_str() {
         "clawhub.ai" | "www.clawhub.ai" => Ok((Source::ClawHub, normalized)),
@@ -1887,6 +1892,8 @@ mod tests {
             Source::GitHub
         );
         assert!(detect_source("http://github.com/acme/review").is_err());
+        assert!(detect_source("https://ghp_secret@github.com/acme/review").is_err());
+        assert!(detect_source("https://user:secret@github.com/acme/review").is_err());
         assert!(detect_source("https://127.0.0.1/skill").is_err());
     }
 
