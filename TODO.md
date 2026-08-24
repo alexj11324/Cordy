@@ -764,6 +764,10 @@
       polling at a bounded 50ms interval; non-Codex providers retain immediate
       pinning. Added persisted/missing rollout tests. Scoped rustfmt and
       diff-check pass; pushed for pro's Ready PR/gate/merge.
+- [x] Follow-up race audit of `c3822514` found no new issue: cancellation and
+      drain timeout remain bounded, the first non-empty session ID is retained,
+      non-Codex providers pin unchanged, persisted rollout pins once, and pin
+      failures remain best-effort without duplicate side effects.
 
 ## Phase 4 — S8 route and API parity
 
