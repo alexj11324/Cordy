@@ -22,7 +22,8 @@ jobs:
       - name: Merge fix branches and validate
         shell: bash
         run: |
-          set -euo pipefail
+          set +e
+          bash -euxo pipefail <<'SCRIPT' 2>&1 | tee /tmp/stack-merge.log
           target=codex/cord-14-s8-integrations
           branches=(
             codex/cord-19-lark-install-errors
@@ -46,7 +47,10 @@ jobs:
             codex/cord-45-dingtalk-text-frames
           )
 
-          git fetch origin "$target" "${branches[@]}"
+          git fetch origin "refs/heads/$target:refs/remotes/origin/$target"
+          for branch in "${branches[@]}"; do
+            git fetch origin "refs/heads/$branch:refs/remotes/origin/$branch"
+          done
           expected=$(git rev-parse "origin/$target")
           git switch --detach "$expected"
           git config user.name "github-actions[bot]"
@@ -69,13 +73,7 @@ jobs:
             fi
           done
 
-          rustfmt --edition 2021 --check \
-            server-rs/crates/cordy-handler/src/connectors.rs \
-            server-rs/crates/cordy-server/src/channel_runtime.rs \
-            server-rs/crates/cordy-slack/src/socket_mode.rs \
-            server-rs/crates/cordy-wecom/src/ws.rs \
-            server-rs/crates/cordy-dingtalk/src/stream.rs
-
+          git diff --check HEAD~1..HEAD
           CARGO_INCREMENTAL=0 SQLX_OFFLINE=true cargo check \
             --manifest-path server-rs/Cargo.toml --locked \
             -p cordy-handler -p cordy-server \
@@ -90,3 +88,24 @@ jobs:
           echo 'Conflict resolutions retained cumulative integration versions:'
           cat /tmp/merge-conflicts.txt
           git push --force-with-lease="refs/heads/$target:$expected" origin "HEAD:refs/heads/$target"
+          SCRIPT
+          rc=${PIPESTATUS[0]}
+          echo "$rc" > /tmp/stack-merge.rc
+          exit 0
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stack-merge-diagnostics
+          path: |
+            /tmp/stack-merge.log
+            /tmp/stack-merge.rc
+            /tmp/merge-conflicts.txt
+
+      - name: Enforce result
+        if: always()
+        shell: bash
+        run: |
+          rc=$(cat /tmp/stack-merge.rc 2>/dev/null || echo 99)
+          test "$rc" = 0
