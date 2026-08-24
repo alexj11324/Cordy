@@ -22,6 +22,7 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio_util::sync::CancellationToken;
 
 use crate::activity::DaemonActivity;
+use crate::auth_lifecycle::{renew_token_once, token_renewal_loop};
 use crate::auto_update::{auto_update_loop, AutoUpdateProbes};
 use crate::bootstrap::{BootstrapClock, DaemonStackExit, SystemBootstrapClock};
 use crate::client::Client;
@@ -49,8 +50,10 @@ const CHECKOUT_MODE_ISOLATED: &str = "isolated";
 /// concrete implementation.
 #[async_trait::async_trait]
 pub trait ProductionRuntimeServices: DaemonCoreServices {
-    /// Auth renewal, initial workspace sync, agent probing, and runtime
-    /// registration. Returned IDs become the authoritative control set.
+    /// Initial workspace sync, agent probing, and runtime registration.
+    /// Authentication renewal is owned by the production stack and completes
+    /// its best-effort first attempt before this method is called. Returned
+    /// IDs become the authoritative control set.
     async fn preflight(&self, ctx: Ctx) -> anyhow::Result<Vec<String>>;
 
     /// Owns workspace consistency and agent-discovery reconciliation. It must
@@ -214,6 +217,9 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
             bridge_ctx.cancel_with(CancelCause::Shutdown);
         });
 
+        // Go renews the PAT synchronously before the first workspace request.
+        // Renewal itself is best-effort; preflight remains the readiness gate.
+        renew_token_once(&self.client, &self.config.profile, &root_ctx.child()).await;
         let runtime_ids = match self.services.preflight(root_ctx.child()).await {
             Ok(runtime_ids) => runtime_ids,
             Err(error) => {
@@ -257,6 +263,12 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         };
 
         let mut owners = JoinSet::new();
+        let renewal_ctx = root_ctx.child();
+        let renewal_client = Arc::clone(&self.client);
+        let renewal_profile = self.config.profile.clone();
+        owners.spawn(async move {
+            token_renewal_loop(renewal_client, renewal_profile, renewal_ctx).await;
+        });
         let control_ctx = root_ctx.child();
         let control_root = root_ctx.clone();
         owners.spawn(async move {

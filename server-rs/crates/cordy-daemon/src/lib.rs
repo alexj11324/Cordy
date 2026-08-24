@@ -20,6 +20,7 @@ pub mod execenv;
 
 // Lane A (client/config/infra) — stubs pre-declared, launch when a slot frees.
 pub mod assembly;
+pub mod auth_lifecycle;
 pub mod bootstrap;
 pub mod canonical_path;
 pub mod client;
