@@ -69,6 +69,7 @@ pub const WRITE_DEADLINE: Duration = Duration::from_secs(10);
 
 /// Bounds the initial TCP + WS handshake dial.
 pub const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(15);
+const CONNECTOR_TASK_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// How far the callback worker may fall behind the read loop before the read
 /// loop blocks. Past this the socket stops being drained, WeCom notices, and
@@ -208,7 +209,7 @@ impl Channel for WecomChannel {
         // via the shared writer mutex so it interleaves cleanly with other
         // outbound frames.
         let ping_ctx = ctx.child_token();
-        let ping_handle = tokio::spawn(ping_loop(ping_ctx.clone(), sender.clone()));
+        let mut ping_handle = tokio::spawn(ping_loop(ping_ctx.clone(), sender.clone()));
 
         // Inbound callbacks run on their own worker, not on the read loop.
         // The read loop is the sole deliverer of server verdicts, so anything
@@ -224,7 +225,7 @@ impl Channel for WecomChannel {
         let (cb_tx, mut cb_rx) = mpsc::channel::<FrameEnvelope>(CALLBACK_QUEUE_DEPTH);
         let worker_err: Arc<std::sync::Mutex<Option<anyhow::Error>>> =
             Arc::new(std::sync::Mutex::new(None));
-        let worker = {
+        let mut worker = {
             let w_err = worker_err.clone();
             let w_handler = handler.clone();
             let w_sender = sender.clone();
@@ -249,7 +250,7 @@ impl Channel for WecomChannel {
                         // parked on the queue send is woken by the dropped
                         // receiver instead.
                         *w_err.lock().unwrap_or_else(|e| e.into_inner()) = Some(e);
-                        w_conn.close().await;
+                        let _ = tokio::time::timeout(WRITE_DEADLINE, w_conn.close()).await;
                         break;
                     }
                 }
@@ -354,15 +355,38 @@ impl Channel for WecomChannel {
         // callback's error would report a spurious "connection exited with
         // error".
         drop(cb_tx);
-        let _ = worker.await;
         ping_ctx.cancel();
-        let _ = ping_handle.await;
+        let joined = async {
+            let _ = (&mut worker).await;
+            let _ = (&mut ping_handle).await;
+        };
+        if tokio::time::timeout(CONNECTOR_TASK_SHUTDOWN_TIMEOUT, joined)
+            .await
+            .is_err()
+        {
+            tracing::warn!(
+                installation_id = %self.installation_id,
+                "wecom: connector tasks exceeded shutdown deadline; aborting"
+            );
+            worker.abort();
+            ping_handle.abort();
+            let _ = worker.await;
+            let _ = ping_handle.await;
+        }
         if registered {
             if let Some(reg) = &self.senders {
                 reg.clear(self.installation_id, &self.generation);
             }
         }
-        conn.close().await;
+        if tokio::time::timeout(WRITE_DEADLINE, conn.close())
+            .await
+            .is_err()
+        {
+            tracing::warn!(
+                installation_id = %self.installation_id,
+                "wecom: websocket close exceeded shutdown deadline"
+            );
+        }
 
         let worker_error = worker_err.lock().unwrap_or_else(|e| e.into_inner()).take();
         match (worker_error, result) {
@@ -479,6 +503,9 @@ async fn dispatch_frame(
     bot_id: &str,
     bot_display_name: &str,
 ) -> anyhow::Result<()> {
+    if ctx.is_cancelled() {
+        return Ok(());
+    }
     match env.cmd.as_str() {
         CMD_MSG_CALLBACK => {
             let mc: AibotMsgCallback = match serde_json::from_value(env.body.clone()) {
@@ -842,6 +869,42 @@ mod tests {
         let writes = conn.writes();
         assert_eq!(writes[0]["cmd"], json!("aibot_subscribe"));
         assert_eq!(writes[0]["body"]["bot_id"], json!("bot-1"));
+    }
+
+    #[tokio::test]
+    async fn cancelled_generation_drops_queued_callback_before_dispatch() {
+        let called = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let handler_called = called.clone();
+        let handler = InboundHandler::new(move |_ctx, _msg| {
+            let called = handler_called.clone();
+            Box::pin(async move {
+                called.store(true, std::sync::atomic::Ordering::SeqCst);
+                Ok(())
+            })
+        });
+        let conn = ScriptedConn::new(Vec::new());
+        let sender = WsSender::new(conn);
+        let ctx = CancellationToken::new();
+        ctx.cancel();
+        let env = FrameEnvelope {
+            cmd: CMD_MSG_CALLBACK.to_string(),
+            headers: crate::ws_frame::FrameHeaders {
+                req_id: "cancelled".to_string(),
+            },
+            body: json!({
+                "msgid": "m-cancelled",
+                "chattype": "single",
+                "from": {"userid": "u1"},
+                "msgtype": "text",
+                "text": {"content": "do not dispatch"}
+            }),
+            ..Default::default()
+        };
+
+        dispatch_frame(&ctx, &env, &handler, &sender, "bot-1", "Cordy")
+            .await
+            .unwrap();
+        assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
     }
 
     #[tokio::test]
