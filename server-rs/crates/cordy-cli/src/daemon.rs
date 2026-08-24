@@ -16,7 +16,9 @@ use cordy_daemon::bootstrap::{BootstrapContext, BootstrapOptions};
 use cordy_daemon::health::RepoCheckoutRegistry;
 use cordy_daemon::lifecycle::DaemonLifecycleOptions;
 use cordy_daemon::provider_adapter::ProductionProviderAdapter;
-use cordy_daemon::provider_registration::{ProviderCatalog, ProviderRegistrationSource};
+use cordy_daemon::provider_registration::{
+    LocalProviderCatalog, ProviderCatalog, ProviderRegistrationSource,
+};
 
 use crate::config::{resolve_daemon_launch_overrides, CliConfig, DaemonLaunchFlags, Environment};
 
@@ -113,6 +115,29 @@ impl DaemonStartAssembly {
     {
         let inputs = self.production_inputs(context, cli_version)?;
         Ok(inputs.into_production_assembly(catalog, checkout_registry))
+    }
+
+    /// Completes foreground assembly with the daemon's real local catalog.
+    /// This is the command-facing entry point once the CLI command supplies
+    /// its bootstrap context and checkout registry; it performs no metadata
+    /// fallback for provider families without a landed backend.
+    pub fn production_assembly_with_local_catalog(
+        &self,
+        context: &BootstrapContext,
+        cli_version: impl Into<String>,
+        checkout_registry: Arc<RepoCheckoutRegistry>,
+    ) -> Result<
+        DaemonProductionAssembly<
+            ProductionProviderAdapter,
+            ProviderRegistrationSource<LocalProviderCatalog>,
+        >,
+    > {
+        self.production_assembly(
+            context,
+            cli_version,
+            Arc::new(LocalProviderCatalog::new()),
+            checkout_registry,
+        )
     }
 }
 

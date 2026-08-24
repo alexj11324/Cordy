@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex, RwLock};
+use std::time::Duration;
 
 use crate::client::{Client, RuntimeProfile};
 use crate::config::Config;
@@ -15,6 +16,7 @@ use crate::registration::{
 };
 use crate::repocache::Ctx;
 use crate::types::RuntimeExecutionTarget;
+use cordy_agent::{build_backend, check_provider_minimum, extract_version_line};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProviderProbeReason {
@@ -75,6 +77,172 @@ pub trait ProviderCatalog: Send + Sync + 'static {
         profile: &RuntimeProfile,
         command_override: Option<&str>,
     ) -> Result<ResolvedProfileCommand, ProfileResolutionError>;
+}
+
+/// The daemon-owned catalog for locally installed provider CLIs.
+///
+/// This is deliberately a thin adapter over the two canonical registries:
+/// `agents_probe` owns PATH/login-shell discovery and `cordy-agent` owns the
+/// provider-family/backend capability table. It never manufactures a
+/// metadata-only backend. Unsupported families are omitted from registration
+/// until their real `cordy-agent` transport lands, while custom profiles carry
+/// a structured failure back to the server.
+#[derive(Debug, Clone, Copy)]
+pub struct LocalProviderCatalog {
+    version_probe_timeout: Duration,
+}
+
+impl Default for LocalProviderCatalog {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LocalProviderCatalog {
+    const DEFAULT_VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+
+    pub const fn new() -> Self {
+        Self {
+            version_probe_timeout: Self::DEFAULT_VERSION_PROBE_TIMEOUT,
+        }
+    }
+
+    /// Test/embedding seam for the bounded `--version` process probe. The
+    /// production default remains ten seconds, matching the Go daemon's
+    /// per-provider probe budget.
+    pub const fn with_version_probe_timeout(timeout: Duration) -> Self {
+        Self {
+            version_probe_timeout: timeout,
+        }
+    }
+
+    fn supports_backend(runtime_id: &str) -> bool {
+        build_backend(runtime_id, cordy_agent::BackendConfig::default()).is_ok()
+    }
+
+    fn display_name(provider: &str) -> Option<&'static str> {
+        cordy_agent::provider(provider)
+            .map(|descriptor| descriptor.display_name)
+            .or_else(|| cordy_agent::builtin_runtime(provider).map(|runtime| runtime.display_name))
+    }
+
+    fn fixed_args(provider: &str) -> Vec<String> {
+        // DSH is probed with the Cordy profile, and the same profile selector
+        // must precede its protocol-owned `--version` argument at launch.
+        if provider == "dsh" {
+            vec!["--profile".to_string(), "cordy".to_string()]
+        } else {
+            Vec::new()
+        }
+    }
+
+    async fn probe_version(
+        &self,
+        ctx: &Ctx,
+        command_path: &str,
+        fixed_args: &[String],
+    ) -> anyhow::Result<String> {
+        let mut command = tokio::process::Command::new(command_path);
+        command.args(fixed_args).arg("--version");
+        let output =
+            crate::gc::processtree::output(ctx, command, self.version_probe_timeout).await?;
+        Ok(extract_version_line(&String::from_utf8_lossy(&output)))
+    }
+
+    async fn resolve_command(
+        &self,
+        ctx: &Ctx,
+        profile: &RuntimeProfile,
+        command_override: Option<&str>,
+    ) -> Result<ResolvedProfileCommand, ProfileResolutionError> {
+        if !Self::supports_backend(&profile.protocol_family) {
+            return Err(ProfileResolutionError {
+                reason: format!("unsupported protocol family: {}", profile.protocol_family),
+            });
+        }
+
+        let command_path = command_override
+            .map(str::trim)
+            .filter(|path| !path.is_empty())
+            .filter(|path| crate::config::agent_executable_present(path))
+            .map(ToOwned::to_owned)
+            .or_else(|| crate::config::resolve_agent_executable_path(&profile.command_name).ok())
+            .ok_or_else(|| ProfileResolutionError {
+                reason: format!("runtime command not executable: {}", profile.command_name),
+            })?;
+
+        let fixed_args = profile.fixed_args.clone();
+        let version = self
+            .probe_version(ctx, &command_path, &fixed_args)
+            .await
+            .map_err(|error| ProfileResolutionError {
+                reason: format!("provider version probe failed: {error}"),
+            })?;
+        check_provider_minimum(&profile.protocol_family, &version).map_err(|error| {
+            ProfileResolutionError {
+                reason: format!("provider version {version:?} is not supported: {error}"),
+            }
+        })?;
+        Ok(ResolvedProfileCommand {
+            command_path,
+            fixed_args,
+            version,
+        })
+    }
+}
+
+#[async_trait::async_trait]
+impl ProviderCatalog for LocalProviderCatalog {
+    async fn probe_builtins(
+        &self,
+        ctx: Ctx,
+        _reason: ProviderProbeReason,
+    ) -> anyhow::Result<Vec<DetectedProviderRuntime>> {
+        let agents = crate::agents_probe::probe_agent_clis();
+        let mut detected = Vec::new();
+        for (provider, entry) in agents {
+            if !Self::supports_backend(&provider) {
+                tracing::debug!(%provider, "provider CLI discovered without a Rust backend; withholding registration");
+                continue;
+            }
+            let Some(display_name) = Self::display_name(&provider) else {
+                tracing::warn!(%provider, "provider CLI discovered without catalog metadata; withholding registration");
+                continue;
+            };
+            let fixed_args = Self::fixed_args(&provider);
+            let version = match self
+                .probe_version(&ctx.child(), &entry.path, &fixed_args)
+                .await
+            {
+                Ok(version) => version,
+                Err(error) => {
+                    tracing::debug!(%provider, error = %error, "provider version probe failed; withholding registration");
+                    continue;
+                }
+            };
+            if let Err(error) = check_provider_minimum(&provider, &version) {
+                tracing::warn!(%provider, %version, error = %error, "provider CLI is below its minimum version; withholding registration");
+                continue;
+            }
+            detected.push(DetectedProviderRuntime {
+                provider,
+                display_name: display_name.to_string(),
+                version,
+                command_path: entry.path,
+                fixed_args,
+            });
+        }
+        Ok(detected)
+    }
+
+    async fn resolve_profile(
+        &self,
+        ctx: Ctx,
+        profile: &RuntimeProfile,
+        command_override: Option<&str>,
+    ) -> Result<ResolvedProfileCommand, ProfileResolutionError> {
+        self.resolve_command(&ctx, profile, command_override).await
+    }
 }
 
 /// Exact machine command selected for a runtime registration row.

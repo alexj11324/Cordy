@@ -46,3 +46,5 @@ pub use qoder::{
 };
 pub use qwen::{QwenBackend, QwenConfig};
 pub use registry::{build_backend, BackendConfig};
+pub use registry::{builtin_runtime, protocol_family, provider};
+pub use version::{check_provider_minimum, extract_version_line};
