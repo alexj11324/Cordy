@@ -321,7 +321,7 @@ fn select_permission(params: Option<&Value>) -> Option<String> {
     None
 }
 
-fn default_permission_decision(params: Option<&Value>) -> AcpPermissionDecision {
+pub(crate) fn default_permission_decision(params: Option<&Value>) -> AcpPermissionDecision {
     select_permission(params).map_or_else(
         || {
             AcpPermissionDecision::Reject(

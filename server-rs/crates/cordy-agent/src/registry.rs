@@ -9,7 +9,7 @@ use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
 use crate::qoder::{
     KimiBackend, KimiConfig, KiroBackend, KiroConfig, QoderBackend, QoderConfig, QwenpawBackend,
-    QwenpawConfig, TraecliBackend, TraecliConfig,
+    QwenpawConfig, ReasonixBackend, ReasonixConfig, TraecliBackend, TraecliConfig,
 };
 use crate::qwen::{QwenBackend, QwenConfig};
 
@@ -52,6 +52,10 @@ pub fn build_backend(
             env: config.env,
         }))),
         "kimi" => Ok(Arc::new(KimiBackend::new(KimiConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "reasonix" => Ok(Arc::new(ReasonixBackend::new(ReasonixConfig {
             command: config.command,
             env: config.env,
         }))),
@@ -475,6 +479,7 @@ mod tests {
         assert!(build_backend("kiro", BackendConfig::default()).is_ok());
         assert!(build_backend("qwenpaw", BackendConfig::default()).is_ok());
         assert!(build_backend("kimi", BackendConfig::default()).is_ok());
+        assert!(build_backend("reasonix", BackendConfig::default()).is_ok());
 
         let metadata_only = build_backend("claude", BackendConfig::default());
         assert!(matches!(
