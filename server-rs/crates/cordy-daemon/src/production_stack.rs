@@ -15,6 +15,7 @@ use anyhow::Context;
 use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::{json, Value};
@@ -586,7 +587,7 @@ async fn repo_checkout_handler<S: ProductionRuntimeServices>(
     State(state): State<Arc<HealthState<S>>>,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<Json<Value>, (StatusCode, HeaderMap, String)> {
+) -> Result<Json<Value>, RepoCheckoutHttpError> {
     let unauthorized = || {
         response_error(
             StatusCode::UNAUTHORIZED,
@@ -661,7 +662,7 @@ async fn repo_checkout_handler<S: ProductionRuntimeServices>(
                 headers.insert("X-Cordy-Retryable", HeaderValue::from_static("repo-busy"));
                 headers.insert(header::RETRY_AFTER, HeaderValue::from_static("2"));
             }
-            (status, headers, format!("{}\n", failure.message))
+            RepoCheckoutHttpError::new(status, headers, format!("{}\n", failure.message))
         })?;
     Ok(Json(result))
 }
@@ -674,10 +675,39 @@ impl Drop for RequestLifetime {
     }
 }
 
-fn response_error(status: StatusCode, message: &'static str) -> (StatusCode, HeaderMap, String) {
+struct RepoCheckoutHttpError(Box<RepoCheckoutHttpErrorResponse>);
+
+struct RepoCheckoutHttpErrorResponse {
+    status: StatusCode,
+    headers: HeaderMap,
+    body: String,
+}
+
+impl RepoCheckoutHttpError {
+    fn new(status: StatusCode, headers: HeaderMap, body: String) -> Self {
+        Self(Box::new(RepoCheckoutHttpErrorResponse {
+            status,
+            headers,
+            body,
+        }))
+    }
+}
+
+impl IntoResponse for RepoCheckoutHttpError {
+    fn into_response(self) -> Response {
+        let RepoCheckoutHttpErrorResponse {
+            status,
+            headers,
+            body,
+        } = *self.0;
+        (status, headers, body).into_response()
+    }
+}
+
+fn response_error(status: StatusCode, message: &'static str) -> RepoCheckoutHttpError {
     response_owned_error(status, message.to_string())
 }
 
-fn response_owned_error(status: StatusCode, message: String) -> (StatusCode, HeaderMap, String) {
-    (status, HeaderMap::new(), format!("{message}\n"))
+fn response_owned_error(status: StatusCode, message: String) -> RepoCheckoutHttpError {
+    RepoCheckoutHttpError::new(status, HeaderMap::new(), format!("{message}\n"))
 }
