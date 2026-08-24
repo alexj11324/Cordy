@@ -972,6 +972,16 @@
       retain the existing contract. Scoped rustfmt and diff-check pass; Cargo
       was not run. The serial subagent reviewed exact head `1684d444` and
       found no issue; pro owns push/Ready PR, gate, and merge.
+- [ ] CLI property/issue-property structural refactor is committed at
+      `a04eef47a230b5feac50a80e56f96846915115da` (parent
+      `1684d444e6d7569e821a444c901145d13414d232`, tree
+      `df973c827ba74ab2ff3ce2ec25068c100c140290`): property DTOs,
+      option and actor encoding, workspace property CRUD, issue-property
+      mutation, and JSON/table rendering now live in
+      `cordy-cli/src/property_commands.rs`; dispatch and parent tests retain
+      their existing contract. Scoped rustfmt and diff-check pass; Cargo was
+      not run. The serial subagent reviewed exact head `a04eef47` and found no
+      issue; pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
