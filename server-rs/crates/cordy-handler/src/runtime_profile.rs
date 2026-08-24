@@ -482,7 +482,7 @@ pub(crate) fn publish_teardown(
             workspace_id: workspace_id.to_string(),
             actor_type: "member".into(),
             actor_id: user_id.to_string(),
-            payload: json!({ "agent": agent }),
+            payload: json!({ "agent": crate::agent_api::agent_event_response(state, agent) }),
             ..Default::default()
         });
     }
