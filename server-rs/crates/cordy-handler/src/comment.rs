@@ -6,11 +6,12 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use cordy_db::models::{Comment, CommentReaction};
-use cordy_db::queries::{attachment, comment, issue as issue_q, reaction};
+use cordy_db::models::{AgentTaskQueue, Comment, CommentReaction, Issue};
+use cordy_db::queries::{agent, attachment, comment, issue as issue_q, reaction};
 use cordy_middleware::workspace::WorkspaceContext;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 
 use crate::error::error_response;
@@ -79,6 +80,199 @@ fn mention_ids(content: &str, kind: &str) -> Vec<Uuid> {
         rest = &tail[raw.len()..];
     }
     ids
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct SurvivorKey {
+    agent_id: Uuid,
+    is_leader_task: bool,
+    squad_id: Option<Uuid>,
+    force_fresh_session: bool,
+    handoff_note: String,
+}
+
+#[derive(Clone, Debug)]
+struct SurvivorPlan {
+    task_id: Uuid,
+    key: SurvivorKey,
+    trigger_comment_id: Option<Uuid>,
+    coalesced_comment_ids: Vec<Uuid>,
+}
+
+#[derive(Clone, Debug)]
+struct SurvivorBatch {
+    task_id: Uuid,
+    key: SurvivorKey,
+    comment_ids: Vec<Uuid>,
+}
+
+fn survivor_batches(
+    cancelled: &[SurvivorPlan],
+    excluded_comment_id: Option<Uuid>,
+) -> Vec<SurvivorBatch> {
+    let mut batches = Vec::new();
+    for plan in cancelled {
+        let mut comment_ids = plan.coalesced_comment_ids.clone();
+        if let Some(trigger) = plan.trigger_comment_id {
+            comment_ids.push(trigger);
+        }
+        for comment_id in comment_ids {
+            if excluded_comment_id == Some(comment_id) {
+                continue;
+            }
+            let Some(batch) = batches.iter_mut().find(|batch| batch.key == plan.key) else {
+                batches.push(SurvivorBatch {
+                    task_id: plan.task_id,
+                    key: plan.key.clone(),
+                    comment_ids: vec![comment_id],
+                });
+                continue;
+            };
+            if !batch.comment_ids.contains(&comment_id) {
+                batch.comment_ids.push(comment_id);
+            }
+        }
+    }
+    batches
+}
+
+fn survivor_plan(task: &AgentTaskQueue) -> SurvivorPlan {
+    SurvivorPlan {
+        task_id: task.id,
+        key: SurvivorKey {
+            agent_id: task.agent_id,
+            is_leader_task: task.is_leader_task,
+            squad_id: task.squad_id,
+            force_fresh_session: task.force_fresh_session,
+            handoff_note: task.handoff_note.clone().unwrap_or_default(),
+        },
+        trigger_comment_id: task.trigger_comment_id,
+        coalesced_comment_ids: task.coalesced_comment_ids.clone(),
+    }
+}
+
+fn is_note_comment(content: &str) -> bool {
+    content
+        .split_whitespace()
+        .next()
+        .is_some_and(|token| token.eq_ignore_ascii_case("/note"))
+}
+
+async fn retrigger_cancelled_survivors(
+    state: &HandlerState,
+    issue: &Issue,
+    cancelled: &[AgentTaskQueue],
+    excluded_comment_id: Option<Uuid>,
+) {
+    let plans: Vec<_> = cancelled.iter().map(survivor_plan).collect();
+    let mut batches = survivor_batches(&plans, excluded_comment_id);
+    if batches.is_empty() {
+        return;
+    }
+
+    let mut comments = HashMap::new();
+    for batch in &batches {
+        for comment_id in &batch.comment_ids {
+            if comments.contains_key(comment_id) {
+                continue;
+            }
+            match comment::get_comment_in_workspace(&state.pool, *comment_id, issue.workspace_id)
+                .await
+            {
+                Ok(Some(comment)) if comment.issue_id == issue.id => {
+                    comments.insert(*comment_id, comment);
+                }
+                Ok(_) => {}
+                Err(error) => tracing::warn!(
+                    %error,
+                    %comment_id,
+                    issue_id = %issue.id,
+                    "failed to load cancelled comment survivor"
+                ),
+            }
+        }
+    }
+
+    let mut ordered: Vec<_> = comments.values().collect();
+    ordered.sort_by(|left, right| {
+        left.created_at
+            .cmp(&right.created_at)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    let order: HashMap<Uuid, usize> = ordered
+        .iter()
+        .enumerate()
+        .map(|(index, comment)| (comment.id, index))
+        .collect();
+    let mut replayed_comments = HashSet::new();
+    let mut replayed_recoveries = HashSet::new();
+
+    for batch in &mut batches {
+        batch
+            .comment_ids
+            .retain(|comment_id| comments.contains_key(comment_id));
+        batch
+            .comment_ids
+            .sort_by_key(|comment_id| order.get(comment_id).copied().unwrap_or(usize::MAX));
+        if batch.comment_ids.is_empty() {
+            continue;
+        }
+
+        let mut replay_ids = Vec::with_capacity(batch.comment_ids.len());
+        for comment_id in &batch.comment_ids {
+            let Some(comment) = comments.get(comment_id) else {
+                continue;
+            };
+            if is_note_comment(&comment.content) {
+                continue;
+            }
+            if cordy_service::task_recovery::is_delegated_failure_recovery_comment(comment) {
+                if !replayed_recoveries.insert(comment.id) {
+                    continue;
+                }
+                if let Err(error) = state
+                    .tasks
+                    .dispatch_delegated_failure_recovery_comment(comment, None)
+                    .await
+                {
+                    tracing::warn!(%error, comment_id = %comment.id, "failed to replay delegated recovery comment");
+                }
+                continue;
+            }
+            if !replayed_comments.insert((comment.id, batch.key.agent_id)) {
+                continue;
+            }
+            replay_ids.push(comment.id);
+        }
+        let Some(trigger_comment_id) = replay_ids.pop() else {
+            continue;
+        };
+        if let Err(error) = state
+            .tasks
+            .enqueue_mention_task(
+                issue,
+                batch.key.agent_id,
+                Some(trigger_comment_id),
+                replay_ids,
+                batch.key.is_leader_task,
+                batch.key.squad_id,
+                batch.key.force_fresh_session,
+                &batch.key.handoff_note,
+                None,
+                Some(batch.task_id),
+            )
+            .await
+        {
+            if !cordy_service::task_service::pending_slot_taken_err(&error) {
+                tracing::warn!(
+                    %error,
+                    issue_id = %issue.id,
+                    agent_id = %batch.key.agent_id,
+                    "failed to replay cancelled comment survivors"
+                );
+            }
+        }
+    }
 }
 
 fn uuid_list(values: &[String], field: &str) -> Result<Vec<Uuid>, Response> {
@@ -415,6 +609,23 @@ async fn update(
         Ok(ids) => ids,
         Err(response) => return response,
     };
+    let trigger_issue = match issue_q::get_issue_in_workspace(
+        &state.pool,
+        current.issue_id,
+        current.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(issue)) => issue,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "issue not found"),
+        Err(error) => {
+            tracing::warn!(%error, issue_id = %current.issue_id, "failed to load comment issue");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update comment",
+            );
+        }
+    };
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(_) => {
@@ -435,20 +646,44 @@ async fn update(
     .await
     {
         Ok(Some(row)) => row,
-        Ok(None) => return error_response(StatusCode::CONFLICT, "comment was edited concurrently"),
+        Ok(None) => {
+            drop(tx);
+            return error_response(StatusCode::CONFLICT, "comment was edited concurrently");
+        }
         Err(error) => {
             tracing::warn!(%error,"failed to update comment");
+            drop(tx);
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to update comment",
             );
         }
     };
+    // Cancel only after the strict update has succeeded, and in the same
+    // transaction as the comment mutation. This prevents attachment-only,
+    // unchanged, and losing concurrent edits from cancelling a still-valid
+    // task batch; a later rollback also restores the queue rows.
+    let cancelled = if updated.content_changed {
+        match agent::cancel_agent_tasks_by_trigger_comment(&mut *tx, current.id).await {
+            Ok(cancelled) => cancelled,
+            Err(error) => {
+                tracing::warn!(%error, comment_id = %current.id, "failed to cancel tasks for edited trigger comment");
+                drop(tx);
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to prepare comment edit",
+                );
+            }
+        }
+    } else {
+        Vec::new()
+    };
     if let Some(ids) = replacement_attachments {
         if attachment::replace_comment_attachments(&mut *tx, current.id, current.issue_id, ids)
             .await
             .is_err()
         {
+            drop(tx);
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to replace comment attachments",
@@ -467,11 +702,12 @@ async fn update(
         .flatten()
         .expect("updated comment");
     let mut value = comment_json(&state, &comment).await;
-    let issue =
-        issue_q::get_issue_in_workspace(&state.pool, current.issue_id, current.workspace_id)
-            .await
-            .ok()
-            .flatten();
+    state
+        .tasks
+        .broadcast_cancelled_tasks(&current.workspace_id.to_string(), &cancelled)
+        .await;
+    retrigger_cancelled_survivors(&state, &trigger_issue, &cancelled, Some(current.id)).await;
+    let issue = Some(trigger_issue);
     let mut outcomes = Vec::new();
     if let Some(issue) = issue.as_ref() {
         for agent_id in mention_ids(&content, "agent") {
@@ -601,25 +837,50 @@ async fn delete(
             "only comment author or admin can delete",
         );
     }
-    if let Err(error) = state
+    let issue = match issue_q::get_issue_in_workspace(
+        &state.pool,
+        current.issue_id,
+        current.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(issue)) => issue,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "issue not found"),
+        Err(error) => {
+            tracing::warn!(%error, issue_id = %current.issue_id, "failed to load comment issue");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to delete comment",
+            );
+        }
+    };
+    let cancelled = match state
         .tasks
         .cancel_tasks_by_trigger_comment(current.id)
         .await
     {
-        tracing::warn!(%error, "failed to cancel tasks for deleted trigger comment");
-        return error_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "failed to delete comment",
-        );
-    }
+        Ok(cancelled) => cancelled,
+        Err(error) => {
+            tracing::warn!(%error, "failed to cancel tasks for deleted trigger comment");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to delete comment",
+            );
+        }
+    };
     match comment::delete_comment(&state.pool, current.id, current.workspace_id).await {
         Ok(Some(row)) if row.changed => {
+            retrigger_cancelled_survivors(&state, &issue, &cancelled, Some(current.id)).await;
             state.bus.publish(&cordy_events::Event{event_type:cordy_protocol::EVENT_COMMENT_DELETED.into(),workspace_id:current.workspace_id.to_string(),actor_type,actor_id:actor_id.to_string(),payload:json!({"comment_id":current.id,"issue_id":current.issue_id,"issue_revision":row.issue_revision}),..Default::default()});
             StatusCode::NO_CONTENT.into_response()
         }
-        Ok(_) => error_response(StatusCode::NOT_FOUND, "comment not found"),
+        Ok(_) => {
+            retrigger_cancelled_survivors(&state, &issue, &cancelled, None).await;
+            error_response(StatusCode::NOT_FOUND, "comment not found")
+        }
         Err(error) => {
             tracing::warn!(%error,"failed to delete comment");
+            retrigger_cancelled_survivors(&state, &issue, &cancelled, None).await;
             error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to delete comment",
@@ -1102,5 +1363,103 @@ mod tests {
         assert_eq!(response["emoji"], json!("👍"));
         assert_eq!(response["created_at"], json!("2026-08-23T12:34:56Z"));
         assert!(response.get("comment_revision").is_none());
+    }
+
+    fn survivor_plan_for(
+        task_id: &str,
+        agent_id: &str,
+        trigger_comment_id: Option<&str>,
+        coalesced_comment_ids: &[&str],
+    ) -> SurvivorPlan {
+        SurvivorPlan {
+            task_id: Uuid::parse_str(task_id).unwrap(),
+            key: SurvivorKey {
+                agent_id: Uuid::parse_str(agent_id).unwrap(),
+                is_leader_task: false,
+                squad_id: None,
+                force_fresh_session: false,
+                handoff_note: String::new(),
+            },
+            trigger_comment_id: trigger_comment_id.map(|id| Uuid::parse_str(id).unwrap()),
+            coalesced_comment_ids: coalesced_comment_ids
+                .iter()
+                .map(|id| Uuid::parse_str(id).unwrap())
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn survivor_replay_excludes_deleted_or_edited_trigger_but_keeps_coalesced_comments() {
+        let trigger = "018f946a-1234-7890-abcd-1234567890ab";
+        let survivor = "018f946a-2234-7890-abcd-1234567890ab";
+        let plan = survivor_plan_for(
+            "018f946a-3234-7890-abcd-1234567890ab",
+            "018f946a-4234-7890-abcd-1234567890ab",
+            Some(trigger),
+            &[survivor],
+        );
+        let batches = survivor_batches(&[plan], Some(Uuid::parse_str(trigger).unwrap()));
+        assert_eq!(batches.len(), 1);
+        assert_eq!(
+            batches[0].comment_ids,
+            vec![Uuid::parse_str(survivor).unwrap()]
+        );
+    }
+
+    #[test]
+    fn survivor_replay_restores_complete_batch_after_mutation_failure() {
+        let trigger = "018f946a-1234-7890-abcd-1234567890ab";
+        let survivor = "018f946a-2234-7890-abcd-1234567890ab";
+        let plan = survivor_plan_for(
+            "018f946a-3234-7890-abcd-1234567890ab",
+            "018f946a-4234-7890-abcd-1234567890ab",
+            Some(trigger),
+            &[survivor],
+        );
+        let batches = survivor_batches(&[plan], None);
+        assert_eq!(batches[0].comment_ids.len(), 2);
+        assert!(batches[0]
+            .comment_ids
+            .contains(&Uuid::parse_str(trigger).unwrap()));
+        assert!(batches[0]
+            .comment_ids
+            .contains(&Uuid::parse_str(survivor).unwrap()));
+    }
+
+    #[test]
+    fn survivor_replay_unions_duplicate_coalesced_survivors_by_agent() {
+        let first = "018f946a-1234-7890-abcd-1234567890ab";
+        let second = "018f946a-2234-7890-abcd-1234567890ab";
+        let third = "018f946a-3234-7890-abcd-1234567890ab";
+        let agent = "018f946a-4234-7890-abcd-1234567890ab";
+        let plans = vec![
+            survivor_plan_for(
+                "018f946a-5234-7890-abcd-1234567890ab",
+                agent,
+                Some(first),
+                &[second],
+            ),
+            survivor_plan_for(
+                "018f946a-6234-7890-abcd-1234567890ab",
+                agent,
+                Some(third),
+                &[second],
+            ),
+        ];
+        let batches = survivor_batches(&plans, Some(Uuid::parse_str(first).unwrap()));
+        assert_eq!(batches.len(), 1);
+        assert_eq!(batches[0].comment_ids.len(), 2);
+        assert!(batches[0]
+            .comment_ids
+            .contains(&Uuid::parse_str(second).unwrap()));
+        assert!(batches[0]
+            .comment_ids
+            .contains(&Uuid::parse_str(third).unwrap()));
+    }
+
+    #[test]
+    fn note_comments_are_not_replayed() {
+        assert!(is_note_comment("  /NOTE do not trigger"));
+        assert!(!is_note_comment("please /note this"));
     }
 }

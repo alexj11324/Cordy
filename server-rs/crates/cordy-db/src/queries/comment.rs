@@ -1357,6 +1357,7 @@ pub struct UpdateCommentRow {
     pub via_plugin_id: Option<Uuid>,
     pub revision: i64,
     pub issue_revision: i64,
+    pub content_changed: bool,
 }
 
 pub async fn update_comment(
@@ -1386,6 +1387,7 @@ pub async fn update_comment(
     SELECT count(*) AS locked_count FROM locked_issue
 ), target AS MATERIALIZED (
     SELECT comment.id, comment.issue_id, comment.author_type, comment.author_id, comment.content, comment.type, comment.created_at, comment.updated_at, comment.parent_id, comment.workspace_id, comment.resolved_at, comment.resolved_by_type, comment.resolved_by_id, comment.source_task_id, comment.quick_action_id, comment.via_plugin_id, comment.revision,
+           comment.content IS DISTINCT FROM $2 AS content_changed,
            ROW(comment.content, comment.source_task_id) IS DISTINCT FROM
                ROW($2, $3::uuid) AS did_change
     FROM comment
@@ -1412,7 +1414,7 @@ pub async fn update_comment(
               comment.parent_id, comment.workspace_id, comment.resolved_at,
               comment.resolved_by_type, comment.resolved_by_id, comment.source_task_id,
               comment.quick_action_id, comment.via_plugin_id, comment.revision,
-              target.did_change
+              target.did_change, target.content_changed
 ), touched_issue AS (
     UPDATE issue
     SET revision = issue.revision + 1,
@@ -1430,7 +1432,8 @@ SELECT updated_comment.id, updated_comment.issue_id, updated_comment.author_type
        updated_comment.resolved_by_type, updated_comment.resolved_by_id,
        updated_comment.source_task_id, updated_comment.quick_action_id,
        updated_comment.via_plugin_id, updated_comment.revision,
-       COALESCE((SELECT revision FROM touched_issue), 0)::bigint AS issue_revision
+       COALESCE((SELECT revision FROM touched_issue), 0)::bigint AS issue_revision,
+       updated_comment.content_changed
 FROM updated_comment"#
     )
         .bind(id)
@@ -1460,5 +1463,6 @@ FROM updated_comment"#
         via_plugin_id: row.try_get(15)?,
         revision: row.try_get(16)?,
         issue_revision: row.try_get(17)?,
+        content_changed: row.try_get(18)?,
     }))
 }
