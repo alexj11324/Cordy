@@ -119,8 +119,8 @@ mod autopilot_trigger_mutation_commands;
 mod autopilot_trigger_webhook_commands;
 mod autopilot_output;
 mod autopilot_resolver;
-mod chat_commands;
 mod chat_command_schema;
+mod attachment_download_commands;
 mod chat_read_commands;
 mod client_factory;
 mod dispatch_agent;
@@ -304,9 +304,7 @@ use autopilot_resolver::{
     load_autopilot_agent_names, resolve_autopilot_agent, resolve_autopilot_id,
     resolve_autopilot_subscribers, resolve_autopilot_trigger_id,
 };
-pub(super) use chat_commands::{
-    run_attachment_download,
-};
+use attachment_download_commands::run_attachment_download;
 use attachment_upload_commands::run_attachment_upload;
 use chat_read_commands::run_chat_read;
 pub(super) use chat_command_schema::{
