@@ -69,6 +69,7 @@ mod text_input;
 mod update_commands;
 mod url_helpers;
 mod user_commands;
+mod version_output;
 mod workspace_commands;
 mod workspace_mcp_commands;
 
@@ -263,6 +264,7 @@ use user_commands::{
     format_user_profile_table, resolve_profile_description, run_user_profile_get,
     run_user_profile_update,
 };
+use version_output::run_version;
 use workspace_commands::{
     build_workspace_create_body, build_workspace_update_body, format_workspace_details_table,
     format_workspace_members, format_workspace_table, normalize_workspace_invite_role,
@@ -4021,29 +4023,6 @@ fn render_daemon_startup(
             bail!("daemon {verb} timed out before readiness (pid {pid}, status {status})")
         }
     }
-}
-
-fn run_version(output: VersionOutput) -> Result<RunOutput> {
-    let stdout = match output {
-        VersionOutput::Text => format!(
-            "cordy {CLIENT_VERSION} (commit: {BUILD_COMMIT}, built: {BUILD_DATE})\ngo: {BUILD_GO_VERSION}, os/arch: {BUILD_OS}/{BUILD_ARCH}\n"
-        ),
-        VersionOutput::Json => format!(
-            "{}\n",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "version": CLIENT_VERSION,
-                "commit": BUILD_COMMIT,
-                "date": BUILD_DATE,
-                "go": BUILD_GO_VERSION,
-                "os": BUILD_OS,
-                "arch": BUILD_ARCH
-            }))?
-        ),
-    };
-    Ok(RunOutput {
-        stdout,
-        stderr: String::new(),
-    })
 }
 
 #[derive(Debug, Deserialize, Serialize)]
