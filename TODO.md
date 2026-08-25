@@ -409,14 +409,21 @@
 - [x] PR #193 `codex/cord-50-cli-attachment-tests` is the next bounded child of
       #192: base branch `codex/cord-50-cli-repo-tests` at
       `84746f9e23a277411905907c345bf7bede0e1841`, exact head
-      `10637cf1c310e29284ae0af4a20668d91c259c0d`, tree
-      `241e21a84ff347b8488ba6d7baa926ef47b16f40`, candidate
-      `a40b9484fea263ef4d76f713c321ae1ea76737a6`. It extracts the attachment
+      `1c0aeba057baf6a62820a7dfd98e7f3a227f5d4a`, tree
+      `b47e335e15505b35b30895a7520eba283e5ee025`, candidate
+      `823b4a08a741a3b3ccb5092a8f78e6faaf7ef454`. It extracts the attachment
       upload/download multipart, path-safety, and output contract test into
       `attachment_command_tests.rs`; task-token fields, filename sanitization,
-      and destination behavior are unchanged. Scoped rustfmt and
-      `git diff --check` pass; PR #193 is Ready (`isDraft=false`),
+      and destination behavior are unchanged. The exact-head static review found
+      and fixed a missing `std::fs` import in `1c0aeba0`; scoped diff-check passes
+      and PR #193 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #193 final exact-head subagent review PASS on
+      `1c0aeba057baf6a62820a7dfd98e7f3a227f5d4a`: `std::fs` import is present;
+      upload/download, multipart, path-safety, output assertions, and module
+      boundary are intact. No compile or behavior blocker was found. Subagent
+      did not run Cargo or modify the worktree; coordinator `git diff --check`
+      remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
