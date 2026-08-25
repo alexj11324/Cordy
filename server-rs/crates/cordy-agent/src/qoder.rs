@@ -297,7 +297,20 @@ impl QoderBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        discover_models(&self.config, cache, cancellation, timeout).await
+        self.discover_models_for_runtime(&self.config.provider, cache, cancellation, timeout)
+            .await
+    }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Qoder executable do not share an account/profile catalog entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models_with_scope(&self.config, runtime_scope, cache, cancellation, timeout).await
     }
 }
 
@@ -425,6 +438,26 @@ impl TraecliBackend {
         self.inner
             .discover_models(cache, cancellation, timeout)
             .await
+    }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Trae CLI executable do not share an account/profile catalog
+    /// entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await
     }
 }
 
@@ -928,9 +961,34 @@ impl DimBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        self.inner
-            .discover_models(cache, cancellation, timeout)
+        self.discover_models_for_runtime("dim", cache, cancellation, timeout)
             .await
+    }
+
+    /// Discovers against a daemon runtime identity and preserves Dim's
+    /// non-authoritative empty fallback when its ACP catalog is unavailable.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        let catalog = discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await;
+        if catalog.models.is_empty() {
+            return Catalog {
+                models: Vec::new(),
+                fallback: true,
+            };
+        }
+        catalog
     }
 }
 
@@ -1050,15 +1108,6 @@ fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMod
         "dim" => &DIM_BLOCKED_ARGS,
         _ => &BLOCKED_ARGS,
     }
-}
-
-async fn discover_models(
-    config: &QoderConfig,
-    cache: &CatalogCache,
-    cancellation: CancellationToken,
-    timeout: Duration,
-) -> Catalog {
-    discover_models_with_scope(config, &config.provider, cache, cancellation, timeout).await
 }
 
 async fn discover_models_with_scope(
@@ -5059,7 +5108,8 @@ done
 "#,
         );
         let catalog = backend
-            .discover_models(
+            .discover_models_for_runtime(
+                "qoder\0workspace=test\0runtime=test\0profile=",
                 &CatalogCache::default(),
                 CancellationToken::new(),
                 Duration::from_secs(5),

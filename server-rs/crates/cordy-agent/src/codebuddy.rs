@@ -62,6 +62,13 @@ impl CodebuddyBackend {
     pub(crate) fn config(&self) -> &CodebuddyConfig {
         &self.config
     }
+
+    pub(crate) fn discovery_argv(&self, invocation: &[String]) -> Vec<String> {
+        let prefix = filter_launch_prefix(&self.config.command.prefix, &BLOCKED_ARGS);
+        let mut argv = prefix.args;
+        argv.extend(invocation.iter().cloned());
+        argv
+    }
 }
 
 pub fn build_codebuddy_args(options: &ExecOptions) -> Vec<String> {
