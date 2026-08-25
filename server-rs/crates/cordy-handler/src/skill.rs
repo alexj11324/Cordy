@@ -4,7 +4,7 @@
 //! module; both modules share the same wire shapes and transactional helpers.
 
 use axum::body::Bytes;
-use axum::extract::{Extension, Path, State};
+use axum::extract::{DefaultBodyLimit, Extension, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -19,13 +19,40 @@ use uuid::Uuid;
 use crate::error::error_response;
 use crate::state::HandlerState;
 
+/// Imported skill bundles are capped at 8 MiB of supporting files. Create,
+/// update, and file-write JSON must be able to round-trip that payload, so the
+/// write routes sit above Axum's default 2 MiB body limit.
+const MAX_SKILL_WRITE_BYTES: usize = (8 << 20) + (1 << 20);
+
+fn skill_write_limit() -> DefaultBodyLimit {
+    DefaultBodyLimit::max(MAX_SKILL_WRITE_BYTES)
+}
+
 pub fn router() -> Router<HandlerState> {
     Router::new()
         .merge(crate::skill_import::router())
-        .route("/api/skills", get(list).post(create))
-        .route("/api/skills/", get(list).post(create))
-        .route("/api/skills/{id}", get(get_one).put(update).delete(delete))
-        .route("/api/skills/{id}/", get(get_one).put(update).delete(delete))
+        .route(
+            "/api/skills",
+            get(list).post(create).layer(skill_write_limit()),
+        )
+        .route(
+            "/api/skills/",
+            get(list).post(create).layer(skill_write_limit()),
+        )
+        .route(
+            "/api/skills/{id}",
+            get(get_one)
+                .put(update)
+                .delete(delete)
+                .layer(skill_write_limit()),
+        )
+        .route(
+            "/api/skills/{id}/",
+            get(get_one)
+                .put(update)
+                .delete(delete)
+                .layer(skill_write_limit()),
+        )
         .route(
             "/api/skills/{id}/labels",
             get(list_labels).post(attach_label),
@@ -34,7 +61,10 @@ pub fn router() -> Router<HandlerState> {
             "/api/skills/{id}/labels/{label_id}",
             axum::routing::delete(detach_label),
         )
-        .route("/api/skills/{id}/files", get(list_files).put(upsert_file))
+        .route(
+            "/api/skills/{id}/files",
+            get(list_files).put(upsert_file).layer(skill_write_limit()),
+        )
         .route(
             "/api/skills/{id}/files/{file_id}",
             axum::routing::delete(delete_file),
@@ -879,6 +909,35 @@ mod tests {
                 .unwrap_err()
                 .status(),
             StatusCode::FORBIDDEN
+        );
+    }
+
+    #[tokio::test]
+    async fn skill_write_routes_accept_bodies_above_axum_default_limit() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt as _;
+
+        let state = crate::HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let app = router().with_state(state);
+        let oversized = vec![b'x'; (2 << 20) + 1];
+        let response = app
+            .oneshot(
+                Request::post("/api/skills")
+                    .header("content-type", "application/json")
+                    .body(Body::from(oversized))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(
+            response.status(),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "skill writes must accept the 8 MiB bundle contract"
         );
     }
 

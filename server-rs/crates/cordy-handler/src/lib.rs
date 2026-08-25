@@ -522,7 +522,13 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             issue::require_issue_workspace,
         )))
         .merge(
-            plugin_admin::router().route_layer(middleware::from_fn_with_state(
+            plugin_admin::member_router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(state.pool.clone(), "id"),
+                cordy_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            plugin_admin::admin_router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url_with_roles(
                     state.pool.clone(),
                     "id",
