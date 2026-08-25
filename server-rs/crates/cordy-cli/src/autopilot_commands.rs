@@ -79,7 +79,7 @@ pub(super) async fn run_autopilot_get(
         stderr: String::new(),
     })
 }
-async fn run_autopilot_create(
+pub(super) async fn run_autopilot_create(
     cli: &Cli,
     environment: &Environment,
     args: &AutopilotCreateArgs,
@@ -158,7 +158,7 @@ async fn run_autopilot_create(
     })
 }
 
-async fn run_autopilot_update(
+pub(super) async fn run_autopilot_update(
     cli: &Cli,
     environment: &Environment,
     args: &AutopilotUpdateArgs,
