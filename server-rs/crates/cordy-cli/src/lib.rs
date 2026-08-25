@@ -63,6 +63,7 @@ mod squad_commands;
 mod task_reference;
 mod text_input;
 mod update_commands;
+mod url_helpers;
 mod user_commands;
 mod workspace_commands;
 mod workspace_mcp_commands;
@@ -240,6 +241,7 @@ pub(super) use text_input::{trim_one_trailing_newline, unescape_backslash_escape
 use update_commands::{
     render_update_outcome, resolve_update_download_timeout, run_update, validate_update_timeout,
 };
+pub(super) use url_helpers::encoded_path_segment;
 use user_commands::{
     format_user_profile_table, resolve_profile_description, run_user_profile_get,
     run_user_profile_update,
@@ -5093,10 +5095,6 @@ struct IssueListResponse {
     issues: Value,
     #[serde(default)]
     total: Value,
-}
-
-fn encoded_path_segment(value: &str) -> String {
-    form_urlencoded::byte_serialize(value.as_bytes()).collect()
 }
 
 fn new_api_client(cli: &Cli, environment: &Environment) -> Result<ApiClient> {
