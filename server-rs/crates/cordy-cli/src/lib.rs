@@ -17,6 +17,7 @@ mod skill_catalog_commands;
 mod agent_helpers;
 mod api;
 mod api_attachments;
+mod api_attachment_download;
 mod api_health;
 mod api_request;
 mod api_skill;
@@ -191,15 +192,24 @@ mod issue_label_schema;
 mod issue_list_commands;
 mod issue_list_schema;
 mod issue_markdown_links;
-mod issue_metadata_commands;
+mod issue_metadata_input;
+mod issue_metadata_output;
+mod issue_metadata_read_commands;
+mod issue_metadata_mutation_commands;
 mod issue_metadata_schema;
 mod issue_property_commands;
+mod issue_property_actor;
+mod issue_property_actor_inputs;
+mod issue_property_output;
+mod issue_property_value_encoding;
 mod issue_property_values;
 mod issue_property_schema;
 mod issue_pull_request_commands;
 mod issue_pull_request_schema;
 mod issue_reference;
 mod issue_reorder_commands;
+mod issue_reorder_output;
+mod issue_reorder_query;
 mod issue_rerun_commands;
 mod issue_safety;
 mod issue_search_commands;
@@ -233,6 +243,10 @@ mod project_reference_resolver;
 mod project_status_commands;
 mod property_command_schema;
 mod property_commands;
+mod property_models;
+mod property_mutation_input;
+mod property_mutation_output;
+mod property_read_commands;
 mod repo_command_schema;
 mod repo_checkout_commands;
 mod repo_mutation_commands;
@@ -417,10 +431,10 @@ use issue_list_commands::{
     build_issue_list_query, build_metadata_filter, issue_list_has_more, run_issue_list,
 };
 pub(super) use issue_list_schema::IssueListArgs;
-use issue_metadata_commands::{
-    format_metadata_table, parse_metadata_value, run_issue_metadata_delete, run_issue_metadata_get,
-    run_issue_metadata_list, run_issue_metadata_set,
-};
+use issue_metadata_input::parse_metadata_value;
+use issue_metadata_output::format_metadata_table;
+use issue_metadata_mutation_commands::{run_issue_metadata_delete, run_issue_metadata_set};
+use issue_metadata_read_commands::{run_issue_metadata_get, run_issue_metadata_list};
 pub(super) use issue_metadata_schema::{
     IssueMetadataArgs, IssueMetadataCommand, IssueMetadataDeleteArgs, IssueMetadataKeyArgs,
     IssueMetadataListArgs, IssueMetadataSetArgs,
