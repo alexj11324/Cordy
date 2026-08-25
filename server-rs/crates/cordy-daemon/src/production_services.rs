@@ -11,8 +11,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cordy_agent::{
-    BackendConfig, CatalogCache, HermesBackend, HermesConfig, KimiBackend, KimiConfig, KiroBackend,
-    KiroConfig, RuntimeCommand,
+    AntigravityBackend, AntigravityConfig, BackendConfig, CatalogCache, CodebuddyBackend,
+    CodebuddyConfig, DimBackend, DimConfig, DshBackend, DshConfig, GrokBackend, GrokConfig,
+    HermesBackend, HermesConfig, KimiBackend, KimiConfig, KiroBackend, KiroConfig, QoderBackend,
+    QoderConfig, ReasonixBackend, ReasonixConfig, RuntimeCommand, TraecliBackend, TraecliConfig,
 };
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
 use serde_json::{json, Value};
@@ -242,9 +244,9 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         }
     }
 
-    /// Completes the Kimi/Hermes model-list contract from the same accepted
-    /// launch identity used by task execution. Custom profile runtimes
-    /// therefore discover against their pinned executable and fixed prefix.
+    /// Completes Rust-backed model-list contracts from the same accepted launch
+    /// identity used by task execution. Custom profile runtimes therefore
+    /// discover against their pinned executable and fixed prefix.
     async fn handle_acp_model_list(
         &self,
         ctx: Ctx,
@@ -255,7 +257,24 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         let Some(target) = registry.execution_target_for_runtime(runtime_id) else {
             return false;
         };
-        if !matches!(target.provider.as_str(), "hermes" | "kimi" | "kiro") {
+        if !matches!(
+            target.provider.as_str(),
+            "hermes"
+                | "kimi"
+                | "kiro"
+                | "reasonix"
+                | "grok"
+                | "qoder"
+                | "qoderclicn"
+                | "traecli"
+                | "antigravity"
+                | "codebuddy"
+                | "dsh"
+                | "qwen"
+                | "qwenpaw"
+                | "mcode"
+                | "dim"
+        ) {
             return false;
         }
 
@@ -308,6 +327,105 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 )
                 .await,
                 "kiro" => KiroBackend::new(KiroConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "reasonix" => ReasonixBackend::new(ReasonixConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "grok" => GrokBackend::new(GrokConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "qoder" | "qoderclicn" => {
+                    let default_command = if target.provider == "qoderclicn" {
+                        "qoderclicn"
+                    } else {
+                        "qodercli"
+                    };
+                    QoderBackend::new(QoderConfig {
+                        command,
+                        env: BTreeMap::new(),
+                        default_command: default_command.to_string(),
+                        provider: target.provider.clone(),
+                        ..QoderConfig::default()
+                    })
+                    .discover_models_for_runtime(
+                        &runtime_scope,
+                        &self.model_cache,
+                        ctx.token().clone(),
+                        ACP_MODEL_DISCOVERY_TIMEOUT,
+                    )
+                    .await
+                }
+                "traecli" => TraecliBackend::new(TraecliConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "antigravity" => AntigravityBackend::new(AntigravityConfig {
+                    command,
+                    env: BTreeMap::new(),
+                    catalog_cache: Arc::clone(&self.model_cache),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "codebuddy" => CodebuddyBackend::new(CodebuddyConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "dsh" => DshBackend::new(DshConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "qwen" | "qwenpaw" | "mcode" => cordy_agent::Catalog::default(),
+                "dim" => DimBackend::new(DimConfig {
                     command,
                     env: BTreeMap::new(),
                 })

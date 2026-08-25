@@ -12,6 +12,7 @@ pub mod codebuddy;
 pub mod codebuddy_discovery;
 pub mod command;
 pub mod contract;
+pub mod dsh;
 mod kimi_usage;
 pub mod mcp;
 pub mod model;
@@ -34,6 +35,7 @@ pub use command::{BlockedArgMode, FilteredArgs, RuntimeCommand};
 pub use contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
+pub use dsh::{build_dsh_args, DshBackend, DshConfig};
 pub use model::{
     parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey,
     ModelServiceTier, ModelThinking, ThinkingLevel,
