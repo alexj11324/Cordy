@@ -882,6 +882,14 @@
       `skip_children` and `git diff --check` pass; PR #219 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
       delegated.
+- [x] #219 exact-head subagent review PASS on
+      `5395016ea55499279b078e3f5d1159f3cce4dda8`: the new private helper test
+      module has correct `#[cfg(test)]` registration, parent-private access,
+      and explicit `Value`/`OsString`/`Cursor` imports. Both tests preserve
+      the removed behavior; `run_private_helper` and `cordy_daemon` resolve
+      correctly. No compile or behavior blocker was found. Subagent did not
+      run Cargo or modify the worktree; coordinator `git diff --check`
+      remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
