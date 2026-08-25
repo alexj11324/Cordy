@@ -806,6 +806,13 @@
       optional checkout refs and environment-only checkout. Scoped rustfmt and
       `git diff --check` pass; PR #245 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #245 exact-head subagent review PASS on
+      `9a20dc50099e5acfc4dd55a7218393f29dbe3317`: `dispatch_repo.rs` covers
+      List/Add/Remove/Checkout; output and `checkout_ref.as_deref()` are
+      preserved, and checkout still accepts only `Environment`, retaining its
+      guard semantics. `Command::Repo` routing and lib registration are
+      correct. `git diff --check` passes; subagent did not run Cargo or modify
+      files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
