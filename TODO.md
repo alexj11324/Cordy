@@ -1724,6 +1724,14 @@
       unchanged. Scoped rustfmt with `skip_children` and `git diff --check`
       pass; Cargo was not run. The serial subagent owns blocker-only
       fixes/review; Pro owns the eventual Ready PR, gate, and merge.
+- [ ] CLI issue pull-request schema refactor is structurally committed at
+      `bd18427f1b76637ba3380ba622c3e4b7c2afcf11` (tree
+      `054ad92f044d403d12c00b597a788b54c3610769`): pull-request attach
+      subcommand and URL/title/state/branch/SHA parameters now live in
+      `issue_pull_request_schema.rs`; validation and table/JSON defaults are
+      unchanged. Scoped rustfmt with `skip_children` and `git diff --check`
+      pass; Cargo was not run. The serial subagent owns blocker-only
+      fixes/review; Pro owns the eventual Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
