@@ -572,6 +572,13 @@
       `skip_children` and `git diff --check` pass; PR #231 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
       delegated.
+- [x] #231 exact-head subagent review PASS on
+      `f1914582f5784396812c7eb775d8d1cc811c28cb`: `dispatch_agent.rs` covers
+      every `AgentCommand` variant and nested Skills/Env/MCP actions, while
+      preserving input forwarding and output/error behavior. The root
+      dispatcher delegates the complete Agent branch and lib module wiring is
+      correct. `git diff --check` passes; subagent did not run Cargo or modify
+      files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
