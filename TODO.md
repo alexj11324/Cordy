@@ -424,6 +424,17 @@
       boundary are intact. No compile or behavior blocker was found. Subagent
       did not run Cargo or modify the worktree; coordinator `git diff --check`
       remains clean.
+- [x] PR #194 `codex/cord-50-cli-project-tests` is the next bounded child of #193:
+      base branch `codex/cord-50-cli-attachment-tests` at
+      `1c0aeba057baf6a62820a7dfd98e7f3a227f5d4a`, exact head
+      `5eb4da32ceb96a0b5be297d8a322f4f1e12c8925`, tree
+      `e852f0c9431f30d93f87ab9ed759895fcdaea304`, candidate
+      `f7c1e0ad3888310758767d2932f60d465185477c`. It extracts five project
+      list/get/create/status parser, HTTP, resource-bundle, and table contract
+      tests into `project_command_tests.rs`; status validation, prefix resolution,
+      payloads, and Go-compatible output are unchanged. Scoped rustfmt and
+      `git diff --check` pass; PR #194 is Ready (`isDraft=false`), MERGEABLE
+      (checks settling). Cargo and exact-head review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
