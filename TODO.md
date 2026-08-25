@@ -1206,6 +1206,18 @@
       JSON/table output, dispatch, and root re-exports remain unchanged.
       Subagent did not run Cargo or modify files; `git diff --check` remains
       clean.
+- [ ] PR #265 `codex/cord-97-cli-agent-env` is the next bounded child of
+      #264: base branch `codex/cord-96-cli-agent-skills` at
+      `2f0a53ce2c70c12d7d1954916cf617077762dfa3`, exact head
+      `717bd90983e4e5ac1e678d13a0a1a97915972be0`, tree
+      `c47dbe5677972b39bc598b17cc0e02de42952302`, candidate
+      `f123ab93bd0f1a383bac0393fdd69ab68a8a3900` (parents base + head).
+      It isolates agent custom environment get/set in `agent_env_commands.rs`;
+      secret JSON stdin/file policy, validation, `/env` paths, output,
+      dispatch, and root re-exports remain unchanged. Scoped pinned rustfmt and
+      `git diff --check` pass; Cargo is delegated. PR #265 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review pending;
+      no duplicate review request has been made.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
