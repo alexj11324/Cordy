@@ -174,12 +174,18 @@
       base `8fdef9ba210096fda1915c4372a4958353025700`, original head
       `592c0f1664b5bc64429ca0f8827c49727ccedefd` was superseded by a minimal import
       fix; current exact head is `051dd0bea993ac7343d3e79eba15cfcde8cd9274`, tree
-      `b654d2bf6774d2ac9c266f8e74b368cccc09eeb4`, candidate must be refreshed. It extracts only runtime
+      `b654d2bf6774d2ac9c266f8e74b368cccc09eeb4`, candidate
+      `5e5692f4eafae0a698d98ae5119d6969b864bc91`. It extracts only runtime
       list/usage/activity/rename/delete/update and runtime-profile lifecycle/path
       tests into `runtime_command_tests.rs`; production behavior is unchanged.
       New module rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`,
       CLEAN/MERGEABLE). Cargo and review remain delegated; any review/gate for
       `592c0f16` is invalid.
+- [x] #179 final exact-head subagent review PASS on `051dd0bea993ac7343d3e79eba15cfcde8cd9274`:
+      `Cursor` covers all 19 `Cursor::` references, and all 11 runtime/runtime-profile
+      tests remain intact. No compile or behavior blocker was introduced. Subagent
+      did not run Cargo or modify the worktree; coordinator rustfmt and
+      `git diff --check` pass.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
