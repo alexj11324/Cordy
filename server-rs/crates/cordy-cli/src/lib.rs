@@ -112,6 +112,7 @@ mod config_commands;
 pub mod daemon;
 mod daemon_command_schema;
 mod daemon_commands;
+mod daemon_status_commands;
 mod disk_usage_commands;
 mod disk_usage_output;
 pub mod error;
@@ -258,12 +259,14 @@ pub(super) use daemon_command_schema::{
 };
 pub use daemon_commands::run_private_helper;
 use daemon_commands::{
-    ensure_restart_is_background, format_daemon_status_table, known_daemon_profiles,
-    parse_cli_duration, parse_log_lines, read_daemon_log_tail, render_daemon_status,
-    require_known_daemon_profile, resolve_daemon_log_path, resolve_daemon_status_port,
-    run_daemon_after_setup, run_daemon_disk_usage, run_daemon_logs, run_daemon_probe_runtimes,
-    run_daemon_restart, run_daemon_start, run_daemon_status, run_daemon_stop,
+    ensure_restart_is_background, parse_cli_duration, parse_log_lines, read_daemon_log_tail,
+    resolve_daemon_log_path, run_daemon_after_setup, run_daemon_disk_usage, run_daemon_logs,
+    run_daemon_probe_runtimes, run_daemon_restart, run_daemon_start, run_daemon_stop,
     validate_daemon_health_port,
+};
+use daemon_status_commands::{
+    format_daemon_status_table, known_daemon_profiles, render_daemon_status,
+    require_known_daemon_profile, resolve_daemon_status_port, run_daemon_status,
 };
 use disk_usage_commands::{
     disk_usage_needs_parent_status, disk_usage_task_context, enumerate_disk_usage_roots,
