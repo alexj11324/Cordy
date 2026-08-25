@@ -524,6 +524,18 @@
       bounded callback reads, callback timeout, workspace polling, and all
       helper re-exports. `git diff --check` passes; subagent did not run Cargo
       or modify files.
+- [x] PR #229 `codex/cord-61-cli-api-errors` is the next bounded child of
+      #228: base branch `codex/cord-60-cli-login-browser` at
+      `786e09b80115851ad04ddefd1309f4b560358cd4`, exact head
+      `18c844639ac101ce1d7a485e57468940f204fffc`, tree
+      `99141bab6b5a614e0b97f7b45c2ed125eb946c58`, candidate
+      `24980c5b394b6ad1086b3dfeb8216144c3c3b33c`. It isolates API error
+      taxonomy, bounded response-body decoding, network classification, Go
+      timeout parsing, and OS normalization in `api_error.rs`; public error
+      types and `http_timeout` remain re-exported from `api`. Scoped rustfmt
+      with `skip_children` and `git diff --check` pass; PR #229 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
+      delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
