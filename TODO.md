@@ -942,6 +942,13 @@
       Scoped rustfmt/check and `git diff --check` pass; Cargo is delegated. PR
       #252 is Ready (`isDraft=false`), CLEAN/MERGEABLE; exact-head review
       pending.
+- [x] #252 initial exact-head subagent review FAIL on
+      `501b012fa7273dbb32a6a9f254baa7648cabe607`: moving the clap structs left
+      `property_commands.rs` with three unqualified `Property*Args` references
+      but no imports, a real compile blocker. The head/candidate are invalidated;
+      the serial subagent is applying only the three explicit parent-module
+      imports, with no Cargo run or behavior change. A new exact-head review is
+      required after the non-amending fix.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
