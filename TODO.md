@@ -1279,6 +1279,18 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
+- [ ] PR #279 `codex/cord-111-cli-autopilot-mutation` is the next bounded child of
+      #278: base branch `codex/cord-110-cli-autopilot-read` at
+      `18214804c5f1d28b5c0cc88f2525a3e5b2b3edad`, exact head
+      `6c21e52ea23a1e6192cdc9a92a60717190181d19`, tree
+      `37e475b777e174c8a5b85f36e7c1902b60a1cd91`, candidate
+      `00cf5105058cf69ab7e71314be2823023f0e5909` (parents base + head).
+      It isolates autopilot create/update/delete handlers in
+      `autopilot_mutation_commands.rs`; validation, resolver behavior, API
+      payloads, output, dispatch, and tests remain unchanged. Scoped pinned
+      rustfmt and `git diff --check` pass; Cargo is delegated. PR #279 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review is
+      pending; no Cargo was run.
 - [x] PR #278 `codex/cord-110-cli-autopilot-read` is the completed bounded child of
       #277: base branch `codex/cord-109-cli-squad-activity` at
       `5809faeb924c66e8eb3403e70aacbda285680073`, exact head
