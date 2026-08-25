@@ -1258,6 +1258,20 @@
       issue. Scoped rustfmt and `git diff --check` pass (the subagent
       environment lacked a rustfmt executable); Cargo was not run. Pro owns
       push/Ready PR, gate, and merge.
+- [ ] CLI issue-list structural refactor is committed at
+      `e6da5fe240c8e6469e4179830852edca24378a95` (parent
+      `bf1aa6b5652948d3475dc397203672c425c4d830`, tree
+      `539d6874638216ad51a187e5515542489f3c90eb`), followed by the
+      subagent's minimal compile fix `cd8c20019a977eff2abec24b9f726b1fd36ecdfa`
+      (tree `539d6874638216ad51a187e5515542489f3c90eb`): issue list
+      query construction, metadata filter encoding, pagination envelope,
+      and table/JSON orchestration now live in
+      `cordy-cli/src/issue_list_commands.rs`; shared actor/assignee
+      resolvers remain in the parent module. The serial subagent found and
+      fixed the missing `BTreeMap` import, then rechecked the exact head
+      with no further issue. Scoped rustfmt and `git diff --check` pass
+      (the subagent environment lacked a rustfmt executable); Cargo was not
+      run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
