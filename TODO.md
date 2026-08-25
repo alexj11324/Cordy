@@ -780,6 +780,16 @@
       ID, overview mode, and `read` forwarding. `Command::Chat` routing and
       lib registration are correct. `git diff --check` passes; subagent did
       not run Cargo or modify files.
+- [x] PR #244 `codex/cord-76-cli-attachment-dispatch` is the next bounded child
+      of #243: base branch `codex/cord-75-cli-chat-dispatch` at
+      `47aacbacfcc93bcf76056ff8dc4ddc043f6bf541`, exact head
+      `1eb103724231f6ab322941bbf8ae2fdf836d5f9a`, tree
+      `757db655661d733bf8a2c49104ba832e73cfc80c`, candidate
+      `5f7a10212d0c820fa7254f6beb0d1ec02f083ac6`. It isolates Attachment
+      download/upload routing into `dispatch_attachment.rs`, preserving output
+      directory and optional task scope. Scoped rustfmt and
+      `git diff --check` pass; PR #244 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
