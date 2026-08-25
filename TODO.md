@@ -643,6 +643,12 @@
       and browser/token login behavior. Scoped rustfmt and `git diff --check`
       pass; PR #235 is Ready (`isDraft=false`), MERGEABLE. Cargo and
       exact-head review remain delegated.
+- [x] #235 exact-head subagent review PASS on
+      `3447306d79aa7a5e228ccb43460e3f9d881f2577`: `dispatch_auth.rs` covers
+      both `AuthCommand` variants, and `run_login_command` forwards the full
+      `LoginArgs` unchanged to `run_login`. Dispatcher delegation and lib
+      wiring are correct with no stale auth/login branches. `git diff --check`
+      passes; subagent did not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
