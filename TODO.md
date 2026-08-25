@@ -931,6 +931,17 @@
       re-exports are valid; all three `dispatch_issue.rs` routes remain wired.
       Subagent did not run Cargo or modify files; scoped rustfmt and
       `git diff --check` remain clean.
+- [x] PR #252 `codex/cord-84-cli-property-schema` is the next bounded child of
+      #251: base branch `codex/cord-83-cli-issue-property-commands` at
+      `7ad99633ade3303f10379a4e554ad63d7106fb00`, exact head
+      `501b012fa7273dbb32a6a9f254baa7648cabe607`, tree
+      `c0a6c35ac9910071d4379cc864f0c60ef1759b62`, candidate
+      `66c2e19aa6f351cfb71cadf5a9f347b3f58ebbe1`. It moves property list/get/
+      create/update/archive clap schema into `property_command_schema.rs`;
+      defaults, flags, command routing, and execution behavior are unchanged.
+      Scoped rustfmt/check and `git diff --check` pass; Cargo is delegated. PR
+      #252 is Ready (`isDraft=false`), CLEAN/MERGEABLE; exact-head review
+      pending.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
