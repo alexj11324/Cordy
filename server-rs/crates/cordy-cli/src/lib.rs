@@ -240,6 +240,7 @@ mod project_status_commands;
 mod property_command_schema;
 mod property_commands;
 mod property_models;
+mod property_read_commands;
 mod repo_command_schema;
 mod repo_checkout_commands;
 mod repo_mutation_commands;
