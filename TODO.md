@@ -636,6 +636,23 @@
       local-link guard behavior remain intact. No compile or behavior blocker
       was found. Subagent did not run Cargo or modify the worktree; coordinator
       `git diff --check` remains clean.
+- [x] PR #206 `codex/cord-50-cli-issue-update-tests` is the next bounded child
+      of #205: base branch `codex/cord-50-cli-issue-create-tests` at
+      `b9a3b839c4f4b7b5d1d31727764fcb6bf0523b18`, exact head
+      `ddd627fead2d7f577d960fe3dde007fea4be1834`, tree
+      `2f0fee750f0b803dd4647471bf1b07fedb6de32c`, candidate
+      `742dbf2ea2d508c72c77675296f3ec81fb275cee`. It extracts the issue-update
+      parser, validation, reference resolution, PUT payload, and explicit-clear
+      contract tests into `issue_update_command_tests.rs`; no-change rejection,
+      suppress-run/no-start, and output behavior are unchanged. Scoped rustfmt
+      and `git diff --check` pass; PR #206 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #206 exact-head subagent review PASS on
+      `ddd627fead2d7f577d960fe3dde007fea4be1834`: all four issue-update tests
+      are preserved; imports/routes are correct; reference resolution, explicit
+      clears, and no-change rejection remain covered. No compile or behavior
+      blocker was found. Subagent did not run Cargo or modify the worktree;
+      coordinator `git diff --check` remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
