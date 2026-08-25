@@ -1,4 +1,5 @@
 use anyhow::{bail, Context, Result};
+use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -8,7 +9,7 @@ use super::{
     new_api_client, normalize_assignee_input, resolve_current_workspace_id, resolve_issue_ref,
     retry_actor_get, value_string, ApiClient, Cli, Environment, IssueActorNames,
     IssuePropertyListArgs, IssuePropertyMutationArgs, IssuePropertyUnsetArgs, OutputFormat,
-    PropertyArchiveArgs, PropertyCreateArgs, PropertyUpdateArgs, RunOutput,
+    RunOutput,
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -703,4 +704,85 @@ pub(super) async fn run_issue_property_unset(
         },
         stderr: String::new(),
     })
+}
+#[derive(Debug, Args)]
+struct PropertyArgs {
+    #[command(subcommand)]
+    command: PropertyCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum PropertyCommand {
+    #[command(about = "List property definitions")]
+    List {
+        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+        output: OutputFormat,
+        #[arg(long, help = "Include archived properties")]
+        include_archived: bool,
+    },
+    #[command(about = "Show one property definition")]
+    Get {
+        #[arg(value_name = "ID-OR-NAME")]
+        property: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
+    #[command(about = "Create a property definition (workspace owner/admin only)")]
+    Create(PropertyCreateArgs),
+    #[command(about = "Update a property definition (owner/admin only; type is immutable)")]
+    Update(PropertyUpdateArgs),
+    #[command(about = "Archive a property definition (hidden from pickers; values preserved)")]
+    Archive(PropertyArchiveArgs),
+    #[command(about = "Restore an archived property definition")]
+    Unarchive(PropertyArchiveArgs),
+}
+
+#[derive(Debug, Args)]
+struct PropertyCreateArgs {
+    #[arg(long, help = "Property name (required)")]
+    name: Option<String>,
+    #[arg(
+        long = "type",
+        help = "Property type: text, number, select, multi_select, date, checkbox, url, actor, multi_actor (required)"
+    )]
+    property_type: Option<String>,
+    #[arg(long, default_value = "", help = "Property description")]
+    description: String,
+    #[arg(
+        long,
+        default_value = "",
+        help = "Property icon key from the Web picker (for example, flag, tag, or shield)"
+    )]
+    icon: String,
+    #[arg(long, action = clap::ArgAction::Append, help = "Select option as \"Name\" or \"Name:#rrggbb\" (repeatable; select types only)")]
+    option: Vec<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct PropertyUpdateArgs {
+    #[arg(value_name = "ID-OR-NAME")]
+    property: String,
+    #[arg(long, help = "New property name")]
+    name: Option<String>,
+    #[arg(long, help = "New property description")]
+    description: Option<String>,
+    #[arg(
+        long,
+        help = "New property icon key from the Web picker; pass an empty value to clear"
+    )]
+    icon: Option<String>,
+    #[arg(long, action = clap::ArgAction::Append, help = "Replacement option list as \"Name\" or \"Name:#rrggbb\" (repeatable)")]
+    option: Vec<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+struct PropertyArchiveArgs {
+    #[arg(value_name = "ID-OR-NAME")]
+    property: String,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    output: OutputFormat,
 }

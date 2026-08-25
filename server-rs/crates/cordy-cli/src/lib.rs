@@ -235,11 +235,12 @@ use project_resource_commands::{
     build_project_resource_add_ref, build_project_resource_update_ref, run_project_resource_add,
     run_project_resource_list, run_project_resource_remove, run_project_resource_update,
 };
-use property_commands::{
+pub(super) use property_commands::{
     build_issue_property_rows, format_issue_property_rows, format_property_definitions,
     parse_property_options, resolve_property, run_issue_property_list, run_issue_property_set,
     run_issue_property_unset, run_property_archive, run_property_create, run_property_get,
-    run_property_list, run_property_update, PropertyDefinition, PropertyOption,
+    run_property_list, run_property_update, PropertyArchiveArgs, PropertyArgs, PropertyCommand,
+    PropertyCreateArgs, PropertyDefinition, PropertyOption, PropertyUpdateArgs,
 };
 pub(super) use repo_commands::{
     repo_checkout_retry_delay, repo_urls, run_repo_add, run_repo_checkout, run_repo_list,
@@ -591,88 +592,6 @@ struct DaemonLaunchArgs {
     auto_update_interval: Option<Duration>,
     #[arg(long = "no-auto-reload")]
     disable_auto_reload: bool,
-}
-
-#[derive(Debug, Args)]
-struct PropertyArgs {
-    #[command(subcommand)]
-    command: PropertyCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum PropertyCommand {
-    #[command(about = "List property definitions")]
-    List {
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-        #[arg(long, help = "Include archived properties")]
-        include_archived: bool,
-    },
-    #[command(about = "Show one property definition")]
-    Get {
-        #[arg(value_name = "ID-OR-NAME")]
-        property: String,
-        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-        output: OutputFormat,
-    },
-    #[command(about = "Create a property definition (workspace owner/admin only)")]
-    Create(PropertyCreateArgs),
-    #[command(about = "Update a property definition (owner/admin only; type is immutable)")]
-    Update(PropertyUpdateArgs),
-    #[command(about = "Archive a property definition (hidden from pickers; values preserved)")]
-    Archive(PropertyArchiveArgs),
-    #[command(about = "Restore an archived property definition")]
-    Unarchive(PropertyArchiveArgs),
-}
-
-#[derive(Debug, Args)]
-struct PropertyCreateArgs {
-    #[arg(long, help = "Property name (required)")]
-    name: Option<String>,
-    #[arg(
-        long = "type",
-        help = "Property type: text, number, select, multi_select, date, checkbox, url, actor, multi_actor (required)"
-    )]
-    property_type: Option<String>,
-    #[arg(long, default_value = "", help = "Property description")]
-    description: String,
-    #[arg(
-        long,
-        default_value = "",
-        help = "Property icon key from the Web picker (for example, flag, tag, or shield)"
-    )]
-    icon: String,
-    #[arg(long, action = clap::ArgAction::Append, help = "Select option as \"Name\" or \"Name:#rrggbb\" (repeatable; select types only)")]
-    option: Vec<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct PropertyUpdateArgs {
-    #[arg(value_name = "ID-OR-NAME")]
-    property: String,
-    #[arg(long, help = "New property name")]
-    name: Option<String>,
-    #[arg(long, help = "New property description")]
-    description: Option<String>,
-    #[arg(
-        long,
-        help = "New property icon key from the Web picker; pass an empty value to clear"
-    )]
-    icon: Option<String>,
-    #[arg(long, action = clap::ArgAction::Append, help = "Replacement option list as \"Name\" or \"Name:#rrggbb\" (repeatable)")]
-    option: Vec<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct PropertyArchiveArgs {
-    #[arg(value_name = "ID-OR-NAME")]
-    property: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
