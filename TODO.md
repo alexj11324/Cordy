@@ -1279,6 +1279,18 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
+- [ ] PR #285 `codex/cord-117-cli-repo-checkout` is the next bounded child of
+      #284: base branch `codex/cord-116-cli-repo-mutation` at
+      `38b46665bf0b9d246e7db7caa562bf3998b93348`, exact head
+      `75f813596c80292ee04fbd19866ec94622c78657`, tree
+      `8a93b5a7fc054431d44da35c1b0719cf9de0d7b5`, candidate
+      `73423cd24d785066c53949d132abd61e4edc6595` (parents base + head).
+      It isolates repository checkout/retry handling in
+      `repo_checkout_commands.rs` and removes the empty generic module;
+      daemon request, retry, timeout, output, dispatch, and tests remain
+      unchanged. Scoped pinned rustfmt and `git diff --check` pass; Cargo is
+      delegated. PR #285 is Ready (`isDraft=false`), CLEAN/MERGEABLE.
+      Exact-head subagent review is pending; no Cargo was run.
 - [x] PR #284 `codex/cord-116-cli-repo-mutation` is the completed bounded child of
       #283: base branch `codex/cord-115-cli-repo-read` at
       `344b20fae740b0191e50ed5c81bfc78e0f8ae232`, exact head
