@@ -1399,6 +1399,15 @@
       rustfmt and `git diff --check` pass; the serial subagent reviewed the
       exact head and found no compile or behavior blocker. Cargo was not run.
       Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI text-input refactor is committed at
+      `d13bdc667513d67e32a3f305c254648e0aee2e70` (parent
+      `25b649c21eac31bed413b78e90e73e2ea4d53804`, tree
+      `553e8a6b1e11d98a682d0f1f658e13f90cede91f`): one-newline trimming and
+      backslash escape decoding now live in `cordy-cli/src/text_input.rs`;
+      the parent re-exports them for issue/comment/user/workspace callers.
+      Scoped rustfmt and `git diff --check` pass; the serial subagent reviewed
+      the exact head and found no compile or behavior blocker. Cargo was not
+      run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
