@@ -372,6 +372,17 @@
       and module boundary/helper visibility is valid. No compile or behavior
       blocker was found. Subagent did not run Cargo or modify the worktree;
       coordinator `git diff --check` remains clean.
+- [x] PR #191 `codex/cord-50-cli-chat-tests` is the next bounded child of #190:
+      base branch `codex/cord-50-cli-issue-timeline-tests` at
+      `5b40696eaaa50e72827e4bd45c52bfb8f9a27542`, exact head
+      `30cdf04a076558ceb3e41032dca88d922d75bce8`, tree
+      `e3b4e7d8d3f7358dc4847ad9fab66205638bc6d0`, candidate
+      `ecfa22c8a515456cfd6d1a01430a4c67e1e847a3`. It extracts the chat
+      history/thread query and rendering contract test into `chat_command_tests.rs`;
+      cursor/limit encoding, thread lookup, table output, and unavailable-thread
+      handling are unchanged. Scoped rustfmt and `git diff --check` pass; PR #191
+      is Ready (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review
+      remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
