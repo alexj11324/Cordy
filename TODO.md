@@ -1389,6 +1389,16 @@
       rustfmt and `git diff --check` pass; the serial subagent reviewed the
       exact head and found no compile or behavior blocker. Cargo was not run.
       Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI output-helper refactor is committed at
+      `25b649c21eac31bed413b78e90e73e2ea4d53804` (parent
+      `da3bd21660ab27e7a03b7333905067edad4c8793`, tree
+      `eab92ec92dfd1f33c85e6c180f89af0695bf5fa4`): table rendering, short
+      identifier display, and bounded text truncation now live in
+      `cordy-cli/src/output_helpers.rs`; the parent re-exports the helpers so
+      existing command and test call-sites retain their contracts. Scoped
+      rustfmt and `git diff --check` pass; the serial subagent reviewed the
+      exact head and found no compile or behavior blocker. Cargo was not run.
+      Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
