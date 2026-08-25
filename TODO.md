@@ -796,6 +796,16 @@
       `output_dir`, while Upload forwards `path` and `task.as_deref()`.
       `Command::Attachment` routing and lib registration are correct. `git
       diff --check` passes; subagent did not run Cargo or modify files.
+- [x] PR #245 `codex/cord-77-cli-repo-dispatch` is the next bounded child of
+      #244: base branch `codex/cord-76-cli-attachment-dispatch` at
+      `1eb103724231f6ab322941bbf8ae2fdf836d5f9a`, exact head
+      `9a20dc50099e5acfc4dd55a7218393f29dbe3317`, tree
+      `63398a30f9596ce093b904cc3aea0ea15ab64cf0`, candidate
+      `27cc29d37055648c5e2fda1070f892c3d51950e0`. It isolates Repo
+      list/add/remove/checkout routing into `dispatch_repo.rs`, preserving
+      optional checkout refs and environment-only checkout. Scoped rustfmt and
+      `git diff --check` pass; PR #245 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
