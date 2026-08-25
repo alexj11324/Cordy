@@ -1098,7 +1098,7 @@
       flags, stdin confirmation, dispatch routing, and root re-exports remain
       unchanged. Subagent did not run Cargo or modify files; `git diff --check`
       remains clean.
-- [ ] PR #259 `codex/cord-91-cli-repo-schema` is the next bounded child of
+- [x] PR #259 `codex/cord-91-cli-repo-schema` is the next bounded child of
       #258: base branch `codex/cord-90-cli-autopilot-schema` at
       `0b004213e8b8289d03325ba77dea16be32c5b3e8`. Initial exact head
       `29f96c1dffa17d86a73094bd0d184b58c2f508cf` was blocked because two
@@ -1113,7 +1113,11 @@
       paths, output, and root re-exports remain unchanged. Scoped pinned
       rustfmt and `git diff --check` pass; Cargo is delegated. PR #259 is
       Ready (`isDraft=false`), CLEAN/MERGEABLE. Corrected-head exact review is
-      pending; the initial review was not reused.
+      PASS on `be6e14c81d112f9193a68938c6707fd8af9e7620`: both handler
+      signature imports are present; Repo positional/`--url` flags, `rm`
+      alias, output defaults, checkout `--ref`, dispatch, and root re-exports
+      remain unchanged. Subagent did not run Cargo or modify files;
+      `git diff --check` remains clean.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
