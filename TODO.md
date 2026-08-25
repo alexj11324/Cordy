@@ -83,6 +83,15 @@
       parser types to `workspace_command_schema.rs`; execution behavior is unchanged.
       New schema rustfmt and `git diff --check` pass; Cargo/review/gate are delegated
       and have not been run by this thread. PR is Ready (`isDraft=false`).
+- [x] Next structural slice #171, `codex/cord-50-cli-setup-schema`, is based on
+      #170 at `b6e5f690b42c15e3dc8e008b6a2843549eba828e`; exact head
+      `cc7b8d569873a240596976e0ea2f69aff5a921e9`, tree
+      `d705d036d7ce19576495cb41af38850939ee4d11`, candidate
+      `1234944e1f776f2fc8aa39ef06dabc151f7cd335`. It moves only Setup Cloud/self-host
+      parser types and error classification to `setup_command_schema.rs`; setup
+      execution/profile persistence is unchanged. New schema rustfmt and
+      `git diff --check` pass; Cargo/review/gate are delegated and have not been run
+      by this thread. PR is Ready (`isDraft=false`).
 - [x] #170 exact-head subagent review PASS: squad/member/activity clap fields,
       defaults, help text, member type/role semantics, re-exports, handlers,
       dispatch, and tests have no compile/behavior blocker. Cargo remains delegated.
