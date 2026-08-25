@@ -11,7 +11,8 @@ use super::{
     load_autopilot_agent_names, new_api_client, read_setup_confirmation, required_workspace_id,
     resolve_autopilot_agent, resolve_autopilot_id, resolve_autopilot_subscribers,
     resolve_autopilot_trigger_id, resolve_current_workspace_id, resolve_project_reference,
-    value_string, Cli, Environment, OutputFormat, RunOutput,
+    value_string, AutopilotCreateArgs, AutopilotTriggerAddArgs, AutopilotTriggerRotateUrlArgs,
+    AutopilotTriggerUpdateArgs, AutopilotUpdateArgs, Cli, Environment, OutputFormat, RunOutput,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
