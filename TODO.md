@@ -653,6 +653,17 @@
       clears, and no-change rejection remain covered. No compile or behavior
       blocker was found. Subagent did not run Cargo or modify the worktree;
       coordinator `git diff --check` remains clean.
+- [x] PR #207 `codex/cord-50-cli-issue-assign-tests` is the next bounded child
+      of #206: base branch `codex/cord-50-cli-issue-update-tests` at
+      `ddd627fead2d7f577d960fe3dde007fea4be1834`, exact head
+      `ef258281620796f9092b17f3f879eef487dca7e1`, tree
+      `1ed074e88a1f4a7ccf2b918154fee62ff7513fba`, candidate
+      `e3c5107005e3fd9b9c86c90c8c815e75d30eb142`. It extracts the issue-assign
+      parser, target validation, actor lookup/PUT, unassign, and no-start
+      contract tests into `issue_assign_command_tests.rs`; actor resolution,
+      payloads, output, and local validation semantics are unchanged. Scoped
+      rustfmt and `git diff --check` pass; PR #207 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
