@@ -126,7 +126,10 @@ use autopilot_resolver::{
     load_autopilot_agent_names, resolve_autopilot_agent, resolve_autopilot_id,
     resolve_autopilot_subscribers, resolve_autopilot_trigger_id,
 };
-use chat_commands::{run_attachment_download, run_attachment_upload, run_chat_read};
+pub(super) use chat_commands::{
+    run_attachment_download, run_attachment_upload, run_chat_read, AttachmentArgs,
+    AttachmentCommand, ChatArgs, ChatCommand, ChatReadArgs, ChatThreadArgs,
+};
 pub(super) use client_factory::{
     new_api_client, new_unscoped_api_client, new_unscoped_authenticated_api_client,
     normalize_api_base_url, required_workspace_id, resolve_current_workspace_id,
@@ -588,74 +591,6 @@ struct DaemonLaunchArgs {
     auto_update_interval: Option<Duration>,
     #[arg(long = "no-auto-reload")]
     disable_auto_reload: bool,
-}
-
-#[derive(Debug, Args)]
-struct AttachmentArgs {
-    #[command(subcommand)]
-    command: AttachmentCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum AttachmentCommand {
-    #[command(about = "Download an attachment to a local file")]
-    Download {
-        #[arg(value_name = "ATTACHMENT-ID")]
-        attachment_id: String,
-        #[arg(
-            short = 'o',
-            long,
-            default_value = ".",
-            help = "Directory to save the downloaded file"
-        )]
-        output_dir: PathBuf,
-    },
-    #[command(about = "Upload a file to attach to your chat reply")]
-    Upload {
-        #[arg(value_name = "PATH")]
-        path: PathBuf,
-        #[arg(long, help = "Chat task id to attach to (defaults to CORDY_TASK_ID)")]
-        task: Option<String>,
-    },
-}
-
-#[derive(Debug, Args)]
-struct ChatArgs {
-    #[command(subcommand)]
-    command: ChatCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum ChatCommand {
-    #[command(about = "Overview of the channel this conversation is in (messages + thread list)")]
-    History(ChatReadArgs),
-    #[command(about = "Read one thread's messages (the current thread, or a specific id)")]
-    Thread(ChatThreadArgs),
-}
-
-#[derive(Debug, Args)]
-struct ChatReadArgs {
-    #[arg(
-        long,
-        default_value_t = 0,
-        help = "Maximum number of messages to return (the server clamps the range)"
-    )]
-    limit: i64,
-    #[arg(
-        long,
-        help = "Opaque cursor (a next_cursor from a prior page) to read older messages"
-    )]
-    before: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct ChatThreadArgs {
-    #[arg(value_name = "ID")]
-    id: Option<String>,
-    #[command(flatten)]
-    read: ChatReadArgs,
 }
 
 #[derive(Debug, Args)]
