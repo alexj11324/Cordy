@@ -10,7 +10,9 @@ use super::{
     apply_agent_permission_args, copied_agent_max_concurrent_tasks, format_agent_details_table,
     format_agent_list_table, format_table, format_workspace_mcp_servers, http_timeout,
     new_api_client, required_workspace_id, resolve_agent_secret_json, validate_agent_custom_env,
-    value_string, Cli, Environment, OutputFormat, RunOutput, WorkspaceMcpServer,
+    value_string, AgentCopyArgs, AgentCreateArgs, AgentEnvSetArgs, AgentMcpListArgs,
+    AgentMcpMutationArgs, AgentSkillsMutationArgs, AgentUpdateArgs, Cli, Environment, OutputFormat,
+    RunOutput, WorkspaceMcpServer,
 };
 
 pub(super) async fn run_agent_list(
