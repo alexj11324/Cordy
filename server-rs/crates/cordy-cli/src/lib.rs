@@ -196,6 +196,7 @@ mod issue_status_commands;
 mod issue_subscriber_commands;
 mod issue_subscriber_schema;
 mod issue_task_commands;
+mod issue_task_output;
 mod issue_timeline_commands;
 mod issue_timeline_schema;
 mod issue_update_commands;
