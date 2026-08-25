@@ -838,6 +838,14 @@
       unchanged. Scoped rustfmt and `git diff --check` pass; PR #217 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
       delegated.
+- [x] #217 initial exact-head review on `e27e0286fcc1ca11125bc331f55cce4ffd018816`
+      found a real compile blocker: sibling test modules could not see the
+      moved helpers. The delegated minimal fix `f09985a9d7a7f33b589f642371654d3991793581`
+      adds the shared-helper import to all 15 affected modules; its tree is
+      `513a63dbf1abbfe039543215e2dad15e76a35fe`, candidate
+      `efbf7e084ecb85d5db45bea9be54bd5586601689`, and PR #217 remains Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. The old head/review is invalid;
+      new exact-head review and Cargo remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
