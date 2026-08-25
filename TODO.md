@@ -132,6 +132,11 @@
       `disk_usage_command_tests.rs`; production behavior is unchanged. New module
       rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`,
       MERGEABLE/UNSTABLE). Cargo and review remain delegated.
+- [x] #176 exact-head subagent review PASS: `disk_usage_command_tests.rs` accesses
+      the parent crate through `use super::*`; all 8 disk-usage parser/validation/
+      limit/format/profile-root tests and assertions are preserved, with no P0/P1
+      or compile blocker. Subagent did not run Cargo or modify the worktree;
+      coordinator's rustfmt and `git diff --check` pass.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
