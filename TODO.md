@@ -186,6 +186,15 @@
       tests remain intact. No compile or behavior blocker was introduced. Subagent
       did not run Cargo or modify the worktree; coordinator rustfmt and
       `git diff --check` pass.
+- [x] PR #180 `codex/cord-50-cli-agent-tests` is the next bounded child of #179:
+      base branch `codex/cord-50-cli-runtime-tests` at `051dd0bea993ac7343d3e79eba15cfcde8cd9274`,
+      exact head `88b516582fd316e9741005e2a3d848eb636909dc`, tree
+      `c3b8255b562197d527fadf20ae344430588b833b`, candidate
+      `abe611cee2363ace2e8d79aab131606acbea6be5`. It extracts the 19 agent
+      list/get/create/update/lifecycle/avatar/skills/env/MCP/copy contract tests
+      into `agent_command_tests.rs`; production behavior is unchanged. Scoped
+      rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
