@@ -659,6 +659,12 @@
       table output and existing mutation handlers. Scoped rustfmt and
       `git diff --check` pass; PR #236 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #236 exact-head subagent review PASS on
+      `dd6efc516082c72c4a062cac52abcc5f67edc388`: `dispatch_config.rs`
+      covers the default config route, `config show`, and `config set`; the
+      default output remains `OutputFormat::Table`. Dispatcher delegation and
+      lib wiring are correct with unchanged handler signatures. `git diff
+      --check` passes; subagent did not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
