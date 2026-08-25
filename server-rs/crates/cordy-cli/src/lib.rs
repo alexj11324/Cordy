@@ -187,6 +187,7 @@ mod path_safety;
 mod project_command_schema;
 mod project_commands;
 mod project_resource_commands;
+mod property_command_schema;
 mod property_commands;
 mod repo_commands;
 mod root_command_schema;
@@ -418,8 +419,10 @@ use project_resource_commands::{
 pub(super) use property_commands::{
     format_property_definitions, parse_property_options, resolve_property, run_property_archive,
     run_property_create, run_property_get, run_property_list, run_property_update,
-    PropertyArchiveArgs, PropertyArgs, PropertyCommand, PropertyCreateArgs, PropertyDefinition,
-    PropertyOption, PropertyUpdateArgs,
+    PropertyDefinition, PropertyOption,
+};
+pub(super) use property_command_schema::{
+    PropertyArchiveArgs, PropertyArgs, PropertyCommand, PropertyCreateArgs, PropertyUpdateArgs,
 };
 pub(super) use issue_property_commands::{
     build_issue_property_rows, format_issue_property_rows, run_issue_property_list,
