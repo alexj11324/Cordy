@@ -1279,7 +1279,7 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
-- [ ] PR #287 `codex/cord-119-cli-attachment-upload` is the next bounded child of
+- [x] PR #287 `codex/cord-119-cli-attachment-upload` is the completed bounded child of
       #286: base branch `codex/cord-118-cli-chat-read` at
       `de1a3bb61485473e1abee044a6474cbf677508ee`, exact head
       `994b7e0e6066ccb1437197c786ff2112db609cb1`, tree
@@ -1290,7 +1290,8 @@
       timeout, API payload, output, dispatch, and tests remain unchanged.
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated.
       PR #287 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head
-      subagent review is pending; no Cargo was run.
+      subagent review PASS; no Cargo was run and no production behavior
+      changed.
 - [x] PR #286 `codex/cord-118-cli-chat-read` is the completed bounded child of
       #285: base branch `codex/cord-117-cli-repo-checkout` at
       `75f813596c80292ee04fbd19866ec94622c78657`, exact head
