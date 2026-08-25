@@ -45,6 +45,7 @@ mod issue_timeline_commands;
 mod issue_update_commands;
 mod issue_usage_commands;
 mod issue_value_helpers;
+mod json_helpers;
 mod label_commands;
 mod label_reference;
 mod login;
@@ -180,6 +181,7 @@ use issue_usage_commands::run_issue_usage;
 use issue_value_helpers::{
     format_metadata_value, issue_labels, validate_issue_priority, validate_issue_status,
 };
+pub(super) use json_helpers::value_string;
 use label_commands::{
     format_label_result, format_label_table, format_workspace_label_table, run_label_create,
     run_label_delete, run_label_get, run_label_list, run_label_update,
@@ -5100,14 +5102,6 @@ struct IssueListResponse {
     issues: Value,
     #[serde(default)]
     total: Value,
-}
-
-fn value_string(object: &Value, key: &str) -> String {
-    match object.get(key) {
-        None | Some(Value::Null) => String::new(),
-        Some(Value::String(value)) => value.clone(),
-        Some(value) => value.to_string(),
-    }
 }
 
 #[cfg(test)]
