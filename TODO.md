@@ -1279,6 +1279,18 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
+- [ ] PR #290 `codex/cord-122-cli-runtime-mutation` is the next bounded child of
+      #289: base branch `codex/cord-121-cli-runtime-read` at
+      `2ea08c33df3e51d9c0bf7f6ae631685ce47dc138`, exact head
+      `2a97456da553b71d40ea2f61e5fb24806fc0dd15`, tree
+      `143dd82e7a5cd16ac249b811ada9b8bec0a63863`, candidate
+      `77eb27f0ff343431e5b73f439bafed3aa2b08a81` (parents base + head).
+      It isolates runtime rename/delete handlers in
+      `runtime_mutation_commands.rs`; payloads, conflict/cascade handling,
+      output, dispatch, and errors remain unchanged. Scoped pinned rustfmt and
+      `git diff --check` pass; Cargo is delegated. PR #290 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review is
+      pending; no Cargo was run.
 - [x] PR #289 `codex/cord-121-cli-runtime-read` is the completed bounded child of
       #288: base branch `codex/cord-120-cli-attachment-download` at
       `eca93e315416d17ef43b7bb6310dbcfe59e6ac5f`, exact head
