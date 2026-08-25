@@ -1279,6 +1279,18 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
+- [ ] PR #282 `codex/cord-114-cli-autopilot-webhook` is the next bounded child of
+      #281: base branch `codex/cord-113-cli-autopilot-trigger-mutation` at
+      `881069628d76a2c8238b91324678cb8edc6b0e56`, exact head
+      `c6ac25e50eb1ddf390e667185bd353ad225a70bc`, tree
+      `0fee6adfd409a1a30e3abc28a0b9c412955b1496`, candidate
+      `2ef23b03cce89919bdd4082d49e99ccc629e212b` (parents base + head).
+      It isolates webhook URL rotation and confirmation in
+      `autopilot_trigger_webhook_commands.rs` and removes the empty legacy
+      module; confirmation, resolver, API, output, dispatch, and tests remain
+      unchanged. Scoped pinned rustfmt and `git diff --check` pass; Cargo is
+      delegated. PR #282 is Ready (`isDraft=false`), CLEAN/MERGEABLE.
+      Exact-head subagent review is pending; no Cargo was run.
 - [x] PR #281 `codex/cord-113-cli-autopilot-trigger-mutation` is the completed bounded child of
       #280: base branch `codex/cord-112-cli-autopilot-trigger` at
       `1aa47b0b1d5b446f38115945c9c5ba841d7c8670`, exact head
