@@ -95,6 +95,14 @@
       and root Command registry to `cli_command_schema.rs`; dispatch and subcommand
       behavior are unchanged. New schema rustfmt and `git diff --check` pass; Cargo,
       review, and gate are delegated and have not been run by this thread. PR is Ready.
+- [x] PR #174 `codex/cord-50-cli-root-tests` is a bounded child of #173: base
+      `98df028c30e763b323dcb7b6875cc93fc3ee9dcc`, exact head
+      `315a3d798a9767f9dfe98abf4781a5e4ebfed33c`, tree
+      `386c3d54cfff33ce86de798f59bbcf86ba5ec9b3`, candidate
+      `a1fa6d10310dab0ce359efc40406b7959fe67466`. It extracts only version/update
+      contract tests into `root_command_tests.rs`; production behavior is unchanged.
+      New test module rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`,
+      CLEAN/MERGEABLE). Cargo and review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
