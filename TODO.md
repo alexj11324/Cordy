@@ -233,6 +233,16 @@
       are valid. No missing/duplicated tests or compile/behavior blocker was found.
       Subagent did not run Cargo or modify the worktree; coordinator scoped
       rustfmt and `git diff --check` pass.
+- [x] PR #183 `codex/cord-50-cli-workspace-tests` is the next bounded child of #182:
+      base branch `codex/cord-50-cli-autopilot-tests` at
+      `70c07b6f7539d7259a1ccfdf415010d4b28917f6`, exact head
+      `23721319518ce8b0c170b3626718f136277237f1`, tree
+      `79d149b87515d0730a563f663a332565d13824af`, candidate
+      `5f80e6936587dccf23095a8b9a48a102ddef5a5b`. It extracts the 18 workspace,
+      member, and MCP list/get/create/update/switch contract tests into
+      `workspace_command_tests.rs`; production behavior is unchanged. Scoped
+      rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
