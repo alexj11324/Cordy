@@ -1,3 +1,8 @@
+//! Input parsing for issue metadata commands.
+//!
+//! HTTP read and mutation workflows live in their focused command modules;
+//! this helper owns only the Go-compatible scalar type inference and errors.
+
 use anyhow::{bail, Result};
 use serde_json::Value;
 
