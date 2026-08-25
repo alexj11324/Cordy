@@ -1247,6 +1247,18 @@
       pass (the subagent environment lacked a rustfmt executable); Cargo was
       not run. Pro owns push/Ready PR, gate, and merge.
 
+- [ ] CLI issue-children structural refactor is committed at
+      `bf1aa6b5652948d3475dc397203672c425c4d830` (parent
+      `b1a8a1e7e63c9fc8fb3f1a36b8d5ed9618f86ccf`, tree
+      `ed49d44336ef39770ec67af8da37ff05c4ffc8eb`): child issue fetch,
+      stage sorting/grouping, terminal counts, JSON envelope, and table
+      rendering now live in `cordy-cli/src/issue_children_commands.rs`;
+      parent dispatch and child formatter/grouping tests retain their
+      contracts. The serial subagent reviewed the exact head and found no
+      issue. Scoped rustfmt and `git diff --check` pass (the subagent
+      environment lacked a rustfmt executable); Cargo was not run. Pro owns
+      push/Ready PR, gate, and merge.
+
 ## Phase 4 — S8 route and API parity
 
 - [ ] Audit #66→#87 bottom-up against the live integration tree.
