@@ -1279,7 +1279,7 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
-- [ ] PR #292 `codex/cord-124-cli-runtime-profile-mutation` is the next bounded child of
+- [x] PR #292 `codex/cord-124-cli-runtime-profile-mutation` is the completed bounded child of
       #291: base branch `codex/cord-123-cli-runtime-profile-read` at
       `f4b90df30f7690e889f822b28a793b0b017d3fbf`, exact head
       `7718af948bf18f75b62844f6088c9722a9039fe2`, tree
@@ -1290,7 +1290,9 @@
       paths, conflict handling, output, and local path policy remain intact.
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated.
       PR #292 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head
-      subagent review is pending; no Cargo was run.
+      subagent review PASS: create/update/delete validation, payloads, paths,
+      conflict handling, output, and local path wiring are unchanged; no Cargo
+      was run.
 - [x] PR #291 `codex/cord-123-cli-runtime-profile-read` is the completed bounded child of
       #290: base branch `codex/cord-122-cli-runtime-mutation` at
       `2a97456da553b71d40ea2f61e5fb24806fc0dd15`, exact head
