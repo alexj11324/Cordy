@@ -459,6 +459,18 @@
       imports; existing call sites remain valid. No compile or behavior
       blocker was found. Subagent did not run Cargo or modify the worktree;
       coordinator `git diff --check` remains clean.
+- [x] PR #226 `codex/cord-58-cli-config-profile` is the next bounded child of
+      #225: base branch `codex/cord-57-cli-config-environment` at
+      `4e2ba606fc8b528a6b0c5ad1f56b3995a0d481d5`, exact head
+      `e4f1c6806107df23372b1e2423fc8ad11cb04fbe`, tree
+      `964c0116f73d7dca04f5cc6261cb5a2c6a9eb3f2`, candidate
+      `9a453359fe1f13f60e6a3a08794d8514b0be3e3e`. It moves the persisted
+      profile schema and flag/environment/profile precedence resolver into
+      `config_profile.rs`, restores the profile serde/default derive, and
+      preserves the `config::` public API through explicit re-exports. Scoped
+      rustfmt with `skip_children` and `git diff --check` pass; PR #226 is
+      Ready (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review
+      remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
