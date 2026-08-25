@@ -93,6 +93,25 @@ pub struct HttpCloudRuntimeProxy {
     timeout: Duration,
 }
 
+/// Fleet URL used by Go's `cloudRuntimeFleetURLFromEnv`: prefer the cloud
+/// variable, then the legacy `CORDY_FLEET_URL` fallback.
+pub(crate) fn fleet_base_url_from_env() -> String {
+    fleet_base_url(
+        std::env::var("CORDY_CLOUD_FLEET_URL").ok().as_deref(),
+        std::env::var("CORDY_FLEET_URL").ok().as_deref(),
+    )
+}
+
+pub(crate) fn fleet_base_url(cloud: Option<&str>, legacy: Option<&str>) -> String {
+    [cloud, legacy]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .find(|value| !value.is_empty())
+        .unwrap_or_default()
+        .to_string()
+}
+
 impl HttpCloudRuntimeProxy {
     pub fn new(base_url: impl Into<String>, client: reqwest::Client) -> Self {
         Self {
@@ -103,10 +122,7 @@ impl HttpCloudRuntimeProxy {
     }
 
     pub fn from_env() -> Self {
-        Self::new(
-            std::env::var("CORDY_CLOUD_FLEET_URL").unwrap_or_default(),
-            reqwest::Client::new(),
-        )
+        Self::new(fleet_base_url_from_env(), reqwest::Client::new())
     }
 
     #[cfg(test)]
@@ -632,6 +648,33 @@ mod tests {
                 .unwrap();
             assert_eq!(result.status(), status);
         }
+    }
+
+    #[test]
+    fn fleet_url_prefers_cloud_variable_then_legacy_fallback() {
+        assert_eq!(
+            fleet_base_url(
+                Some(" https://cloud.example/ "),
+                Some("https://legacy.example/")
+            ),
+            "https://cloud.example/"
+        );
+        assert_eq!(
+            fleet_base_url(Some("  "), Some("https://legacy.example/")),
+            "https://legacy.example/"
+        );
+        assert_eq!(
+            fleet_base_url(None, Some("https://legacy.example/")),
+            "https://legacy.example/"
+        );
+        assert_eq!(fleet_base_url(None, None), "");
+    }
+
+    #[test]
+    fn loaded_config_fleet_url_is_stored_for_the_http_proxy() {
+        let state = test_state().with_cloud_pat_fleet_url(Some(" https://loaded.example/fleet "));
+        assert_eq!(state.cloud_runtime_base_url, "https://loaded.example/fleet");
+        assert!(state.cloud_pat_verifier.is_some());
     }
 
     #[test]

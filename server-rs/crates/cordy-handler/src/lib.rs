@@ -251,8 +251,17 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         WorkspaceGuardState::member_only(state.pool.clone()),
         issue::require_issue_workspace,
     ));
-    let cloud_runtime_proxy: Arc<dyn cloud_runtime::CloudRuntimeProxy> =
-        Arc::new(cloud_runtime::HttpCloudRuntimeProxy::from_env());
+    let cloud_runtime_proxy: Arc<dyn cloud_runtime::CloudRuntimeProxy> = {
+        let fleet_url = if state.cloud_runtime_base_url.is_empty() {
+            cloud_runtime::fleet_base_url_from_env()
+        } else {
+            state.cloud_runtime_base_url.clone()
+        };
+        Arc::new(cloud_runtime::HttpCloudRuntimeProxy::new(
+            fleet_url,
+            reqwest::Client::new(),
+        ))
+    };
     let composio_state = composio::ComposioState::from_handler(&state);
     let authenticated = workspace::authenticated_router()
         .merge(

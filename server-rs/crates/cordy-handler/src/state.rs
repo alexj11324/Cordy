@@ -368,6 +368,9 @@ pub struct HandlerState {
     pub daemon_token_cache: DaemonTokenCache,
     pub membership_cache: MembershipCache,
     pub cloud_pat_verifier: Option<cordy_auth::cloud_pat::CloudPatVerifier>,
+    /// Loaded Fleet base URL used by the cloud-runtime HTTP proxy. Empty means
+    /// fall back to `CORDY_CLOUD_FLEET_URL` / `CORDY_FLEET_URL` at router build.
+    pub cloud_runtime_base_url: String,
     /// Realtime WS hub (cordy-realtime). `None` only in tests.
     pub hub: Option<Arc<Hub>>,
     /// Event bus (Go h.Bus) for workspace-scoped WS fanout.
@@ -575,6 +578,7 @@ impl HandlerState {
             daemon_token_cache: DaemonTokenCache::disabled(),
             membership_cache: MembershipCache::disabled(),
             cloud_pat_verifier: None,
+            cloud_runtime_base_url: String::new(),
             hub,
             bus,
             channel_tasks: Arc::new(cordy_channel::RuntimeTasks::new()),
@@ -902,7 +906,15 @@ impl HandlerState {
     }
 
     pub fn with_cloud_pat_fleet_url(mut self, fleet_url: Option<&str>) -> Self {
-        self.cloud_pat_verifier = fleet_url.and_then(cordy_auth::cloud_pat::CloudPatVerifier::new);
+        let url = fleet_url
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or_default()
+            .to_string();
+        self.cloud_pat_verifier = (!url.is_empty())
+            .then(|| cordy_auth::cloud_pat::CloudPatVerifier::new(&url))
+            .flatten();
+        self.cloud_runtime_base_url = url;
         self
     }
 
