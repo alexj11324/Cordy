@@ -1,33 +1,17 @@
-use anyhow::{bail, Context, Result};
+//! Issue metadata mutation commands.
+//!
+//! Value parsing remains in the input helper; this module owns set/delete
+//! requests and their post-mutation output/fallback behavior.
+
+use anyhow::{Context, Result};
 use serde_json::Value;
 
+use super::issue_metadata_input::parse_metadata_value;
 use super::issue_metadata_output::{format_metadata_output, metadata_object};
 use super::{
     new_api_client, resolve_issue_ref, Cli, Environment, IssueMetadataDeleteArgs,
     IssueMetadataSetArgs, OutputFormat, RunOutput,
 };
-
-pub(super) fn parse_metadata_value(raw: &str, forced_type: Option<&str>) -> Result<Value> {
-    match forced_type.unwrap_or_default() {
-        "string" => Ok(Value::String(raw.into())),
-        "number" => match serde_json::from_str::<Value>(raw) {
-            Ok(value @ Value::Number(_)) => Ok(value),
-            _ => bail!("value {raw:?} is not a valid number"),
-        },
-        "bool" => match raw {
-            "true" => Ok(Value::Bool(true)),
-            "false" => Ok(Value::Bool(false)),
-            _ => bail!("value {raw:?} is not a valid bool (expected true or false)"),
-        },
-        "" => match serde_json::from_str::<Value>(raw) {
-            Ok(value @ (Value::String(_) | Value::Bool(_) | Value::Number(_))) => Ok(value),
-            _ => Ok(Value::String(raw.into())),
-        },
-        value_type => {
-            bail!("unknown --type {value_type:?} (expected string, number, or bool)")
-        }
-    }
-}
 
 pub(super) async fn run_issue_metadata_set(
     cli: &Cli,
