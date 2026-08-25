@@ -1,23 +1,25 @@
 name: Exact-head review remediation patch runner
 
 on:
-  pull_request_target:
-    branches: [main]
-    types: [synchronize, reopened, ready_for_review]
+  issue_comment:
+    types: [created]
 
 permissions:
   contents: write
+  pull-requests: read
+  issues: read
 
 concurrency:
-  group: exact-review-remediation-${{ github.event.pull_request.number }}
+  group: exact-review-remediation-${{ github.event.issue.number }}
   cancel-in-progress: false
 
 jobs:
   patch-and-validate:
     if: >-
-      github.event.pull_request.number == 135 &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.event.pull_request.head.ref == 'remediation/review-debt-20260824'
+      github.event.issue.number == 135 &&
+      github.event.issue.pull_request != null &&
+      github.event.comment.user.login == github.repository_owner &&
+      github.event.comment.body == '/run-review-remediation'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     services:
@@ -37,10 +39,23 @@ jobs:
     env:
       DATABASE_URL: postgres://cordy:cordy@localhost:5432/cordy?sslmode=disable
       CARGO_INCREMENTAL: '0'
+      GH_TOKEN: ${{ github.token }}
     steps:
+      - name: Resolve and verify PR head
+        id: pr
+        shell: bash
+        run: |
+          set -euo pipefail
+          head_sha="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/135" --jq '.head.sha')"
+          head_ref="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/135" --jq '.head.ref')"
+          head_repo="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/135" --jq '.head.repo.full_name')"
+          test "$head_ref" = 'remediation/review-debt-20260824'
+          test "$head_repo" = "$GITHUB_REPOSITORY"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ steps.pr.outputs.head_sha }}
           fetch-depth: 0
 
       - name: Verify exact branch head
@@ -48,8 +63,8 @@ jobs:
         run: |
           set -euo pipefail
           git fetch origin remediation/review-debt-20260824
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha }}"
-          test "$(git rev-parse origin/remediation/review-debt-20260824)" = "${{ github.event.pull_request.head.sha }}"
+          test "$(git rev-parse HEAD)" = "${{ steps.pr.outputs.head_sha }}"
+          test "$(git rev-parse origin/remediation/review-debt-20260824)" = "${{ steps.pr.outputs.head_sha }}"
           if git log -1 --pretty=%B | grep -q '^\[patch-runner\]'; then
             echo skip=true >> "$GITHUB_ENV"
           fi
