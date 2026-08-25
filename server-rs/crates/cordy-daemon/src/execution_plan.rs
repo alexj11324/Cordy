@@ -417,11 +417,18 @@ impl ProviderExecutionPlan {
             "OPENCLAW_CONFIG_PATH",
             &environment.openclaw_config_path,
         );
-        insert_nonempty(
-            &mut values,
-            "OPENCLAW_INCLUDE_ROOTS",
-            &prepared.openclaw_include_roots,
-        );
+        if !prepared.openclaw_include_roots.trim().is_empty() {
+            let mut roots = vec![std::path::PathBuf::from(
+                prepared.openclaw_include_roots.as_str(),
+            )];
+            if let Some(existing) = values.get("OPENCLAW_INCLUDE_ROOTS") {
+                roots.extend(std::env::split_paths(existing));
+            }
+            let joined = std::env::join_paths(roots)
+                .map(|joined| joined.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| prepared.openclaw_include_roots.clone());
+            values.insert("OPENCLAW_INCLUDE_ROOTS".to_string(), joined);
+        }
         // The prepared overlay is authoritative over custom_env.
         insert_nonempty(&mut values, "HERMES_HOME", &environment.hermes_home);
 
