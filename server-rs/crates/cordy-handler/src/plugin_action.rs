@@ -649,8 +649,8 @@ async fn create_comment(
     state.bus.publish(&cordy_events::Event {
         event_type: cordy_protocol::EVENT_COMMENT_CREATED.to_string(),
         workspace_id: caller.workspace_id.to_string(),
-        actor_type: author_type.to_string(),
-        actor_id: author_id.to_string(),
+        actor_type: "plugin".to_string(),
+        actor_id: caller.installation.id.to_string(),
         payload: json!({
             "comment": event_comment,
             "issue_title": issue.title,
