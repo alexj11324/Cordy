@@ -1424,7 +1424,7 @@
       rustfmt and `git diff --check` pass; Cargo is delegated. PR #310 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review PASS on
       `5563b95f`; no Cargo was run.
-- [ ] PR #311 `codex/cord-143-cli-issue-description` is the next bounded child of
+- [x] PR #311 `codex/cord-143-cli-issue-description` is the completed bounded child of
       #310: base branch `codex/cord-142-cli-issue-markdown-safety` at
       `5563b95faa406b81335960778e45e50e1470a8c1`, exact head
       `068dea7373f28d508188d1f6f0ed2d090a6f4f0f`, tree
@@ -1435,7 +1435,7 @@
       backslash unescaping, empty-content errors, and command callers. Scoped
       pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR #311
       is Ready (`isDraft=false`), MERGEABLE (checks pending). Exact-head
-      subagent review is pending; no Cargo was run.
+      subagent review PASS on `068dea73`; no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
