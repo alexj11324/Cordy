@@ -976,6 +976,13 @@
       error text, PUT body, and output semantics remain unchanged. Scoped
       rustfmt/check and `git diff --check` pass; Cargo is delegated. PR #253
       is Ready (`isDraft=false`), CLEAN/MERGEABLE; exact-head review pending.
+- [x] #253 exact-head subagent review PASS on
+      `2f0010dcf99fb3f5c5d04394f09ed50e35d6bb86`: status constants and
+      validation error semantics are unchanged; workspace/project resolution,
+      PUT path/body, JSON/table output, and `dispatch_project` wiring remain
+      equivalent. Existing status tests still reach the helpers through the
+      parent re-exports. Subagent did not run Cargo or modify files; scoped
+      rustfmt/check and `git diff --check` remain clean.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
