@@ -219,6 +219,7 @@ mod skill_command_schema;
 mod skill_files_commands;
 mod squad_command_schema;
 mod squad_commands;
+mod squad_read_commands;
 mod task_reference;
 mod text_input;
 mod update_commands;
@@ -521,10 +522,13 @@ pub(super) use squad_command_schema::{
     SquadUpdateArgs,
 };
 use squad_commands::{
-    format_squad_details_table, format_squad_list_table, render_squad_member_output,
-    run_squad_activity, run_squad_create, run_squad_delete, run_squad_get, run_squad_list,
+    render_squad_member_output, run_squad_activity, run_squad_create, run_squad_delete,
     run_squad_member_add, run_squad_member_list, run_squad_member_remove,
-    run_squad_member_set_role, run_squad_update, squad_member_count_display,
+    run_squad_member_set_role, run_squad_update,
+};
+use squad_read_commands::{
+    format_squad_details_table, format_squad_list_table, run_squad_get, run_squad_list,
+    squad_member_count_display,
 };
 use task_reference::resolve_task_run_id;
 pub(super) use text_input::{trim_one_trailing_newline, unescape_backslash_escapes};
