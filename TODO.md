@@ -847,6 +847,16 @@
       retain async behavior. `Command::Daemon` routing and lib registration
       are correct. `git diff --check` passes; subagent did not run Cargo or
       modify files.
+- [x] PR #248 `codex/cord-80-cli-setup-dispatch` is the next bounded child of
+      #247: base branch `codex/cord-79-cli-daemon-dispatch` at
+      `5e6d4373e32fdd8cecf1c5446ecf4cf7e2586ae0`, exact head
+      `1c883c8d74e143680ac08dd61d4aec05c423f215`, tree
+      `6df7ca43ee921caf8291d11e22364d687e79bfa4`, candidate
+      `f92441183ab00adc7c53ca9805103b8099c6183c`. It isolates Setup routing
+      into `dispatch_setup.rs`, preserving profile arguments and shared stdin
+      forwarding. Scoped rustfmt and `git diff --check` pass; PR #248 is
+      Ready (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review
+      remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
