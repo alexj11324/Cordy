@@ -319,13 +319,14 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                     command,
                     env: BTreeMap::new(),
                 })
-                .discover_models_for_runtime(
+                .discover_models_for_runtime_result(
                     &runtime_scope,
                     &self.model_cache,
                     ctx.token().clone(),
                     ACP_MODEL_DISCOVERY_TIMEOUT,
                 )
-                .await,
+                .await
+                .map_err(|error| anyhow::anyhow!(error))?,
                 "kiro" => KiroBackend::new(KiroConfig {
                     command,
                     env: BTreeMap::new(),

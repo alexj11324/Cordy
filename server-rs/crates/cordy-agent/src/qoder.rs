@@ -657,6 +657,25 @@ impl KimiBackend {
         )
         .await
     }
+
+    /// Preserves transient Kimi discovery failures for callers that need to
+    /// distinguish them from a successful empty catalog.
+    pub async fn discover_models_for_runtime_result(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Result<Catalog, String> {
+        discover_kimi_models_with_scope_result(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await
+    }
 }
 
 #[async_trait]
@@ -823,6 +842,14 @@ fn normalize_grok_providers(models: &mut [Model]) {
     for model in models {
         if model.provider.is_empty() || model.provider == "grok" {
             model.provider = "xai".to_string();
+        }
+    }
+}
+
+fn normalize_kimi_providers(models: &mut [Model]) {
+    for model in models {
+        if model.id.contains('/') {
+            model.provider.clear();
         }
     }
 }
@@ -1161,6 +1188,16 @@ async fn discover_acp_session(
     cancellation: CancellationToken,
     timeout: Duration,
 ) -> Option<(Value, Value)> {
+    discover_acp_session_result(config, cancellation, timeout)
+        .await
+        .ok()
+}
+
+async fn discover_acp_session_result(
+    config: &QoderConfig,
+    cancellation: CancellationToken,
+    timeout: Duration,
+) -> Result<(Value, Value), String> {
     let command_path = if config.command.path.is_empty() {
         config.default_command.as_str()
     } else {
@@ -1178,7 +1215,9 @@ async fn discover_acp_session(
             Ok(directory) => Some(directory),
             Err(error) => {
                 tracing::debug!(provider = "reasonix", error = %error, "ACP model discovery state isolation failed");
-                return None;
+                return Err(format!(
+                    "ACP model discovery state isolation failed: {error}"
+                ));
             }
         }
     } else {
@@ -1202,16 +1241,18 @@ async fn discover_acp_session(
         Ok(tree) => tree,
         Err(error) => {
             tracing::debug!(provider = %config.provider, error = %error, "ACP model discovery process failed to start");
-            return None;
+            return Err(format!(
+                "ACP model discovery process failed to start: {error}"
+            ));
         }
     };
     let Some(stdin) = tree.child_mut().stdin.take() else {
         let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-        return None;
+        return Err("ACP model discovery process has no stdin".to_string());
     };
     let Some(stdout) = tree.child_mut().stdout.take() else {
         let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-        return None;
+        return Err("ACP model discovery process has no stdout".to_string());
     };
     let provider = config.provider.clone();
     let explicit_authentication = config.explicit_authentication;
@@ -1261,9 +1302,13 @@ async fn discover_acp_session(
         timeout
     };
     let result = tokio::select! {
-        result = &mut handshake => result.ok().and_then(Result::ok),
-        () = cancellation.cancelled() => None,
-        () = tokio::time::sleep(timeout) => None,
+        result = &mut handshake => result
+            .map_err(|error| format!("ACP model discovery task failed: {error}"))
+            .and_then(|result| result.map_err(|error| error.to_string())),
+        () = cancellation.cancelled() => Err("ACP model discovery cancelled".to_string()),
+        () = tokio::time::sleep(timeout) => {
+            Err(format!("ACP model discovery timed out after {timeout:?}"))
+        },
     };
     let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
     if !handshake.is_finished() {
@@ -1288,27 +1333,42 @@ async fn discover_kimi_models_with_scope(
     cancellation: CancellationToken,
     timeout: Duration,
 ) -> Catalog {
+    discover_kimi_models_with_scope_result(config, runtime_scope, cache, cancellation, timeout)
+        .await
+        .unwrap_or_else(|error| {
+            tracing::debug!(provider = "kimi", error = %error, "Kimi model discovery failed");
+            Catalog::default()
+        })
+}
+
+async fn discover_kimi_models_with_scope_result(
+    config: &QoderConfig,
+    runtime_scope: &str,
+    cache: &CatalogCache,
+    cancellation: CancellationToken,
+    timeout: Duration,
+) -> Result<Catalog, String> {
     let scope = if runtime_scope.trim().is_empty() {
         "kimi"
     } else {
         runtime_scope
     };
     let Some(key) = ModelDiscoveryCacheKey::new(scope, &config.command) else {
-        return Catalog::default();
+        return Err("Kimi model discovery scope is invalid".to_string());
     };
     if let Some(catalog) = cache.get(&key) {
-        return catalog;
+        return Ok(catalog);
     }
-    let Some((initialize, session)) =
-        discover_acp_session(config, cancellation.clone(), timeout).await
-    else {
-        return Catalog::default();
-    };
+    let (initialize, session) = discover_acp_session_result(config, cancellation.clone(), timeout)
+        .await
+        .map_err(|error| format!("Kimi model discovery failed: {error}"))?;
     if cancellation.is_cancelled() {
-        return Catalog::default();
+        return Err("Kimi model discovery cancelled".to_string());
     }
+    let mut models = parse_acp_session_models(&session, "kimi");
+    normalize_kimi_providers(&mut models);
     let mut catalog = Catalog {
-        models: parse_acp_session_models(&session, "kimi"),
+        models,
         fallback: false,
     };
     let version = initialize
@@ -1326,7 +1386,7 @@ async fn discover_kimi_models_with_scope(
                 }
             }
         } else if cancellation.is_cancelled() {
-            return Catalog::default();
+            return Err("Kimi model discovery cancelled".to_string());
         } else {
             tracing::debug!(
                 provider = "kimi",
@@ -1336,10 +1396,10 @@ async fn discover_kimi_models_with_scope(
         }
     }
     if cancellation.is_cancelled() {
-        return Catalog::default();
+        return Err("Kimi model discovery cancelled".to_string());
     }
     let _ = cache.insert(key, catalog.clone());
-    catalog
+    Ok(catalog)
 }
 
 async fn discover_kimi_thinking(
@@ -4194,6 +4254,31 @@ mod tests {
     }
 
     #[test]
+    fn kimi_keeps_slash_form_models_ungrouped() {
+        let mut models = vec![
+            Model {
+                id: "kimi-code/k3".to_string(),
+                provider: "kimi-code".to_string(),
+                ..Model::default()
+            },
+            Model {
+                id: "kimi-code/plain".to_string(),
+                provider: "kimi-code".to_string(),
+                ..Model::default()
+            },
+            Model {
+                id: "kimi:k2".to_string(),
+                provider: "kimi".to_string(),
+                ..Model::default()
+            },
+        ];
+        normalize_kimi_providers(&mut models);
+        assert!(models[0].provider.is_empty());
+        assert!(models[1].provider.is_empty());
+        assert_eq!(models[2].provider, "kimi");
+    }
+
+    #[test]
     fn provider_error_tracker_does_not_join_unrelated_lines() {
         let tracker = ProviderErrorTracker::default();
         tracker.push(b"[ERROR] ordinary validation warning\n");
@@ -5093,6 +5178,7 @@ done
             )
             .await;
         assert_eq!(catalog.models.len(), 2);
+        assert!(catalog.models.iter().all(|model| model.provider.is_empty()));
         assert!(catalog.models[0].default);
         let thinking = catalog.models[0]
             .thinking
@@ -5108,6 +5194,55 @@ done
             ["low", "high", "max"]
         );
         assert!(catalog.models[1].thinking.is_none());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kimi_discovery_preserves_acp_failures_as_errors() {
+        let (_directory, _requests, backend) = fake_kimi_backend(
+            r#"#!/bin/sh
+exit 42
+"#,
+        );
+        let error = backend
+            .discover_models_for_runtime_result(
+                "kimi\0workspace=test\0runtime=test\0profile=",
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await
+            .err()
+            .unwrap_or_else(|| panic!("failed Kimi discovery must return an error"));
+        assert!(error.contains("Kimi model discovery failed"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kimi_discovery_keeps_successful_empty_catalog_as_success() {
+        let (_directory, _requests, backend) = fake_kimi_backend(
+            r#"#!/bin/sh
+test "$1" = acp || exit 20
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"empty"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let catalog = backend
+            .discover_models_for_runtime_result(
+                "kimi\0workspace=test\0runtime=test\0profile=empty",
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("empty Kimi catalog should succeed: {error}"));
+        assert!(catalog.models.is_empty());
+        assert!(!catalog.fallback);
     }
 
     #[cfg(unix)]
