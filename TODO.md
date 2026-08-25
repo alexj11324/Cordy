@@ -810,6 +810,17 @@
       count, and table output behavior remain covered. No compile or behavior
       blocker was found. Subagent did not run Cargo or modify the worktree;
       coordinator `git diff --check` remains clean.
+- [x] PR #216 `codex/cord-50-cli-issue-rerun-tests` is the next bounded child
+      of #215: base branch `codex/cord-50-cli-issue-usage-tests` at
+      `9945f0ea4da542e5a58f8562b30da2576c620754`, exact head
+      `7db7da3ed8517ad4683ff981f071457a5d829b41`, tree
+      `b2cb1e5b426d76fcda70cc08b2447c7791e4c1ce`, candidate
+      `495245d05c7ca27ed9c456e484c7a9dde09e633c`. It extracts the issue-rerun
+      fresh-task POST and agent-name output contract test into
+      `issue_rerun_command_tests.rs`; empty-body payload, agent lookup, and
+      re-enqueued output are unchanged. Scoped rustfmt and `git diff --check`
+      pass; PR #216 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Cargo and
+      exact-head review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
