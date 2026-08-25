@@ -301,6 +301,17 @@
       visibility plus module boundaries are valid. No additional compile or
       behavior blocker was found. Subagent did not run Cargo or modify the
       worktree; coordinator `git diff --check` remains clean.
+- [x] PR #187 `codex/cord-50-cli-issue-subscriber-tests` is the next bounded child
+      of #186: base branch `codex/cord-50-cli-issue-search-tests` at
+      `7efffb03c1887042b4ae753f1331c7361f38a0f8`, exact head
+      `72765119264f59ef5a3e7a5eff6a05245da8ee69`, tree
+      `4015a2d180b4d545333e21f010ecabf89a222366`, candidate
+      `234aeebad7ace5106a0cfdbf654fe962b45e930d`. It extracts the three issue-
+      subscriber parser, list, and mutation contract tests into
+      `issue_subscriber_command_tests.rs`; caller defaults, member resolution,
+      payloads, and table/JSON output are unchanged. Scoped rustfmt and
+      `git diff --check` pass; PR #187 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
