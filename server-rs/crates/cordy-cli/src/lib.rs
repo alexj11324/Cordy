@@ -218,6 +218,7 @@ mod project_mutation_commands;
 mod project_resource_commands;
 mod project_resource_input;
 mod project_resource_support;
+mod project_reference_resolver;
 mod project_status_commands;
 mod property_command_schema;
 mod property_commands;
@@ -371,10 +372,10 @@ pub(super) use issue_activity_schema::{
 };
 use issue_actor_output::{format_issue_list_table, load_issue_actor_names, IssueActorNames};
 use issue_actor_resolver::{
-    resolve_issue_assignee_id, resolve_issue_assignee_name, resolve_issue_project_id,
-    resolve_project_reference, resolve_subscriber_id, resolve_subscriber_name,
-    ResolvedIssueAssignee,
+    resolve_issue_assignee_id, resolve_issue_assignee_name, resolve_subscriber_id,
+    resolve_subscriber_name, ResolvedIssueAssignee,
 };
+use project_reference_resolver::{resolve_issue_project_id, resolve_project_reference};
 use issue_assign_commands::run_issue_assign;
 use issue_children_commands::{
     child_stage, format_issue_children_table, group_issue_children, run_issue_children,
