@@ -1,6 +1,7 @@
 use std::io::Read;
 
 use super::dispatch_agent::run_agent_command;
+use super::dispatch_auth::{run_auth_command, run_login_command};
 use super::dispatch_autopilot::run_autopilot_command;
 use super::dispatch_issue::run_issue_command;
 use super::dispatch_skill::run_skill_command;
@@ -16,13 +17,8 @@ pub(super) async fn run_with_input<R: Read>(
         Command::Skill(args) => run_skill_command(cli, environment, args, input).await,
         Command::Autopilot(args) => run_autopilot_command(cli, environment, args, input).await,
         Command::Issue(args) => run_issue_command(cli, environment, args, input).await,
-        Command::Auth(AuthArgs {
-            command: AuthCommand::Status { output },
-        }) => run_auth_status(cli, environment, *output).await,
-        Command::Auth(AuthArgs {
-            command: AuthCommand::Logout,
-        }) => run_auth_logout(cli, environment),
-        Command::Login(args) => run_login(cli, environment, args).await,
+        Command::Auth(args) => run_auth_command(cli, environment, args).await,
+        Command::Login(args) => run_login_command(cli, environment, args).await,
         Command::Config(ConfigArgs { command: None }) => {
             run_config_show(cli, environment, OutputFormat::Table)
         }
