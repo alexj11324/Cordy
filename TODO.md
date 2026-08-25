@@ -1307,18 +1307,21 @@
       `git diff --check` pass; Cargo is delegated. PR #301 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review PASS on
       `61e7b437`; no Cargo was run.
-- [ ] PR #302 `codex/cord-134-cli-issue-task-output` is the next bounded child
+- [x] PR #302 `codex/cord-134-cli-issue-task-output` is the completed bounded child
       of #301: base branch `codex/cord-133-cli-issue-property-values` at
-      `61e7b4379f7b0f51e4dba37308767dfd851e9964`, exact head
-      `32e8438fbe3fbdd903f5e2bcc09c3ebd1b6f15c5`, tree
-      `176a6453dd2c4844a70378418c3878b7101c0f2e`, candidate
-      `83f90d4abc8b8dda36bf4eea534bfed4c70979d7` (parents base + head).
+      `61e7b4379f7b0f51e4dba37308767dfd851e9964`, current exact head
+      `529d464a3e7926cd1325733d0b10348a93334416`, tree
+      `29848f751a04c695f94b858bb4a8e96e939ed61a`, candidate
+      `ce65ab197552acd494378a4d78b512ab8b45b5bc` (parents base + head).
       It isolates task-run and run-message table formatting in
       `issue_task_output.rs`; task-run resolution, API paths, JSON output,
       cancellation, truncation, and command dispatch remain unchanged.
-      Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated.
-      PR #302 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head
-      subagent review pending; no Cargo was run.
+      The first review found a real formatter re-export compile blocker; the
+      delegated minimal fix `529d464a` makes `lib.rs` import the moved
+      formatters from `issue_task_output`. Scoped pinned rustfmt and
+      `git diff --check` pass; Cargo is delegated. PR #302 is Ready
+      (`isDraft=false`), MERGEABLE. Exact-head subagent review PASS on
+      `529d464a`; no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
