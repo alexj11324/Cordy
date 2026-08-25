@@ -520,6 +520,12 @@
       are unchanged. Scoped rustfmt and `git diff --check` pass; PR #199 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
       delegated.
+- [x] #199 exact-head subagent review PASS on
+      `6cf833b3c46bc4368b335084efd53b0d037e28b8`: both label tests are
+      preserved; POST/PUT/DELETE routes, full-id/table/JSON behavior, imports,
+      and module boundary are intact. No compile or behavior blocker was found.
+      Subagent did not run Cargo or modify the worktree; coordinator
+      `git diff --check` remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
