@@ -1609,6 +1609,17 @@
       pinned rustfmt and `git diff --check` pass; Cargo and exact-head
       subagent review PASS on `040dce27`; no Cargo was run. PR #326 is Ready
       (`isDraft=false`), MERGEABLE (checks pending).
+- [ ] PR #327 `codex/cord-159-cli-issue-metadata-input` is the next bounded child
+      of #326: base branch `codex/cord-158-cli-issue-metadata-mutations` at
+      `040dce279c3b4206e3e6134b93cf5a84bcaa803c`, exact head
+      `9f0ce457bcc092947224017903608ac7647254d0`, tree
+      `eb95229a32146e211a15b88a59504172aaaf8336`, candidate
+      `5591470cd4f1cf4fc7515ef78f95fa28507155cd` (parents base + head).
+      It isolates scalar metadata parsing; inferred string/bool/number,
+      forced-type errors, and dispatch wiring remain unchanged. Scoped pinned
+      rustfmt and `git diff --check` pass; Cargo and exact-head subagent
+      review are delegated and pending. PR #327 is Ready (`isDraft=false`),
+      MERGEABLE (checks pending).
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
