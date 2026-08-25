@@ -965,6 +965,17 @@
       `dispatch_property`, and issue-property routing remain valid. No behavior
       regression was found; subagent did not run Cargo or modify files, and
       scoped rustfmt/check plus `git diff --check` remain clean.
+- [x] PR #253 `codex/cord-85-cli-project-status` is the next bounded child of
+      #252: base branch `codex/cord-84-cli-property-schema` at
+      `d6a04b2a176f4b4306aeeb73a12c9b8db7ac05f9`, exact head
+      `2f0010dcf99fb3f5c5d04394f09ed50e35d6bb86`, tree
+      `0caafa1d4c01b41a2a16177d926f35072b46c5fa`, candidate
+      `31fe15f751b210ef03b6c352e2de7c9191a4c75a`. It isolates project status
+      constants, validation, and the status-update request in
+      `project_status_commands.rs`; CRUD/resource behavior, status values,
+      error text, PUT body, and output semantics remain unchanged. Scoped
+      rustfmt/check and `git diff --check` pass; Cargo is delegated. PR #253
+      is Ready (`isDraft=false`), CLEAN/MERGEABLE; exact-head review pending.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
