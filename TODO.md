@@ -879,22 +879,32 @@
       `Command::Update` routing and lib registration are correct, and the
       schema's `download_timeout` behavior is untouched. `git diff --check`
       passes; subagent did not run Cargo or modify files.
-- [x] PR #250 `codex/cord-82-cli-version-dispatch` is the next bounded child
+- [x] PR #250 initial head `508c0aad06b42ceed3c0aadbe418b6fbcad3e4fc` is
+      superseded by a blocker fix; its original candidate/review cannot be
+      reused.
+- [x] PR #250 `codex/cord-82-cli-version-dispatch` corrected head is the next
+      bounded child
       of #249: base branch `codex/cord-81-cli-update-dispatch` at
       `b23be30fc54b8df9e16e6d9e02d1db8f1ec4dcbe`, exact head
-      `508c0aad06b42ceed3c0aadbe418b6fbcad3e4fc`, tree
-      `f5304173063f3762d622118327a03bf19508d2e9`, candidate
-      `6a7ffc410d6c04f7d8c32666e815c31bd70a3c37`. It isolates Version output
+      `81d69f95c33e3b98342f867f197813874bef3a8e`, tree
+      `57cd816207d05c8695479b9419186eafd9254574`, candidate
+      `0d80c4299c10ba22ce1eac7e357be0076dc44890`. It isolates Version output
       routing into `dispatch_version.rs`, preserving output format and handler
       behavior. Scoped rustfmt and `git diff --check` pass; PR #250 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
       delegated.
-- [ ] #250 exact-head subagent review FAIL on
+- [x] #250 initial exact-head subagent review FAIL on
       `508c0aad06b42ceed3c0aadbe418b6fbcad3e4fc`: `Command::Version.output`
       and `run_version` both use `VersionOutput`, but `dispatch_version.rs`
       incorrectly declares `OutputFormat`, creating a real type mismatch.
       Subagent did not modify files or run Cargo; delegate the minimal type
       correction, then invalidate this head/review and re-review the new head.
+- [x] #250 blocker fix `81d69f95c33e3b98342f867f197813874bef3a8e` (parent
+      `508c0aad06b42ceed3c0aadbe418b6fbcad3e4fc`, tree
+      `57cd816207d05c8695479b9419186eafd9254574`) changes only the dispatch
+      parameter type to `VersionOutput`. Absolute rustfmt and `git diff
+      --check` pass; the old head/review are invalidated and a new exact-head
+      review is required.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
