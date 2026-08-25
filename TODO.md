@@ -65,6 +65,14 @@
       `796087ac64df1ee4612c84c33df8178923bf5027`, and #167
       `087babdbe2425426bcd227a343d35f615c0dbfca`. They remain serial; Pro owns
       review, Cargo gates, and merge.
+- [x] Next structural slice is #168, `codex/cord-50-cli-skill-schema`, based on
+      #167 at `b2301f0263b49ded70404342bfb7f9a59e273d75`; exact head
+      `9941a51b75b7571846ede20534c05766156eb456`, tree
+      `779c9827541c27bb0de6feae97b45fb9c0e66443`, candidate
+      `54c3a3ca7e2d70b7b21120a59dd3b63b5981ade6`. It moves only Skill parser/schema types to
+      `skill_command_schema.rs`; execution behavior remains in `skill_commands.rs`.
+      New schema rustfmt and `git diff --check` pass; Cargo/review/gate are delegated
+      and have not been run by this thread. PR is Ready (`isDraft=false`).
 - [ ] After all replacement PRs are created and exact refs verified, close #159 as
       `SUPERSEDED` without deleting or rewriting its branch. Do not reuse #159's
       review/gate evidence for any replacement PR.
