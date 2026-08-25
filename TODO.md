@@ -1358,6 +1358,18 @@
       pass; Cargo is delegated. PR #305 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Exact-head subagent review PASS on `c0555e5b`; no Cargo
       was run.
+- [ ] PR #306 `codex/cord-138-cli-project-resource-input` is the next bounded
+      child of #305: base branch `codex/cord-137-cli-api-url-normalization` at
+      `c0555e5b3b44253949f808b6b9bc9e9f00d35884`, exact head
+      `6091804a5e7a8c89d6bafccfa688d01d69ba3bd5`, tree
+      `bf1ed60a4e39b0c7c4e065e63bb7477d51f1b32c`, candidate
+      `3fb23ed95716b4ae4a5888200fa1c893fb441e32` (parents base + head).
+      It isolates project-resource add/update payload builders in
+      `project_resource_input.rs`; resource lookup, UUID-prefix resolution,
+      list/remove behavior, validation, and API paths remain unchanged.
+      Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated.
+      PR #306 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head
+      subagent review pending; no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
