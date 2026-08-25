@@ -1279,7 +1279,7 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
-- [ ] PR #285 `codex/cord-117-cli-repo-checkout` is the next bounded child of
+- [x] PR #285 `codex/cord-117-cli-repo-checkout` is the completed bounded child of
       #284: base branch `codex/cord-116-cli-repo-mutation` at
       `38b46665bf0b9d246e7db7caa562bf3998b93348`, exact head
       `75f813596c80292ee04fbd19866ec94622c78657`, tree
@@ -1290,7 +1290,8 @@
       daemon request, retry, timeout, output, dispatch, and tests remain
       unchanged. Scoped pinned rustfmt and `git diff --check` pass; Cargo is
       delegated. PR #285 is Ready (`isDraft=false`), CLEAN/MERGEABLE.
-      Exact-head subagent review is pending; no Cargo was run.
+      Exact-head subagent review PASS; no Cargo was run and no production
+      behavior changed.
 - [x] PR #284 `codex/cord-116-cli-repo-mutation` is the completed bounded child of
       #283: base branch `codex/cord-115-cli-repo-read` at
       `344b20fae740b0191e50ed5c81bfc78e0f8ae232`, exact head
