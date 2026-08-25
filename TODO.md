@@ -1612,16 +1612,17 @@
 - [ ] PR #327 `codex/cord-159-cli-issue-metadata-input` is the next bounded child
       of #326: base branch `codex/cord-158-cli-issue-metadata-mutations` at
       `040dce279c3b4206e3e6134b93cf5a84bcaa803c`, exact head
-      `9f0ce457bcc092947224017903608ac7647254d0`, tree
-      `eb95229a32146e211a15b88a59504172aaaf8336`, candidate
-      `5591470cd4f1cf4fc7515ef78f95fa28507155cd` (parents base + head).
+      `fe1832fdbc64451582de6747e8b29516b772a2fb`, tree
+      `d24910ebdc3a4eae27572cc9e9798863678fb2e5`, candidate
+      `3c30a874d4046d65861969e1fc1b63631a483aa7` (parents base + head).
       It isolates scalar metadata parsing; inferred string/bool/number,
-      forced-type errors, and dispatch wiring remain unchanged. Scoped pinned
-      rustfmt and `git diff --check` pass; Cargo and exact-head subagent
-      review found one compile blocker: mutation wiring still imported the
-      pre-rename `issue_metadata_commands::parse_metadata_value`; subagent
-      owns the minimal import fix. The old head is stale pending that fix.
-      PR #327 remains Ready (`isDraft=false`), MERGEABLE (checks pending).
+      forced-type errors, and dispatch wiring remain unchanged. The prior
+      exact-head review found a real compile blocker in mutation wiring; the
+      delegated minimal fix `fix(cli): repair metadata parser import` replaced
+      the stale `issue_metadata_commands` import with the renamed input module.
+      Subagent static review and `git diff --check` pass; no Cargo was run.
+      The old head/review are stale. PR #327 remains Ready (`isDraft=false`),
+      CLEAN/MERGEABLE; a new exact-head review is pending.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
