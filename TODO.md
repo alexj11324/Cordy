@@ -1060,6 +1060,18 @@
       `dispatch_workspace` wiring are complete; subagent did not run Cargo or
       modify files, and scoped rustfmt/check plus `git diff --check` remain
       clean.
+- [ ] PR #257 `codex/cord-89-cli-agent-schema` is the next bounded child of
+      #256: base branch `codex/cord-88-cli-workspace-mutations` at
+      `f76ecdbd6c214db2a38e841fcb8f6b36f31bc703`, exact head
+      `033251dd41b73f0241dd86075126bade914ee7a3`, tree
+      `37af91a69e27dd761fcb1a5e4efd5eb1f321939d`, candidate
+      `772da0c9374de9c5facae25f8f6bb329afae306a` (parents base + head).
+      It moves the complete agent clap schema into
+      `agent_command_schema.rs`; agent execution, API paths, validation,
+      output formats, and root re-exports remain unchanged. Scoped pinned
+      rustfmt and `git diff --check` pass; Cargo is delegated. PR #257 is
+      Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review is
+      pending; no duplicate review request has been made.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
