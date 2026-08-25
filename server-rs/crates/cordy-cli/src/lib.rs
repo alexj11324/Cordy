@@ -6,6 +6,7 @@
 mod agent_commands;
 mod agent_helpers;
 mod api;
+mod api_error;
 mod cli_command_schema;
 #[cfg(test)]
 mod root_command_tests;
