@@ -1080,16 +1080,20 @@
       not run Cargo or modify files; `git diff --check` remains clean.
 - [ ] PR #258 `codex/cord-90-cli-autopilot-schema` is the next bounded child
       of #257: base branch `codex/cord-89-cli-agent-schema` at
-      `e79ee5b23bd2bc422aa5a7045febfc6ed755d9a5`, exact head
-      `72d0b86eb71e030bf7a8d513e3ca2fecde5dbf06`, tree
-      `68333d3c5f27526d41a15e702a613d8e9f82fad8`, candidate
-      `d405d4b1891372851b8dbe1f19488f2c95b1a6c1` (parents base + head).
+      `e79ee5b23bd2bc422aa5a7045febfc6ed755d9a5`. Initial exact head
+      `72d0b86eb71e030bf7a8d513e3ca2fecde5dbf06` was blocked because five
+      moved schema types were still needed by execution signatures. The serial
+      subagent fixed only those imports in
+      `0b004213e8b8289d03325ba77dea16be32c5b3e8`; corrected exact head is
+      `0b004213e8b8289d03325ba77dea16be32c5b3e8`, tree
+      `2bad54a4fb76dc69fec11d458cbf76a6cde143e6`, candidate
+      `7ac3f384f0f3f7cf1f4555a4637e53804f208497` (parents base + head).
       It moves autopilot clap command definitions into
       `autopilot_command_schema.rs`; API execution, validation, confirmation,
       output, and routing semantics remain unchanged. Scoped pinned rustfmt
       and `git diff --check` pass; Cargo is delegated. PR #258 is Ready
-      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review pending;
-      no duplicate review request has been made.
+      (`isDraft=false`), CLEAN/MERGEABLE. Corrected-head exact review is
+      pending; the initial review was not reused.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
