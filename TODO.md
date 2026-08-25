@@ -83,6 +83,14 @@
       parser types to `workspace_command_schema.rs`; execution behavior is unchanged.
       New schema rustfmt and `git diff --check` pass; Cargo/review/gate are delegated
       and have not been run by this thread. PR is Ready (`isDraft=false`).
+- [x] Next structural slice #172, `codex/cord-50-cli-root-schema`, is based on
+      #171 at `cc7b8d569873a240596976e0ea2f69aff5a921e9`; exact head
+      `192b888c3f4caca725c1eff26503207e96acbadf`, tree
+      `ba085eddc3bce0a217e4e46ea11c8cfb64739ff2`, candidate
+      `5774f6bf72ba332ecc2dc2dc8795ac479c98ec1e`. It moves only UpdateArgs and
+      VersionOutput to `root_command_schema.rs`; update/version execution is unchanged.
+      New schema rustfmt and `git diff --check` pass; Cargo/review/gate are delegated
+      and have not been run by this thread. PR is Ready (`isDraft=false`).
 - [x] Next structural slice #171, `codex/cord-50-cli-setup-schema`, is based on
       #170 at `b6e5f690b42c15e3dc8e008b6a2843549eba828e`; exact head
       `cc7b8d569873a240596976e0ea2f69aff5a921e9`, tree
