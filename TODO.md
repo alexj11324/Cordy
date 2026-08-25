@@ -813,6 +813,16 @@
       guard semantics. `Command::Repo` routing and lib registration are
       correct. `git diff --check` passes; subagent did not run Cargo or modify
       files.
+- [x] PR #246 `codex/cord-78-cli-runtime-dispatch` is the next bounded child
+      of #245: base branch `codex/cord-77-cli-repo-dispatch` at
+      `9a20dc50099e5acfc4dd55a7218393f29dbe3317`, exact head
+      `d2c37b59a239258b8be284032e7f15a6fab3cc6a`, tree
+      `fe7a7eed1a24bfd22241d35180a4d45105f96c81`, candidate
+      `ad2a3752bf65e9fec2522238fa019c3cebda5353`. It isolates Runtime and
+      RuntimeProfile routing into `dispatch_runtime.rs`, preserving IDs,
+      wait/cascade, profile path, and output semantics. Scoped rustfmt and
+      `git diff --check` pass; PR #246 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
