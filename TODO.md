@@ -201,6 +201,16 @@
       No missing/duplicated tests or compile/behavior blocker was found. Subagent
       did not run Cargo or modify the worktree; coordinator scoped rustfmt and
       `git diff --check` pass.
+- [x] PR #181 `codex/cord-50-cli-skill-tests` is the next bounded child of #180:
+      base branch `codex/cord-50-cli-agent-tests` at
+      `88b516582fd316e9741005e2a3d848eb636909dc`, exact head
+      `13209c98fcc801e77b1ffeaa9e849761b0152a50`, tree
+      `c82220b8eaf8709c14ace5d26634b08d46498fb3`, candidate
+      `9949a5d5ac35ded5418f6d327c86a63311c7173e`. It extracts the 14 skill
+      list/get/create/update/delete/import/refresh/search/files contract tests
+      into `skill_command_tests.rs`; production behavior is unchanged. Scoped
+      rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
