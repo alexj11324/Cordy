@@ -7,6 +7,7 @@
 
 pub mod command;
 pub mod contract;
+pub mod dsh;
 pub mod mcp;
 pub mod model;
 pub mod process;
@@ -20,6 +21,7 @@ pub use command::{BlockedArgMode, FilteredArgs, RuntimeCommand};
 pub use contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
-pub use model::{Catalog, Model, ModelServiceTier, ModelThinking, ThinkingLevel};
+pub use dsh::{build_dsh_args, DshBackend, DshConfig};
+pub use model::{Catalog, CatalogCache, Model, ModelServiceTier, ModelThinking, ThinkingLevel};
 pub use process::{OwnedProcessTree, ProcessTreeSignal};
 pub use qwen::{QwenBackend, QwenConfig};
