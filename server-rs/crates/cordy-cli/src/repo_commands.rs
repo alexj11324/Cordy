@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::{
     format_table, new_api_client, required_workspace_id, value_string, ApiClient, Cli, Environment,
-    OutputFormat, RunOutput,
+    OutputFormat, RepoMutationArgs, RepoRemoveArgs, RunOutput,
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
