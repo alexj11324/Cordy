@@ -706,13 +706,13 @@ pub(super) async fn run_issue_property_unset(
     })
 }
 #[derive(Debug, Args)]
-struct PropertyArgs {
+pub(super) struct PropertyArgs {
     #[command(subcommand)]
-    command: PropertyCommand,
+    pub(super) command: PropertyCommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum PropertyCommand {
+pub(super) enum PropertyCommand {
     #[command(about = "List property definitions")]
     List {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
@@ -738,51 +738,51 @@ enum PropertyCommand {
 }
 
 #[derive(Debug, Args)]
-struct PropertyCreateArgs {
+pub(super) struct PropertyCreateArgs {
     #[arg(long, help = "Property name (required)")]
-    name: Option<String>,
+    pub(super) name: Option<String>,
     #[arg(
         long = "type",
         help = "Property type: text, number, select, multi_select, date, checkbox, url, actor, multi_actor (required)"
     )]
-    property_type: Option<String>,
+    pub(super) property_type: Option<String>,
     #[arg(long, default_value = "", help = "Property description")]
-    description: String,
+    pub(super) description: String,
     #[arg(
         long,
         default_value = "",
         help = "Property icon key from the Web picker (for example, flag, tag, or shield)"
     )]
-    icon: String,
+    pub(super) icon: String,
     #[arg(long, action = clap::ArgAction::Append, help = "Select option as \"Name\" or \"Name:#rrggbb\" (repeatable; select types only)")]
-    option: Vec<String>,
+    pub(super) option: Vec<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
-struct PropertyUpdateArgs {
+pub(super) struct PropertyUpdateArgs {
     #[arg(value_name = "ID-OR-NAME")]
-    property: String,
+    pub(super) property: String,
     #[arg(long, help = "New property name")]
-    name: Option<String>,
+    pub(super) name: Option<String>,
     #[arg(long, help = "New property description")]
-    description: Option<String>,
+    pub(super) description: Option<String>,
     #[arg(
         long,
         help = "New property icon key from the Web picker; pass an empty value to clear"
     )]
-    icon: Option<String>,
+    pub(super) icon: Option<String>,
     #[arg(long, action = clap::ArgAction::Append, help = "Replacement option list as \"Name\" or \"Name:#rrggbb\" (repeatable)")]
-    option: Vec<String>,
+    pub(super) option: Vec<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
-struct PropertyArchiveArgs {
+pub(super) struct PropertyArchiveArgs {
     #[arg(value_name = "ID-OR-NAME")]
-    property: String,
+    pub(super) property: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
