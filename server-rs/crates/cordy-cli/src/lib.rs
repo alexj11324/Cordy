@@ -112,6 +112,7 @@ mod config_commands;
 pub mod daemon;
 mod daemon_command_schema;
 mod daemon_commands;
+mod daemon_diagnostics_commands;
 mod daemon_log_commands;
 mod daemon_status_commands;
 mod disk_usage_commands;
@@ -261,9 +262,9 @@ pub(super) use daemon_command_schema::{
 pub use daemon_commands::run_private_helper;
 use daemon_commands::{
     ensure_restart_is_background, parse_cli_duration, run_daemon_after_setup,
-    run_daemon_disk_usage, run_daemon_probe_runtimes, run_daemon_restart, run_daemon_start,
-    run_daemon_stop, validate_daemon_health_port,
+    run_daemon_restart, run_daemon_start, run_daemon_stop, validate_daemon_health_port,
 };
+use daemon_diagnostics_commands::{run_daemon_disk_usage, run_daemon_probe_runtimes};
 use daemon_log_commands::{
     parse_log_lines, read_daemon_log_tail, resolve_daemon_log_path, run_daemon_logs,
 };
