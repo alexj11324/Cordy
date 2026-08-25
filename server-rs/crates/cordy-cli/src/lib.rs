@@ -192,7 +192,7 @@ mod issue_label_schema;
 mod issue_list_commands;
 mod issue_list_schema;
 mod issue_markdown_links;
-mod issue_metadata_commands;
+mod issue_metadata_input;
 mod issue_metadata_output;
 mod issue_metadata_read_commands;
 mod issue_metadata_mutation_commands;
@@ -423,9 +423,7 @@ use issue_list_commands::{
     build_issue_list_query, build_metadata_filter, issue_list_has_more, run_issue_list,
 };
 pub(super) use issue_list_schema::IssueListArgs;
-use issue_metadata_commands::{
-    parse_metadata_value,
-};
+use issue_metadata_input::parse_metadata_value;
 use issue_metadata_output::format_metadata_table;
 use issue_metadata_mutation_commands::{run_issue_metadata_delete, run_issue_metadata_set};
 use issue_metadata_read_commands::{run_issue_metadata_get, run_issue_metadata_list};
