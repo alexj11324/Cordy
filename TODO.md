@@ -1206,7 +1206,7 @@
       JSON/table output, dispatch, and root re-exports remain unchanged.
       Subagent did not run Cargo or modify files; `git diff --check` remains
       clean.
-- [ ] PR #265 `codex/cord-97-cli-agent-env` is the next bounded child of
+- [x] PR #265 `codex/cord-97-cli-agent-env` is the completed bounded child of
       #264: base branch `codex/cord-96-cli-agent-skills` at
       `2f0a53ce2c70c12d7d1954916cf617077762dfa3`, exact head
       `717bd90983e4e5ac1e678d13a0a1a97915972be0`, tree
@@ -1216,6 +1216,18 @@
       secret JSON stdin/file policy, validation, `/env` paths, output,
       dispatch, and root re-exports remain unchanged. Scoped pinned rustfmt and
       `git diff --check` pass; Cargo is delegated. PR #265 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review PASS;
+      no Cargo was run and no production behavior changed.
+- [ ] PR #266 `codex/cord-98-cli-agent-mcp` is the next bounded child of
+      #265: base branch `codex/cord-97-cli-agent-env` at
+      `717bd90983e4e5ac1e678d13a0a1a97915972be0`, exact head
+      `036da9b2bad7aaed29714617b25ecc84b53a8759`, tree
+      `d4f8a5bd94bd66f295bb73a4ae39eb576e079cb8`, candidate
+      `e5741740b776a6ab75de728ae675d92dc109c58b` (parents base + head).
+      It isolates agent MCP path/action/list/mutation handlers in
+      `agent_mcp_commands.rs`; URL encoding, action semantics, output,
+      dispatch, and root re-exports remain unchanged. Scoped pinned rustfmt and
+      `git diff --check` pass; Cargo is delegated. PR #266 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review pending;
       no duplicate review request has been made.
 - [x] #223 exact-head subagent review PASS on
