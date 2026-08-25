@@ -1358,6 +1358,17 @@
       and `git diff --check` pass (the subagent environment lacked a
       rustfmt executable); Cargo was not run. Pro owns push/Ready PR, gate,
       and merge.
+- [ ] CLI attachment-input refactor is committed at
+      `397a741381ffe6d5cbaa7f8ce76137cad6b5dbbe` (parent
+      `c9f4de39116fbf5b3001feeb2faad87bd9d3261e`, tree
+      `74061f9cf6fb350d6a374812200864f05e45d290`): pending attachment
+      staging type, attachment-ID deduplication, quick-create environment
+      parsing, URL rejection, workdir containment, and local reads now live
+      in `cordy-cli/src/attachment_input.rs`; create/comment imports retain
+      their contracts. The serial subagent reviewed the exact head and found
+      no issue. Scoped rustfmt and `git diff --check` pass (the subagent
+      environment lacked a rustfmt executable); Cargo was not run. Pro owns
+      push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
