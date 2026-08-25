@@ -3,6 +3,7 @@ use std::io::Read;
 use super::dispatch_agent::run_agent_command;
 use super::dispatch_auth::{run_auth_command, run_login_command};
 use super::dispatch_autopilot::run_autopilot_command;
+use super::dispatch_chat::run_chat_command;
 use super::dispatch_config::run_config_command;
 use super::dispatch_issue::run_issue_command;
 use super::dispatch_label::run_label_command;
@@ -33,22 +34,7 @@ pub(super) async fn run_with_input<R: Read>(
         Command::Label(args) => run_label_command(cli, environment, args).await,
         Command::Project(args) => run_project_command(cli, environment, args).await,
         Command::Property(args) => run_property_command(cli, environment, args).await,
-        Command::Chat(ChatArgs {
-            command: ChatCommand::History(args),
-        }) => run_chat_read(cli, environment, "/api/chat/history", None, args, true).await,
-        Command::Chat(ChatArgs {
-            command: ChatCommand::Thread(args),
-        }) => {
-            run_chat_read(
-                cli,
-                environment,
-                "/api/chat/thread",
-                args.id.as_deref(),
-                &args.read,
-                false,
-            )
-            .await
-        }
+        Command::Chat(args) => run_chat_command(cli, environment, args).await,
         Command::Attachment(AttachmentArgs {
             command:
                 AttachmentCommand::Download {
