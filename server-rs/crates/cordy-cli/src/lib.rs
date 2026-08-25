@@ -216,7 +216,7 @@ mod runtime_update;
 mod setup_command_schema;
 mod setup_commands;
 mod skill_command_schema;
-mod skill_commands;
+mod skill_files_commands;
 mod squad_command_schema;
 mod squad_commands;
 mod task_reference;
@@ -500,7 +500,7 @@ pub(super) use skill_command_schema::{
     SkillFilesCommand, SkillFilesDeleteArgs, SkillFilesListArgs, SkillFilesUpsertArgs,
     SkillGetArgs, SkillImportArgs, SkillRefreshArgs, SkillSearchArgs, SkillUpdateArgs,
 };
-use skill_commands::{
+use skill_files_commands::{
     format_skill_files_table, run_skill_files_delete, run_skill_files_list,
     run_skill_files_upsert,
 };
