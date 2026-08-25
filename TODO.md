@@ -123,6 +123,15 @@
       blocker. Disk-usage tests intentionally remain in the original module for a
       later bounded slice. Subagent did not run Cargo or modify the worktree;
       coordinator's rustfmt and `git diff --check` pass.
+- [x] PR #176 `codex/cord-50-cli-disk-usage-tests` is the next bounded child of #175:
+      base `c3e5310cc06eff79986283344e5ace16067f503d`, exact head
+      `57f2dc0e03d7972df7ea9c27a4ab9148f986a4d8`, tree
+      `729bc7e24120765b42fedbd9479ee07a27bd27b5`, candidate
+      `0c7c641693d4249ed659225663df68d32c4996d3`. It extracts only disk-usage
+      parser/validation/limiting/formatting/profile-root tests into
+      `disk_usage_command_tests.rs`; production behavior is unchanged. New module
+      rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`,
+      MERGEABLE/UNSTABLE). Cargo and review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
