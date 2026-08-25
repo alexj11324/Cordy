@@ -756,6 +756,13 @@
       include-archived and output semantics. Scoped rustfmt and
       `git diff --check` pass; PR #242 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #242 exact-head subagent review PASS on
+      `0fc096835b4a87a4ff3cdb5d3f039ee034d8efae`: `dispatch_property.rs`
+      covers List/Get/Create/Update/Archive/Unarchive; List preserves output
+      and include-archived, while Archive/Unarchive pass `true`/`false` to the
+      existing handler. `Command::Property` routing, lib registration, and
+      visibility are correct. `git diff --check` passes; subagent did not run
+      Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
