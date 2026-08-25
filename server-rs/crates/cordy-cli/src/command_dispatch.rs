@@ -5,6 +5,7 @@ use super::dispatch_auth::{run_auth_command, run_login_command};
 use super::dispatch_autopilot::run_autopilot_command;
 use super::dispatch_config::run_config_command;
 use super::dispatch_issue::run_issue_command;
+use super::dispatch_label::run_label_command;
 use super::dispatch_skill::run_skill_command;
 use super::dispatch_squad::run_squad_command;
 use super::dispatch_user::run_user_command;
@@ -27,21 +28,7 @@ pub(super) async fn run_with_input<R: Read>(
         Command::User(args) => run_user_command(cli, environment, args, input).await,
         Command::Workspace(args) => run_workspace_command(cli, environment, args, input).await,
         Command::Squad(args) => run_squad_command(cli, environment, args).await,
-        Command::Label(LabelArgs {
-            command: LabelCommand::List { output, full_id },
-        }) => run_label_list(cli, environment, *output, *full_id).await,
-        Command::Label(LabelArgs {
-            command: LabelCommand::Get { id, output },
-        }) => run_label_get(cli, environment, id, *output).await,
-        Command::Label(LabelArgs {
-            command: LabelCommand::Create(args),
-        }) => run_label_create(cli, environment, args).await,
-        Command::Label(LabelArgs {
-            command: LabelCommand::Update(args),
-        }) => run_label_update(cli, environment, args).await,
-        Command::Label(LabelArgs {
-            command: LabelCommand::Delete { id, output },
-        }) => run_label_delete(cli, environment, id, *output).await,
+        Command::Label(args) => run_label_command(cli, environment, args).await,
         Command::Project(ProjectArgs {
             command:
                 ProjectCommand::List {
