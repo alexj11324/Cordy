@@ -1672,6 +1672,17 @@
       behavior. Pinned rustfmt and `git diff --check` pass; Cargo is delegated.
       PR #331 is Ready (`isDraft=false`), CLEAN/MERGEABLE; exact-head subagent
       review PASS on `443cd5d7`; no Cargo was run.
+- [ ] PR #332 `codex/cord-164-cli-issue-property-output` is the next bounded
+      child of #331: base branch `codex/cord-163-cli-property-mutation-output` at
+      `443cd5d71b9c229550d27fb2241221baf5b63872`, exact head
+      `03a837a36d819c155b7089214322db44bdd2b848`, tree
+      `181958569b700318cbc65a902dc9b798a7afa104`, candidate
+      `cd335c8691a0bd10182385dff92af06a192fb476` (parents base + head).
+      It extracts IssuePropertyRow construction and JSON/table rendering while
+      preserving archived-field serialization, actor display resolution, and
+      list/set orchestration. Pinned rustfmt and `git diff --check` pass; Cargo
+      is delegated. PR #332 is Ready (`isDraft=false`), CLEAN/MERGEABLE;
+      exact-head subagent review is pending.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
