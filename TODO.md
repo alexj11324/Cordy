@@ -1499,6 +1499,15 @@
       subscriber validation and output contracts are unchanged. Scoped
       rustfmt and `git diff --check` pass; Cargo was not run. Pro owns
       push/Ready PR, gate, and merge.
+- [ ] CLI autopilot execution refactor is committed at structural head
+      `29be90d5f77366971f2a2f92a45a347c857b14f9`; the serial subagent found
+      and fixed the real visibility blocker in `9a1eb37cb48becfcdff635514ca6e22b58d3e94a`
+      (tree `28dab750b418ed34ca47d2ec32b62979cad12e40`): delete, trigger, and
+      runs execution now live in `autopilot_commands.rs`, with the parent
+      re-exporting them and preserving timeout, query, resolution, and table/
+      JSON behavior. `git diff --check` passes; rustfmt was unavailable in the
+      subagent check and Cargo was not run. Pro owns push/Ready PR, gate, and
+      merge.
 
 ## Phase 4 — S8 route and API parity
 
