@@ -6,6 +6,7 @@ use super::dispatch_autopilot::run_autopilot_command;
 use super::dispatch_config::run_config_command;
 use super::dispatch_issue::run_issue_command;
 use super::dispatch_skill::run_skill_command;
+use super::dispatch_user::run_user_command;
 use super::*;
 
 pub(super) async fn run_with_input<R: Read>(
@@ -21,18 +22,7 @@ pub(super) async fn run_with_input<R: Read>(
         Command::Auth(args) => run_auth_command(cli, environment, args).await,
         Command::Login(args) => run_login_command(cli, environment, args).await,
         Command::Config(args) => run_config_command(cli, environment, args),
-        Command::User(UserArgs {
-            command:
-                UserCommand::Profile(ProfileArgs {
-                    command: ProfileCommand::Get { output },
-                }),
-        }) => run_user_profile_get(cli, environment, *output).await,
-        Command::User(UserArgs {
-            command:
-                UserCommand::Profile(ProfileArgs {
-                    command: ProfileCommand::Update(args),
-                }),
-        }) => run_user_profile_update(cli, environment, args, input).await,
+        Command::User(args) => run_user_command(cli, environment, args, input).await,
         Command::Workspace(WorkspaceArgs {
             command: WorkspaceCommand::List { output, full_id },
         }) => run_workspace_list(cli, environment, *output, *full_id).await,
