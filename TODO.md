@@ -905,6 +905,12 @@
       parameter type to `VersionOutput`. Absolute rustfmt and `git diff
       --check` pass; the old head/review are invalidated and a new exact-head
       review is required.
+- [x] #250 corrected exact-head subagent review PASS on
+      `81d69f95c33e3b98342f867f197813874bef3a8e`: `Command::Version.output`,
+      `run_version_command`, and `run_version` now consistently use
+      `VersionOutput`; root forwarding and lib module registration are valid
+      with no new compile/behavior blocker. `git diff --check` passes;
+      subagent did not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
