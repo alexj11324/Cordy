@@ -1305,6 +1305,16 @@
       exact head and found no issue. Scoped rustfmt and
       `git diff --check` pass (the subagent environment lacked a rustfmt
       executable); Cargo was not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI issue-reference structural refactor is committed at
+      `8975b4a8c4b2210ea13041889672d0f6d7f32ca6` (parent
+      `012b09471726ca94b9d003d8d4cae9b9b7898bf3`, tree
+      `137076e92dba9fa5f2eab9748d9edbc27042808a`): issue key/full-UUID
+      recognition, short-prefix rejection, API resolution, and stable
+      error messages now live in `cordy-cli/src/issue_reference.rs`.
+      The serial subagent reviewed the exact head and found no issue.
+      Scoped rustfmt and `git diff --check` pass (the subagent environment
+      lacked a rustfmt executable); Cargo was not run. Pro owns push/Ready
+      PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
