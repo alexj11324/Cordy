@@ -1279,6 +1279,18 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
+- [ ] PR #280 `codex/cord-112-cli-autopilot-trigger` is the next bounded child of
+      #279: base branch `codex/cord-111-cli-autopilot-mutation` at
+      `6c21e52ea23a1e6192cdc9a92a60717190181d19`, exact head
+      `1aa47b0b1d5b446f38115945c9c5ba841d7c8670`, tree
+      `604aca22f7b3c57e7e82c169727d71cc49ed4fe3`, candidate
+      `d3d1997f659361ed7aff72f473120a1023003faa` (parents base + head).
+      It isolates the autopilot trigger handler in
+      `autopilot_trigger_commands.rs`; timeout policy, resolver behavior, API
+      request, output, dispatch, and tests remain unchanged. Scoped pinned
+      rustfmt and `git diff --check` pass; Cargo is delegated. PR #280 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review is
+      pending; no Cargo was run.
 - [x] PR #279 `codex/cord-111-cli-autopilot-mutation` is the completed bounded child of
       #278: base branch `codex/cord-110-cli-autopilot-read` at
       `18214804c5f1d28b5c0cc88f2525a3e5b2b3edad`, exact head
