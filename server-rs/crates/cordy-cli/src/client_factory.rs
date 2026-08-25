@@ -1,10 +1,10 @@
-use anyhow::{bail, Context, Result};
-use url::Url;
+use anyhow::{bail, Result};
 
 pub(super) use super::client_scope::{
     required_workspace_id, resolve_current_workspace_id, resolve_workspace_id,
 };
 
+use super::client_url::normalize_api_base_url;
 use super::{config, http_timeout, ApiClient, Cli, Environment, CLIENT_VERSION};
 
 pub(super) fn new_api_client(cli: &Cli, environment: &Environment) -> Result<ApiClient> {
@@ -105,24 +105,4 @@ fn new_api_client_with_options(
         http_timeout(environment.raw("CORDY_HTTP_TIMEOUT")),
         CLIENT_VERSION,
     )
-}
-
-pub(super) fn normalize_api_base_url(raw: &str) -> Result<String> {
-    let mut url = Url::parse(raw.trim()).context("invalid CORDY_SERVER_URL")?;
-    match url.scheme() {
-        "ws" => url
-            .set_scheme("http")
-            .map_err(|_| anyhow::anyhow!("set scheme"))?,
-        "wss" => url
-            .set_scheme("https")
-            .map_err(|_| anyhow::anyhow!("set scheme"))?,
-        "http" | "https" => {}
-        _ => bail!("CORDY_SERVER_URL must use ws, wss, http, or https"),
-    }
-    if url.path() == "/ws" {
-        url.set_path("");
-    }
-    url.set_query(None);
-    url.set_fragment(None);
-    Ok(url.to_string().trim_end_matches('/').into())
 }
