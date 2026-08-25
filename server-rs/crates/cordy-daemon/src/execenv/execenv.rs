@@ -36,9 +36,10 @@
 //! - slog logger parameter dropped; tracing macros used directly.
 //! - Prepare is async: the worktree branch shells out to git through
 //!   tokio::process with timeouts (local_worktree.rs).
-//! - Hermes and OpenClaw remain explicit fail-closed stand-ins at the bottom
-//!   of this file. Reasonix and QwenPaw are implemented in their capability
-//!   modules and their prepare/reuse call sites are production-wired here.
+//! - Hermes and Reasonix are implemented in capability modules and their
+//!   prepare/reuse call sites are production-wired here. OpenClaw remains an
+//!   explicit fail-closed stand-in until its complete CLI/config contract is
+//!   migrated.
 //! - OpenclawGatewayPin is a structural stand-in for openclaw_config.go's
 //!   type. Go's public type masks Token via MarshalJSON/Stringer; the
 //!   stand-in serializes plainly (the isolation helper protocol needs the
@@ -61,8 +62,8 @@ use super::context::{
 use super::cursor_mcp::prepare_cursor_mcp_config;
 use super::git::task_key;
 use super::local_worktree::{prepare_local_worktree, LocalWorktree, LocalWorktreeParams};
-use super::reasonix;
 use super::reclaimable::CODEX_HOME_DIR_NAME;
+use super::{hermes, reasonix};
 
 // ---------------------------------------------------------------------------
 // Path helpers (Go filepath.Join / filepath.Clean semantics)
@@ -1599,13 +1600,6 @@ impl std::fmt::Display for OpenclawGatewayPin {
     }
 }
 
-/// Result of preparing a Hermes overlay (hermes_home.go prepareHermesHome).
-#[derive(Debug, Clone, Copy, Default)]
-pub struct HermesSessions {
-    pub mounted: bool,
-    pub history_present: bool,
-}
-
 /// Config-prep inputs for openclaw (openclaw_config.go OpenclawConfigPrep).
 #[derive(Debug, Clone, Default)]
 pub struct OpenclawConfigPrep {
@@ -1621,18 +1615,24 @@ pub struct OpenclawConfigResult {
     pub include_root: String,
 }
 
-// S9-integration: hermes_home.go lands in lane E2.
-#[allow(clippy::too_many_arguments)]
 fn prepare_hermes_home(
-    _hermes_home: &str,
-    _source_home: &str,
-    _source_must_exist: bool,
-    _skills: &[SkillContextForEnv],
-    _env: &HashMap<String, String>,
-    _memory_store: &str,
-    _session_store: &str,
-) -> anyhow::Result<HermesSessions> {
-    bail!("execenv: hermes provider family not yet ported (lane E2)")
+    hermes_home: &str,
+    source_home: &str,
+    source_must_exist: bool,
+    skills: &[SkillContextForEnv],
+    env: &HashMap<String, String>,
+    memory_store: &str,
+    session_store: &str,
+) -> anyhow::Result<hermes::HermesSessions> {
+    hermes::prepare_hermes_home(
+        hermes_home,
+        source_home,
+        source_must_exist,
+        skills,
+        env,
+        memory_store,
+        session_store,
+    )
 }
 
 /// Prepares QwenPaw's per-task workspace and native skill manifest.
