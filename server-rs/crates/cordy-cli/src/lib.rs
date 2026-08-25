@@ -18,6 +18,7 @@ mod agent_helpers;
 mod api;
 mod api_attachments;
 mod api_health;
+mod api_request;
 mod api_skill;
 mod api_transport;
 mod cli_command_schema;
