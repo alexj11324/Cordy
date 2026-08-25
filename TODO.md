@@ -1080,6 +1080,16 @@
       rustfmt and `git diff --check` pass (the subagent environment lacked a
       rustfmt executable); Cargo was not run. Pro owns push/Ready PR, gate, and
       merge.
+- [ ] CLI issue-label command structural refactor is committed at
+      `8079370d2b2f26085f4274c1e4632607383c68ff` (parent
+      `715d4c04787e095374e0c2e66ca42cec787b2de1`, tree
+      `eed039219659570b14e1fc038973b990d06579d9`): issue label list,
+      attach, detach, resolution, and output formatting now live in
+      `cordy-cli/src/issue_label_commands.rs`; the shared issue-label
+      extractor remains in the parent for workspace label reuse. The serial
+      subagent reviewed the exact head and found no issue. Scoped rustfmt and
+      `git diff --check` pass (the subagent environment lacked a rustfmt
+      executable); Cargo was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
