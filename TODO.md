@@ -830,6 +830,16 @@
       `as_deref()`, and sync/async call forms are preserved. `Command::Runtime`
       routing and lib registration are correct. `git diff --check` passes;
       subagent did not run Cargo or modify files.
+- [x] PR #247 `codex/cord-79-cli-daemon-dispatch` is the next bounded child of
+      #246: base branch `codex/cord-78-cli-runtime-dispatch` at
+      `d2c37b59a239258b8be284032e7f15a6fab3cc6a`, exact head
+      `5e6d4373e32fdd8cecf1c5446ecf4cf7e2586ae0`, tree
+      `e09927f06dc40c83c685bfc826f597ec9f04cc01`, candidate
+      `4f2c70bcd48b329f1cc97191d186b2188f2868a9`. It isolates daemon
+      lifecycle/status/logs/diagnostics routing into `dispatch_daemon.rs`,
+      preserving lifecycle arguments and synchronous probe behavior. Scoped
+      rustfmt and `git diff --check` pass; PR #247 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
