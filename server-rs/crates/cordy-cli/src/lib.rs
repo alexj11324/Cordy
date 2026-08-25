@@ -17,6 +17,7 @@ mod skill_catalog_commands;
 mod agent_helpers;
 mod api;
 mod api_attachments;
+mod api_attachment_download;
 mod api_health;
 mod api_request;
 mod api_skill;
