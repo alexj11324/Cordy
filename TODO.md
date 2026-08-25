@@ -469,6 +469,12 @@
       behavior is unchanged. Scoped rustfmt and `git diff --check` pass; PR #196
       is Ready (`isDraft=false`), MERGEABLE (checks settling). Cargo and
       exact-head review remain delegated.
+- [x] #196 exact-head subagent review PASS on
+      `631ade755b43cd733341e0154b823b3eb1f9473c`: all five config tests are
+      preserved; fs/Path imports, profile scoping, redaction, and task-local
+      fail-closed behavior remain covered. No compile or behavior blocker was
+      found. Subagent did not run Cargo or modify the worktree; coordinator
+      `git diff --check` remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
