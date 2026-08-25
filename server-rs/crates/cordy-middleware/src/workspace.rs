@@ -251,6 +251,18 @@ pub async fn require_workspace(
         (status, [(header::CONTENT_TYPE, "application/json")], body).into_response()
     }
 
+    if !state.roles.is_empty()
+        && matches!(
+            header(&req, "x-actor-source"),
+            Some("task_token" | "cloud_pat")
+        )
+    {
+        return json_error(
+            StatusCode::FORBIDDEN,
+            r#"{"error":"workspace administration is only available to human actors"}"#,
+        );
+    }
+
     let resolution = if let Some(param) = state.url_param {
         url_param(&req, param)
             .map(ResolveOutcome::Found)
