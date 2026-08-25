@@ -687,6 +687,18 @@
       `suppress_run`, and `--no-start` behavior remain covered. No compile or
       behavior blocker was found. Subagent did not run Cargo or modify the
       worktree; coordinator `git diff --check` remains clean.
+- [x] PR #209 `codex/cord-50-cli-issue-reorder-tests` is the next bounded
+      child of #208: base branch `codex/cord-50-cli-issue-status-tests` at
+      `017d306b24851e7f585a9b7a5dbee9a8ebb37e49`, exact head
+      `185d00aa76c01561b2d2ee71d8f1830fb4e7c8da`, tree
+      `38e54831a1f6ba17202102fdf88507e01b8bfd5a`, candidate
+      `165a316ad95a6a20484751fe4b84bcad7551e605`. It extracts the issue-reorder
+      target parser, position math, paginated project-column fetch, and
+      selector-validation tests into `issue_reorder_command_tests.rs`;
+      ordering, computed positions, PUT payloads, and errors are unchanged.
+      Scoped rustfmt and `git diff --check` pass; PR #209 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
+      delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
