@@ -6,6 +6,7 @@ use super::dispatch_auth::{run_auth_command, run_login_command};
 use super::dispatch_autopilot::run_autopilot_command;
 use super::dispatch_chat::run_chat_command;
 use super::dispatch_config::run_config_command;
+use super::dispatch_daemon::run_daemon_command;
 use super::dispatch_issue::run_issue_command;
 use super::dispatch_label::run_label_command;
 use super::dispatch_project::run_project_command;
@@ -41,27 +42,7 @@ pub(super) async fn run_with_input<R: Read>(
         Command::Attachment(args) => run_attachment_command(cli, environment, args).await,
         Command::Repo(args) => run_repo_command(cli, environment, args).await,
         Command::Runtime(args) => run_runtime_command(cli, environment, args).await,
-        Command::Daemon(DaemonArgs {
-            command: DaemonCommand::Start(args),
-        }) => run_daemon_start(cli, environment, args).await,
-        Command::Daemon(DaemonArgs {
-            command: DaemonCommand::Status(args),
-        }) => run_daemon_status(cli, environment, args).await,
-        Command::Daemon(DaemonArgs {
-            command: DaemonCommand::Logs(args),
-        }) => run_daemon_logs(cli, environment, args).await,
-        Command::Daemon(DaemonArgs {
-            command: DaemonCommand::Restart(args),
-        }) => run_daemon_restart(cli, environment, args).await,
-        Command::Daemon(DaemonArgs {
-            command: DaemonCommand::Stop,
-        }) => run_daemon_stop(cli, environment).await,
-        Command::Daemon(DaemonArgs {
-            command: DaemonCommand::ProbeRuntimes,
-        }) => run_daemon_probe_runtimes(cli, environment),
-        Command::Daemon(DaemonArgs {
-            command: DaemonCommand::DiskUsage(args),
-        }) => run_daemon_disk_usage(cli, environment, args).await,
+        Command::Daemon(args) => run_daemon_command(cli, environment, args).await,
         Command::Setup(args) => run_setup(cli, environment, args, input).await,
         Command::Update(args) => run_update(cli, environment, args).await,
         Command::Version { output } => run_version(*output),
