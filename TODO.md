@@ -1418,6 +1418,16 @@
       `git diff --check` pass; the serial subagent reviewed the exact head and
       found no compile or behavior blocker. Cargo was not run. Pro owns
       push/Ready PR, gate, and merge.
+- [ ] CLI API-client factory refactor is committed at
+      `2d78cb93c28072d798f8931f730b3a3be0563eb5` (parent
+      `e3409bcc38a74f48739882df08c3c00c3b0e0f06`, tree
+      `04a655b9b720bc2f4cd09970abd3611ad6024f42`): client construction,
+      task-context credential guards, server URL normalization, and workspace
+      selection now live in `cordy-cli/src/client_factory.rs`; the parent
+      re-exports the existing helpers. Scoped rustfmt and `git diff --check`
+      pass; the serial subagent reviewed the exact head and found no compile
+      or behavior blocker. Cargo was not run. Pro owns push/Ready PR, gate,
+      and merge.
 
 ## Phase 4 — S8 route and API parity
 
