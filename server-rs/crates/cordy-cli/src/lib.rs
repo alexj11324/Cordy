@@ -6,6 +6,7 @@
 mod agent_commands;
 mod agent_command_schema;
 mod agent_lifecycle_commands;
+mod agent_skill_commands;
 mod agent_helpers;
 mod api;
 mod cli_command_schema;
@@ -244,8 +245,9 @@ use url::{form_urlencoded, Url};
 pub(super) use agent_commands::{
     agent_mcp_path, run_agent_copy, run_agent_create, run_agent_env_get, run_agent_env_set,
     run_agent_get, run_agent_list, run_agent_mcp_list, run_agent_mcp_mutation,
-    run_agent_skills_list, run_agent_skills_mutation, run_agent_update, AgentMcpAction,
+    run_agent_update, AgentMcpAction,
 };
+pub(super) use agent_skill_commands::{run_agent_skills_list, run_agent_skills_mutation};
 pub(super) use agent_lifecycle_commands::{
     run_agent_avatar, run_agent_lifecycle, run_agent_tasks,
 };
