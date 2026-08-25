@@ -597,6 +597,17 @@
       import/refresh/search preserve their original arguments. Root routing
       and lib module wiring are valid with no stale branches. `git diff
       --check` passes; subagent did not run Cargo or modify files.
+- [x] PR #233 `codex/cord-65-cli-autopilot-dispatch` is the next bounded child
+      of #232: base branch `codex/cord-64-cli-skill-dispatch` at
+      `6b3f29b5bbffbed4ef64289230aa4929fd197722`, exact head
+      `1391a6e9dcac92c2b36bb3b2d3121cc17e2f6150`, tree
+      `9109c4ef73423d9720810461f3d8be2f46a66e34`, candidate
+      `ee59d7ff7c4138d84e9d11c7584b010a26417ebc`. It isolates the complete
+      `AutopilotCommand` routing branch into `dispatch_autopilot.rs`,
+      preserving every handler and `TriggerRotateUrl` stdin forwarding.
+      Scoped rustfmt and `git diff --check` pass; PR #233 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
+      delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
