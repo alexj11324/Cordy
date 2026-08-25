@@ -561,6 +561,17 @@
       `resolve_current_workspace_id` remain re-exported through
       `client_factory`; root imports and parent visibility are valid.
       `git diff --check` passes; subagent did not run Cargo or modify files.
+- [x] PR #231 `codex/cord-63-cli-agent-dispatch` is the next bounded child of
+      #230: base branch `codex/cord-62-cli-workspace-scope` at
+      `743142853714962d0a1a432bdea56b449f4d3c10`, exact head
+      `f1914582f5784396812c7eb775d8d1cc811c28cb`, tree
+      `e6cde9d9c848de002c52ae74e25022fce960ae11`, candidate
+      `a9ff02ba0ff7699fb6b8db6bc8b37eb88c82344b`. It isolates the agent
+      lifecycle/skills/env/MCP/copy dispatch group in `dispatch_agent.rs`,
+      leaving the root dispatcher as a routing shell. Scoped rustfmt with
+      `skip_children` and `git diff --check` pass; PR #231 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
+      delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
