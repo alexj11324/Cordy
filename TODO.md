@@ -1069,6 +1069,18 @@
       found no issue. Scoped rustfmt/diff-check pass; Cargo was not run. Pro
       owns push/Ready PR, gate, and merge.
 
+- [ ] CLI issue-subscriber command structural refactor is committed at
+      `715d4c04787e095374e0c2e66ca42cec787b2de1` (parent
+      `0cb3602e6d7425cb71e56b2bf846ac20d909fd85`, tree
+      `b99dcb01a46ac7fe6af08c9b6cfa536ada515726`): subscriber list,
+      table rendering, subscribe, and unsubscribe flows now live in
+      `cordy-cli/src/issue_subscriber_commands.rs`; parent dispatch and
+      regression-test visibility remain unchanged. The serial subagent reviewed
+      the exact head and found no compile-visibility or behavior issue. Scoped
+      rustfmt and `git diff --check` pass (the subagent environment lacked a
+      rustfmt executable); Cargo was not run. Pro owns push/Ready PR, gate, and
+      merge.
+
 ## Phase 4 — S8 route and API parity
 
 - [ ] Audit #66→#87 bottom-up against the live integration tree.
