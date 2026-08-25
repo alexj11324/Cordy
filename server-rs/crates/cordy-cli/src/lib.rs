@@ -39,6 +39,7 @@ mod issue_label_commands;
 mod issue_list_commands;
 mod issue_metadata_commands;
 mod issue_metadata_schema;
+mod issue_property_schema;
 mod issue_pull_request_commands;
 mod issue_reference;
 mod issue_reorder_commands;
@@ -205,6 +206,10 @@ use issue_metadata_commands::{
 pub(super) use issue_metadata_schema::{
     IssueMetadataArgs, IssueMetadataCommand, IssueMetadataDeleteArgs, IssueMetadataKeyArgs,
     IssueMetadataListArgs, IssueMetadataSetArgs,
+};
+pub(super) use issue_property_schema::{
+    IssuePropertyArgs, IssuePropertyCommand, IssuePropertyListArgs, IssuePropertyMutationArgs,
+    IssuePropertyUnsetArgs,
 };
 use issue_pull_request_commands::{
     format_issue_pull_requests_table, run_issue_pull_request_attach, run_issue_pull_requests,
@@ -687,55 +692,6 @@ struct IssueTimelineArgs {
     tail: i64,
     #[arg(long, help = "Show full UUIDs in table output")]
     full_id: bool,
-}
-
-#[derive(Debug, Args)]
-struct IssuePropertyArgs {
-    #[command(subcommand)]
-    command: IssuePropertyCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum IssuePropertyCommand {
-    #[command(about = "List custom property values set on an issue")]
-    List(IssuePropertyListArgs),
-    #[command(about = "Set a custom property value on an issue")]
-    Set(IssuePropertyMutationArgs),
-    #[command(about = "Remove a custom property value from an issue")]
-    Unset(IssuePropertyUnsetArgs),
-}
-
-#[derive(Debug, Args)]
-struct IssuePropertyListArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct IssuePropertyMutationArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(long, help = "Property name or UUID (required)")]
-    name: Option<String>,
-    #[arg(
-        long,
-        help = "Property value (required; see --help for per-type forms)"
-    )]
-    value: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct IssuePropertyUnsetArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(long, help = "Property name or UUID (required)")]
-    name: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
