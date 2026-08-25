@@ -78,6 +78,7 @@ mod runtime_delete;
 mod runtime_output;
 mod runtime_profile;
 mod runtime_update;
+mod setup_command_schema;
 mod setup_commands;
 mod skill_command_schema;
 mod skill_commands;
@@ -317,6 +318,9 @@ use runtime_profile::{
 use runtime_update::{
     format_runtime_update_result, run_runtime_update, run_runtime_update_with_policy,
 };
+pub(super) use setup_command_schema::{
+    SetupArgs, SetupCloudArgs, SetupCommand, SetupError, SetupSelfHostArgs,
+};
 use setup_commands::{
     confirm_setup_overwrite, dispatch_daemon_after_setup, format_setup_value_change,
     prepare_setup_profile, prepare_setup_profile_input, read_setup_confirmation,
@@ -486,65 +490,6 @@ struct UpdateArgs {
         help = "Maximum time to wait for the release archive download"
     )]
     download_timeout: Option<Duration>,
-}
-
-#[derive(Debug, Args)]
-struct SetupArgs {
-    #[arg(
-        long,
-        help = "Host/IP the browser callback URL points at when it can reach this CLI directly"
-    )]
-    callback_host: Option<String>,
-    #[command(subcommand)]
-    command: Option<SetupCommand>,
-}
-
-#[derive(Debug, Subcommand)]
-enum SetupCommand {
-    #[command(about = "Configure Cordy Cloud")]
-    Cloud(SetupCloudArgs),
-    #[command(about = "Configure a self-hosted Cordy server")]
-    SelfHost(SetupSelfHostArgs),
-}
-
-#[derive(Debug, Args)]
-struct SetupCloudArgs {
-    #[arg(
-        long,
-        help = "Host/IP the browser callback URL points at when it can reach this CLI directly"
-    )]
-    callback_host: Option<String>,
-}
-
-#[derive(Debug, Args)]
-struct SetupSelfHostArgs {
-    #[arg(long, help = "Frontend URL used by the login flow")]
-    app_url: Option<String>,
-    #[arg(
-        long,
-        default_value_t = 8080,
-        help = "Backend port for local self-hosting"
-    )]
-    port: u16,
-    #[arg(
-        long,
-        default_value_t = 3000,
-        help = "Frontend port for local self-hosting"
-    )]
-    frontend_port: u16,
-    #[arg(
-        long,
-        help = "Host/IP the browser callback URL points at when it can reach this CLI directly"
-    )]
-    callback_host: Option<String>,
-}
-
-#[derive(Debug, thiserror::Error)]
-enum SetupError {
-    #[error("setup health preflight failed: {0}")]
-    HealthProbe(#[source] HealthProbeError),
-    #[error("setup self-host requires --app-url when --server-url points at a remote host")]
-    RemoteAppUrlRequired,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
