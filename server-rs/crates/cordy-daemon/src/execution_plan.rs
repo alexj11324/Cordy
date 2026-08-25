@@ -8,8 +8,11 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use anyhow::Context as _;
 use cordy_agent::ExecOptions;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
@@ -22,12 +25,16 @@ use crate::execenv::execenv::{
 };
 use crate::execenv::hermes;
 use crate::execenv::local_worktree::LocalWorktreeParams;
+use crate::identity::profile_dir;
 use crate::openclaw_runtime_config::decode_openclaw_runtime_config;
 use crate::prompt::{
     backend_resume_continuity_notice, comment_reply_threads, task_is_squad_leader,
 };
 use crate::thread_name::derive_task_thread_name_from_task;
 use crate::types::{AgentData, RuntimeExecutionTarget, Task};
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 const TASK_CONFIG_ROOT_ENV: &str = "CORDY_TASK_CONFIG_ROOT";
 
@@ -298,6 +305,15 @@ impl ProviderExecutionPlan {
         };
 
         let mut values = inputs.runtime_env;
+        if provider == "dsh" {
+            let session_root =
+                prepare_dsh_task_session_root(&config.profile, &task.runtime_id, &task.agent_id)?;
+            values.insert(
+                "CORDY_DSH_SESSION_ROOT".to_string(),
+                session_root.to_string_lossy().into_owned(),
+            );
+            values.insert("DSH_TELEMETRY_DISABLED".to_string(), "1".to_string());
+        }
         if !inputs.path.is_empty() {
             values.insert("PATH".to_string(), inputs.path);
         }
@@ -455,6 +471,12 @@ impl ProviderExecutionPlan {
         let mut values = self.child_env.values.clone();
         for (key, value) in &self.child_env.custom_env {
             values.insert(key.clone(), value.clone());
+        }
+        if self.prepare.provider == "dsh" {
+            if let Some(session_root) = self.child_env.values.get("CORDY_DSH_SESSION_ROOT") {
+                values.insert("CORDY_DSH_SESSION_ROOT".to_string(), session_root.clone());
+            }
+            values.insert("DSH_TELEMETRY_DISABLED".to_string(), "1".to_string());
         }
         values.insert(
             TASK_CONFIG_ROOT_ENV.to_string(),
@@ -729,6 +751,44 @@ fn insert_nonempty(values: &mut BTreeMap<String, String>, key: &str, value: &str
     }
 }
 
+fn prepare_dsh_task_session_root(
+    profile: &str,
+    runtime_id: &str,
+    agent_id: &str,
+) -> anyhow::Result<PathBuf> {
+    let profile_dir = profile_dir(profile)?;
+    prepare_dsh_task_session_root_at(&profile_dir, runtime_id, agent_id)
+}
+
+fn prepare_dsh_task_session_root_at(
+    profile_dir: &Path,
+    runtime_id: &str,
+    agent_id: &str,
+) -> anyhow::Result<PathBuf> {
+    let runtime_id = validate_dsh_state_segment("runtime", runtime_id)?;
+    let agent_id = validate_dsh_state_segment("agent", agent_id)?;
+    let path = profile_dir
+        .join("dsh-sessions")
+        .join(runtime_id)
+        .join(agent_id);
+    fs::create_dir_all(&path).context("create DSH session root")?;
+    #[cfg(unix)]
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o700))
+        .context("restrict DSH session root")?;
+    Ok(path)
+}
+
+fn validate_dsh_state_segment<'a>(name: &str, value: &'a str) -> anyhow::Result<&'a str> {
+    anyhow::ensure!(!value.is_empty(), "{name} ID is required");
+    anyhow::ensure!(
+        value
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_')),
+        "{name} ID contains an unsafe path character"
+    );
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -916,6 +976,29 @@ mod tests {
             .unwrap();
         assert_eq!(bound.launch_prefix, vec!["--model", "coder"]);
         assert_eq!(bound.options.custom_args, vec!["--agent-flag"]);
+    }
+
+    #[test]
+    fn dsh_session_root_is_scoped_and_rejects_unsafe_identity_segments() {
+        let root = tempfile::tempdir().unwrap();
+        let session_root =
+            prepare_dsh_task_session_root_at(root.path(), "runtime-1", "agent_2").unwrap();
+        assert_eq!(
+            session_root,
+            root.path().join("dsh-sessions/runtime-1/agent_2")
+        );
+        assert!(session_root.is_dir());
+        #[cfg(unix)]
+        assert_eq!(
+            std::fs::metadata(&session_root)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+        assert!(prepare_dsh_task_session_root_at(root.path(), "runtime/1", "agent").is_err());
+        assert!(prepare_dsh_task_session_root_at(root.path(), "runtime", "../agent").is_err());
     }
 
     #[test]

@@ -439,6 +439,26 @@ impl TraecliBackend {
             .discover_models(cache, cancellation, timeout)
             .await
     }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Trae CLI executable do not share an account/profile catalog
+    /// entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await
+    }
 }
 
 #[async_trait]
@@ -941,9 +961,34 @@ impl DimBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        self.inner
-            .discover_models(cache, cancellation, timeout)
+        self.discover_models_for_runtime("dim", cache, cancellation, timeout)
             .await
+    }
+
+    /// Discovers against a daemon runtime identity and preserves Dim's
+    /// non-authoritative empty fallback when its ACP catalog is unavailable.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        let catalog = discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await;
+        if catalog.models.is_empty() {
+            return Catalog {
+                models: Vec::new(),
+                fallback: true,
+            };
+        }
+        catalog
     }
 }
 
