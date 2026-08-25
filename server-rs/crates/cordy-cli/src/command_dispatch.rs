@@ -16,6 +16,7 @@ use super::dispatch_runtime::run_runtime_command;
 use super::dispatch_setup::run_setup_command;
 use super::dispatch_skill::run_skill_command;
 use super::dispatch_squad::run_squad_command;
+use super::dispatch_update::run_update_command;
 use super::dispatch_user::run_user_command;
 use super::dispatch_workspace::run_workspace_command;
 use super::*;
@@ -45,7 +46,7 @@ pub(super) async fn run_with_input<R: Read>(
         Command::Runtime(args) => run_runtime_command(cli, environment, args).await,
         Command::Daemon(args) => run_daemon_command(cli, environment, args).await,
         Command::Setup(args) => run_setup_command(cli, environment, args, input).await,
-        Command::Update(args) => run_update(cli, environment, args).await,
+        Command::Update(args) => run_update_command(cli, environment, args).await,
         Command::Version { output } => run_version(*output),
     }
 }
