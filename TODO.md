@@ -1279,6 +1279,18 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
+- [ ] PR #298 `codex/cord-130-cli-api-skill-import` is the next bounded child of
+      #297: base branch `codex/cord-129-cli-api-attachments` at
+      `e6f02837d0e50e3f76a1aed3f4f068010c006800`, exact head
+      `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, tree
+      `6747a7e42a92adb7f49e872db786ce78cdaa579c`, candidate
+      `186d8d6b167278595aa76f00577f645006945f58` (parents base + head).
+      It isolates skill archive multipart import in `api_skill.rs`; filename
+      fallback, on_conflict field, endpoint, auth headers, and response
+      decoding remain unchanged. Scoped pinned rustfmt and `git diff --check`
+      pass; Cargo is delegated. PR #298 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Exact-head subagent review is pending; no Cargo was
+      run.
 - [x] PR #297 `codex/cord-129-cli-api-attachments` is the completed bounded child of
       #296: base branch `codex/cord-128-cli-config-mutation` at
       `d01b432af7549bd0352e4ee267df9dd173f15fea`, exact head
