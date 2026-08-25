@@ -145,6 +145,7 @@ impl ProductionProviderAdapter {
             openclaw_bin: (target.provider == "openclaw")
                 .then(|| launch.command_path.clone())
                 .unwrap_or_default(),
+            launch_prefix: launch.fixed_args.clone(),
             path: provider_path(),
             ..ProviderExecutionInputs::default()
         };
@@ -247,10 +248,11 @@ impl ProductionProviderAdapter {
                     ..PreparedEnvironmentInputs::default()
                 },
             )?;
-            let backend_config = runtime.backend_config(
+            let backend_config = runtime.backend_config_with_prefix(
                 &task.workspace_id,
                 &target,
                 bound.child_env.into_inner(),
+                bound.launch_prefix,
             )?;
             let backend = cordy_agent::build_backend(&target.provider, backend_config)
                 .map_err(|error| anyhow::anyhow!("create agent backend: {error}"))?;

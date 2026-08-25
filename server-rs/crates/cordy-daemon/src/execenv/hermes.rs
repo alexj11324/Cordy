@@ -40,6 +40,106 @@ pub struct HermesProfileResolution {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct HermesProfileSelection {
+    pub name: String,
+    pub found: bool,
+    pub inline: bool,
+    arg_from: usize,
+    arg_len: usize,
+}
+
+pub fn parse_hermes_profile_args(args: &[String]) -> HermesProfileSelection {
+    let none = HermesProfileSelection::default();
+    let mut index = 0;
+    while index < args.len() {
+        let arg = unquote_arg(&args[index]);
+        if arg == "--" {
+            break;
+        }
+        if arg == "--args" && inside_mcp_add(args, index) {
+            break;
+        }
+        if arg == "-p" || arg == "--profile" {
+            let Some(value) = args.get(index + 1).map(|value| unquote_arg(value)) else {
+                return none;
+            };
+            if !valid_profile_arg(&value) {
+                return none;
+            }
+            return HermesProfileSelection {
+                name: value,
+                found: true,
+                inline: false,
+                arg_from: index,
+                arg_len: 2,
+            };
+        }
+        if let Some(value) = arg.strip_prefix("--profile=") {
+            let value = unquote_arg(value);
+            return HermesProfileSelection {
+                name: value,
+                found: true,
+                inline: true,
+                arg_from: index,
+                arg_len: 1,
+            };
+        }
+        if hermes_value_flag(&arg) {
+            index += 2;
+            continue;
+        }
+        if hermes_optional_value_flag(&arg)
+            && args
+                .get(index + 1)
+                .is_some_and(|value| !unquote_arg(value).starts_with("-"))
+        {
+            index += 2;
+            continue;
+        }
+        index += 1;
+    }
+    none
+}
+
+pub fn hermes_launch_argv(launch_prefix: &[String], custom_args: &[String]) -> Vec<String> {
+    let mut argv = launch_prefix.to_vec();
+    argv.push("acp".to_string());
+    argv.extend(
+        custom_args
+            .iter()
+            .filter(|arg| unquote_arg(arg) != "acp")
+            .cloned(),
+    );
+    argv
+}
+
+pub fn strip_hermes_profile_selectors(
+    launch_prefix: &[String],
+    custom_args: &[String],
+) -> (Vec<String>, Vec<String>) {
+    let mut prefix = launch_prefix.to_vec();
+    let mut custom = custom_args
+        .iter()
+        .filter(|arg| unquote_arg(arg) != "acp")
+        .cloned()
+        .collect::<Vec<_>>();
+
+    loop {
+        let argv = hermes_launch_argv(&prefix, &custom);
+        let selection = parse_hermes_profile_args(&argv);
+        if !selection.found || selection.arg_len == 0 {
+            return (prefix, custom);
+        }
+        for index in (selection.arg_from..selection.arg_from + selection.arg_len).rev() {
+            if index < prefix.len() {
+                prefix.remove(index);
+            } else if index > prefix.len() {
+                custom.remove(index - prefix.len() - 1);
+            }
+        }
+    }
+}
 /// Resolve the profile home using the same precedence as Hermes: an explicit
 /// custom `HERMES_HOME`, an already profile-scoped home, then active_profile,
 /// otherwise the platform default.  Invalid explicit names fail closed.
@@ -52,7 +152,7 @@ pub fn resolve_hermes_profile(custom_home: &str, profile: Option<&str>) -> Herme
     let explicit = profile.is_some();
     let name = match profile {
         Some(value) => value.to_string(),
-        None if base
+        None if Path::new(&base)
             .parent()
             .and_then(Path::file_name)
             .is_some_and(|p| p == "profiles") =>
@@ -117,6 +217,63 @@ fn invalid_profile(message: impl Into<String>) -> HermesProfileResolution {
         error: Some(message.into()),
         ..Default::default()
     }
+}
+
+fn valid_profile_arg(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    !bytes.is_empty()
+        && bytes.len() <= 64
+        && (bytes[0].is_ascii_lowercase() || bytes[0].is_ascii_digit())
+        && bytes.iter().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == 95 || *byte == 45
+        })
+}
+
+fn hermes_value_flag(value: &str) -> bool {
+    matches!(
+        value,
+        "-z" | "--oneshot"
+            | "-m"
+            | "--model"
+            | "--provider"
+            | "-t"
+            | "--toolsets"
+            | "-r"
+            | "--resume"
+            | "-s"
+            | "--skills"
+            | "--usage-file"
+    )
+}
+
+fn hermes_optional_value_flag(value: &str) -> bool {
+    matches!(value, "-c" | "--continue")
+}
+
+fn inside_mcp_add(args: &[String], index: usize) -> bool {
+    let Some(mcp) = args
+        .iter()
+        .take(index)
+        .position(|arg| unquote_arg(arg) == "mcp")
+    else {
+        return false;
+    };
+    args.iter()
+        .skip(mcp + 1)
+        .take(index.saturating_sub(mcp + 1))
+        .any(|arg| unquote_arg(arg) == "add")
+}
+
+fn unquote_arg(value: &str) -> String {
+    let value = value.trim();
+    if value.len() >= 2 {
+        let bytes = value.as_bytes();
+        let last = value.len() - 1;
+        if (bytes[0] == 39 && bytes[last] == 39) || (bytes[0] == 34 && bytes[last] == 34) {
+            return value[1..last].to_string();
+        }
+    }
+    value.to_string()
 }
 
 fn nonempty(value: &str) -> Option<String> {
@@ -688,7 +845,7 @@ fn mount_session_db(overlay: &str, store: &str) -> anyhow::Result<HermesSessions
     })
 }
 
-fn touch_store(path: &str) {
+fn touch_store(path: &Path) {
     // Store GC uses directory mtime as the last-activity signal. Updating it
     // is best-effort: active-store reservations still protect a live mount,
     // while a read-only filesystem should not make task preparation fail.
@@ -786,6 +943,53 @@ fn atomic_write(path: &Path, data: &[u8], mode: u32) -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(|value| (*value).to_string()).collect()
+    }
+
+    #[test]
+    fn profile_parser_matches_hermes_argv_and_skips_value_flags() {
+        let argv = hermes_launch_argv(
+            &args(&["--model", "coder"]),
+            &args(&["-p", "research", "acp"]),
+        );
+        let selection = parse_hermes_profile_args(&argv);
+        assert_eq!(selection.name, "research");
+        assert!(selection.found);
+        assert!(!selection.inline);
+
+        let inline = parse_hermes_profile_args(&args(&["-m", "coder", "--profile=research"]));
+        assert_eq!(inline.name, "research");
+        assert!(inline.inline);
+        for quoted in ["--profile='research'", "--profile=\"research\""] {
+            let quoted = parse_hermes_profile_args(&args(&[quoted]));
+            assert_eq!(quoted.name, "research");
+            assert!(quoted.inline);
+        }
+        assert!(!parse_hermes_profile_args(&args(&["-p", "no:xdist"])).found);
+        assert!(
+            !parse_hermes_profile_args(&args(&[
+                "mcp",
+                "add",
+                "server",
+                "--args",
+                "--profile",
+                "child",
+            ]))
+            .found
+        );
+    }
+
+    #[test]
+    fn overlay_strips_all_profile_selectors_from_both_launch_regions() {
+        let (prefix, custom) = strip_hermes_profile_selectors(
+            &args(&["--model", "coder"]),
+            &args(&["-p", "research", "--profile=other", "flag", "acp"]),
+        );
+        assert_eq!(prefix, args(&["--model", "coder"]));
+        assert_eq!(custom, args(&["flag"]));
+    }
 
     #[test]
     fn profile_resolution_rejects_reserved_and_scopes_named_profiles() {

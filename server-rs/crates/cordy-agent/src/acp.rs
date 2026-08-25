@@ -109,7 +109,7 @@ where
         &mut self,
         method: &str,
         params: Value,
-        on_notification: impl FnMut(AcpNotification),
+        mut on_notification: impl FnMut(AcpNotification),
         mut on_permission: impl FnMut(Option<&Value>) -> AcpPermissionDecision,
     ) -> Result<Value, AcpError> {
         let id = self.next_id;
@@ -169,7 +169,7 @@ where
         &mut self,
         quiet: Duration,
         maximum: Duration,
-        mut on_notification: impl FnMut(AcpNotification),
+        on_notification: impl FnMut(AcpNotification),
     ) -> Result<(), AcpError> {
         self.drain_notifications_with_permission(
             quiet,

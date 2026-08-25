@@ -123,6 +123,32 @@ impl ProviderRuntimeContext {
         target: &RuntimeExecutionTarget,
         env: BTreeMap<String, String>,
     ) -> anyhow::Result<BackendConfig> {
+        let launch = self.resolve_launch(workspace_id, target)?;
+        Ok(BackendConfig {
+            command: RuntimeCommand::new(launch.command_path, launch.fixed_args),
+            env,
+        })
+    }
+
+    pub fn backend_config_with_prefix(
+        &self,
+        workspace_id: &str,
+        target: &RuntimeExecutionTarget,
+        env: BTreeMap<String, String>,
+        prefix: Vec<String>,
+    ) -> anyhow::Result<BackendConfig> {
+        let launch = self.resolve_launch(workspace_id, target)?;
+        Ok(BackendConfig {
+            command: RuntimeCommand::new(launch.command_path, prefix),
+            env,
+        })
+    }
+
+    fn resolve_launch(
+        &self,
+        workspace_id: &str,
+        target: &RuntimeExecutionTarget,
+    ) -> anyhow::Result<crate::provider_registration::RuntimeLaunchSpec> {
         let launch = self
             .launch_registry
             .resolve(workspace_id, target)
@@ -137,10 +163,7 @@ impl ProviderRuntimeContext {
             "accepted launch for provider {} has no executable path",
             target.provider
         );
-        Ok(BackendConfig {
-            command: RuntimeCommand::new(launch.command_path, launch.fixed_args),
-            env,
-        })
+        Ok(launch)
     }
 
     /// Process-wide activity state used to coordinate execution with update

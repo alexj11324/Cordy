@@ -20,6 +20,7 @@ use crate::execenv::execenv::{
     ConnectedApp, Environment, OpenclawGatewayPin, PrepareParams, ProjectResourceForEnv,
     RepoContextForEnv, ReuseParams, SkillContextForEnv, SkillFileContextForEnv, TaskContextForEnv,
 };
+use crate::execenv::hermes;
 use crate::execenv::local_worktree::LocalWorktreeParams;
 use crate::openclaw_runtime_config::decode_openclaw_runtime_config;
 use crate::prompt::{
@@ -49,6 +50,9 @@ pub struct ProviderExecutionInputs {
     pub hermes_source_must_exist: bool,
     pub hermes_memory_store: String,
     pub hermes_session_store: String,
+    /// Accepted runtime fixed arguments used by providers with argv-level
+    /// profile selectors.
+    pub launch_prefix: Vec<String>,
     pub codex_custom_args: Vec<String>,
     /// Additional daemon-owned child values. Canonical task identity and
     /// credential keys are applied afterwards and therefore cannot be
@@ -79,6 +83,7 @@ pub struct ProviderExecutionPlan {
     prior_work_dir: String,
     options: ExecOptionsSeed,
     child_env: ChildEnvironmentSeed,
+    launch_prefix: Vec<String>,
 }
 
 impl fmt::Debug for ProviderExecutionPlan {
@@ -98,6 +103,7 @@ impl fmt::Debug for ProviderExecutionPlan {
 pub struct BoundProviderExecution {
     pub options: ExecOptions,
     pub child_env: ChildProcessEnvironment,
+    pub launch_prefix: Vec<String>,
 }
 
 impl fmt::Debug for BoundProviderExecution {
@@ -212,6 +218,49 @@ impl ProviderExecutionPlan {
         };
         let task_context = task_context(task, agent, &provider);
         let mut extra_args = default_args(config, &provider);
+        let mut custom_args = agent.custom_args.clone();
+        let mut hermes_source_home = inputs.hermes_source_home;
+        let mut hermes_source_must_exist = inputs.hermes_source_must_exist;
+        let mut hermes_memory_store = inputs.hermes_memory_store;
+        let mut hermes_session_store = inputs.hermes_session_store;
+        let mut hermes_env = custom_env.clone();
+        let mut launch_prefix = inputs.launch_prefix;
+        if provider == "hermes" {
+            let selection = hermes::parse_hermes_profile_args(&hermes::hermes_launch_argv(
+                &launch_prefix,
+                &custom_args,
+            ));
+            let resolution = hermes::resolve_hermes_profile(
+                custom_env
+                    .get("HERMES_HOME")
+                    .map(String::as_str)
+                    .unwrap_or_default(),
+                selection.found.then_some(selection.name.as_str()),
+            );
+            if let Some(error) = resolution.error {
+                anyhow::bail!("invalid Hermes profile selection: {error}");
+            }
+            hermes_source_home = resolution.source_home;
+            hermes_source_must_exist = resolution.must_exist;
+            hermes_memory_store = hermes::hermes_memory_store_path(
+                &config.profile,
+                &task.agent_id,
+                &hermes_source_home,
+            );
+            hermes_session_store = hermes::hermes_session_store_path(
+                &config.profile,
+                &task.agent_id,
+                &hermes_source_home,
+                &task_context,
+            );
+            hermes_env.insert("HERMES_HOME".to_string(), hermes_source_home.clone());
+            if !task_context.agent_skills.is_empty() {
+                let (effective_prefix, effective_custom_args) =
+                    hermes::strip_hermes_profile_selectors(&launch_prefix, &custom_args);
+                launch_prefix = effective_prefix;
+                custom_args = effective_custom_args;
+            }
+        }
         let codex_custom_args = if inputs.codex_custom_args.is_empty() {
             let mut effective = extra_args.clone();
             effective.extend(agent.custom_args.clone());
@@ -238,11 +287,11 @@ impl ProviderExecutionPlan {
             openclaw_gateway,
             local_work_dir: inputs.local_work_dir,
             local_worktree: inputs.local_worktree,
-            hermes_source_home: inputs.hermes_source_home,
-            hermes_source_must_exist: inputs.hermes_source_must_exist,
-            hermes_memory_store: inputs.hermes_memory_store,
-            hermes_session_store: inputs.hermes_session_store,
-            hermes_env: custom_env.clone().into_iter().collect(),
+            hermes_source_home,
+            hermes_source_must_exist,
+            hermes_memory_store,
+            hermes_session_store,
+            hermes_env: hermes_env.into_iter().collect(),
             reasonix_env: custom_env.clone().into_iter().collect(),
             codex_custom_args,
             task: task_context,
@@ -314,13 +363,14 @@ impl ProviderExecutionPlan {
                 resume_session_id: task.prior_session_id.clone(),
                 resume_continuity_notice: backend_resume_continuity_notice(task),
                 extra_args,
-                custom_args: agent.custom_args.clone(),
+                custom_args,
                 mcp_config,
                 thinking_level: agent.thinking_level.clone(),
                 service_tier: agent.service_tier.clone(),
                 openclaw_mode,
             },
             child_env: ChildEnvironmentSeed { values, custom_env },
+            launch_prefix,
         })
     }
 
@@ -458,6 +508,7 @@ impl ProviderExecutionPlan {
                 ..ExecOptions::default()
             },
             child_env: ChildProcessEnvironment(values),
+            launch_prefix: self.launch_prefix.clone(),
         })
     }
 }
@@ -814,6 +865,57 @@ mod tests {
             prepare.codex_custom_args,
             vec!["--sandbox", "workspace-write", "--agent-flag", "secret-arg"]
         );
+    }
+
+    #[test]
+    fn hermes_plan_resolves_profile_stores_and_overlay_launch_args() {
+        let mut task = task();
+        let agent = task.agent.as_mut().unwrap();
+        agent
+            .custom_env
+            .as_mut()
+            .unwrap()
+            .insert("HERMES_HOME".to_string(), "/tmp/hermes".to_string());
+        agent.custom_args = vec![
+            "--profile".to_string(),
+            "research".to_string(),
+            "--profile=ignored".to_string(),
+            "--agent-flag".to_string(),
+        ];
+        let target = RuntimeExecutionTarget {
+            provider: "hermes".to_string(),
+            profile_id: String::new(),
+        };
+        let mut inputs = inputs();
+        inputs.launch_prefix = vec!["--model".to_string(), "coder".to_string()];
+
+        let plan = ProviderExecutionPlan::build(&config(), &task, &target, inputs).unwrap();
+        let prepare = plan.prepare_params();
+        assert_eq!(prepare.hermes_source_home, "/tmp/hermes/profiles/research");
+        assert!(prepare.hermes_source_must_exist);
+        assert_eq!(
+            prepare.hermes_env.get("HERMES_HOME").map(String::as_str),
+            Some("/tmp/hermes/profiles/research"),
+        );
+        assert!(prepare
+            .hermes_memory_store
+            .ends_with("hermes-state/agent-1/research_f71c2089e8cc5449",));
+        assert!(prepare
+            .hermes_session_store
+            .ends_with("hermes-sessions/agent-1/research_f71c2089e8cc5449/issue-1",));
+
+        let bound = plan
+            .bind_environment(
+                &Environment {
+                    work_dir: "/workdir".to_string(),
+                    cordy_config_root: "/config".to_string(),
+                    ..Environment::default()
+                },
+                PreparedEnvironmentInputs::default(),
+            )
+            .unwrap();
+        assert_eq!(bound.launch_prefix, vec!["--model", "coder"]);
+        assert_eq!(bound.options.custom_args, vec!["--agent-flag"]);
     }
 
     #[test]
