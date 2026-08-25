@@ -1294,7 +1294,7 @@
       scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated.
       PR #300 is Ready (`isDraft=false`), MERGEABLE. Exact-head subagent review
       PASS on `50ec9b1b`; no Cargo was run.
-- [ ] PR #301 `codex/cord-133-cli-issue-property-values` is the next bounded
+- [x] PR #301 `codex/cord-133-cli-issue-property-values` is the completed bounded
       child of #300: base branch `codex/cord-132-cli-api-transport` at
       `50ec9b1b08440a477e0a1019b4ac528ab30d437b`, exact head
       `61e7b4379f7b0f51e4dba37308767dfd851e9964`, tree
@@ -1305,8 +1305,8 @@
       row construction, output formatting, API calls, validation semantics,
       and command dispatch remain unchanged. Scoped pinned rustfmt and
       `git diff --check` pass; Cargo is delegated. PR #301 is Ready
-      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review pending;
-      no Cargo was run.
+      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review PASS on
+      `61e7b437`; no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
