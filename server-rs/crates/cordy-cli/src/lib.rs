@@ -146,7 +146,7 @@ mod dispatch_version;
 mod command_dispatch;
 pub mod config;
 mod config_command_schema;
-mod config_commands;
+mod config_mutation_commands;
 mod config_read_commands;
 pub mod daemon;
 mod daemon_command_schema;
@@ -321,7 +321,7 @@ pub(super) use client_factory::{
 };
 pub(super) use command_dispatch::run_with_input;
 pub(super) use config_command_schema::{ConfigArgs, ConfigCommand};
-use config_commands::{run_config_set, validate_config_set};
+use config_mutation_commands::{run_config_set, validate_config_set};
 use config_read_commands::{config_display_values, format_config_table, run_config_show};
 pub(super) use daemon_command_schema::{
     DaemonArgs, DaemonCommand, DaemonDiskUsageArgs, DaemonLaunchArgs, DaemonLogsArgs,
