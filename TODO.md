@@ -406,6 +406,17 @@
       boundaries are valid. No compile or behavior blocker was found. Subagent
       did not run Cargo or modify the worktree; coordinator `git diff --check`
       remains clean.
+- [x] PR #193 `codex/cord-50-cli-attachment-tests` is the next bounded child of
+      #192: base branch `codex/cord-50-cli-repo-tests` at
+      `84746f9e23a277411905907c345bf7bede0e1841`, exact head
+      `10637cf1c310e29284ae0af4a20668d91c259c0d`, tree
+      `241e21a84ff347b8488ba6d7baa926ef47b16f40`, candidate
+      `a40b9484fea263ef4d76f713c321ae1ea76737a6`. It extracts the attachment
+      upload/download multipart, path-safety, and output contract test into
+      `attachment_command_tests.rs`; task-token fields, filename sanitization,
+      and destination behavior are unchanged. Scoped rustfmt and
+      `git diff --check` pass; PR #193 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
