@@ -1383,6 +1383,7 @@ impl Drop for CancelArchiveOnDrop {
     }
 }
 
+#[cfg(test)]
 fn parse_archive(data: &[u8], filename: &str) -> Result<ImportedSkill, ImportError> {
     parse_archive_with_cancel(data, filename, &AtomicBool::new(false))
 }
