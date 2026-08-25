@@ -388,6 +388,18 @@
       routes, encoded query behavior, imports, and module visibility are intact.
       No compile or behavior blocker was found. Subagent did not run Cargo or
       modify the worktree; coordinator `git diff --check` remains clean.
+- [x] PR #222 `codex/cord-54-daemon-diagnostics` is the next bounded child
+      of #221: base branch `codex/cord-53-daemon-log-commands` at
+      `1ad8a5a57edfb33a5ad29f4c0d6b22390d89cac4`, exact head
+      `5d3c4fd9cbb27f67dd5fbf6103ba3a9be236655c`, tree
+      `f8701ece338834474734377794b0ffa50289b8ca`, candidate
+      `5082d0613e339c640aa9fdefa590cc009f7a03e`. It isolates the
+      `probe-runtimes` and `disk-usage` diagnostics boundary in
+      `daemon_diagnostics_commands.rs`; scanning, parent-status, and output
+      primitives remain in their owning modules. Scoped rustfmt with
+      `skip_children` and `git diff --check` pass; PR #222 is Ready
+      (`isDraft=false`), MERGEABLE (GitHub checks pending). Cargo and
+      exact-head review remain delegated.
 - [x] PR #221 `codex/cord-53-daemon-log-commands` is the next bounded child
       of #220: base branch `codex/cord-52-daemon-status-commands` at
       `6a80fafaf12814009a2155036d89a4ea1ef51d58`, exact head
