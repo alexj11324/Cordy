@@ -1078,7 +1078,7 @@
       all seven handler signature imports are present, schema clap structure,
       defaults, `PathBuf`, and Agent/MCP routing are unchanged. Subagent did
       not run Cargo or modify files; `git diff --check` remains clean.
-- [ ] PR #258 `codex/cord-90-cli-autopilot-schema` is the next bounded child
+- [x] PR #258 `codex/cord-90-cli-autopilot-schema` is the next bounded child
       of #257: base branch `codex/cord-89-cli-agent-schema` at
       `e79ee5b23bd2bc422aa5a7045febfc6ed755d9a5`. Initial exact head
       `72d0b86eb71e030bf7a8d513e3ca2fecde5dbf06` was blocked because five
@@ -1093,7 +1093,11 @@
       output, and routing semantics remain unchanged. Scoped pinned rustfmt
       and `git diff --check` pass; Cargo is delegated. PR #258 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Corrected-head exact review is
-      pending; the initial review was not reused.
+      PASS on `0b004213e8b8289d03325ba77dea16be32c5b3e8`: all five handler
+      signature imports are present; Autopilot/Trigger variants, defaults,
+      flags, stdin confirmation, dispatch routing, and root re-exports remain
+      unchanged. Subagent did not run Cargo or modify files; `git diff --check`
+      remains clean.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
