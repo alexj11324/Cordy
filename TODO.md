@@ -739,6 +739,13 @@
       preserving identifiers, output formats, and resource behavior. Scoped
       rustfmt and `git diff --check` pass; PR #241 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #241 exact-head subagent review PASS on
+      `3870dd16270024020f9557fec428f9970e2e591c`: `dispatch_project.rs`
+      covers Project List/Get/Create/Update/Delete/Status and Resource
+      List/Add/Update/Remove; status/full-id/output/ID and nested resource
+      arguments are preserved. `Command::Project` routing, lib registration,
+      and parent visibility are correct and equivalent to the original match.
+      `git diff --check` passes; subagent did not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
