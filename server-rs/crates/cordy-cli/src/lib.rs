@@ -200,6 +200,7 @@ mod issue_metadata_schema;
 mod issue_property_commands;
 mod issue_property_actor;
 mod issue_property_output;
+mod issue_property_value_encoding;
 mod issue_property_values;
 mod issue_property_schema;
 mod issue_pull_request_commands;
