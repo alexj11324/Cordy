@@ -827,6 +827,17 @@
       lookup, and output behavior remain covered. No compile or behavior blocker
       was found. Subagent did not run Cargo or modify the worktree; coordinator
       `git diff --check` remains clean.
+- [x] PR #217 `codex/cord-50-cli-test-helpers` is the next bounded child of
+      #216: base branch `codex/cord-50-cli-issue-rerun-tests` at
+      `7db7da3ed8517ad4683ff981f071457a5d829b41`, exact head
+      `e27e0286fcc1ca11125bc331f55cce4ffd018816`, tree
+      `c891b0add99c7c1ed79d55c4d72bba98064d9ff4`, candidate
+      `580941d83011da15e01734f3c278d6f45faf7099`. It centralizes shared issue,
+      workspace, and user CLI argument-extraction helpers in the test-only
+      `cli_test_helpers.rs` module; command behavior and typed matches are
+      unchanged. Scoped rustfmt and `git diff --check` pass; PR #217 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
+      delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
