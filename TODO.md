@@ -1242,7 +1242,7 @@
       pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR #267
       is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review
       PASS; no Cargo was run and no production behavior changed.
-- [ ] PR #268 `codex/cord-100-cli-agent-read` is the next bounded child of
+- [x] PR #268 `codex/cord-100-cli-agent-read` is the completed bounded child of
       #267: base branch `codex/cord-99-cli-agent-copy` at
       `c30121f6fd05f9ebe0726a850f911410b7fc9ba7`, exact head
       `c20c984908d7b5af2a01351c4902d95054ea7751`, tree
@@ -1252,8 +1252,8 @@
       encoding, API paths, JSON/table output, errors, dispatch, and re-exports
       remain unchanged. Scoped pinned rustfmt and `git diff --check` pass; Cargo
       is delegated. PR #268 is Ready (`isDraft=false`), CLEAN/MERGEABLE.
-      Exact-head subagent review pending; no duplicate review request has been
-      made.
+      Exact-head subagent review PASS; no Cargo was run and no production
+      behavior changed.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
