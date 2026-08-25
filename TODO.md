@@ -141,13 +141,15 @@
       base `57f2dc0e03d7972df7ea9c27a4ab9148f986a4d8`, original head
       `3bfefc9bc52463633c8ac20097666769c1b1fc28` was superseded by the minimal
       import fix; current exact head is
-      `3c25f0fe8f80736bc367383ad7d0ff64a47228fd3`, tree
-      `4bcbecea8e29ebfa890ee669bdb896a5cf4c49f2`. It extracts only setup
+      `2aaebaa6c8b0218814d6e5f0e50ec0301cb32b6f`, tree
+      `757875ad76ac3e17c694f482948270f9605685bf`. The import fix is
+      `3c25f0fe8f80736bc367383ad7d0ff64a47228fd3`; a separate rustfmt import-order
+      commit `2aaebaa6` is now the final head. It extracts only setup
       cloud/self-host parser, preflight, profile replacement, confirmation, daemon
       handoff, and URL-normalization tests into `setup_command_tests.rs`; production
       behavior is unchanged. New module rustfmt and `git diff --check` pass; PR is
       Ready (`isDraft=false`); candidate must be re-read after GitHub refresh. Cargo
-      and review remain delegated; current candidate is `4a41bcaae0a7ae5d43b7e545d8ee0775ad79c0dc`; any
+      and review remain delegated; current candidate is `ec928eda3fbae82b9b935c8c02f2e69211e3d340`; any
       review/gate for `3bfefc9b` is invalid.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
