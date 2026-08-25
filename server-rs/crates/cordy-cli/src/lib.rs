@@ -47,6 +47,7 @@ mod issue_value_helpers;
 mod label_commands;
 mod label_reference;
 mod login;
+mod output_helpers;
 mod path_safety;
 mod project_commands;
 mod project_resource_commands;
@@ -183,6 +184,7 @@ use login::{
     wait_for_workspace_creation_with_opener, LoginWorkspace, WORKSPACE_DISCOVERY_INTERVAL,
     WORKSPACE_DISCOVERY_TIMEOUT,
 };
+pub(super) use output_helpers::{display_id, format_table, truncate_text};
 use path_safety::{ensure_file_within_workdir, lexical_normalize};
 use project_commands::{
     format_project_details_table, format_project_list_table, format_project_mutation,
@@ -5093,48 +5095,6 @@ struct IssueListResponse {
 
 fn encoded_path_segment(value: &str) -> String {
     form_urlencoded::byte_serialize(value.as_bytes()).collect()
-}
-
-fn truncate_text(value: &str, limit: usize) -> String {
-    if value.chars().count() > limit {
-        value.chars().take(limit - 3).collect::<String>() + "..."
-    } else {
-        value.into()
-    }
-}
-
-fn format_table(rows: &[Vec<String>]) -> String {
-    let column_count = rows.iter().map(Vec::len).max().unwrap_or_default();
-    let widths: Vec<_> = (0..column_count.saturating_sub(1))
-        .map(|column| {
-            rows.iter()
-                .filter_map(|row| row.get(column))
-                .map(|value| value.chars().count())
-                .max()
-                .unwrap_or_default()
-                + 2
-        })
-        .collect();
-    let mut output = String::new();
-    for row in rows {
-        for (column, value) in row.iter().enumerate() {
-            if let Some(width) = widths.get(column) {
-                let _ = write!(output, "{value:<width$}");
-            } else {
-                output.push_str(value);
-            }
-        }
-        output.push('\n');
-    }
-    output
-}
-
-fn display_id(id: &str, full: bool) -> String {
-    if full {
-        id.into()
-    } else {
-        id.chars().take(8).collect()
-    }
 }
 
 fn trim_one_trailing_newline(mut value: String) -> String {
