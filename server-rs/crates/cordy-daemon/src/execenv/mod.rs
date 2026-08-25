@@ -20,6 +20,7 @@ pub mod cursor_mcp;
 #[allow(clippy::module_inception)]
 pub mod execenv;
 pub mod git;
+pub mod hermes;
 pub mod isolation;
 pub mod local_worktree;
 pub mod reasonix;
