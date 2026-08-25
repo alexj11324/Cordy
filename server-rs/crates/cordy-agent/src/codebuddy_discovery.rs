@@ -111,7 +111,7 @@ async fn discover_once(
         config.command.path.as_str()
     };
     let invocation = ["--acp".to_string()];
-    let argv = config.command.argv(&invocation);
+    let argv = backend.discovery_argv(&invocation);
     let mut command = Command::new(command_path);
     command
         .args(argv)
@@ -584,6 +584,25 @@ mod tests {
         let key = ModelDiscoveryCacheKey::new("codebuddy", &RuntimeCommand::default())
             .unwrap_or_else(|| panic!("cache key"));
         assert!(!cache.insert(key, fallback));
+    }
+
+    #[test]
+    fn discovery_filters_protocol_owned_fixed_arguments() {
+        let backend = CodebuddyBackend::new(CodebuddyConfig {
+            command: RuntimeCommand::new(
+                "codebuddy",
+                vec![
+                    "--output-format".to_string(),
+                    "text".to_string(),
+                    "--wrapper".to_string(),
+                ],
+            ),
+            ..CodebuddyConfig::default()
+        });
+        assert_eq!(
+            backend.discovery_argv(&["--acp".to_string()]),
+            vec!["--wrapper".to_string(), "--acp".to_string()]
+        );
     }
 
     #[cfg(unix)]

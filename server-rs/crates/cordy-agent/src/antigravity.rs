@@ -436,7 +436,7 @@ async fn discover_once(
     } else {
         &config.command.path
     };
-    let argv = config.command.argv(&["models".to_string()]);
+    let argv = build_discovery_args(&config.command);
     let mut command = Command::new(command_path);
     command
         .args(argv)
@@ -478,6 +478,13 @@ async fn discover_once(
             Ok(Vec::new())
         }
     }
+}
+
+fn build_discovery_args(command: &RuntimeCommand) -> Vec<String> {
+    let prefix = filter_launch_prefix(&command.prefix, &BLOCKED_ARGS);
+    let mut argv = prefix.args;
+    argv.push("models".to_string());
+    argv
 }
 
 fn parse_models(output: &str) -> Vec<Model> {
@@ -653,6 +660,22 @@ mod tests {
             .windows(2)
             .any(|pair| pair == ["--conversation", "cid"]));
         assert!(args.windows(2).any(|pair| pair == ["--add-dir", "/extra"]));
+    }
+
+    #[test]
+    fn discovery_filters_protocol_owned_fixed_arguments() {
+        let command = RuntimeCommand::new(
+            "agy",
+            vec![
+                "-p".to_string(),
+                "fixed prompt".to_string(),
+                "--wrapper".to_string(),
+            ],
+        );
+        assert_eq!(
+            build_discovery_args(&command),
+            vec!["--wrapper".to_string(), "models".to_string()]
+        );
     }
 
     #[test]
