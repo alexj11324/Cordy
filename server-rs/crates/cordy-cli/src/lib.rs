@@ -6,6 +6,7 @@
 mod agent_commands;
 mod agent_helpers;
 mod api;
+mod cli_command_schema;
 mod attachment_input;
 mod auth_command_schema;
 mod auth_commands;
@@ -405,84 +406,8 @@ pub const ROOT_LONG_VERSION: &str = concat!(
     env!("CORDY_BUILD_ARCH")
 );
 
-#[derive(Debug, Parser)]
-#[command(
-    name = "cordy",
-    version = CLIENT_VERSION,
-    long_version = ROOT_LONG_VERSION,
-    about = "Cordy CLI — local agent runtime and management tool",
-    long_about = "Work seamlessly with Cordy from the command line."
-)]
-pub struct Cli {
-    #[arg(long, global = true, help = "Cordy server URL (env: CORDY_SERVER_URL)")]
-    server_url: Option<String>,
-    #[arg(long, global = true, help = "Workspace ID (env: CORDY_WORKSPACE_ID)")]
-    workspace_id: Option<String>,
-    #[arg(
-        long,
-        global = true,
-        default_value = "",
-        help = "Configuration profile name (e.g. dev)"
-    )]
-    profile: String,
-    #[arg(
-        long,
-        global = true,
-        help = "Print full error details on failure (env: CORDY_DEBUG)"
-    )]
-    debug: bool,
-    #[command(subcommand)]
-    command: Command,
-}
-
-#[derive(Debug, Subcommand)]
-enum Command {
-    #[command(about = "Work with agents")]
-    Agent(AgentArgs),
-    #[command(about = "Work with skills")]
-    Skill(SkillArgs),
-    #[command(about = "Work with issues")]
-    Issue(IssueArgs),
-    #[command(about = "Authenticate cordy with Cordy")]
-    Auth(AuthArgs),
-    #[command(about = "Authenticate and set up workspaces")]
-    Login(LoginArgs),
-    #[command(about = "Manage configuration for cordy")]
-    Config(ConfigArgs),
-    #[command(about = "Work with your user account")]
-    User(UserArgs),
-    #[command(about = "Work with workspaces")]
-    Workspace(WorkspaceArgs),
-    #[command(about = "Work with squads")]
-    Squad(SquadArgs),
-    #[command(about = "Work with issue labels")]
-    Label(LabelArgs),
-    #[command(about = "Work with projects")]
-    Project(ProjectArgs),
-    #[command(about = "Manage workspace custom issue properties")]
-    Property(PropertyArgs),
-    #[command(about = "Work with the current chat conversation")]
-    Chat(ChatArgs),
-    #[command(about = "Work with attachments")]
-    Attachment(AttachmentArgs),
-    #[command(about = "Work with repositories")]
-    Repo(RepoArgs),
-    #[command(about = "Work with agent runtimes")]
-    Runtime(RuntimeArgs),
-    #[command(about = "Run the local Cordy daemon")]
-    Daemon(DaemonArgs),
-    #[command(about = "Configure the Cordy server and authenticate")]
-    Setup(SetupArgs),
-    #[command(about = "Manage autopilots (scheduled/triggered agent automations)")]
-    Autopilot(AutopilotArgs),
-    #[command(about = "Update cordy to the latest version")]
-    Update(UpdateArgs),
-    #[command(about = "Print version information")]
-    Version {
-        #[arg(long, value_enum, default_value_t = VersionOutput::Text)]
-        output: VersionOutput,
-    },
-}
+pub use cli_command_schema::Cli;
+pub(super) use cli_command_schema::Command;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
 enum OutputFormat {
