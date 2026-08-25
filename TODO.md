@@ -1236,6 +1236,16 @@
       Scoped rustfmt and `git diff --check` pass (the subagent environment
       lacked a rustfmt executable); Cargo was not run. Pro owns push/Ready PR,
       gate, and merge.
+- [ ] CLI issue pull-request command structural refactor is committed at
+      `b1a8a1e7e63c9fc8fb3f1a36b8d5ed9618f86ccf` (parent
+      `ef653f06f0de0a5c18cfee0aa6bed4703b09ad18`, tree
+      `90aad55e91ab218fadf6d2ae8a1275a51deb2e31`): pull-request list/attach
+      requests, payload serialization, validation, and table rendering now
+      live in `cordy-cli/src/issue_pull_request_commands.rs`; parent dispatch
+      and formatter tests retain their contracts. The serial subagent reviewed
+      the exact head and found no issue. Scoped rustfmt and `git diff --check`
+      pass (the subagent environment lacked a rustfmt executable); Cargo was
+      not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
