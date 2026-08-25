@@ -879,6 +879,16 @@
       `Command::Update` routing and lib registration are correct, and the
       schema's `download_timeout` behavior is untouched. `git diff --check`
       passes; subagent did not run Cargo or modify files.
+- [x] PR #250 `codex/cord-82-cli-version-dispatch` is the next bounded child
+      of #249: base branch `codex/cord-81-cli-update-dispatch` at
+      `b23be30fc54b8df9e16e6d9e02d1db8f1ec4dcbe`, exact head
+      `508c0aad06b42ceed3c0aadbe418b6fbcad3e4fc`, tree
+      `f5304173063f3762d622118327a03bf19508d2e9`, candidate
+      `6a7ffc410d6c04f7d8c32666e815c31bd70a3c37`. It isolates Version output
+      routing into `dispatch_version.rs`, preserving output format and handler
+      behavior. Scoped rustfmt and `git diff --check` pass; PR #250 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
+      delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
