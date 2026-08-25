@@ -579,6 +579,17 @@
       dispatcher delegates the complete Agent branch and lib module wiring is
       correct. `git diff --check` passes; subagent did not run Cargo or modify
       files.
+- [x] PR #232 `codex/cord-64-cli-skill-dispatch` is the next bounded child of
+      #231: base branch `codex/cord-63-cli-agent-dispatch` at
+      `f1914582f5784396812c7eb775d8d1cc811c28cb`, exact head
+      `6b3f29b5bbffbed4ef64289230aa4929fd197722`, tree
+      `39fc23fb1c389e2eaab798314c4a7f069a3a922d`, candidate
+      `0dae59303d9e4835085fe72e996d22ada36f2c13`. It isolates the complete
+      `SkillCommand` and nested `SkillFilesCommand` routing into
+      `dispatch_skill.rs`, preserving every handler, input forwarding, and
+      root dispatcher behavior. Scoped rustfmt and `git diff --check` pass;
+      PR #232 is Ready (`isDraft=false`), MERGEABLE. Cargo and exact-head
+      review remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
