@@ -79,6 +79,7 @@ mod runtime_output;
 mod runtime_profile;
 mod runtime_update;
 mod setup_commands;
+mod skill_command_schema;
 mod skill_commands;
 mod squad_commands;
 mod task_reference;
@@ -319,6 +320,11 @@ use setup_commands::{
     prepare_setup_profile, prepare_setup_profile_input, read_setup_confirmation,
     resolve_setup_profile_input, run_setup, setup_callback_host, setup_daemon_action,
     setup_server_is_local, SetupDaemonAction,
+};
+pub(super) use skill_command_schema::{
+    SkillArgs, SkillCommand, SkillCreateArgs, SkillDeleteArgs, SkillFilesArgs,
+    SkillFilesCommand, SkillFilesDeleteArgs, SkillFilesListArgs, SkillFilesUpsertArgs,
+    SkillGetArgs, SkillImportArgs, SkillRefreshArgs, SkillSearchArgs, SkillUpdateArgs,
 };
 use skill_commands::{
     format_skill_files_table, format_skill_import_table, format_skill_list_table,
@@ -687,188 +693,6 @@ struct SquadActivityArgs {
     reason: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
     output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct SkillArgs {
-    #[command(subcommand)]
-    command: SkillCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum SkillCommand {
-    #[command(about = "List skills in the workspace")]
-    List {
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-    #[command(about = "Get skill details")]
-    Get(SkillGetArgs),
-    #[command(about = "Create a new skill")]
-    Create(SkillCreateArgs),
-    #[command(about = "Update a skill")]
-    Update(SkillUpdateArgs),
-    #[command(about = "Delete a skill")]
-    Delete(SkillDeleteArgs),
-    #[command(about = "Import a skill from a URL or local archive")]
-    Import(SkillImportArgs),
-    #[command(about = "Re-download a skill from its imported source")]
-    Refresh(SkillRefreshArgs),
-    #[command(about = "Search for installable skills")]
-    Search(SkillSearchArgs),
-    #[command(about = "Work with skill files")]
-    Files(SkillFilesArgs),
-}
-
-#[derive(Debug, Args)]
-struct SkillGetArgs {
-    #[arg(value_name = "SKILL-ID")]
-    skill_id: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct SkillCreateArgs {
-    #[arg(long, help = "Skill name (required)")]
-    name: Option<String>,
-    #[arg(long, default_value = "", help = "Skill description")]
-    description: String,
-    #[arg(long, help = "Skill content (SKILL.md body)")]
-    content: Option<String>,
-    #[arg(long, help = "Read skill content from stdin")]
-    content_stdin: bool,
-    #[arg(
-        long,
-        value_name = "PATH",
-        help = "Read skill content from a UTF-8 file"
-    )]
-    content_file: Option<PathBuf>,
-    #[arg(long, help = "Skill config as JSON")]
-    config: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct SkillUpdateArgs {
-    #[arg(value_name = "SKILL-ID")]
-    skill_id: String,
-    #[arg(long, help = "New skill name")]
-    name: Option<String>,
-    #[arg(long, help = "New skill description")]
-    description: Option<String>,
-    #[arg(long, help = "New skill content (SKILL.md body)")]
-    content: Option<String>,
-    #[arg(long, help = "Read new skill content from stdin")]
-    content_stdin: bool,
-    #[arg(
-        long,
-        value_name = "PATH",
-        help = "Read new skill content from a UTF-8 file"
-    )]
-    content_file: Option<PathBuf>,
-    #[arg(long, help = "New skill config as JSON")]
-    config: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct SkillDeleteArgs {
-    #[arg(value_name = "SKILL-ID")]
-    skill_id: String,
-    #[arg(long, help = "Skip the confirmation prompt")]
-    yes: bool,
-}
-
-#[derive(Debug, Args)]
-struct SkillImportArgs {
-    #[arg(long, help = "URL or slug to import")]
-    url: Option<String>,
-    #[arg(long, value_name = "PATH", help = "Local .skill or .zip archive")]
-    file: Option<PathBuf>,
-    #[arg(
-        long,
-        default_value = "fail",
-        help = "Conflict strategy: fail, overwrite, rename, or skip"
-    )]
-    on_conflict: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-    #[arg(
-        long,
-        help = "Allow --file to read outside the current working directory"
-    )]
-    allow_external_file: bool,
-}
-
-#[derive(Debug, Args)]
-struct SkillRefreshArgs {
-    #[arg(value_name = "SKILL-ID")]
-    skill_id: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct SkillSearchArgs {
-    #[arg(value_name = "QUERY")]
-    query: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct SkillFilesArgs {
-    #[command(subcommand)]
-    command: SkillFilesCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum SkillFilesCommand {
-    #[command(about = "List files for a skill")]
-    List(SkillFilesListArgs),
-    #[command(about = "Create or update a skill file")]
-    Upsert(SkillFilesUpsertArgs),
-    #[command(about = "Delete a skill file")]
-    Delete(SkillFilesDeleteArgs),
-}
-
-#[derive(Debug, Args)]
-struct SkillFilesListArgs {
-    #[arg(value_name = "SKILL-ID")]
-    skill_id: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct SkillFilesUpsertArgs {
-    #[arg(value_name = "SKILL-ID")]
-    skill_id: String,
-    #[arg(long, help = "File path within the skill (required)")]
-    path: Option<String>,
-    #[arg(long, help = "File content")]
-    content: Option<String>,
-    #[arg(long, help = "Read file content from stdin")]
-    content_stdin: bool,
-    #[arg(
-        long,
-        value_name = "PATH",
-        help = "Read file content from a UTF-8 file"
-    )]
-    content_file: Option<PathBuf>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct SkillFilesDeleteArgs {
-    #[arg(value_name = "SKILL-ID")]
-    skill_id: String,
-    #[arg(value_name = "FILE-ID")]
-    file_id: String,
 }
 
 #[derive(Debug, Subcommand)]
