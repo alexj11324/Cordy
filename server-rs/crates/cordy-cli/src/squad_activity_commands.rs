@@ -1,9 +1,10 @@
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde_json::Value;
 
 use super::{
-    new_api_client, resolve_issue_ref, Cli, Environment, OutputFormat, RunOutput, SquadActivityArgs,
+    Cli, Environment, OutputFormat, RunOutput, SquadActivityArgs, new_api_client, resolve_issue_ref,
 };
+
 pub(super) async fn run_squad_activity(
     cli: &Cli,
     environment: &Environment,
