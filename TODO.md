@@ -707,6 +707,12 @@
       existing output and mutation behavior. Scoped rustfmt and
       `git diff --check` pass; PR #239 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #239 exact-head subagent review PASS on
+      `95a9fb647a128bd4c78d73fd75170e10655127a8`: `dispatch_squad.rs` covers
+      all Squad, Member (List/Add/SetRole/Remove), and Activity variants;
+      `Command::Squad` routing and `lib.rs` module wiring are correct with
+      parent visibility intact. `git diff --check` passes; subagent did not
+      run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
