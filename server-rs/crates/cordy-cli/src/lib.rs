@@ -174,7 +174,10 @@ use issue_assign_commands::run_issue_assign;
 use issue_children_commands::{
     child_stage, format_issue_children_table, group_issue_children, run_issue_children,
 };
-pub(super) use issue_command_schema::{IssueArgs, IssueCommand};
+pub(super) use issue_command_schema::{
+    IssueArgs, IssueAssignArgs, IssueCommand, IssueCreateArgs, IssueReorderArgs, IssueStatusArgs,
+    IssueUpdateArgs,
+};
 use issue_comment_add_commands::{resolve_issue_comment_content, run_issue_comment_add};
 use issue_comment_list_commands::{format_issue_comments_table, run_issue_comment_list};
 use issue_comment_mutation_commands::{run_issue_comment_delete, run_issue_comment_resolution};
