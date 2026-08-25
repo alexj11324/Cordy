@@ -120,6 +120,7 @@ mod autopilot_output;
 mod autopilot_resolver;
 mod chat_commands;
 mod chat_command_schema;
+mod chat_read_commands;
 mod client_factory;
 mod dispatch_agent;
 mod dispatch_autopilot;
@@ -303,8 +304,9 @@ use autopilot_resolver::{
     resolve_autopilot_subscribers, resolve_autopilot_trigger_id,
 };
 pub(super) use chat_commands::{
-    run_attachment_download, run_attachment_upload, run_chat_read,
+    run_attachment_download, run_attachment_upload,
 };
+use chat_read_commands::run_chat_read;
 pub(super) use chat_command_schema::{
     AttachmentArgs, AttachmentCommand, ChatArgs, ChatCommand, ChatReadArgs, ChatThreadArgs,
 };
