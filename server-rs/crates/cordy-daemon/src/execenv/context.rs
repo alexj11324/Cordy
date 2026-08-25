@@ -57,6 +57,7 @@
 //!   normalizes quoting/indentation just like Go's yaml.Marshal round-trip.
 
 use std::collections::HashMap;
+use std::io::Write as _;
 use std::path::Path;
 
 use anyhow::Context;
@@ -285,7 +286,22 @@ pub(crate) fn record_write_file(
         }
         Err(_) => {}
     }
-    std::fs::write(path, data)?;
+    let mut file = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Err(err_pre_exists(path));
+        }
+        Err(error) => {
+            return Err(anyhow::Error::new(error).context(format!("create target {path}")));
+        }
+    };
+    file.write_all(data)
+        .map_err(anyhow::Error::new)
+        .with_context(|| format!("write target {path}"))?;
     m.files.push(path.to_string());
     Ok(())
 }

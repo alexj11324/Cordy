@@ -99,6 +99,121 @@ fn nonempty(value: &str) -> Option<&str> {
     (!value.is_empty()).then_some(value)
 }
 
+/// Cleans a Windows path without allowing parent traversal to remove its
+/// drive or UNC root. clean_path intentionally implements Unix/Go lexical
+/// semantics and turns C:/../rx into rx, which is not a valid Windows
+/// equivalent.
+fn clean_windows_path(path: &str) -> String {
+    if path.is_empty() {
+        return ".".to_string();
+    }
+    let normalized = path.replace('\\', "/");
+    let (prefix, rooted, remainder) = if normalized.starts_with("//") {
+        let mut parts = normalized[2..].splitn(3, '/');
+        let server = parts.next().unwrap_or_default();
+        let share = parts.next().unwrap_or_default();
+        if server.is_empty() || share.is_empty() {
+            return clean_path(&normalized);
+        }
+        (
+            format!("//{server}/{share}"),
+            true,
+            parts.next().unwrap_or_default(),
+        )
+    } else if normalized.len() >= 2
+        && normalized.as_bytes()[0].is_ascii_alphabetic()
+        && normalized.as_bytes()[1] == b':'
+    {
+        let drive = &normalized[..2];
+        let remainder = &normalized[2..];
+        if remainder.starts_with('/') {
+            (format!("{drive}/"), true, remainder.trim_start_matches('/'))
+        } else {
+            (drive.to_string(), false, remainder)
+        }
+    } else if normalized.starts_with('/') {
+        ("/".to_string(), true, normalized.trim_start_matches('/'))
+    } else {
+        (String::new(), false, normalized.as_str())
+    };
+
+    let mut components = Vec::new();
+    for component in remainder.split('/') {
+        if component.is_empty() || component == "." {
+            continue;
+        }
+        if component == ".." {
+            if components.last().is_some_and(|last| last != "..") {
+                components.pop();
+            } else if !rooted {
+                components.push("..".to_string());
+            }
+        } else {
+            components.push(component.to_string());
+        }
+    }
+    let suffix = components.join("/");
+    if prefix.is_empty() {
+        return if suffix.is_empty() {
+            ".".to_string()
+        } else {
+            suffix
+        };
+    }
+    if prefix == "/" {
+        return if suffix.is_empty() {
+            prefix
+        } else {
+            format!("/{suffix}")
+        };
+    }
+    if prefix.ends_with('/') {
+        return if suffix.is_empty() {
+            prefix
+        } else {
+            format!("{prefix}{suffix}")
+        };
+    }
+    if !rooted && prefix.len() == 2 && prefix.as_bytes()[1] == b':' {
+        return if suffix.is_empty() {
+            prefix
+        } else {
+            format!("{prefix}{suffix}")
+        };
+    }
+    if suffix.is_empty() {
+        prefix
+    } else {
+        format!("{prefix}/{suffix}")
+    }
+}
+
+fn clean_reasonix_path(path: &str, windows: bool) -> String {
+    if windows {
+        clean_windows_path(path)
+    } else {
+        clean_path(path)
+    }
+}
+
+fn validate_env_key_collisions(env: &HashMap<String, String>, windows: bool) -> Result<()> {
+    if !windows {
+        return Ok(());
+    }
+    let mut seen = HashMap::new();
+    for key in env.keys() {
+        let folded = key.to_ascii_lowercase();
+        if let Some(existing) = seen.insert(folded, key.clone()) {
+            if existing != *key {
+                bail!(
+                    "reasonix environment contains case-insensitive duplicate keys {existing:?} and {key:?}"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 fn clean_dir(env: &HashMap<String, String>, name: &str) -> String {
     let mut dir = lookup(env, name).trim().to_string();
     if dir.is_empty() {
@@ -107,7 +222,9 @@ fn clean_dir(env: &HashMap<String, String>, name: &str) -> String {
     dir = expand_vars(&dir, env);
     let home = user_home(env);
     if dir == "~" {
-        dir = home;
+        if !home.is_empty() {
+            dir = home;
+        }
     } else if let Some(rest) = dir.strip_prefix("~/").or_else(|| dir.strip_prefix(r"~\")) {
         if !home.is_empty() {
             dir = Path::new(&home).join(rest).to_string_lossy().into_owned();
@@ -118,7 +235,7 @@ fn clean_dir(env: &HashMap<String, String>, name: &str) -> String {
             dir = cwd.join(dir).to_string_lossy().into_owned();
         }
     }
-    clean_path(&dir)
+    clean_reasonix_path(&dir, cfg!(windows))
 }
 
 fn isolated_home(env: &HashMap<String, String>) -> String {
@@ -191,7 +308,8 @@ fn same_path(a: &str, b: &str) -> bool {
                 .unwrap_or_else(|_| path.to_path_buf())
         }
     };
-    clean_path(&absolute(a).to_string_lossy()) == clean_path(&absolute(b).to_string_lossy())
+    clean_reasonix_path(&absolute(a).to_string_lossy(), cfg!(windows))
+        == clean_reasonix_path(&absolute(b).to_string_lossy(), cfg!(windows))
 }
 
 fn legacy_os_support_dir(env: &HashMap<String, String>) -> String {
@@ -231,7 +349,7 @@ fn legacy_xdg_paths(env: &HashMap<String, String>) -> Vec<String> {
     }
     let mut paths = Vec::new();
     let mut add = |path: PathBuf| {
-        let value = clean_path(&path.to_string_lossy());
+        let value = clean_reasonix_path(&path.to_string_lossy(), cfg!(windows));
         if !value.is_empty() && !paths.iter().any(|existing| existing == &value) {
             paths.push(value);
         }
@@ -344,6 +462,7 @@ pub(crate) fn write_reasonix_project_config(
     if work_dir.is_empty() {
         return Ok(());
     }
+    validate_env_key_collisions(task_env, cfg!(windows))?;
     let user_path = user_config_load_path(task_env);
     let content = match render_project_config(&user_path) {
         Ok(content) => content,
@@ -402,16 +521,70 @@ mod tests {
             permissions["allow"].as_array().unwrap()[0].as_str(),
             Some("read")
         );
-        assert!(permissions["deny"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|value| value.as_str() == Some("write")));
-        assert!(permissions["deny"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|value| value.as_str() == Some(ASK_TOOL)));
+        assert!(
+            permissions["deny"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value.as_str() == Some("write"))
+        );
+        assert!(
+            permissions["deny"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|value| value.as_str() == Some(ASK_TOOL))
+        );
+    }
+
+    #[test]
+    fn windows_path_cleaning_preserves_drive_and_unc_roots() {
+        assert_eq!(clean_reasonix_path("C:/../rx", true), "C:/rx");
+        assert_eq!(clean_reasonix_path(r"C:\users\..\rx", true), "C:/rx");
+        assert_eq!(
+            clean_reasonix_path(r"\\server\share\..\rx", true),
+            "//server/share/rx"
+        );
+    }
+
+    #[test]
+    fn literal_tilde_stays_relative_when_home_is_unset() {
+        let env = HashMap::from([
+            ("HOME".to_string(), String::new()),
+            ("REASONIX_HOME".to_string(), "~".to_string()),
+        ]);
+        let cwd = std::env::current_dir().unwrap();
+        let expected = clean_path(&cwd.join("~").to_string_lossy());
+        assert_eq!(clean_dir(&env, "REASONIX_HOME"), expected);
+    }
+
+    #[test]
+    fn windows_environment_key_collisions_are_rejected() {
+        let env = HashMap::from([
+            ("REASONIX_HOME".to_string(), "/one".to_string()),
+            ("reasonix_home".to_string(), "/two".to_string()),
+        ]);
+        assert!(validate_env_key_collisions(&env, true).is_err());
+        assert!(validate_env_key_collisions(&env, false).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn existing_project_config_symlink_is_not_followed() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().unwrap();
+        let target = temp.path().join("target.toml");
+        std::fs::write(&target, "[permissions]\ndeny = [\"custom\"]\n").unwrap();
+        let work_dir = temp.path().join("work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        symlink(&target, work_dir.join(PROJECT_CONFIG_FILE)).unwrap();
+
+        write_reasonix_project_config(work_dir.to_str().unwrap(), &HashMap::new(), None).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(target).unwrap(),
+            "[permissions]\ndeny = [\"custom\"]\n"
+        );
     }
 
     #[test]
