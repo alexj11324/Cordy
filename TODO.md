@@ -86,6 +86,14 @@
 - [x] #169 exact-head subagent review PASS: workspace/member/MCP/create/update clap
       fields, defaults, help text, `PathBuf`/stdin semantics, re-exports, handlers,
       dispatch, and tests have no compile/behavior blocker. Cargo remains delegated.
+- [x] Next structural slice #170, `codex/cord-50-cli-squad-schema`, is based on
+      #169 at `145866c38861194779e3314f5859162e40fc807b`; exact head
+      `b6e5f690b42c15e3dc8e008b6a2843549eba828e`, tree
+      `66fab2aa14d807b589f30cdef8f635720b847fb8`, candidate
+      `dca672fa455dc4de17f414122b09c2d939efeac2`. It moves only squad/member/activity
+      parser types to `squad_command_schema.rs`; execution behavior is unchanged.
+      New schema rustfmt and `git diff --check` pass; Cargo/review/gate are delegated
+      and have not been run by this thread. PR is Ready (`isDraft=false`).
 - [x] After the replacement PRs were created and exact refs verified, #159 was closed
       as `SUPERSEDED` without deleting or rewriting its branch. Its review/gate
       evidence is not reused by any replacement PR.
