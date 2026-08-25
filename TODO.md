@@ -1059,6 +1059,15 @@
       slices. The serial subagent reviewed exact head `0fa943d5` and found no
       issue. Scoped rustfmt/diff-check pass; Cargo was not run. Pro owns
       push/Ready PR, gate, and merge.
+- [ ] CLI agent auxiliary command structural refactor is committed at
+      `0cb3602e6d7425cb71e56b2bf846ac20d909fd85` (parent
+      `0fa943d55bcdd14746bfab1b1e14b2a79beeeb5b`, tree
+      `a99e6bd26dbe86e40acde3f7f94e64d63cc5570a`): agent skills/env/MCP/copy
+      commands, MCP action/path helpers, and their dispatch now live in
+      `cordy-cli/src/agent_commands.rs`; shared secret/permission helpers stay
+      in the parent. The serial subagent reviewed exact head `0cb3602e` and
+      found no issue. Scoped rustfmt/diff-check pass; Cargo was not run. Pro
+      owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
