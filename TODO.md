@@ -1653,6 +1653,14 @@
       `git diff --check` pass; Cargo was not run. The serial subagent owns
       blocker-only fixes/review; Pro owns the eventual Ready PR, gate, and
       merge.
+- [ ] CLI label-schema refactor is structurally committed at
+      `9e5851802337b1d9134d9848b5349fa3e995e180` (tree
+      `8442fb1d7d3a4db49113caa4444e3694337d4474`): label list/get/create/
+      update/delete clap definitions now live in `label_command_schema.rs`;
+      command aliases, required values, and output defaults are unchanged.
+      Scoped rustfmt with `skip_children` and `git diff --check` pass; Cargo
+      was not run. The serial subagent owns blocker-only fixes/review; Pro
+      owns the eventual Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
