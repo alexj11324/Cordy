@@ -614,6 +614,17 @@
       delete/rotate and runs pagination. `TriggerRotateUrl` forwards `input`
       correctly; root dispatcher delegation and lib module wiring are valid.
       `git diff --check` passes; subagent did not run Cargo or modify files.
+- [x] PR #234 `codex/cord-66-cli-issue-dispatch` is the next bounded child
+      of #233: base branch `codex/cord-65-cli-autopilot-dispatch` at
+      `1391a6e9dcac92c2b36bb3b2d3121cc17e2f6150`, exact head
+      `0f1658d6b05c724ffc0ddba75aa4fd9a23f02d92`, tree
+      `681c76488a76151563c3df40e2fc24eb4987b207`, candidate
+      `b8ed10d13be44eb4113b167da366a13a843708a4`. It isolates the complete
+      `IssueCommand` routing branch into `dispatch_issue.rs`, preserving issue
+      reads, mutations, comments, runs, metadata, labels, and stdin
+      forwarding. Scoped rustfmt and `git diff --check` pass; PR #234 is
+      Ready (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review
+      remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
