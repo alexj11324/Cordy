@@ -170,6 +170,15 @@
       creation tests and assertions are preserved, external imports cover actual
       references, and no P0/P1 or compile blocker exists. Subagent did not run Cargo
       or modify the worktree; coordinator rustfmt and `git diff --check` pass.
+- [x] PR #179 `codex/cord-50-cli-runtime-tests` is the next bounded child of #178:
+      base `8fdef9ba210096fda1915c4372a4958353025700`, exact head
+      `592c0f1664b5bc64429ca0f8827c49727ccedefd`, tree
+      `533c48869303ed1af566f2fa95af224b7d5c0fb5`, candidate
+      `f0251f81c82355cff3a0a8646503f1de27e6ed59`. It extracts only runtime
+      list/usage/activity/rename/delete/update and runtime-profile lifecycle/path
+      tests into `runtime_command_tests.rs`; production behavior is unchanged.
+      New module rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`,
+      CLEAN/MERGEABLE). Cargo and review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
