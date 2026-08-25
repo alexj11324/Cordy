@@ -923,6 +923,14 @@
       same API paths, output shapes, and dispatcher re-exports. Scoped
       rustfmt/check and `git diff --check` pass; Cargo is delegated. PR #251
       is Ready (`isDraft=false`), CLEAN/MERGEABLE; exact-head review pending.
+- [x] #251 exact-head subagent review PASS on
+      `7ad99633ade3303f10379a4e554ad63d7106fb00`: the focused issue-property
+      module preserves List/Set/Unset request paths, property-definition
+      resolution, actor/member lookup, typed encoding, and JSON/table output.
+      `PropertyDefinition`/`resolve_property` visibility and `lib.rs`
+      re-exports are valid; all three `dispatch_issue.rs` routes remain wired.
+      Subagent did not run Cargo or modify files; scoped rustfmt and
+      `git diff --check` remain clean.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
