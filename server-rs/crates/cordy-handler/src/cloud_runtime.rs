@@ -670,8 +670,8 @@ mod tests {
         assert_eq!(fleet_base_url(None, None), "");
     }
 
-    #[test]
-    fn loaded_config_fleet_url_is_stored_for_the_http_proxy() {
+    #[tokio::test]
+    async fn loaded_config_fleet_url_is_stored_for_the_http_proxy() {
         let state = test_state().with_cloud_pat_fleet_url(Some(" https://loaded.example/fleet "));
         assert_eq!(state.cloud_runtime_base_url, "https://loaded.example/fleet");
         assert!(state.cloud_pat_verifier.is_some());
