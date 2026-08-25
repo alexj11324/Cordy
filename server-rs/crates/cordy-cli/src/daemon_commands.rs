@@ -5,8 +5,6 @@
 //! the same typed `DaemonStartAssembly` snapshot.
 
 use anyhow::{bail, Context, Result};
-use std::ffi::OsString;
-use std::io::{Read, Write as IoWrite};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -268,21 +266,4 @@ pub(super) fn validate_daemon_health_port(
 
 pub(super) fn parse_cli_duration(value: &str) -> std::result::Result<Duration, String> {
     cordy_daemon::helpers::parse_go_duration(value).map_err(|error| error.to_string())
-}
-/// Handles the daemon's private execution-environment helper mode before
-/// normal CLI parsing or profile loading. The protocol never places task
-/// configuration or gateway credentials in argv; all payload data stays on
-/// the inherited stdin/stdout pipes.
-pub async fn run_private_helper<I, O>(args: &[OsString], input: I, output: &mut O) -> Result<bool>
-where
-    I: Read,
-    O: IoWrite,
-{
-    if args.len() != 2
-        || args[1] != OsString::from(cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG)
-    {
-        return Ok(false);
-    }
-    cordy_daemon::execenv::isolation::run_preparation_helper(input, output).await?;
-    Ok(true)
 }
