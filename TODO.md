@@ -1003,6 +1003,18 @@
       and `dispatch_project`/`lib.rs` wiring is complete. Subagent did not run
       Cargo or modify files; scoped rustfmt/check and `git diff --check` remain
       clean.
+- [x] PR #255 `codex/cord-87-cli-workspace-members` is the next bounded child
+      of #254: base branch `codex/cord-86-cli-project-mutations` at
+      `df6203d708d5a9f89f1930aca1e7160551ee23db`, exact head
+      `52c3c16608947a59b85221fa0934e2a816b7cc7e`, tree
+      `adadf5b05f243cb8ade327e1a5d33a05ce5e626a`, candidate
+      `68c01865ec1fb43d342536a3355b83a6344b217d`. It isolates workspace member
+      list/table, invite role normalization, and invitation execution in
+      `workspace_member_commands.rs`; workspace CRUD, switch, resolution,
+      text-input policy, API paths, and output/error semantics remain unchanged.
+      Scoped rustfmt/check and `git diff --check` pass; Cargo is delegated. PR
+      #255 is Ready (`isDraft=false`), CLEAN/MERGEABLE; exact-head review
+      pending.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
