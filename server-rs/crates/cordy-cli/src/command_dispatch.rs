@@ -10,6 +10,7 @@ use super::dispatch_issue::run_issue_command;
 use super::dispatch_label::run_label_command;
 use super::dispatch_project::run_project_command;
 use super::dispatch_property::run_property_command;
+use super::dispatch_repo::run_repo_command;
 use super::dispatch_skill::run_skill_command;
 use super::dispatch_squad::run_squad_command;
 use super::dispatch_user::run_user_command;
@@ -37,18 +38,7 @@ pub(super) async fn run_with_input<R: Read>(
         Command::Property(args) => run_property_command(cli, environment, args).await,
         Command::Chat(args) => run_chat_command(cli, environment, args).await,
         Command::Attachment(args) => run_attachment_command(cli, environment, args).await,
-        Command::Repo(RepoArgs {
-            command: RepoCommand::List { output },
-        }) => run_repo_list(cli, environment, *output).await,
-        Command::Repo(RepoArgs {
-            command: RepoCommand::Add(args),
-        }) => run_repo_add(cli, environment, args).await,
-        Command::Repo(RepoArgs {
-            command: RepoCommand::Remove(args),
-        }) => run_repo_remove(cli, environment, args).await,
-        Command::Repo(RepoArgs {
-            command: RepoCommand::Checkout { url, checkout_ref },
-        }) => run_repo_checkout(environment, url, checkout_ref.as_deref()).await,
+        Command::Repo(args) => run_repo_command(cli, environment, args).await,
         Command::Runtime(RuntimeArgs {
             command: RuntimeCommand::List { output },
         }) => run_runtime_list(cli, environment, *output).await,
