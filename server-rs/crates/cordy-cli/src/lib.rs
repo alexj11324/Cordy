@@ -51,6 +51,7 @@ mod issue_subscriber_commands;
 mod issue_subscriber_schema;
 mod issue_task_commands;
 mod issue_timeline_commands;
+mod issue_timeline_schema;
 mod issue_update_commands;
 mod issue_usage_commands;
 mod issue_value_helpers;
@@ -233,6 +234,7 @@ use issue_task_commands::{
 use issue_timeline_commands::{
     build_timeline_filter, filter_timeline, format_issue_timeline_table, run_issue_timeline,
 };
+pub(super) use issue_timeline_schema::IssueTimelineArgs;
 use issue_update_commands::run_issue_update;
 use issue_usage_commands::run_issue_usage;
 use issue_value_helpers::{
@@ -660,36 +662,6 @@ struct IssueLabelMutationArgs {
     label_id: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
     output: OutputFormat,
-    #[arg(long, help = "Show full UUIDs in table output")]
-    full_id: bool,
-}
-
-#[derive(Debug, Args)]
-struct IssueTimelineArgs {
-    #[arg(value_name = "ID")]
-    issue_id: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-    #[arg(long, help = "Drop comments and return activity records only")]
-    activity_only: bool,
-    #[arg(
-        long,
-        value_delimiter = ',',
-        help = "Only return activities with these actions (repeatable or comma-separated)"
-    )]
-    action: Vec<String>,
-    #[arg(
-        long,
-        help = "Only return entries created after this RFC3339 timestamp"
-    )]
-    since: Option<String>,
-    #[arg(
-        long,
-        default_value_t = 0,
-        allow_hyphen_values = true,
-        help = "Only return the N most recent entries"
-    )]
-    tail: i64,
     #[arg(long, help = "Show full UUIDs in table output")]
     full_id: bool,
 }
