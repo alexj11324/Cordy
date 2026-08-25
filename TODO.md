@@ -1100,16 +1100,20 @@
       remains clean.
 - [ ] PR #259 `codex/cord-91-cli-repo-schema` is the next bounded child of
       #258: base branch `codex/cord-90-cli-autopilot-schema` at
-      `0b004213e8b8289d03325ba77dea16be32c5b3e8`, exact head
-      `29f96c1dffa17d86a73094bd0d184b58c2f508cf`, tree
-      `14ce728e36d501b2e461419fe54e8a500b3183a1`, candidate
-      `72b8cf09c1cee366a5be05c96d43f0fa908894a7` (parents base + head).
+      `0b004213e8b8289d03325ba77dea16be32c5b3e8`. Initial exact head
+      `29f96c1dffa17d86a73094bd0d184b58c2f508cf` was blocked because two
+      moved schema types were still needed by execution signatures. The serial
+      subagent fixed only those imports in
+      `be6e14c81d112f9193a68938c6707fd8af9e7620`; corrected exact head is
+      `be6e14c81d112f9193a68938c6707fd8af9e7620`, tree
+      `8fa6da7b709418c2e4d71c6d4932a6ffa29b7124`, candidate
+      `64c6b3fb32e2ffe22e0491cf2d0cf82f51a3be8e` (parents base + head).
       It moves repository clap definitions into `repo_command_schema.rs`;
       URL validation/deduplication, checkout retry and timeout behavior, API
       paths, output, and root re-exports remain unchanged. Scoped pinned
       rustfmt and `git diff --check` pass; Cargo is delegated. PR #259 is
-      Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review
-      pending; no duplicate review request has been made.
+      Ready (`isDraft=false`), CLEAN/MERGEABLE. Corrected-head exact review is
+      pending; the initial review was not reused.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
