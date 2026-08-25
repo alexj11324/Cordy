@@ -7,6 +7,7 @@ use super::dispatch_config::run_config_command;
 use super::dispatch_issue::run_issue_command;
 use super::dispatch_label::run_label_command;
 use super::dispatch_project::run_project_command;
+use super::dispatch_property::run_property_command;
 use super::dispatch_skill::run_skill_command;
 use super::dispatch_squad::run_squad_command;
 use super::dispatch_user::run_user_command;
@@ -31,28 +32,7 @@ pub(super) async fn run_with_input<R: Read>(
         Command::Squad(args) => run_squad_command(cli, environment, args).await,
         Command::Label(args) => run_label_command(cli, environment, args).await,
         Command::Project(args) => run_project_command(cli, environment, args).await,
-        Command::Property(PropertyArgs {
-            command:
-                PropertyCommand::List {
-                    output,
-                    include_archived,
-                },
-        }) => run_property_list(cli, environment, *output, *include_archived).await,
-        Command::Property(PropertyArgs {
-            command: PropertyCommand::Get { property, output },
-        }) => run_property_get(cli, environment, property, *output).await,
-        Command::Property(PropertyArgs {
-            command: PropertyCommand::Create(args),
-        }) => run_property_create(cli, environment, args).await,
-        Command::Property(PropertyArgs {
-            command: PropertyCommand::Update(args),
-        }) => run_property_update(cli, environment, args).await,
-        Command::Property(PropertyArgs {
-            command: PropertyCommand::Archive(args),
-        }) => run_property_archive(cli, environment, args, true).await,
-        Command::Property(PropertyArgs {
-            command: PropertyCommand::Unarchive(args),
-        }) => run_property_archive(cli, environment, args, false).await,
+        Command::Property(args) => run_property_command(cli, environment, args).await,
         Command::Chat(ChatArgs {
             command: ChatCommand::History(args),
         }) => run_chat_read(cli, environment, "/api/chat/history", None, args, true).await,

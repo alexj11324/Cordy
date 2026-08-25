@@ -111,6 +111,7 @@ mod dispatch_auth;
 mod dispatch_issue;
 mod dispatch_label;
 mod dispatch_project;
+mod dispatch_property;
 mod dispatch_config;
 mod dispatch_user;
 mod dispatch_workspace;
