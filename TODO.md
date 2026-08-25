@@ -1692,6 +1692,14 @@
       and `git diff --check` pass; Cargo was not run. The serial subagent owns
       blocker-only fixes/review; Pro owns the eventual Ready PR, gate, and
       merge.
+- [ ] CLI issue-subscriber schema refactor is structurally committed at
+      `e19c268708e5cf81d538b0ec6c0b39b9e0fb1453` (tree
+      `dce3c97d9beabef272f567a0e11f1b13170967df`): subscriber list/add/remove
+      clap definitions now live in `issue_subscriber_schema.rs`; caller
+      defaults, mutually-exclusive identity flags, and output behavior remain
+      unchanged. Scoped rustfmt with `skip_children` and `git diff --check`
+      pass; Cargo was not run. The serial subagent owns blocker-only
+      fixes/review; Pro owns the eventual Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
