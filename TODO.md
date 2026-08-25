@@ -1230,6 +1230,18 @@
       `git diff --check` pass; Cargo is delegated. PR #266 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review PASS;
       no Cargo was run and no production behavior changed.
+- [ ] PR #267 `codex/cord-99-cli-agent-copy` is the next bounded child of
+      #266: base branch `codex/cord-98-cli-agent-mcp` at
+      `036da9b2bad7aaed29714617b25ecc84b53a8759`, exact head
+      `c30121f6fd05f9ebe0726a850f911410b7fc9ba7`, tree
+      `cbc7e00f21a54f1a394ca416b525f44c81cda454`, candidate
+      `30ce65a8a92539578e087baa86e1e58c56684624` (parents base + head).
+      It isolates agent copy orchestration in `agent_copy_commands.rs`;
+      source lookup, runtime/model rules, permissions, skills, secret input,
+      API payload, output, dispatch, and re-exports remain unchanged. Scoped
+      pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR #267
+      is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review
+      pending; no duplicate review request has been made.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
