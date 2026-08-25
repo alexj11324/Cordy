@@ -12,9 +12,9 @@ use std::time::Duration;
 
 use cordy_agent::{
     AntigravityBackend, AntigravityConfig, BackendConfig, CatalogCache, CodebuddyBackend,
-    CodebuddyConfig, DimBackend, DimConfig, GrokBackend, GrokConfig, HermesBackend, HermesConfig,
-    KimiBackend, KimiConfig, KiroBackend, KiroConfig, QoderBackend, QoderConfig, ReasonixBackend,
-    ReasonixConfig, RuntimeCommand, TraecliBackend, TraecliConfig,
+    CodebuddyConfig, DimBackend, DimConfig, DshBackend, DshConfig, GrokBackend, GrokConfig,
+    HermesBackend, HermesConfig, KimiBackend, KimiConfig, KiroBackend, KiroConfig, QoderBackend,
+    QoderConfig, ReasonixBackend, ReasonixConfig, RuntimeCommand, TraecliBackend, TraecliConfig,
 };
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
 use serde_json::{json, Value};
@@ -269,6 +269,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 | "traecli"
                 | "antigravity"
                 | "codebuddy"
+                | "dsh"
                 | "qwen"
                 | "qwenpaw"
                 | "mcode"
@@ -402,6 +403,17 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 )
                 .await,
                 "codebuddy" => CodebuddyBackend::new(CodebuddyConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "dsh" => DshBackend::new(DshConfig {
                     command,
                     env: BTreeMap::new(),
                 })
