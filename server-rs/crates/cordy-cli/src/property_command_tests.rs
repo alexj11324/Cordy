@@ -4,6 +4,7 @@ use axum::routing::{get, patch, put};
 use axum::{Json, Router};
 use clap::Parser;
 use std::io::Cursor;
+use tokio::net::TcpListener;
 
 #[test]
 fn property_read_parser_and_table_match_go_registry_contract() {
