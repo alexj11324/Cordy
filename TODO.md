@@ -1448,6 +1448,18 @@
       rustfmt and `git diff --check` pass; Cargo is delegated. PR #312 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review PASS on
       `e41de24e`; no Cargo was run.
+- [ ] PR #313 `codex/cord-145-cli-config-profile-resolution` is the next bounded
+      child of #312: base branch `codex/cord-144-cli-project-output` at
+      `e41de24e23a21decfbd78aecbef023690d48c275`, exact head
+      `e44f110a35ea28430b32150bf1e591425698b1be`, tree
+      `e254e276d3f675373dfd351dbbdc17fd349c5689`, candidate
+      `9288f88c8da77d3851c780c15c73505d3c85c3fe` (parents base + head).
+      It separates persisted profile/backend/launch-flag schema from daemon
+      launch precedence resolution; flag > env > profile semantics, timeout
+      parsing, disable signals, health-port selection, and non-secret probe
+      extraction remain unchanged. Scoped pinned rustfmt and `git diff --check`
+      pass; Cargo is delegated. PR #313 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Exact-head subagent review is pending; no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
