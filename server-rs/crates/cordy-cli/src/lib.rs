@@ -8,6 +8,7 @@ mod agent_helpers;
 mod api;
 mod attachment_input;
 mod auth_commands;
+mod autopilot_commands;
 mod autopilot_output;
 mod autopilot_resolver;
 mod chat_commands;
@@ -105,6 +106,7 @@ use attachment_input::{
     PendingAttachment,
 };
 use auth_commands::{display_token_prefix, run_auth_logout, run_auth_status};
+pub(super) use autopilot_commands::{run_autopilot_get, run_autopilot_list};
 use autopilot_output::{
     autopilot_webhook_url, format_autopilot_runs_table, format_autopilot_table,
 };
@@ -4023,76 +4025,6 @@ fn render_daemon_startup(
             bail!("daemon {verb} timed out before readiness (pid {pid}, status {status})")
         }
     }
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct AutopilotListEnvelope {
-    autopilots: Vec<Value>,
-    total: i64,
-}
-
-async fn run_autopilot_list(
-    cli: &Cli,
-    environment: &Environment,
-    status: &str,
-    output: OutputFormat,
-    full_id: bool,
-) -> Result<RunOutput> {
-    let client = new_api_client(cli, environment)?;
-    let workspace_id = required_workspace_id(cli, environment)?;
-    let path = if status.is_empty() {
-        "/api/autopilots".into()
-    } else {
-        format!(
-            "/api/autopilots?status={}",
-            form_urlencoded::byte_serialize(status.as_bytes()).collect::<String>()
-        )
-    };
-    let response: AutopilotListEnvelope =
-        client.get_json(&path).await.context("list autopilots")?;
-    let stdout = match output {
-        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&response)?),
-        OutputFormat::Table => {
-            let agents =
-                load_autopilot_agent_names(&client, &workspace_id, &response.autopilots).await;
-            format_autopilot_table(&response.autopilots, full_id, &agents)
-        }
-    };
-    Ok(RunOutput {
-        stdout,
-        stderr: String::new(),
-    })
-}
-
-async fn run_autopilot_get(
-    cli: &Cli,
-    environment: &Environment,
-    id: &str,
-    output: OutputFormat,
-) -> Result<RunOutput> {
-    let client = new_api_client(cli, environment)?;
-    let workspace_id = resolve_current_workspace_id(cli, environment);
-    let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, id)
-        .await
-        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
-    let response: Value = client
-        .get_json(&format!("/api/autopilots/{autopilot_id}"))
-        .await
-        .context("get autopilot")?;
-    let stdout = match output {
-        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&response)?),
-        OutputFormat::Table => {
-            let autopilot = response.get("autopilot").unwrap_or(&Value::Null);
-            let agents =
-                load_autopilot_agent_names(&client, &workspace_id, std::slice::from_ref(autopilot))
-                    .await;
-            format_autopilot_table(std::slice::from_ref(autopilot), true, &agents)
-        }
-    };
-    Ok(RunOutput {
-        stdout,
-        stderr: String::new(),
-    })
 }
 
 async fn run_autopilot_create(
