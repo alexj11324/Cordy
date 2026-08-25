@@ -675,6 +675,12 @@
       and update request-body forwarding. Scoped rustfmt and `git diff
       --check` pass; PR #237 is Ready (`isDraft=false`), CLEAN/MERGEABLE.
       Cargo and exact-head review remain delegated.
+- [x] #237 exact-head subagent review PASS on
+      `1a875c8d071a56f760042dc0daeb2ef088a6d913`: `dispatch_user.rs` covers
+      profile get and update; update forwards the shared stdin reader
+      unchanged. Dispatcher and lib wiring are correct with preserved handler
+      signatures. `git diff --check` passes; subagent did not run Cargo or
+      modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
