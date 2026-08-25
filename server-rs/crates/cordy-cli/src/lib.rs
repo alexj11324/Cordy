@@ -163,6 +163,7 @@ mod daemon_launch_inputs;
 mod daemon_lifecycle_output;
 mod daemon_log_commands;
 mod daemon_status_commands;
+mod daemon_status_output;
 mod disk_usage_commands;
 mod disk_usage_output;
 pub mod error;
@@ -357,9 +358,10 @@ use daemon_log_commands::{
     parse_log_lines, read_daemon_log_tail, resolve_daemon_log_path, run_daemon_logs,
 };
 use daemon_status_commands::{
-    format_daemon_status_table, known_daemon_profiles, render_daemon_status,
-    require_known_daemon_profile, resolve_daemon_status_port, run_daemon_status,
+    known_daemon_profiles, require_known_daemon_profile, resolve_daemon_status_port,
+    run_daemon_status,
 };
+use daemon_status_output::{format_daemon_status_table, render_daemon_status};
 use disk_usage_commands::{
     disk_usage_needs_parent_status, disk_usage_task_context, enumerate_disk_usage_roots,
     fill_disk_usage_parent_statuses, limit_disk_usage_aggregate, limit_disk_usage_report,
