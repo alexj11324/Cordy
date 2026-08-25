@@ -1140,6 +1140,16 @@
       subagent reviewed the exact head and found no issue. Scoped rustfmt and
       `git diff --check` pass (the subagent environment lacked a rustfmt
       executable); Cargo was not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI issue rerun command structural refactor is committed at
+      `3d47bdddfd98777fb48ef60d510a12ea8612cf22` (parent
+      `16812d6149062ecb312d84b41911e9793e99313b`, tree
+      `a31fe81989c4d2cb8f0dc3fc756bb2e80cb8e46e`): rerun request,
+      agent-name enrichment, and JSON/table output now live in
+      `cordy-cli/src/issue_rerun_commands.rs`; parent dispatch retains its
+      existing contract. The serial subagent reviewed the exact head and found
+      no issue. Scoped rustfmt and `git diff --check` pass (the subagent
+      environment lacked a rustfmt executable); Cargo was not run. Pro owns
+      push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
