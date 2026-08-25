@@ -7,6 +7,7 @@ use super::dispatch_config::run_config_command;
 use super::dispatch_issue::run_issue_command;
 use super::dispatch_skill::run_skill_command;
 use super::dispatch_user::run_user_command;
+use super::dispatch_workspace::run_workspace_command;
 use super::*;
 
 pub(super) async fn run_with_input<R: Read>(
@@ -23,65 +24,7 @@ pub(super) async fn run_with_input<R: Read>(
         Command::Login(args) => run_login_command(cli, environment, args).await,
         Command::Config(args) => run_config_command(cli, environment, args),
         Command::User(args) => run_user_command(cli, environment, args, input).await,
-        Command::Workspace(WorkspaceArgs {
-            command: WorkspaceCommand::List { output, full_id },
-        }) => run_workspace_list(cli, environment, *output, *full_id).await,
-        Command::Workspace(WorkspaceArgs {
-            command: WorkspaceCommand::Get { workspace, output },
-        }) => run_workspace_get(cli, environment, workspace.as_deref(), *output).await,
-        Command::Workspace(WorkspaceArgs {
-            command: WorkspaceCommand::Create(args),
-        }) => run_workspace_create(cli, environment, args, input).await,
-        Command::Workspace(WorkspaceArgs {
-            command: WorkspaceCommand::Update(args),
-        }) => run_workspace_update(cli, environment, args, input).await,
-        Command::Workspace(WorkspaceArgs {
-            command: WorkspaceCommand::Switch { workspace },
-        }) => run_workspace_switch(cli, environment, workspace).await,
-        Command::Workspace(WorkspaceArgs {
-            command:
-                WorkspaceCommand::Member(WorkspaceMemberArgs {
-                    command: WorkspaceMemberCommand::List { workspace, output },
-                }),
-        }) => run_workspace_member_list(cli, environment, workspace.as_deref(), *output).await,
-        Command::Workspace(WorkspaceArgs {
-            command:
-                WorkspaceCommand::Member(WorkspaceMemberArgs {
-                    command: WorkspaceMemberCommand::Invite(args),
-                }),
-        }) => run_workspace_member_invite(cli, environment, args).await,
-        Command::Workspace(WorkspaceArgs {
-            command:
-                WorkspaceCommand::Mcp(WorkspaceMcpArgs {
-                    command: WorkspaceMcpCommand::List { workspace, output },
-                }),
-        }) => run_workspace_mcp_list(cli, environment, workspace.as_deref(), *output).await,
-        Command::Workspace(WorkspaceArgs {
-            command:
-                WorkspaceCommand::Mcp(WorkspaceMcpArgs {
-                    command: WorkspaceMcpCommand::Add(args),
-                }),
-        }) => run_workspace_mcp_add(cli, environment, args, input).await,
-        Command::Workspace(WorkspaceArgs {
-            command:
-                WorkspaceCommand::Mcp(WorkspaceMcpArgs {
-                    command: WorkspaceMcpCommand::Update(args),
-                }),
-        }) => run_workspace_mcp_update(cli, environment, args, input).await,
-        Command::Workspace(WorkspaceArgs {
-            command:
-                WorkspaceCommand::Mcp(WorkspaceMcpArgs {
-                    command:
-                        WorkspaceMcpCommand::Remove {
-                            server_id,
-                            workspace,
-                            output,
-                        },
-                }),
-        }) => {
-            run_workspace_mcp_remove(cli, environment, server_id, workspace.as_deref(), *output)
-                .await
-        }
+        Command::Workspace(args) => run_workspace_command(cli, environment, args, input).await,
         Command::Squad(SquadArgs {
             command: SquadCommand::List { output },
         }) => run_squad_list(cli, environment, *output).await,

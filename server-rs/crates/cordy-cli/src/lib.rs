@@ -111,6 +111,7 @@ mod dispatch_auth;
 mod dispatch_issue;
 mod dispatch_config;
 mod dispatch_user;
+mod dispatch_workspace;
 mod dispatch_skill;
 mod command_dispatch;
 pub mod config;
