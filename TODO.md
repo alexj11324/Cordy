@@ -1191,6 +1191,16 @@
       exact head and found no issue. Scoped rustfmt and `git diff --check`
       pass (the subagent environment lacked a rustfmt executable); Cargo was
       not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI issue-assignment command structural refactor is committed at
+      `d016ad65a8bfd880ce49113ec545cabd2ff7c276` (parent
+      `8904a9d78662fb212c45cf10d94975700559b3be`, tree
+      `4d251d1fcca3513f1cc7fbf4d97d4b511f2378b3`): assign/unassign argument
+      validation, assignee resolution, PUT request, and output now live in
+      `cordy-cli/src/issue_assign_commands.rs`; parent dispatch retains its
+      contract. The serial subagent reviewed the exact head and found no issue.
+      Scoped rustfmt and `git diff --check` pass (the subagent environment
+      lacked a rustfmt executable); Cargo was not run. Pro owns push/Ready PR,
+      gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
