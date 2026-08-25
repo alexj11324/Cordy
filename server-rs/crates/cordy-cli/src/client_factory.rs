@@ -1,8 +1,7 @@
 use anyhow::{bail, Context, Result};
 use url::Url;
 
-mod client_scope;
-pub(super) use client_scope::{
+pub(super) use super::client_scope::{
     required_workspace_id, resolve_current_workspace_id, resolve_workspace_id,
 };
 
