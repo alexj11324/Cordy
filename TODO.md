@@ -1373,6 +1373,18 @@
       delegated. PR #306 is Ready (`isDraft=false`), MERGEABLE (checks
       pending). New exact-head subagent review PASS on `0fc50c88`; no Cargo
       was run.
+- [ ] PR #307 `codex/cord-139-cli-project-reference` is the next bounded child of
+      #306: base branch `codex/cord-138-cli-project-resource-input` at
+      `0fc50c88fc5e0cb9709046029361c4e860d8fc71`, exact head
+      `e1ac3bd5aa11f449ea1afe17ed1c1c9acabbccd7`, tree
+      `c7c87c64265f4d1b97ac93bd1b239b9ef8495035`, candidate
+      `b627d704d4da196113fedbd455e8ddda74bd2bfe` (parents base + head).
+      It isolates canonical UUID/project-prefix and URL-encoded project reference
+      resolution in `project_reference_resolver.rs`; actor/member/agent/squad
+      resolution, lookup ordering, validation, error text, and API callers remain
+      unchanged. Scoped pinned rustfmt and `git diff --check` pass; Cargo is
+      delegated. PR #307 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head
+      subagent review is pending; no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
