@@ -7,6 +7,7 @@ mod agent_commands;
 mod agent_helpers;
 mod api;
 mod attachment_input;
+mod auth_command_schema;
 mod auth_commands;
 mod autopilot_commands;
 mod autopilot_output;
@@ -123,6 +124,7 @@ use attachment_input::{
     append_unique_strings, collect_local_attachments, quick_create_attachment_ids,
     PendingAttachment,
 };
+pub(super) use auth_command_schema::{AuthArgs, AuthCommand, LoginArgs};
 use auth_commands::{display_token_prefix, run_auth_logout, run_auth_status};
 pub(super) use autopilot_commands::{
     run_autopilot_create, run_autopilot_delete, run_autopilot_get, run_autopilot_list,
@@ -521,34 +523,6 @@ enum SetupError {
     HealthProbe(#[source] HealthProbeError),
     #[error("setup self-host requires --app-url when --server-url points at a remote host")]
     RemoteAppUrlRequired,
-}
-
-#[derive(Debug, Args)]
-struct AuthArgs {
-    #[command(subcommand)]
-    command: AuthCommand,
-}
-
-#[derive(Debug, Args)]
-struct LoginArgs {
-    #[arg(long, help = "Authenticate using a personal access token")]
-    token: Option<String>,
-    #[arg(
-        long,
-        help = "Host/IP the browser callback URL points at when it can reach this CLI directly"
-    )]
-    callback_host: Option<String>,
-}
-
-#[derive(Debug, Subcommand)]
-enum AuthCommand {
-    #[command(about = "Show current authentication status")]
-    Status {
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-    #[command(about = "Remove stored authentication token")]
-    Logout,
 }
 
 #[derive(Debug, Args)]
