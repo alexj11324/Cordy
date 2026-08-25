@@ -713,6 +713,16 @@
       `Command::Squad` routing and `lib.rs` module wiring are correct with
       parent visibility intact. `git diff --check` passes; subagent did not
       run Cargo or modify files.
+- [x] PR #240 `codex/cord-72-cli-label-dispatch` is the next bounded child of
+      #239: base branch `codex/cord-71-cli-squad-dispatch` at
+      `95a9fb647a128bd4c78d73fd75170e10655127a8`, exact head
+      `00c5dbef79d8acf7cfccab0e23ecd27e7e3dc47a`, tree
+      `4bd409ede4f8c4ae1fb20dd6c3396a803a4f2651`, candidate
+      `b68c262f34642db38b67c9f3956dda250945b316`. It isolates Label CRUD
+      routing into `dispatch_label.rs`, preserving identifier/full-id and
+      output semantics. Scoped rustfmt and `git diff --check` pass; PR #240
+      is Ready (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review
+      remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
