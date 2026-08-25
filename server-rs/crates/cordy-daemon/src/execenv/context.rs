@@ -212,7 +212,7 @@ fn err_pre_exists(path: &str) -> anyhow::Error {
     anyhow::Error::new(ErrPathPreExists).context(format!("path exists: {path}"))
 }
 
-fn is_pre_exists(err: &anyhow::Error) -> bool {
+pub(crate) fn is_pre_exists(err: &anyhow::Error) -> bool {
     err.downcast_ref::<ErrPathPreExists>().is_some()
 }
 
