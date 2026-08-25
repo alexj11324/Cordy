@@ -114,7 +114,9 @@ fn issue_user_jwt_at(
             sub: user_id,
             email,
             name,
-            exp: now + ttl,
+            exp: now
+                .checked_add(ttl)
+                .ok_or_else(|| anyhow::anyhow!("JWT expiration overflow"))?,
             iat: now,
         },
         &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
@@ -183,5 +185,22 @@ mod tests {
         assert_eq!(claims["name"], "Alex");
         assert_eq!(claims["iat"], 100);
         assert_eq!(claims["exp"], 400);
+    }
+
+    #[test]
+    fn user_jwt_rejects_expiration_overflow() {
+        let error = issue_user_jwt_at(
+            "user-1",
+            "a@example.com",
+            "Alex",
+            i64::MAX - 1,
+            10,
+            "secret",
+        )
+        .expect_err("overflowing exp must fail");
+        assert!(
+            error.to_string().contains("overflow"),
+            "unexpected error: {error}"
+        );
     }
 }

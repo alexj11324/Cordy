@@ -175,7 +175,11 @@ fn validate_variant(scope_type: &str, variant: Option<&str>) -> Result<Option<St
     }
 }
 
-fn update_variant(input: JsonInput, scope_type: &str, existing: Option<String>) -> Result<Option<String>, ()> {
+fn update_variant(
+    input: JsonInput,
+    scope_type: &str,
+    existing: Option<String>,
+) -> Result<Option<String>, ()> {
     match input {
         JsonInput::Missing => Ok(existing),
         JsonInput::Present(Value::Null) => validate_variant(scope_type, None),
@@ -456,7 +460,11 @@ async fn update(
             }
         },
     };
-    let scope_variant = match update_variant(request.scope_variant, &view.scope_type, view.scope_variant.clone()) {
+    let scope_variant = match update_variant(
+        request.scope_variant,
+        &view.scope_type,
+        view.scope_variant.clone(),
+    ) {
         Ok(variant) => variant,
         Err(()) => {
             return error_response(
@@ -529,8 +537,12 @@ mod tests {
         let omitted: UpdateRequest = decode(br#"{"expected_revision":1}"#).unwrap();
         assert!(matches!(omitted.scope_variant, JsonInput::Missing));
 
-        let cleared: UpdateRequest = decode(br#"{"scope_variant":null,"expected_revision":1}"#).unwrap();
-        assert!(matches!(cleared.scope_variant, JsonInput::Present(Value::Null)));
+        let cleared: UpdateRequest =
+            decode(br#"{"scope_variant":null,"expected_revision":1}"#).unwrap();
+        assert!(matches!(
+            cleared.scope_variant,
+            JsonInput::Present(Value::Null)
+        ));
         assert_eq!(
             update_variant(cleared.scope_variant, "workspace", Some("members".into())),
             Ok(None)

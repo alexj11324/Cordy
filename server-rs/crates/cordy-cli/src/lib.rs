@@ -8609,9 +8609,9 @@ fn resolve_auth_status_credentials(
         .as_deref()
         .or_else(|| environment.trimmed("CORDY_SERVER_URL"));
     let server_url = if let Some(raw) = explicit_server_url.filter(|value| !value.is_empty()) {
-        normalize_api_base_url(raw).unwrap_or_else(|_| raw.into())
+        normalize_api_base_url(raw)?
     } else if may_read_config && !config.server_url.is_empty() {
-        normalize_api_base_url(&config.server_url).unwrap_or(config.server_url)
+        normalize_api_base_url(&config.server_url)?
     } else {
         String::new()
     };
@@ -9923,7 +9923,7 @@ async fn run_issue_children(
     environment: &Environment,
     input: &str,
     output: OutputFormat,
-    _full_id: bool,
+    full_id: bool,
 ) -> Result<RunOutput> {
     let client = new_api_client(cli, environment)?;
     let issue_id = resolve_issue_ref(&client, input)
@@ -9947,7 +9947,7 @@ async fn run_issue_children(
         OutputFormat::Table => {
             let workspace_id = resolve_current_workspace_id(cli, environment);
             let actors = load_issue_actor_names(&client, &workspace_id, &children).await;
-            format_issue_children_table(&children, &actors)
+            format_issue_children_table(&children, full_id, &actors)
         }
     };
     Ok(RunOutput {
@@ -10007,20 +10007,28 @@ fn group_issue_children(children: &[Value]) -> IssueChildrenEnvelope {
     }
 }
 
-fn format_issue_children_table(children: &[Value], actors: &IssueActorNames) -> String {
+fn format_issue_children_table(
+    children: &[Value],
+    full_id: bool,
+    actors: &IssueActorNames,
+) -> String {
     let mut rows = Vec::with_capacity(children.len() + 1);
-    rows.push(vec![
+    let mut headers = vec![
         "STAGE".into(),
         "KEY".into(),
         "TITLE".into(),
         "STATUS".into(),
         "PRIORITY".into(),
         "ASSIGNEE".into(),
-    ]);
+    ];
+    if full_id {
+        headers.insert(2, "ID".into());
+    }
+    rows.push(headers);
     rows.extend(children.iter().map(|child| {
         let id = value_string(child, "id");
         let key = match value_string(child, "identifier") {
-            value if value.is_empty() => id,
+            value if value.is_empty() => id.clone(),
             value => value,
         };
         let actor_type = value_string(child, "assignee_type");
@@ -10034,14 +10042,18 @@ fn format_issue_children_table(children: &[Value], actors: &IssueActorNames) -> 
                 .get(&actor_key)
                 .map_or_else(|| actor_key.clone(), |name| format!("{actor_type}:{name}"))
         };
-        vec![
+        let mut row = vec![
             child_stage(child).map_or_else(|| "-".into(), |stage| stage.to_string()),
             key,
             value_string(child, "title"),
             value_string(child, "status"),
             value_string(child, "priority"),
             assignee,
-        ]
+        ];
+        if full_id {
+            row.insert(2, id);
+        }
+        row
     }));
     format_table(&rows)
 }
@@ -15703,13 +15715,22 @@ fn lexical_normalize(path: &Path) -> PathBuf {
     for component in path.components() {
         match component {
             Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
+            Component::ParentDir => match normalized.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    let _ = normalized.pop();
+                }
+                Some(Component::RootDir) | Some(Component::Prefix(_)) => {}
+                _ if !normalized.has_root() => normalized.push(component.as_os_str()),
+                _ => {}
+            },
             _ => normalized.push(component.as_os_str()),
         }
     }
-    normalized
+    if normalized.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        normalized
+    }
 }
 
 fn new_api_client(cli: &Cli, environment: &Environment) -> Result<ApiClient> {
@@ -15763,12 +15784,12 @@ fn new_api_client_with_options(
         .as_deref()
         .or_else(|| environment.trimmed("CORDY_SERVER_URL"));
     let server_url = if let Some(raw) = explicit_server_url.filter(|value| !value.is_empty()) {
-        normalize_api_base_url(raw).unwrap_or_else(|_| raw.into())
+        normalize_api_base_url(raw)?
     } else if !task_context || environment.trimmed(config::TASK_CONFIG_ROOT_ENV).is_some() {
         if config.server_url.is_empty() {
             String::new()
         } else {
-            normalize_api_base_url(&config.server_url).unwrap_or_else(|_| config.server_url.clone())
+            normalize_api_base_url(&config.server_url)?
         }
     } else {
         String::new()
@@ -20800,11 +20821,27 @@ mod tests {
             "assignee_id": "agent-1"
         })];
         let actors = IssueActorNames(HashMap::from([("agent:agent-1".into(), "CordyBot".into())]));
-        let table = format_issue_children_table(&children, &actors);
+        let table = format_issue_children_table(&children, false, &actors);
         assert!(table.starts_with("STAGE"));
         assert!(table.contains("CORD-19"));
         assert!(table.contains("First barrier"));
         assert!(table.contains("agent:CordyBot"));
+        assert!(!table.contains("child-1"));
+        let full = format_issue_children_table(&children, true, &actors);
+        assert!(full.contains("ID"));
+        assert!(full.contains("child-1"));
+    }
+
+    #[test]
+    fn lexical_normalize_clamps_parent_segments_at_filesystem_root() {
+        assert_eq!(
+            lexical_normalize(Path::new("/../../tmp/cordy")),
+            PathBuf::from("/tmp/cordy")
+        );
+        assert_eq!(
+            lexical_normalize(Path::new("/srv/tasks/../task-config")),
+            PathBuf::from("/srv/task-config")
+        );
     }
 
     #[test]
@@ -27706,6 +27743,27 @@ mod tests {
         assert_eq!(
             normalize_api_base_url("wss://api.cordy.ai/ws?old=1#fragment").expect("URL"),
             "https://api.cordy.ai"
+        );
+    }
+
+    #[test]
+    fn malformed_server_url_is_a_configuration_error() {
+        let error = normalize_api_base_url("not-a-url").expect_err("invalid URL");
+        assert!(
+            error.to_string().contains("invalid CORDY_SERVER_URL"),
+            "{error:#}"
+        );
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+        environment.set("CORDY_SERVER_URL", "not-a-url");
+        environment.set("CORDY_TOKEN", "token-1");
+        let cli = Cli::try_parse_from(["cordy", "auth", "status"]).expect("cli");
+        let error = resolve_auth_status_credentials(&cli, &environment)
+            .expect_err("malformed URL must not be retained");
+        assert!(
+            format!("{error:#}").contains("invalid CORDY_SERVER_URL"),
+            "{error:#}"
         );
     }
 
