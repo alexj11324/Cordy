@@ -6,6 +6,7 @@
 mod agent_commands;
 mod agent_helpers;
 mod api;
+mod api_error;
 mod cli_command_schema;
 #[cfg(test)]
 mod root_command_tests;
@@ -91,6 +92,12 @@ mod issue_runs_command_tests;
 mod issue_run_controls_command_tests;
 #[cfg(test)]
 mod issue_usage_command_tests;
+#[cfg(test)]
+mod issue_rerun_command_tests;
+#[cfg(test)]
+mod cli_test_helpers;
+#[cfg(test)]
+mod private_helper_command_tests;
 mod attachment_input;
 mod auth_command_schema;
 mod auth_commands;
@@ -99,13 +106,18 @@ mod autopilot_output;
 mod autopilot_resolver;
 mod chat_commands;
 mod client_factory;
+mod client_scope;
 mod command_dispatch;
 pub mod config;
 mod config_command_schema;
 mod config_commands;
 pub mod daemon;
 mod daemon_command_schema;
-mod daemon_commands;
+mod daemon_diagnostics_commands;
+mod daemon_execenv_commands;
+mod daemon_lifecycle_commands;
+mod daemon_log_commands;
+mod daemon_status_commands;
 mod disk_usage_commands;
 mod disk_usage_output;
 pub mod error;
@@ -250,14 +262,18 @@ pub(super) use daemon_command_schema::{
     DaemonArgs, DaemonCommand, DaemonDiskUsageArgs, DaemonLaunchArgs, DaemonLogsArgs,
     DaemonRestartArgs, DaemonStartArgs, DaemonStatusArgs,
 };
-pub use daemon_commands::run_private_helper;
-use daemon_commands::{
-    ensure_restart_is_background, format_daemon_status_table, known_daemon_profiles,
-    parse_cli_duration, parse_log_lines, read_daemon_log_tail, render_daemon_status,
-    require_known_daemon_profile, resolve_daemon_log_path, resolve_daemon_status_port,
-    run_daemon_after_setup, run_daemon_disk_usage, run_daemon_logs, run_daemon_probe_runtimes,
-    run_daemon_restart, run_daemon_start, run_daemon_status, run_daemon_stop,
-    validate_daemon_health_port,
+pub use daemon_execenv_commands::run_private_helper;
+use daemon_lifecycle_commands::{
+    ensure_restart_is_background, parse_cli_duration, run_daemon_after_setup,
+    run_daemon_restart, run_daemon_start, run_daemon_stop, validate_daemon_health_port,
+};
+use daemon_diagnostics_commands::{run_daemon_disk_usage, run_daemon_probe_runtimes};
+use daemon_log_commands::{
+    parse_log_lines, read_daemon_log_tail, resolve_daemon_log_path, run_daemon_logs,
+};
+use daemon_status_commands::{
+    format_daemon_status_table, known_daemon_profiles, render_daemon_status,
+    require_known_daemon_profile, resolve_daemon_status_port, run_daemon_status,
 };
 use disk_usage_commands::{
     disk_usage_needs_parent_status, disk_usage_task_context, enumerate_disk_usage_roots,
@@ -359,7 +375,8 @@ use label_commands::{
 use label_reference::{resolve_label_id, resolve_label_reference};
 use login::{
     build_login_url, build_workspace_creation_url, constant_time_equal, run_browser_login,
-    run_login, validate_login_token, wait_for_login_callback, wait_for_workspace_creation,
+    run_login, run_login_with_urls, validate_login_token, wait_for_login_callback,
+    wait_for_workspace_creation,
     wait_for_workspace_creation_with_opener, AuthUser, LoginWorkspace,
     WORKSPACE_DISCOVERY_INTERVAL, WORKSPACE_DISCOVERY_TIMEOUT,
 };
@@ -530,336 +547,4 @@ struct IssueListResponse {
     issues: Value,
     #[serde(default)]
     total: Value,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::extract::Request;
-    use axum::http::{HeaderMap, StatusCode};
-    use axum::routing::{delete as delete_route, get, patch, post, put};
-    use axum::{Json, Router};
-    use clap::Parser;
-    use std::fs;
-    use std::io::Cursor;
-    use std::sync::{Arc, Mutex};
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpListener;
-
-    #[tokio::test]
-    async fn private_execenv_helper_dispatches_before_cli_parsing() {
-        let missing = tempfile::tempdir()
-            .expect("tempdir")
-            .path()
-            .join("missing-workdir");
-        let input = serde_json::to_vec(&serde_json::json!({
-            "action": "reuse",
-            "reuse": {
-                "WorkDir": missing,
-                "Provider": "codex"
-            }
-        }))
-        .expect("helper request");
-        let mut output = Vec::new();
-
-        let handled = run_private_helper(
-            &[
-                OsString::from("cordy"),
-                OsString::from(cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG),
-            ],
-            Cursor::new(input),
-            &mut output,
-        )
-        .await
-        .expect("private helper");
-
-        assert!(handled);
-        let response: Value = serde_json::from_slice(&output).expect("helper response");
-        assert!(response.get("environment").is_none());
-        assert!(response.get("error").is_none());
-    }
-
-    #[tokio::test]
-    async fn private_execenv_helper_requires_the_exact_private_argv() {
-        let mut output = Vec::new();
-        let handled = run_private_helper(
-            &[
-                OsString::from("cordy"),
-                OsString::from(cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG),
-                OsString::from("unexpected"),
-            ],
-            Cursor::new(Vec::<u8>::new()),
-            &mut output,
-        )
-        .await
-        .expect("ordinary CLI path");
-
-        assert!(!handled);
-        assert!(output.is_empty());
-    }
-
-
-
-
-
-    async fn test_server() -> (String, tokio::task::JoinHandle<()>) {
-        let app = Router::new().route(
-            "/api/me",
-            get(|request: Request| async move {
-                assert_eq!(request.headers()["authorization"], "Bearer token-from-env");
-                assert_eq!(request.headers()["x-workspace-id"], "workspace-from-env");
-                assert_eq!(request.headers()["x-client-platform"], "cli");
-                assert_eq!(
-                    request.headers()["x-client-capabilities"],
-                    "stable_attachment_urls"
-                );
-                axum::Json(serde_json::json!({
-                    "id": "user-1",
-                    "name": "Ada",
-                    "email": "ada@example.com",
-                    "profile_description": "Maintainer"
-                }))
-            }),
-        );
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let address = listener.local_addr().expect("address");
-        let task = tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("serve");
-        });
-        (format!("http://{address}"), task)
-    }
-
-    async fn patch_test_server() -> (
-        String,
-        Arc<Mutex<Option<Value>>>,
-        tokio::task::JoinHandle<()>,
-    ) {
-        let captured = Arc::new(Mutex::new(None));
-        let captured_by_handler = Arc::clone(&captured);
-        let app = Router::new().route(
-            "/api/me",
-            patch(move |Json(body): Json<Value>| {
-                let captured = Arc::clone(&captured_by_handler);
-                async move {
-                    *captured.lock().expect("capture body") = Some(body.clone());
-                    Json(serde_json::json!({
-                        "id": "user-1",
-                        "name": "Ada",
-                        "email": "ada@example.com",
-                        "profile_description": body["profile_description"]
-                    }))
-                }
-            }),
-        );
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let address = listener.local_addr().expect("address");
-        let task = tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("serve");
-        });
-        (format!("http://{address}"), captured, task)
-    }
-
-    fn update_args(cli: &Cli) -> &UpdateProfileArgs {
-        match &cli.command {
-            Command::User(UserArgs {
-                command:
-                    UserCommand::Profile(ProfileArgs {
-                        command: ProfileCommand::Update(args),
-                    }),
-            }) => args,
-            _ => panic!("expected user profile update"),
-        }
-    }
-
-    fn create_workspace_args(cli: &Cli) -> &CreateWorkspaceArgs {
-        match &cli.command {
-            Command::Workspace(WorkspaceArgs {
-                command: WorkspaceCommand::Create(args),
-            }) => args,
-            _ => panic!("expected workspace create"),
-        }
-    }
-
-    fn update_workspace_args(cli: &Cli) -> &UpdateWorkspaceArgs {
-        match &cli.command {
-            Command::Workspace(WorkspaceArgs {
-                command: WorkspaceCommand::Update(args),
-            }) => args,
-            _ => panic!("expected workspace update"),
-        }
-    }
-
-    fn issue_list_args(cli: &Cli) -> &IssueListArgs {
-        match &cli.command {
-            Command::Issue(IssueArgs {
-                command: IssueCommand::List(args),
-            }) => args,
-            _ => panic!("expected issue list"),
-        }
-    }
-
-    fn issue_create_args(cli: &Cli) -> &IssueCreateArgs {
-        match &cli.command {
-            Command::Issue(IssueArgs {
-                command: IssueCommand::Create(args),
-            }) => args,
-            _ => panic!("expected issue create"),
-        }
-    }
-
-    fn issue_update_args(cli: &Cli) -> &IssueUpdateArgs {
-        match &cli.command {
-            Command::Issue(IssueArgs {
-                command: IssueCommand::Update(args),
-            }) => args,
-            _ => panic!("expected issue update"),
-        }
-    }
-
-    fn issue_assign_args(cli: &Cli) -> &IssueAssignArgs {
-        match &cli.command {
-            Command::Issue(IssueArgs {
-                command: IssueCommand::Assign(args),
-            }) => args,
-            _ => panic!("expected issue assign"),
-        }
-    }
-
-    fn issue_status_args(cli: &Cli) -> &IssueStatusArgs {
-        match &cli.command {
-            Command::Issue(IssueArgs {
-                command: IssueCommand::Status(args),
-            }) => args,
-            _ => panic!("expected issue status"),
-        }
-    }
-
-    fn issue_reorder_args(cli: &Cli) -> &IssueReorderArgs {
-        match &cli.command {
-            Command::Issue(IssueArgs {
-                command: IssueCommand::Reorder(args),
-            }) => args,
-            _ => panic!("expected issue reorder"),
-        }
-    }
-
-    fn issue_comment_add_args(cli: &Cli) -> &IssueCommentAddArgs {
-        match &cli.command {
-            Command::Issue(IssueArgs {
-                command:
-                    IssueCommand::Comment(IssueCommentArgs {
-                        command: IssueCommentCommand::Add(args),
-                    }),
-            }) => args,
-            _ => panic!("expected issue comment add"),
-        }
-    }
-
-    fn issue_comment_list_args(cli: &Cli) -> &IssueCommentListArgs {
-        match &cli.command {
-            Command::Issue(IssueArgs {
-                command:
-                    IssueCommand::Comment(IssueCommentArgs {
-                        command: IssueCommentCommand::List(args),
-                    }),
-            }) => args,
-            _ => panic!("expected issue comment list"),
-        }
-    }
-
-    fn issue_runs_args(cli: &Cli) -> &IssueRunsArgs {
-        match &cli.command {
-            Command::Issue(IssueArgs {
-                command: IssueCommand::Runs(args),
-            }) => args,
-            _ => panic!("expected issue runs"),
-        }
-    }
-
-    fn issue_run_messages_args(cli: &Cli) -> &IssueRunMessagesArgs {
-        match &cli.command {
-            Command::Issue(IssueArgs {
-                command: IssueCommand::RunMessages(args),
-            }) => args,
-            _ => panic!("expected issue run-messages"),
-        }
-    }
-
-    fn issue_cancel_task_args(cli: &Cli) -> &IssueCancelTaskArgs {
-        match &cli.command {
-            Command::Issue(IssueArgs {
-                command: IssueCommand::CancelTask(args),
-            }) => args,
-            _ => panic!("expected issue cancel-task"),
-        }
-    }
-
-    fn issue_usage_args(cli: &Cli) -> &IssueUsageArgs {
-        match &cli.command {
-            Command::Issue(IssueArgs {
-                command: IssueCommand::Usage(args),
-            }) => args,
-            _ => panic!("expected issue usage"),
-        }
-    }
-
-    fn issue_rerun_args(cli: &Cli) -> &IssueRerunArgs {
-        match &cli.command {
-            Command::Issue(IssueArgs {
-                command: IssueCommand::Rerun(args),
-            }) => args,
-            _ => panic!("expected issue rerun"),
-        }
-    }
-
-    fn issue_search_args(cli: &Cli) -> &IssueSearchArgs {
-        match &cli.command {
-            Command::Issue(IssueArgs {
-                command: IssueCommand::Search(args),
-            }) => args,
-            _ => panic!("expected issue search"),
-        }
-    }
-
-    #[tokio::test]
-    async fn issue_rerun_posts_fresh_task_and_formats_agent_name() {
-        let app = Router::new()
-            .route(
-                "/api/issues/CORD-18",
-                get(|| async {
-                    Json(serde_json::json!({"id":"issue-uuid","identifier":"CORD-18"}))
-                }),
-            )
-            .route(
-                "/api/issues/issue-uuid/rerun",
-                post(|Json(body): Json<Value>| async move {
-                    assert_eq!(body, serde_json::json!({}));
-                    Json(serde_json::json!({"id":"task-1","agent_id":"agent-1","status":"queued"}))
-                }),
-            )
-            .route(
-                "/api/agents",
-                get(|| async { Json(vec![serde_json::json!({"id":"agent-1","name":"CodeBot"})]) }),
-            );
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let address = listener.local_addr().expect("address");
-        let task = tokio::spawn(async move { axum::serve(listener, app).await.expect("serve") });
-        let home = tempfile::tempdir().expect("temp home");
-        let cwd = tempfile::tempdir().expect("temp cwd");
-        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
-        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
-        environment.set("CORDY_WORKSPACE_ID", "workspace-1");
-        environment.set("CORDY_TOKEN", "token-1");
-        let cli = Cli::try_parse_from(["cordy", "issue", "rerun", "CORD-18", "--output", "table"])
-            .expect("rerun CLI");
-        assert_eq!(issue_rerun_args(&cli).issue_id, "CORD-18");
-        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
-            .await
-            .expect("rerun issue");
-        assert_eq!(output.stdout, "Re-enqueued task task-1 on agent CodeBot\n");
-        assert!(output.stderr.is_empty());
-        task.abort();
-    }
-
-
 }
