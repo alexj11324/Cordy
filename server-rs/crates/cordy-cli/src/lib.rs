@@ -122,6 +122,7 @@ mod dispatch_user;
 mod dispatch_workspace;
 mod dispatch_skill;
 mod dispatch_squad;
+mod dispatch_setup;
 mod command_dispatch;
 pub mod config;
 mod config_command_schema;
