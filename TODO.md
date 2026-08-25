@@ -1120,16 +1120,21 @@
       `git diff --check` remains clean.
 - [ ] PR #260 `codex/cord-92-cli-chat-schema` is the next bounded child of
       #259: base branch `codex/cord-91-cli-repo-schema` at
-      `be6e14c81d112f9193a68938c6707fd8af9e7620`, exact head
-      `af28d11a55ed805c2f07453c5c367d82702925a2`, tree
-      `a45313169b3077de425d8d8b47e9ae1dab6d6420`, candidate
-      `8adbf002624a9abb4cbc84580792c43ddcc5aafc` (parents base + head).
+      `be6e14c81d112f9193a68938c6707fd8af9e7620`. Initial exact head
+      `af28d11a55ed805c2f07453c5c367d82702925a2` was blocked because the
+      chat read handler still needed one moved schema type in scope. The
+      serial subagent fixed only that import in
+      `de4fdb393848cb6285f3b71230e37aafb53f19a7`; corrected exact head is
+      `de4fdb393848cb6285f3b71230e37aafb53f19a7`, tree
+      `0ccfca093da6d3a5b8bbdc4b02a073436688e45c`, candidate
+      `6a6015cf9c9a8e15024135b8e9aea14c54583f37` (parents base + head).
       It moves chat/history/thread and attachment upload/download clap
       definitions into `chat_command_schema.rs`; local path handling,
       pagination/defaults, API paths, output, and dispatch remain unchanged.
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated.
       PR #260 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head
-      subagent review pending; no duplicate review request has been made.
+      review is pending for the corrected head; the initial review was not
+      reused.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
