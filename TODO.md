@@ -1326,6 +1326,17 @@
       and found no issue. Scoped rustfmt and `git diff --check` pass (the
       subagent environment lacked a rustfmt executable); Cargo was not run.
       Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI label-reference structural refactor is committed at
+      `0ce120d412b21413d3eb3a3d7d968691713f138b` (parent
+      `0c0e787f2d6aff5513c142a618707e3e999700f1`, tree
+      `fc9865a26675c945d0fec71e9ab2b796f6fa96bf`): canonical UUID and
+      prefix resolution, workspace URL encoding, ambiguity handling, and
+      stable label errors now live in `cordy-cli/src/label_reference.rs`;
+      parent and label command imports retain their contracts. The serial
+      subagent reviewed the exact head and found no issue. Scoped rustfmt
+      and `git diff --check` pass (the subagent environment lacked a
+      rustfmt executable); Cargo was not run. Pro owns push/Ready PR, gate,
+      and merge.
 
 ## Phase 4 — S8 route and API parity
 
