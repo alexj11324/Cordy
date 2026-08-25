@@ -106,6 +106,7 @@ mod autopilot_command_schema;
 mod autopilot_output;
 mod autopilot_resolver;
 mod chat_commands;
+mod chat_command_schema;
 mod client_factory;
 mod dispatch_agent;
 mod dispatch_autopilot;
@@ -276,8 +277,10 @@ use autopilot_resolver::{
     resolve_autopilot_subscribers, resolve_autopilot_trigger_id,
 };
 pub(super) use chat_commands::{
-    run_attachment_download, run_attachment_upload, run_chat_read, AttachmentArgs,
-    AttachmentCommand, ChatArgs, ChatCommand, ChatReadArgs, ChatThreadArgs,
+    run_attachment_download, run_attachment_upload, run_chat_read,
+};
+pub(super) use chat_command_schema::{
+    AttachmentArgs, AttachmentCommand, ChatArgs, ChatCommand, ChatReadArgs, ChatThreadArgs,
 };
 pub(super) use client_factory::{
     new_api_client, new_unscoped_api_client, new_unscoped_authenticated_api_client,
