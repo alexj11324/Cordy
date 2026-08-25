@@ -75,6 +75,14 @@
       and have not been run by this thread. Subagent exact-head review PASS: clap
       fields/defaults, `PathBuf` semantics, re-exports, handlers, dispatch, and tests
       have no compile/behavior blocker. PR is Ready (`isDraft=false`).
+- [x] Next structural slice #169, `codex/cord-50-cli-workspace-schema`, is based on
+      #168 at `9941a51b75b7571846ede20534c05766156eb456`; exact head
+      `145866c38861194779e3314f5859162e40fc807b`, tree
+      `100c8a5193baa8422db2e15feb513f247bb1c51f`, candidate
+      `45ad499ea9cd45f1ef227dd2b7d7e15c4f4d07da`. It moves only workspace/member/MCP
+      parser types to `workspace_command_schema.rs`; execution behavior is unchanged.
+      New schema rustfmt and `git diff --check` pass; Cargo/review/gate are delegated
+      and have not been run by this thread. PR is Ready (`isDraft=false`).
 - [ ] After all replacement PRs are created and exact refs verified, close #159 as
       `SUPERSEDED` without deleting or rewriting its branch. Do not reuse #159's
       review/gate evidence for any replacement PR.
