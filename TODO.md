@@ -1347,6 +1347,17 @@
       reviewed the exact head and found no issue. Scoped rustfmt and
       `git diff --check` pass (the subagent environment lacked a rustfmt
       executable); Cargo was not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI issue-description input refactor is committed at
+      `c9f4de39116fbf5b3001feeb2faad87bd9d3261e` (parent
+      `38efcc5d5f0733da5ae350c1831aa6b5a3b8065e`, tree
+      `8aaa48f189cb854e414e801c92a5098b0294dd74`): inline/stdin/file
+      source selection, workdir containment, newline trimming, and escape
+      decoding now live in `cordy-cli/src/issue_description.rs`; create
+      and update commands retain their existing contracts. The serial
+      subagent reviewed the exact head and found no issue. Scoped rustfmt
+      and `git diff --check` pass (the subagent environment lacked a
+      rustfmt executable); Cargo was not run. Pro owns push/Ready PR, gate,
+      and merge.
 
 ## Phase 4 — S8 route and API parity
 
