@@ -5,9 +5,18 @@ use std::path::Path;
 use url::form_urlencoded;
 
 use super::{
-    chat_reply_count, http_timeout, new_api_client, value_string, ChatReadArgs, Cli, Environment,
-    OutputFormat, RunOutput,
+    http_timeout, new_api_client, value_string, ChatReadArgs, Cli, Environment, OutputFormat,
+    RunOutput,
 };
+
+fn chat_reply_count(message: &Value) -> String {
+    message
+        .get("reply_count")
+        .and_then(Value::as_f64)
+        .filter(|count| *count != 0.0)
+        .map(|count| (count as i64).to_string())
+        .unwrap_or_default()
+}
 
 fn format_chat_read(response: &Value, output: OutputFormat, overview: bool) -> Result<String> {
     if output == OutputFormat::Json {

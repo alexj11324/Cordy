@@ -4732,15 +4732,6 @@ fn confirm_webhook_rotation<R: Read>(input: &mut R) -> Result<bool> {
     Ok(false)
 }
 
-fn chat_reply_count(message: &Value) -> String {
-    message
-        .get("reply_count")
-        .and_then(Value::as_f64)
-        .filter(|count| *count != 0.0)
-        .map(|count| (count as i64).to_string())
-        .unwrap_or_default()
-}
-
 fn required_workspace_id(cli: &Cli, environment: &Environment) -> Result<String> {
     let workspace_id = resolve_current_workspace_id(cli, environment);
     if workspace_id.is_empty() {
