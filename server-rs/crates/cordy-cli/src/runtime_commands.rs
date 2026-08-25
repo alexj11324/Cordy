@@ -139,7 +139,7 @@ pub(super) async fn run_runtime_delete(
     let client = new_api_client(cli, environment)?;
     let mut result = match client.delete(&format!("/api/runtimes/{runtime_id}")).await {
         Ok(()) => serde_json::Map::new(),
-        Err(_error) => {
+        Err(error) => {
             let Some(conflict) = runtime_delete_conflict(&error) else {
                 return Err(error).context("delete runtime");
             };
