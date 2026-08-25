@@ -1272,6 +1272,16 @@
       with no further issue. Scoped rustfmt and `git diff --check` pass
       (the subagent environment lacked a rustfmt executable); Cargo was not
       run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI issue-get structural refactor is committed at
+      `a3eb2a893ce1d5334867faf5282f4ac445a1d3b6` (parent
+      `cd8c20019a977eff2abec24b9f726b1fd36ecdfa`, tree
+      `e24553587ed357301be988ff73525125f4c43efc`): issue fetch,
+      actor enrichment, JSON output, and table formatting now live in
+      `cordy-cli/src/issue_get_commands.rs`; shared issue-reference and
+      actor helpers remain in the parent module. The serial subagent
+      reviewed the exact head and found no issue. Scoped rustfmt and
+      `git diff --check` pass (the subagent environment lacked a rustfmt
+      executable); Cargo was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
