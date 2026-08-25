@@ -3,6 +3,7 @@ use std::io::Read;
 use super::dispatch_agent::run_agent_command;
 use super::dispatch_auth::{run_auth_command, run_login_command};
 use super::dispatch_autopilot::run_autopilot_command;
+use super::dispatch_config::run_config_command;
 use super::dispatch_issue::run_issue_command;
 use super::dispatch_skill::run_skill_command;
 use super::*;
@@ -19,15 +20,7 @@ pub(super) async fn run_with_input<R: Read>(
         Command::Issue(args) => run_issue_command(cli, environment, args, input).await,
         Command::Auth(args) => run_auth_command(cli, environment, args).await,
         Command::Login(args) => run_login_command(cli, environment, args).await,
-        Command::Config(ConfigArgs { command: None }) => {
-            run_config_show(cli, environment, OutputFormat::Table)
-        }
-        Command::Config(ConfigArgs {
-            command: Some(ConfigCommand::Show { output }),
-        }) => run_config_show(cli, environment, *output),
-        Command::Config(ConfigArgs {
-            command: Some(ConfigCommand::Set { key, value }),
-        }) => run_config_set(cli, environment, key, value),
+        Command::Config(args) => run_config_command(cli, environment, args),
         Command::User(UserArgs {
             command:
                 UserCommand::Profile(ProfileArgs {
