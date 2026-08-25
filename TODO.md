@@ -1279,7 +1279,7 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
-- [ ] PR #299 `codex/cord-131-cli-api-health` is the next bounded child of
+- [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
       `fe361f576355f41ec22af89781cf90b214bb0b07`, tree
@@ -1290,7 +1290,9 @@
       timeout/error mapping, and status behavior remain unchanged. Scoped
       pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR #299
       is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review
-      is pending; no Cargo was run.
+      PASS: health probe/tests, URL validation, redirect/timeout/status/error
+      handling, re-exports, setup calls, and module wiring are unchanged; no
+      Cargo was run.
 - [x] PR #298 `codex/cord-130-cli-api-skill-import` is the completed bounded child of
       #297: base branch `codex/cord-129-cli-api-attachments` at
       `e6f02837d0e50e3f76a1aed3f4f068010c006800`, exact head
