@@ -1379,6 +1379,16 @@
       Scoped rustfmt and `git diff --check` pass; the serial subagent reviewed
       the exact head and found no compile or behavior blocker. Cargo was not
       run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI identifier-helper refactor is committed at
+      `da3bd21660ab27e7a03b7333905067edad4c8793` (parent
+      `be099adcc275447cfe710f87e70d5c325b0e2034`, tree
+      `a8cc7ec1c616cb6600eebc863af14997aac2eb5a`): canonical UUID checks,
+      normalized prefixes, and compact UUID matching now live in
+      `cordy-cli/src/id_helpers.rs`; the parent re-exports the helpers so all
+      existing command and test call-sites retain their contracts. Scoped
+      rustfmt and `git diff --check` pass; the serial subagent reviewed the
+      exact head and found no compile or behavior blocker. Cargo was not run.
+      Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
