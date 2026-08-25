@@ -503,6 +503,12 @@
       symlink guards, and output behavior are unchanged. Scoped rustfmt and
       `git diff --check` pass; PR #198 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #198 exact-head subagent review PASS on
+      `1f228689d13516869711910be379db35a01eac53`: all seven profile tests are
+      preserved; fs/Parser/Cursor imports, shared helpers, description-source and
+      symlink guards, and API output behavior remain intact. No compile or
+      behavior blocker was found. Subagent did not run Cargo or modify the
+      worktree; coordinator `git diff --check` remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
