@@ -357,14 +357,21 @@
 - [x] PR #190 `codex/cord-50-cli-issue-timeline-tests` is the next bounded child
       of #189: base branch `codex/cord-50-cli-issue-metadata-tests` at
       `cbefb24e82f8b06c500cdb91973863712637b251`, exact head
-      `044b5f8dfebc3882f4320da0835bc5be3823fe4c`, tree
-      `ece20e45843dc5a0752844ef6da440ad0d592245`, candidate
-      `db0dd0f1fa5a04e7cab65a5c7f35e049d59cea6c`. It extracts the three issue-
+      `5b40696eaaa50e72827e4bd45c52bfb8f9a27542`, tree
+      `d160a276a3412122e628d93e6b3bbd04584a7a4a`, candidate
+      `497c0d434de218d309381888d501ab91f4ef4b6c`. It extracts the three issue-
       timeline parser, filtering, validation, truncation, and rendering tests
       into `issue_timeline_command_tests.rs`; history alias, RFC3339/tail
-      validation, activity filtering, and notices are unchanged. Scoped rustfmt
-      and `git diff --check` pass; PR #190 is Ready (`isDraft=false`),
+      validation, activity filtering, and notices are unchanged. The exact-head
+      static review found and fixed a missing `HashMap` import in `5b40696e`;
+      scoped diff-check passes and PR #190 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #190 final exact-head subagent review PASS on
+      `5b40696eaaa50e72827e4bd45c52bfb8f9a27542`: `HashMap`, `HeaderMap`, and
+      `TcpListener` imports are present, all three timeline tests remain intact,
+      and module boundary/helper visibility is valid. No compile or behavior
+      blocker was found. Subagent did not run Cargo or modify the worktree;
+      coordinator `git diff --check` remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
