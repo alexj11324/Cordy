@@ -1032,6 +1032,13 @@
       New remote candidate is
       `a7129dc6c3fda173374f36ab87a502dd29df52af` (parents #254 base plus fix),
       with exact-head review pending.
+- [x] #255 corrected exact-head subagent review PASS on
+      `6f53c3b1d0df7040d2650dac56125e9796d05785`: `lib.rs` now exposes the
+      workspace resolver needed by the existing MCP module, while the new
+      member module uses the sibling path with valid `pub(super)` visibility.
+      Member, MCP, switch, and CRUD routes remain wired with unchanged
+      arguments and stdin behavior. Subagent did not run Cargo or modify files;
+      scoped rustfmt/check and `git diff --check` remain clean.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
