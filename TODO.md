@@ -497,6 +497,18 @@
       `setup_commands.rs` re-exports cover lib dispatch, setup tests, and
       daemon lifecycle callers; no stale imports or old module paths remain.
       `git diff --check` passes. Subagent did not run Cargo or modify files.
+- [x] PR #228 `codex/cord-60-cli-login-browser` is the next bounded child of
+      #227: base branch `codex/cord-59-cli-setup-profile` at
+      `09b452a0cc18027c6d15b3972437b092b3a5b974`, exact head
+      `d012a2d2993a213b7924646954737f7feffb83c9`, tree
+      `bbd0e99723407091d9700ff938b9cc7bceebecf0`, candidate
+      `8c8c3250b60ff13542e2b6640686ca4b9758a23e`. It isolates the browser
+      callback listener, state validation, login URL construction, browser
+      launch, and workspace polling in `login_browser.rs`; credential
+      verification and atomic profile persistence remain in `login.rs`.
+      Scoped rustfmt with `skip_children` and `git diff --check` pass; PR #228
+      is Ready (`isDraft=false`), MERGEABLE. Cargo and exact-head review remain
+      delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
