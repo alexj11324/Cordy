@@ -625,6 +625,14 @@
       forwarding. Scoped rustfmt and `git diff --check` pass; PR #234 is
       Ready (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review
       remain delegated.
+- [x] #234 exact-head subagent review PASS on
+      `0f1658d6b05c724ffc0ddba75aa4fd9a23f02d92`: `dispatch_issue.rs` covers
+      every `IssueCommand` variant, including pull-request, comment,
+      subscriber, label, metadata, property, timeline, runs, usage, rerun,
+      and cancel-task routes. Issue create/update/comment-add preserve stdin
+      forwarding; root routing and lib wiring are valid with no stale issue
+      branches. `git diff --check` passes; subagent did not run Cargo or modify
+      files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
