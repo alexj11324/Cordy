@@ -1437,6 +1437,16 @@
       `git diff --check` pass; the serial subagent reviewed the exact head and
       found no compile or behavior blocker. Cargo was not run. Pro owns
       push/Ready PR, gate, and merge.
+- [ ] CLI agent-helper refactor is committed at
+      `4c75e22391c680f1ede7c63dfea24ee27d1ee329` (parent
+      `1c50eb5f1b31bbbdbf064d0a31b5c3e9cc950394`, tree
+      `4ed192dd27727d75f128adde7a14bfd61616b809`): agent permission target
+      construction, custom-env validation, secret JSON input, and agent table
+      rendering now live in `cordy-cli/src/agent_helpers.rs`; the parent
+      re-exports them for agent commands and tests. Scoped rustfmt and
+      `git diff --check` pass; the serial subagent reviewed the exact head and
+      found no compile or behavior blocker. Cargo was not run. Pro owns
+      push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
