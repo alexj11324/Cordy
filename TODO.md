@@ -348,6 +348,12 @@
       and request payloads are unchanged. Scoped rustfmt and `git diff --check`
       pass; PR #189 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Cargo and
       exact-head review remain delegated.
+- [x] #189 exact-head subagent review PASS on
+      `cbefb24e82f8b06c500cdb91973863712637b251`: all three metadata tests are
+      preserved, imports and get/put routes are correct, and typed payload plus
+      not-found fallback behavior remain intact. No compile or behavior blocker
+      was found. Subagent did not run Cargo or modify the worktree; coordinator
+      `git diff --check` remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
