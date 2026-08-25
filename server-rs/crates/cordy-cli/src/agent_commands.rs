@@ -802,13 +802,13 @@ pub(super) async fn run_agent_copy<R: Read>(
     })
 }
 #[derive(Debug, Args)]
-struct AgentArgs {
+pub(super) struct AgentArgs {
     #[command(subcommand)]
-    command: AgentCommand,
+    pub(super) command: AgentCommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum AgentCommand {
+pub(super) enum AgentCommand {
     #[command(about = "List agents in the workspace")]
     List {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
@@ -872,63 +872,63 @@ enum AgentCommand {
 }
 
 #[derive(Debug, Args)]
-struct AgentCopyArgs {
+pub(super) struct AgentCopyArgs {
     #[arg(value_name = "SOURCE-AGENT-ID")]
-    source_agent_id: String,
+    pub(super) source_agent_id: String,
     #[arg(long, help = "Name for the new agent")]
-    name: Option<String>,
+    pub(super) name: Option<String>,
     #[arg(long, help = "Target runtime ID")]
-    runtime_id: Option<String>,
+    pub(super) runtime_id: Option<String>,
     #[arg(long, help = "Override the copied description")]
-    description: Option<String>,
+    pub(super) description: Option<String>,
     #[arg(long, help = "Override the copied instructions")]
-    instructions: Option<String>,
+    pub(super) instructions: Option<String>,
     #[arg(long, help = "Model identifier for the copy")]
-    model: Option<String>,
+    pub(super) model: Option<String>,
     #[arg(long, help = "Override thinking level")]
-    thinking_level: Option<String>,
+    pub(super) thinking_level: Option<String>,
     #[arg(long, help = "Override Codex service tier")]
-    service_tier: Option<String>,
+    pub(super) service_tier: Option<String>,
     #[arg(long, help = "Override custom CLI arguments as a JSON array")]
-    custom_args: Option<String>,
+    pub(super) custom_args: Option<String>,
     #[arg(long, help = "Override maximum concurrent tasks")]
-    max_concurrent_tasks: Option<i32>,
+    pub(super) max_concurrent_tasks: Option<i32>,
     #[arg(long, help = "Override visibility: private or workspace")]
-    visibility: Option<String>,
+    pub(super) visibility: Option<String>,
     #[arg(long, help = "Override invocation permission mode")]
-    permission_mode: Option<String>,
+    pub(super) permission_mode: Option<String>,
     #[arg(long, num_args = 0..=1, default_missing_value = "true", help = "Allow every workspace member to invoke the copy")]
-    public_to_workspace: Option<bool>,
+    pub(super) public_to_workspace: Option<bool>,
     #[arg(long, action = clap::ArgAction::Append, value_delimiter = ',', help = "Allow a workspace member ID to invoke the copy")]
-    public_to_member: Vec<String>,
+    pub(super) public_to_member: Vec<String>,
     #[arg(long, help = "Do not copy workspace skill assignments")]
-    no_skills: bool,
+    pub(super) no_skills: bool,
     #[arg(long, help = "Set custom_env on the copy as a JSON object")]
-    custom_env: Option<String>,
+    pub(super) custom_env: Option<String>,
     #[arg(long, help = "Read custom_env from stdin")]
-    custom_env_stdin: bool,
+    pub(super) custom_env_stdin: bool,
     #[arg(long, value_name = "PATH", help = "Read custom_env from a file")]
-    custom_env_file: Option<PathBuf>,
+    pub(super) custom_env_file: Option<PathBuf>,
     #[arg(long, help = "Set mcp_config on the copy as a JSON object")]
-    mcp_config: Option<String>,
+    pub(super) mcp_config: Option<String>,
     #[arg(long, help = "Read mcp_config from stdin")]
-    mcp_config_stdin: bool,
+    pub(super) mcp_config_stdin: bool,
     #[arg(long, value_name = "PATH", help = "Read mcp_config from a file")]
-    mcp_config_file: Option<PathBuf>,
+    pub(super) mcp_config_file: Option<PathBuf>,
     #[arg(long, help = "Set runtime_config on the copy as JSON")]
-    runtime_config: Option<String>,
+    pub(super) runtime_config: Option<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
-struct AgentMcpArgs {
+pub(super) struct AgentMcpArgs {
     #[command(subcommand)]
-    command: AgentMcpCommand,
+    pub(super) command: AgentMcpCommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum AgentMcpCommand {
+pub(super) enum AgentMcpCommand {
     #[command(about = "List workspace MCP servers assigned to an agent")]
     List(AgentMcpListArgs),
     #[command(about = "Give a workspace MCP server to an agent")]
@@ -942,31 +942,31 @@ enum AgentMcpCommand {
 }
 
 #[derive(Debug, Args)]
-struct AgentMcpListArgs {
+pub(super) struct AgentMcpListArgs {
     #[arg(value_name = "AGENT-ID")]
-    agent_id: String,
+    pub(super) agent_id: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
-struct AgentMcpMutationArgs {
+pub(super) struct AgentMcpMutationArgs {
     #[arg(value_name = "AGENT-ID")]
-    agent_id: String,
+    pub(super) agent_id: String,
     #[arg(value_name = "SERVER-ID")]
-    server_id: String,
+    pub(super) server_id: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
-struct AgentEnvArgs {
+pub(super) struct AgentEnvArgs {
     #[command(subcommand)]
-    command: AgentEnvCommand,
+    pub(super) command: AgentEnvCommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum AgentEnvCommand {
+pub(super) enum AgentEnvCommand {
     #[command(about = "Print an agent's custom_env as a JSON map")]
     Get {
         #[arg(value_name = "AGENT-ID")]
@@ -979,31 +979,31 @@ enum AgentEnvCommand {
 }
 
 #[derive(Debug, Args)]
-struct AgentEnvSetArgs {
+pub(super) struct AgentEnvSetArgs {
     #[arg(value_name = "AGENT-ID")]
-    agent_id: String,
+    pub(super) agent_id: String,
     #[arg(long, help = "Replacement custom_env as a JSON object")]
-    custom_env: Option<String>,
+    pub(super) custom_env: Option<String>,
     #[arg(long, help = "Read the replacement custom_env JSON object from stdin")]
-    custom_env_stdin: bool,
+    pub(super) custom_env_stdin: bool,
     #[arg(
         long,
         value_name = "PATH",
         help = "Read the replacement custom_env JSON object from a file"
     )]
-    custom_env_file: Option<PathBuf>,
+    pub(super) custom_env_file: Option<PathBuf>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
-struct AgentSkillsArgs {
+pub(super) struct AgentSkillsArgs {
     #[command(subcommand)]
-    command: AgentSkillsCommand,
+    pub(super) command: AgentSkillsCommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum AgentSkillsCommand {
+pub(super) enum AgentSkillsCommand {
     #[command(about = "List skills assigned to an agent")]
     List {
         #[arg(value_name = "AGENT-ID")]
@@ -1018,122 +1018,122 @@ enum AgentSkillsCommand {
 }
 
 #[derive(Debug, Args)]
-struct AgentSkillsMutationArgs {
+pub(super) struct AgentSkillsMutationArgs {
     #[arg(value_name = "AGENT-ID")]
-    agent_id: String,
+    pub(super) agent_id: String,
     #[arg(long, action = clap::ArgAction::Append, value_delimiter = ',', help = "Skill IDs to assign (comma-separated)")]
-    skill_ids: Option<Vec<String>>,
+    pub(super) skill_ids: Option<Vec<String>>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
-struct AgentCreateArgs {
+pub(super) struct AgentCreateArgs {
     #[arg(long, help = "Agent name (required)")]
-    name: Option<String>,
+    pub(super) name: Option<String>,
     #[arg(long, default_value = "", help = "Agent description")]
-    description: String,
+    pub(super) description: String,
     #[arg(long, default_value = "", help = "Agent instructions")]
-    instructions: String,
+    pub(super) instructions: String,
     #[arg(long, help = "Runtime ID (required)")]
-    runtime_id: Option<String>,
+    pub(super) runtime_id: Option<String>,
     #[arg(long, help = "Runtime config as JSON string")]
-    runtime_config: Option<String>,
+    pub(super) runtime_config: Option<String>,
     #[arg(long, help = "Model identifier")]
-    model: Option<String>,
+    pub(super) model: Option<String>,
     #[arg(long, help = "Reasoning/effort level for the agent runtime")]
-    thinking_level: Option<String>,
+    pub(super) thinking_level: Option<String>,
     #[arg(long, help = "Codex execution service tier")]
-    service_tier: Option<String>,
+    pub(super) service_tier: Option<String>,
     #[arg(long, help = "Custom CLI arguments as a JSON array")]
-    custom_args: Option<String>,
+    pub(super) custom_args: Option<String>,
     #[arg(long, help = "Custom environment variables as a JSON object")]
-    custom_env: Option<String>,
+    pub(super) custom_env: Option<String>,
     #[arg(long, help = "Read custom environment variables from stdin")]
-    custom_env_stdin: bool,
+    pub(super) custom_env_stdin: bool,
     #[arg(
         long,
         value_name = "PATH",
         help = "Read custom environment variables from a file"
     )]
-    custom_env_file: Option<PathBuf>,
+    pub(super) custom_env_file: Option<PathBuf>,
     #[arg(long, help = "MCP server configuration as a JSON object")]
-    mcp_config: Option<String>,
+    pub(super) mcp_config: Option<String>,
     #[arg(long, help = "Read MCP server configuration from stdin")]
-    mcp_config_stdin: bool,
+    pub(super) mcp_config_stdin: bool,
     #[arg(
         long,
         value_name = "PATH",
         help = "Read MCP server configuration from a file"
     )]
-    mcp_config_file: Option<PathBuf>,
+    pub(super) mcp_config_file: Option<PathBuf>,
     #[arg(long, help = "Visibility: private or workspace")]
-    visibility: Option<String>,
+    pub(super) visibility: Option<String>,
     #[arg(long, help = "Invocation permission mode: private or public_to")]
-    permission_mode: Option<String>,
+    pub(super) permission_mode: Option<String>,
     #[arg(long, num_args = 0..=1, default_missing_value = "true", help = "Allow every workspace member to invoke this agent")]
-    public_to_workspace: Option<bool>,
+    pub(super) public_to_workspace: Option<bool>,
     #[arg(long, action = clap::ArgAction::Append, value_delimiter = ',', help = "Allow a workspace member ID to invoke this agent (repeatable)")]
-    public_to_member: Vec<String>,
+    pub(super) public_to_member: Vec<String>,
     #[arg(long, help = "Maximum concurrent tasks (1-50)")]
-    max_concurrent_tasks: Option<i32>,
+    pub(super) max_concurrent_tasks: Option<i32>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
-struct AgentUpdateArgs {
+pub(super) struct AgentUpdateArgs {
     #[arg(value_name = "ID")]
-    id: String,
+    pub(super) id: String,
     #[arg(long, help = "New name")]
-    name: Option<String>,
+    pub(super) name: Option<String>,
     #[arg(long, help = "New description")]
-    description: Option<String>,
+    pub(super) description: Option<String>,
     #[arg(long, help = "New instructions")]
-    instructions: Option<String>,
+    pub(super) instructions: Option<String>,
     #[arg(long, help = "New runtime ID")]
-    runtime_id: Option<String>,
+    pub(super) runtime_id: Option<String>,
     #[arg(long, help = "New runtime config as JSON string")]
-    runtime_config: Option<String>,
+    pub(super) runtime_config: Option<String>,
     #[arg(
         long,
         help = "New model identifier; empty clears to the runtime default"
     )]
-    model: Option<String>,
+    pub(super) model: Option<String>,
     #[arg(
         long,
         help = "New reasoning/effort level; empty clears to the runtime default"
     )]
-    thinking_level: Option<String>,
+    pub(super) thinking_level: Option<String>,
     #[arg(
         long,
         help = "New Codex execution service tier; empty inherits local config"
     )]
-    service_tier: Option<String>,
+    pub(super) service_tier: Option<String>,
     #[arg(long, help = "New custom CLI arguments as a JSON array")]
-    custom_args: Option<String>,
+    pub(super) custom_args: Option<String>,
     #[arg(long, help = "New MCP server configuration; pass null to clear")]
-    mcp_config: Option<String>,
+    pub(super) mcp_config: Option<String>,
     #[arg(long, help = "Read the new MCP server configuration from stdin")]
-    mcp_config_stdin: bool,
+    pub(super) mcp_config_stdin: bool,
     #[arg(
         long,
         value_name = "PATH",
         help = "Read the new MCP server configuration from a file"
     )]
-    mcp_config_file: Option<PathBuf>,
+    pub(super) mcp_config_file: Option<PathBuf>,
     #[arg(long, help = "New visibility: private or workspace")]
-    visibility: Option<String>,
+    pub(super) visibility: Option<String>,
     #[arg(long, help = "New invocation permission mode: private or public_to")]
-    permission_mode: Option<String>,
+    pub(super) permission_mode: Option<String>,
     #[arg(long, num_args = 0..=1, default_missing_value = "true", help = "Allow every workspace member to invoke this agent")]
-    public_to_workspace: Option<bool>,
+    pub(super) public_to_workspace: Option<bool>,
     #[arg(long, action = clap::ArgAction::Append, value_delimiter = ',', help = "Allow a workspace member ID to invoke this agent (repeatable)")]
-    public_to_member: Vec<String>,
+    pub(super) public_to_member: Vec<String>,
     #[arg(long, help = "New status")]
-    status: Option<String>,
+    pub(super) status: Option<String>,
     #[arg(long, help = "New maximum concurrent tasks (1-50)")]
-    max_concurrent_tasks: Option<i32>,
+    pub(super) max_concurrent_tasks: Option<i32>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
