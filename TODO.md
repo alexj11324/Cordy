@@ -1337,6 +1337,16 @@
       and `git diff --check` pass (the subagent environment lacked a
       rustfmt executable); Cargo was not run. Pro owns push/Ready PR, gate,
       and merge.
+- [ ] CLI issue value/validation helper refactor is committed at
+      `38efcc5d5f0733da5ae350c1831aa6b5a3b8065e` (parent
+      `0ce120d412b21413d3eb3a3d7d968691713f138b`, tree
+      `43dcfb43fd0a1c5a9b0efb22ac6c0c979e48c48b`): metadata formatting,
+      issue-label extraction, and status/priority validation now live in
+      `cordy-cli/src/issue_value_helpers.rs`; attachment staging and
+      description helpers remain in the parent module. The serial subagent
+      reviewed the exact head and found no issue. Scoped rustfmt and
+      `git diff --check` pass (the subagent environment lacked a rustfmt
+      executable); Cargo was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
