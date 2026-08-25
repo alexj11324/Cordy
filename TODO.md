@@ -1282,6 +1282,18 @@
       reviewed the exact head and found no issue. Scoped rustfmt and
       `git diff --check` pass (the subagent environment lacked a rustfmt
       executable); Cargo was not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI issue-actor output refactor is committed at
+      `cac46a09ed4a107b0383a699411d97cac1544001` (parent
+      `a3eb2a893ce1d5334867faf5282f4ac445a1d3b6`, tree
+      `e082b6740f82a70149be15d727da49a40cc33a3e`), followed by the
+      subagent's visibility fix `d226ef13626a496b35352f21aa0ca59d85c781aa`:
+      actor-name loading, shared `IssueActorNames`, and issue-list table
+      rendering now live in `cordy-cli/src/issue_actor_output.rs`; the
+      tuple map field is explicitly visible to parent tests and sibling
+      command modules. The serial subagent rechecked the exact head with no
+      further issue. Scoped rustfmt and `git diff --check` pass (the
+      subagent environment lacked a rustfmt executable); Cargo was not run.
+      Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
