@@ -768,6 +768,12 @@
       truncation, and output behavior are unchanged. Scoped rustfmt and
       `git diff --check` pass; PR #213 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #213 exact-head subagent review PASS on
+      `b2246b0ea20e6207a56092e928d8e50551a3735a`: both issue-runs tests are
+      preserved; imports and module boundary are correct; actor/full-id/
+      truncation and task-run fetch behavior remain covered. No compile or
+      behavior blocker was found. Subagent did not run Cargo or modify the
+      worktree; coordinator `git diff --check` remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
