@@ -1716,6 +1716,14 @@
       Scoped rustfmt with `skip_children` and `git diff --check` pass; Cargo
       was not run. The serial subagent owns blocker-only fixes/review; Pro
       owns the eventual Ready PR, gate, and merge.
+- [ ] CLI issue-timeline schema refactor is structurally committed at
+      `b0709fcd53398f55aa0e15d6d320409e13e0a892` (tree
+      `f3407a7bee214b67410dcb6221a88ff3008b2a96`): timeline filters,
+      pagination, action selection, and output flags now live in
+      `issue_timeline_schema.rs`; defaults and query semantics remain
+      unchanged. Scoped rustfmt with `skip_children` and `git diff --check`
+      pass; Cargo was not run. The serial subagent owns blocker-only
+      fixes/review; Pro owns the eventual Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
