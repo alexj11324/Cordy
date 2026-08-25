@@ -81,6 +81,7 @@ mod runtime_update;
 mod setup_commands;
 mod skill_command_schema;
 mod skill_commands;
+mod squad_command_schema;
 mod squad_commands;
 mod task_reference;
 mod text_input;
@@ -334,6 +335,11 @@ use skill_commands::{
     run_skill_files_list, run_skill_files_upsert, run_skill_get, run_skill_import, run_skill_list,
     run_skill_refresh, run_skill_search, run_skill_update,
 };
+pub(super) use squad_command_schema::{
+    SquadActivityArgs, SquadArgs, SquadCommand, SquadCreateArgs, SquadMemberAddArgs,
+    SquadMemberArgs, SquadMemberCommand, SquadMemberRemoveArgs, SquadMemberSetRoleArgs,
+    SquadUpdateArgs,
+};
 use squad_commands::{
     format_squad_details_table, format_squad_list_table, render_squad_member_output,
     run_squad_activity, run_squad_create, run_squad_delete, run_squad_get, run_squad_list,
@@ -539,160 +545,6 @@ enum SetupError {
     HealthProbe(#[source] HealthProbeError),
     #[error("setup self-host requires --app-url when --server-url points at a remote host")]
     RemoteAppUrlRequired,
-}
-
-#[derive(Debug, Args)]
-struct SquadArgs {
-    #[command(subcommand)]
-    command: SquadCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum SquadCommand {
-    #[command(about = "List squads in the workspace")]
-    List {
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-    #[command(about = "Get squad details")]
-    Get {
-        #[arg(value_name = "SQUAD-ID")]
-        squad_id: String,
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-    #[command(about = "Create a new squad")]
-    Create(SquadCreateArgs),
-    #[command(about = "Update a squad")]
-    Update(SquadUpdateArgs),
-    #[command(about = "Delete (archive) a squad")]
-    Delete {
-        #[arg(value_name = "SQUAD-ID")]
-        squad_id: String,
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-    #[command(about = "Work with squad members")]
-    Member(SquadMemberArgs),
-    #[command(about = "Record a squad leader evaluation on an issue")]
-    Activity(SquadActivityArgs),
-}
-
-#[derive(Debug, Args)]
-struct SquadCreateArgs {
-    #[arg(long, help = "Squad name (required)")]
-    name: Option<String>,
-    #[arg(long, default_value = "", help = "Squad description")]
-    description: String,
-    #[arg(long, help = "Leader agent (name or ID) — required")]
-    leader: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct SquadUpdateArgs {
-    #[arg(value_name = "SQUAD-ID")]
-    squad_id: String,
-    #[arg(long, help = "New name")]
-    name: Option<String>,
-    #[arg(long, help = "New description")]
-    description: Option<String>,
-    #[arg(long, help = "New instructions")]
-    instructions: Option<String>,
-    #[arg(long, help = "New leader agent (name or ID)")]
-    leader: Option<String>,
-    #[arg(long, help = "New avatar URL")]
-    avatar_url: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct SquadMemberArgs {
-    #[command(subcommand)]
-    command: SquadMemberCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum SquadMemberCommand {
-    #[command(about = "List members of a squad")]
-    List {
-        #[arg(value_name = "SQUAD-ID")]
-        squad_id: String,
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-    #[command(about = "Add a member to a squad")]
-    Add(SquadMemberAddArgs),
-    #[command(about = "Change a squad member's role")]
-    SetRole(SquadMemberSetRoleArgs),
-    #[command(about = "Remove a member from a squad")]
-    Remove(SquadMemberRemoveArgs),
-}
-
-#[derive(Debug, Args)]
-struct SquadMemberAddArgs {
-    #[arg(value_name = "SQUAD-ID")]
-    squad_id: String,
-    #[arg(long, help = "Member or agent ID (required)")]
-    member_id: Option<String>,
-    #[arg(
-        long = "type",
-        default_value = "agent",
-        help = "Member type: agent or member"
-    )]
-    member_type: String,
-    #[arg(long, default_value = "member", help = "Role in the squad")]
-    role: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct SquadMemberSetRoleArgs {
-    #[arg(value_name = "SQUAD-ID")]
-    squad_id: String,
-    #[arg(long, help = "Member or agent ID (required)")]
-    member_id: Option<String>,
-    #[arg(
-        long = "member-type",
-        default_value = "agent",
-        help = "Member type: agent or member"
-    )]
-    member_type: String,
-    #[arg(long, help = "New role in the squad (required)")]
-    role: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct SquadMemberRemoveArgs {
-    #[arg(value_name = "SQUAD-ID")]
-    squad_id: String,
-    #[arg(long, help = "Member or agent ID (required)")]
-    member_id: Option<String>,
-    #[arg(
-        long = "type",
-        default_value = "agent",
-        help = "Member type: agent or member"
-    )]
-    member_type: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct SquadActivityArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(value_name = "OUTCOME")]
-    outcome: String,
-    #[arg(long, default_value = "", help = "Short explanation of the decision")]
-    reason: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
