@@ -217,6 +217,7 @@ mod repo_read_commands;
 mod root_command_schema;
 mod runtime_commands;
 mod runtime_command_schema;
+mod runtime_read_commands;
 mod runtime_delete;
 mod runtime_output;
 mod runtime_profile;
@@ -481,9 +482,9 @@ pub(super) use repo_read_commands::run_repo_list;
 pub(super) use repo_command_schema::{RepoArgs, RepoCommand, RepoMutationArgs, RepoRemoveArgs};
 pub(super) use root_command_schema::{UpdateArgs, VersionOutput};
 pub(super) use runtime_commands::{
-    run_runtime_activity, run_runtime_delete, run_runtime_list, run_runtime_rename,
-    run_runtime_usage,
+    run_runtime_delete, run_runtime_rename,
 };
+pub(super) use runtime_read_commands::{run_runtime_activity, run_runtime_list, run_runtime_usage};
 pub(super) use runtime_command_schema::{
     RuntimeArgs, RuntimeCommand, RuntimeProfileArgs, RuntimeProfileCommand,
     RuntimeProfileCreateArgs, RuntimeProfileUpdateArgs,
