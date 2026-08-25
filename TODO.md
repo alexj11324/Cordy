@@ -1254,6 +1254,18 @@
       is delegated. PR #268 is Ready (`isDraft=false`), CLEAN/MERGEABLE.
       Exact-head subagent review PASS; no Cargo was run and no production
       behavior changed.
+- [ ] PR #270 `codex/cord-102-cli-skill-read` is the next bounded child of
+      #269: base branch `codex/cord-101-cli-agent-mutation` at
+      `efc902d1dd17927faaf95a0a7a201ebe12990247`, exact head
+      `7a06e7ffc68fc78fded05baf0aad6c33a01b9e04`, tree
+      `1f06cf57bdf2e564ae635e9c76587068c916b49f`, candidate
+      `652c5dd1ae43a6b7bb8137dc5d27a8e011048efa` (parents base + head).
+      It isolates skill list/get handlers and table formatters in
+      `skill_read_commands.rs`; path encoding, validation, API calls, output,
+      errors, dispatch, and re-exports remain unchanged. Scoped pinned rustfmt
+      and `git diff --check` pass; Cargo is delegated. PR #270 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review pending;
+      no duplicate review request has been made.
 - [x] PR #269 `codex/cord-101-cli-agent-mutation` is the completed bounded child of
       #268: base branch `codex/cord-100-cli-agent-read` at
       `c20c984908d7b5af2a01351c4902d95054ea7751`, exact head
