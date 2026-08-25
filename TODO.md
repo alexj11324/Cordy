@@ -1279,7 +1279,7 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
-- [ ] PR #289 `codex/cord-121-cli-runtime-read` is the next bounded child of
+- [x] PR #289 `codex/cord-121-cli-runtime-read` is the completed bounded child of
       #288: base branch `codex/cord-120-cli-attachment-download` at
       `eca93e315416d17ef43b7bb6310dbcfe59e6ac5f`, exact head
       `2ea08c33df3e51d9c0bf7f6ae631685ce47dc138`, tree
@@ -1289,8 +1289,9 @@
       `runtime_read_commands.rs`; validation, API paths, table/JSON output,
       dispatch, and errors remain unchanged. Scoped pinned rustfmt and
       `git diff --check` pass; Cargo is delegated. PR #289 is Ready
-      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review is
-      pending; no Cargo was run.
+      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review PASS:
+      list/usage/activity API paths, validation, output, errors, and module
+      wiring are unchanged; no Cargo was run.
 - [x] PR #288 `codex/cord-120-cli-attachment-download` is the completed bounded child of
       #287: base branch `codex/cord-119-cli-attachment-upload` at
       `994b7e0e6066ccb1437197c786ff2112db609cb1`, exact head
