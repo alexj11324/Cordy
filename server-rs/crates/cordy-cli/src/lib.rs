@@ -41,6 +41,7 @@ mod issue_metadata_commands;
 mod issue_metadata_schema;
 mod issue_property_schema;
 mod issue_pull_request_commands;
+mod issue_pull_request_schema;
 mod issue_reference;
 mod issue_reorder_commands;
 mod issue_rerun_commands;
@@ -214,6 +215,9 @@ pub(super) use issue_property_schema::{
 };
 use issue_pull_request_commands::{
     format_issue_pull_requests_table, run_issue_pull_request_attach, run_issue_pull_requests,
+};
+pub(super) use issue_pull_request_schema::{
+    IssuePullRequestArgs, IssuePullRequestAttachArgs, IssuePullRequestCommand,
 };
 use issue_reference::resolve_issue_ref;
 use issue_reorder_commands::{compute_reorder_position, run_issue_reorder};
@@ -664,42 +668,6 @@ struct IssueLabelMutationArgs {
     output: OutputFormat,
     #[arg(long, help = "Show full UUIDs in table output")]
     full_id: bool,
-}
-
-#[derive(Debug, Args)]
-struct IssuePullRequestArgs {
-    #[command(subcommand)]
-    command: IssuePullRequestCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum IssuePullRequestCommand {
-    #[command(about = "Attach an existing GitHub pull request to an issue")]
-    Attach(IssuePullRequestAttachArgs),
-}
-
-#[derive(Debug, Args)]
-struct IssuePullRequestAttachArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(
-        long,
-        help = "GitHub pull request URL: https://github.com/{owner}/{repo}/pull/{number}"
-    )]
-    url: String,
-    #[arg(
-        long,
-        help = "Optional PR title, used only when the workspace has no GitHub App installed"
-    )]
-    title: Option<String>,
-    #[arg(long, help = "Optional PR state: open, closed, merged, or draft")]
-    state: Option<String>,
-    #[arg(long, help = "Optional head branch name")]
-    branch: Option<String>,
-    #[arg(long, help = "Optional head commit SHA")]
-    head_sha: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
