@@ -116,13 +116,14 @@ mod attachment_upload_commands;
 mod auth_command_schema;
 mod auth_commands;
 mod autopilot_command_schema;
+mod autopilot_member_resolver;
 mod autopilot_mutation_commands;
 mod autopilot_read_commands;
+mod autopilot_reference_resolver;
 mod autopilot_trigger_commands;
 mod autopilot_trigger_mutation_commands;
 mod autopilot_trigger_webhook_commands;
 mod autopilot_output;
-mod autopilot_resolver;
 mod chat_command_schema;
 mod attachment_download_commands;
 mod chat_read_commands;
@@ -316,10 +317,10 @@ pub(super) use autopilot_command_schema::{
 use autopilot_output::{
     autopilot_webhook_url, format_autopilot_runs_table, format_autopilot_table,
 };
-use autopilot_resolver::{
-    load_autopilot_agent_names, resolve_autopilot_agent, resolve_autopilot_id,
-    resolve_autopilot_subscribers, resolve_autopilot_trigger_id,
+use autopilot_member_resolver::{
+    load_autopilot_agent_names, resolve_autopilot_agent, resolve_autopilot_subscribers,
 };
+use autopilot_reference_resolver::{resolve_autopilot_id, resolve_autopilot_trigger_id};
 use attachment_download_commands::run_attachment_download;
 use attachment_upload_commands::run_attachment_upload;
 use chat_read_commands::run_chat_read;
