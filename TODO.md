@@ -227,6 +227,12 @@
       `autopilot_command_tests.rs`; production behavior is unchanged. Scoped
       rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`),
       MERGEABLE (CodeRabbit pending). Cargo and exact-head review remain delegated.
+- [x] #182 exact-head subagent review PASS on `70c07b6f7539d7259a1ccfdf415010d4b28917f6`:
+      `autopilot_command_tests.rs` preserves all 15 `autopilot_*` tests removed
+      from `lib.rs`; imports, parent-private API visibility, and module boundaries
+      are valid. No missing/duplicated tests or compile/behavior blocker was found.
+      Subagent did not run Cargo or modify the worktree; coordinator scoped
+      rustfmt and `git diff --check` pass.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
