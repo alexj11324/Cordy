@@ -1,53 +1,12 @@
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
+use super::issue_metadata_output::{format_metadata_output, metadata_object, metadata_value_type};
 use super::{
     format_metadata_value, format_table, new_api_client, resolve_issue_ref, Cli, Environment,
     HttpError, IssueMetadataDeleteArgs, IssueMetadataKeyArgs, IssueMetadataListArgs,
     IssueMetadataSetArgs, OutputFormat, RunOutput,
 };
-
-fn metadata_object(result: &Value) -> serde_json::Map<String, Value> {
-    result
-        .get("metadata")
-        .and_then(Value::as_object)
-        .cloned()
-        .unwrap_or_default()
-}
-
-fn metadata_value_type(value: &Value) -> &'static str {
-    match value {
-        Value::String(_) => "string",
-        Value::Bool(_) => "bool",
-        Value::Number(_) => "number",
-        _ => "unknown",
-    }
-}
-
-pub(super) fn format_metadata_table(metadata: &serde_json::Map<String, Value>) -> String {
-    let mut keys = metadata.keys().collect::<Vec<_>>();
-    keys.sort();
-    let mut rows = vec![vec!["KEY".into(), "VALUE".into(), "TYPE".into()]];
-    rows.extend(keys.into_iter().map(|key| {
-        let value = &metadata[key];
-        vec![
-            key.clone(),
-            format_metadata_value(Some(value)),
-            metadata_value_type(value).into(),
-        ]
-    }));
-    format_table(&rows)
-}
-
-fn format_metadata_output(
-    metadata: &serde_json::Map<String, Value>,
-    output: OutputFormat,
-) -> Result<String> {
-    match output {
-        OutputFormat::Json => Ok(format!("{}\n", serde_json::to_string_pretty(metadata)?)),
-        OutputFormat::Table => Ok(format_metadata_table(metadata)),
-    }
-}
 
 pub(super) fn parse_metadata_value(raw: &str, forced_type: Option<&str>) -> Result<Value> {
     match forced_type.unwrap_or_default() {
