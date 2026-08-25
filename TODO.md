@@ -108,6 +108,15 @@
       tests and assertions are preserved, with no naming collision or P0/P1/compile
       blocker. Subagent did not run Cargo or modify the worktree; coordinator's
       rustfmt check and `git diff --check` both pass.
+- [x] PR #175 `codex/cord-50-cli-daemon-tests` is the next bounded child of #174:
+      base `315a3d798a9767f9dfe98abf4781a5e4ebfed33c`, exact head
+      `c3e5310cc06eff79986283344e5ace16067f503d`, tree
+      `828c70069d6222357fe3d5912d40d499ed5caad6`, candidate
+      `b2bf6ada8c749731812854c33a578040301a2bf4`. It extracts only daemon auth,
+      foreground/start, restart, probe, status, and logs contract tests into
+      `daemon_command_tests.rs`; production behavior is unchanged. New module
+      rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`,
+      MERGEABLE/UNSTABLE). Cargo and review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
