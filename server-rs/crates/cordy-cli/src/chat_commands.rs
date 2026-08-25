@@ -1,13 +1,22 @@
 use anyhow::{bail, Context, Result};
+use clap::{Args, Subcommand};
 use serde_json::Value;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use url::form_urlencoded;
 
 use super::{
-    chat_reply_count, http_timeout, new_api_client, value_string, ChatReadArgs, Cli, Environment,
-    OutputFormat, RunOutput,
+    http_timeout, new_api_client, value_string, Cli, Environment, OutputFormat, RunOutput,
 };
+
+fn chat_reply_count(message: &Value) -> String {
+    message
+        .get("reply_count")
+        .and_then(Value::as_f64)
+        .filter(|count| *count != 0.0)
+        .map(|count| (count as i64).to_string())
+        .unwrap_or_default()
+}
 
 fn format_chat_read(response: &Value, output: OutputFormat, overview: bool) -> Result<String> {
     if output == OutputFormat::Json {
@@ -204,4 +213,71 @@ pub(super) async fn run_attachment_download(
         ),
         stderr: format!("Downloaded: {path}\n"),
     })
+}
+#[derive(Debug, Args)]
+pub(super) struct AttachmentArgs {
+    #[command(subcommand)]
+    pub(super) command: AttachmentCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(super) enum AttachmentCommand {
+    #[command(about = "Download an attachment to a local file")]
+    Download {
+        #[arg(value_name = "ATTACHMENT-ID")]
+        attachment_id: String,
+        #[arg(
+            short = 'o',
+            long,
+            default_value = ".",
+            help = "Directory to save the downloaded file"
+        )]
+        output_dir: PathBuf,
+    },
+    #[command(about = "Upload a file to attach to your chat reply")]
+    Upload {
+        #[arg(value_name = "PATH")]
+        path: PathBuf,
+        #[arg(long, help = "Chat task id to attach to (defaults to CORDY_TASK_ID)")]
+        task: Option<String>,
+    },
+}
+
+#[derive(Debug, Args)]
+pub(super) struct ChatArgs {
+    #[command(subcommand)]
+    pub(super) command: ChatCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(super) enum ChatCommand {
+    #[command(about = "Overview of the channel this conversation is in (messages + thread list)")]
+    History(ChatReadArgs),
+    #[command(about = "Read one thread's messages (the current thread, or a specific id)")]
+    Thread(ChatThreadArgs),
+}
+
+#[derive(Debug, Args)]
+pub(super) struct ChatReadArgs {
+    #[arg(
+        long,
+        default_value_t = 0,
+        help = "Maximum number of messages to return (the server clamps the range)"
+    )]
+    pub(super) limit: i64,
+    #[arg(
+        long,
+        help = "Opaque cursor (a next_cursor from a prior page) to read older messages"
+    )]
+    pub(super) before: Option<String>,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    pub(super) output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
+pub(super) struct ChatThreadArgs {
+    #[arg(value_name = "ID")]
+    pub(super) id: Option<String>,
+    #[command(flatten)]
+    pub(super) read: ChatReadArgs,
 }
