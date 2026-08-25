@@ -3297,11 +3297,11 @@ mod tests {
         );
         let api_only = serde_json::json!({"authMethods":[{"id":"xai.api_key"}]});
         assert!(select_grok_auth_method(&api_only, false)
-            .unwrap_err()
-            .contains("XAI_API_KEY"));
+            .err()
+            .is_some_and(|err| err.contains("XAI_API_KEY")));
         assert!(select_grok_auth_method(&Value::Null, false)
-            .unwrap_err()
-            .contains("grok login"));
+            .err()
+            .is_some_and(|err| err.contains("grok login")));
     }
 
     #[test]
