@@ -1,9 +1,11 @@
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
+use super::project_resource_input::{
+    build_project_resource_add_ref, build_project_resource_update_ref,
+};
 use super::project_resource_support::{
-    build_project_resource_add_ref, build_project_resource_update_ref, find_project_resource,
-    project_resources, resolve_project_resource_reference,
+    find_project_resource, project_resources, resolve_project_resource_reference,
 };
 use super::{
     display_id, format_table, new_api_client, resolve_current_workspace_id,

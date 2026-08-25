@@ -1,4 +1,4 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use serde_json::Value;
 use std::fmt::Write;
 use std::io::{Read, Write as IoWrite};
