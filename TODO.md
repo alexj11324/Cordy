@@ -1456,6 +1456,15 @@
       `git diff --check` pass; the serial subagent reviewed the exact head and
       found no compile or behavior blocker. Cargo was not run. Pro owns
       push/Ready PR, gate, and merge.
+- [ ] CLI runtime-command refactor is committed at structural head
+      `4c07bb8d0e33e5077f9fbf943b2f3dc53275e419`; its serial subagent found
+      and minimally fixed a real moved-branch compile blocker in
+      `5221ac56c4f8e5924d318e4f9ac087ef805230aa` (parent `4c07bb8d`, tree
+      `752d08566a6b90c6769f4414acbb289c5523e3fb`): `run_runtime_*` list,
+      usage, activity, rename, and delete now live in
+      `cordy-cli/src/runtime_commands.rs`, and the delete error binding is
+      corrected without changing behavior. `git diff --check` passes; Cargo
+      was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
