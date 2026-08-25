@@ -14,11 +14,11 @@ use std::time::Duration;
 #[derive(Debug)]
 pub struct ApiClient {
     pub(super) base_url: String,
-    workspace_id: String,
-    token: String,
-    agent_id: String,
-    task_id: String,
-    version: &'static str,
+    pub(super) workspace_id: String,
+    pub(super) token: String,
+    pub(super) agent_id: String,
+    pub(super) task_id: String,
+    pub(super) version: &'static str,
     pub(super) request_timeout: Option<Duration>,
     pub(super) client: Client,
 }
