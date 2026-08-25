@@ -1039,6 +1039,18 @@
       Member, MCP, switch, and CRUD routes remain wired with unchanged
       arguments and stdin behavior. Subagent did not run Cargo or modify files;
       scoped rustfmt/check and `git diff --check` remain clean.
+- [x] PR #256 `codex/cord-88-cli-workspace-mutations` is the next bounded child
+      of #255: base branch `codex/cord-87-cli-workspace-members` at
+      `6f53c3b1d0df7040d2650dac56125e9796d05785`, exact head
+      `f76ecdbd6c214db2a38e841fcb8f6b36f31bc703`, tree
+      `c4ea9dff2bb304fdf3911a62a3c24dda41b7b219`, candidate
+      `81c6bb401246d666951c966c13db2dfbd3fe1a99`. It isolates workspace
+      create/update payload assembly and stdin/file text-source safety in
+      `workspace_mutation_commands.rs`; list/get/switch/resolution, member/MCP
+      routes, API paths, error text, and output semantics remain unchanged.
+      Scoped rustfmt/check and `git diff --check` pass; Cargo is delegated. PR
+      #256 is Ready (`isDraft=false`), CLEAN/MERGEABLE; exact-head review
+      pending.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
