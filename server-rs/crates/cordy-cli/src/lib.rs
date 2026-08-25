@@ -373,7 +373,8 @@ use label_commands::{
 use label_reference::{resolve_label_id, resolve_label_reference};
 use login::{
     build_login_url, build_workspace_creation_url, constant_time_equal, run_browser_login,
-    run_login, validate_login_token, wait_for_login_callback, wait_for_workspace_creation,
+    run_login, run_login_with_urls, validate_login_token, wait_for_login_callback,
+    wait_for_workspace_creation,
     wait_for_workspace_creation_with_opener, AuthUser, LoginWorkspace,
     WORKSPACE_DISCOVERY_INTERVAL, WORKSPACE_DISCOVERY_TIMEOUT,
 };

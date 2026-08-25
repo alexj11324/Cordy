@@ -40,7 +40,7 @@ pub(super) async fn run_login(
     run_login_with_urls(cli, environment, args, None, None).await
 }
 
-async fn run_login_with_urls(
+pub(super) async fn run_login_with_urls(
     cli: &Cli,
     environment: &Environment,
     args: &LoginArgs,
