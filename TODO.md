@@ -1150,6 +1150,17 @@
       no issue. Scoped rustfmt and `git diff --check` pass (the subagent
       environment lacked a rustfmt executable); Cargo was not run. Pro owns
       push/Ready PR, gate, and merge.
+- [ ] CLI issue comment-list structural refactor is committed at
+      `0dfec48c2dbb3bada853cda33c3c65d65b26c59a` (parent
+      `3d47bdddfd98777fb48ef60d510a12ea8612cf22`, tree
+      `d05df835769f335bc2ef017d20e42235c2a8b3a9`): comment list option
+      validation, pagination/cursor handling, compact output, actor enrichment,
+      and table rendering now live in
+      `cordy-cli/src/issue_comment_list_commands.rs`; parent dispatch and
+      formatter tests retain their contracts. The serial subagent reviewed the
+      exact head and found no issue. Scoped rustfmt and `git diff --check`
+      pass (the subagent environment lacked a rustfmt executable); Cargo was
+      not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
