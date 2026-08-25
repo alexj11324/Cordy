@@ -1497,7 +1497,7 @@
       pass; Cargo is delegated. PR #316 is Ready (`isDraft=false`), MERGEABLE
       (checks pending). Exact-head subagent review PASS on `a2d7a185`; no Cargo
       was run.
-- [ ] PR #317 `codex/cord-149-cli-daemon-profile-discovery` is the next bounded
+- [x] PR #317 `codex/cord-149-cli-daemon-profile-discovery` is the completed bounded
       child of #316: base branch `codex/cord-148-cli-daemon-status-output` at
       `a2d7a185d09290db67ec606a4f53791b8ed615a2`, exact head
       `541f9b8091da7b623a26c318261d2860eed71e2f`, tree
@@ -1505,9 +1505,9 @@
       `92a120716f047e502cc1a4b9923a4b1ac67b6230` (parents base + head).
       It isolates daemon profile validation and filesystem discovery; profile
       traversal, sorting, config-path checks, and error wording remain
-      unchanged. Scoped pinned rustfmt and `git diff --check` pass; Cargo and
-      exact-head subagent review are delegated and pending. PR #317 is Ready
-      (`isDraft=false`), MERGEABLE (checks pending).
+      unchanged. Scoped pinned rustfmt and `git diff --check` pass; Cargo is
+      delegated. PR #317 is Ready (`isDraft=false`), MERGEABLE (checks pending).
+      Exact-head subagent review PASS on `541f9b80`; no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
