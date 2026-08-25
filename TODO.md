@@ -1398,6 +1398,19 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated.
       PR #308 is Ready (`isDraft=false`), MERGEABLE (checks pending). Exact-head
       subagent review PASS on `4ef44cf0`; no Cargo was run.
+- [ ] PR #309 `codex/cord-141-cli-autopilot-resolvers` is the next bounded child of
+      #308: base branch `codex/cord-140-cli-config-persistence` at
+      `4ef44cf098a148d2fe05eab0010bd18839750b77`, exact head
+      `ee0f82ddb0f7f01b55a8a2d60f5f76dfab67f4f8`, tree
+      `800cfe2f9e5a470b3346456f2eb953cb5ea3068c`, candidate
+      `2022c063cb8b42348a432792fef0d8ef416fa42a` (parents base + head).
+      It separates autopilot/trigger UUID reference resolution from workspace
+      member/agent resolution; canonical UUID and prefix validation, pagination,
+      URL encoding, sorting, matching precedence, payloads, errors, and all
+      command callers remain unchanged. Scoped pinned rustfmt and
+      `git diff --check` pass; Cargo is delegated. PR #309 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review is pending;
+      no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
