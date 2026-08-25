@@ -112,6 +112,7 @@ mod auth_command_schema;
 mod auth_commands;
 mod autopilot_commands;
 mod autopilot_command_schema;
+mod autopilot_mutation_commands;
 mod autopilot_read_commands;
 mod autopilot_output;
 mod autopilot_resolver;
@@ -280,10 +281,10 @@ use attachment_input::{
 pub(super) use auth_command_schema::{AuthArgs, AuthCommand, LoginArgs};
 use auth_commands::{display_token_prefix, run_auth_logout, run_auth_status};
 pub(super) use autopilot_commands::{
-    run_autopilot_create, run_autopilot_delete, run_autopilot_trigger, run_autopilot_trigger_add,
-    run_autopilot_trigger_delete, run_autopilot_trigger_rotate_url, run_autopilot_trigger_update,
-    run_autopilot_update,
+    run_autopilot_trigger, run_autopilot_trigger_add, run_autopilot_trigger_delete,
+    run_autopilot_trigger_rotate_url, run_autopilot_trigger_update,
 };
+use autopilot_mutation_commands::{run_autopilot_create, run_autopilot_delete, run_autopilot_update};
 use autopilot_read_commands::{run_autopilot_get, run_autopilot_list, run_autopilot_runs};
 pub(super) use autopilot_command_schema::{
     AutopilotArgs, AutopilotCommand, AutopilotCreateArgs, AutopilotTriggerAddArgs,
