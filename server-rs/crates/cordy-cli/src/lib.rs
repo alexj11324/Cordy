@@ -73,6 +73,7 @@ mod project_commands;
 mod project_resource_commands;
 mod property_commands;
 mod repo_commands;
+mod root_command_schema;
 mod runtime_commands;
 mod runtime_delete;
 mod runtime_output;
@@ -304,6 +305,7 @@ pub(super) use repo_commands::{
     repo_checkout_retry_delay, repo_urls, run_repo_add, run_repo_checkout, run_repo_list,
     run_repo_remove, RepoArgs, RepoCommand, RepoMutationArgs, RepoRemoveArgs, WorkspaceRepo,
 };
+pub(super) use root_command_schema::{UpdateArgs, VersionOutput};
 pub(super) use runtime_commands::{
     run_runtime_activity, run_runtime_delete, run_runtime_list, run_runtime_rename,
     run_runtime_usage, RuntimeArgs, RuntimeCommand, RuntimeProfileArgs, RuntimeProfileCommand,
@@ -482,27 +484,10 @@ enum Command {
     },
 }
 
-#[derive(Debug, Args)]
-struct UpdateArgs {
-    #[arg(
-        long,
-        value_parser = parse_cli_duration,
-        help = "Maximum time to wait for the release archive download"
-    )]
-    download_timeout: Option<Duration>,
-}
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
 enum OutputFormat {
     #[default]
     Table,
-    Json,
-}
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, ValueEnum)]
-enum VersionOutput {
-    #[default]
-    Text,
     Json,
 }
 
