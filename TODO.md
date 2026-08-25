@@ -1748,6 +1748,15 @@
       `skip_children` and `git diff --check` pass; Cargo was not run. The
       serial subagent owns blocker-only fixes/review; Pro owns the eventual
       Ready PR, gate, and merge.
+- [ ] CLI daemon-schema refactor is structurally committed at
+      `18d4e6f36930da8d5205712197abdb01439fd3ee` (tree
+      `b71340049988815c780a3b7fb3a8b6902f9e1554`): daemon subcommands,
+      start/restart launch flags, logs, status, and disk-usage argument schema
+      now live in `daemon_command_schema.rs`; lifecycle dispatch and all flag
+      defaults remain unchanged. Scoped rustfmt with `skip_children` and
+      `git diff --check` pass; Cargo was not run. The serial subagent owns
+      blocker-only fixes/review; Pro owns the eventual Ready PR, gate, and
+      merge.
 
 ## Phase 4 — S8 route and API parity
 
