@@ -4,6 +4,7 @@ pub(super) use super::property_models::{PropertyDefinition, PropertyOption};
 pub(super) use super::property_mutation_input::{
     build_property_create_body, build_property_update_body, parse_property_options,
 };
+use super::property_mutation_output::{format_property_archive, format_property_mutation};
 pub(super) use super::property_read_commands::{
     fetch_property_definitions, format_property_definitions, list_property_definitions,
     resolve_property, run_property_get, run_property_list,
@@ -12,21 +13,6 @@ use super::{
     new_api_client, Cli, Environment, OutputFormat, PropertyArchiveArgs, PropertyCreateArgs,
     PropertyUpdateArgs, RunOutput,
 };
-
-fn format_property_mutation(
-    property: &PropertyDefinition,
-    output: OutputFormat,
-    action: &str,
-) -> Result<String> {
-    match output {
-        OutputFormat::Json => Ok(format!("{}\n", serde_json::to_string_pretty(property)?)),
-        OutputFormat::Table => Ok(format!(
-            "Property {:?} {action}.\n{}",
-            property.name,
-            format_property_definitions(std::slice::from_ref(property), OutputFormat::Table)?
-        )),
-    }
-}
 
 pub(super) async fn run_property_create(
     cli: &Cli,
@@ -82,14 +68,7 @@ pub(super) async fn run_property_archive(
         .await
         .with_context(|| format!("{action} property"))?;
     Ok(RunOutput {
-        stdout: match args.output {
-            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&updated)?),
-            OutputFormat::Table => format!(
-                "Property {:?} {}.\n",
-                updated.name,
-                if archive { "archived" } else { "restored" }
-            ),
-        },
+        stdout: format_property_archive(&updated, args.output, archive)?,
         stderr: String::new(),
     })
 }
