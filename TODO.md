@@ -431,6 +431,14 @@
       no behavior changes. Scoped rustfmt with `skip_children` and
       `git diff --check` pass; PR #224 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #224 exact-head subagent review PASS on
+      `a4d7e236066c0e30e0e7477b8ce9148f783ef185`: this is a pure rename from
+      `daemon_commands.rs` to `daemon_lifecycle_commands.rs` plus lib wiring.
+      Lifecycle imports, dispatch/setup/test paths, the private-helper
+      re-export, and parser references resolve through the renamed module; no
+      old module references remain. No compile or behavior blocker was found.
+      Subagent did not run Cargo or modify the worktree; coordinator
+      `git diff --check` remains clean.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
