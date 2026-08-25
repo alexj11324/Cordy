@@ -1138,6 +1138,19 @@
       Chat history/thread pagination/cursor/JSON defaults, dispatch, and root
       re-exports remain unchanged. Subagent did not run Cargo or modify files;
       `git diff --check` remains clean.
+- [ ] PR #261 `codex/cord-93-cli-runtime-schema` is the next bounded child of
+      #260: base branch `codex/cord-92-cli-chat-schema` at
+      `de4fdb393848cb6285f3b71230e37aafb53f19a7`, exact head
+      `e5b26a4e98b96e4bc728c71581ba7adae550350e`, tree
+      `41f8c37a2f78975d9854ef788a85ab238bd07dcc`, candidate
+      `9fc4a3328a6fb632ac6b6cc02f224842b6b9e3be` (parents base + head).
+      It moves runtime/runtime-profile clap definitions into
+      `runtime_command_schema.rs`; usage/activity/delete cascade/update/profile
+      flags, defaults, API paths, output, and dispatch remain unchanged.
+      Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated.
+      PR #261 is Ready (`isDraft=false`), current GitHub state CLEAN with
+      mergeability pending checks. Exact-head subagent review pending; no
+      duplicate review request has been made.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
