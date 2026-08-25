@@ -34,7 +34,25 @@ impl CodebuddyBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        let Some(key) = ModelDiscoveryCacheKey::new("codebuddy", &self.config().command) else {
+        self.discover_models_for_runtime("codebuddy", cache, cancellation, timeout)
+            .await
+    }
+
+    /// Discovers against a daemon runtime identity so custom profiles cannot
+    /// share a catalog with the built-in CodeBuddy runtime.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        let scope = if runtime_scope.trim().is_empty() {
+            "codebuddy"
+        } else {
+            runtime_scope
+        };
+        let Some(key) = ModelDiscoveryCacheKey::new(scope, &self.config().command) else {
             return fallback_catalog();
         };
         if let Some(catalog) = cache.get(&key) {
@@ -45,7 +63,7 @@ impl CodebuddyBackend {
         } else {
             timeout
         };
-        let catalog = match discover_once(self, cancellation, timeout).await {
+        let catalog = match discover_once(self, cancellation.clone(), timeout).await {
             Ok(catalog) if !catalog.models.is_empty() => catalog,
             Ok(_) => fallback_catalog(),
             Err(failure) => {
@@ -58,6 +76,9 @@ impl CodebuddyBackend {
                 fallback_catalog()
             }
         };
+        if cancellation.is_cancelled() {
+            return Catalog::default();
+        }
         let _ = cache.insert(key, catalog.clone());
         catalog
     }

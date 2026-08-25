@@ -11,9 +11,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cordy_agent::{
-    BackendConfig, CatalogCache, DimBackend, DimConfig, GrokBackend, GrokConfig, HermesBackend,
-    HermesConfig, KimiBackend, KimiConfig, KiroBackend, KiroConfig, QoderBackend, QoderConfig,
-    ReasonixBackend, ReasonixConfig, RuntimeCommand, TraecliBackend, TraecliConfig,
+    AntigravityBackend, AntigravityConfig, BackendConfig, CatalogCache, CodebuddyBackend,
+    CodebuddyConfig, DimBackend, DimConfig, GrokBackend, GrokConfig, HermesBackend, HermesConfig,
+    KimiBackend, KimiConfig, KiroBackend, KiroConfig, QoderBackend, QoderConfig, ReasonixBackend,
+    ReasonixConfig, RuntimeCommand, TraecliBackend, TraecliConfig,
 };
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
 use serde_json::{json, Value};
@@ -243,9 +244,9 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         }
     }
 
-    /// Completes the Kimi/Hermes model-list contract from the same accepted
-    /// launch identity used by task execution. Custom profile runtimes
-    /// therefore discover against their pinned executable and fixed prefix.
+    /// Completes Rust-backed model-list contracts from the same accepted launch
+    /// identity used by task execution. Custom profile runtimes therefore
+    /// discover against their pinned executable and fixed prefix.
     async fn handle_acp_model_list(
         &self,
         ctx: Ctx,
@@ -266,6 +267,8 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 | "qoder"
                 | "qoderclicn"
                 | "traecli"
+                | "antigravity"
+                | "codebuddy"
                 | "qwen"
                 | "qwenpaw"
                 | "mcode"
@@ -377,6 +380,28 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                     .await
                 }
                 "traecli" => TraecliBackend::new(TraecliConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "antigravity" => AntigravityBackend::new(AntigravityConfig {
+                    command,
+                    env: BTreeMap::new(),
+                    catalog_cache: Arc::clone(&self.model_cache),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "codebuddy" => CodebuddyBackend::new(CodebuddyConfig {
                     command,
                     env: BTreeMap::new(),
                 })

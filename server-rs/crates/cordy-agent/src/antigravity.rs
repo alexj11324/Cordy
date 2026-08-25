@@ -98,7 +98,24 @@ impl AntigravityBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        let Some(key) = ModelDiscoveryCacheKey::new("antigravity", &self.config.command) else {
+        self.discover_models_for_runtime("antigravity", cancellation, timeout)
+            .await
+    }
+
+    /// Discovers against a daemon runtime identity so custom profiles cannot
+    /// share a catalog with the built-in Antigravity runtime.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        let scope = if runtime_scope.trim().is_empty() {
+            "antigravity"
+        } else {
+            runtime_scope
+        };
+        let Some(key) = ModelDiscoveryCacheKey::new(scope, &self.config.command) else {
             return Catalog::default();
         };
         if let Some(catalog) = self.config.catalog_cache.get(&key) {
@@ -109,13 +126,16 @@ impl AntigravityBackend {
         } else {
             timeout
         };
-        let models = discover_once(&self.config, cancellation, timeout)
+        let models = discover_once(&self.config, cancellation.clone(), timeout)
             .await
             .unwrap_or_default();
         let catalog = Catalog {
             models,
             fallback: false,
         };
+        if cancellation.is_cancelled() {
+            return Catalog::default();
+        }
         let _ = self.config.catalog_cache.insert(key, catalog.clone());
         catalog
     }
