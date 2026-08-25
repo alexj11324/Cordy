@@ -490,6 +490,13 @@
       with `skip_children` and `git diff --check` pass; PR #227 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
       delegated.
+- [x] #227 exact-head subagent review PASS on
+      `09b452a0cc18027c6d15b3972437b092b3a5b974`: `setup_profile.rs`
+      preserves profile precedence, callback-host selection, local-server
+      detection, daemon action selection, and active-task safeguards.
+      `setup_commands.rs` re-exports cover lib dispatch, setup tests, and
+      daemon lifecycle callers; no stale imports or old module paths remain.
+      `git diff --check` passes. Subagent did not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
