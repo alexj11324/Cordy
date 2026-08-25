@@ -102,6 +102,7 @@ mod attachment_input;
 mod auth_command_schema;
 mod auth_commands;
 mod autopilot_commands;
+mod autopilot_command_schema;
 mod autopilot_output;
 mod autopilot_resolver;
 mod chat_commands;
@@ -260,9 +261,11 @@ pub(super) use autopilot_commands::{
     run_autopilot_create, run_autopilot_delete, run_autopilot_get, run_autopilot_list,
     run_autopilot_runs, run_autopilot_trigger, run_autopilot_trigger_add,
     run_autopilot_trigger_delete, run_autopilot_trigger_rotate_url, run_autopilot_trigger_update,
-    run_autopilot_update, AutopilotArgs, AutopilotCommand, AutopilotCreateArgs,
-    AutopilotTriggerAddArgs, AutopilotTriggerRotateUrlArgs, AutopilotTriggerUpdateArgs,
-    AutopilotUpdateArgs,
+    run_autopilot_update,
+};
+pub(super) use autopilot_command_schema::{
+    AutopilotArgs, AutopilotCommand, AutopilotCreateArgs, AutopilotTriggerAddArgs,
+    AutopilotTriggerRotateUrlArgs, AutopilotTriggerUpdateArgs, AutopilotUpdateArgs,
 };
 use autopilot_output::{
     autopilot_webhook_url, format_autopilot_runs_table, format_autopilot_table,
