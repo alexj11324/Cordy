@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use std::time::{Duration, Instant};
 
+use super::runtime_update_output::format_runtime_update_result;
 use super::{
     http_timeout, new_api_client, value_string, Cli, Environment, OutputFormat, RunOutput,
 };
@@ -79,31 +80,4 @@ pub(super) async fn run_runtime_update_with_policy(
             value_string(&update, "status")
         ),
     }
-}
-
-pub(super) fn format_runtime_update_result(
-    update: &Value,
-    output: OutputFormat,
-    waited: bool,
-) -> Result<RunOutput> {
-    let stdout = match output {
-        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(update)?),
-        OutputFormat::Table if !waited => format!(
-            "Update initiated: {} (status: {})\n",
-            value_string(update, "id"),
-            value_string(update, "status")
-        ),
-        OutputFormat::Table if value_string(update, "status") == "completed" => {
-            format!("Update completed: {}\n", value_string(update, "output"))
-        }
-        OutputFormat::Table => format!(
-            "Update {}: {}\n",
-            value_string(update, "status"),
-            value_string(update, "error")
-        ),
-    };
-    Ok(RunOutput {
-        stdout,
-        stderr: String::new(),
-    })
 }
