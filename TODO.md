@@ -211,6 +211,12 @@
       into `skill_command_tests.rs`; production behavior is unchanged. Scoped
       rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #181 exact-head subagent review PASS on `13209c98fcc801e77b1ffeaa9e849761b0152a50`:
+      `skill_command_tests.rs` preserves all 14 `skill_*` tests removed from
+      `lib.rs`; imports, parent-private API visibility, and module boundaries are
+      valid. No missing/duplicated tests or compile/behavior blocker was found.
+      Subagent did not run Cargo or modify the worktree; coordinator scoped
+      rustfmt and `git diff --check` pass.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
