@@ -1161,6 +1161,16 @@
       exact head and found no issue. Scoped rustfmt and `git diff --check`
       pass (the subagent environment lacked a rustfmt executable); Cargo was
       not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI issue comment-add structural refactor is committed at
+      `36fb32a187c583582c2e2c9f291b080d058edb22` (parent
+      `0dfec48c2dbb3bada853cda33c3c65d65b26c59a`, tree
+      `497ad4592f8d6b0e8d6fe893032364f69429b64f`): content source parsing,
+      path safety, attachment upload, and comment creation now live in
+      `cordy-cli/src/issue_comment_add_commands.rs`; the parent test helper
+      remains available through `pub(super)`. The serial subagent reviewed the
+      exact head and found no issue. Scoped rustfmt and `git diff --check`
+      pass (the subagent environment lacked a rustfmt executable); Cargo was
+      not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
