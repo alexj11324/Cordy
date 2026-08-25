@@ -509,6 +509,17 @@
       symlink guards, and API output behavior remain intact. No compile or
       behavior blocker was found. Subagent did not run Cargo or modify the
       worktree; coordinator `git diff --check` remains clean.
+- [x] PR #199 `codex/cord-50-cli-label-tests` is the next bounded child of #198:
+      base branch `codex/cord-50-cli-user-profile-tests` at
+      `1f228689d13516869711910be379db35a01eac53`, exact head
+      `6cf833b3c46bc4368b335084efd53b0d037e28b8`, tree
+      `85fab6ed5a70c8d70aa9584d75722b99394cb1ad`, candidate
+      `49eecf56f679ef641df4072adf30a538276edc51`. It extracts two workspace-label
+      parser/table and create/update/delete HTTP contract tests into
+      `label_command_tests.rs`; full-id rendering, payloads, and response output
+      are unchanged. Scoped rustfmt and `git diff --check` pass; PR #199 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
+      delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
