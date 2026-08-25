@@ -215,13 +215,13 @@ pub(super) async fn run_attachment_download(
     })
 }
 #[derive(Debug, Args)]
-struct AttachmentArgs {
+pub(super) struct AttachmentArgs {
     #[command(subcommand)]
-    command: AttachmentCommand,
+    pub(super) command: AttachmentCommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum AttachmentCommand {
+pub(super) enum AttachmentCommand {
     #[command(about = "Download an attachment to a local file")]
     Download {
         #[arg(value_name = "ATTACHMENT-ID")]
@@ -244,13 +244,13 @@ enum AttachmentCommand {
 }
 
 #[derive(Debug, Args)]
-struct ChatArgs {
+pub(super) struct ChatArgs {
     #[command(subcommand)]
-    command: ChatCommand,
+    pub(super) command: ChatCommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum ChatCommand {
+pub(super) enum ChatCommand {
     #[command(about = "Overview of the channel this conversation is in (messages + thread list)")]
     History(ChatReadArgs),
     #[command(about = "Read one thread's messages (the current thread, or a specific id)")]
@@ -258,26 +258,26 @@ enum ChatCommand {
 }
 
 #[derive(Debug, Args)]
-struct ChatReadArgs {
+pub(super) struct ChatReadArgs {
     #[arg(
         long,
         default_value_t = 0,
         help = "Maximum number of messages to return (the server clamps the range)"
     )]
-    limit: i64,
+    pub(super) limit: i64,
     #[arg(
         long,
         help = "Opaque cursor (a next_cursor from a prior page) to read older messages"
     )]
-    before: Option<String>,
+    pub(super) before: Option<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
-struct ChatThreadArgs {
+pub(super) struct ChatThreadArgs {
     #[arg(value_name = "ID")]
-    id: Option<String>,
+    pub(super) id: Option<String>,
     #[command(flatten)]
-    read: ChatReadArgs,
+    pub(super) read: ChatReadArgs,
 }
