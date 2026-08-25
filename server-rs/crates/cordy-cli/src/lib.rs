@@ -24,6 +24,7 @@ mod issue_comment_add_commands;
 mod issue_comment_list_commands;
 mod issue_comment_mutation_commands;
 mod issue_create_commands;
+mod issue_description;
 mod issue_get_commands;
 mod issue_label_commands;
 mod issue_list_commands;
@@ -126,6 +127,7 @@ use issue_comment_add_commands::{resolve_issue_comment_content, run_issue_commen
 use issue_comment_list_commands::{format_issue_comments_table, run_issue_comment_list};
 use issue_comment_mutation_commands::{run_issue_comment_delete, run_issue_comment_resolution};
 use issue_create_commands::run_issue_create;
+use issue_description::{resolve_issue_create_description, resolve_issue_update_description};
 use issue_get_commands::{format_issue_get_table, run_issue_get};
 use issue_label_commands::{
     format_issue_labels, run_issue_label_add, run_issue_label_list, run_issue_label_remove,
@@ -5082,118 +5084,6 @@ struct IssueListResponse {
 struct PendingAttachment {
     path: String,
     data: Vec<u8>,
-}
-
-fn resolve_issue_create_description<R: Read>(
-    args: &IssueCreateArgs,
-    environment: &Environment,
-    input: &mut R,
-) -> Result<Option<String>> {
-    let inline = args.description.as_deref().unwrap_or_default();
-    let description_file = args
-        .description_file
-        .as_deref()
-        .filter(|path| !path.is_empty())
-        .map(Path::new);
-    let sources = [
-        args.description_stdin,
-        !inline.is_empty(),
-        description_file.is_some(),
-    ]
-    .into_iter()
-    .filter(|source| *source)
-    .count();
-    if sources > 1 {
-        bail!("--description, --description-stdin, and --description-file are mutually exclusive");
-    }
-    if args.description_stdin {
-        let mut bytes = Vec::new();
-        input
-            .read_to_end(&mut bytes)
-            .context("read stdin for --description-stdin")?;
-        let body = trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned());
-        if body.is_empty() {
-            bail!("stdin content for --description-stdin is empty");
-        }
-        return Ok(Some(body));
-    }
-    if let Some(path) = description_file {
-        ensure_file_within_workdir(
-            path,
-            environment.current_dir(),
-            args.allow_external_file,
-            "description",
-        )?;
-        let path = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            environment.current_dir().join(path)
-        };
-        let bytes = fs::read(path).context("read file for --description-file")?;
-        let body = trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned());
-        if body.is_empty() {
-            bail!("file content for --description-file is empty");
-        }
-        return Ok(Some(body));
-    }
-    Ok((!inline.is_empty()).then(|| unescape_backslash_escapes(inline)))
-}
-
-fn resolve_issue_update_description<R: Read>(
-    args: &IssueUpdateArgs,
-    environment: &Environment,
-    input: &mut R,
-) -> Result<String> {
-    let inline = args.description.as_deref().unwrap_or_default();
-    let description_file = args
-        .description_file
-        .as_deref()
-        .filter(|path| !path.is_empty())
-        .map(Path::new);
-    let sources = [
-        args.description_stdin,
-        args.description
-            .as_ref()
-            .is_some_and(|_| !inline.is_empty()),
-        description_file.is_some(),
-    ]
-    .into_iter()
-    .filter(|source| *source)
-    .count();
-    if sources > 1 {
-        bail!("--description, --description-stdin, and --description-file are mutually exclusive");
-    }
-    if args.description_stdin {
-        let mut bytes = Vec::new();
-        input
-            .read_to_end(&mut bytes)
-            .context("read stdin for --description-stdin")?;
-        let body = trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned());
-        if body.is_empty() {
-            bail!("stdin content for --description-stdin is empty");
-        }
-        return Ok(body);
-    }
-    if let Some(path) = description_file {
-        ensure_file_within_workdir(
-            path,
-            environment.current_dir(),
-            args.allow_external_file,
-            "description",
-        )?;
-        let path = if path.is_absolute() {
-            path.to_path_buf()
-        } else {
-            environment.current_dir().join(path)
-        };
-        let bytes = fs::read(path).context("read file for --description-file")?;
-        let body = trim_one_trailing_newline(String::from_utf8_lossy(&bytes).into_owned());
-        if body.is_empty() {
-            bail!("file content for --description-file is empty");
-        }
-        return Ok(body);
-    }
-    Ok(unescape_backslash_escapes(inline))
 }
 
 fn append_unique_strings(values: impl IntoIterator<Item = String>) -> Vec<String> {
