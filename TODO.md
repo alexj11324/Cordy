@@ -1294,6 +1294,17 @@
       further issue. Scoped rustfmt and `git diff --check` pass (the
       subagent environment lacked a rustfmt executable); Cargo was not run.
       Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI issue-actor resolver refactor is committed at
+      `012b09471726ca94b9d003d8d4cae9b9b7898bf3` (parent
+      `d226ef13626a496b35352f21aa0ca59d85c781aa`, tree
+      `ae78ca6eb6b30868d06c6d23bc584580deff2592`): shared member/agent/
+      squad lookup, assignee/subscriber resolution, project resolution,
+      retry behavior, and typed `ResolvedIssueAssignee` now live in
+      `cordy-cli/src/issue_actor_resolver.rs`; parent command imports
+      retain their existing contracts. The serial subagent reviewed the
+      exact head and found no issue. Scoped rustfmt and
+      `git diff --check` pass (the subagent environment lacked a rustfmt
+      executable); Cargo was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
