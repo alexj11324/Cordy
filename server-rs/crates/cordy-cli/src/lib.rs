@@ -183,6 +183,7 @@ mod issue_list_schema;
 mod issue_metadata_commands;
 mod issue_metadata_schema;
 mod issue_property_commands;
+mod issue_property_values;
 mod issue_property_schema;
 mod issue_pull_request_commands;
 mod issue_pull_request_schema;
