@@ -1447,6 +1447,15 @@
       `git diff --check` pass; the serial subagent reviewed the exact head and
       found no compile or behavior blocker. Cargo was not run. Pro owns
       push/Ready PR, gate, and merge.
+- [ ] CLI chat-output refactor is committed at
+      `f84198080a5989d81556fbff2f86bd14784e3d1a` (parent
+      `4c75e22391c680f1ede7c63dfea24ee27d1ee329`, tree
+      `128ea7c74c40a14475fc5607a9a1086a23b7dd4e`): reply-count rendering now
+      belongs to `chat_commands.rs`, removing the root-module dependency while
+      preserving missing/zero/numeric JSON behavior. Scoped rustfmt and
+      `git diff --check` pass; the serial subagent reviewed the exact head and
+      found no compile or behavior blocker. Cargo was not run. Pro owns
+      push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
