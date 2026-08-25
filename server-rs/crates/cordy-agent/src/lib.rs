@@ -12,6 +12,7 @@ pub mod codebuddy;
 pub mod codebuddy_discovery;
 pub mod command;
 pub mod contract;
+mod env;
 mod kimi_usage;
 pub mod mcp;
 pub mod model;

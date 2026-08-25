@@ -12,6 +12,8 @@ use tokio::process::{ChildStdin, ChildStdout, Command};
 use tokio_util::sync::CancellationToken;
 
 use crate::codebuddy::CodebuddyBackend;
+use crate::command::filter_launch_prefix;
+use crate::env::configure_child_env;
 use crate::model::{
     Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelThinking, ThinkingLevel,
 };
@@ -89,16 +91,20 @@ async fn discover_once(
     } else {
         config.command.path.as_str()
     };
-    let invocation = ["--acp".to_string()];
-    let argv = config.command.argv(&invocation);
+    let prefix = filter_launch_prefix(
+        &config.command.prefix,
+        CodebuddyBackend::blocked_launch_args(),
+    );
+    let mut argv = prefix.args;
+    argv.push("--acp".to_string());
     let mut command = Command::new(command_path);
     command
         .args(argv)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .envs(&config.env)
         .kill_on_drop(false);
+    configure_child_env(&mut command, &config.env);
     let mut tree = OwnedProcessTree::spawn(&mut command)
         .await
         .map_err(|error| DiscoveryFailure::new("process start", error.to_string()))?;
@@ -261,7 +267,7 @@ fn parse_models(result: &Value) -> Vec<Model> {
         return parse_config_option_models(result);
     };
     let Ok(catalog) = serde_json::from_value::<SessionModels>(raw.clone()) else {
-        return Vec::new();
+        return parse_config_option_models(result);
     };
     let mut seen = BTreeSet::new();
     let mut models = Vec::new();
@@ -602,5 +608,72 @@ done
             .await;
         assert!(!catalog.fallback);
         assert_eq!(catalog.models.len(), 4);
+    }
+
+    #[test]
+    fn malformed_models_falls_back_to_config_options() {
+        let result = serde_json::json!({
+            "models": null,
+            "configOptions": [{
+                "id": "model",
+                "currentValue": "hy3",
+                "options": [
+                    {"value": "hy3", "name": "Hy3"},
+                    {"value": "glm-5.2", "name": "GLM"}
+                ]
+            }]
+        });
+        let models = parse_models(&result);
+        assert_eq!(models.len(), 2);
+        assert_eq!(models[0].id, "hy3");
+        assert!(models[0].default);
+        assert_eq!(models[1].id, "glm-5.2");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn discovery_filters_protocol_critical_launch_prefix() {
+        let directory =
+            tempfile::tempdir().unwrap_or_else(|error| panic!("create discovery fixture: {error}"));
+        let executable = directory.path().join("codebuddy");
+        let session = captured_session_result().to_string();
+        let script = format!(
+            r#"#!/bin/sh
+printf '%s\n' "$@" > "$0.args"
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{{"jsonrpc":"2.0","id":%s,"result":{{"protocolVersion":1}}}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{{"jsonrpc":"2.0","id":%s,"result":%s}}\n' "$id" '{session}'; exit 0 ;;
+  esac
+done
+"#
+        );
+        std::fs::write(&executable, script)
+            .unwrap_or_else(|error| panic!("write discovery fixture: {error}"));
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|error| panic!("chmod discovery fixture: {error}"));
+        let backend = CodebuddyBackend::new(CodebuddyConfig {
+            command: RuntimeCommand::new(
+                executable.to_string_lossy(),
+                ["--output-format", "text", "--verbose"]
+                    .map(str::to_string)
+                    .to_vec(),
+            ),
+            ..CodebuddyConfig::default()
+        });
+        let catalog = backend
+            .discover_models(
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert!(!catalog.fallback);
+        let args = std::fs::read_to_string(format!("{}.args", executable.display()))
+            .unwrap_or_else(|error| panic!("read discovery args: {error}"));
+        assert!(!args.contains("--output-format"), "{args}");
+        assert!(args.contains("--acp"), "{args}");
+        assert!(args.contains("--verbose"), "{args}");
     }
 }

@@ -25,6 +25,7 @@ use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
     COST_USD_TICKS_PER_USD,
 };
+use crate::env::configure_child_env;
 use crate::kimi_usage::{scan_kimi_session_usage, KimiUsageScan};
 use crate::model::{parse_acp_session_models, Catalog, CatalogCache, ModelDiscoveryCacheKey};
 use crate::process::OwnedProcessTree;
@@ -860,6 +861,9 @@ async fn discover_models(
             if matches!(config.provider.as_str(), "reasonix" | "dim") {
                 annotate_acp_effort(&mut models, &session);
             }
+            if config.provider == "grok" {
+                annotate_grok_thinking(&mut models);
+            }
             Catalog {
                 models,
                 fallback: false,
@@ -903,8 +907,8 @@ async fn discover_acp_session(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .envs(&config.env)
         .kill_on_drop(false);
+    configure_child_env(&mut command, &config.env);
     if let Some(directory) = isolated_state.as_ref() {
         command.env("REASONIX_STATE_HOME", directory.path());
     }
@@ -1047,8 +1051,8 @@ async fn discover_kimi_thinking(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .envs(&config.env)
         .kill_on_drop(false);
+    configure_child_env(&mut command, &config.env);
     let mut tree = OwnedProcessTree::spawn(&mut command).await.ok()?;
     let stdout = tree.child_mut().stdout.take()?;
     let mut reader = tokio::spawn(async move {
@@ -1189,8 +1193,8 @@ impl Backend for QoderBackend {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        configure_child_env(&mut command, &self.config.env);
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd);
         }
@@ -1243,6 +1247,7 @@ impl Backend for QoderBackend {
         let have_api_key = effective_env_nonempty(&self.config.env, "XAI_API_KEY");
         let kimi_home = self.config.env.get("KIMI_CODE_HOME").cloned();
         let resumed = !options.resume_session_id.is_empty();
+        let published_session = Arc::new(Mutex::new(String::new()));
         let fallback_model = if options.model.is_empty() {
             "unknown".to_string()
         } else {
@@ -1289,6 +1294,7 @@ impl Backend for QoderBackend {
                 retry_held_session,
                 held_retry_attempts,
                 held_retry_delay,
+                published_session.clone(),
             ));
             let end = if timeout.is_zero() {
                 tokio::select! {
@@ -1306,11 +1312,19 @@ impl Backend for QoderBackend {
                 RunEnd::Protocol(result) => result.unwrap_or_else(|error| {
                     ProtocolOutcome::failed(format!("{provider} protocol task failed: {error}"))
                 }),
-                RunEnd::Cancelled => ProtocolOutcome::terminal("aborted", "execution cancelled"),
-                RunEnd::TimedOut => ProtocolOutcome::terminal(
-                    "timeout",
-                    format!("{provider} timed out after {}s", timeout.as_secs_f64()),
-                ),
+                RunEnd::Cancelled => {
+                    let mut outcome = ProtocolOutcome::terminal("aborted", "execution cancelled");
+                    outcome.session_id = remembered_session_id(&published_session);
+                    outcome
+                }
+                RunEnd::TimedOut => {
+                    let mut outcome = ProtocolOutcome::terminal(
+                        "timeout",
+                        format!("{provider} timed out after {}s", timeout.as_secs_f64()),
+                    );
+                    outcome.session_id = remembered_session_id(&published_session);
+                    outcome
+                }
             };
             let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
             if !protocol_task.is_finished() {
@@ -1420,7 +1434,7 @@ async fn run_protocol(
     resume_method: String,
     prompt_content_alias: bool,
     model_selection: bool,
-    reject_failed_load: bool,
+    _reject_failed_load: bool,
     coding_project_meta: Option<String>,
     full_text_output: bool,
     usage_model_unknown: bool,
@@ -1435,6 +1449,7 @@ async fn run_protocol(
     retry_held_session: bool,
     held_retry_attempts: u8,
     held_retry_delay: Duration,
+    published_session: Arc<Mutex<String>>,
 ) -> ProtocolOutcome {
     let mut client = AcpClient::new(BufReader::new(stdout), stdin);
     let initialize = match client
@@ -1577,7 +1592,7 @@ async fn run_protocol(
                 (result, session_id)
             }
             Err(error) => {
-                let rejected = reject_failed_load && error.is_session_not_found();
+                let rejected = error.is_session_not_found();
                 if provider == "reasonix" && is_reasonix_lease_conflict(&error) {
                     return ProtocolOutcome::failed(format!(
                         "reasonix session is already in use; close the other Reasonix window or process first: {error}"
@@ -1587,6 +1602,7 @@ async fn run_protocol(
             }
         }
     };
+    remember_session_id(&published_session, &session_id);
     let mut effective_model = if usage_model_unknown || !model_selection {
         "unknown".to_string()
     } else if matches!(provider.as_str(), "kimi" | "reasonix") {
@@ -1640,6 +1656,7 @@ async fn run_protocol(
             let rejected = !options.resume_session_id.is_empty() && error.is_session_not_found();
             if rejected {
                 session_id.clear();
+                remember_session_id(&published_session, "");
             }
             if close_session && !session_id.is_empty() {
                 let _ = client
@@ -1773,6 +1790,7 @@ async fn run_protocol(
             let rejected = !options.resume_session_id.is_empty() && error.is_session_not_found();
             if rejected {
                 session_id.clear();
+                remember_session_id(&published_session, "");
             }
             if provider == "kiro"
                 && is_kiro_close_error(&error)
@@ -1968,6 +1986,17 @@ fn protocol_failure(
     }
 }
 
+fn remember_session_id(slot: &Arc<Mutex<String>>, session_id: &str) {
+    if let Ok(mut guard) = slot.lock() {
+        guard.clear();
+        guard.push_str(session_id);
+    }
+}
+
+fn remembered_session_id(slot: &Arc<Mutex<String>>) -> String {
+    slot.lock().map(|guard| guard.clone()).unwrap_or_default()
+}
+
 #[derive(Default)]
 struct NotificationState {
     deliverable: Deliverable,
@@ -1986,6 +2015,7 @@ struct NotificationState {
 struct PendingTool {
     name: String,
     input: BTreeMap<String, Value>,
+    args_text: String,
     emitted: bool,
     finishing: bool,
 }
@@ -2171,6 +2201,11 @@ fn handle_tool_start(
     }
     let name = tool_name(data, state.extended_tool_names);
     let input = tool_input(data);
+    let args_text = if input.is_empty() {
+        tool_content_text(data).unwrap_or_default()
+    } else {
+        String::new()
+    };
     let finishing = state.kiro_dialect && is_finishing_tool(&name, &input);
     state.deliverable.tool_boundary();
     let emitted = !input.is_empty();
@@ -2182,6 +2217,7 @@ fn handle_tool_start(
         PendingTool {
             name,
             input,
+            args_text,
             emitted,
             finishing,
         },
@@ -2197,9 +2233,6 @@ fn handle_tool_update(
         .get("status")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    if !matches!(status, "completed" | "failed") {
-        return;
-    }
     let id = data
         .get("toolCallId")
         .and_then(Value::as_str)
@@ -2207,18 +2240,32 @@ fn handle_tool_update(
     if id.is_empty() {
         return;
     }
-    let pending = match state.tools.remove(id) {
+    if !matches!(status, "completed" | "failed") {
+        if let Some(pending) = state.tools.get_mut(id) {
+            if let Some(text) = tool_content_text(data) {
+                pending.args_text = text;
+            }
+            let incoming = tool_input(data);
+            if !incoming.is_empty() {
+                pending.input = incoming;
+            }
+        }
+        return;
+    }
+    let mut pending = match state.tools.remove(id) {
         Some(pending) => pending,
         None => {
             state.deliverable.tool_boundary();
             PendingTool {
                 name: tool_name(data, state.extended_tool_names),
                 input: tool_input(data),
+                args_text: tool_content_text(data).unwrap_or_default(),
                 emitted: false,
                 finishing: false,
             }
         }
     };
+    apply_completed_tool_input(&mut pending, data);
     let finishing = state.kiro_dialect
         && (pending.finishing || is_finishing_tool(&pending.name, &pending.input));
     if !pending.emitted {
@@ -2228,6 +2275,7 @@ fn handle_tool_update(
         .iter()
         .find_map(|key| data.get(*key))
         .map(render_value)
+        .or_else(|| tool_content_text(data))
         .or_else(|| content_text(data).map(str::to_string))
         .unwrap_or_default();
     let mut result = message(MessageType::ToolResult, "");
@@ -2363,6 +2411,50 @@ fn tool_input(data: &Value) -> BTreeMap<String, Value> {
                 .map(|(key, value)| (key.clone(), value.clone()))
                 .collect()
         })
+        .unwrap_or_default()
+}
+
+fn tool_content_text(data: &Value) -> Option<String> {
+    let content = data.get("content")?;
+    if let Some(text) = content.get("text").and_then(Value::as_str) {
+        let text = text.trim();
+        return (!text.is_empty()).then(|| text.to_string());
+    }
+    let blocks = content.as_array()?;
+    let mut pieces = Vec::new();
+    for block in blocks {
+        let kind = block.get("type").and_then(Value::as_str).unwrap_or("");
+        let text = match kind {
+            "content" => block
+                .get("content")
+                .and_then(|inner| inner.get("text"))
+                .and_then(Value::as_str),
+            "text" => block.get("text").and_then(Value::as_str),
+            _ => None,
+        };
+        if let Some(text) = text.filter(|text| !text.is_empty()) {
+            pieces.push(text.to_string());
+        }
+    }
+    (!pieces.is_empty()).then_some(pieces.join("\n"))
+}
+
+fn apply_completed_tool_input(pending: &mut PendingTool, data: &Value) {
+    let incoming = tool_input(data);
+    if !incoming.is_empty() {
+        pending.input = incoming;
+        return;
+    }
+    if pending.input.is_empty() {
+        pending.input = parse_json_object(&pending.args_text);
+    }
+}
+
+fn parse_json_object(text: &str) -> BTreeMap<String, Value> {
+    serde_json::from_str::<Value>(text.trim())
+        .ok()
+        .and_then(|value| value.as_object().cloned())
+        .map(|object| object.into_iter().collect())
         .unwrap_or_default()
 }
 
@@ -2841,6 +2933,25 @@ async fn apply_acp_effort<R, W>(
             error = %error,
             "runtime rejected the reasoning effort request; sending the prompt anyway"
         ),
+    }
+}
+
+fn annotate_grok_thinking(models: &mut [crate::model::Model]) {
+    for model in models {
+        if model.id != "grok-4.5" {
+            continue;
+        }
+        model.thinking = Some(crate::model::ModelThinking {
+            supported_levels: ["low", "medium", "high"]
+                .into_iter()
+                .map(|value| crate::model::ThinkingLevel {
+                    value: value.to_string(),
+                    label: thinking_label(value),
+                    description: String::new(),
+                })
+                .collect(),
+            default_level: String::new(),
+        });
     }
 }
 
@@ -3436,6 +3547,88 @@ mod tests {
         assert_eq!(thinking.default_level, "max");
         assert_eq!(thinking.supported_levels[1].value, "disabled");
         assert!(models[1].thinking.is_none());
+    }
+
+    #[test]
+    fn grok_discovery_annotates_only_verified_effort_models() {
+        let mut models = vec![
+            crate::model::Model {
+                id: "grok-4.5".to_string(),
+                label: "Grok 4.5".to_string(),
+                provider: "grok".to_string(),
+                default: true,
+                ..crate::model::Model::default()
+            },
+            crate::model::Model {
+                id: "grok-4".to_string(),
+                label: "Grok 4".to_string(),
+                provider: "grok".to_string(),
+                ..crate::model::Model::default()
+            },
+        ];
+        annotate_grok_thinking(&mut models);
+        let thinking = models[0]
+            .thinking
+            .as_ref()
+            .unwrap_or_else(|| panic!("Grok 4.5 thinking catalog"));
+        assert_eq!(
+            thinking
+                .supported_levels
+                .iter()
+                .map(|level| level.value.as_str())
+                .collect::<Vec<_>>(),
+            ["low", "medium", "high"]
+        );
+        assert!(models[1].thinking.is_none());
+    }
+
+    #[test]
+    fn streamed_tool_arguments_are_buffered_until_completion() {
+        let (messages, mut receiver) = mpsc::channel(8);
+        let mut state = NotificationState {
+            extended_tool_names: true,
+            ..NotificationState::default()
+        };
+        handle_tool_start(
+            &serde_json::json!({
+                "toolCallId": "tc-kimi-1",
+                "title": "Shell",
+                "status": "in_progress",
+                "content": [{"type":"content","content":{"type":"text","text":""}}]
+            }),
+            &messages,
+            &mut state,
+        );
+        handle_tool_update(
+            &serde_json::json!({
+                "toolCallId": "tc-kimi-1",
+                "status": "in_progress",
+                "content": [{"type":"content","content":{"type":"text","text":"{\"command\":\"echo hi\"}"}}]
+            }),
+            &messages,
+            &mut state,
+        );
+        handle_tool_update(
+            &serde_json::json!({
+                "toolCallId": "tc-kimi-1",
+                "status": "completed",
+                "content": [{"type":"content","content":{"type":"text","text":"hi\n"}}]
+            }),
+            &messages,
+            &mut state,
+        );
+        let mut got = Vec::new();
+        while let Ok(message) = receiver.try_recv() {
+            got.push(message);
+        }
+        assert_eq!(got.len(), 2);
+        assert_eq!(got[0].message_type, MessageType::ToolUse);
+        assert_eq!(
+            got[0].input.get("command").and_then(Value::as_str),
+            Some("echo hi")
+        );
+        assert_eq!(got[1].message_type, MessageType::ToolResult);
+        assert_eq!(got[1].output, "hi\n");
     }
 
     #[test]
@@ -4519,6 +4712,90 @@ done
             .unwrap_or_else(|error| panic!("cancellation exceeded bound: {error}"))
             .unwrap_or_else(|error| panic!("Qoder result: {error}"));
         assert_eq!(result.status, "aborted");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cancellation_preserves_session_id_after_session_new() {
+        let (directory, backend) = fake_backend(
+            r#"#!/bin/sh
+ready="$(dirname "$0")/ready"
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"qoder-keep"}}\n' "$id"
+      printf ready > "$ready"
+      ;;
+    *'"method":"session/prompt"'*) sleep 60 ;;
+  esac
+done
+"#,
+        );
+        let cancellation = tokio_util::sync::CancellationToken::new();
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    cancellation: cancellation.clone(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Qoder: {error}"));
+        let ready = directory.path().join("ready");
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if ready.exists() {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "session/new never published a resume pointer"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        cancellation.cancel();
+        let result = tokio::time::timeout(Duration::from_secs(15), session.result)
+            .await
+            .unwrap_or_else(|error| panic!("cancellation exceeded bound: {error}"))
+            .unwrap_or_else(|error| panic!("Qoder result: {error}"));
+        assert_eq!(result.status, "aborted");
+        assert_eq!(result.session_id, "qoder-keep");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn qoder_missing_resumed_session_requests_fresh_retry() {
+        let (_directory, backend) = fake_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/resume"'*) printf '{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"session not found"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let session = backend
+            .execute(
+                "continue",
+                ExecOptions {
+                    resume_session_id: "stale".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Qoder: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Qoder result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert!(result.resume_rejected);
+        assert!(result.session_id.is_empty());
     }
 
     #[cfg(unix)]

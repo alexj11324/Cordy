@@ -161,10 +161,11 @@ where
         }
     }
 
-    /// Drains post-response notifications until the wire has been quiet for
-    /// `quiet` or the absolute `maximum` bound expires. Some ACP agents emit
-    /// their final message/tool update immediately after the terminal prompt
-    /// response; treating that response as EOF loses the user-facing tail.
+    /// Drains post-response notifications until stdout EOF or the absolute
+    /// `maximum` bound expires. Closing the request side first is what lets a
+    /// well-behaved agent flush and hang up; a quiet interval is not treated
+    /// as terminal, because some runtimes emit their final `session/update`
+    /// after a gap that is still inside the advertised drain bound.
     pub async fn drain_notifications(
         &mut self,
         quiet: Duration,
@@ -187,16 +188,16 @@ where
         mut on_notification: impl FnMut(AcpNotification),
         mut on_permission: impl FnMut(Option<&Value>) -> AcpPermissionDecision,
     ) -> Result<(), AcpError> {
+        let _ = quiet;
         let deadline = tokio::time::Instant::now() + maximum;
         loop {
             let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
             if remaining.is_zero() {
                 return Ok(());
             }
-            let wait = quiet.min(remaining);
             let line = tokio::select! {
                 line = self.reader.next_line() => line?,
-                () = tokio::time::sleep(wait) => return Ok(()),
+                () = tokio::time::sleep(remaining) => return Ok(()),
             };
             let Some(line) = line else {
                 return Ok(());
@@ -490,5 +491,38 @@ mod tests {
             data: String::new(),
         };
         assert!(!unrelated.is_session_not_found());
+    }
+
+    #[tokio::test]
+    async fn drain_keeps_reading_after_the_first_quiet_interval() {
+        let (client_io, agent_io) = tokio::io::duplex(16 * 1024);
+        let (client_read, client_write) = tokio::io::split(client_io);
+        let (_agent_read, mut agent_write) = tokio::io::split(agent_io);
+        let agent = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(80)).await;
+            agent_write
+                .write_all(
+                    br#"{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"late"}}}}
+"#,
+                )
+                .await
+                .unwrap_or_else(|error| panic!("write late notification: {error}"));
+            drop(agent_write);
+        });
+        let mut client = AcpClient::new(BufReader::new(client_read), client_write);
+        let mut notifications = Vec::new();
+        client
+            .drain_notifications(
+                Duration::from_millis(20),
+                Duration::from_secs(1),
+                |notification| notifications.push(notification),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("drain: {error}"));
+        agent
+            .await
+            .unwrap_or_else(|error| panic!("agent task: {error}"));
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].method, "session/update");
     }
 }
