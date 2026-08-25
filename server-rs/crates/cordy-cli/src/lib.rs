@@ -129,11 +129,12 @@ use config_commands::{
     validate_config_set,
 };
 use daemon_commands::{
-    format_daemon_status_table, known_daemon_profiles, parse_log_lines, read_daemon_log_tail,
-    render_daemon_status, require_known_daemon_profile, resolve_daemon_log_path,
-    resolve_daemon_status_port, run_daemon_after_setup, run_daemon_disk_usage, run_daemon_logs,
-    run_daemon_probe_runtimes, run_daemon_restart, run_daemon_start, run_daemon_status,
-    run_daemon_stop,
+    ensure_restart_is_background, format_daemon_status_table, known_daemon_profiles,
+    parse_cli_duration, parse_log_lines, read_daemon_log_tail, render_daemon_status,
+    require_known_daemon_profile, resolve_daemon_log_path, resolve_daemon_status_port,
+    run_daemon_after_setup, run_daemon_disk_usage, run_daemon_logs, run_daemon_probe_runtimes,
+    run_daemon_restart, run_daemon_start, run_daemon_status, run_daemon_stop,
+    validate_daemon_health_port,
 };
 use disk_usage_commands::{
     disk_usage_needs_parent_status, disk_usage_task_context, enumerate_disk_usage_roots,
@@ -612,32 +613,6 @@ impl DaemonLaunchArgs {
             disable_auto_reload: self.disable_auto_reload,
         }
     }
-}
-
-fn ensure_restart_is_background(launch: &DaemonLaunchArgs) -> Result<()> {
-    anyhow::ensure!(
-        !launch.foreground,
-        "daemon restart does not support --foreground; use 'daemon start --foreground'"
-    );
-    Ok(())
-}
-
-fn validate_daemon_health_port(
-    requested: Option<u16>,
-    resolved: &cordy_daemon::assembly::DaemonLaunchOverrides,
-) -> Result<()> {
-    if let Some(health_port) = requested {
-        anyhow::ensure!(
-            i32::from(health_port) == resolved.health_port,
-            "--health-port must match the profile-derived daemon health port ({})",
-            resolved.health_port
-        );
-    }
-    Ok(())
-}
-
-fn parse_cli_duration(value: &str) -> std::result::Result<Duration, String> {
-    cordy_daemon::helpers::parse_go_duration(value).map_err(|error| error.to_string())
 }
 
 #[derive(Debug, Args)]

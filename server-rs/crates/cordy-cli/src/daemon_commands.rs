@@ -14,9 +14,9 @@ use std::time::Duration;
 
 use super::config::Environment;
 use super::{
-    config, daemon, dispatch_daemon_after_setup, ensure_restart_is_background,
-    validate_daemon_health_port, Cli, DaemonDiskUsageArgs, DaemonLogsArgs, DaemonRestartArgs,
-    DaemonStartArgs, DaemonStatusArgs, OutputFormat, RunOutput, CLIENT_VERSION,
+    config, daemon, dispatch_daemon_after_setup, Cli, DaemonDiskUsageArgs, DaemonLaunchArgs,
+    DaemonLogsArgs, DaemonRestartArgs, DaemonStartArgs, DaemonStatusArgs, OutputFormat, RunOutput,
+    CLIENT_VERSION,
 };
 
 pub(crate) async fn run_daemon_after_setup(
@@ -691,4 +691,29 @@ fn render_daemon_startup(
             bail!("daemon {verb} timed out before readiness (pid {pid}, status {status})")
         }
     }
+}
+fn ensure_restart_is_background(launch: &DaemonLaunchArgs) -> Result<()> {
+    anyhow::ensure!(
+        !launch.foreground,
+        "daemon restart does not support --foreground; use 'daemon start --foreground'"
+    );
+    Ok(())
+}
+
+fn validate_daemon_health_port(
+    requested: Option<u16>,
+    resolved: &cordy_daemon::assembly::DaemonLaunchOverrides,
+) -> Result<()> {
+    if let Some(health_port) = requested {
+        anyhow::ensure!(
+            i32::from(health_port) == resolved.health_port,
+            "--health-port must match the profile-derived daemon health port ({})",
+            resolved.health_port
+        );
+    }
+    Ok(())
+}
+
+fn parse_cli_duration(value: &str) -> std::result::Result<Duration, String> {
+    cordy_daemon::helpers::parse_go_duration(value).map_err(|error| error.to_string())
 }
