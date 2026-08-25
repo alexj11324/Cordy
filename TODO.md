@@ -450,6 +450,15 @@
       API through re-exports. Scoped rustfmt with `skip_children` and
       `git diff --check` pass; PR #225 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #225 exact-head subagent review PASS on
+      `4e2ba606fc8b528a6b0c5ad1f56b3995a0d481d5`: `config_environment.rs`
+      fully contains `Environment`, task marker/profile validation,
+      `SetupProfileInput`, locked atomic persistence, permissions, and
+      `TASK_CONFIG_ROOT_ENV`. `config.rs` correctly re-exports the public API
+      while retaining `CliConfig`, launch resolution, tests, and required
+      imports; existing call sites remain valid. No compile or behavior
+      blocker was found. Subagent did not run Cargo or modify the worktree;
+      coordinator `git diff --check` remains clean.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
