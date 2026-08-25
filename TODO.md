@@ -853,6 +853,16 @@
       correct. No compile or behavior blocker was found. Subagent did not run
       Cargo or modify the worktree; coordinator `git diff --check` remains
       clean.
+- [x] PR #218 `codex/cord-50-cli-profile-test-fixtures` is the next bounded
+      child of #217: base branch `codex/cord-50-cli-test-helpers` at
+      `f09985a9d7a7f33b589f642371654d3991793581`, exact head
+      `ebab54e8cd27ad603456bc05058bb24997b8f457`, tree
+      `5b487656e8fc47ad722878bd32a932f61bf39983`, candidate
+      `b4e22262545facb67a979d49598ffcbe399948da`. It moves the user/profile
+      HTTP fixtures into `cli_test_helpers.rs`; authorization/capability
+      assertions and profile PATCH capture behavior are unchanged. Scoped
+      rustfmt and `git diff --check` pass; PR #218 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
