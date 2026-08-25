@@ -117,6 +117,12 @@
       `daemon_command_tests.rs`; production behavior is unchanged. New module
       rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`,
       MERGEABLE/UNSTABLE). Cargo and review remain delegated.
+- [x] #175 exact-head subagent review PASS: `daemon_command_tests.rs` accesses the
+      parent crate through `use super::*`; all 13 daemon auth/start/restart/probe/
+      status/logs tests and assertions are preserved, with no P0/P1 or compile
+      blocker. Disk-usage tests intentionally remain in the original module for a
+      later bounded slice. Subagent did not run Cargo or modify the worktree;
+      coordinator's rustfmt and `git diff --check` pass.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
