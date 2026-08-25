@@ -1,6 +1,7 @@
 use std::io::Read;
 
 use super::dispatch_agent::run_agent_command;
+use super::dispatch_attachment::run_attachment_command;
 use super::dispatch_auth::{run_auth_command, run_login_command};
 use super::dispatch_autopilot::run_autopilot_command;
 use super::dispatch_chat::run_chat_command;
@@ -35,16 +36,7 @@ pub(super) async fn run_with_input<R: Read>(
         Command::Project(args) => run_project_command(cli, environment, args).await,
         Command::Property(args) => run_property_command(cli, environment, args).await,
         Command::Chat(args) => run_chat_command(cli, environment, args).await,
-        Command::Attachment(AttachmentArgs {
-            command:
-                AttachmentCommand::Download {
-                    attachment_id,
-                    output_dir,
-                },
-        }) => run_attachment_download(cli, environment, attachment_id, output_dir).await,
-        Command::Attachment(AttachmentArgs {
-            command: AttachmentCommand::Upload { path, task },
-        }) => run_attachment_upload(cli, environment, path, task.as_deref()).await,
+        Command::Attachment(args) => run_attachment_command(cli, environment, args).await,
         Command::Repo(RepoArgs {
             command: RepoCommand::List { output },
         }) => run_repo_list(cli, environment, *output).await,

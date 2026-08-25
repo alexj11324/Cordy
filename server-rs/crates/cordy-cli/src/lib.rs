@@ -108,6 +108,7 @@ mod client_factory;
 mod dispatch_agent;
 mod dispatch_autopilot;
 mod dispatch_auth;
+mod dispatch_attachment;
 mod dispatch_issue;
 mod dispatch_label;
 mod dispatch_project;
