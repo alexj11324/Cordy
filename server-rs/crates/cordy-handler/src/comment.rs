@@ -7,7 +7,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use cordy_db::models::{AgentTaskQueue, Comment, CommentReaction, Issue};
-use cordy_db::queries::{attachment, comment, issue as issue_q, reaction};
+use cordy_db::queries::{agent, attachment, comment, issue as issue_q, reaction};
 use cordy_middleware::workspace::WorkspaceContext;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -626,24 +626,9 @@ async fn update(
             );
         }
     };
-    let cancelled = match state
-        .tasks
-        .cancel_tasks_by_trigger_comment(current.id)
-        .await
-    {
-        Ok(cancelled) => cancelled,
-        Err(error) => {
-            tracing::warn!(%error, comment_id = %current.id, "failed to cancel tasks for edited trigger comment");
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to prepare comment edit",
-            );
-        }
-    };
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(_) => {
-            retrigger_cancelled_survivors(&state, &trigger_issue, &cancelled, None).await;
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to update comment",
@@ -663,18 +648,35 @@ async fn update(
         Ok(Some(row)) => row,
         Ok(None) => {
             drop(tx);
-            retrigger_cancelled_survivors(&state, &trigger_issue, &cancelled, None).await;
             return error_response(StatusCode::CONFLICT, "comment was edited concurrently");
         }
         Err(error) => {
             tracing::warn!(%error,"failed to update comment");
             drop(tx);
-            retrigger_cancelled_survivors(&state, &trigger_issue, &cancelled, None).await;
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to update comment",
             );
         }
+    };
+    // Cancel only after the strict update has succeeded, and in the same
+    // transaction as the comment mutation. This prevents attachment-only,
+    // unchanged, and losing concurrent edits from cancelling a still-valid
+    // task batch; a later rollback also restores the queue rows.
+    let cancelled = if updated.content_changed {
+        match agent::cancel_agent_tasks_by_trigger_comment(&mut *tx, current.id).await {
+            Ok(cancelled) => cancelled,
+            Err(error) => {
+                tracing::warn!(%error, comment_id = %current.id, "failed to cancel tasks for edited trigger comment");
+                drop(tx);
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to prepare comment edit",
+                );
+            }
+        }
+    } else {
+        Vec::new()
     };
     if let Some(ids) = replacement_attachments {
         if attachment::replace_comment_attachments(&mut *tx, current.id, current.issue_id, ids)
@@ -682,7 +684,6 @@ async fn update(
             .is_err()
         {
             drop(tx);
-            retrigger_cancelled_survivors(&state, &trigger_issue, &cancelled, None).await;
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to replace comment attachments",
@@ -690,7 +691,6 @@ async fn update(
         }
     }
     if tx.commit().await.is_err() {
-        retrigger_cancelled_survivors(&state, &trigger_issue, &cancelled, None).await;
         return error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to update comment",
@@ -702,6 +702,10 @@ async fn update(
         .flatten()
         .expect("updated comment");
     let mut value = comment_json(&state, &comment).await;
+    state
+        .tasks
+        .broadcast_cancelled_tasks(&current.workspace_id.to_string(), &cancelled)
+        .await;
     retrigger_cancelled_survivors(&state, &trigger_issue, &cancelled, Some(current.id)).await;
     let issue = Some(trigger_issue);
     let mut outcomes = Vec::new();
