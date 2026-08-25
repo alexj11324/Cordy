@@ -691,6 +691,12 @@
       handling, mutation input forwarding, and output behavior. Scoped
       rustfmt and `git diff --check` pass; PR #238 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #238 exact-head subagent review PASS on
+      `32c60a8b7741bf662c99fd9df44b4df96a6b954c`: `dispatch_workspace.rs`
+      covers all Workspace, Member, and MCP variants; optional workspace scope
+      remains `as_deref()`, and create/update/MCP add/update forward stdin
+      unchanged. Dispatcher and lib wiring are correct. `git diff --check`
+      passes; subagent did not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
