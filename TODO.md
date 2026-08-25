@@ -681,6 +681,16 @@
       unchanged. Dispatcher and lib wiring are correct with preserved handler
       signatures. `git diff --check` passes; subagent did not run Cargo or
       modify files.
+- [x] PR #238 `codex/cord-70-cli-workspace-dispatch` is the next bounded child
+      of #237: base branch `codex/cord-69-cli-user-dispatch` at
+      `1a875c8d071a56f760042dc0daeb2ef088a6d913`, exact head
+      `32c60a8b7741bf662c99fd9df44b4df96a6b954c`, tree
+      `d4ec57b28aa6b99ace6462c7fa696b2df5aff42b`, candidate
+      `376b93267671ab3433f7c91c0303d24956077d14`. It isolates Workspace,
+      Member, and MCP routing into `dispatch_workspace.rs`, preserving scope
+      handling, mutation input forwarding, and output behavior. Scoped
+      rustfmt and `git diff --check` pass; PR #238 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
