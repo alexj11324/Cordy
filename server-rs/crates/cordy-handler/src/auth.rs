@@ -50,7 +50,7 @@ impl AuthSettings {
 
     pub fn from_config(config: &cordy_config::Config) -> Self {
         Self {
-            allow_signup: config.auth.allow_signup.as_deref() != Some("false"),
+            allow_signup: config.auth.allow_signup.as_deref().map(str::trim) != Some("false"),
             allowed_emails: split_value(config.auth.allowed_emails.as_deref()),
             allowed_email_domains: split_value(config.auth.allowed_email_domains.as_deref()),
             app_env: option_trimmed(config.server.app_env.as_deref()),
@@ -81,6 +81,13 @@ impl AuthSettings {
         !self.app_env.eq_ignore_ascii_case("production")
             && is_six_digit_code(&self.dev_verification_code)
             && constant_time_eq(code.as_bytes(), self.dev_verification_code.as_bytes())
+    }
+
+    pub(crate) fn cookie_attributes(&self) -> (Option<String>, bool) {
+        (
+            cordy_auth::cookie::cookie_domain(Some(&self.cookie_domain)),
+            cordy_auth::cookie::is_secure_cookie(Some(&self.frontend_origin)),
+        )
     }
 }
 
@@ -163,13 +170,16 @@ struct UserResponse {
     updated_at: String,
 }
 
-impl From<&User> for UserResponse {
-    fn from(value: &User) -> Self {
+impl UserResponse {
+    fn from_user(state: &HandlerState, value: &User) -> Self {
         Self {
             id: value.id.to_string(),
             name: value.name.clone(),
             email: value.email.clone(),
-            avatar_url: value.avatar_url.clone(),
+            avatar_url: value
+                .avatar_url
+                .as_deref()
+                .map(|url| crate::avatar::resolve_url(state, url)),
             language: value.language.clone(),
             timezone: value.timezone.clone(),
             onboarded_at: value.onboarded_at.map(crate::timefmt::rfc3339),
@@ -221,19 +231,49 @@ async fn send_code(State(state): State<HandlerState>, body: Bytes) -> Response {
         }
     }
 
-    if let Ok(Some(latest)) = verification_code::get_latest_code_by_email(&state.pool, &email).await
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(error) => {
+            tracing::error!(%error, %email, "auth: failed to start send-code transaction");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to store verification code",
+            );
+        }
+    };
+    if let Err(error) = sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!("auth-send-code:{email}"))
+        .execute(&mut *tx)
+        .await
     {
-        if Utc::now().signed_duration_since(latest.created_at) < Duration::seconds(60) {
+        tracing::error!(%error, %email, "auth: failed to lock send-code cooldown");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to store verification code",
+        );
+    }
+    match verification_code::get_latest_code_by_email(&mut *tx, &email).await {
+        Ok(Some(latest))
+            if Utc::now().signed_duration_since(latest.created_at) < Duration::seconds(60) =>
+        {
             return error_response(
                 StatusCode::TOO_MANY_REQUESTS,
                 "please wait before requesting another code",
+            );
+        }
+        Ok(_) => {}
+        Err(error) => {
+            tracing::error!(%error, %email, "auth: failed to inspect send-code cooldown");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to store verification code",
             );
         }
     }
 
     let code = format!("{:06}", rand::thread_rng().gen_range(0..1_000_000));
     match verification_code::create_verification_code(
-        &state.pool,
+        &mut *tx,
         &email,
         &code,
         Some(Utc::now() + Duration::minutes(10)),
@@ -248,6 +288,14 @@ async fn send_code(State(state): State<HandlerState>, body: Bytes) -> Response {
             );
         }
     }
+    if let Err(error) = tx.commit().await {
+        tracing::error!(%error, %email, "auth: failed to commit send-code cooldown");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to store verification code",
+        );
+    }
+
     if let Err(error) = state
         .email_service
         .send_verification_code(&email, &code)
@@ -291,8 +339,11 @@ async fn verify_code(
     if !state.auth_settings.is_dev_code(code)
         && !constant_time_eq(code.as_bytes(), db_code.code.as_bytes())
     {
-        let _ =
-            verification_code::increment_verification_code_attempts(&state.pool, db_code.id).await;
+        if let Err(error) =
+            verification_code::reserve_verification_code_attempt(&state.pool, db_code.id).await
+        {
+            tracing::warn!(%error, "auth: failed to reserve verification attempt");
+        }
         return error_response(StatusCode::BAD_REQUEST, "invalid or expired code");
     }
     match verification_code::mark_verification_code_used(&state.pool, db_code.id).await {
@@ -497,8 +548,7 @@ async fn complete_login(
             );
         }
     };
-    let domain = cordy_auth::cookie::cookie_domain(Some(&state.auth_settings.cookie_domain));
-    let secure = cordy_auth::cookie::is_secure_cookie(Some(&state.auth_settings.frontend_origin));
+    let (domain, secure) = state.auth_settings.cookie_attributes();
     let cookies =
         match cordy_auth::cookie::set_auth_cookie_values(&token, domain.as_deref(), secure) {
             Ok(cookies) => cookies,
@@ -506,14 +556,14 @@ async fn complete_login(
                 tracing::warn!(%error, "auth: failed to set auth cookies");
                 return Json(LoginResponse {
                     token,
-                    user: UserResponse::from(&current),
+                    user: UserResponse::from_user(state, &current),
                 })
                 .into_response();
             }
         };
     let mut response = Json(LoginResponse {
         token,
-        user: UserResponse::from(&current),
+        user: UserResponse::from_user(state, &current),
     })
     .into_response();
     for cookie in cookies {
@@ -716,7 +766,7 @@ mod tests {
         let mut config = cordy_config::Config::default();
         config.server.app_env = Some(" Production ".into());
         config.auth.dev_verification_code = Some(" 123456 ".into());
-        config.auth.allow_signup = Some("false".into());
+        config.auth.allow_signup = Some(" false ".into());
         let settings = AuthSettings::from_config(&config);
         assert!(!settings.is_dev_code("123456"));
         assert!(!settings.signup_allowed("new@example.com", true));
