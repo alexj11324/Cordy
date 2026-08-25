@@ -1620,6 +1620,14 @@
       handlers, with parser metadata and behavior unchanged. `git diff
       --check` passes; rustfmt was unavailable in the subagent check and Cargo
       was not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI repository-schema refactor is structurally committed at
+      `d2db878ff28f94871308f1e621794e97bb447c38`; the serial subagent fixed
+      schema type/field visibility in `0fa4203ea1ece6f6711ed588dbdca97c71cd9abb`
+      (tree `0957e550238fd4b4d4d28346747e93170f1744ae`): repo list/add/remove/
+      checkout clap definitions now live beside repository handlers, with
+      aliases, positional URL behavior, and output defaults unchanged. `git
+      diff --check` passes; rustfmt was unavailable in the subagent check and
+      Cargo was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
