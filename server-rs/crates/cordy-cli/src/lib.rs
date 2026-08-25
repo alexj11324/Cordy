@@ -182,6 +182,7 @@ mod issue_label_commands;
 mod issue_label_schema;
 mod issue_list_commands;
 mod issue_list_schema;
+mod issue_markdown_links;
 mod issue_metadata_commands;
 mod issue_metadata_schema;
 mod issue_property_commands;
