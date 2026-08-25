@@ -103,6 +103,11 @@
       contract tests into `root_command_tests.rs`; production behavior is unchanged.
       New test module rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`,
       CLEAN/MERGEABLE). Cargo and review remain delegated.
+- [x] #174 exact-head subagent review PASS: `root_command_tests.rs` can access the
+      parent crate's private/re-exported API through `use super::*`; all six moved
+      tests and assertions are preserved, with no naming collision or P0/P1/compile
+      blocker. Subagent did not run Cargo or modify the worktree; coordinator's
+      rustfmt check and `git diff --check` both pass.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
