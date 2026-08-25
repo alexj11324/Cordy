@@ -4,7 +4,7 @@ use std::fmt::Write;
 use std::path::Path;
 
 use super::{
-    config_commands::parse_go_duration, require_task_local_config_root, Cli, Environment,
+    config_mutation_commands::parse_go_duration, require_task_local_config_root, Cli, Environment,
     OutputFormat, RunOutput,
 };
 
