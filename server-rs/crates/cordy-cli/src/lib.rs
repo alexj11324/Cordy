@@ -17,6 +17,7 @@ mod daemon_commands;
 mod disk_usage_commands;
 mod disk_usage_output;
 pub mod error;
+mod id_helpers;
 mod issue_actor_output;
 mod issue_actor_resolver;
 mod issue_assign_commands;
@@ -120,6 +121,7 @@ use disk_usage_output::{
     append_disk_usage_warning, format_disk_ratio, format_disk_usage_aggregate_table,
     format_disk_usage_report_table,
 };
+pub(super) use id_helpers::{compact_uuid, is_canonical_uuid, normalize_uuid_prefix};
 use issue_actor_output::{format_issue_list_table, load_issue_actor_names, IssueActorNames};
 use issue_actor_resolver::{
     resolve_issue_assignee_id, resolve_issue_assignee_name, resolve_issue_project_id,
@@ -5091,24 +5093,6 @@ struct IssueListResponse {
 
 fn encoded_path_segment(value: &str) -> String {
     form_urlencoded::byte_serialize(value.as_bytes()).collect()
-}
-
-fn is_canonical_uuid(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    bytes.len() == 36
-        && bytes.iter().enumerate().all(|(index, byte)| match index {
-            8 | 13 | 18 | 23 => *byte == b'-',
-            _ => byte.is_ascii_hexdigit(),
-        })
-}
-
-fn normalize_uuid_prefix(value: &str) -> Option<String> {
-    let prefix = value.trim().replace('-', "").to_ascii_lowercase();
-    (prefix.len() >= 4 && prefix.bytes().all(|byte| byte.is_ascii_hexdigit())).then_some(prefix)
-}
-
-fn compact_uuid(value: &str) -> String {
-    value.trim().replace('-', "").to_ascii_lowercase()
 }
 
 fn truncate_text(value: &str, limit: usize) -> String {
