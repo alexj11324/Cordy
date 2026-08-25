@@ -171,8 +171,6 @@ pub(crate) async fn run_daemon_stop(cli: &Cli, environment: &Environment) -> Res
     }
 }
 
-
-
 fn render_daemon_start_outcome(
     outcome: cordy_daemon::process_control::DaemonStartOutcome,
 ) -> Result<RunOutput> {
