@@ -26,7 +26,10 @@ use crate::contract::{
     COST_USD_TICKS_PER_USD,
 };
 use crate::kimi_usage::{scan_kimi_session_usage, KimiUsageScan};
-use crate::model::{parse_acp_session_models, Catalog, CatalogCache, ModelDiscoveryCacheKey};
+use crate::model::{
+    parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelThinking,
+    ThinkingLevel,
+};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 use crate::version::check_minimum;
@@ -294,7 +297,20 @@ impl QoderBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        discover_models(&self.config, cache, cancellation, timeout).await
+        self.discover_models_for_runtime(&self.config.provider, cache, cancellation, timeout)
+            .await
+    }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Qoder executable do not share an account/profile catalog entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models_with_scope(&self.config, runtime_scope, cache, cancellation, timeout).await
     }
 }
 
@@ -423,6 +439,26 @@ impl TraecliBackend {
             .discover_models(cache, cancellation, timeout)
             .await
     }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Trae CLI executable do not share an account/profile catalog
+    /// entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await
+    }
 }
 
 #[async_trait]
@@ -486,6 +522,25 @@ impl KiroBackend {
         self.inner
             .discover_models(cache, cancellation, timeout)
             .await
+    }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Kiro executable do not share an account/profile catalog entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await
     }
 }
 
@@ -664,6 +719,26 @@ impl ReasonixBackend {
             .discover_models(cache, cancellation, timeout)
             .await
     }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Reasonix executable do not share an account/profile catalog
+    /// entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await
+    }
 }
 
 #[async_trait]
@@ -714,9 +789,89 @@ impl GrokBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        self.inner
-            .discover_models(cache, cancellation, timeout)
+        self.discover_models_for_runtime("grok", cache, cancellation, timeout)
             .await
+    }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Grok executable do not share an account/profile catalog entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        let mut catalog = discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await;
+        if catalog.models.is_empty() {
+            return grok_fallback_catalog();
+        }
+        normalize_grok_providers(&mut catalog.models);
+        annotate_grok_thinking(&mut catalog.models);
+        catalog
+    }
+}
+
+fn normalize_grok_providers(models: &mut [Model]) {
+    for model in models {
+        if model.provider.is_empty() || model.provider == "grok" {
+            model.provider = "xai".to_string();
+        }
+    }
+}
+
+fn grok_fallback_catalog() -> Catalog {
+    let mut models = vec![
+        Model {
+            id: "grok-4.5".to_string(),
+            label: "Grok 4.5".to_string(),
+            provider: "xai".to_string(),
+            default: true,
+            ..Model::default()
+        },
+        Model {
+            id: "grok-composer-2.5-fast".to_string(),
+            label: "Grok Composer 2.5 Fast".to_string(),
+            provider: "xai".to_string(),
+            ..Model::default()
+        },
+    ];
+    annotate_grok_thinking(&mut models);
+    Catalog {
+        models,
+        fallback: true,
+    }
+}
+
+fn annotate_grok_thinking(models: &mut [Model]) {
+    if let Some(model) = models.iter_mut().find(|model| model.id == "grok-4.5") {
+        model.thinking = Some(ModelThinking {
+            supported_levels: vec![
+                ThinkingLevel {
+                    value: "low".to_string(),
+                    label: "Low".to_string(),
+                    description: String::new(),
+                },
+                ThinkingLevel {
+                    value: "medium".to_string(),
+                    label: "Medium".to_string(),
+                    description: String::new(),
+                },
+                ThinkingLevel {
+                    value: "high".to_string(),
+                    label: "High".to_string(),
+                    description: String::new(),
+                },
+            ],
+            default_level: String::new(),
+        });
     }
 }
 
@@ -810,9 +965,34 @@ impl DimBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        self.inner
-            .discover_models(cache, cancellation, timeout)
+        self.discover_models_for_runtime("dim", cache, cancellation, timeout)
             .await
+    }
+
+    /// Discovers against a daemon runtime identity and preserves Dim's
+    /// non-authoritative empty fallback when its ACP catalog is unavailable.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        let catalog = discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await;
+        if catalog.models.is_empty() {
+            return Catalog {
+                models: Vec::new(),
+                fallback: true,
+            };
+        }
+        catalog
     }
 }
 
@@ -934,15 +1114,6 @@ fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMod
     }
 }
 
-async fn discover_models(
-    config: &QoderConfig,
-    cache: &CatalogCache,
-    cancellation: CancellationToken,
-    timeout: Duration,
-) -> Catalog {
-    discover_models_with_scope(config, &config.provider, cache, cancellation, timeout).await
-}
-
 async fn discover_models_with_scope(
     config: &QoderConfig,
     runtime_scope: &str,
@@ -961,7 +1132,7 @@ async fn discover_models_with_scope(
     if let Some(catalog) = cache.get(&key) {
         return catalog;
     }
-    let catalog = discover_acp_session(config, cancellation, timeout)
+    let catalog = discover_acp_session(config, cancellation.clone(), timeout)
         .await
         .map_or_else(Catalog::default, |(initialize, session)| {
             if let Some(minimum) = config.minimum_agent_version {
@@ -978,6 +1149,9 @@ async fn discover_models_with_scope(
                 fallback: false,
             }
         });
+    if cancellation.is_cancelled() {
+        return Catalog::default();
+    }
     let _ = cache.insert(key, catalog.clone());
     catalog
 }
@@ -3709,6 +3883,30 @@ mod tests {
     }
 
     #[test]
+    fn grok_fallback_catalog_matches_static_model_contract() {
+        let catalog = grok_fallback_catalog();
+        assert!(catalog.fallback);
+        assert_eq!(
+            catalog
+                .models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            ["grok-4.5", "grok-composer-2.5-fast"]
+        );
+        assert_eq!(catalog.models[0].provider, "xai");
+        assert!(catalog.models[0].default);
+        assert_eq!(
+            catalog.models[0]
+                .thinking
+                .as_ref()
+                .map(|thinking| thinking.supported_levels.len()),
+            Some(3)
+        );
+        assert!(catalog.models[1].thinking.is_none());
+    }
+
+    #[test]
     fn mcode_arguments_keep_acp_and_login_ui_owned() {
         let args = build_mcode_args(&ExecOptions {
             extra_args: ["acp", "--verbose"].map(str::to_string).to_vec(),
@@ -3968,6 +4166,31 @@ mod tests {
             provider_error("qoder", tracker.found(), "xxxxx", ""),
             Some("qoder provider reported a terminal upstream error on stderr".to_string())
         );
+    }
+
+    #[test]
+    fn grok_normalizes_empty_and_internal_provider_names() {
+        let mut models = vec![
+            Model {
+                id: "grok-4.5".to_string(),
+                provider: String::new(),
+                ..Model::default()
+            },
+            Model {
+                id: "grok-composer".to_string(),
+                provider: "grok".to_string(),
+                ..Model::default()
+            },
+            Model {
+                id: "custom".to_string(),
+                provider: "other".to_string(),
+                ..Model::default()
+            },
+        ];
+        normalize_grok_providers(&mut models);
+        assert_eq!(models[0].provider, "xai");
+        assert_eq!(models[1].provider, "xai");
+        assert_eq!(models[2].provider, "other");
     }
 
     #[test]
@@ -4632,7 +4855,8 @@ done
 "#,
         );
         let catalog = backend
-            .discover_models(
+            .discover_models_for_runtime(
+                "kiro\0workspace=test\0runtime=test\0profile=",
                 &CatalogCache::default(),
                 CancellationToken::new(),
                 Duration::from_secs(5),
@@ -4913,7 +5137,8 @@ done
 "#,
         );
         let catalog = backend
-            .discover_models(
+            .discover_models_for_runtime(
+                "qoder\0workspace=test\0runtime=test\0profile=",
                 &CatalogCache::default(),
                 CancellationToken::new(),
                 Duration::from_secs(5),
@@ -5036,7 +5261,8 @@ while IFS= read -r line; do
   case "$line" in
     *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"authMethods":[{"id":"cached_token"},{"id":"xai.api_key"}]}}\n' "$id" ;;
     *'"method":"authenticate"'*)
-      case "$line" in *'"methodId":"xai.api_key"'*'"headless":true'*) ;; *) exit 41 ;; esac
+      case "$line" in *'"methodId":"xai.api_key"'*) ;; *) exit 41 ;; esac
+      case "$line" in *'"headless":true'*) ;; *) exit 41 ;; esac
       printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id"
       ;;
     *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"grok-1"}}\n' "$id" ;;
@@ -5090,7 +5316,8 @@ done
 "#,
         );
         let catalog = backend
-            .discover_models(
+            .discover_models_for_runtime(
+                "grok\0workspace=test\0runtime=test\0profile=",
                 &CatalogCache::default(),
                 CancellationToken::new(),
                 Duration::from_secs(5),
