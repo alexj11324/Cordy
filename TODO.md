@@ -1155,6 +1155,19 @@
       remain unchanged; runtime/profile handlers, dispatch, and root
       re-exports are complete. Subagent did not run Cargo or modify files;
       `git diff --check` remains clean.
+- [ ] PR #262 `codex/cord-94-cli-project-resource-support` is the next
+      bounded child of #261: base branch `codex/cord-93-cli-runtime-schema` at
+      `e5b26a4e98b96e4bc728c71581ba7adae550350e`, exact head
+      `ae8bbde45c6ac80b29d7966a0b8da62f89b0e59b`, tree
+      `7b12f25e3cdf96b5b5d43c913c21ba5ba1fabadc`, candidate
+      `18684ff9cdd6a1b99027b965062955dcee8a49a5` (parents base + head).
+      It isolates project-resource reference parsing, shortcut payload
+      construction, UUID-prefix resolution, and update merge helpers in
+      `project_resource_support.rs`; list/add/update/remove API orchestration,
+      validation messages, output, and test re-exports remain unchanged.
+      Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated.
+      PR #262 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head
+      subagent review pending; no duplicate review request has been made.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
