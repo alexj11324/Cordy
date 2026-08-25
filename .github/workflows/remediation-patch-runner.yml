@@ -54,15 +54,14 @@ jobs:
             echo skip=true >> "$GITHUB_ENV"
           fi
 
-      - name: Apply the fixed remediation patch
+      - name: Apply assertion-based remediation
         if: env.skip != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          test -f .github/remediation/patch.diff
-          git apply --check .github/remediation/patch.diff
-          git apply .github/remediation/patch.diff
-          rm .github/remediation/patch.diff
+          test -f .github/remediation/apply.py
+          python3 .github/remediation/apply.py
+          rm .github/remediation/apply.py
           git diff --check
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
