@@ -224,6 +224,7 @@ mod runtime_profile_mutation_commands;
 mod runtime_profile_path_commands;
 mod runtime_profile_read_commands;
 mod runtime_update;
+mod runtime_update_output;
 mod setup_command_schema;
 mod setup_commands;
 mod skill_command_schema;
@@ -500,9 +501,8 @@ use runtime_profile_mutation_commands::{
     run_runtime_profile_create, run_runtime_profile_delete, run_runtime_profile_update,
 };
 use runtime_profile_read_commands::{run_runtime_profile_list, runtime_profiles_path};
-use runtime_update::{
-    format_runtime_update_result, run_runtime_update, run_runtime_update_with_policy,
-};
+use runtime_update::{run_runtime_update, run_runtime_update_with_policy};
+use runtime_update_output::format_runtime_update_result;
 pub(super) use setup_command_schema::{
     SetupArgs, SetupCloudArgs, SetupCommand, SetupError, SetupSelfHostArgs,
 };
