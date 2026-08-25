@@ -1118,7 +1118,7 @@
       alias, output defaults, checkout `--ref`, dispatch, and root re-exports
       remain unchanged. Subagent did not run Cargo or modify files;
       `git diff --check` remains clean.
-- [ ] PR #260 `codex/cord-92-cli-chat-schema` is the next bounded child of
+- [x] PR #260 `codex/cord-92-cli-chat-schema` is the next bounded child of
       #259: base branch `codex/cord-91-cli-repo-schema` at
       `be6e14c81d112f9193a68938c6707fd8af9e7620`. Initial exact head
       `af28d11a55ed805c2f07453c5c367d82702925a2` was blocked because the
@@ -1133,8 +1133,11 @@
       pagination/defaults, API paths, output, and dispatch remain unchanged.
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated.
       PR #260 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head
-      review is pending for the corrected head; the initial review was not
-      reused.
+      review PASS on `de4fdb393848cb6285f3b71230e37aafb53f19a7`: `ChatReadArgs`
+      is in scope; Attachment `PathBuf`/default directory/upload task flags,
+      Chat history/thread pagination/cursor/JSON defaults, dispatch, and root
+      re-exports remain unchanged. Subagent did not run Cargo or modify files;
+      `git diff --check` remains clean.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
