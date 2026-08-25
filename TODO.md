@@ -1758,6 +1758,14 @@
       blocker-only fixes/review; Pro owns the eventual Ready PR, gate, and
       merge.
 
+- [ ] CLI config-schema refactor is structurally committed at
+      `57eae832ddd21222ff47077b935f5619a7cf0eb8` (tree
+      `8e8355cb6c1ea775cc4d5a0cc7d1d4a37a94ee09`): config show/set clap
+      definitions now live in `config_command_schema.rs`; optional command
+      dispatch, keys, values, and output defaults remain unchanged. This
+      extends Ready PR #159; scoped rustfmt with `skip_children` and
+      `git diff --check` pass, Cargo was not run.
+
 ## Phase 4 — S8 route and API parity
 
 - [ ] Audit #66→#87 bottom-up against the live integration tree.
