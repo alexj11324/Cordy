@@ -1580,6 +1580,14 @@
       found no blocker; `git diff --check` passes, rustfmt was unavailable in
       the subagent check, and Cargo was not run. Pro owns push/Ready PR, gate,
       and merge.
+- [ ] CLI daemon-launch mapping refactor is committed at
+      `0cc4a1c314b0ce1655cc740d58adff727bf634f4` (tree
+      `b5f8adb7e93344727a41daae5184b297031619e8`): the complete
+      `DaemonLaunchArgs::to_launch_flags` mapping now belongs to
+      `daemon_commands.rs`; all timeout, concurrency, auto-update, and reload
+      fields remain identical. The serial subagent found no blocker;
+      `git diff --check` passes, rustfmt was unavailable in the subagent
+      check, and Cargo was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
