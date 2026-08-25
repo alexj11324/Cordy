@@ -378,6 +378,23 @@ impl ProviderExecutionPlan {
         self.prepare.clone()
     }
 
+    /// Returns the persistent Hermes stores this plan will mount. The caller
+    /// holds the activity guard before Prepare/Reuse and until finalization so
+    /// Hermes GC cannot reclaim a store between path resolution and mounting.
+    pub fn hermes_store_paths(&self) -> Vec<std::path::PathBuf> {
+        if self.prepare.provider != "hermes" || self.prepare.task.agent_skills.is_empty() {
+            return Vec::new();
+        }
+        [
+            self.prepare.hermes_memory_store.as_str(),
+            self.prepare.hermes_session_store.as_str(),
+        ]
+        .into_iter()
+        .filter(|path| !path.trim().is_empty())
+        .map(std::path::PathBuf::from)
+        .collect()
+    }
+
     pub fn task_context(&self) -> &TaskContextForEnv {
         &self.prepare.task
     }

@@ -144,6 +144,27 @@ impl ProviderRuntimeContext {
         })
     }
 
+    /// Builds a backend config from the launch snapshot accepted before task
+    /// preparation. Registration may refresh a custom profile while the
+    /// filesystem is being prepared; the executable and the argv prefix must
+    /// still describe the same launch that was used to build the plan.
+    pub fn backend_config_with_launch(
+        &self,
+        launch: crate::provider_registration::RuntimeLaunchSpec,
+        env: BTreeMap<String, String>,
+        prefix: Vec<String>,
+    ) -> anyhow::Result<BackendConfig> {
+        anyhow::ensure!(
+            !launch.command_path.trim().is_empty(),
+            "accepted launch for provider {} has no executable path",
+            launch.target.provider
+        );
+        Ok(BackendConfig {
+            command: RuntimeCommand::new(launch.command_path, prefix),
+            env,
+        })
+    }
+
     fn resolve_launch(
         &self,
         workspace_id: &str,

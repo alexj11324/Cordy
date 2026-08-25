@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
 
 use anyhow::{anyhow, bail, Context};
 use serde_yaml::{Mapping, Value};
@@ -152,10 +153,7 @@ pub fn resolve_hermes_profile(custom_home: &str, profile: Option<&str>) -> Herme
     let explicit = profile.is_some();
     let name = match profile {
         Some(value) => value.to_string(),
-        None if Path::new(&base)
-            .parent()
-            .and_then(Path::file_name)
-            .is_some_and(|p| p == "profiles") =>
+        None if has_profiles_parent(Path::new(&base)) =>
         {
             return HermesProfileResolution {
                 source_home: base,
@@ -304,6 +302,15 @@ fn platform_default_home() -> String {
         .unwrap_or_else(|| std::env::temp_dir().join(".hermes").display().to_string())
 }
 
+fn platform_user_home() -> Option<PathBuf> {
+    let key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
+    std::env::var_os(key)
+        .filter(|value| !value.is_empty())
+        .or_else(|| std::env::var_os("HOME").filter(|value| !value.is_empty()))
+        .or_else(|| std::env::var_os("USERPROFILE").filter(|value| !value.is_empty()))
+        .map(PathBuf::from)
+}
+
 fn absolute_clean(path: &str) -> String {
     let path = PathBuf::from(path);
     if path.is_absolute() {
@@ -318,20 +325,61 @@ fn absolute_clean(path: &str) -> String {
 }
 
 fn hermes_root(home: &str) -> String {
-    let path = Path::new(home);
-    if path
-        .parent()
-        .and_then(Path::file_name)
-        .is_some_and(|p| p == "profiles")
-    {
-        path.parent()
-            .and_then(Path::parent)
-            .unwrap_or(path)
-            .display()
-            .to_string()
-    } else {
-        home.to_string()
+    hermes_root_for(home, &platform_default_home())
+}
+
+fn hermes_root_for(home: &str, native_home: &str) -> String {
+    let path = PathBuf::from(absolute_clean(home));
+    let native = PathBuf::from(absolute_clean(native_home));
+    if path_is_under(
+        &resolve_path_best_effort(&native),
+        &resolve_path_best_effort(&path),
+    ) {
+        return native.display().to_string();
     }
+    if has_profiles_parent(&path) {
+        return path
+            .parent()
+            .and_then(Path::parent)
+            .unwrap_or(&path)
+            .display()
+            .to_string();
+    }
+    path.display().to_string()
+}
+
+fn has_profiles_parent(path: &Path) -> bool {
+    path.parent()
+        .and_then(Path::file_name)
+        .is_some_and(|name| name.to_string_lossy().eq_ignore_ascii_case("profiles"))
+}
+
+fn path_is_under(parent: &Path, child: &Path) -> bool {
+    child == parent || child.strip_prefix(parent).is_ok()
+}
+
+fn resolve_path_best_effort(path: &Path) -> PathBuf {
+    let absolute = PathBuf::from(absolute_clean(&path.display().to_string()));
+    if let Ok(resolved) = fs::canonicalize(&absolute) {
+        return resolved;
+    }
+
+    let mut cursor = absolute.clone();
+    let mut suffix = Vec::new();
+    while fs::metadata(&cursor).is_err() {
+        let Some(name) = cursor.file_name().map(|name| name.to_os_string()) else {
+            return absolute;
+        };
+        suffix.push(name);
+        if !cursor.pop() {
+            return absolute;
+        }
+    }
+    let mut resolved = fs::canonicalize(&cursor).unwrap_or(cursor);
+    for name in suffix.iter().rev() {
+        resolved.push(name);
+    }
+    resolved
 }
 
 fn read_active_profile(root: &str) -> Option<String> {
@@ -390,7 +438,9 @@ fn profile_dir(profile: &str) -> Option<PathBuf> {
     if profile.contains(['/', '\\']) || matches!(profile, "." | "..") {
         return None;
     }
-    if let Some(root) = std::env::var_os("CORDY_TASK_CONFIG_ROOT") {
+    if let Some(root) = std::env::var_os("CORDY_TASK_CONFIG_ROOT")
+        .filter(|value| !value.is_empty())
+    {
         let root = PathBuf::from(root);
         if !root.is_absolute() {
             return None;
@@ -401,7 +451,7 @@ fn profile_dir(profile: &str) -> Option<PathBuf> {
             root.join("profiles").join(profile)
         });
     }
-    let home = PathBuf::from(std::env::var_os("HOME")?);
+    let home = platform_user_home()?;
     Some(if profile.is_empty() {
         home.join(".cordy")
     } else {
@@ -424,11 +474,7 @@ fn hermes_profile_segment(source_home: &str) -> String {
         return "default".to_string();
     }
     let path = Path::new(&home);
-    if path
-        .parent()
-        .and_then(Path::file_name)
-        .is_some_and(|p| p == "profiles")
-    {
+    if has_profiles_parent(path) {
         let root = path
             .parent()
             .and_then(Path::parent)
@@ -620,6 +666,23 @@ fn create_file_link(source: &Path, target: &Path) -> anyhow::Result<()> {
     }
 }
 
+fn create_session_file_link(source: &Path, target: &Path) -> anyhow::Result<()> {
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(source, target)?;
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
+        // A copied SQLite database is not a mount: writes and WAL sidecars
+        // would stay in the task overlay while the next task opens the stale
+        // store copy. If Windows cannot create a real link, the caller keeps
+        // the session database task-local instead.
+        std::os::windows::fs::symlink_file(source, target)?;
+        Ok(())
+    }
+}
+
 fn write_derived_config(
     shared: &str,
     overlay: &str,
@@ -790,7 +853,7 @@ fn mount_memories(overlay: &str, store: &str) -> anyhow::Result<()> {
             return Ok(());
         }
         if metadata.is_dir() && !metadata.file_type().is_symlink() && store_is_empty(store)? {
-            copy_tree(&target, store)?;
+            migrate_memories(&target, store)?;
         }
         remove_path(&target)?;
     }
@@ -833,7 +896,7 @@ fn mount_session_db(overlay: &str, store: &str) -> anyhow::Result<HermesSessions
     // Prove the link can be created before deleting a task-local database.
     let staged = Path::new(overlay).join(SESSION_LINK_STAGING);
     remove_path(&staged)?;
-    if create_file_link(&store_db, &staged).is_err() {
+    if create_session_file_link(&store_db, &staged).is_err() {
         return Ok(HermesSessions::default());
     }
     remove_state_files(overlay)?;
@@ -869,18 +932,82 @@ fn migrate_session_files(overlay: &str, store: &Path) -> anyhow::Result<()> {
     if files.is_empty() {
         return Ok(());
     }
-    let staging = tempfile::tempdir_in(store.parent().unwrap_or(store))?;
+    let staging = new_store_staging(store)?;
     for entry in files {
         fs::copy(entry.path(), staging.path().join(entry.file_name()))?;
     }
-    for entry in fs::read_dir(staging.path())? {
-        let entry = entry?;
-        fs::rename(entry.path(), store.join(entry.file_name()))?;
+    let _publish_lock = hermes_store_publish_lock();
+    if has_session_db(store) {
+        return Ok(());
+    }
+    // A session store may contain an empty database or orphaned WAL files
+    // from an interrupted first turn. Remove only that known family while
+    // holding the publish lock, then replace the directory in one rename.
+    remove_state_files_at(store)?;
+    publish_staged_store(staging.path(), store, has_session_db)?;
+    Ok(())
+}
+
+fn migrate_memories(source: &Path, store: &Path) -> anyhow::Result<()> {
+    if store_is_empty(store)? && fs::read_dir(source)?.next().is_some() {
+        let staging = new_store_staging(store)?;
+        copy_tree(source, staging.path())?;
+        let _publish_lock = hermes_store_publish_lock();
+        publish_staged_store(staging.path(), store, store_is_populated)?;
     }
     Ok(())
 }
 
+fn new_store_staging(store: &Path) -> anyhow::Result<tempfile::TempDir> {
+    let parent = store.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent)?;
+    tempfile::Builder::new()
+        .prefix(".cordy-hermes-migrating-")
+        .tempdir_in(parent)
+        .map_err(anyhow::Error::new)
+}
+
+fn publish_staged_store(
+    staging: &Path,
+    store: &Path,
+    populated: fn(&Path) -> bool,
+) -> anyhow::Result<bool> {
+    match fs::remove_dir(store) {
+        Ok(()) => {}
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+        Err(error) => {
+            if populated(store) {
+                return Ok(false);
+            }
+            return Err(anyhow!(error).context("clear empty Hermes store before publish"));
+        }
+    }
+    match fs::rename(staging, store) {
+        Ok(()) => Ok(true),
+        Err(_error) if populated(store) => Ok(false),
+        Err(error) => Err(anyhow!(error).context("publish Hermes store migration")),
+    }
+}
+
+fn store_is_populated(dir: &Path) -> bool {
+    fs::read_dir(dir)
+        .ok()
+        .and_then(|mut entries| entries.next())
+        .is_some()
+}
+
+fn hermes_store_publish_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 fn remove_state_files(dir: &str) -> anyhow::Result<()> {
+    remove_state_files_at(Path::new(dir))
+}
+
+fn remove_state_files_at(dir: &Path) -> anyhow::Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         if is_state_entry(&entry.file_name().to_string_lossy()) {
@@ -891,7 +1018,12 @@ fn remove_state_files(dir: &str) -> anyhow::Result<()> {
 }
 
 fn store_is_empty(dir: &Path) -> anyhow::Result<bool> {
-    Ok(fs::read_dir(dir)?.next().is_none())
+    let mut entries = fs::read_dir(dir)?;
+    match entries.next() {
+        None => Ok(true),
+        Some(Ok(_)) => Ok(false),
+        Some(Err(error)) => Err(error.into()),
+    }
 }
 
 fn copy_tree(source: &Path, target: &Path) -> anyhow::Result<()> {
@@ -1004,6 +1136,30 @@ mod tests {
             hermes_profile_segment("/tmp/custom/profiles/research"),
             format!("research_{}", sha256_short("/tmp/custom"))
         );
+    }
+
+    #[test]
+    fn profile_root_reuses_native_root_for_nested_and_symlinked_homes() {
+        let root = tempdir().unwrap();
+        let native = root.path().join("native-hermes");
+        let nested = native.join("custom");
+        fs::create_dir_all(&nested).unwrap();
+        assert_eq!(
+            hermes_root_for(&nested.display().to_string(), &native.display().to_string()),
+            native.display().to_string()
+        );
+
+        let profile = native.join("profiles").join("coder");
+        fs::create_dir_all(&profile).unwrap();
+        let link = root.path().join("coder-home");
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&profile, &link).unwrap();
+            assert_eq!(
+                hermes_root_for(&link.display().to_string(), &native.display().to_string()),
+                native.display().to_string()
+            );
+        }
     }
 
     #[test]

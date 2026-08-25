@@ -171,6 +171,14 @@ impl ProductionProviderAdapter {
             Ok(plan) => plan,
             Err(error) => return failed(error, None),
         };
+        let _hermes_store_use = {
+            let paths = plan.hermes_store_paths();
+            if paths.is_empty() {
+                None
+            } else {
+                Some(runtime.activity().mark_stores(paths).await)
+            }
+        };
         let requested_session_id = plan.resume_session_id().to_string();
 
         let client = runtime.client();
@@ -248,9 +256,8 @@ impl ProductionProviderAdapter {
                     ..PreparedEnvironmentInputs::default()
                 },
             )?;
-            let backend_config = runtime.backend_config_with_prefix(
-                &task.workspace_id,
-                &target,
+            let backend_config = runtime.backend_config_with_launch(
+                launch,
                 bound.child_env.into_inner(),
                 bound.launch_prefix,
             )?;
