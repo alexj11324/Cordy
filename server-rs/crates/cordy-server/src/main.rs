@@ -218,7 +218,7 @@ fn install_pending_stores(
     redis_url: Option<&str>,
 ) -> cordy_handler::HandlerState {
     let Some(redis_url) = redis_url.map(str::trim).filter(|url| !url.is_empty()) else {
-        return state;
+        return state.with_in_memory_pending_stores();
     };
     let client = match redis::Client::open(redis_url) {
         Ok(client) => client,
@@ -286,13 +286,14 @@ async fn build_production_router(
     )
     .with_plugins_from_env()
     .with_slack_history_from_env()
-    .with_llm_from_env()?
-    .with_integrations(cfg.integrations.clone())
-    .with_public_config(cordy_handler::config::PublicConfigSettings {
-        cdn_domain: cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
+    .with_llm_from_config(&cfg.llm)?
+    .with_composio_from_config(cfg)
+    .with_public_config(cordy_handler::config::PublicConfigSettings::from_config(
+        cfg,
+        cfg.storage.cloudfront_domain.clone().unwrap_or_default(),
         cdn_signed,
-        server_version: env!("CARGO_PKG_VERSION").to_string(),
-    })
+        env!("CARGO_PKG_VERSION").to_string(),
+    ))
     .with_vcs_webhooks(vcs.enabled, vcs.secret_box);
     let redis_url = cfg
         .redis
@@ -1034,8 +1035,40 @@ mod tests {
         let state = install_pending_stores(state, Some("not-a-redis-url"));
         assert!(state.update_store.is_none());
         assert!(state.model_list_store.is_none());
+        assert!(state.model_catalog_cache.is_none());
         assert!(state.local_skill_list_store.is_none());
         assert!(state.local_skill_import_store.is_none());
+    }
+
+    #[tokio::test]
+    async fn redis_free_configuration_installs_in_memory_pending_stores() {
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let state = cordy_handler::HandlerState::new(
+            pool,
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let state = install_pending_stores(state, None);
+        assert!(state.update_store.is_some());
+        assert!(state.model_list_store.is_some());
+        assert!(state.model_catalog_cache.is_some());
+        assert!(state.local_skill_list_store.is_some());
+        assert!(state.local_skill_import_store.is_some());
+        let created = state
+            .update_store
+            .as_ref()
+            .unwrap()
+            .create("runtime-1", "v2", "user-1")
+            .await
+            .unwrap();
+        assert!(state
+            .update_store
+            .as_ref()
+            .unwrap()
+            .has_pending("runtime-1")
+            .await
+            .unwrap());
+        assert_eq!(created.target_version, "v2");
     }
 
     #[tokio::test]
