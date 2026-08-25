@@ -191,6 +191,7 @@ mod project_command_schema;
 mod project_commands;
 mod project_mutation_commands;
 mod project_resource_commands;
+mod project_resource_support;
 mod project_status_commands;
 mod property_command_schema;
 mod property_commands;
@@ -430,8 +431,11 @@ use project_mutation_commands::{
 };
 use project_status_commands::{run_project_status, validate_project_status, PROJECT_STATUSES};
 use project_resource_commands::{
-    build_project_resource_add_ref, build_project_resource_update_ref, run_project_resource_add,
-    run_project_resource_list, run_project_resource_remove, run_project_resource_update,
+    run_project_resource_add, run_project_resource_list, run_project_resource_remove,
+    run_project_resource_update,
+};
+pub(super) use project_resource_support::{
+    build_project_resource_add_ref, build_project_resource_update_ref,
 };
 pub(super) use property_commands::{
     format_property_definitions, parse_property_options, resolve_property, run_property_archive,
