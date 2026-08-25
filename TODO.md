@@ -1190,7 +1190,7 @@
       timeout/upload semantics, dispatch, and root re-exports remain
       unchanged. Subagent did not run Cargo or modify files; `git diff --check`
       remains clean.
-- [ ] PR #264 `codex/cord-96-cli-agent-skills` is the next bounded child of
+- [x] PR #264 `codex/cord-96-cli-agent-skills` is the next bounded child of
       #263: base branch `codex/cord-95-cli-agent-lifecycle` at
       `af34a524e7988b88a25883aae535043765d73e91`, exact head
       `2f0a53ce2c70c12d7d1954916cf617077762dfa3`, tree
@@ -1201,7 +1201,11 @@
       paths, output, dispatch, and root re-exports remain unchanged. Scoped
       pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR #264
       is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review
-      pending; no duplicate review request has been made.
+      PASS on `2f0a53ce2c70c12d7d1954916cf617077762dfa3`: skill list/set/add
+      imports and visibility, empty-set/skill-id validation, endpoint,
+      JSON/table output, dispatch, and root re-exports remain unchanged.
+      Subagent did not run Cargo or modify files; `git diff --check` remains
+      clean.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
