@@ -1625,7 +1625,7 @@
       CLEAN/MERGEABLE; exact-head subagent review PASS on `fe1832fd` confirmed
       the renamed parser import is complete with no new P0/P1 or compile
       blocker. No Cargo was run.
-- [ ] PR #328 `codex/cord-160-cli-property-model` is the next bounded child of
+- [x] PR #328 `codex/cord-160-cli-property-model` is the completed bounded child of
       #327: base branch `codex/cord-159-cli-issue-metadata-input` at
       `fe1832fdbc64451582de6747e8b29516b772a2fb`, exact head
       `825503ad866d20cd0bc55afb378cd3399eacf751`, tree
@@ -1635,8 +1635,8 @@
       dedicated model module while preserving serde shapes, re-exports, and
       property/issue-property command behavior. Pinned rustfmt checks and
       `git diff --check` pass; Cargo is delegated. PR #328 is Ready
-      (`isDraft=false`), CLEAN/MERGEABLE; exact-head subagent review is
-      pending.
+      (`isDraft=false`), CLEAN/MERGEABLE; exact-head subagent review PASS on
+      `825503ad`; no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
