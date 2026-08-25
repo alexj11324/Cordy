@@ -958,6 +958,13 @@
       old head/review/candidate are invalidated. New remote exact candidate is
       `5a7f8c4f6579c52cb0d160d5a5d832fc8a3d83e4` (parents #251 base plus the
       fix), and a new exact-head review is pending.
+- [x] #252 corrected exact-head subagent review PASS on
+      `d6a04b2a176f4b4306aeeb73a12c9b8db7ac05f9`: the explicit schema imports
+      remove the compile blocker; the schema module retains every property
+      CRUD/archive flag, default, type, and help string, while `lib.rs`,
+      `dispatch_property`, and issue-property routing remain valid. No behavior
+      regression was found; subagent did not run Cargo or modify files, and
+      scoped rustfmt/check plus `git diff --check` remain clean.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
