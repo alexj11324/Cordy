@@ -23,6 +23,7 @@ mod disk_usage_output;
 pub mod error;
 mod execution_policy;
 mod id_helpers;
+mod issue_activity_schema;
 mod issue_actor_output;
 mod issue_actor_resolver;
 mod issue_assign_commands;
@@ -164,6 +165,11 @@ pub use error::command_error_output;
 pub(super) use error::command_output_error;
 pub(super) use execution_policy::{require_human_local_command, require_task_local_config_root};
 pub(super) use id_helpers::{compact_uuid, is_canonical_uuid, normalize_uuid_prefix};
+pub(super) use issue_activity_schema::{
+    IssueCancelTaskArgs, IssueCommentAddArgs, IssueCommentArgs, IssueCommentCommand,
+    IssueCommentListArgs, IssueCommentResolutionArgs, IssueRerunArgs, IssueRunMessagesArgs,
+    IssueRunsArgs, IssueSearchArgs, IssueUsageArgs,
+};
 use issue_actor_output::{format_issue_list_table, load_issue_actor_names, IssueActorNames};
 use issue_actor_resolver::{
     resolve_issue_assignee_id, resolve_issue_assignee_name, resolve_issue_project_id,
@@ -604,155 +610,6 @@ struct DaemonLaunchArgs {
     auto_update_interval: Option<Duration>,
     #[arg(long = "no-auto-reload")]
     disable_auto_reload: bool,
-}
-
-#[derive(Debug, Args)]
-struct IssueCommentArgs {
-    #[command(subcommand)]
-    command: IssueCommentCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum IssueCommentCommand {
-    #[command(about = "List comments on an issue")]
-    List(IssueCommentListArgs),
-    #[command(about = "Add a comment to an issue")]
-    Add(IssueCommentAddArgs),
-    #[command(about = "Delete a comment")]
-    Delete {
-        #[arg(value_name = "COMMENT-ID")]
-        comment_id: String,
-    },
-    #[command(about = "Resolve a comment thread")]
-    Resolve(IssueCommentResolutionArgs),
-    #[command(about = "Unresolve a comment thread")]
-    Unresolve(IssueCommentResolutionArgs),
-}
-
-#[derive(Debug, Args)]
-struct IssueCommentListArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-    #[arg(long, help = "Only comments created after this RFC3339 timestamp")]
-    since: Option<String>,
-    #[arg(long, help = "Return the thread containing this comment UUID")]
-    thread: Option<String>,
-    #[arg(long, help = "Cap replies to the N most recent within --thread")]
-    tail: Option<i64>,
-    #[arg(long, help = "Return the N most recently active threads")]
-    recent: Option<i64>,
-    #[arg(long, help = "Only return top-level comments")]
-    roots_only: bool,
-    #[arg(long, help = "Drop redundant fields from JSON output")]
-    compact: bool,
-    #[arg(long, help = "Clip comment content to a short preview")]
-    summary: bool,
-    #[arg(long, help = "Return resolved threads without folding")]
-    full: bool,
-    #[arg(long, help = "Composite pagination timestamp cursor")]
-    before: Option<String>,
-    #[arg(long, help = "Composite pagination UUID cursor")]
-    before_id: Option<String>,
-}
-
-#[derive(Debug, Args)]
-struct IssueCommentAddArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(
-        long,
-        help = "Comment content (decodes \\n, \\r, \\t, \\\\; use stdin to preserve literal backslashes)"
-    )]
-    content: Option<String>,
-    #[arg(long, help = "Read comment content from stdin")]
-    content_stdin: bool,
-    #[arg(
-        long,
-        value_name = "PATH",
-        help = "Read comment content from a UTF-8 file"
-    )]
-    content_file: Option<String>,
-    #[arg(
-        long,
-        help = "Allow content/attachment files outside the current workdir"
-    )]
-    allow_external_file: bool,
-    #[arg(long, help = "Parent comment ID to reply under")]
-    parent: Option<String>,
-    #[arg(long, value_delimiter = ',', help = "File path(s) to attach")]
-    attachment: Vec<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct IssueCommentResolutionArgs {
-    #[arg(value_name = "COMMENT-ID")]
-    comment_id: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct IssueRunsArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-    #[arg(long, help = "Show full task UUIDs in table output")]
-    full_id: bool,
-}
-
-#[derive(Debug, Args)]
-struct IssueRunMessagesArgs {
-    #[arg(value_name = "TASK-ID")]
-    task_id: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-    #[arg(long, help = "Only return messages after this sequence number")]
-    since: i64,
-    #[arg(long, help = "Issue ID/key to scope short task ID prefix resolution")]
-    issue: Option<String>,
-}
-
-#[derive(Debug, Args)]
-struct IssueUsageArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct IssueRerunArgs {
-    #[arg(value_name = "ID")]
-    issue_id: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct IssueCancelTaskArgs {
-    #[arg(value_name = "TASK-ID")]
-    task_id: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-    #[arg(long, help = "Issue ID/key to scope short task ID prefix resolution")]
-    issue: Option<String>,
-}
-
-#[derive(Debug, Args)]
-struct IssueSearchArgs {
-    #[arg(value_name = "QUERY")]
-    query: String,
-    #[arg(long, default_value_t = 20, help = "Maximum number of results")]
-    limit: i64,
-    #[arg(long, help = "Include done and cancelled issues")]
-    include_closed: bool,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
