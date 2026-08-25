@@ -6,6 +6,7 @@
 mod agent_commands;
 mod agent_helpers;
 mod api;
+mod api_error;
 mod cli_command_schema;
 #[cfg(test)]
 mod root_command_tests;
@@ -105,6 +106,7 @@ mod autopilot_output;
 mod autopilot_resolver;
 mod chat_commands;
 mod client_factory;
+mod client_scope;
 mod command_dispatch;
 pub mod config;
 mod config_command_schema;
