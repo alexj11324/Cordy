@@ -56,9 +56,8 @@ impl ConfiguredFlags {
         if String::from_utf8_lossy(bytes).trim().is_empty() {
             return Ok(Self::default());
         }
-        let rules: std::collections::HashMap<String, RuleConfig> =
-            serde_yaml::from_slice(bytes)
-                .map_err(|error| anyhow::anyhow!("featureflag: parse: {error}"))?;
+        let rules: std::collections::HashMap<String, RuleConfig> = serde_yaml::from_slice(bytes)
+            .map_err(|error| anyhow::anyhow!("featureflag: parse: {error}"))?;
         let mut configured = std::collections::HashMap::with_capacity(rules.len());
         for (key, rule) in rules {
             let percent = rule.percent.map(|rule| rule.percent);
