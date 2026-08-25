@@ -249,6 +249,22 @@
       boundaries are valid. No missing/duplicated tests or compile/behavior
       blocker was found. Subagent did not run Cargo or modify the worktree;
       coordinator scoped rustfmt and `git diff --check` pass.
+- [x] PR #184 `codex/cord-50-cli-squad-tests` is the next bounded child of #183:
+      base branch `codex/cord-50-cli-workspace-tests` at
+      `23721319518ce8b0c170b3626718f136277237f1`, exact head
+      `e12d80a1213155d40037a87aedf73616c3730f12`, tree
+      `8952863ac9f179492178a6e53cd09d8a84c2e32f`, candidate
+      `8f7fa6bf9457f38e2afb5f2401a5c69382152752`. It extracts the 12 squad,
+      member, and activity contract tests into `squad_command_tests.rs`;
+      production behavior is unchanged. Scoped rustfmt and `git diff --check`
+      pass; PR is Ready (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head
+      review remain delegated.
+- [x] #184 exact-head subagent review PASS on
+      `e12d80a1213155d40037a87aedf73616c3730f12`: `squad_command_tests.rs`
+      preserves all 12 squad/member/activity tests; imports and parent-private
+      helper visibility cover actual usage, with no missing, duplicated, compile,
+      or behavior blocker. Subagent did not run Cargo or modify the worktree;
+      coordinator `git diff --check` remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
