@@ -773,6 +773,13 @@
       thread identifier, and read-mode behavior. Scoped rustfmt and
       `git diff --check` pass; PR #243 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #243 exact-head subagent review PASS on
+      `47aacbacfcc93bcf76056ff8dc4ddc043f6bf541`: `dispatch_chat.rs` covers
+      History and Thread; History preserves `/api/chat/history`, no thread ID,
+      and overview mode, while Thread preserves `/api/chat/thread`, optional
+      ID, overview mode, and `read` forwarding. `Command::Chat` routing and
+      lib registration are correct. `git diff --check` passes; subagent did
+      not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
