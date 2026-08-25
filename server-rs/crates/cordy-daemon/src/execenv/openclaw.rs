@@ -195,7 +195,16 @@ fn discover(bin: &str, timeout: Duration, profile: &str) -> anyhow::Result<Disco
 fn active_config_path(bin: &str, timeout: Duration) -> anyhow::Result<(String, bool)> {
     match run_text(bin, timeout, &["config", "file"]) {
         Ok(output) => {
-            let path = expand_home(output.trim())?;
+            let reported = output
+                .lines()
+                .rev()
+                .map(str::trim)
+                .find(|line| !line.is_empty())
+                .ok_or_else(|| anyhow!("`openclaw config file` returned empty output"))?;
+            let mut path = expand_home(reported)?;
+            if !Path::new(&path).is_absolute() {
+                path = std::env::current_dir()?.join(path).display().to_string();
+            }
             return Ok((path.clone(), Path::new(&path).is_file()));
         }
         Err(error) if unsupported_config_file(&error) => fallback_config_path(),
