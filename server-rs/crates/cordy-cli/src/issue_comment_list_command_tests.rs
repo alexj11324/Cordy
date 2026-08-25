@@ -1,4 +1,5 @@
 use super::*;
+use super::cli_test_helpers::*;
 use axum::extract::Request;
 use axum::http::HeaderMap;
 use axum::routing::get;
