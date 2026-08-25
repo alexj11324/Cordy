@@ -6,7 +6,7 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 
-use super::issue_metadata_commands::parse_metadata_value;
+use super::issue_metadata_input::parse_metadata_value;
 use super::issue_metadata_output::{format_metadata_output, metadata_object};
 use super::{
     new_api_client, resolve_issue_ref, Cli, Environment, IssueMetadataDeleteArgs,
