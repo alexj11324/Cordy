@@ -584,27 +584,6 @@ struct DaemonLaunchArgs {
     disable_auto_reload: bool,
 }
 
-impl DaemonLaunchArgs {
-    fn to_launch_flags(&self, server_url: Option<String>) -> config::DaemonLaunchFlags {
-        config::DaemonLaunchFlags {
-            server_url,
-            daemon_id: self.daemon_id.clone(),
-            device_name: self.device_name.clone(),
-            runtime_name: self.runtime_name.clone(),
-            workspaces_root: self.workspaces_root.clone(),
-            poll_interval: self.poll_interval,
-            heartbeat_interval: self.heartbeat_interval,
-            agent_timeout: self.agent_timeout,
-            codex_semantic_inactivity_timeout: self.codex_semantic_inactivity_timeout,
-            codex_handshake_timeout: self.codex_handshake_timeout,
-            max_concurrent_tasks: self.max_concurrent_tasks,
-            disable_auto_update: self.disable_auto_update,
-            auto_update_check_interval: self.auto_update_interval,
-            disable_auto_reload: self.disable_auto_reload,
-        }
-    }
-}
-
 #[derive(Debug, Args)]
 struct AutopilotArgs {
     #[command(subcommand)]
