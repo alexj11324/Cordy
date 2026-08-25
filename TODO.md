@@ -1465,6 +1465,15 @@
       `cordy-cli/src/runtime_commands.rs`, and the delete error binding is
       corrected without changing behavior. `git diff --check` passes; Cargo
       was not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI workspace-requirement refactor is committed at
+      `1562c90672cc74f0491b2a87a6c81dff8f928f71` (parent
+      `5221ac56c4f8e5924d318e4f9ac087ef805230aa`, tree
+      `63a3a2db62798391481544c3144af0b56e14319a`): required workspace
+      validation now belongs to `client_factory.rs`, preserving daemon
+      context fail-closed behavior and all existing error text. Scoped
+      rustfmt and `git diff --check` pass; the serial subagent reviewed the
+      exact head and found no compile or behavior blocker. Cargo was not run.
+      Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
