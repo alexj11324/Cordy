@@ -846,6 +846,13 @@
       `efbf7e084ecb85d5db45bea9be54bd5586601689`, and PR #217 remains Ready
       (`isDraft=false`), CLEAN/MERGEABLE. The old head/review is invalid;
       new exact-head review and Cargo remain delegated.
+- [x] #217 final exact-head subagent review PASS on
+      `f09985a9d7a7f33b589f642371654d3991793581`: all 15 helper-using sibling
+      test modules import `cli_test_helpers`; all 17 `pub(super)` helpers have
+      covered call sites; the `#[cfg(test)]` boundary and Rust privacy are
+      correct. No compile or behavior blocker was found. Subagent did not run
+      Cargo or modify the worktree; coordinator `git diff --check` remains
+      clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
