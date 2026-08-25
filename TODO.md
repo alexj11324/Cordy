@@ -1212,6 +1212,19 @@
       exact head and found no issue. Scoped rustfmt and `git diff --check`
       pass (the subagent environment lacked a rustfmt executable); Cargo was
       not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI issue-create structural refactor is committed at
+      `f58670f7a049c55b355376c6f29088bd5bd357c6` (parent
+      `8e5cc1865d8cde9a25161fd65a286e1a40f6f4cf`, tree
+      `f9cc2a67fdf1ae706fb083ff34aa0e4d65cc8fad`), followed by the
+      subagent's minimal compile fix `267c4136b24da35e9868af6a64b48c0c2f73b766`
+      (tree `2069ec9d004e012a1e704bd9115f8a4cfcd0a094`): issue create
+      validation, description/assignee/project/attachment resolution, POST and
+      output now live in `cordy-cli/src/issue_create_commands.rs`; the fix
+      imports `std::io::Read` for the extracted generic input. The serial
+      subagent reviewed the resulting exact head and found no further issue.
+      Scoped rustfmt and `git diff --check` pass (the subagent environment
+      lacked a rustfmt executable); Cargo was not run. Pro owns push/Ready PR,
+      gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
