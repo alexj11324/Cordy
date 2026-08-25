@@ -18,6 +18,7 @@ mod disk_usage_output;
 pub mod error;
 mod issue_label_commands;
 mod issue_metadata_commands;
+mod issue_search_commands;
 mod issue_subscriber_commands;
 mod issue_timeline_commands;
 mod label_commands;
@@ -97,6 +98,7 @@ use issue_metadata_commands::{
     format_metadata_table, parse_metadata_value, run_issue_metadata_delete, run_issue_metadata_get,
     run_issue_metadata_list, run_issue_metadata_set,
 };
+use issue_search_commands::{format_issue_search_table, run_issue_search};
 use issue_subscriber_commands::{
     format_issue_subscribers_table, run_issue_subscriber_list, run_issue_subscriber_mutation,
 };
@@ -7397,70 +7399,6 @@ async fn run_issue_rerun(
         stdout,
         stderr: String::new(),
     })
-}
-
-async fn run_issue_search(
-    cli: &Cli,
-    environment: &Environment,
-    args: &IssueSearchArgs,
-) -> Result<RunOutput> {
-    let client = new_api_client(cli, environment)?;
-    let mut serializer = form_urlencoded::Serializer::new(String::new());
-    serializer.append_pair("q", &args.query);
-    if args.limit > 0 {
-        serializer.append_pair("limit", &args.limit.to_string());
-    }
-    if args.include_closed {
-        serializer.append_pair("include_closed", "true");
-    }
-    let result: Value = client
-        .get_json(&format!("/api/issues/search?{}", serializer.finish()))
-        .await
-        .context("search issues")?;
-    let stdout = match args.output {
-        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&result)?),
-        OutputFormat::Table => {
-            let issues = result
-                .get("issues")
-                .and_then(Value::as_array)
-                .map(Vec::as_slice)
-                .unwrap_or_default();
-            format_issue_search_table(issues)
-        }
-    };
-    Ok(RunOutput {
-        stdout,
-        stderr: String::new(),
-    })
-}
-
-fn format_issue_search_table(issues: &[Value]) -> String {
-    let mut rows = vec![vec![
-        "KEY".into(),
-        "TITLE".into(),
-        "STATUS".into(),
-        "MATCH".into(),
-    ]];
-    for issue in issues {
-        let mut match_info = value_string(issue, "match_source");
-        let snippet = value_string(issue, "matched_snippet");
-        if !snippet.is_empty() {
-            let snippet = if snippet.chars().count() > 50 {
-                format!("{}...", snippet.chars().take(47).collect::<String>())
-            } else {
-                snippet
-            };
-            match_info.push_str(": ");
-            match_info.push_str(&snippet);
-        }
-        rows.push(vec![
-            value_string(issue, "identifier"),
-            value_string(issue, "title"),
-            value_string(issue, "status"),
-            match_info,
-        ]);
-    }
-    format_table(&rows)
 }
 
 fn issue_labels(result: &Value) -> &[Value] {
