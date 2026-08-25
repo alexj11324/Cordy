@@ -1732,6 +1732,14 @@
       unchanged. Scoped rustfmt with `skip_children` and `git diff --check`
       pass; Cargo was not run. The serial subagent owns blocker-only
       fixes/review; Pro owns the eventual Ready PR, gate, and merge.
+- [ ] CLI issue-list schema refactor is structurally committed at
+      `11eac434116e433fb4d20ba325d968a0b6d540f7` (tree
+      `dfd0d91719c5097ee80bcacaea773e4797cb5fab`): issue filters, metadata
+      selectors, pagination, sort, and direction flags now live in
+      `issue_list_schema.rs`; defaults and query semantics remain unchanged.
+      Scoped rustfmt with `skip_children` and `git diff --check` pass; Cargo
+      was not run. The serial subagent owns blocker-only fixes/review; Pro
+      owns the eventual Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
