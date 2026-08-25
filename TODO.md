@@ -1612,6 +1612,14 @@
       profile commands, defaults, and parser metadata unchanged. `git diff
       --check` passes; rustfmt was unavailable in the subagent check and Cargo
       was not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI agent-schema refactor is structurally committed at
+      `7b87fbacfdf86dadaa6f231a46cd7d254e57e731`; the serial subagent fixed
+      schema type/field visibility in `ceda4412aceae27df9be700b67e2da810f6a095e`
+      (tree `6254036df8a32ceede586808348cc30a6d1f3185`): agent, MCP, env,
+      skills, copy, create, and update clap definitions now live beside agent
+      handlers, with parser metadata and behavior unchanged. `git diff
+      --check` passes; rustfmt was unavailable in the subagent check and Cargo
+      was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
