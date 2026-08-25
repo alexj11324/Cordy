@@ -1015,6 +1015,14 @@
       Scoped rustfmt/check and `git diff --check` pass; Cargo is delegated. PR
       #255 is Ready (`isDraft=false`), CLEAN/MERGEABLE; exact-head review
       pending.
+- [x] #255 initial exact-head subagent review FAIL on
+      `52c3c16608947a59b85221fa0934e2a816b7cc7e`: the existing
+      `workspace_mcp_commands.rs` imports `resolve_workspace_arg` from the
+      parent module, but `lib.rs` did not re-export it after the workspace
+      split. This is a real compile visibility blocker; the head/candidate are
+      invalidated. The serial subagent is applying only the explicit
+      `lib.rs` import, without Cargo or behavior changes; a new exact-head
+      review is required.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
