@@ -4,6 +4,7 @@ use axum::routing::get;
 use axum::{Json, Router};
 use clap::Parser;
 use std::io::Cursor;
+use tokio::net::TcpListener;
 
 #[test]
 fn issue_search_parser_and_table_match_go_contract() {
