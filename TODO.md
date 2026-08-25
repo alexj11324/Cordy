@@ -1765,6 +1765,13 @@
       dispatch, keys, values, and output defaults remain unchanged. This
       extends Ready PR #159; scoped rustfmt with `skip_children` and
       `git diff --check` pass, Cargo was not run.
+- [ ] CLI auth/login schema refactor is structurally committed at
+      `e8ad789bb0960f652de7b3a43b4eaa5bb9b70768` (tree
+      `ff977195e963e6831c3f8a18ae378e917a1afbdf`): auth status/logout and
+      login token/callback flags now live in `auth_command_schema.rs`; auth
+      dispatch and browser-login semantics remain unchanged. This extends
+      Ready PR #159; scoped rustfmt with `skip_children` and `git diff --check`
+      pass, Cargo was not run.
 
 ## Phase 4 — S8 route and API parity
 
