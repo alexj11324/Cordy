@@ -46,6 +46,7 @@ mod issue_safety;
 mod issue_search_commands;
 mod issue_status_commands;
 mod issue_subscriber_commands;
+mod issue_subscriber_schema;
 mod issue_task_commands;
 mod issue_timeline_commands;
 mod issue_update_commands;
@@ -211,6 +212,9 @@ use issue_search_commands::{format_issue_search_table, run_issue_search};
 use issue_status_commands::run_issue_status;
 use issue_subscriber_commands::{
     format_issue_subscribers_table, run_issue_subscriber_list, run_issue_subscriber_mutation,
+};
+pub(super) use issue_subscriber_schema::{
+    IssueSubscriberArgs, IssueSubscriberCommand, IssueSubscriberMutationArgs,
 };
 use issue_task_commands::{
     format_issue_run_messages_table, format_issue_runs_table, run_issue_cancel_task,
@@ -610,42 +614,6 @@ struct DaemonLaunchArgs {
     auto_update_interval: Option<Duration>,
     #[arg(long = "no-auto-reload")]
     disable_auto_reload: bool,
-}
-
-#[derive(Debug, Args)]
-struct IssueSubscriberArgs {
-    #[command(subcommand)]
-    command: IssueSubscriberCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum IssueSubscriberCommand {
-    #[command(about = "List subscribers of an issue")]
-    List {
-        #[arg(value_name = "ISSUE-ID")]
-        issue_id: String,
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-    #[command(about = "Subscribe a user or agent to an issue (defaults to the caller)")]
-    Add(IssueSubscriberMutationArgs),
-    #[command(about = "Unsubscribe a user or agent from an issue (defaults to the caller)")]
-    Remove(IssueSubscriberMutationArgs),
-}
-
-#[derive(Debug, Args)]
-struct IssueSubscriberMutationArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(
-        long,
-        help = "Member or agent name (fuzzy match; defaults to the caller)"
-    )]
-    user: Option<String>,
-    #[arg(long, help = "Member or agent UUID (mutually exclusive with --user)")]
-    user_id: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
