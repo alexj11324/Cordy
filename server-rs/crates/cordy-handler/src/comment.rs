@@ -7,7 +7,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use cordy_db::models::{Comment, CommentReaction};
-use cordy_db::queries::{attachment, comment, issue as issue_q, reaction};
+use cordy_db::queries::{activity, attachment, comment, issue as issue_q, reaction};
 use cordy_middleware::workspace::WorkspaceContext;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -203,6 +203,29 @@ async fn create(
                         "parent_id is not a comment this task may reply under",
                     );
                 }
+                match activity::has_squad_leader_no_action_evaluation_for_task(
+                    &state.pool,
+                    issue.id,
+                    author_id,
+                    &task_id.to_string(),
+                )
+                .await
+                {
+                    Ok(Some(true)) => {
+                        return error_response(
+                            StatusCode::CONFLICT,
+                            "the squad leader has already recorded no_action for this task",
+                        )
+                    }
+                    Ok(Some(false)) | Ok(None) => {}
+                    Err(error) => {
+                        tracing::warn!(%error, task_id = %task_id, "failed to check squad leader evaluation");
+                        return error_response(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "failed to validate squad leader evaluation",
+                        );
+                    }
+                }
             }
         }
     }
@@ -263,6 +286,27 @@ async fn create(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to link comment attachments",
         );
+    }
+    if let Some(parent) = parent.as_ref() {
+        let root = comment::get_thread_root(&state.pool, parent.id, issue.workspace_id)
+            .await
+            .ok()
+            .flatten();
+        state
+            .tasks
+            .auto_unresolve_thread_on_reply(
+                root.as_ref(),
+                &context.workspace_id,
+                &author_type,
+                &author_id.to_string(),
+            )
+            .await;
+    }
+    if author_type == "agent" {
+        state
+            .tasks
+            .cancel_deferred_escalations_for_issue_agent(issue.id, author_id)
+            .await;
     }
     let created = comment::get_comment_in_workspace(&state.pool, id, issue.workspace_id)
         .await
@@ -359,9 +403,9 @@ async fn update(
         }
     }
     let source = if actor_type == "agent" && current.author_id == actor_id {
-        task_id.unwrap_or_default()
+        task_id
     } else {
-        Uuid::nil()
+        None
     };
     let replacement_attachments = match request.attachment_ids.as_deref() {
         Some(values) => match uuid_list(values, "attachment_ids") {
@@ -431,20 +475,41 @@ async fn update(
             );
         }
     };
+    let mut attachment_changed = false;
     if let Some(ids) = replacement_attachments {
-        if attachment::replace_comment_attachments(&mut *tx, current.id, current.issue_id, ids)
+        match attachment::replace_comment_attachments(&mut *tx, current.id, current.issue_id, ids)
             .await
-            .is_err()
         {
-            if content_changed {
-                retrigger_cancelled_task_survivors(&state, &issue, &cancelled, None).await;
+            Ok(changed) => attachment_changed = changed > 0,
+            Err(_) => {
+                if content_changed {
+                    retrigger_cancelled_task_survivors(&state, &issue, &cancelled, None).await;
+                }
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to replace comment attachments",
+                );
             }
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to replace comment attachments",
-            );
         }
     }
+    let attachment_revision = if !content_changed && attachment_changed {
+        match comment::touch_comment_after_attachment_edit(&mut *tx, current.id, current.issue_id)
+            .await
+        {
+            Ok(Some((_, issue_revision))) => Some(issue_revision),
+            Ok(None) | Err(_) => {
+                if content_changed {
+                    retrigger_cancelled_task_survivors(&state, &issue, &cancelled, None).await;
+                }
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to update comment revision",
+                );
+            }
+        }
+    } else {
+        None
+    };
     if tx.commit().await.is_err() {
         if content_changed {
             retrigger_cancelled_task_survivors(&state, &issue, &cancelled, None).await;
@@ -477,7 +542,10 @@ async fn update(
         outcomes = enqueue_comment_triggers(&state, &issue, current.id, &plan, &suppressed).await;
     }
     if let Some(object) = value.as_object_mut() {
-        object.insert("issue_revision".into(), json!(updated.issue_revision));
+        object.insert(
+            "issue_revision".into(),
+            json!(attachment_revision.unwrap_or(updated.issue_revision)),
+        );
         object.insert("trigger_outcomes".into(), json!(outcomes));
     }
     publish(
@@ -528,6 +596,25 @@ async fn delete(
             .await
             .ok()
             .flatten();
+    let attachment_urls = match attachment::list_attachments_by_comment(
+        &state.pool,
+        current.id,
+        current.workspace_id,
+    )
+    .await
+    {
+        Ok(rows) => rows.into_iter().map(|row| row.url).collect::<Vec<_>>(),
+        Err(error) => {
+            tracing::warn!(%error, comment_id = %current.id, "failed to collect comment attachment URLs");
+            if let Some(issue) = issue.as_ref() {
+                retrigger_cancelled_task_survivors(&state, issue, &cancelled, None).await;
+            }
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to delete comment",
+            );
+        }
+    };
     match comment::delete_comment(&state.pool, current.id, current.workspace_id).await {
         Ok(Some(row)) if row.changed => {
             if let Some(issue) = issue.as_ref() {
@@ -535,6 +622,7 @@ async fn delete(
                     .await;
             }
             state.bus.publish(&cordy_events::Event{event_type:cordy_protocol::EVENT_COMMENT_DELETED.into(),workspace_id:current.workspace_id.to_string(),actor_type,actor_id:actor_id.to_string(),payload:json!({"comment_id":current.id,"issue_id":current.issue_id,"issue_revision":row.issue_revision}),..Default::default()});
+            crate::issue::delete_attachment_objects(&state, attachment_urls).await;
             StatusCode::NO_CONTENT.into_response()
         }
         Ok(_) => {

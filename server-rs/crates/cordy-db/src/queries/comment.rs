@@ -1363,7 +1363,7 @@ pub async fn update_comment(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
     content: &str,
-    source_task_id: Uuid,
+    source_task_id: Option<Uuid>,
     expected_revision: Option<i64>,
     content_base: Option<&str>,
 ) -> anyhow::Result<Option<UpdateCommentRow>> {
@@ -1461,4 +1461,40 @@ FROM updated_comment"#
         revision: row.try_get(16)?,
         issue_revision: row.try_get(17)?,
     }))
+}
+
+/// Bump comment and issue revisions when an edit changes only attachments.
+/// The content update query deliberately has no-op semantics for an unchanged
+/// body/source pair, so attachment replacement needs its own revision fence.
+pub async fn touch_comment_after_attachment_edit(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    comment_id: Uuid,
+    issue_id: Uuid,
+) -> anyhow::Result<Option<(i64, i64)>> {
+    let row = sqlx::query(
+        r#"WITH updated_comment AS (
+    UPDATE comment
+    SET revision = revision + 1,
+        updated_at = now()
+    WHERE id = $1 AND issue_id = $2
+    RETURNING id, issue_id, workspace_id, revision
+), touched_issue AS (
+    UPDATE issue
+    SET revision = issue.revision + 1,
+        last_activity_at = GREATEST(COALESCE(issue.last_activity_at, issue.updated_at), now())
+    FROM updated_comment
+    WHERE issue.id = updated_comment.issue_id
+      AND issue.workspace_id = updated_comment.workspace_id
+    RETURNING issue.revision
+)
+SELECT updated_comment.revision,
+       COALESCE((SELECT revision FROM touched_issue), 0)::bigint
+FROM updated_comment"#,
+    )
+    .bind(comment_id)
+    .bind(issue_id)
+    .fetch_optional(executor)
+    .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some((row.try_get(0)?, row.try_get(1)?)))
 }

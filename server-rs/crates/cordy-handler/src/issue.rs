@@ -24,8 +24,8 @@ use cordy_db::models::{
 use cordy_db::queries::issue_reaction::AddIssueReactionRow;
 use cordy_db::queries::{
     activity, agent, agent_invocation_target, attachment, autopilot, comment as comment_q,
-    issue as issue_q, issue_label, issue_property, issue_reaction, member, quick_action, squad,
-    subscriber, task_usage, user, workspace,
+    issue as issue_q, issue_label, issue_property, issue_reaction, member, quick_action, runtime,
+    squad, subscriber, task_usage, user, workspace,
 };
 use cordy_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use cordy_service::issue_service::{
@@ -198,9 +198,23 @@ fn search_snippet(raw: &str, query: &str) -> String {
     if chars.len() <= MAX {
         return raw.to_string();
     }
-    let lower = raw.to_lowercase();
-    let byte_index = lower.find(&query.to_lowercase()).unwrap_or(0);
-    let char_index = raw[..byte_index.min(raw.len())].chars().count();
+    // `str::to_lowercase` can change the number of bytes (for example, some
+    // Unicode characters expand when case-folded), so an offset in the folded
+    // string is not safe to use as a byte offset into `raw`. Keep a mapping for
+    // every folded byte back to the original character index instead.
+    let mut folded = String::new();
+    let mut folded_byte_to_char = Vec::new();
+    for (char_index, character) in raw.chars().enumerate() {
+        for folded_character in character.to_lowercase() {
+            let byte_len = folded_character.len_utf8();
+            folded.push(folded_character);
+            folded_byte_to_char.extend(std::iter::repeat(char_index).take(byte_len));
+        }
+    }
+    let char_index = folded
+        .find(&query.to_lowercase())
+        .and_then(|byte_index| folded_byte_to_char.get(byte_index).copied())
+        .unwrap_or(0);
     let start = char_index.saturating_sub(60).min(chars.len() - MAX);
     let mut result = chars[start..start + MAX].iter().collect::<String>();
     if start > 0 {
@@ -286,7 +300,13 @@ async fn search_issues(
         .build_query_scalar::<i64>()
         .fetch_one(&state.pool)
         .await
-        .unwrap_or(issues.len() as i64);
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to count search results");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to count search results",
+            )
+        })?;
     let prefix = issue_prefix(&state, workspace_id).await;
     let mut response = Vec::with_capacity(issues.len());
     let terms = query
@@ -515,6 +535,8 @@ struct TableCursor {
     query: String,
     offset: i64,
     #[serde(default)]
+    last_id: Option<String>,
+    #[serde(default)]
     group_key: Option<String>,
     #[serde(default)]
     parent_id: Option<String>,
@@ -580,6 +602,75 @@ fn table_cursor(request: &TableRequest, fingerprint: &str) -> Result<(i64, i64),
     Ok((limit, decoded.offset.max(0)))
 }
 
+fn table_row_cursor(
+    request: &TableRequest,
+    fingerprint: &str,
+) -> Result<(i64, Option<Uuid>), Response> {
+    let limit = request
+        .page
+        .get("limit")
+        .and_then(Value::as_i64)
+        .unwrap_or(50);
+    if !(1..=100).contains(&limit) {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "page.limit must be between 1 and 100",
+        ));
+    }
+    let Some(raw) = request
+        .page
+        .get("cursor")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return Ok((limit, None));
+    };
+    let decoded = URL_SAFE_NO_PAD
+        .decode(raw)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<TableCursor>(&bytes).ok())
+        .filter(|cursor| cursor.v == 1)
+        .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid cursor"))?;
+    let group_binding = request.group_key.clone().or_else(|| {
+        request
+            .group
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(|kind| {
+                format!(
+                    "group:{kind}:{}",
+                    request
+                        .group
+                        .get("property_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                )
+            })
+    });
+    if decoded.query != fingerprint
+        || decoded.group_key != group_binding
+        || decoded.parent_id != request.parent_id
+    {
+        return Err(error_response(
+            StatusCode::CONFLICT,
+            "cursor does not belong to this table query",
+        ));
+    }
+    let last_id = decoded
+        .last_id
+        .as_deref()
+        .map(Uuid::parse_str)
+        .transpose()
+        .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid cursor"))?;
+    if last_id.is_none() {
+        return Err(error_response(
+            StatusCode::CONFLICT,
+            "cursor requires a fresh table query",
+        ));
+    }
+    Ok((limit, last_id))
+}
+
 fn encode_table_cursor(request: &TableRequest, fingerprint: &str, offset: i64) -> String {
     let group_key = request.group_key.clone().or_else(|| {
         request
@@ -602,6 +693,37 @@ fn encode_table_cursor(request: &TableRequest, fingerprint: &str, offset: i64) -
             v: 1,
             query: fingerprint.into(),
             offset,
+            last_id: None,
+            group_key,
+            parent_id: request.parent_id.clone(),
+        })
+        .unwrap_or_default(),
+    )
+}
+
+fn encode_table_row_cursor(request: &TableRequest, fingerprint: &str, last_id: Uuid) -> String {
+    let group_key = request.group_key.clone().or_else(|| {
+        request
+            .group
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(|kind| {
+                format!(
+                    "group:{kind}:{}",
+                    request
+                        .group
+                        .get("property_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                )
+            })
+    });
+    URL_SAFE_NO_PAD.encode(
+        serde_json::to_vec(&TableCursor {
+            v: 1,
+            query: fingerprint.into(),
+            offset: 0,
+            last_id: Some(last_id.to_string()),
             group_key,
             parent_id: request.parent_id.clone(),
         })
@@ -1045,15 +1167,29 @@ fn push_table_branch(
                 })?;
             if value == "unset:" {
                 builder
-                    .push(" AND NOT(i.properties ? ")
+                    .push(" AND (NOT(i.properties ? ")
                     .push_bind(property_id.to_string())
-                    .push(")");
+                    .push(") OR i.properties->")
+                    .push_bind(property_id.to_string())
+                    .push(" = 'null'::jsonb OR CASE WHEN jsonb_typeof(i.properties->")
+                    .push_bind(property_id.to_string())
+                    .push(") = 'array' THEN jsonb_array_length(i.properties->")
+                    .push_bind(property_id.to_string())
+                    .push(") = 0 ELSE FALSE END)");
             } else {
+                let value = value.trim_start_matches("value:").to_string();
                 builder
-                    .push(" AND i.properties->>")
+                    .push(" AND (i.properties->>")
                     .push_bind(property_id.to_string())
                     .push("=")
-                    .push_bind(value.trim_start_matches("value:").to_string());
+                    .push_bind(value.clone())
+                    .push(" OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(i.properties->")
+                    .push_bind(property_id.to_string())
+                    .push(") = 'array' THEN i.properties->")
+                    .push_bind(property_id.to_string())
+                    .push(" ELSE '[]'::jsonb END) AS property_value(value) WHERE property_value.value=")
+                    .push_bind(value)
+                    .push("))");
             }
         }
         "compound" => push_compound_group_predicate(builder, request, value)?,
@@ -1180,11 +1316,11 @@ fn table_sort_column(field: &str) -> Option<&'static str> {
     }
 }
 
-async fn table_order(
+async fn table_sort_expression(
     state: &HandlerState,
     workspace_id: Uuid,
     request: &TableRequest,
-) -> Result<String, Response> {
+) -> Result<(String, bool), Response> {
     let sort = request.query.get("sort").unwrap_or(&Value::Null);
     let field = sort
         .get("field")
@@ -1223,13 +1359,13 @@ async fn table_order(
             "invalid sort.field",
         ));
     };
-    let direction = match sort
+    let descending = match sort
         .get("direction")
         .and_then(Value::as_str)
         .unwrap_or("asc")
     {
-        "asc" => "ASC",
-        "desc" => "DESC",
+        "asc" => false,
+        "desc" => true,
         _ => {
             return Err(error_response(
                 StatusCode::BAD_REQUEST,
@@ -1237,9 +1373,74 @@ async fn table_order(
             ));
         }
     };
+    Ok((column, descending))
+}
+
+async fn table_order(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    request: &TableRequest,
+) -> Result<String, Response> {
+    let (column, descending) = table_sort_expression(state, workspace_id, request).await?;
+    let direction = if descending { "DESC" } else { "ASC" };
     Ok(format!(
         "{column} {direction} NULLS LAST, i.created_at DESC, i.id DESC"
     ))
+}
+
+fn push_table_keyset(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    expression: &str,
+    descending: bool,
+    last_id: Uuid,
+) {
+    // The cursor stores the last row id, so the database can read the exact
+    // typed sort value from the same row. This preserves numeric/date ordering
+    // for custom properties without serializing values into an untyped cursor.
+    let last_expression = expression.replace("i.", "last_i.");
+    let primary_comparison = if descending { "<" } else { ">" };
+    builder.push(" AND (");
+    builder
+        .push("(")
+        .push(expression)
+        .push(" IS NULL AND ");
+    push_table_last_value(builder, &last_expression, last_id);
+    builder.push(" IS NOT NULL)");
+    builder.push(" OR (");
+    builder.push(expression).push(" IS NOT DISTINCT FROM ");
+    push_table_last_value(builder, &last_expression, last_id);
+    builder.push(" AND (");
+    builder
+        .push("i.created_at < (SELECT last_i.created_at FROM issue AS last_i WHERE last_i.id = ");
+    builder.push_bind(last_id).push(")");
+    builder.push(" OR (i.created_at IS NOT DISTINCT FROM (SELECT last_i.created_at FROM issue AS last_i WHERE last_i.id = ");
+    builder.push_bind(last_id).push(") AND i.id < ");
+    builder.push_bind(last_id).push(")");
+    builder.push(")");
+    builder.push(")");
+    builder.push(" OR (");
+    builder
+        .push(expression)
+        .push(" IS NOT NULL AND ");
+    push_table_last_value(builder, &last_expression, last_id);
+    builder.push(" IS NOT NULL AND ");
+    builder.push(expression).push(' ').push(primary_comparison).push(' ');
+    push_table_last_value(builder, &last_expression, last_id);
+    builder.push(")");
+    builder.push(")");
+}
+
+fn push_table_last_value(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    expression: &str,
+    last_id: Uuid,
+) {
+    builder
+        .push("(SELECT ")
+        .push(expression)
+        .push(" FROM issue AS last_i WHERE last_i.id = ")
+        .push_bind(last_id)
+        .push(")");
 }
 
 async fn table_base_rows(
@@ -1249,8 +1450,10 @@ async fn table_base_rows(
     request: &TableRequest,
 ) -> Result<(Vec<Issue>, i64, Option<String>), Response> {
     let fingerprint = table_fingerprint(request);
-    let (limit, offset) = table_cursor(request, &fingerprint)?;
+    let (limit, last_id) = table_row_cursor(request, &fingerprint)?;
     let order = table_order(state, workspace_id, request).await?;
+    let (sort_expression, descending) =
+        table_sort_expression(state, workspace_id, request).await?;
     let mut count = QueryBuilder::<Postgres>::new("SELECT count(*) FROM issue i WHERE ");
     push_table_filters(&mut count, request, workspace_id, user_id)?;
     push_table_branch(&mut count, request)?;
@@ -1269,13 +1472,14 @@ async fn table_base_rows(
         QueryBuilder::<Postgres>::new(format!("SELECT {ISSUE_COLUMNS} FROM issue i WHERE "));
     push_table_filters(&mut query, request, workspace_id, user_id)?;
     push_table_branch(&mut query, request)?;
+    if let Some(last_id) = last_id {
+        push_table_keyset(&mut query, &sort_expression, descending, last_id);
+    }
     query
         .push(" ORDER BY ")
         .push(order)
         .push(" LIMIT ")
-        .push_bind(limit)
-        .push(" OFFSET ")
-        .push_bind(offset);
+        .push_bind(limit);
     let rows = query
         .build_query_as::<Issue>()
         .fetch_all(&state.pool)
@@ -1287,8 +1491,9 @@ async fn table_base_rows(
                 "failed to query issue table",
             )
         })?;
-    let next = ((offset + rows.len() as i64) < total)
-        .then(|| encode_table_cursor(request, &fingerprint, offset + rows.len() as i64));
+    let next = (rows.len() == limit)
+        .then(|| rows.last().map(|row| encode_table_row_cursor(request, &fingerprint, row.id)))
+        .flatten();
     Ok((rows, total, next))
 }
 
@@ -1435,6 +1640,49 @@ async fn table_grouped_counts(
         })
         .map_err(|error| {
             tracing::warn!(%error, "failed to aggregate issue table groups");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to query issue table",
+            )
+        })
+}
+
+async fn table_property_grouped_counts(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    request: &TableRequest,
+    property_id: &str,
+    group_keys: bool,
+) -> Result<Vec<(String, i64)>, Response> {
+    let property_id = Uuid::parse_str(property_id)
+        .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid group.property_id"))?
+        .to_string();
+    // The property id has been parsed as a UUID before interpolation. Values
+    // are expanded in SQL so an issue contributes once to every selected
+    // option, rather than being grouped under the JSON array's serialization.
+    let value_expression = if group_keys {
+        "'value:' || property_element.value"
+    } else {
+        "property_element.value"
+    };
+    let empty_expression = if group_keys { "'unset:'" } else { "'__none__'" };
+    let mut query = QueryBuilder::<Postgres>::new(format!(
+        "SELECT property_group.group_value, count(DISTINCT i.id)::bigint FROM issue i CROSS JOIN LATERAL (SELECT {empty_expression}::text AS group_value WHERE NOT (i.properties ? '{property_id}') OR i.properties -> '{property_id}' = 'null'::jsonb OR CASE WHEN jsonb_typeof(i.properties -> '{property_id}') = 'array' THEN jsonb_array_length(i.properties -> '{property_id}') = 0 ELSE FALSE END UNION ALL SELECT {value_expression} AS group_value FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(i.properties -> '{property_id}') = 'array' THEN i.properties -> '{property_id}' ELSE jsonb_build_array(i.properties ->> '{property_id}') END) AS property_element(value) WHERE i.properties ? '{property_id}' AND i.properties -> '{property_id}' <> 'null'::jsonb AND CASE WHEN jsonb_typeof(i.properties -> '{property_id}') = 'array' THEN jsonb_array_length(i.properties -> '{property_id}') > 0 ELSE TRUE END) AS property_group WHERE "
+    ));
+    push_table_filters(&mut query, request, workspace_id, user_id)?;
+    query.push(" GROUP BY 1");
+    query
+        .build_query_as::<(Option<String>, i64)>()
+        .fetch_all(&state.pool)
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .filter_map(|(key, count)| key.map(|key| (key, count)))
+                .collect()
+        })
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to aggregate issue property groups");
             error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to query issue table",
@@ -1672,15 +1920,26 @@ async fn table_groups(
             Ok(expr) => expr,
             Err(response) => return response,
         };
-        let rows = match table_grouped_counts(
-            &state,
-            workspace_id,
-            context.member.user_id,
-            &request,
-            &expr,
-        )
-        .await
-        {
+        let rows = match if kind == "property" {
+            table_property_grouped_counts(
+                &state,
+                workspace_id,
+                context.member.user_id,
+                &request,
+                property_id.unwrap_or_default(),
+                true,
+            )
+            .await
+        } else {
+            table_grouped_counts(
+                &state,
+                workspace_id,
+                context.member.user_id,
+                &request,
+                &expr,
+            )
+            .await
+        } {
             Ok(rows) => rows,
             Err(response) => return response,
         };
@@ -1882,15 +2141,26 @@ async fn table_facets(
                     Ok(expr) => expr,
                     Err(response) => return response,
                 };
-                match table_grouped_counts(
-                    &state,
-                    workspace_id,
-                    context.member.user_id,
-                    &facet_request,
-                    &expr,
-                )
-                .await
-                {
+                match if kind == "property" {
+                    table_property_grouped_counts(
+                        &state,
+                        workspace_id,
+                        context.member.user_id,
+                        &facet_request,
+                        property_id.unwrap_or_default(),
+                        false,
+                    )
+                    .await
+                } else {
+                    table_grouped_counts(
+                        &state,
+                        workspace_id,
+                        context.member.user_id,
+                        &facet_request,
+                        &expr,
+                    )
+                    .await
+                } {
                     Ok(rows) => rows.into_iter().collect(),
                     Err(response) => return response,
                 }
@@ -1931,7 +2201,7 @@ async fn delete_issue_and_collect_attachment_urls(
     Ok(urls)
 }
 
-async fn delete_attachment_objects(state: &HandlerState, urls: Vec<String>) {
+pub(crate) async fn delete_attachment_objects(state: &HandlerState, urls: Vec<String>) {
     let Some(storage) = state.attachment_storage.as_ref() else {
         return;
     };
@@ -2340,10 +2610,28 @@ async fn preview_trigger(
             )
             .await
         {
-            triggers.push(json!({ "issue_id": trigger.issue_id, "agent_id": trigger.agent_id, "source": trigger.source.as_str(), "handoff_supported": false }));
+            let handoff_supported = runtime_supports_handoff(&state, trigger.agent_id).await;
+            triggers.push(json!({ "issue_id": trigger.issue_id, "agent_id": trigger.agent_id, "source": trigger.source.as_str(), "handoff_supported": handoff_supported }));
         }
     }
     Json(json!({ "total_count": triggers.len(), "triggers": triggers })).into_response()
+}
+
+async fn runtime_supports_handoff(state: &HandlerState, agent_id: Uuid) -> bool {
+    let Ok(Some(agent)) = agent::get_agent(&state.pool, agent_id).await else {
+        return false;
+    };
+    let Some(runtime_id) = agent.runtime_id else {
+        return false;
+    };
+    let Ok(Some(runtime)) = runtime::get_agent_runtime(&state.pool, runtime_id).await else {
+        return false;
+    };
+    runtime
+        .metadata
+        .get("cli_version")
+        .and_then(Value::as_str)
+        .is_some_and(cordy_agent::version::handoff_supported)
 }
 
 async fn issue_timeline(
@@ -2741,24 +3029,15 @@ async fn run_quick_action(
     .flatten()
     .expect("created comment");
     let trigger = if action.assignee_type == "squad" {
-        match squad::get_squad_in_workspace(&state.pool, action.assignee_id, issue.workspace_id)
+        state
+            .tasks
+            .enqueue_task_for_squad_leader(
+                &issue,
+                target_agent.id,
+                action.assignee_id,
+                Some(comment.id),
+            )
             .await
-        {
-            Ok(Some(squad)) => {
-                state
-                    .tasks
-                    .enqueue_task_for_squad_leader(
-                        &issue,
-                        target_agent.id,
-                        squad.id,
-                        Some(comment.id),
-                    )
-                    .await
-            }
-            _ => {
-                return error_response(StatusCode::CONFLICT, "quick action target unavailable");
-            }
-        }
     } else {
         state
             .tasks
@@ -7641,6 +7920,14 @@ mod tests {
             search_patterns(r"100% _done"),
             vec![r"%100\%%", r"%\_done%"]
         );
+    }
+
+    #[test]
+    fn search_snippet_handles_casefolded_unicode_without_slicing_mid_codepoint() {
+        let raw = format!("İ{}目标", "x".repeat(240));
+        let snippet = search_snippet(&raw, "目标");
+        assert!(snippet.chars().count() <= 242);
+        assert!(snippet.is_char_boundary(snippet.len()));
     }
 
     #[test]

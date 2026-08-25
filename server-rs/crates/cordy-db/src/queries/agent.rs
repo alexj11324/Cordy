@@ -6748,7 +6748,7 @@ pub async fn update_agent(
     model: Option<&str>,
     thinking_level: Option<&str>,
     service_tier: Option<&str>,
-    composio_toolkit_allowlist: &[String],
+    composio_toolkit_allowlist: Option<&[String]>,
 ) -> anyhow::Result<Option<Agent>> {
     let row = sqlx::query(
         r#"UPDATE agent SET

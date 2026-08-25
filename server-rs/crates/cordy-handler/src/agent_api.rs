@@ -13,6 +13,7 @@ use cordy_db::queries::{
     agent, agent_invocation_target, chat, issue_label, runtime, skill, workspace,
 };
 use cordy_middleware::workspace::WorkspaceContext;
+use rand::Rng;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -21,6 +22,15 @@ use crate::error::error_response;
 use crate::HandlerState;
 
 const ENV_SENTINEL: &str = "****";
+const AGENT_EMOJI_AVATARS: &[&str] = &[
+    "🐙", "🦊", "🦉", "🐝", "🐼", "🐸", "🐯", "🦁", "🐨", "🐵", "🐧", "🐳", "🦋",
+    "🌞", "🌙", "⭐", "🔥", "⚡", "🍀", "🌈", "🚀", "🤖", "👾", "🧠",
+];
+
+fn random_agent_avatar() -> String {
+    let index = rand::thread_rng().gen_range(0..AGENT_EMOJI_AVATARS.len());
+    format!("emoji:{}", AGENT_EMOJI_AVATARS[index])
+}
 
 pub fn router() -> Router<HandlerState> {
     Router::new()
@@ -365,6 +375,13 @@ fn normalise_allowlist(values: Vec<String>) -> Vec<String> {
         .map(|value| value.trim().to_ascii_lowercase())
         .filter(|value| !value.is_empty() && seen.insert(value.clone()))
         .collect()
+}
+
+fn composio_enabled(state: &HandlerState) -> bool {
+    state
+        .feature_flags
+        .as_deref()
+        .is_some_and(cordy_service::feature_flags::composio_mcp_apps_enabled)
 }
 
 fn system_instructions_for(system_key: Option<&str>, display_name: &str) -> String {
@@ -910,12 +927,17 @@ async fn create_agent(
             "service_tier is not recognised for this runtime",
         );
     }
-    let avatar_url = match request.avatar_url.as_deref() {
+    let avatar_url = match request
+        .avatar_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|raw| !raw.is_empty())
+    {
         Some(raw) => match crate::avatar::accept_url(&state, raw, None).await {
             Ok(value) => Some(value),
             Err(message) => return error_response(StatusCode::FORBIDDEN, message),
         },
-        None => None,
+        None => Some(random_agent_avatar()),
     };
     let is_first_agent = sqlx::query_scalar::<_, bool>(
         "SELECT NOT EXISTS (SELECT 1 FROM agent WHERE workspace_id=$1)",
@@ -949,12 +971,16 @@ async fn create_agent(
     let custom_env = json!(request.custom_env.clone().unwrap_or_default());
     let custom_args = json!(request.custom_args.clone().unwrap_or_default());
     let mcp_config = request.mcp_config.clone().unwrap_or_else(|| json!({}));
-    let composio_toolkit_allowlist = normalise_allowlist(
-        request
-            .composio_toolkit_allowlist
-            .clone()
-            .unwrap_or_default(),
-    );
+    let composio_toolkit_allowlist = if composio_enabled(&state) {
+        normalise_allowlist(
+            request
+                .composio_toolkit_allowlist
+                .clone()
+                .unwrap_or_default(),
+        )
+    } else {
+        Vec::new()
+    };
     let created = agent::create_agent(
         &mut *tx,
         ws,
@@ -1030,7 +1056,10 @@ async fn create_agent(
     let response = match hydrated_agent_response(&state, &context, &headers, created.clone()).await
     {
         Ok(response) => response,
-        Err(response) => return response,
+        Err(_) => {
+            tracing::warn!(agent_id = %created.id, "agent created but response hydration failed");
+            agent_response(Some(&state), created.clone(), false, false)
+        }
     };
     let analytics = cordy_analytics::events::agent_created(
         &context.member.user_id.to_string(),
@@ -1311,19 +1340,21 @@ async fn update_agent(
         .unwrap_or_else(|| json!({}));
     let allowlist_touched = raw_request.get("composio_toolkit_allowlist").is_some();
     let is_owner = existing.owner_id == Some(context.member.user_id);
-    let clear_allowlist =
-        allowlist_touched && is_owner && raw_request["composio_toolkit_allowlist"].is_null();
-    let composio_toolkit_allowlist = if allowlist_touched && is_owner {
-        request
-            .composio_toolkit_allowlist
-            .clone()
-            .map(normalise_allowlist)
-            .unwrap_or_default()
+    let composio_rollout_enabled = composio_enabled(&state);
+    let clear_allowlist = composio_rollout_enabled
+        && allowlist_touched
+        && is_owner
+        && raw_request["composio_toolkit_allowlist"].is_null();
+    let composio_toolkit_allowlist = if composio_rollout_enabled && allowlist_touched && is_owner {
+        Some(
+            request
+                .composio_toolkit_allowlist
+                .clone()
+                .map(normalise_allowlist)
+                .unwrap_or_default(),
+        )
     } else {
-        existing
-            .composio_toolkit_allowlist
-            .clone()
-            .unwrap_or_default()
+        None
     };
     let mut runtime_config = request
         .runtime_config
@@ -1376,7 +1407,7 @@ async fn update_agent(
             .service_tier
             .as_deref()
             .filter(|value| !value.is_empty()),
-        &composio_toolkit_allowlist,
+        composio_toolkit_allowlist.as_deref(),
     )
     .await;
     let mut updated = match updated {
@@ -1521,31 +1552,46 @@ async fn create_mika(
         Ok(v) => v,
         Err(r) => return r,
     };
-    let runtime_id = match Uuid::parse_str(&request.runtime_id) {
-        Ok(v) => v,
-        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
-    };
-    let rt = match runtime::get_agent_runtime_for_workspace(&state.pool, runtime_id, ws).await {
-        Ok(Some(v)) => v,
-        _ => {
+    let existing_target = match agent::get_agent_by_system_key(&state.pool, ws, Some("mika")).await
+    {
+        Ok(target) => target,
+        Err(_) => {
             return error_response(
-                StatusCode::BAD_REQUEST,
-                "runtime not found in this workspace",
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to look up the workspace agent",
             )
         }
     };
-    if rt.owner_id.is_none()
-        || rt.visibility != "public" && rt.owner_id != Some(context.member.user_id)
-    {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            "you cannot bind an agent to this runtime",
-        );
-    }
+    let (runtime_id, runtime) = if existing_target.is_some() {
+        (None, None)
+    } else {
+        let runtime_id = match Uuid::parse_str(&request.runtime_id) {
+            Ok(v) => v,
+            Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
+        };
+        let runtime = match runtime::get_agent_runtime_for_workspace(&state.pool, runtime_id, ws).await {
+            Ok(Some(v)) => v,
+            _ => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "runtime not found in this workspace",
+                )
+            }
+        };
+        if runtime.owner_id.is_none()
+            || runtime.visibility != "public" && runtime.owner_id != Some(context.member.user_id)
+        {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "you cannot bind an agent to this runtime",
+            );
+        }
+        (Some(runtime_id), Some(runtime))
+    };
     let mut created_now = false;
-    let mut target = match agent::get_agent_by_system_key(&state.pool, ws, Some("mika")).await {
-        Ok(Some(existing)) => existing,
-        Ok(None) => {
+    let mut target = match existing_target {
+        Some(existing) => existing,
+        None => {
             let mut tx = match state.pool.begin().await {
                 Ok(tx) => tx,
                 Err(_) => {
@@ -1569,13 +1615,18 @@ async fn create_mika(
             let target = match agent::get_agent_by_system_key(&mut *tx, ws, Some("mika")).await {
                 Ok(Some(existing)) => existing,
                 Ok(None) => {
+                    let runtime = runtime
+                        .as_ref()
+                        .expect("Mika runtime is required when provisioning the agent");
+                    let runtime_id = runtime_id
+                        .expect("Mika runtime id is required when provisioning the agent");
                     let created = match agent::create_system_user_agent(
                         &mut *tx,
                         ws,
                         "Mika",
                         description,
                         Some("emoji:🦄"),
-                        &rt.runtime_mode,
+                        &runtime.runtime_mode,
                         runtime_id,
                         request
                             .model
@@ -1629,18 +1680,15 @@ async fn create_mika(
             }
             target
         }
-        Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to look up the workspace agent",
-            )
-        }
     };
-    if created_now && rt.status == "online" {
+    if created_now && runtime.as_ref().is_some_and(|runtime| runtime.status == "online") {
         state.tasks.reconcile_agent_status(target.id).await;
         if let Ok(Some(reconciled)) = agent::get_agent(&state.pool, target.id).await {
             target = reconciled;
         }
+    }
+    if created_now {
+        publish(&state, "agent:created", &target, context.member.user_id);
     }
     let session = match get_or_create_mika_session(
         &state,
@@ -1660,14 +1708,11 @@ async fn create_mika(
             );
         }
     };
-    if created_now {
-        publish(&state, "agent:created", &target, context.member.user_id);
-    }
     let mut response = match hydrated_agent_response(&state, &context, &headers, target).await {
         Ok(response) => response,
         Err(response) => return response,
     };
-    response["onboarding_session"] = json!(session);
+    response["onboarding_session"] = crate::chat_api::session_json(&session);
     (
         if created_now {
             StatusCode::CREATED
@@ -1706,8 +1751,8 @@ async fn archive_agent(
         Ok(Some(v)) => v,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive agent"),
     };
-    if state.tasks.cancel_tasks_for_agent(target.id).await.is_err() {
-        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to cancel tasks");
+    if let Err(error) = state.tasks.cancel_tasks_for_agent(target.id).await {
+        tracing::warn!(%error, agent_id = %target.id, "failed to cancel tasks after archiving agent");
     }
     publish(&state, "agent:archived", &archived, context.member.user_id);
     match hydrated_agent_response(&state, &context, &headers, archived).await {
@@ -1946,7 +1991,16 @@ async fn attach_label(
     match issue_label::attach_label_to_agent(&state.pool, target.id, label_id, target.workspace_id)
         .await
     {
-        Ok(0) => error_response(StatusCode::NOT_FOUND, "label not found"),
+        Ok(0) => match issue_label::get_label(&state.pool, label_id, target.workspace_id).await {
+            Ok(Some(label)) if label.resource_type == "agent" => {
+                labels_response(&state, &target).await
+            }
+            Ok(Some(_)) | Ok(None) => error_response(StatusCode::NOT_FOUND, "label not found"),
+            Err(_) => error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to verify label",
+            ),
+        },
         Ok(_) => {
             publish_label_updated(
                 &state,

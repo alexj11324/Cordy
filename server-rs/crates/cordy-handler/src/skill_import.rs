@@ -194,40 +194,46 @@ async fn search_clawhub(
         .json()
         .await
         .map_err(|_| "failed to parse ClawHub search response".to_string())?;
-    let mut candidates = Vec::new();
-    for (index, item) in found.results.into_iter().enumerate() {
-        if item.slug.is_empty() {
-            continue;
-        }
-        let installs = if index < SEARCH_STATS_LIMIT {
-            clawhub_install_count(client, base, &item.slug).await
-        } else {
-            None
-        };
-        let name = if item.display_name.is_empty() {
-            item.slug.clone()
-        } else {
-            item.display_name
-        };
-        let url = if item.owner_handle.is_empty() {
-            format!("https://clawhub.ai/{}", path_segment(&item.slug))
-        } else {
-            format!(
-                "https://clawhub.ai/{}/{}",
-                path_segment(&item.owner_handle),
-                path_segment(&item.slug)
-            )
-        };
-        candidates.push(SearchCandidate {
-            name,
-            url,
-            source: "clawhub.ai".into(),
-            repo: None,
-            install_count: installs,
-            github_stars: None,
-            description: item.summary,
-        });
-    }
+    let candidates = stream::iter(
+        found
+            .results
+            .into_iter()
+            .enumerate()
+            .filter(|(_, item)| !item.slug.is_empty())
+            .map(|(index, item)| async move {
+                let installs = if index < SEARCH_STATS_LIMIT {
+                    clawhub_install_count(client, base, &item.slug).await
+                } else {
+                    None
+                };
+                let name = if item.display_name.is_empty() {
+                    item.slug.clone()
+                } else {
+                    item.display_name
+                };
+                let url = if item.owner_handle.is_empty() {
+                    format!("https://clawhub.ai/{}", path_segment(&item.slug))
+                } else {
+                    format!(
+                        "https://clawhub.ai/{}/{}",
+                        path_segment(&item.owner_handle),
+                        path_segment(&item.slug)
+                    )
+                };
+                SearchCandidate {
+                    name,
+                    url,
+                    source: "clawhub.ai".into(),
+                    repo: None,
+                    install_count: installs,
+                    github_stars: None,
+                    description: item.summary,
+                }
+            }),
+    )
+    .buffered(DOWNLOAD_CONCURRENCY)
+    .collect()
+    .await;
     Ok(candidates)
 }
 
@@ -715,7 +721,12 @@ async fn fetch_skills_sh(client: &Client, raw_url: &str) -> Result<ImportedSkill
         .tree
         .iter()
         .filter(|entry| {
-            entry.kind == "blob" && (entry.path == "SKILL.md" || entry.path.ends_with("/SKILL.md"))
+            entry.kind == "blob"
+                && entry
+                    .path
+                    .rsplit('/')
+                    .next()
+                    .is_some_and(|name| name.eq_ignore_ascii_case("SKILL.md"))
         })
         .collect::<Vec<_>>();
     let raw_prefix = raw_prefix(owner, repo, &branch);
@@ -725,35 +736,54 @@ async fn fetch_skills_sh(client: &Client, raw_url: &str) -> Result<ImportedSkill
         format!(".claude/skills/{requested}/SKILL.md"),
         format!("plugin/skills/{requested}/SKILL.md"),
         format!("{requested}/SKILL.md"),
+        "SKILL.md".into(),
     ];
-    for entry in &candidates {
-        let likely = conventional.iter().any(|path| path == &entry.path)
-            || entry
-                .path
-                .rsplit('/')
-                .nth(1)
-                .is_some_and(|name| name.eq_ignore_ascii_case(requested));
-        if !likely {
-            continue;
-        }
-        if let Ok(body) = fetch_bytes(client, raw_url_for(&raw_prefix, &entry.path)?, true).await {
-            let (name, _) = parse_frontmatter(&String::from_utf8_lossy(&body));
-            if name == *requested || conventional.iter().any(|path| path == &entry.path) {
-                selected = Some((entry.path.clone(), body));
-                break;
-            }
+    let mut candidate_paths = conventional.to_vec();
+    for entry in candidates {
+        if !candidate_paths
+            .iter()
+            .any(|path| path.eq_ignore_ascii_case(&entry.path))
+        {
+            candidate_paths.push(entry.path.clone());
         }
     }
-    if selected.is_none() {
-        for entry in candidates {
-            if let Ok(body) =
-                fetch_bytes(client, raw_url_for(&raw_prefix, &entry.path)?, true).await
-            {
-                if parse_frontmatter(&String::from_utf8_lossy(&body)).0 == *requested {
-                    selected = Some((entry.path.clone(), body));
-                    break;
-                }
+    candidate_paths.sort_by_key(|path| {
+        if let Some(index) = conventional
+            .iter()
+            .position(|candidate| candidate.eq_ignore_ascii_case(path))
+        {
+            if index + 1 == conventional.len() {
+                (3_u8, index, path.len())
+            } else {
+                (0, index, path.len())
             }
+        } else if path
+            .rsplit('/')
+            .nth(1)
+            .is_some_and(|name| name.eq_ignore_ascii_case(requested))
+        {
+            (1, 0, path.len())
+        } else if path.contains('/') {
+            (2, 0, path.len())
+        } else {
+            (3, 0, path.len())
+        }
+    });
+    for path in candidate_paths {
+        let Ok(body) = fetch_bytes(client, raw_url_for(&raw_prefix, &path)?, true).await else {
+            continue;
+        };
+        let (name, _) = parse_frontmatter(&String::from_utf8_lossy(&body));
+        let conventional_path = conventional
+            .iter()
+            .any(|candidate| candidate.eq_ignore_ascii_case(&path));
+        let nested_alias = path
+            .rsplit('/')
+            .nth(1)
+            .is_some_and(|parent| parent.eq_ignore_ascii_case(requested));
+        if conventional_path || nested_alias || name.eq_ignore_ascii_case(requested) {
+            selected = Some((path, body));
+            break;
         }
     }
     let (skill_path, body) = selected.ok_or_else(|| {
@@ -761,7 +791,10 @@ async fn fetch_skills_sh(client: &Client, raw_url: &str) -> Result<ImportedSkill
             "SKILL.md not found in repository {owner}/{repo} for skill {requested}"
         ))
     })?;
-    let skill_dir = skill_path.strip_suffix("/SKILL.md").unwrap_or("");
+    let skill_dir = skill_path
+        .rsplit_once('/')
+        .map(|(parent, _)| parent)
+        .unwrap_or("");
     let body_text = String::from_utf8_lossy(&body).into_owned();
     let (front_name, description) = parse_frontmatter(&body_text);
     let name = if front_name.is_empty() {
@@ -791,6 +824,7 @@ struct GitHubSpec {
     repo: String,
     reference: String,
     skill_dir: String,
+    skill_filename: String,
     tree_segments: Vec<String>,
 }
 
@@ -804,9 +838,9 @@ async fn fetch_github(client: &Client, raw_url: &str) -> Result<ImportedSkill, I
     }
     let prefix = raw_prefix(&spec.owner, &spec.repo, &spec.reference);
     let skill_path = if spec.skill_dir.is_empty() {
-        "SKILL.md".into()
+        spec.skill_filename.clone()
     } else {
-        format!("{}/SKILL.md", spec.skill_dir)
+        format!("{}/{}", spec.skill_dir, spec.skill_filename)
     };
     let body = fetch_bytes(client, raw_url_for(&prefix, &skill_path)?, true)
         .await
@@ -870,6 +904,7 @@ fn parse_github(raw: &str) -> Result<GitHubSpec, ImportError> {
         repo: parts[1].trim_end_matches(".git").to_string(),
         reference: String::new(),
         skill_dir: String::new(),
+        skill_filename: "SKILL.md".into(),
         tree_segments: Vec::new(),
     };
     if parts.len() > 2 {
@@ -882,15 +917,16 @@ fn parse_github(raw: &str) -> Result<GitHubSpec, ImportError> {
         }
         let mut encoded = parts[3..].to_vec();
         if kind == "blob" {
-            if !encoded
-                .last()
-                .is_some_and(|value| value.eq_ignore_ascii_case("SKILL.md"))
-            {
+            let filename = encoded
+                .pop()
+                .ok_or_else(|| ImportError::Bad("blob URL must point to a SKILL.md file".into()))?;
+            let filename = decode_path_segment(&filename)?;
+            if !filename.eq_ignore_ascii_case("SKILL.md") {
                 return Err(ImportError::Bad(
                     "blob URL must point to a SKILL.md file".into(),
                 ));
             }
-            encoded.pop();
+            spec.skill_filename = filename;
             if encoded.is_empty() {
                 return Err(ImportError::Bad("missing ref after /blob/".into()));
             }
@@ -1084,21 +1120,34 @@ async fn add_files_via_crawl(
     let mut queue = vec![skill_dir.trim_matches('/').to_string()];
     let mut files = Vec::new();
     while let Some(repo_path) = queue.pop() {
-        let response = github_get(
+        let response = match github_get(
             client,
             github_contents_url(owner, repo, &repo_path, reference),
         )
-        .await?;
+        .await
+        {
+            Ok(response) => response,
+            Err(error @ ImportError::Cap(_)) => return Err(error),
+            Err(error) => {
+                tracing::warn!(%error, path = %repo_path, "github supporting-file listing skipped");
+                continue;
+            }
+        };
         if response.status() != StatusCode::OK {
-            return Err(ImportError::Upstream(format!(
-                "github directory listing returned HTTP {}",
-                response.status().as_u16()
-            )));
+            tracing::warn!(
+                status = response.status().as_u16(),
+                path = %repo_path,
+                "github supporting-file listing skipped"
+            );
+            continue;
         }
-        let entries: Vec<ContentEntry> = response
-            .json()
-            .await
-            .map_err(|error| ImportError::Upstream(error.to_string()))?;
+        let entries: Vec<ContentEntry> = match response.json().await {
+            Ok(entries) => entries,
+            Err(error) => {
+                tracing::warn!(%error, path = %repo_path, "github supporting-file listing skipped");
+                continue;
+            }
+        };
         for entry in entries {
             match entry.kind.as_str() {
                 "dir" => queue.push(entry.path),
@@ -1125,14 +1174,18 @@ async fn add_files_via_crawl(
                     else {
                         continue;
                     };
-                    let download = Url::parse(download_url)
-                        .map_err(|error| ImportError::Upstream(error.to_string()))?;
+                    let download = match Url::parse(download_url) {
+                        Ok(download) => download,
+                        Err(error) => {
+                            tracing::warn!(%error, path = %entry.path, "github supporting file skipped");
+                            continue;
+                        }
+                    };
                     if download.scheme() != "https"
                         || download.host_str() != Some("raw.githubusercontent.com")
                     {
-                        return Err(ImportError::Upstream(
-                            "github contents API returned an unsafe download URL".into(),
-                        ));
+                        tracing::warn!(path = %entry.path, "github supporting file skipped unsafe download URL");
+                        continue;
                     }
                     files.push((relative, download));
                     if files.len() > MAX_FILE_COUNT {
@@ -1152,8 +1205,11 @@ async fn add_files_via_crawl(
     }))
     .buffered(DOWNLOAD_CONCURRENCY);
     while let Some(result) = downloads.next().await {
-        let (path, content) = result?;
-        imported.add_file(path, content)?;
+        match result {
+            Ok((path, content)) => imported.add_file(path, content)?,
+            Err(error @ ImportError::Cap(_)) => return Err(error),
+            Err(error) => tracing::warn!(%error, "github supporting file skipped"),
+        }
     }
     Ok(())
 }
@@ -1216,7 +1272,7 @@ async fn add_tree_files(
             "import bundle is {total} bytes, exceeding the {MAX_TOTAL_SIZE} byte limit"
         )));
     }
-    let downloads = stream::iter(
+    let mut downloads = stream::iter(
         files
             .into_iter()
             .map(|(repo_path, relative, _)| async move {
@@ -1225,12 +1281,13 @@ async fn add_tree_files(
                 Ok::<_, ImportError>((relative, String::from_utf8_lossy(&bytes).into_owned()))
             }),
     )
-    .buffered(DOWNLOAD_CONCURRENCY)
-    .collect::<Vec<_>>()
-    .await;
-    for result in downloads {
-        let (path, content) = result?;
-        imported.add_file(path, content)?;
+    .buffered(DOWNLOAD_CONCURRENCY);
+    while let Some(result) = downloads.next().await {
+        match result {
+            Ok((path, content)) => imported.add_file(path, content)?,
+            Err(error @ ImportError::Cap(_)) => return Err(error),
+            Err(error) => tracing::warn!(%error, "github supporting file skipped"),
+        }
     }
     Ok(())
 }
