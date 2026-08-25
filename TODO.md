@@ -697,6 +697,16 @@
       remains `as_deref()`, and create/update/MCP add/update forward stdin
       unchanged. Dispatcher and lib wiring are correct. `git diff --check`
       passes; subagent did not run Cargo or modify files.
+- [x] PR #239 `codex/cord-71-cli-squad-dispatch` is the next bounded child of
+      #238: base branch `codex/cord-70-cli-workspace-dispatch` at
+      `32c60a8b7741bf662c99fd9df44b4df96a6b954c`, exact head
+      `95a9fb647a128bd4c78d73fd75170e10655127a8`, tree
+      `c6ab87018c4b7a414cc991fe904325fbe5a73fb4`, candidate
+      `94c60cea724850c9d09b991058ae3e940d29afa9`. It isolates Squad,
+      Member, and Activity routing into `dispatch_squad.rs`, preserving
+      existing output and mutation behavior. Scoped rustfmt and
+      `git diff --check` pass; PR #239 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
