@@ -1637,7 +1637,7 @@
       `git diff --check` pass; Cargo is delegated. PR #328 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE; exact-head subagent review PASS on
       `825503ad`; no Cargo was run.
-- [ ] PR #329 `codex/cord-161-cli-property-read` is the next bounded child of
+- [x] PR #329 `codex/cord-161-cli-property-read` is the completed bounded child of
       #328: base branch `codex/cord-160-cli-property-model` at
       `825503ad866d20cd0bc55afb378cd3399eacf751`, exact head
       `dfafb0165bb03f31c62cd1caea7dd61973e459b1`, tree
@@ -1648,7 +1648,7 @@
       archive query, JSON/table output, and case-insensitive resolution are
       unchanged. Pinned rustfmt and `git diff --check` pass; Cargo is delegated.
       PR #329 is Ready (`isDraft=false`), MERGEABLE (checks pending); exact-head
-      subagent review is pending.
+      subagent review PASS on `dfafb016`; no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
