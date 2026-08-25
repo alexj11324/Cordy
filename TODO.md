@@ -1254,6 +1254,19 @@
       is delegated. PR #268 is Ready (`isDraft=false`), CLEAN/MERGEABLE.
       Exact-head subagent review PASS; no Cargo was run and no production
       behavior changed.
+- [ ] PR #269 `codex/cord-101-cli-agent-mutation` is the next bounded child of
+      #268: base branch `codex/cord-100-cli-agent-read` at
+      `c20c984908d7b5af2a01351c4902d95054ea7751`, exact head
+      `efc902d1dd17927faaf95a0a7a201ebe12990247`, tree
+      `1b08ba92755fbf9afdbdd15e97eb3d85d44fdbfb`, candidate
+      `65fa2105d7491573e4be87d5b7d4261da64bae7f` (parents base + head).
+      It isolates agent create/update handlers in `agent_mutation_commands.rs`
+      and removes the empty generic module; validation, secret input,
+      permissions, payloads, API calls, output, dispatch, and re-exports remain
+      unchanged. Scoped pinned rustfmt and `git diff --check` pass; Cargo is
+      delegated. PR #269 is Ready (`isDraft=false`), CLEAN/MERGEABLE.
+      Exact-head subagent review pending; no duplicate review request has been
+      made.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
