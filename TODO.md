@@ -92,6 +92,10 @@
       execution/profile persistence is unchanged. New schema rustfmt and
       `git diff --check` pass; Cargo/review/gate are delegated and have not been run
       by this thread. PR is Ready (`isDraft=false`).
+- [x] #171 exact-head subagent review PASS: Setup callback/app URL/port defaults,
+      help text, `HealthProbeError` visibility, `SetupError`, migrated argument
+      visibility, handlers, dispatch, and tests have no compile/behavior blocker.
+      Cargo remains delegated.
 - [x] #170 exact-head subagent review PASS: squad/member/activity clap fields,
       defaults, help text, member type/role semantics, re-exports, handlers,
       dispatch, and tests have no compile/behavior blocker. Cargo remains delegated.
