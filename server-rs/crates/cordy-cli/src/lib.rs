@@ -218,7 +218,7 @@ mod setup_commands;
 mod skill_command_schema;
 mod skill_files_commands;
 mod squad_command_schema;
-mod squad_commands;
+mod squad_activity_commands;
 mod squad_read_commands;
 mod squad_mutation_commands;
 mod squad_member_commands;
@@ -523,7 +523,7 @@ pub(super) use squad_command_schema::{
     SquadMemberArgs, SquadMemberCommand, SquadMemberRemoveArgs, SquadMemberSetRoleArgs,
     SquadUpdateArgs,
 };
-use squad_commands::{
+use squad_activity_commands::{
     run_squad_activity,
 };
 use squad_read_commands::{
