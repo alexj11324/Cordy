@@ -546,13 +546,13 @@ fn confirm_webhook_rotation<R: Read>(input: &mut R) -> Result<bool> {
     Ok(false)
 }
 #[derive(Debug, Args)]
-struct AutopilotArgs {
+pub(super) struct AutopilotArgs {
     #[command(subcommand)]
-    command: AutopilotCommand,
+    pub(super) command: AutopilotCommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum AutopilotCommand {
+pub(super) enum AutopilotCommand {
     #[command(about = "List autopilots in the workspace")]
     List {
         #[arg(long, default_value = "", help = "Filter by status (active, paused)")]
@@ -612,127 +612,127 @@ enum AutopilotCommand {
 }
 
 #[derive(Debug, Args)]
-struct AutopilotTriggerAddArgs {
+pub(super) struct AutopilotTriggerAddArgs {
     #[arg(value_name = "AUTOPILOT-ID")]
-    autopilot_id: String,
+    pub(super) autopilot_id: String,
     #[arg(
         long,
         default_value = "schedule",
         help = "Trigger kind: schedule or webhook"
     )]
-    kind: String,
+    pub(super) kind: String,
     #[arg(
         long,
         default_value = "",
         help = "Cron expression (required for --kind schedule)"
     )]
-    cron: String,
+    pub(super) cron: String,
     #[arg(
         long,
         default_value = "",
         help = "IANA timezone (default UTC; schedule only)"
     )]
-    timezone: String,
+    pub(super) timezone: String,
     #[arg(long, default_value = "", help = "Optional human-readable label")]
-    label: String,
+    pub(super) label: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
-struct AutopilotTriggerUpdateArgs {
+pub(super) struct AutopilotTriggerUpdateArgs {
     #[arg(value_name = "AUTOPILOT-ID")]
-    autopilot_id: String,
+    pub(super) autopilot_id: String,
     #[arg(value_name = "TRIGGER-ID")]
-    trigger_id: String,
+    pub(super) trigger_id: String,
     #[arg(long, num_args = 0..=1, default_missing_value = "true")]
-    enabled: Option<bool>,
+    pub(super) enabled: Option<bool>,
     #[arg(long)]
-    cron: Option<String>,
+    pub(super) cron: Option<String>,
     #[arg(long)]
-    timezone: Option<String>,
+    pub(super) timezone: Option<String>,
     #[arg(long)]
-    label: Option<String>,
+    pub(super) label: Option<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
-struct AutopilotTriggerRotateUrlArgs {
+pub(super) struct AutopilotTriggerRotateUrlArgs {
     #[arg(value_name = "AUTOPILOT-ID")]
-    autopilot_id: String,
+    pub(super) autopilot_id: String,
     #[arg(value_name = "TRIGGER-ID")]
-    trigger_id: String,
+    pub(super) trigger_id: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
     #[arg(short = 'y', long, help = "Skip the interactive confirmation prompt")]
-    yes: bool,
+    pub(super) yes: bool,
 }
 
 #[derive(Debug, Args)]
-struct AutopilotCreateArgs {
+pub(super) struct AutopilotCreateArgs {
     #[arg(long, help = "Autopilot title (required)")]
-    title: Option<String>,
+    pub(super) title: Option<String>,
     #[arg(
         long,
         default_value = "",
         help = "Autopilot description (used as task prompt)"
     )]
-    description: String,
+    pub(super) description: String,
     #[arg(long, help = "Assignee agent (name or ID) — required")]
-    agent: Option<String>,
+    pub(super) agent: Option<String>,
     #[arg(long, help = "Execution mode: create_issue or run_only (required)")]
-    mode: Option<String>,
+    pub(super) mode: Option<String>,
     #[arg(
         long,
         help = "Priority for created issues (none, low, medium, high, urgent)"
     )]
-    priority: Option<String>,
+    pub(super) priority: Option<String>,
     #[arg(long, default_value = "", help = "Project ID (optional)")]
-    project: String,
+    pub(super) project: String,
     #[arg(
         long,
         default_value = "",
         help = "Template for issue titles (create_issue mode). Only {{date}} (UTC, YYYY-MM-DD) is interpolated; any other {{...}} token is rejected at create-time."
     )]
-    issue_title_template: String,
+    pub(super) issue_title_template: String,
     #[arg(
         long,
         action = clap::ArgAction::Append,
         help = "Member subscriber to notify for issues this autopilot creates (name or user ID; repeatable)"
     )]
-    subscriber: Vec<String>,
+    pub(super) subscriber: Vec<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
-struct AutopilotUpdateArgs {
+pub(super) struct AutopilotUpdateArgs {
     #[arg(value_name = "ID")]
-    id: String,
+    pub(super) id: String,
     #[arg(long)]
-    title: Option<String>,
+    pub(super) title: Option<String>,
     #[arg(long)]
-    description: Option<String>,
+    pub(super) description: Option<String>,
     #[arg(long, help = "New assignee agent (name or ID)")]
-    agent: Option<String>,
+    pub(super) agent: Option<String>,
     #[arg(long, help = "New project ID (use empty string to clear)")]
-    project: Option<String>,
+    pub(super) project: Option<String>,
     #[arg(long)]
-    priority: Option<String>,
+    pub(super) priority: Option<String>,
     #[arg(long, help = "New status (active, paused)")]
-    status: Option<String>,
+    pub(super) status: Option<String>,
     #[arg(long, help = "New execution mode (create_issue or run_only)")]
-    mode: Option<String>,
+    pub(super) mode: Option<String>,
     #[arg(
         long,
         help = "New issue title template. Only {{date}} is interpolated."
     )]
-    issue_title_template: Option<String>,
+    pub(super) issue_title_template: Option<String>,
     #[arg(long, action = clap::ArgAction::Append, help = "Replace subscribers with this member (repeatable)")]
-    subscriber: Vec<String>,
+    pub(super) subscriber: Vec<String>,
     #[arg(long, help = "Remove all autopilot subscribers")]
-    clear_subscribers: bool,
+    pub(super) clear_subscribers: bool,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
