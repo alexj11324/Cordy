@@ -10,6 +10,7 @@ mod agent_skill_commands;
 mod agent_env_commands;
 mod agent_mcp_commands;
 mod agent_copy_commands;
+mod agent_read_commands;
 mod agent_helpers;
 mod api;
 mod cli_command_schema;
@@ -246,8 +247,9 @@ use std::time::Duration;
 use url::{form_urlencoded, Url};
 
 pub(super) use agent_commands::{
-    run_agent_create, run_agent_get, run_agent_list, run_agent_update,
+    run_agent_create, run_agent_update,
 };
+pub(super) use agent_read_commands::{run_agent_get, run_agent_list};
 pub(super) use agent_mcp_commands::{
     agent_mcp_path, run_agent_mcp_list, run_agent_mcp_mutation, AgentMcpAction,
 };
