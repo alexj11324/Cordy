@@ -40,9 +40,9 @@ pub use model::{
 };
 pub use process::{OwnedProcessTree, ProcessTreeSignal};
 pub use qoder::{
-    DimBackend, DimConfig, GrokBackend, GrokConfig, KimiBackend, KimiConfig, KiroBackend,
-    KiroConfig, McodeBackend, McodeConfig, QoderBackend, QoderConfig, QwenpawBackend,
-    QwenpawConfig, ReasonixBackend, ReasonixConfig, TraecliBackend, TraecliConfig,
+    DimBackend, DimConfig, GrokBackend, GrokConfig, HermesBackend, HermesConfig, KimiBackend,
+    KimiConfig, KiroBackend, KiroConfig, McodeBackend, McodeConfig, QoderBackend, QoderConfig,
+    QwenpawBackend, QwenpawConfig, ReasonixBackend, ReasonixConfig, TraecliBackend, TraecliConfig,
 };
 pub use qwen::{QwenBackend, QwenConfig};
 pub use registry::{build_backend, BackendConfig};

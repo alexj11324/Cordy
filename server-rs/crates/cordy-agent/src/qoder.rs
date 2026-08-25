@@ -148,6 +148,12 @@ static OUTPUT_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)API call failed after \d+ retr(?:y|ies)")
         .unwrap_or_else(|error| panic!("invalid Qoder output-error regex: {error}"))
 });
+static HERMES_SESSION_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?im)^\s*(?:RuntimeError:\s*)?No LLM provider configured[^\r\n]*")
+        .unwrap_or_else(|error| panic!("invalid Hermes provider-error regex: {error}"))
+});
+const HERMES_PROVIDER_UNCONFIGURED_HINT: &str =
+    " [cordy] hermes did not read the HERMES_HOME your shell uses: this task ran against a per-task overlay, seeded from the home the daemon process resolved. The daemon log line \"hermes home resolved\" for this task names that source home — if your hermes config lives somewhere else, set HERMES_HOME in the agent's custom_env to point at it.";
 
 #[derive(Debug, Default)]
 struct ProviderErrorState {
@@ -191,8 +197,10 @@ impl ProviderErrorTracker {
                             code[0] == b'4' && code.iter().all(u8::is_ascii_digit)
                         })
                     }));
-            state.found |=
-                TERMINAL_PROVIDER_ERROR.is_match(&rendered) || (state.marker && state.error_kind);
+            let transient_retry_warning = is_transient_retry_warning(&rendered);
+            state.found |= !transient_retry_warning
+                && (TERMINAL_PROVIDER_ERROR.is_match(&rendered)
+                    || (state.marker && state.error_kind));
             if ends_line {
                 state.suffix.clear();
                 state.marker = false;
@@ -211,10 +219,19 @@ impl ProviderErrorTracker {
     }
 }
 
+fn is_transient_retry_warning(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower.contains("api call failed")
+        && lower.contains("attempt")
+        && (line.contains('⚠') || lower.contains("warning"))
+        && !lower.contains("after ")
+}
+
 #[derive(Debug, Clone)]
 pub struct QoderConfig {
     pub command: RuntimeCommand,
     pub env: BTreeMap<String, String>,
+    pub builtin_runtime: bool,
     pub default_command: String,
     pub provider: String,
     pub launch_args: Vec<String>,
@@ -245,6 +262,7 @@ impl Default for QoderConfig {
         Self {
             command: RuntimeCommand::default(),
             env: BTreeMap::new(),
+            builtin_runtime: false,
             default_command: "qodercli".to_string(),
             provider: "qoder".to_string(),
             launch_args: vec!["--yolo".to_string(), "--acp".to_string()],
@@ -293,6 +311,55 @@ impl QoderBackend {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct HermesConfig {
+    pub command: RuntimeCommand,
+    pub env: BTreeMap<String, String>,
+    pub builtin_runtime: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct HermesBackend {
+    inner: QoderBackend,
+}
+
+impl HermesBackend {
+    pub fn new(config: HermesConfig) -> Self {
+        Self {
+            inner: QoderBackend::new(QoderConfig {
+                command: config.command,
+                env: config.env,
+                builtin_runtime: config.builtin_runtime,
+                default_command: "hermes".to_string(),
+                provider: "hermes".to_string(),
+                launch_args: vec!["acp".to_string()],
+                discovery_args: vec!["acp".to_string()],
+                resume_method: "session/resume".to_string(),
+                use_system_prompt: false,
+                ..QoderConfig::default()
+            }),
+        }
+    }
+
+    pub async fn discover_models(
+        &self,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        self.inner
+            .discover_models(cache, cancellation, timeout)
+            .await
+    }
+}
+
+#[async_trait]
+impl Backend for HermesBackend {
+    async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
+        self.inner.execute(prompt, options).await
+    }
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct TraecliConfig {
     pub command: RuntimeCommand,
     pub env: BTreeMap<String, String>,
@@ -309,6 +376,7 @@ impl TraecliBackend {
             inner: QoderBackend::new(QoderConfig {
                 command: config.command,
                 env: config.env,
+                builtin_runtime: false,
                 default_command: "traecli".to_string(),
                 provider: "traecli".to_string(),
                 launch_args: ["acp", "serve", "--yolo"].map(str::to_string).to_vec(),
@@ -372,6 +440,7 @@ impl KiroBackend {
             inner: QoderBackend::new(QoderConfig {
                 command: config.command,
                 env: config.env,
+                builtin_runtime: false,
                 default_command: "kiro-cli".to_string(),
                 provider: "kiro".to_string(),
                 launch_args: ["acp", "--trust-all-tools"].map(str::to_string).to_vec(),
@@ -435,6 +504,7 @@ impl QwenpawBackend {
             inner: QoderBackend::new(QoderConfig {
                 command: config.command,
                 env: config.env,
+                builtin_runtime: false,
                 default_command: "qwenpaw".to_string(),
                 provider: "qwenpaw".to_string(),
                 launch_args: vec!["acp".to_string()],
@@ -905,6 +975,9 @@ async fn discover_acp_session(
         .stderr(Stdio::null())
         .envs(&config.env)
         .kill_on_drop(false);
+    if config.provider == "hermes" {
+        command.env("HERMES_YOLO_MODE", "1");
+    }
     if let Some(directory) = isolated_state.as_ref() {
         command.env("REASONIX_STATE_HOME", directory.path());
     }
@@ -1191,6 +1264,12 @@ impl Backend for QoderBackend {
             .stderr(Stdio::piped())
             .envs(&self.config.env)
             .kill_on_drop(false);
+        if self.config.provider == "hermes" {
+            // Match the Go Hermes backend's headless execution policy. This
+            // is provider-owned rather than task-controlled, so custom args
+            // cannot disable it.
+            command.env("HERMES_YOLO_MODE", "1");
+        }
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd);
         }
@@ -1240,6 +1319,9 @@ impl Backend for QoderBackend {
         let retry_held_session = self.config.retry_held_session;
         let held_retry_attempts = self.config.held_retry_attempts;
         let held_retry_delay = self.config.held_retry_delay;
+        let builtin_runtime = self.config.builtin_runtime;
+        let hermes_home_configured =
+            provider == "hermes" && effective_env_nonempty(&self.config.env, "HERMES_HOME");
         let have_api_key = effective_env_nonempty(&self.config.env, "XAI_API_KEY");
         let kimi_home = self.config.env.get("KIMI_CODE_HOME").cloned();
         let resumed = !options.resume_session_id.is_empty();
@@ -1289,6 +1371,7 @@ impl Backend for QoderBackend {
                 retry_held_session,
                 held_retry_attempts,
                 held_retry_delay,
+                builtin_runtime,
             ));
             let end = if timeout.is_zero() {
                 tokio::select! {
@@ -1323,7 +1406,9 @@ impl Backend for QoderBackend {
                 stderr_task.abort();
             }
             let stderr = stderr_tail.tail();
-            if outcome.status == "completed" {
+            let promote_provider_error = outcome.status == "completed"
+                || (provider == "hermes" && outcome.error == HERMES_RESUME_LOST_ERROR);
+            if promote_provider_error {
                 if let Some(provider_error) = provider_error(
                     &provider,
                     terminal_stderr.found(),
@@ -1358,6 +1443,10 @@ impl Backend for QoderBackend {
             }
             if !outcome.error.is_empty() {
                 outcome.error = with_stderr(&outcome.error, &provider, &stderr);
+            }
+            if provider == "hermes" {
+                outcome.error =
+                    annotate_hermes_provider_unconfigured(&outcome.error, hermes_home_configured);
             }
             let _ = result_tx.send(ExecutionResult {
                 status: outcome.status,
@@ -1434,6 +1523,7 @@ async fn run_protocol(
     retry_held_session: bool,
     held_retry_attempts: u8,
     held_retry_delay: Duration,
+    builtin_runtime: bool,
 ) -> ProtocolOutcome {
     let mut client = AcpClient::new(BufReader::new(stdout), stdin);
     let initialize = match client
@@ -1488,8 +1578,11 @@ async fn run_protocol(
             ));
         }
     }
-    let mcp_servers =
-        filter_acp_mcp_servers(mcp_servers, parse_acp_mcp_capabilities(&initialize), false);
+    let mcp_servers = filter_acp_mcp_servers(
+        mcp_servers,
+        parse_acp_mcp_capabilities(&initialize),
+        provider == "hermes" && builtin_runtime,
+    );
     let cwd = if options.cwd.is_empty() {
         "."
     } else {
@@ -1512,11 +1605,19 @@ async fn run_protocol(
             ..ProtocolOutcome::default()
         };
     }
+    let mut resume_landed = true;
     let (session_result, mut session_id) = if options.resume_session_id.is_empty() {
         match client
             .request(
                 "session/new",
-                session_params(cwd, None, mcp_servers, coding_project_meta.as_deref()),
+                session_params(
+                    cwd,
+                    None,
+                    mcp_servers,
+                    coding_project_meta.as_deref(),
+                    (provider == "hermes" && !options.model.is_empty())
+                        .then_some(options.model.as_str()),
+                ),
                 |_| {},
             )
             .await
@@ -1549,6 +1650,7 @@ async fn run_protocol(
                         Some(&options.resume_session_id),
                         mcp_servers.clone(),
                         coding_project_meta.as_deref(),
+                        None,
                     ),
                     |_| {},
                 )
@@ -1567,12 +1669,20 @@ async fn run_protocol(
         };
         match loaded {
             Ok(result) => {
-                let returned = extract_session_id(&result);
-                let session_id = if returned.is_empty() {
-                    options.resume_session_id.clone()
+                let (session_id, landed) = if provider == "hermes" {
+                    extract_hermes_resume_session(&result, &options.resume_session_id)
                 } else {
-                    returned
+                    let returned = extract_session_id(&result);
+                    (
+                        if returned.is_empty() {
+                            options.resume_session_id.clone()
+                        } else {
+                            returned
+                        },
+                        true,
+                    )
                 };
+                resume_landed = landed;
                 (result, session_id)
             }
             Err(error) => {
@@ -1627,7 +1737,10 @@ async fn run_protocol(
             };
         }
     }
-    if model_selection && !options.model.is_empty() {
+    let model_already_current = provider == "hermes"
+        && !options.model.is_empty()
+        && extract_current_model(&session_result) == options.model;
+    if model_selection && !options.model.is_empty() && !model_already_current {
         if let Err(error) = client
             .request(
                 "session/set_model",
@@ -1711,14 +1824,42 @@ async fn run_protocol(
         )
         .await;
     }
-    let user_text = if !use_system_prompt || options.system_prompt.is_empty() {
+    if provider == "hermes" && !options.thinking_level.is_empty() {
+        apply_acp_effort(
+            &mut client,
+            "hermes",
+            &session_result,
+            &session_id,
+            &options.thinking_level,
+            options.model.is_empty(),
+        )
+        .await;
+    }
+    let user_text = if provider == "hermes"
+        && options.resume_expected
+        && !resume_landed
+        && !options.resume_continuity_notice.is_empty()
+    {
+        format!("{}{}", options.resume_continuity_notice, prompt)
+    } else if !use_system_prompt || options.system_prompt.is_empty() {
         prompt
     } else {
         format!("{}\n\n---\n\n{}", options.system_prompt, prompt)
     };
+    if provider == "hermes" {
+        let mut running = message(MessageType::Status, "");
+        running.status = "running".to_string();
+        running.session_id = session_id.clone();
+        send(&messages, running);
+    }
     let mut state = NotificationState {
         kiro_dialect: provider == "kiro",
-        extended_tool_names: matches!(provider.as_str(), "kiro" | "kimi" | "reasonix" | "dim"),
+        hermes_dialect: provider == "hermes",
+        hermes_builtin_runtime: provider == "hermes" && builtin_runtime,
+        extended_tool_names: matches!(
+            provider.as_str(),
+            "hermes" | "kiro" | "kimi" | "reasonix" | "dim"
+        ),
         reasonix_dialect: provider == "reasonix",
         ..NotificationState::default()
     };
@@ -1900,6 +2041,7 @@ async fn run_protocol(
         "cancelled" => ("aborted", format!("{provider} cancelled the prompt")),
         "end_turn" | "" if !strict_stop_reason => ("completed", String::new()),
         "end_turn" => ("completed", String::new()),
+        "refusal" if provider == "hermes" => ("completed", String::new()),
         "error" => (
             "failed",
             format!("{provider} ended the prompt with stopReason=error"),
@@ -1913,6 +2055,13 @@ async fn run_protocol(
             format!("{provider} returned unsupported stopReason {unsupported:?}"),
         ),
     };
+    let resume_lost = provider == "hermes"
+        && hermes_resume_session_lost(&options.resume_session_id, stop_reason, state.activity);
+    if resume_lost {
+        status = "failed";
+        error = HERMES_RESUME_LOST_ERROR.to_string();
+        session_id.clear();
+    }
     if provider == "reasonix"
         && !blocked_question.is_empty()
         && matches!(status, "completed" | "failed")
@@ -1927,7 +2076,7 @@ async fn run_protocol(
         full_output,
         session_id,
         usage,
-        resume_rejected: false,
+        resume_rejected: resume_lost,
     }
 }
 
@@ -1936,10 +2085,14 @@ fn session_params(
     session_id: Option<&str>,
     mcp_servers: Vec<AcpMcpServer>,
     coding_project_meta: Option<&str>,
+    model: Option<&str>,
 ) -> Value {
     let mut params = serde_json::json!({"cwd":cwd,"mcpServers":mcp_servers});
     if let Some(session_id) = session_id {
         params["sessionId"] = Value::String(session_id.to_string());
+    }
+    if let Some(model) = model.filter(|model| !model.is_empty()) {
+        params["model"] = Value::String(model.to_string());
     }
     if cwd != "." {
         if let Some(key) = coding_project_meta {
@@ -1972,8 +2125,11 @@ struct NotificationState {
     deliverable: Deliverable,
     tools: HashMap<String, PendingTool>,
     usage: UsageAccumulator,
+    activity: u64,
     last_finishing_status: String,
     kiro_dialect: bool,
+    hermes_dialect: bool,
+    hermes_builtin_runtime: bool,
     extended_tool_names: bool,
     reasonix_dialect: bool,
     reasonix_sequence: u64,
@@ -1985,6 +2141,7 @@ struct NotificationState {
 struct PendingTool {
     name: String,
     input: BTreeMap<String, Value>,
+    deferred_text: String,
     emitted: bool,
     finishing: bool,
 }
@@ -2038,17 +2195,30 @@ fn handle_notification(
     match kind.as_str() {
         "agentmessagechunk" => {
             if let Some(text) = content_text(data) {
+                state.activity = state.activity.saturating_add(1);
                 state.deliverable.text(text);
                 send(messages, message(MessageType::Text, text));
             }
         }
         "agentthoughtchunk" => {
             if let Some(text) = content_text(data) {
+                state.activity = state.activity.saturating_add(1);
                 send(messages, message(MessageType::Thinking, text));
             }
         }
-        "toolcall" => handle_tool_start(data, messages, state),
-        "toolcallupdate" => handle_tool_update(data, messages, state),
+        "toolcall" => {
+            state.activity = state.activity.saturating_add(1);
+            handle_tool_start(data, messages, state);
+        }
+        "toolcallupdate" => {
+            if matches!(
+                data.get("status").and_then(Value::as_str),
+                Some("completed" | "failed")
+            ) {
+                state.activity = state.activity.saturating_add(1);
+            }
+            handle_tool_update(data, messages, state);
+        }
         "usageupdate" | "turnend" => {
             state
                 .usage
@@ -2168,6 +2338,38 @@ fn handle_tool_start(
     if id.is_empty() {
         return;
     }
+    if state.hermes_dialect {
+        let name = hermes_tool_name(data);
+        let input = tool_input(data);
+        let deferred_text = if !state.hermes_builtin_runtime && input.is_empty() {
+            hermes_tool_call_text(data)
+        } else {
+            String::new()
+        };
+        let mut invocation = input.clone();
+        if state.hermes_builtin_runtime && input.is_empty() {
+            let rendered = hermes_tool_call_text(data);
+            if name == "terminal" && rendered.trim_start().starts_with("$ ") {
+                invocation = parse_hermes_tool_input(&rendered);
+            }
+        }
+        state.deliverable.tool_boundary();
+        let emitted = state.hermes_builtin_runtime || !invocation.is_empty();
+        if emitted {
+            send(messages, tool_use(&id, &name, invocation.clone()));
+        }
+        state.tools.insert(
+            id,
+            PendingTool {
+                name,
+                input: invocation,
+                deferred_text,
+                emitted,
+                finishing: false,
+            },
+        );
+        return;
+    }
     let name = tool_name(data, state.extended_tool_names);
     let input = tool_input(data);
     let finishing = state.kiro_dialect && is_finishing_tool(&name, &input);
@@ -2181,6 +2383,7 @@ fn handle_tool_start(
         PendingTool {
             name,
             input,
+            deferred_text: String::new(),
             emitted,
             finishing,
         },
@@ -2196,6 +2399,29 @@ fn handle_tool_update(
         .get("status")
         .and_then(Value::as_str)
         .unwrap_or_default();
+    if status == "in_progress" {
+        let id = data
+            .get("toolCallId")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if id.is_empty() {
+            return;
+        }
+        let hermes_dialect = state.hermes_dialect;
+        if let Some(pending) = state.tools.get_mut(id) {
+            let update_input = tool_input(data);
+            if !update_input.is_empty() {
+                pending.input.extend(update_input);
+                pending.deferred_text.clear();
+            } else if hermes_dialect && !pending.emitted {
+                let update_text = hermes_tool_call_text(data);
+                if !update_text.is_empty() {
+                    pending.deferred_text = update_text;
+                }
+            }
+        }
+        return;
+    }
     if !matches!(status, "completed" | "failed") {
         return;
     }
@@ -2206,18 +2432,31 @@ fn handle_tool_update(
     if id.is_empty() {
         return;
     }
-    let pending = match state.tools.remove(id) {
+    let mut pending = match state.tools.remove(id) {
         Some(pending) => pending,
         None => {
             state.deliverable.tool_boundary();
             PendingTool {
-                name: tool_name(data, state.extended_tool_names),
+                name: if state.hermes_dialect {
+                    hermes_tool_name(data)
+                } else {
+                    tool_name(data, state.extended_tool_names)
+                },
                 input: tool_input(data),
+                deferred_text: String::new(),
                 emitted: false,
                 finishing: false,
             }
         }
     };
+    if state.hermes_dialect && !pending.emitted {
+        let update_input = tool_input(data);
+        if !update_input.is_empty() {
+            pending.input = update_input;
+        } else if pending.input.is_empty() && !pending.deferred_text.is_empty() {
+            pending.input = parse_hermes_tool_input(&pending.deferred_text);
+        }
+    }
     let finishing = state.kiro_dialect
         && (pending.finishing || is_finishing_tool(&pending.name, &pending.input));
     if !pending.emitted {
@@ -2228,6 +2467,12 @@ fn handle_tool_update(
         .find_map(|key| data.get(*key))
         .map(render_value)
         .or_else(|| content_text(data).map(str::to_string))
+        .or_else(|| {
+            state
+                .hermes_dialect
+                .then(|| hermes_tool_call_text(data))
+                .filter(|text| !text.is_empty())
+        })
         .unwrap_or_default();
     let mut result = message(MessageType::ToolResult, "");
     result.call_id = id.to_string();
@@ -2274,6 +2519,102 @@ fn tool_name(data: &Value, extended_names: bool) -> String {
         "todo" | "todo write" | "todo list" | "todo_list" => "todo_write".to_string(),
         _ => name.to_ascii_lowercase().replace(' ', "_"),
     }
+}
+
+fn hermes_tool_name(data: &Value) -> String {
+    let title = data
+        .get("title")
+        .or_else(|| data.get("name"))
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim();
+    if title.eq_ignore_ascii_case("execute code") {
+        return "execute_code".to_string();
+    }
+    if let Some((prefix, _)) = title.split_once(':') {
+        return match prefix.trim().to_ascii_lowercase().as_str() {
+            "terminal" => "terminal".to_string(),
+            "read" => "read_file".to_string(),
+            "write" => "write_file".to_string(),
+            value if value.starts_with("patch") => "patch".to_string(),
+            "search" => "search_files".to_string(),
+            "web search" => "web_search".to_string(),
+            "extract" => "web_extract".to_string(),
+            "delegate" => "delegate_task".to_string(),
+            "analyze image" => "vision_analyze".to_string(),
+            value => value.to_string(),
+        };
+    }
+    match data
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "read" => "read_file".to_string(),
+        "edit" => "write_file".to_string(),
+        "execute" => "terminal".to_string(),
+        "search" => "search_files".to_string(),
+        "fetch" => "web_search".to_string(),
+        "think" => "thinking".to_string(),
+        _ if !title.is_empty() => title.to_string(),
+        kind => kind.to_string(),
+    }
+}
+
+fn hermes_tool_call_text(data: &Value) -> String {
+    let Some(blocks) = data.get("content").and_then(Value::as_array) else {
+        return String::new();
+    };
+    let mut pieces = Vec::new();
+    for block in blocks {
+        match block
+            .get("type")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+        {
+            "content" => {
+                if let Some(text) = block
+                    .get("content")
+                    .and_then(|content| content.get("text"))
+                    .and_then(Value::as_str)
+                {
+                    if !text.is_empty() {
+                        pieces.push(text.to_string());
+                    }
+                }
+            }
+            "diff" => {
+                let path = block
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                if !path.is_empty() {
+                    let old_len = block
+                        .get("oldText")
+                        .and_then(Value::as_str)
+                        .map_or(0, str::len);
+                    let new_len = block
+                        .get("newText")
+                        .and_then(Value::as_str)
+                        .map_or(0, str::len);
+                    pieces.push(if old_len == 0 {
+                        format!("--- {path}\n+++ {path}\n(new file, {new_len} bytes)")
+                    } else {
+                        format!("--- {path}\n+++ {path}\n(edited: {old_len} → {new_len} bytes)")
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    pieces.join("\n")
+}
+
+fn parse_hermes_tool_input(text: &str) -> BTreeMap<String, Value> {
+    serde_json::from_str(text)
+        .unwrap_or_else(|_| BTreeMap::from([("text".to_string(), Value::String(text.to_string()))]))
 }
 
 fn is_finishing_tool(name: &str, input: &BTreeMap<String, Value>) -> bool {
@@ -2625,6 +2966,35 @@ fn extract_session_id(value: &Value) -> String {
         .to_string()
 }
 
+fn extract_hermes_resume_session(value: &Value, requested: &str) -> (String, bool) {
+    let returned = extract_session_id(value);
+    let provenance = value
+        .get("_meta")
+        .and_then(|meta| meta.get("hermes"))
+        .and_then(|hermes| hermes.get("sessionProvenance"))
+        .and_then(|provenance| provenance.get("acpSessionId"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or_default();
+    let actual = if !returned.is_empty() {
+        returned
+    } else if !provenance.is_empty() {
+        provenance.to_string()
+    } else {
+        requested.to_string()
+    };
+    let landed = actual == requested;
+    (actual, landed)
+}
+
+const HERMES_RESUME_LOST_ERROR: &str =
+    "hermes could not restore the resumed session; it refused the turn without running the agent";
+
+fn hermes_resume_session_lost(resume_session_id: &str, stop_reason: &str, activity: u64) -> bool {
+    !resume_session_id.is_empty() && stop_reason == "refusal" && activity == 0
+}
+
 fn extract_current_model(value: &Value) -> String {
     value
         .get("models")
@@ -2634,6 +3004,7 @@ fn extract_current_model(value: &Value) -> String {
                 .or_else(|| models.get("current_model_id"))
         })
         .or_else(|| value.get("currentModelId"))
+        .or_else(|| value.get("current_model_id"))
         .and_then(Value::as_str)
         .unwrap_or_default()
         .trim()
@@ -3048,17 +3419,37 @@ fn provider_error(
     stderr: &str,
     output: &str,
 ) -> Option<String> {
+    if provider == "hermes" {
+        if let Some(found) = HERMES_SESSION_PROVIDER_ERROR.find(stderr) {
+            return Some(format!("{provider} provider error: {}", found.as_str()));
+        }
+    }
     if terminal_stderr {
         return Some(format!(
             "{provider} provider reported a terminal upstream error on stderr"
         ));
     }
-    if let Some(found) = TERMINAL_PROVIDER_ERROR.find(stderr) {
+    if let Some(found) = TERMINAL_PROVIDER_ERROR
+        .find_iter(stderr)
+        .find(|found| !is_transient_retry_warning(found.as_str()))
+    {
         return Some(format!("{provider} provider error: {}", found.as_str()));
     }
     OUTPUT_PROVIDER_ERROR
         .find(output)
         .map(|found| format!("{provider} provider error: {}", found.as_str()))
+}
+
+fn annotate_hermes_provider_unconfigured(error: &str, hermes_home_configured: bool) -> String {
+    let lower = error.to_ascii_lowercase();
+    if hermes_home_configured
+        && lower.contains("no llm provider configured")
+        && !error.contains(HERMES_PROVIDER_UNCONFIGURED_HINT)
+    {
+        format!("{error}{HERMES_PROVIDER_UNCONFIGURED_HINT}")
+    } else {
+        error.to_string()
+    }
 }
 
 fn message(message_type: MessageType, content: &str) -> Message {
@@ -3568,6 +3959,29 @@ mod tests {
     }
 
     #[test]
+    fn transient_provider_retry_warning_is_not_terminal() {
+        let warning = "⚠️ API call failed (attempt 1/3): RateLimitError\n";
+        let tracker = ProviderErrorTracker::default();
+        tracker.push(warning.as_bytes());
+        assert!(!tracker.found());
+        assert_eq!(provider_error("hermes", false, warning, ""), None);
+
+        let terminal = "⚠️ API call failed after 3 retries: RateLimitError\n";
+        let tracker = ProviderErrorTracker::default();
+        tracker.push(terminal.as_bytes());
+        assert!(tracker.found());
+        assert!(provider_error("hermes", false, terminal, "").is_some());
+    }
+
+    #[test]
+    fn hermes_provider_hint_explains_overlay_configuration() {
+        let error = "hermes provider error: No LLM provider configured";
+        let annotated = annotate_hermes_provider_unconfigured(error, true);
+        assert!(annotated.contains("HERMES_HOME"));
+        assert_eq!(annotate_hermes_provider_unconfigured(error, false), error);
+    }
+
+    #[test]
     fn provider_error_tracker_does_not_join_unrelated_lines() {
         let tracker = ProviderErrorTracker::default();
         tracker.push(b"[ERROR] ordinary validation warning\n");
@@ -3651,6 +4065,140 @@ mod tests {
     }
 
     #[test]
+    fn custom_hermes_defers_terminal_content_until_completion() {
+        let (messages, mut received) = mpsc::channel(8);
+        let mut state = NotificationState {
+            hermes_dialect: true,
+            hermes_builtin_runtime: false,
+            ..NotificationState::default()
+        };
+        handle_tool_start(
+            &serde_json::json!({
+                "toolCallId": "tool-1",
+                "title": "terminal: $ echo wrong",
+                "content": [{"type":"content","content":{"type":"text","text":"$ echo wrong"}}]
+            }),
+            &messages,
+            &mut state,
+        );
+        assert!(received.try_recv().is_err());
+        assert!(state
+            .tools
+            .get("tool-1")
+            .is_some_and(|tool| tool.input.is_empty() && !tool.deferred_text.is_empty()));
+        handle_tool_update(
+            &serde_json::json!({
+                "toolCallId": "tool-1",
+                "status": "completed",
+                "rawInput": {"command":"echo right"}
+            }),
+            &messages,
+            &mut state,
+        );
+        let tool = received
+            .try_recv()
+            .unwrap_or_else(|error| panic!("custom Hermes tool use: {error}"));
+        assert_eq!(tool.message_type, MessageType::ToolUse);
+        assert_eq!(tool.tool, "terminal");
+        assert_eq!(
+            tool.input.get("command").and_then(Value::as_str),
+            Some("echo right")
+        );
+    }
+
+    #[test]
+    fn custom_hermes_buffers_in_progress_arguments_until_completion() {
+        let (messages, mut received) = mpsc::channel(8);
+        let mut state = NotificationState {
+            hermes_dialect: true,
+            hermes_builtin_runtime: false,
+            ..NotificationState::default()
+        };
+        handle_tool_start(
+            &serde_json::json!({
+                "toolCallId": "tool-1",
+                "title": "terminal",
+                "content": []
+            }),
+            &messages,
+            &mut state,
+        );
+        for text in [
+            "{\"command\":",
+            "{\"command\":\"echo ",
+            "{\"command\":\"echo hi\"}",
+        ] {
+            handle_tool_update(
+                &serde_json::json!({
+                    "toolCallId": "tool-1",
+                    "status": "in_progress",
+                    "content": [{"type":"content","content":{"type":"text","text":text}}]
+                }),
+                &messages,
+                &mut state,
+            );
+        }
+        assert!(state.tools.get("tool-1").is_some_and(|tool| {
+            tool.input.is_empty() && tool.deferred_text == "{\"command\":\"echo hi\"}"
+        }));
+        handle_tool_update(
+            &serde_json::json!({
+                "toolCallId": "tool-1",
+                "status": "completed",
+                "rawOutput": "hi"
+            }),
+            &messages,
+            &mut state,
+        );
+        let tool = received
+            .try_recv()
+            .unwrap_or_else(|error| panic!("custom Hermes in-progress tool use: {error}"));
+        assert_eq!(tool.message_type, MessageType::ToolUse);
+        assert_eq!(tool.tool, "terminal");
+        assert_eq!(
+            tool.input.get("command").and_then(Value::as_str),
+            Some("echo hi")
+        );
+    }
+
+    #[test]
+    fn hermes_mcp_remote_filter_matches_builtin_and_capability_contracts() {
+        let servers = build_acp_mcp_servers(Some(&serde_json::json!({
+            "mcpServers": {
+                "local": {"command": "uvx"},
+                "remote-http": {"type": "http", "url": "https://x/mcp"},
+                "remote-sse": {"type": "sse", "url": "https://x/sse"}
+            }
+        })))
+        .unwrap_or_else(|error| panic!("build MCP servers: {error}"));
+
+        let omitted = parse_acp_mcp_capabilities(&serde_json::json!({
+            "agentCapabilities": {}
+        }));
+        assert_eq!(
+            filter_acp_mcp_servers(servers.clone(), omitted, true).len(),
+            3
+        );
+        assert_eq!(
+            filter_acp_mcp_servers(servers.clone(), omitted, false).len(),
+            1
+        );
+
+        let declined = parse_acp_mcp_capabilities(&serde_json::json!({
+            "agentCapabilities": {"mcpCapabilities": {"http": false, "sse": false}}
+        }));
+        assert_eq!(
+            filter_acp_mcp_servers(servers.clone(), declined, true).len(),
+            1
+        );
+
+        let advertised = parse_acp_mcp_capabilities(&serde_json::json!({
+            "agentCapabilities": {"mcpCapabilities": {"http": true, "sse": true}}
+        }));
+        assert_eq!(filter_acp_mcp_servers(servers, advertised, false).len(), 3);
+    }
+
+    #[test]
     fn deliverable_uses_text_after_latest_tool_boundary() {
         let mut deliverable = Deliverable::default();
         deliverable.text("I will inspect.");
@@ -3674,6 +4222,240 @@ mod tests {
             ..QoderConfig::default()
         });
         (directory, backend)
+    }
+
+    #[cfg(unix)]
+    fn fake_hermes_backend(
+        script: &str,
+        builtin_runtime: bool,
+    ) -> (tempfile::TempDir, std::path::PathBuf, HermesBackend) {
+        let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
+        let executable = directory.path().join("hermes");
+        let requests = directory.path().join("requests.jsonl");
+        std::fs::write(&executable, script)
+            .unwrap_or_else(|error| panic!("write fake Hermes: {error}"));
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700))
+            .unwrap_or_else(|error| panic!("chmod fake Hermes: {error}"));
+        let backend = HermesBackend::new(HermesConfig {
+            command: RuntimeCommand::new(executable.to_string_lossy(), Vec::new()),
+            env: BTreeMap::from([(
+                "HERMES_REQUESTS".to_string(),
+                requests.to_string_lossy().into_owned(),
+            )]),
+            builtin_runtime,
+        });
+        (directory, requests, backend)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn hermes_executes_model_mcp_tools_usage_and_headless_policy() {
+        let (_directory, requests, backend) = fake_hermes_backend(
+            r#"#!/bin/sh
+test "$1" = acp || exit 20
+test "$HERMES_YOLO_MODE" = 1 || exit 21
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$HERMES_REQUESTS"
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"agentCapabilities":{}}}\n' "$id" ;;
+    *'"method":"session/new"'*)
+      case "$line" in
+        *'"model":"custom:model"'*) ;;
+        *) exit 22 ;;
+      esac
+      case "$line" in
+        *'"name":"remote"'*) ;;
+        *) exit 22 ;;
+      esac
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"hermes-1","models":{"currentModelId":"custom:model"},"configOptions":[{"id":"effort","category":"thought_level","currentValue":"low","options":[{"value":"low"},{"value":"high"}]}]}}\n' "$id" ;;
+    *'"method":"session/set_config_option"'*)
+      case "$line" in *'"configId":"effort"'*'"value":"high"'*) ;; *) exit 23 ;; esac
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":[{"id":"effort","currentValue":"high"}]}}\n' "$id" ;;
+    *'"method":"session/set_model"'*) exit 24 ;;
+    *'"method":"session/prompt"'*)
+      case "$line" in *'system-only'*) exit 24 ;; esac
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"before tool"}}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"ToolCall","toolCallId":"tool-1","title":"terminal: $ echo hi","content":[{"type":"content","content":{"type":"text","text":"$ echo hi"}}]}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"ToolCallUpdate","toolCallId":"tool-1","status":"completed","rawOutput":"ok"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"after tool"}}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn","usage":{"inputTokens":9,"outputTokens":3}}}\n' "$id" ;;
+  esac
+done
+"#,
+            true,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    model: "custom:model".to_string(),
+                    thinking_level: "high".to_string(),
+                    system_prompt: "system-only".to_string(),
+                    mcp_config: Some(serde_json::json!({
+                        "mcpServers": {
+                            "remote": {"type":"http", "url":"https://mcp.example"}
+                        }
+                    })),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("execute Hermes: {error}"));
+        let Session {
+            mut messages,
+            result,
+        } = session;
+        let result = result
+            .await
+            .unwrap_or_else(|error| panic!("Hermes result: {error}"));
+        let mut received = Vec::new();
+        while let Some(message) = messages.recv().await {
+            received.push(message);
+        }
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "after tool");
+        assert_eq!(result.session_id, "hermes-1");
+        assert_eq!(result.usage["custom:model"].input_tokens, 9);
+        assert!(received.iter().any(|message| {
+            message.message_type == MessageType::Status
+                && message.session_id == "hermes-1"
+                && message.status == "running"
+        }));
+        let tool = received
+            .iter()
+            .find(|message| message.message_type == MessageType::ToolUse)
+            .unwrap_or_else(|| panic!("Hermes tool use message"));
+        assert_eq!(tool.tool, "terminal");
+        assert_eq!(
+            tool.input.get("text").and_then(Value::as_str),
+            Some("$ echo hi")
+        );
+        assert!(received
+            .iter()
+            .any(|message| message.message_type == MessageType::ToolResult));
+        let requests = std::fs::read_to_string(requests)
+            .unwrap_or_else(|error| panic!("read Hermes requests: {error}"));
+        assert_eq!(requests.matches("session/set_model").count(), 0);
+        assert_eq!(requests.matches("session/set_config_option").count(), 1);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn hermes_resume_uses_provenance_and_continuity_notice() {
+        let (_directory, _requests, backend) = fake_hermes_backend(
+            r#"#!/bin/sh
+test "$1" = acp || exit 30
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/resume"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"_meta":{"hermes":{"sessionProvenance":{"acpSessionId":"hermes-new"}}}}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      case "$line" in *'resume notice: prompt'*) ;; *) exit 31 ;; esac
+      printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"answer"}}}}'
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}\n' "$id" ;;
+  esac
+done
+"#,
+            true,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    resume_session_id: "hermes-old".to_string(),
+                    resume_expected: true,
+                    resume_continuity_notice: "resume notice: ".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("resume Hermes: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Hermes resume result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "answer");
+        assert_eq!(result.session_id, "hermes-new");
+        assert!(!result.resume_rejected);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn hermes_refused_resume_surrenders_dead_session() {
+        let (_directory, _requests, backend) = fake_hermes_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/resume"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/prompt"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"refusal"}}\n' "$id" ;;
+  esac
+done
+"#,
+            true,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    resume_session_id: "hermes-dead".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("refused Hermes resume: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Hermes refusal result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert_eq!(result.error, HERMES_RESUME_LOST_ERROR);
+        assert!(result.session_id.is_empty());
+        assert!(result.resume_rejected);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn hermes_refused_resume_preserves_specific_provider_error() {
+        let (_directory, _requests, backend) = fake_hermes_backend(
+            r#"#!/bin/sh
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/resume"'*)
+      echo 'RuntimeError: No LLM provider configured. Run hermes model to select a provider.' >&2
+      printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/prompt"'*)
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"refusal"}}\n' "$id" ;;
+  esac
+done
+"#,
+            true,
+        );
+        let session = backend
+            .execute(
+                "prompt",
+                ExecOptions {
+                    resume_session_id: "hermes-dead".to_string(),
+                    ..ExecOptions::default()
+                },
+            )
+            .await
+            .unwrap_or_else(|error| panic!("provider-error Hermes resume: {error}"));
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("Hermes provider-error result: {error}"));
+        assert_eq!(result.status, "failed");
+        assert!(result.error.contains("No LLM provider configured"));
+        assert!(result.session_id.is_empty());
+        assert!(result.resume_rejected);
     }
 
     #[cfg(unix)]
