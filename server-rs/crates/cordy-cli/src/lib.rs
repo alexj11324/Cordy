@@ -36,6 +36,7 @@ mod issue_create_commands;
 mod issue_description;
 mod issue_get_commands;
 mod issue_label_commands;
+mod issue_label_schema;
 mod issue_list_commands;
 mod issue_list_schema;
 mod issue_metadata_commands;
@@ -198,6 +199,9 @@ use issue_description::{resolve_issue_create_description, resolve_issue_update_d
 use issue_get_commands::{format_issue_get_table, run_issue_get};
 use issue_label_commands::{
     format_issue_labels, run_issue_label_add, run_issue_label_list, run_issue_label_remove,
+};
+pub(super) use issue_label_schema::{
+    IssueLabelArgs, IssueLabelCommand, IssueLabelListArgs, IssueLabelMutationArgs,
 };
 use issue_list_commands::{
     build_issue_list_query, build_metadata_filter, issue_list_has_more, run_issue_list,
@@ -632,44 +636,6 @@ struct DaemonLaunchArgs {
     auto_update_interval: Option<Duration>,
     #[arg(long = "no-auto-reload")]
     disable_auto_reload: bool,
-}
-
-#[derive(Debug, Args)]
-struct IssueLabelArgs {
-    #[command(subcommand)]
-    command: IssueLabelCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum IssueLabelCommand {
-    #[command(about = "List labels on an issue")]
-    List(IssueLabelListArgs),
-    #[command(about = "Attach a label to an issue")]
-    Add(IssueLabelMutationArgs),
-    #[command(about = "Remove a label from an issue")]
-    Remove(IssueLabelMutationArgs),
-}
-
-#[derive(Debug, Args)]
-struct IssueLabelListArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-    #[arg(long, help = "Show full UUIDs in table output")]
-    full_id: bool,
-}
-
-#[derive(Debug, Args)]
-struct IssueLabelMutationArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(value_name = "LABEL-ID")]
-    label_id: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-    #[arg(long, help = "Show full UUIDs in table output")]
-    full_id: bool,
 }
 
 #[derive(Debug, Args)]
