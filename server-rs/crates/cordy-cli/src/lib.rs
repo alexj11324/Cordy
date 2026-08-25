@@ -22,6 +22,7 @@ mod issue_search_commands;
 mod issue_subscriber_commands;
 mod issue_task_commands;
 mod issue_timeline_commands;
+mod issue_usage_commands;
 mod label_commands;
 mod login;
 mod project_commands;
@@ -110,6 +111,7 @@ use issue_task_commands::{
 use issue_timeline_commands::{
     build_timeline_filter, filter_timeline, format_issue_timeline_table, run_issue_timeline,
 };
+use issue_usage_commands::run_issue_usage;
 use label_commands::{
     format_label_result, format_label_table, format_workspace_label_table, run_label_create,
     run_label_delete, run_label_get, run_label_list, run_label_update,
@@ -7131,44 +7133,6 @@ async fn run_issue_comment_resolution(
     Ok(RunOutput {
         stdout,
         stderr: format!("Comment {comment_id} {action}.\n"),
-    })
-}
-
-async fn run_issue_usage(
-    cli: &Cli,
-    environment: &Environment,
-    args: &IssueUsageArgs,
-) -> Result<RunOutput> {
-    let client = new_api_client(cli, environment)?;
-    let issue_id = resolve_issue_ref(&client, &args.issue_id)
-        .await
-        .context("resolve issue")?;
-    let usage: Value = client
-        .get_json(&format!("/api/issues/{issue_id}/usage"))
-        .await
-        .context("get issue usage")?;
-    let stdout = match args.output {
-        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&usage)?),
-        OutputFormat::Table => format_table(&[
-            vec![
-                "INPUT_TOKENS".into(),
-                "OUTPUT_TOKENS".into(),
-                "CACHE_READ".into(),
-                "CACHE_WRITE".into(),
-                "RUNS".into(),
-            ],
-            vec![
-                format_metadata_value(usage.get("total_input_tokens")),
-                format_metadata_value(usage.get("total_output_tokens")),
-                format_metadata_value(usage.get("total_cache_read_tokens")),
-                format_metadata_value(usage.get("total_cache_write_tokens")),
-                format_metadata_value(usage.get("task_count")),
-            ],
-        ]),
-    };
-    Ok(RunOutput {
-        stdout,
-        stderr: String::new(),
     })
 }
 
