@@ -692,7 +692,7 @@ fn render_daemon_startup(
         }
     }
 }
-fn ensure_restart_is_background(launch: &DaemonLaunchArgs) -> Result<()> {
+pub(super) fn ensure_restart_is_background(launch: &DaemonLaunchArgs) -> Result<()> {
     anyhow::ensure!(
         !launch.foreground,
         "daemon restart does not support --foreground; use 'daemon start --foreground'"
@@ -700,7 +700,7 @@ fn ensure_restart_is_background(launch: &DaemonLaunchArgs) -> Result<()> {
     Ok(())
 }
 
-fn validate_daemon_health_port(
+pub(super) fn validate_daemon_health_port(
     requested: Option<u16>,
     resolved: &cordy_daemon::assembly::DaemonLaunchOverrides,
 ) -> Result<()> {
@@ -714,6 +714,6 @@ fn validate_daemon_health_port(
     Ok(())
 }
 
-fn parse_cli_duration(value: &str) -> std::result::Result<Duration, String> {
+pub(super) fn parse_cli_duration(value: &str) -> std::result::Result<Duration, String> {
     cordy_daemon::helpers::parse_go_duration(value).map_err(|error| error.to_string())
 }
