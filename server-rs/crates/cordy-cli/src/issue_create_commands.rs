@@ -1,6 +1,7 @@
 use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use std::fmt::Write;
+use std::io::Read;
 
 use super::{
     active_duplicate_issue_message, append_unique_strings, collect_local_attachments, format_table,
