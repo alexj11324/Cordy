@@ -11,6 +11,7 @@ use super::dispatch_label::run_label_command;
 use super::dispatch_project::run_project_command;
 use super::dispatch_property::run_property_command;
 use super::dispatch_repo::run_repo_command;
+use super::dispatch_runtime::run_runtime_command;
 use super::dispatch_skill::run_skill_command;
 use super::dispatch_squad::run_squad_command;
 use super::dispatch_user::run_user_command;
@@ -39,92 +40,7 @@ pub(super) async fn run_with_input<R: Read>(
         Command::Chat(args) => run_chat_command(cli, environment, args).await,
         Command::Attachment(args) => run_attachment_command(cli, environment, args).await,
         Command::Repo(args) => run_repo_command(cli, environment, args).await,
-        Command::Runtime(RuntimeArgs {
-            command: RuntimeCommand::List { output },
-        }) => run_runtime_list(cli, environment, *output).await,
-        Command::Runtime(RuntimeArgs {
-            command:
-                RuntimeCommand::Usage {
-                    runtime_id,
-                    output,
-                    days,
-                },
-        }) => run_runtime_usage(cli, environment, runtime_id, *output, *days).await,
-        Command::Runtime(RuntimeArgs {
-            command: RuntimeCommand::Activity { runtime_id, output },
-        }) => run_runtime_activity(cli, environment, runtime_id, *output).await,
-        Command::Runtime(RuntimeArgs {
-            command:
-                RuntimeCommand::Rename {
-                    runtime_id,
-                    name,
-                    machine,
-                    output,
-                },
-        }) => run_runtime_rename(cli, environment, runtime_id, name, *machine, *output).await,
-        Command::Runtime(RuntimeArgs {
-            command:
-                RuntimeCommand::Delete {
-                    runtime_id,
-                    cascade,
-                    output,
-                },
-        }) => run_runtime_delete(cli, environment, runtime_id, *cascade, *output).await,
-        Command::Runtime(RuntimeArgs {
-            command:
-                RuntimeCommand::Update {
-                    runtime_id,
-                    target_version,
-                    output,
-                    wait,
-                },
-        }) => {
-            run_runtime_update(
-                cli,
-                environment,
-                runtime_id,
-                target_version.as_deref(),
-                *output,
-                *wait,
-            )
-            .await
-        }
-        Command::Runtime(RuntimeArgs {
-            command:
-                RuntimeCommand::Profile(RuntimeProfileArgs {
-                    command: RuntimeProfileCommand::List { output },
-                }),
-        }) => run_runtime_profile_list(cli, environment, *output).await,
-        Command::Runtime(RuntimeArgs {
-            command:
-                RuntimeCommand::Profile(RuntimeProfileArgs {
-                    command: RuntimeProfileCommand::Create(args),
-                }),
-        }) => run_runtime_profile_create(cli, environment, args).await,
-        Command::Runtime(RuntimeArgs {
-            command:
-                RuntimeCommand::Profile(RuntimeProfileArgs {
-                    command: RuntimeProfileCommand::Update(args),
-                }),
-        }) => run_runtime_profile_update(cli, environment, args).await,
-        Command::Runtime(RuntimeArgs {
-            command:
-                RuntimeCommand::Profile(RuntimeProfileArgs {
-                    command: RuntimeProfileCommand::Delete { profile_id },
-                }),
-        }) => run_runtime_profile_delete(cli, environment, profile_id).await,
-        Command::Runtime(RuntimeArgs {
-            command:
-                RuntimeCommand::Profile(RuntimeProfileArgs {
-                    command: RuntimeProfileCommand::SetPath { profile_id, path },
-                }),
-        }) => run_runtime_profile_set_path(cli, environment, profile_id, path.as_deref()),
-        Command::Runtime(RuntimeArgs {
-            command:
-                RuntimeCommand::Profile(RuntimeProfileArgs {
-                    command: RuntimeProfileCommand::UnsetPath { profile_id },
-                }),
-        }) => run_runtime_profile_unset_path(cli, environment, profile_id),
+        Command::Runtime(args) => run_runtime_command(cli, environment, args).await,
         Command::Daemon(DaemonArgs {
             command: DaemonCommand::Start(args),
         }) => run_daemon_start(cli, environment, args).await,
