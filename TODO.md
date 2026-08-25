@@ -1111,6 +1111,16 @@
       issue. Scoped rustfmt and `git diff --check` pass (the subagent
       environment lacked a rustfmt executable); Cargo was not run. Pro owns
       push/Ready PR, gate, and merge.
+- [ ] CLI issue-search command structural refactor is committed at
+      `e33c60894fd63baec504c989f44e881a8534fc5f` (parent
+      `0b54230b232aa05522e64ec40ab549ea8fb4b8c3`, tree
+      `403bcb929cac6b21a96445c21fecb9e395aa1663`): issue search query
+      serialization, request execution, JSON output, and table rendering now
+      live in `cordy-cli/src/issue_search_commands.rs`; parent dispatch and
+      formatter regression-test visibility remain unchanged. The serial
+      subagent reviewed the exact head and found no issue. Scoped rustfmt and
+      `git diff --check` pass (the subagent environment lacked a rustfmt
+      executable); Cargo was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
