@@ -137,6 +137,15 @@
       limit/format/profile-root tests and assertions are preserved, with no P0/P1
       or compile blocker. Subagent did not run Cargo or modify the worktree;
       coordinator's rustfmt and `git diff --check` pass.
+- [x] PR #177 `codex/cord-50-cli-setup-tests` is the next bounded child of #176:
+      base `57f2dc0e03d7972df7ea9c27a4ab9148f986a4d8`, exact head
+      `3bfefc9bc52463633c8ac20097666769c1b1fc28`, tree
+      `8d0f660c5b103480a29eb46173e77a62b8fa5e81`, candidate
+      `443d6483dd1b693bca77eb63c0be18dd5a6192bd`. It extracts only setup
+      cloud/self-host parser, preflight, profile replacement, confirmation, daemon
+      handoff, and URL-normalization tests into `setup_command_tests.rs`; production
+      behavior is unchanged. New module rustfmt and `git diff --check` pass; PR is
+      Ready (`isDraft=false`, MERGEABLE/UNSTABLE). Cargo and review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
