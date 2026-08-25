@@ -198,6 +198,7 @@ mod issue_subscriber_schema;
 mod issue_task_commands;
 mod issue_task_output;
 mod issue_timeline_commands;
+mod issue_timeline_filter;
 mod issue_timeline_schema;
 mod issue_update_commands;
 mod issue_usage_commands;
@@ -426,9 +427,8 @@ pub(super) use issue_subscriber_schema::{
 };
 use issue_task_commands::{run_issue_cancel_task, run_issue_run_messages, run_issue_runs};
 use issue_task_output::{format_issue_run_messages_table, format_issue_runs_table};
-use issue_timeline_commands::{
-    build_timeline_filter, filter_timeline, format_issue_timeline_table, run_issue_timeline,
-};
+use issue_timeline_commands::{format_issue_timeline_table, run_issue_timeline};
+use issue_timeline_filter::{build_timeline_filter, filter_timeline};
 pub(super) use issue_timeline_schema::IssueTimelineArgs;
 use issue_update_commands::run_issue_update;
 use issue_usage_commands::run_issue_usage;
