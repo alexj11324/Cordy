@@ -1571,6 +1571,15 @@
       The serial subagent found no blocker; `git diff --check` passes, rustfmt
       was unavailable in the subagent check, and Cargo was not run. Pro owns
       push/Ready PR, gate, and merge.
+- [ ] CLI command-dispatch refactor is committed at
+      `dfb06c4b2bb4d5eb130bba7633730b093cbd2fc1` (tree
+      `5c6890759a204a8e0640549faf75ba92a0b569ba`): the complete
+      `run_with_input` command match now lives in `command_dispatch.rs`, with
+      the root `run` and tests using the parent re-export; every branch,
+      stdin stream, and output contract is unchanged. The serial subagent
+      found no blocker; `git diff --check` passes, rustfmt was unavailable in
+      the subagent check, and Cargo was not run. Pro owns push/Ready PR, gate,
+      and merge.
 
 ## Phase 4 — S8 route and API parity
 
