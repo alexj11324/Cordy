@@ -338,6 +338,27 @@ impl HermesBackend {
             .discover_models(cache, cancellation, timeout)
             .await
     }
+
+    /// Discovers against a daemon runtime identity rather than only the
+    /// protocol family. Two accepted Hermes runtimes can intentionally share
+    /// one executable and fixed prefix while resolving different account or
+    /// profile state, so their successful catalogs must not share a memo entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await
+    }
 }
 
 #[async_trait]
@@ -900,7 +921,22 @@ async fn discover_models(
     cancellation: CancellationToken,
     timeout: Duration,
 ) -> Catalog {
-    let Some(key) = ModelDiscoveryCacheKey::new(&config.provider, &config.command) else {
+    discover_models_with_scope(config, &config.provider, cache, cancellation, timeout).await
+}
+
+async fn discover_models_with_scope(
+    config: &QoderConfig,
+    runtime_scope: &str,
+    cache: &CatalogCache,
+    cancellation: CancellationToken,
+    timeout: Duration,
+) -> Catalog {
+    let scope = if runtime_scope.trim().is_empty() {
+        config.provider.as_str()
+    } else {
+        runtime_scope
+    };
+    let Some(key) = ModelDiscoveryCacheKey::new(scope, &config.command) else {
         return Catalog::default();
     };
     if let Some(catalog) = cache.get(&key) {
@@ -4100,6 +4136,60 @@ mod tests {
             builtin_runtime,
         });
         (directory, requests, backend)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn hermes_runtime_scoped_discovery_cache_does_not_cross_runtime_ids() {
+        let (_directory, requests, backend) = fake_hermes_backend(
+            r#"#!/bin/sh
+test "$1" = acp || exit 20
+test "$HERMES_YOLO_MODE" = 1 || exit 21
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$HERMES_REQUESTS"
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"discovery","models":{"currentModelId":"hermes:model","availableModels":[{"modelId":"hermes:model","name":"Hermes Model"}]}}}\n' "$id" ;;
+  esac
+done
+"#,
+            true,
+        );
+        let cache = CatalogCache::default();
+        let first = backend
+            .discover_models_for_runtime(
+                "hermes\0workspace=one\0runtime=one\0profile=",
+                &cache,
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        let same_runtime = backend
+            .discover_models_for_runtime(
+                "hermes\0workspace=one\0runtime=one\0profile=",
+                &cache,
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        let other_runtime = backend
+            .discover_models_for_runtime(
+                "hermes\0workspace=two\0runtime=two\0profile=",
+                &cache,
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+
+        assert_eq!(first.models.len(), 1);
+        assert_eq!(same_runtime.models, first.models);
+        assert_eq!(other_runtime.models, first.models);
+        let starts = std::fs::read_to_string(requests)
+            .unwrap_or_else(|error| panic!("read Hermes discovery requests: {error}"))
+            .matches("\"method\":\"initialize\"")
+            .count();
+        assert_eq!(starts, 2, "each runtime scope should launch discovery once");
     }
 
     #[cfg(unix)]
