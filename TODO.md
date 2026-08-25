@@ -1482,6 +1482,15 @@
       and newline formatting. Scoped rustfmt and `git diff --check` pass; the
       serial subagent reviewed the exact head and found no compile or behavior
       blocker. Cargo was not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI autopilot list/get refactor is committed at
+      `0d2471057d6ee287fa73a92ecc9bbce6a0b98f28` (parent
+      `b1cc0061261ad0f6f7e460e0a0539310f76eeaaf`, tree
+      `87a5c24e41955d0dd788b114c7350e95fe94e972`): read commands and their
+      list envelope now live in `cordy-cli/src/autopilot_commands.rs`, while
+      status URL encoding, workspace/agent resolution, and JSON/table output
+      remain unchanged. Scoped rustfmt and `git diff --check` pass; the serial
+      subagent reviewed the exact head and found no compile or behavior
+      blocker. Cargo was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
