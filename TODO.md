@@ -471,6 +471,13 @@
       rustfmt with `skip_children` and `git diff --check` pass; PR #226 is
       Ready (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review
       remain delegated.
+- [x] #226 exact-head subagent review PASS on
+      `e4f1c6806107df23372b1e2423fc8ad11cb04fbe`: `config_profile.rs`
+      preserves `CliConfig`, backend/launch types, and flag→environment→profile
+      precedence; `config.rs` re-exports the moved API and restores the
+      `Clone`/`Default`/`Deserialize` derives needed by existing call sites.
+      No stale direct module references or behavior changes were found;
+      `git diff --check` passes. Subagent did not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
