@@ -1772,6 +1772,13 @@
       dispatch and browser-login semantics remain unchanged. This extends
       Ready PR #159; scoped rustfmt with `skip_children` and `git diff --check`
       pass, Cargo was not run.
+- [ ] CLI user/profile schema refactor is structurally committed at
+      `b2301f0263b49ded70404342bfb7f9a59e273d75` (tree
+      `a6533ad745edac2465ea2e13a78c7df58e7a8253`): user/profile command,
+      profile update input, path, clear, and output flags now live in
+      `user_command_schema.rs`; profile update behavior remains unchanged.
+      This extends Ready PR #159; scoped rustfmt with `skip_children` and
+      `git diff --check` pass, Cargo was not run.
 
 ## Phase 4 — S8 route and API parity
 
