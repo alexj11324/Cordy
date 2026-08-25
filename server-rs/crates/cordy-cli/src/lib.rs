@@ -6,6 +6,7 @@
 mod agent_commands;
 mod agent_helpers;
 mod api;
+mod api_error;
 mod cli_command_schema;
 #[cfg(test)]
 mod root_command_tests;
@@ -95,6 +96,8 @@ mod issue_usage_command_tests;
 mod issue_rerun_command_tests;
 #[cfg(test)]
 mod cli_test_helpers;
+#[cfg(test)]
+mod private_helper_command_tests;
 mod attachment_input;
 mod auth_command_schema;
 mod auth_commands;
@@ -103,13 +106,18 @@ mod autopilot_output;
 mod autopilot_resolver;
 mod chat_commands;
 mod client_factory;
+mod client_scope;
 mod command_dispatch;
 pub mod config;
 mod config_command_schema;
 mod config_commands;
 pub mod daemon;
 mod daemon_command_schema;
-mod daemon_commands;
+mod daemon_diagnostics_commands;
+mod daemon_execenv_commands;
+mod daemon_lifecycle_commands;
+mod daemon_log_commands;
+mod daemon_status_commands;
 mod disk_usage_commands;
 mod disk_usage_output;
 pub mod error;
@@ -254,14 +262,18 @@ pub(super) use daemon_command_schema::{
     DaemonArgs, DaemonCommand, DaemonDiskUsageArgs, DaemonLaunchArgs, DaemonLogsArgs,
     DaemonRestartArgs, DaemonStartArgs, DaemonStatusArgs,
 };
-pub use daemon_commands::run_private_helper;
-use daemon_commands::{
-    ensure_restart_is_background, format_daemon_status_table, known_daemon_profiles,
-    parse_cli_duration, parse_log_lines, read_daemon_log_tail, render_daemon_status,
-    require_known_daemon_profile, resolve_daemon_log_path, resolve_daemon_status_port,
-    run_daemon_after_setup, run_daemon_disk_usage, run_daemon_logs, run_daemon_probe_runtimes,
-    run_daemon_restart, run_daemon_start, run_daemon_status, run_daemon_stop,
-    validate_daemon_health_port,
+pub use daemon_execenv_commands::run_private_helper;
+use daemon_lifecycle_commands::{
+    ensure_restart_is_background, parse_cli_duration, run_daemon_after_setup,
+    run_daemon_restart, run_daemon_start, run_daemon_stop, validate_daemon_health_port,
+};
+use daemon_diagnostics_commands::{run_daemon_disk_usage, run_daemon_probe_runtimes};
+use daemon_log_commands::{
+    parse_log_lines, read_daemon_log_tail, resolve_daemon_log_path, run_daemon_logs,
+};
+use daemon_status_commands::{
+    format_daemon_status_table, known_daemon_profiles, render_daemon_status,
+    require_known_daemon_profile, resolve_daemon_status_port, run_daemon_status,
 };
 use disk_usage_commands::{
     disk_usage_needs_parent_status, disk_usage_task_context, enumerate_disk_usage_roots,
@@ -363,7 +375,8 @@ use label_commands::{
 use label_reference::{resolve_label_id, resolve_label_reference};
 use login::{
     build_login_url, build_workspace_creation_url, constant_time_equal, run_browser_login,
-    run_login, validate_login_token, wait_for_login_callback, wait_for_workspace_creation,
+    run_login, run_login_with_urls, validate_login_token, wait_for_login_callback,
+    wait_for_workspace_creation,
     wait_for_workspace_creation_with_opener, AuthUser, LoginWorkspace,
     WORKSPACE_DISCOVERY_INTERVAL, WORKSPACE_DISCOVERY_TIMEOUT,
 };
@@ -534,133 +547,4 @@ struct IssueListResponse {
     issues: Value,
     #[serde(default)]
     total: Value,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use super::cli_test_helpers::*;
-    use axum::extract::Request;
-    use axum::http::{HeaderMap, StatusCode};
-    use axum::routing::{delete as delete_route, get, patch, post, put};
-    use axum::{Json, Router};
-    use clap::Parser;
-    use std::fs;
-    use std::io::Cursor;
-    use std::sync::{Arc, Mutex};
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpListener;
-
-    #[tokio::test]
-    async fn private_execenv_helper_dispatches_before_cli_parsing() {
-        let missing = tempfile::tempdir()
-            .expect("tempdir")
-            .path()
-            .join("missing-workdir");
-        let input = serde_json::to_vec(&serde_json::json!({
-            "action": "reuse",
-            "reuse": {
-                "WorkDir": missing,
-                "Provider": "codex"
-            }
-        }))
-        .expect("helper request");
-        let mut output = Vec::new();
-
-        let handled = run_private_helper(
-            &[
-                OsString::from("cordy"),
-                OsString::from(cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG),
-            ],
-            Cursor::new(input),
-            &mut output,
-        )
-        .await
-        .expect("private helper");
-
-        assert!(handled);
-        let response: Value = serde_json::from_slice(&output).expect("helper response");
-        assert!(response.get("environment").is_none());
-        assert!(response.get("error").is_none());
-    }
-
-    #[tokio::test]
-    async fn private_execenv_helper_requires_the_exact_private_argv() {
-        let mut output = Vec::new();
-        let handled = run_private_helper(
-            &[
-                OsString::from("cordy"),
-                OsString::from(cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG),
-                OsString::from("unexpected"),
-            ],
-            Cursor::new(Vec::<u8>::new()),
-            &mut output,
-        )
-        .await
-        .expect("ordinary CLI path");
-
-        assert!(!handled);
-        assert!(output.is_empty());
-    }
-
-
-
-
-
-    async fn test_server() -> (String, tokio::task::JoinHandle<()>) {
-        let app = Router::new().route(
-            "/api/me",
-            get(|request: Request| async move {
-                assert_eq!(request.headers()["authorization"], "Bearer token-from-env");
-                assert_eq!(request.headers()["x-workspace-id"], "workspace-from-env");
-                assert_eq!(request.headers()["x-client-platform"], "cli");
-                assert_eq!(
-                    request.headers()["x-client-capabilities"],
-                    "stable_attachment_urls"
-                );
-                axum::Json(serde_json::json!({
-                    "id": "user-1",
-                    "name": "Ada",
-                    "email": "ada@example.com",
-                    "profile_description": "Maintainer"
-                }))
-            }),
-        );
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let address = listener.local_addr().expect("address");
-        let task = tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("serve");
-        });
-        (format!("http://{address}"), task)
-    }
-
-    async fn patch_test_server() -> (
-        String,
-        Arc<Mutex<Option<Value>>>,
-        tokio::task::JoinHandle<()>,
-    ) {
-        let captured = Arc::new(Mutex::new(None));
-        let captured_by_handler = Arc::clone(&captured);
-        let app = Router::new().route(
-            "/api/me",
-            patch(move |Json(body): Json<Value>| {
-                let captured = Arc::clone(&captured_by_handler);
-                async move {
-                    *captured.lock().expect("capture body") = Some(body.clone());
-                    Json(serde_json::json!({
-                        "id": "user-1",
-                        "name": "Ada",
-                        "email": "ada@example.com",
-                        "profile_description": body["profile_description"]
-                    }))
-                }
-            }),
-        );
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let address = listener.local_addr().expect("address");
-        let task = tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("serve");
-        });
-        (format!("http://{address}"), captured, task)
-    }
 }
