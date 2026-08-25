@@ -29,6 +29,7 @@ mod issue_label_commands;
 mod issue_list_commands;
 mod issue_metadata_commands;
 mod issue_pull_request_commands;
+mod issue_reference;
 mod issue_reorder_commands;
 mod issue_rerun_commands;
 mod issue_search_commands;
@@ -136,6 +137,7 @@ use issue_metadata_commands::{
 use issue_pull_request_commands::{
     format_issue_pull_requests_table, run_issue_pull_request_attach, run_issue_pull_requests,
 };
+use issue_reference::resolve_issue_ref;
 use issue_reorder_commands::{compute_reorder_position, run_issue_reorder};
 use issue_rerun_commands::run_issue_rerun;
 use issue_search_commands::{format_issue_search_table, run_issue_search};
@@ -5068,25 +5070,6 @@ struct IssueListResponse {
     total: Value,
 }
 
-async fn resolve_issue_ref(client: &ApiClient, input: &str) -> Result<String> {
-    let trimmed = input.trim();
-    if trimmed.is_empty() {
-        bail!("issue id is required");
-    }
-    if looks_like_issue_identifier(trimmed) || is_canonical_uuid(trimmed) {
-        let issue: Value = client.get_json(&format!("/api/issues/{trimmed}")).await?;
-        return Ok(value_string(&issue, "id"));
-    }
-    if normalize_uuid_prefix(trimmed).is_some() {
-        bail!(
-            "issue ref {input:?} looks like a short UUID prefix; short prefixes are no longer supported for issues. Use the issue key (e.g. MUL-123) shown by `cordy issue list`, or pass the full UUID (run a list command with --full-id to copy it)"
-        );
-    }
-    bail!(
-        "issue ref {input:?} is not a recognized issue reference; use the issue key (e.g. MUL-123) shown by `cordy issue list`, or pass the full UUID"
-    )
-}
-
 async fn resolve_task_run_id(
     client: &ApiClient,
     issue_id: Option<&str>,
@@ -5204,15 +5187,6 @@ async fn resolve_label_reference(
                 .join("\n  ")
         ),
     }
-}
-
-fn looks_like_issue_identifier(input: &str) -> bool {
-    let Some((prefix, number)) = input.rsplit_once('-') else {
-        return false;
-    };
-    !prefix.is_empty()
-        && prefix.bytes().all(|byte| byte.is_ascii_alphanumeric())
-        && number.trim().parse::<i64>().is_ok_and(|number| number > 0)
 }
 
 const BUILT_IN_ISSUE_STATUSES: &[&str] = &[
