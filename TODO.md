@@ -840,6 +840,13 @@
       preserving lifecycle arguments and synchronous probe behavior. Scoped
       rustfmt and `git diff --check` pass; PR #247 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #247 exact-head subagent review PASS on
+      `5e6d4373e32fdd8cecf1c5446ecf4cf7e2586ae0`: `dispatch_daemon.rs`
+      covers Start/Status/Logs/Restart/Stop/ProbeRuntimes/DiskUsage with all
+      parameters preserved. ProbeRuntimes remains synchronous; other calls
+      retain async behavior. `Command::Daemon` routing and lib registration
+      are correct. `git diff --check` passes; subagent did not run Cargo or
+      modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
