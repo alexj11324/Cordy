@@ -83,6 +83,9 @@
       parser types to `workspace_command_schema.rs`; execution behavior is unchanged.
       New schema rustfmt and `git diff --check` pass; Cargo/review/gate are delegated
       and have not been run by this thread. PR is Ready (`isDraft=false`).
+- [x] #170 exact-head subagent review PASS: squad/member/activity clap fields,
+      defaults, help text, member type/role semantics, re-exports, handlers,
+      dispatch, and tests have no compile/behavior blocker. Cargo remains delegated.
 - [x] #169 exact-head subagent review PASS: workspace/member/MCP/create/update clap
       fields, defaults, help text, `PathBuf`/stdin semantics, re-exports, handlers,
       dispatch, and tests have no compile/behavior blocker. Cargo remains delegated.
