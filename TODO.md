@@ -590,6 +590,13 @@
       root dispatcher behavior. Scoped rustfmt and `git diff --check` pass;
       PR #232 is Ready (`isDraft=false`), MERGEABLE. Cargo and exact-head
       review remain delegated.
+- [x] #232 exact-head subagent review PASS on
+      `6b3f29b5bbffbed4ef64289230aa4929fd197722`: `dispatch_skill.rs` covers
+      all `SkillCommand` variants and all three `SkillFilesCommand` variants;
+      create/update/delete/upsert preserve stdin forwarding, while list/get/
+      import/refresh/search preserve their original arguments. Root routing
+      and lib module wiring are valid with no stale branches. `git diff
+      --check` passes; subagent did not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
