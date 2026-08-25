@@ -83,6 +83,10 @@
       parser types to `workspace_command_schema.rs`; execution behavior is unchanged.
       New schema rustfmt and `git diff --check` pass; Cargo/review/gate are delegated
       and have not been run by this thread. PR is Ready (`isDraft=false`).
+- [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
+      timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
+      handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
+      delegated.
 - [x] Next structural slice #172, `codex/cord-50-cli-root-schema`, is based on
       #171 at `cc7b8d569873a240596976e0ea2f69aff5a921e9`; exact head
       `192b888c3f4caca725c1eff26503207e96acbadf`, tree
