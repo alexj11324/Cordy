@@ -1,11 +1,9 @@
 use anyhow::{bail, Context, Result};
-use serde::Deserialize;
 use serde_json::Value;
-use std::path::Path;
 
 use super::{
-    new_api_client, output_runtime_profiles, require_human_local_command, required_workspace_id,
-    Cli, Environment, OutputFormat, RunOutput, RuntimeProfileCreateArgs, RuntimeProfileUpdateArgs,
+    new_api_client, output_runtime_profiles, required_workspace_id, runtime_profiles_path, Cli,
+    Environment, RunOutput, RuntimeProfileCreateArgs, RuntimeProfileUpdateArgs,
 };
 
 const RUNTIME_PROTOCOL_FAMILIES: &[&str] = &[
@@ -33,30 +31,6 @@ const RUNTIME_PROTOCOL_FAMILIES: &[&str] = &[
     "mcode",
     "dim",
 ];
-
-#[derive(Debug, Deserialize)]
-struct RuntimeProfileListResponse {
-    #[serde(default)]
-    runtime_profiles: Vec<Value>,
-}
-
-fn runtime_profiles_path(workspace_id: &str) -> String {
-    format!("/api/workspaces/{workspace_id}/runtime-profiles")
-}
-
-pub(super) async fn run_runtime_profile_list(
-    cli: &Cli,
-    environment: &Environment,
-    output: OutputFormat,
-) -> Result<RunOutput> {
-    let client = new_api_client(cli, environment)?;
-    let workspace_id = required_workspace_id(cli, environment)?;
-    let response: RuntimeProfileListResponse = client
-        .get_json(&runtime_profiles_path(&workspace_id))
-        .await
-        .context("list runtime profiles")?;
-    output_runtime_profiles(&response.runtime_profiles, output, false)
-}
 
 pub(super) async fn run_runtime_profile_create(
     cli: &Cli,
@@ -166,52 +140,6 @@ pub(super) async fn run_runtime_profile_delete(
     }
     Ok(RunOutput {
         stdout: format!("Deleted runtime profile {profile_id}\n"),
-        stderr: String::new(),
-    })
-}
-
-pub(super) fn run_runtime_profile_set_path(
-    cli: &Cli,
-    environment: &Environment,
-    profile_id: &str,
-    path: Option<&str>,
-) -> Result<RunOutput> {
-    require_human_local_command(environment, "runtime profile set-path")?;
-    let path = path
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-        .context("--path is required")?;
-    if !Path::new(path).is_absolute() {
-        bail!("--path must be an absolute path, got {path:?}");
-    }
-    environment
-        .set_profile_command_override(&cli.profile, profile_id, Some(path))
-        .context("save CLI config")?;
-    Ok(RunOutput {
-        stdout: format!(
-            "Pinned runtime profile {profile_id} to {path} on this machine.\nRestart the daemon for the change to take effect.\n"
-        ),
-        stderr: String::new(),
-    })
-}
-
-pub(super) fn run_runtime_profile_unset_path(
-    cli: &Cli,
-    environment: &Environment,
-    profile_id: &str,
-) -> Result<RunOutput> {
-    require_human_local_command(environment, "runtime profile unset-path")?;
-    let changed = environment
-        .set_profile_command_override(&cli.profile, profile_id, None)
-        .context("save CLI config")?;
-    Ok(RunOutput {
-        stdout: if changed {
-            format!(
-                "Removed per-machine path override for runtime profile {profile_id}.\nRestart the daemon for the change to take effect.\n"
-            )
-        } else {
-            format!("No per-machine path override set for runtime profile {profile_id}.\n")
-        },
         stderr: String::new(),
     })
 }
