@@ -19,6 +19,7 @@ mod api;
 mod api_attachments;
 mod api_health;
 mod api_skill;
+mod api_transport;
 mod cli_command_schema;
 #[cfg(test)]
 mod root_command_tests;
