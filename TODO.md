@@ -1279,6 +1279,18 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
+- [ ] PR #288 `codex/cord-120-cli-attachment-download` is the next bounded child of
+      #287: base branch `codex/cord-119-cli-attachment-upload` at
+      `994b7e0e6066ccb1437197c786ff2112db609cb1`, exact head
+      `eca93e315416d17ef43b7bb6310dbcfe59e6ac5f`, tree
+      `ccb9b3d427c808f6fe312f05b57f481ed27b96b3`, candidate
+      `3ccde30c1ef1690af1a84863e5767708630d67e9` (parents base + head).
+      It isolates attachment download and file output in
+      `attachment_download_commands.rs` and removes the empty generic chat
+      module; timeout, URL, filesystem, output, dispatch, and tests remain
+      unchanged. Scoped pinned rustfmt and `git diff --check` pass; Cargo is
+      delegated. PR #288 is Ready (`isDraft=false`), CLEAN/MERGEABLE.
+      Exact-head subagent review is pending; no Cargo was run.
 - [x] PR #287 `codex/cord-119-cli-attachment-upload` is the completed bounded child of
       #286: base branch `codex/cord-118-cli-chat-read` at
       `de1a3bb61485473e1abee044a6474cbf677508ee`, exact head
