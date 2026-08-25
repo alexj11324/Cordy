@@ -863,6 +863,13 @@
       assertions and profile PATCH capture behavior are unchanged. Scoped
       rustfmt and `git diff --check` pass; PR #218 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #218 exact-head subagent review PASS on
+      `ebab54e8cd27ad603456bc05058bb24997b8f457`: both fixtures preserve the
+      original header assertions and capture behavior; user_profile tests
+      import/access the `pub(super)` helpers correctly; module privacy and
+      import boundaries are valid. No compile or behavior blocker was found.
+      Subagent did not run Cargo or modify the worktree; coordinator
+      `git diff --check` remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
