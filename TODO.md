@@ -22,6 +22,53 @@
 - [x] Installed `/home/ubuntu/.codex/skills/refactor/SKILL.md`; apply its behavior-
       preserving, test-first, one-smell-at-a-time process to every refactor slice.
 
+## Current stack split decision (2026-08-25)
+
+- [x] Do not extend aggregate PR #159. Its exact base was `9b38ea94151514f3b49b26b1d8e4d32d4a42016f`,
+      head is `b2301f0263b49ded70404342bfb7f9a59e273d75`, and the aggregate diff is
+      93 files / 18,498 additions / 15,620 deletions. This is too broad for a
+      maintainable stack PR and was closed as `SUPERSEDED` (comment
+      `5404653797`).
+- [x] Create and push Ready, non-rewriting stack branches in this order, keeping each
+      child based on the exact parent branch. PR/base/head/tree evidence:
+      1. #160 `codex/cord-50-cli-foundation`: base `main@9b38ea94`, head
+         `154df0b015a9a23ecd9c07720a5a9ffc6215ce93`, tree
+         `a85cc0df438a194ae70c586d0087f65260d0659a` (behavior/fix foundation);
+      2. #161 `codex/cord-50-cli-daemon`: base `#160@154df0b0`, head
+         `03c9c43bf2dc6868010b8b52c3c7e3bb62366a1f`, tree
+         `d9bb6548041db709136e140b0a1408b126813cf5` (daemon/auth/setup/runtime policy);
+      3. #162 `codex/cord-50-cli-platform`: base `#161@03c9c43b`, head
+         `1684d444e6d7569e821a444c901145d13414d232`, tree
+         `394528df29f32343c963866db2108b736d5d434a` (autopilot/repository/chat/skill);
+      4. #163 `codex/cord-50-cli-workspace`: base `#162@1684d444`, head
+         `53bd13f7879eb9188c18ba69137579dadc8e3115`, tree
+         `985006c482c3878910f773e285fcd61af00748a9` (property/squad/workspace);
+      5. #164 `codex/cord-50-cli-agents`: base `#163@53bd13f7`, head
+         `0fa943d55bcdd14746bfab1b1e14b2a79beeeb5b`, tree
+         `f558cb4a90ff995f818e778cfc8d1905535b1703` (user/label/project/agent);
+      6. #165 `codex/cord-50-cli-issues`: base `#164@0fa943d5`, head
+         `8975b4a8c4b2210ea13041889672d0f6d7f32ca6`, tree
+         `137076e92dba9fa5f2eab9748d9edbc27042808a` (issue command/refactor surface);
+      7. #166 `codex/cord-50-cli-core`: base `#165@8975b4a8`, head
+         `c43939b370142a0586d20a4c53418195e7a5fe70`, tree
+         `43042c5e9631386e44ab47c3f54960500ca7d1e6` (shared client/output/helper policy);
+      8. #167 `codex/cord-50-cli-schemas`: base `#166@c43939b3`, head
+         `b2301f0263b49ded70404342bfb7f9a59e273d75`, tree
+         `a6533ad745edac2465ea2e13a78c7df58e7a8253` (command schema modules).
+- [x] #160→#167 are all Ready (`isDraft=false`), CLEAN, and non-rewriting. Current
+      candidate merge SHAs are #160 `196a336cdee59eb5fda9c48ba25caa793cda0bfe`,
+      #161 `8656edc3143e1ba25fcda568f5aab9e65fafc877`, #162
+      `61337b99b78f999169eba8bda1e9b96f518c26c4`, #163
+      `76cc2c9bae3f97d1eddba112d9250b6fd8461d89`, #164
+      `b05a61a432f8bfda66f8dd92d5b7c77209308a82`, #165
+      `257178689458e30d7c7fa2588599c658a6d4bdbc`, #166
+      `796087ac64df1ee4612c84c33df8178923bf5027`, and #167
+      `087babdbe2425426bcd227a343d35f615c0dbfca`. They remain serial; Pro owns
+      review, Cargo gates, and merge.
+- [ ] After all replacement PRs are created and exact refs verified, close #159 as
+      `SUPERSEDED` without deleting or rewriting its branch. Do not reuse #159's
+      review/gate evidence for any replacement PR.
+
 ## Current baseline (2026-08-24)
 
 - Integration remote: `7ac42ed089895a88b165ca1e83734d37429e9286` (after #114 merge).
