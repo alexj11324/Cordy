@@ -3127,18 +3127,6 @@ pub struct RunOutput {
     pub stderr: String,
 }
 
-impl Cli {
-    pub fn debug_enabled(&self, environment: &Environment) -> bool {
-        self.debug
-            || environment.trimmed("CORDY_DEBUG").is_some_and(|value| {
-                !matches!(
-                    value.to_ascii_lowercase().as_str(),
-                    "0" | "false" | "no" | "off"
-                )
-            })
-    }
-}
-
 pub async fn run(cli: &Cli, environment: &Environment) -> Result<RunOutput> {
     let stdin = std::io::stdin();
     let mut stdin = stdin.lock();

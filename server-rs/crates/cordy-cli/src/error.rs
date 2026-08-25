@@ -1,6 +1,7 @@
 //! User-facing error classification ported from `server/internal/cli/errors.go`.
 
 use crate::api::{ErrorKind, HttpError, NetworkError};
+use crate::config::Environment;
 use crate::RunOutput;
 use anyhow::Error;
 
@@ -32,6 +33,18 @@ pub fn command_error_output(error: &anyhow::Error) -> Option<&RunOutput> {
             .downcast_ref::<CommandOutputError>()
             .map(|error| &error.output)
     })
+}
+
+impl super::Cli {
+    pub fn debug_enabled(&self, environment: &Environment) -> bool {
+        self.debug
+            || environment.trimmed("CORDY_DEBUG").is_some_and(|value| {
+                !matches!(
+                    value.to_ascii_lowercase().as_str(),
+                    "0" | "false" | "no" | "off"
+                )
+            })
+    }
 }
 
 pub fn format_error(error: &Error, debug: bool) -> String {
