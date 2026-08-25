@@ -142,7 +142,7 @@ async fn hydrated_agent_response(
                 "failed to load agent skills",
             )
         })?;
-    let mut response = agent_response(target, reveal_secrets, reveal_composio);
+    let mut response = agent_response(Some(state), target, reveal_secrets, reveal_composio);
     apply_targets(&mut response, &targets);
     apply_skills(&mut response, &skills);
     Ok(response)
@@ -370,7 +370,12 @@ fn system_instructions_for(system_key: Option<&str>, display_name: &str) -> Stri
     }
 }
 
-fn agent_response(target: Agent, reveal_secrets: bool, reveal_composio: bool) -> Value {
+fn agent_response(
+    state: Option<&HandlerState>,
+    target: Agent,
+    reveal_secrets: bool,
+    reveal_composio: bool,
+) -> Value {
     let env_count = env_map(&target).len();
     let system_instructions = system_instructions_for(target.system_key.as_deref(), &target.name);
     let mut mcp_config = target.mcp_config.clone().unwrap_or_else(|| json!({}));
@@ -390,6 +395,12 @@ fn agent_response(target: Agent, reveal_secrets: bool, reveal_composio: bool) ->
             .composio_toolkit_allowlist
             .as_ref()
             .is_some_and(|allowlist| !allowlist.is_empty());
+    let avatar_url = target.avatar_url.as_deref().map(|raw| {
+        state.map_or_else(
+            || raw.to_string(),
+            |state| crate::avatar::resolve_url(state, raw),
+        )
+    });
     json!({
         "id": target.id,
         "workspace_id": target.workspace_id,
@@ -400,7 +411,7 @@ fn agent_response(target: Agent, reveal_secrets: bool, reveal_composio: bool) ->
         "instructions": target.instructions,
         "system_key": target.system_key.unwrap_or_default(),
         "system_instructions": system_instructions,
-        "avatar_url": target.avatar_url,
+        "avatar_url": avatar_url,
         "runtime_mode": target.runtime_mode,
         "runtime_config": mask_gateway_token(target.runtime_config),
         "custom_args": target.custom_args,
@@ -530,7 +541,7 @@ async fn list_agents(
                     .map(Vec::as_slice)
                     .unwrap_or_default();
                 let reveal_composio = !is_agent && target.owner_id == Some(context.member.user_id);
-                let mut response = agent_response(target, reveal, reveal_composio);
+                let mut response = agent_response(Some(&state), target, reveal, reveal_composio);
                 apply_targets(&mut response, targets);
                 if let Some(skills) = skills_by_agent.get(&target_id) {
                     apply_skills(&mut response, skills);
@@ -589,7 +600,7 @@ async fn get_agent(
     let target_id = target.id;
     let reveal = !is_agent && !always_redact && can_manage(&context, &target);
     let reveal_composio = !is_agent && target.owner_id == Some(context.member.user_id);
-    let mut response = agent_response(target, reveal, reveal_composio);
+    let mut response = agent_response(Some(&state), target, reveal, reveal_composio);
     apply_targets(&mut response, &targets);
     match skill::list_agent_skill_summaries(&state.pool, target_id).await {
         Ok(skills) => apply_skills(&mut response, &skills),
@@ -833,6 +844,13 @@ async fn create_agent(
             "service_tier is not recognised for this runtime",
         );
     }
+    let avatar_url = match request.avatar_url.as_deref() {
+        Some(raw) => match crate::avatar::accept_url(&state, raw, None).await {
+            Ok(value) => Some(value),
+            Err(message) => return error_response(StatusCode::FORBIDDEN, message),
+        },
+        None => None,
+    };
     let is_first_agent = sqlx::query_scalar::<_, bool>(
         "SELECT NOT EXISTS (SELECT 1 FROM agent WHERE workspace_id=$1)",
     )
@@ -876,7 +894,7 @@ async fn create_agent(
         ws,
         name,
         request.description.as_deref().unwrap_or_default().trim(),
-        request.avatar_url.as_deref(),
+        avatar_url.as_deref(),
         &rt.runtime_mode,
         &runtime_config,
         runtime_id,
@@ -1151,6 +1169,15 @@ async fn update_agent(
             );
         }
     }
+    let avatar_url = match request.avatar_url.as_deref() {
+        Some(raw) => {
+            match crate::avatar::accept_url(&state, raw, existing.avatar_url.as_deref()).await {
+                Ok(value) => Some(value),
+                Err(message) => return error_response(StatusCode::FORBIDDEN, message),
+            }
+        }
+        None => None,
+    };
     let custom_env = existing.custom_env.clone();
     let custom_args = request
         .custom_args
@@ -1210,7 +1237,7 @@ async fn update_agent(
         existing.id,
         request.name.as_deref().map(str::trim),
         request.description.as_deref().map(str::trim),
-        request.avatar_url.as_deref(),
+        avatar_url.as_deref(),
         &runtime_config,
         request
             .runtime_id
@@ -2199,7 +2226,7 @@ fn publish(state: &HandlerState, event_type: &str, target: &Agent, actor_id: Uui
         workspace_id: target.workspace_id.to_string(),
         actor_type: "member".into(),
         actor_id: actor_id.to_string(),
-        payload: json!({"agent":agent_response(target.clone(),false,false)}),
+        payload: json!({"agent":agent_response(Some(state),target.clone(),false,false)}),
         ..Default::default()
     });
 }
@@ -2270,7 +2297,7 @@ mod tests {
 
     #[test]
     fn agent_actor_projection_redacts_every_secret_surface() {
-        let response = agent_response(agent_fixture(), false, false);
+        let response = agent_response(None, agent_fixture(), false, false);
         assert_eq!(response["runtime_config"]["gateway"]["token"], "***");
         assert_eq!(response["mcp_config"], json!({}));
         assert_eq!(response["mcp_config_redacted"], true);
