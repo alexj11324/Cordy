@@ -194,6 +194,7 @@ mod project_status_commands;
 mod property_command_schema;
 mod property_commands;
 mod repo_commands;
+mod repo_command_schema;
 mod root_command_schema;
 mod runtime_commands;
 mod runtime_delete;
@@ -442,8 +443,9 @@ pub(super) use issue_property_commands::{
 };
 pub(super) use repo_commands::{
     repo_checkout_retry_delay, repo_urls, run_repo_add, run_repo_checkout, run_repo_list,
-    run_repo_remove, RepoArgs, RepoCommand, RepoMutationArgs, RepoRemoveArgs, WorkspaceRepo,
+    run_repo_remove, WorkspaceRepo,
 };
+pub(super) use repo_command_schema::{RepoArgs, RepoCommand, RepoMutationArgs, RepoRemoveArgs};
 pub(super) use root_command_schema::{UpdateArgs, VersionOutput};
 pub(super) use runtime_commands::{
     run_runtime_activity, run_runtime_delete, run_runtime_list, run_runtime_rename,
