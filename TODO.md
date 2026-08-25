@@ -729,6 +729,16 @@
       all ID/output/CRUD arguments remain unchanged. `Command::Label` routing,
       lib module registration, and parent visibility are correct. `git diff
       --check` passes; subagent did not run Cargo or modify files.
+- [x] PR #241 `codex/cord-73-cli-project-dispatch` is the next bounded child
+      of #240: base branch `codex/cord-72-cli-label-dispatch` at
+      `00c5dbef79d8acf7cfccab0e23ecd27e7e3dc47a`, exact head
+      `3870dd16270024020f9557fec428f9970e2e591c`, tree
+      `691ff30fc2be0cb6a020478c9918630de6084cf2`, candidate
+      `9cc48a7a5d9d23b7a95eb64e162e2b122689152b`. It isolates Project CRUD,
+      status, and nested resource routing into `dispatch_project.rs`,
+      preserving identifiers, output formats, and resource behavior. Scoped
+      rustfmt and `git diff --check` pass; PR #241 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
