@@ -1315,6 +1315,17 @@
       Scoped rustfmt and `git diff --check` pass (the subagent environment
       lacked a rustfmt executable); Cargo was not run. Pro owns push/Ready
       PR, gate, and merge.
+- [ ] CLI task-run reference structural refactor is committed at
+      `0c0e787f2d6aff5513c142a618707e3e999700f1` (parent
+      `8975b4a8c4b2210ea13041889672d0f6d7f32ca6`, tree
+      `09a02265511e8806f7233707d0c0a3a9aced04c9`): full UUID handling,
+      issue-scoped short-prefix lookup, ambiguity/error reporting, and
+      bounded task-run resolution now live in
+      `cordy-cli/src/task_reference.rs`; parent and task command imports
+      retain their contracts. The serial subagent reviewed the exact head
+      and found no issue. Scoped rustfmt and `git diff --check` pass (the
+      subagent environment lacked a rustfmt executable); Cargo was not run.
+      Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
