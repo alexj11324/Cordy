@@ -12,7 +12,8 @@ use std::time::Duration;
 
 use cordy_agent::{
     BackendConfig, CatalogCache, GrokBackend, GrokConfig, HermesBackend, HermesConfig, KimiBackend,
-    KimiConfig, KiroBackend, KiroConfig, ReasonixBackend, ReasonixConfig, RuntimeCommand,
+    KimiConfig, KiroBackend, KiroConfig, QoderBackend, QoderConfig, ReasonixBackend,
+    ReasonixConfig, RuntimeCommand,
 };
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
 use serde_json::{json, Value};
@@ -257,7 +258,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         };
         if !matches!(
             target.provider.as_str(),
-            "hermes" | "kimi" | "kiro" | "reasonix" | "grok"
+            "hermes" | "kimi" | "kiro" | "reasonix" | "grok" | "qoder" | "qoderclicn"
         ) {
             return false;
         }
@@ -343,6 +344,27 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                     ACP_MODEL_DISCOVERY_TIMEOUT,
                 )
                 .await,
+                "qoder" | "qoderclicn" => {
+                    let default_command = if target.provider == "qoderclicn" {
+                        "qoderclicn"
+                    } else {
+                        "qodercli"
+                    };
+                    QoderBackend::new(QoderConfig {
+                        command,
+                        env: BTreeMap::new(),
+                        default_command: default_command.to_string(),
+                        provider: target.provider.clone(),
+                        ..QoderConfig::default()
+                    })
+                    .discover_models_for_runtime(
+                        &runtime_scope,
+                        &self.model_cache,
+                        ctx.token().clone(),
+                        ACP_MODEL_DISCOVERY_TIMEOUT,
+                    )
+                    .await
+                }
                 _ => unreachable!("provider filtered above"),
             };
             Ok::<_, anyhow::Error>(model_list_completed_payload(&target.provider, catalog))
