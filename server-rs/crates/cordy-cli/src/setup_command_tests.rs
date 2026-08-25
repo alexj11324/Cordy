@@ -53,6 +53,7 @@ fn setup_callback_host_is_available_for_cloud_and_self_host_browser_flows() {
         .expect("cloud callback host");
     let Command::Setup(SetupArgs {
         command: Some(command),
+        ..
     }) = cloud.command
     else {
         panic!("expected cloud setup");
@@ -74,6 +75,7 @@ fn setup_callback_host_is_available_for_cloud_and_self_host_browser_flows() {
             .expect("self-host callback host");
     let Command::Setup(SetupArgs {
         command: Some(command),
+        ..
     }) = self_host.command
     else {
         panic!("expected self-host setup");

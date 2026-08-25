@@ -11,10 +11,10 @@ use super::{
 
 #[derive(Debug)]
 pub(super) struct TimelineFilter {
-    activity_only: bool,
-    actions: HashSet<String>,
-    since: Option<DateTime<FixedOffset>>,
-    tail: usize,
+    pub(super) activity_only: bool,
+    pub(super) actions: HashSet<String>,
+    pub(super) since: Option<DateTime<FixedOffset>>,
+    pub(super) tail: usize,
 }
 
 pub(super) fn build_timeline_filter(args: &IssueTimelineArgs) -> Result<TimelineFilter> {

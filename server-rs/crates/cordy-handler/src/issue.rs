@@ -296,17 +296,20 @@ async fn search_issues(
     };
     let mut count = QueryBuilder::<Postgres>::new("SELECT count(*) FROM issue i WHERE ");
     push_search_membership(&mut count, workspace_id, include_closed, &patterns, number);
-    let total = count
+    let total = match count
         .build_query_scalar::<i64>()
         .fetch_one(&state.pool)
         .await
-        .map_err(|error| {
+    {
+        Ok(total) => total,
+        Err(error) => {
             tracing::warn!(%error, "failed to count search results");
-            error_response(
+            return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to count search results",
-            )
-        })?;
+            );
+        }
+    };
     let prefix = issue_prefix(&state, workspace_id).await;
     let mut response = Vec::with_capacity(issues.len());
     let terms = query
@@ -1491,7 +1494,7 @@ async fn table_base_rows(
                 "failed to query issue table",
             )
         })?;
-    let next = (rows.len() == limit)
+    let next = (rows.len() as i64 == limit)
         .then(|| rows.last().map(|row| encode_table_row_cursor(request, &fingerprint, row.id)))
         .flatten();
     Ok((rows, total, next))

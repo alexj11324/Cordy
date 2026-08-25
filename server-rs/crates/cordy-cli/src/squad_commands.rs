@@ -71,7 +71,7 @@ pub(super) async fn run_squad_create(
     }
     let leader = args.leader.as_deref().unwrap_or_default().trim();
     if leader.is_empty() {
-        bail!("--leader is required (agent name or ID)");
+        bail!("--leader is required (name or ID)");
     }
     let client = new_api_client(cli, environment)?;
     let workspace_id = resolve_current_workspace_id(cli, environment);
