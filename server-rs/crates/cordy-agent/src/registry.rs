@@ -7,6 +7,7 @@ use crate::antigravity::{AntigravityBackend, AntigravityConfig};
 use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
+use crate::dsh::{DshBackend, DshConfig};
 use crate::qoder::{
     DimBackend, DimConfig, GrokBackend, GrokConfig, HermesBackend, HermesConfig, KimiBackend,
     KimiConfig, KiroBackend, KiroConfig, McodeBackend, McodeConfig, QoderBackend, QoderConfig,
@@ -89,6 +90,10 @@ pub fn build_backend(
             env: config.env,
         }))),
         "dim" => Ok(Arc::new(DimBackend::new(DimConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "dsh" => Ok(Arc::new(DshBackend::new(DshConfig {
             command: config.command,
             env: config.env,
         }))),
@@ -513,6 +518,7 @@ mod tests {
         assert!(build_backend("qwenpaw", BackendConfig::default()).is_ok());
         assert!(build_backend("kimi", BackendConfig::default()).is_ok());
         assert!(build_backend("reasonix", BackendConfig::default()).is_ok());
+        assert!(build_backend("dsh", BackendConfig::default()).is_ok());
         assert!(build_backend("grok", BackendConfig::default()).is_ok());
         assert!(build_backend("mcode", BackendConfig::default()).is_ok());
         assert!(build_backend("dim", BackendConfig::default()).is_ok());
