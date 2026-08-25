@@ -36,15 +36,10 @@
 //! - slog logger parameter dropped; tracing macros used directly.
 //! - Prepare is async: the worktree branch shells out to git through
 //!   tokio::process with timeouts (local_worktree.rs).
-//! - Hermes and Reasonix are implemented in capability modules and their
-//!   prepare/reuse call sites are production-wired here. OpenClaw remains an
-//!   explicit fail-closed stand-in until its complete CLI/config contract is
-//!   migrated.
-//! - OpenclawGatewayPin is a structural stand-in for openclaw_config.go's
-//!   type. Go's public type masks Token via MarshalJSON/Stringer; the
-//!   stand-in serializes plainly (the isolation helper protocol needs the
-//!   real token anyway) and masks only in Display. When E2 lands the real
-//!   port it replaces this definition wholesale.
+//! - Hermes, OpenClaw, and Reasonix are implemented in capability modules and
+//!   their prepare/reuse call sites are production-wired here.
+//! - OpenclawGatewayPin remains the wire type used by the isolation protocol;
+//!   config discovery and wrapper synthesis live in openclaw.rs.
 
 use std::collections::HashMap;
 use std::io::Write as _;
@@ -63,7 +58,7 @@ use super::cursor_mcp::prepare_cursor_mcp_config;
 use super::git::task_key;
 use super::local_worktree::{prepare_local_worktree, LocalWorktree, LocalWorktreeParams};
 use super::reclaimable::CODEX_HOME_DIR_NAME;
-use super::{hermes, reasonix};
+use super::{hermes, openclaw, reasonix};
 
 // ---------------------------------------------------------------------------
 // Path helpers (Go filepath.Join / filepath.Clean semantics)
@@ -825,6 +820,8 @@ async fn prepare_body(
                 openclaw_bin: params.openclaw_bin.clone(),
                 mcp_config: params.mcp_config.clone(),
                 gateway: params.openclaw_gateway.clone(),
+                profile: params.profile.clone(),
+                timeout: std::time::Duration::ZERO,
             },
         )
         .map_err(|e| anyhow!("execenv: prepare openclaw config: {e:#}"))?;
@@ -1117,6 +1114,8 @@ pub fn reuse(params: ReuseParams) -> Option<Environment> {
                 openclaw_bin: params.openclaw_bin.clone(),
                 mcp_config: params.mcp_config.clone(),
                 gateway: params.openclaw_gateway.clone(),
+                profile: params.profile.clone(),
+                timeout: std::time::Duration::ZERO,
             },
         ) {
             Ok(result) => {
@@ -1517,13 +1516,10 @@ fn dir_is_empty(dir: &str) -> anyhow::Result<bool> {
 }
 
 // ---------------------------------------------------------------------------
-// S9-integration: lane E2 provider seams
-//
-// These stand-ins keep prepare structurally identical to execenv.go while the
-// hermes/openclaw/qwenpaw/reasonix provider families are ported in lane E2.
-// Each fails closed so a mis-routed task surfaces loudly instead of running
-// with missing configuration. E2 replaces these bodies (and deletes this
-// section) without touching the call sites above.
+// Provider seams shared by the capability modules.  The wire-facing Gateway
+// pin remains here because isolation.rs serializes it; Hermes, OpenClaw,
+// QwenPaw, and Reasonix behavior lives in their capability modules and is
+// invoked from the prepare/reuse call sites above.
 // ---------------------------------------------------------------------------
 
 /// OpenclawGatewayPin describes the Gateway endpoint a per-task openclaw
@@ -1578,6 +1574,11 @@ pub struct OpenclawConfigPrep {
     pub openclaw_bin: String,
     pub mcp_config: Option<Value>,
     pub gateway: OpenclawGatewayPin,
+    /// Daemon profile used to scope the shared discovery cache.
+    pub profile: String,
+    /// Per-invocation CLI deadline; zero uses CORDY_OPENCLAW_CLI_TIMEOUT or
+    /// the bounded 30s default.
+    pub timeout: std::time::Duration,
 }
 
 /// Result of preparing the per-task OpenClaw config.
@@ -1727,14 +1728,12 @@ fn write_reasonix_project_config(
     reasonix::write_reasonix_project_config(work_dir, env, manifest)
 }
 
-// S9-integration: openclaw_config.go + openclaw_config_cache.go land in lane
-// E2 (including openclawProfileCacheDir(profile)).
 fn prepare_openclaw_config(
-    _env_root: &str,
-    _work_dir: &str,
-    _prep: &OpenclawConfigPrep,
+    env_root: &str,
+    work_dir: &str,
+    prep: &OpenclawConfigPrep,
 ) -> anyhow::Result<OpenclawConfigResult> {
-    bail!("execenv: openclaw provider family not yet ported (lane E2)")
+    openclaw::prepare_openclaw_config(env_root, work_dir, prep)
 }
 
 #[cfg(test)]
