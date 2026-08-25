@@ -83,9 +83,12 @@
       parser types to `workspace_command_schema.rs`; execution behavior is unchanged.
       New schema rustfmt and `git diff --check` pass; Cargo/review/gate are delegated
       and have not been run by this thread. PR is Ready (`isDraft=false`).
-- [ ] After all replacement PRs are created and exact refs verified, close #159 as
-      `SUPERSEDED` without deleting or rewriting its branch. Do not reuse #159's
-      review/gate evidence for any replacement PR.
+- [x] #169 exact-head subagent review PASS: workspace/member/MCP/create/update clap
+      fields, defaults, help text, `PathBuf`/stdin semantics, re-exports, handlers,
+      dispatch, and tests have no compile/behavior blocker. Cargo remains delegated.
+- [x] After the replacement PRs were created and exact refs verified, #159 was closed
+      as `SUPERSEDED` without deleting or rewriting its branch. Its review/gate
+      evidence is not reused by any replacement PR.
 
 ## Current baseline (2026-08-24)
 
