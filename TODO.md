@@ -1358,18 +1358,21 @@
       pass; Cargo is delegated. PR #305 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Exact-head subagent review PASS on `c0555e5b`; no Cargo
       was run.
-- [ ] PR #306 `codex/cord-138-cli-project-resource-input` is the next bounded
+- [x] PR #306 `codex/cord-138-cli-project-resource-input` is the completed bounded
       child of #305: base branch `codex/cord-137-cli-api-url-normalization` at
-      `c0555e5b3b44253949f808b6b9bc9e9f00d35884`, exact head
-      `6091804a5e7a8c89d6bafccfa688d01d69ba3bd5`, tree
-      `bf1ed60a4e39b0c7c4e065e63bb7477d51f1b32c`, candidate
-      `3fb23ed95716b4ae4a5888200fa1c893fb441e32` (parents base + head).
+      `c0555e5b3b44253949f808b6b9bc9e9f00d35884`, current exact head
+      `0fc50c88fc5e0cb9709046029361c4e860d8fc71`, tree
+      `44d430a26b9bffebb6fb2a1ac739e2fb3ebef66a`, candidate
+      `f16b44aea71682c55a6991d4840fe56265326a35` (parents base + head).
       It isolates project-resource add/update payload builders in
       `project_resource_input.rs`; resource lookup, UUID-prefix resolution,
-      list/remove behavior, validation, and API paths remain unchanged.
-      Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated.
-      PR #306 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head
-      subagent review pending; no Cargo was run.
+      list/remove behavior, validation, and API paths remain unchanged. The
+      first review found a real stale import; delegated fix `0fc50c88` updates
+      `project_resource_commands.rs` to import the builders from the new input
+      module. Scoped pinned rustfmt and `git diff --check` pass; Cargo is
+      delegated. PR #306 is Ready (`isDraft=false`), MERGEABLE (checks
+      pending). New exact-head subagent review PASS on `0fc50c88`; no Cargo
+      was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
