@@ -400,6 +400,14 @@
       `skip_children` and `git diff --check` pass; PR #222 is Ready
       (`isDraft=false`), MERGEABLE (GitHub checks pending). Cargo and
       exact-head review remain delegated.
+- [x] #222 exact-head subagent review PASS on
+      `5d3c4fd9cbb27f67dd5fbf6103ba3a9be236655c`: the diagnostics module
+      preserves probe-runtimes and disk-usage validation, task/profile context,
+      parent-status warnings, limits, and JSON/table output. Parent helper
+      imports and module wiring are correct, including both daemon dispatch
+      references. No compile or behavior blocker was found. Subagent did not
+      run Cargo or modify the worktree; coordinator `git diff --check`
+      remains clean.
 - [x] PR #221 `codex/cord-53-daemon-log-commands` is the next bounded child
       of #220: base branch `codex/cord-52-daemon-status-commands` at
       `6a80fafaf12814009a2155036d89a4ea1ef51d58`, exact head
