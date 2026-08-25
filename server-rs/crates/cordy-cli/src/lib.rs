@@ -110,12 +110,12 @@ mod private_helper_command_tests;
 mod attachment_input;
 mod auth_command_schema;
 mod auth_commands;
-mod autopilot_commands;
 mod autopilot_command_schema;
 mod autopilot_mutation_commands;
 mod autopilot_read_commands;
 mod autopilot_trigger_commands;
 mod autopilot_trigger_mutation_commands;
+mod autopilot_trigger_webhook_commands;
 mod autopilot_output;
 mod autopilot_resolver;
 mod chat_commands;
@@ -282,9 +282,7 @@ use attachment_input::{
 };
 pub(super) use auth_command_schema::{AuthArgs, AuthCommand, LoginArgs};
 use auth_commands::{display_token_prefix, run_auth_logout, run_auth_status};
-pub(super) use autopilot_commands::{
-    run_autopilot_trigger_rotate_url,
-};
+use autopilot_trigger_webhook_commands::run_autopilot_trigger_rotate_url;
 use autopilot_trigger_commands::run_autopilot_trigger;
 use autopilot_trigger_mutation_commands::{
     run_autopilot_trigger_add, run_autopilot_trigger_delete, run_autopilot_trigger_update,
