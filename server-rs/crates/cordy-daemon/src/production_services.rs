@@ -11,8 +11,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use cordy_agent::{
-    BackendConfig, CatalogCache, HermesBackend, HermesConfig, KimiBackend, KimiConfig, KiroBackend,
-    KiroConfig, ReasonixBackend, ReasonixConfig, RuntimeCommand,
+    BackendConfig, CatalogCache, GrokBackend, GrokConfig, HermesBackend, HermesConfig, KimiBackend,
+    KimiConfig, KiroBackend, KiroConfig, ReasonixBackend, ReasonixConfig, RuntimeCommand,
 };
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
 use serde_json::{json, Value};
@@ -257,7 +257,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         };
         if !matches!(
             target.provider.as_str(),
-            "hermes" | "kimi" | "kiro" | "reasonix"
+            "hermes" | "kimi" | "kiro" | "reasonix" | "grok"
         ) {
             return false;
         }
@@ -322,6 +322,17 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 )
                 .await,
                 "reasonix" => ReasonixBackend::new(ReasonixConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "grok" => GrokBackend::new(GrokConfig {
                     command,
                     env: BTreeMap::new(),
                 })

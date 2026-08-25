@@ -26,7 +26,10 @@ use crate::contract::{
     COST_USD_TICKS_PER_USD,
 };
 use crate::kimi_usage::{scan_kimi_session_usage, KimiUsageScan};
-use crate::model::{parse_acp_session_models, Catalog, CatalogCache, ModelDiscoveryCacheKey};
+use crate::model::{
+    parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelThinking,
+    ThinkingLevel,
+};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 use crate::version::check_minimum;
@@ -753,9 +756,85 @@ impl GrokBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        self.inner
-            .discover_models(cache, cancellation, timeout)
+        self.discover_models_for_runtime("grok", cache, cancellation, timeout)
             .await
+    }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Grok executable do not share an account/profile catalog entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        let mut catalog = discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await;
+        if catalog.models.is_empty() {
+            return grok_fallback_catalog();
+        }
+        for model in &mut catalog.models {
+            if model.provider == "grok" {
+                model.provider = "xai".to_string();
+            }
+        }
+        annotate_grok_thinking(&mut catalog.models);
+        catalog
+    }
+}
+
+fn grok_fallback_catalog() -> Catalog {
+    let mut models = vec![
+        Model {
+            id: "grok-4.5".to_string(),
+            label: "Grok 4.5".to_string(),
+            provider: "xai".to_string(),
+            default: true,
+            ..Model::default()
+        },
+        Model {
+            id: "grok-composer-2.5-fast".to_string(),
+            label: "Grok Composer 2.5 Fast".to_string(),
+            provider: "xai".to_string(),
+            ..Model::default()
+        },
+    ];
+    annotate_grok_thinking(&mut models);
+    Catalog {
+        models,
+        fallback: true,
+    }
+}
+
+fn annotate_grok_thinking(models: &mut [Model]) {
+    if let Some(model) = models.iter_mut().find(|model| model.id == "grok-4.5") {
+        model.thinking = Some(ModelThinking {
+            supported_levels: vec![
+                ThinkingLevel {
+                    value: "low".to_string(),
+                    label: "Low".to_string(),
+                    description: String::new(),
+                },
+                ThinkingLevel {
+                    value: "medium".to_string(),
+                    label: "Medium".to_string(),
+                    description: String::new(),
+                },
+                ThinkingLevel {
+                    value: "high".to_string(),
+                    label: "High".to_string(),
+                    description: String::new(),
+                },
+            ],
+            default_level: String::new(),
+        });
     }
 }
 
@@ -3751,6 +3830,30 @@ mod tests {
     }
 
     #[test]
+    fn grok_fallback_catalog_matches_static_model_contract() {
+        let catalog = grok_fallback_catalog();
+        assert!(catalog.fallback);
+        assert_eq!(
+            catalog
+                .models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            ["grok-4.5", "grok-composer-2.5-fast"]
+        );
+        assert_eq!(catalog.models[0].provider, "xai");
+        assert!(catalog.models[0].default);
+        assert_eq!(
+            catalog.models[0]
+                .thinking
+                .as_ref()
+                .map(|thinking| thinking.supported_levels.len()),
+            Some(3)
+        );
+        assert!(catalog.models[1].thinking.is_none());
+    }
+
+    #[test]
     fn mcode_arguments_keep_acp_and_login_ui_owned() {
         let args = build_mcode_args(&ExecOptions {
             extra_args: ["acp", "--verbose"].map(str::to_string).to_vec(),
@@ -5079,7 +5182,8 @@ while IFS= read -r line; do
   case "$line" in
     *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"authMethods":[{"id":"cached_token"},{"id":"xai.api_key"}]}}\n' "$id" ;;
     *'"method":"authenticate"'*)
-      case "$line" in *'"methodId":"xai.api_key"'*'"headless":true'*) ;; *) exit 41 ;; esac
+      case "$line" in *'"methodId":"xai.api_key"'*) ;; *) exit 41 ;; esac
+      case "$line" in *'"headless":true'*) ;; *) exit 41 ;; esac
       printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id"
       ;;
     *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"grok-1"}}\n' "$id" ;;
@@ -5133,7 +5237,8 @@ done
 "#,
         );
         let catalog = backend
-            .discover_models(
+            .discover_models_for_runtime(
+                "grok\0workspace=test\0runtime=test\0profile=",
                 &CatalogCache::default(),
                 CancellationToken::new(),
                 Duration::from_secs(5),
