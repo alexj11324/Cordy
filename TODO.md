@@ -492,6 +492,17 @@
       profile-scoped logout behavior remain covered. No compile or behavior
       blocker was found. Subagent did not run Cargo or modify the worktree;
       coordinator `git diff --check` remains clean.
+- [x] PR #198 `codex/cord-50-cli-user-profile-tests` is the next bounded child of
+      #197: base branch `codex/cord-50-cli-auth-tests` at
+      `269a57eda39d0c7ed6e1b767a6b47e2aa211f4e5`, exact head
+      `1f228689d13516869711910be379db35a01eac53`, tree
+      `8b4a52fc87dbcb056c9fd51f1ab57eecae2d3736`, candidate
+      `251b78693b158adea611e47e6d1e5e21a0838a0d`. It extracts seven user/profile
+      get/update input-safety, API, and table contract tests into
+      `user_profile_command_tests.rs`; description precedence, external-file and
+      symlink guards, and output behavior are unchanged. Scoped rustfmt and
+      `git diff --check` pass; PR #198 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
