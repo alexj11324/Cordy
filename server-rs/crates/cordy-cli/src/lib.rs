@@ -218,6 +218,7 @@ mod path_safety;
 mod project_command_schema;
 mod project_commands;
 mod project_mutation_commands;
+mod project_output;
 mod project_resource_commands;
 mod project_resource_input;
 mod project_resource_support;
@@ -465,9 +466,9 @@ pub(super) use project_command_schema::{
     ProjectArgs, ProjectCommand, ProjectCreateArgs, ProjectResourceAddArgs, ProjectResourceArgs,
     ProjectResourceCommand, ProjectResourceUpdateArgs, ProjectUpdateArgs,
 };
-use project_commands::{
+use project_commands::{run_project_get, run_project_list};
+use project_output::{
     format_project_details_table, format_project_list_table, project_actor_inputs, project_lead,
-    run_project_get, run_project_list,
 };
 use project_mutation_commands::{
     format_project_mutation, run_project_create, run_project_delete, run_project_update,
