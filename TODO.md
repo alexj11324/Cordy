@@ -1409,6 +1409,16 @@
       the exact head and found no compile or behavior blocker. Cargo was not
       run. Pro owns push/Ready PR, gate, and merge.
 
+- [ ] CLI URL-helper refactor is committed at
+      `e3409bcc38a74f48739882df08c3c00c3b0e0f06` (parent
+      `d13bdc667513d67e32a3f305c254648e0aee2e70`, tree
+      `7c836b06ebde2d85b093e6877a78ca3743040c94`): path-segment encoding
+      now lives in `cordy-cli/src/url_helpers.rs`; the parent re-exports it
+      for skill, squad, and workspace MCP commands. Scoped rustfmt and
+      `git diff --check` pass; the serial subagent reviewed the exact head and
+      found no compile or behavior blocker. Cargo was not run. Pro owns
+      push/Ready PR, gate, and merge.
+
 ## Phase 4 — S8 route and API parity
 
 - [ ] Audit #66→#87 bottom-up against the live integration tree.
