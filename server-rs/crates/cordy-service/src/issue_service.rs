@@ -585,9 +585,6 @@ impl IssueService {
         actor_id: &str,
         opts: &IssueCreateOpts,
     ) {
-        let Some(client) = self.analytics.as_deref() else {
-            return;
-        };
         let (source, task_id, autopilot_run_id) = classify_origin(issue);
         let analytics_actor_id = if creator_type == "agent" {
             format!("agent:{actor_id}")
@@ -604,7 +601,11 @@ impl IssueService {
             source,
             &opts.platform,
         );
-        cordy_metrics::business_events::record_event(Some(client), self.metrics.as_deref(), &ev);
+        cordy_metrics::business_events::record_event(
+            self.analytics.as_deref(),
+            self.metrics.as_deref(),
+            &ev,
+        );
     }
 
     /// Leaves the refusal on the issue when an assignment cannot be enqueued

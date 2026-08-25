@@ -624,6 +624,9 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         ))
         .layer(middleware::from_fn(
             cordy_middleware::client::client_metadata,
+        ))
+        .layer(middleware::from_fn(
+            cordy_middleware::request_id::request_id,
         ));
 
     match http_metrics {

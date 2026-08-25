@@ -188,16 +188,14 @@ async fn update_me(State(state): State<HandlerState>, headers: HeaderMap, body: 
         None => current_user.name.clone(),
     };
     let avatar_url = match request.avatar_url {
-        Some(value) => match crate::avatar::accept_url(
-            &state,
-            &value,
-            current_user.avatar_url.as_deref(),
-        )
-        .await
-        {
-            Ok(value) => Some(value),
-            Err(message) => return error_response(StatusCode::FORBIDDEN, message),
-        },
+        Some(value) => {
+            match crate::avatar::accept_url(&state, &value, current_user.avatar_url.as_deref())
+                .await
+            {
+                Ok(value) => Some(value),
+                Err(message) => return error_response(StatusCode::FORBIDDEN, message),
+            }
+        }
         None => None,
     };
     let language = match request.language {
@@ -269,7 +267,24 @@ async fn patch_onboarding(
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
     };
 
-    let before_user = user::get_user(&state.pool, user_id).await.ok().flatten();
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update onboarding",
+            )
+        }
+    };
+    let before_user = match user::get_user_for_update(&mut *tx, user_id).await {
+        Ok(user) => user,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update onboarding",
+            )
+        }
+    };
     let before_raw = before_user
         .as_ref()
         .map(|user| user.onboarding_questionnaire.clone())
@@ -281,18 +296,27 @@ async fn patch_onboarding(
             .as_object()
             .is_some_and(serde_json::Map::is_empty);
 
-    let updated =
-        match user::patch_user_onboarding(&state.pool, request.questionnaire.as_ref(), user_id)
-            .await
-        {
-            Ok(Some(user)) => user,
-            Ok(None) | Err(_) => {
-                return error_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to update onboarding",
-                )
-            }
-        };
+    let updated = match user::patch_user_onboarding(
+        &mut *tx,
+        request.questionnaire.as_ref(),
+        user_id,
+    )
+    .await
+    {
+        Ok(Some(user)) => user,
+        Ok(None) | Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update onboarding",
+            )
+        }
+    };
+    if tx.commit().await.is_err() {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to update onboarding",
+        );
+    }
 
     if first_touch
         && request
@@ -384,19 +408,19 @@ async fn complete_onboarding(
         };
     }
 
-    let before = match user::get_user(&state.pool, user_id).await {
-        Ok(Some(user)) => user,
-        Ok(None) | Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to complete onboarding",
-            )
-        }
-    };
-    let first_completion = before.onboarded_at.is_none();
-    let updated = match user::mark_user_onboarded(&state.pool, user_id).await {
-        Ok(Some(user)) => user,
-        Ok(None) | Err(_) => {
+    let (updated, first_completion) = match user::claim_first_onboarding(&state.pool, user_id).await
+    {
+        Ok(Some(user)) => (user, true),
+        Ok(None) => match user::get_user(&state.pool, user_id).await {
+            Ok(Some(user)) => (user, false),
+            Ok(None) | Err(_) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to complete onboarding",
+                )
+            }
+        },
+        Err(_) => {
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to complete onboarding",
@@ -528,9 +552,11 @@ fn first_unquoted(value: &str, needle: char) -> Option<usize> {
 }
 
 fn record_metric_event(state: &HandlerState, event: &cordy_analytics::Event) {
-    if let Some(metrics) = state.business_metrics.as_deref() {
-        metrics.inc_for_event(event);
-    }
+    cordy_metrics::business_events::record_event(
+        Some(state.analytics.as_ref()),
+        state.business_metrics.as_deref(),
+        event,
+    );
 }
 
 fn deserialize_null_string<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -618,6 +644,77 @@ mod tests {
         assert_eq!(value["onboarding_questionnaire"], serde_json::json!({}));
         assert_eq!(value["created_at"], "2026-08-23T12:34:56Z");
         assert_eq!(value["updated_at"], "2026-08-23T12:35:00Z");
+    }
+
+    struct PrivateStorage;
+
+    #[async_trait::async_trait]
+    impl crate::attachment_storage::AttachmentStorage for PrivateStorage {
+        async fn upload(
+            &self,
+            _key: &str,
+            _body: Vec<u8>,
+            _content_type: &str,
+            _filename: &str,
+        ) -> anyhow::Result<String> {
+            unreachable!()
+        }
+
+        async fn get(
+            &self,
+            _key: &str,
+            _range: Option<&str>,
+        ) -> anyhow::Result<crate::attachment_storage::StoredObject> {
+            unreachable!()
+        }
+
+        async fn delete(&self, _key: &str) -> anyhow::Result<()> {
+            unreachable!()
+        }
+
+        fn key_from_url(&self, raw: &str) -> Option<String> {
+            raw.strip_prefix("https://objects.example/")
+                .map(str::to_string)
+        }
+
+        fn object_url(&self, key: &str) -> String {
+            format!("https://objects.example/{key}")
+        }
+    }
+
+    fn profile_state() -> HandlerState {
+        let mut download = crate::state::AttachmentDownloadSettings::default();
+        download.public_url = "https://api.example".into();
+        HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        )
+        .with_attachment_storage(std::sync::Arc::new(PrivateStorage), Vec::new(), download)
+    }
+
+    #[test]
+    fn user_response_hides_private_avatar_object_url() {
+        let user = User {
+            avatar_url: Some("https://objects.example/users/u/avatar.png".into()),
+            cloud_waitlist_email: None,
+            cloud_waitlist_reason: None,
+            created_at: "2026-08-23T12:34:56Z".parse().unwrap(),
+            email: "alex@example.com".into(),
+            id: Uuid::nil(),
+            language: None,
+            name: "Alex".into(),
+            onboarded_at: None,
+            onboarding_questionnaire: serde_json::json!({}),
+            profile_description: String::new(),
+            starter_content_state: None,
+            timezone: None,
+            updated_at: "2026-08-23T12:35:00Z".parse().unwrap(),
+        };
+        let response = user_response(&profile_state(), &user);
+        let avatar_url = response.avatar_url.unwrap();
+        assert!(avatar_url.starts_with("https://api.example/api/avatars/"));
+        assert!(!avatar_url.contains("objects.example"));
     }
 
     #[test]

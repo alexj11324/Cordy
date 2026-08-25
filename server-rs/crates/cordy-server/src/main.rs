@@ -11,6 +11,7 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 mod channel_runtime;
+mod http_serve;
 mod realtime_runtime;
 
 const HTTP_DRAIN_TIMEOUT: Duration = Duration::from_secs(30);
@@ -146,6 +147,21 @@ fn duration_env(name: &str, default: Duration, allow_zero: bool) -> Duration {
             default
         }
     }
+}
+
+fn dedicated_sampler_pool(
+    cfg: &cordy_config::DatabaseConfig,
+) -> Option<cordy_metrics::sampler::BusinessSamplerOptions> {
+    let url = cfg.url.as_deref()?;
+    sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .connect_lazy(url)
+        .ok()
+        .map(|pool| cordy_metrics::sampler::BusinessSamplerOptions {
+            pool: Arc::new(pool),
+            cache_ttl: None,
+            query_timeout: None,
+        })
 }
 
 fn autopilot_entitlements(
@@ -502,11 +518,12 @@ async fn main() -> anyhow::Result<()> {
         let registry = cordy_metrics::Registry::new(cordy_metrics::registry::RegistryOptions {
             pool: Some(Arc::new(db.clone())),
             realtime: Some(&cordy_realtime::M),
+            daemonws: Some(&cordy_daemon::hub::M),
             version: env!("CARGO_PKG_VERSION").to_string(),
             commit: option_env!("CORDY_GIT_COMMIT")
                 .unwrap_or("unknown")
                 .to_string(),
-            sampler: None,
+            sampler: dedicated_sampler_pool(&cfg.database),
         });
         let business = registry.business.clone();
         let http = registry.http.clone();
@@ -610,36 +627,29 @@ async fn main() -> anyhow::Result<()> {
         analytics,
     } = app;
     let http_shutdown = CancellationToken::new();
-    let server_shutdown = http_shutdown.clone();
-    let mut server = Box::pin(
-        axum::serve(
-            listener,
-            router.into_make_service_with_connect_info::<SocketAddr>(),
-        )
-        .with_graceful_shutdown(async move {
-            server_shutdown.cancelled().await;
-        }),
-    );
+    let mut server = std::pin::pin!(http_serve::serve_with_bounded_drain(
+        listener,
+        router,
+        http_shutdown.clone(),
+        HTTP_DRAIN_TIMEOUT,
+    ));
     let mut http_drain_timed_out = false;
     let serve_result = tokio::select! {
-        result = server.as_mut() => result,
+        result = server.as_mut() => result.map(|timed_out| {
+            http_drain_timed_out = timed_out;
+        }),
         () = shutdown_signal() => {
             http_shutdown.cancel();
-            match tokio::time::timeout(HTTP_DRAIN_TIMEOUT, server.as_mut()).await {
-                Ok(result) => result,
-                Err(_) => {
-                    http_drain_timed_out = true;
-                    tracing::warn!(
-                        timeout_seconds = HTTP_DRAIN_TIMEOUT.as_secs(),
-                        "HTTP server did not drain within shutdown timeout; forcing remaining connections closed"
-                    );
-                    Ok(())
-                }
-            }
+            server.as_mut().await.map(|timed_out| {
+                http_drain_timed_out = timed_out;
+            })
         }
     };
     if http_drain_timed_out {
-        drop(server);
+        tracing::warn!(
+            timeout_seconds = HTTP_DRAIN_TIMEOUT.as_secs(),
+            "HTTP server did not drain within shutdown timeout; aborted remaining connections"
+        );
     }
     // Match Go's shutdown ordering: drain every in-flight HTTP handler before
     // stopping maintenance workers. Channel adapters are producers and must

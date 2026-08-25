@@ -143,15 +143,110 @@ async fn seed_issue(
 async fn complete_user(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     user_id: Uuid,
-) -> anyhow::Result<()> {
-    let before = user::get_user(&mut **tx, user_id)
+) -> anyhow::Result<(bool, cordy_db::models::User)> {
+    let first = user::claim_first_onboarding(&mut **tx, user_id)
+        .await?
+        .is_some();
+    let user = user::get_user(&mut **tx, user_id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("user not found"))?;
-    user::mark_user_onboarded(&mut **tx, user_id).await?;
-    if before.starter_content_state.is_none() {
+    if user.starter_content_state.is_none() {
         user::set_starter_content_state(&mut **tx, user_id, Some("imported")).await?;
     }
-    Ok(())
+    Ok((first, user))
+}
+
+fn client_platform(headers: &HeaderMap) -> &str {
+    headers
+        .get("x-client-platform")
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or("")
+}
+
+fn legacy_onboarding_metric_events(
+    user_id: Uuid,
+    workspace_id: Uuid,
+    user: &cordy_db::models::User,
+    first_completion: bool,
+    completion_path: &str,
+    created_agent_id: Option<Uuid>,
+    created_issue_id: Option<Uuid>,
+    agent_created_meta: Option<(&str, &str, bool)>,
+    platform: &str,
+) -> Vec<cordy_analytics::Event> {
+    let mut events = Vec::new();
+    if let Some(agent_id) = created_agent_id {
+        if let Some((provider, runtime_mode, is_first_agent)) = agent_created_meta {
+            events.push(cordy_analytics::agent_created(
+                &user_id.to_string(),
+                &workspace_id.to_string(),
+                &agent_id.to_string(),
+                provider,
+                runtime_mode,
+                "cordy_helper",
+                is_first_agent,
+            ));
+        }
+    }
+    if let Some(issue_id) = created_issue_id {
+        events.push(cordy_analytics::issue_created(
+            &user_id.to_string(),
+            &workspace_id.to_string(),
+            &issue_id.to_string(),
+            &created_agent_id
+                .map(|id| id.to_string())
+                .unwrap_or_default(),
+            "",
+            "",
+            cordy_analytics::SOURCE_ONBOARDING,
+            platform,
+        ));
+    }
+    if first_completion {
+        let onboarded_at = user
+            .onboarded_at
+            .map(crate::timefmt::rfc3339)
+            .unwrap_or_default();
+        events.push(cordy_analytics::onboarding_completed(
+            &user_id.to_string(),
+            &workspace_id.to_string(),
+            completion_path,
+            &onboarded_at,
+            user.cloud_waitlist_email.is_some(),
+        ));
+    }
+    events
+}
+
+fn record_legacy_onboarding_side_effects(
+    state: &HandlerState,
+    user_id: Uuid,
+    workspace_id: Uuid,
+    user: &cordy_db::models::User,
+    first_completion: bool,
+    completion_path: &str,
+    created_agent: Option<&Agent>,
+    created_issue: Option<&Issue>,
+    agent_created_meta: Option<(&str, &str, bool)>,
+    platform: &str,
+) {
+    for event in legacy_onboarding_metric_events(
+        user_id,
+        workspace_id,
+        user,
+        first_completion,
+        completion_path,
+        created_agent.map(|agent| agent.id),
+        created_issue.map(|issue| issue.id),
+        agent_created_meta,
+        platform,
+    ) {
+        cordy_metrics::business_events::record_event(
+            Some(state.analytics.as_ref()),
+            state.business_metrics.as_deref(),
+            &event,
+        );
+    }
 }
 
 async fn publish(
@@ -263,6 +358,7 @@ async fn with_runtime(
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to list agents");
         }
     };
+    let is_first_agent = agents.is_empty();
     let mut made_agent = None;
     let helper = match agents
         .into_iter()
@@ -344,12 +440,39 @@ async fn with_runtime(
             );
         }
     };
-    if complete_user(&mut tx, user_id).await.is_err() || tx.commit().await.is_err() {
+    let (first_completion, user) = match complete_user(&mut tx, user_id).await {
+        Ok(value) => value,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to finish onboarding",
+            )
+        }
+    };
+    if tx.commit().await.is_err() {
         return error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to finish onboarding",
         );
     }
+    record_legacy_onboarding_side_effects(
+        &state,
+        user_id,
+        workspace_id,
+        &user,
+        first_completion,
+        cordy_analytics::ONBOARDING_PATH_FULL,
+        made_agent.as_ref(),
+        made_issue.as_ref(),
+        made_agent.as_ref().map(|_| {
+            (
+                runtime.provider.as_str(),
+                runtime.runtime_mode.as_str(),
+                is_first_agent,
+            )
+        }),
+        client_platform(&headers),
+    );
     publish(
         &state,
         workspace_id,
@@ -546,12 +669,33 @@ async fn without_runtime(
             );
         }
     };
-    if complete_user(&mut tx, user_id).await.is_err() || tx.commit().await.is_err() {
+    let (first_completion, user) = match complete_user(&mut tx, user_id).await {
+        Ok(value) => value,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to finish onboarding",
+            )
+        }
+    };
+    if tx.commit().await.is_err() {
         return error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to finish onboarding",
         );
     }
+    record_legacy_onboarding_side_effects(
+        &state,
+        user_id,
+        workspace_id,
+        &user,
+        first_completion,
+        cordy_analytics::ONBOARDING_PATH_RUNTIME_SKIPPED,
+        None,
+        made_issue.as_ref(),
+        None,
+        client_platform(&headers),
+    );
     publish(&state, workspace_id, user_id, None, made_issue.as_ref()).await;
     Json(json!({"workspace_id": workspace_id, "issue_id": onboarding_issue.id})).into_response()
 }
@@ -565,5 +709,57 @@ mod tests {
         assert_eq!("你好".chars().count(), 2);
         assert!(no_runtime_copy(Some("zh-Hans")).starts_with("欢迎"));
         assert!(no_runtime_copy(Some("en")).starts_with("Welcome"));
+    }
+
+    #[test]
+    fn first_completion_emits_established_analytics_side_effects() {
+        let user_id = Uuid::now_v7();
+        let workspace_id = Uuid::now_v7();
+        let now = chrono::Utc::now();
+        let user = cordy_db::models::User {
+            id: user_id,
+            name: "Alex".into(),
+            email: "alex@example.com".into(),
+            avatar_url: None,
+            created_at: now,
+            updated_at: now,
+            onboarded_at: Some(now),
+            onboarding_questionnaire: serde_json::json!({}),
+            cloud_waitlist_email: None,
+            cloud_waitlist_reason: None,
+            starter_content_state: Some("imported".into()),
+            language: None,
+            profile_description: String::new(),
+            timezone: None,
+        };
+        let agent_id = Uuid::now_v7();
+        let issue_id = Uuid::now_v7();
+        let events = legacy_onboarding_metric_events(
+            user_id,
+            workspace_id,
+            &user,
+            true,
+            cordy_analytics::ONBOARDING_PATH_FULL,
+            Some(agent_id),
+            Some(issue_id),
+            Some(("cursor", "cloud", true)),
+            "desktop",
+        );
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].name, cordy_analytics::EVENT_AGENT_CREATED);
+        assert_eq!(events[1].name, cordy_analytics::EVENT_ISSUE_CREATED);
+        assert_eq!(events[2].name, cordy_analytics::EVENT_ONBOARDING_COMPLETED);
+        let repeat = legacy_onboarding_metric_events(
+            user_id,
+            workspace_id,
+            &user,
+            false,
+            cordy_analytics::ONBOARDING_PATH_FULL,
+            None,
+            None,
+            None,
+            "desktop",
+        );
+        assert!(repeat.is_empty());
     }
 }

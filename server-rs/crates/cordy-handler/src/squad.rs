@@ -298,7 +298,7 @@ async fn accepted_avatar_url(
         Some(value) => crate::avatar::accept_url(state, &value, current)
             .await
             .map(Some)
-            .map_err(|message| error_response(StatusCode::BAD_REQUEST, message)),
+            .map_err(|message| error_response(StatusCode::FORBIDDEN, message)),
     }
 }
 

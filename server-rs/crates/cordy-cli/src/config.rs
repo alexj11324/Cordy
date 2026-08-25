@@ -40,6 +40,8 @@ const CAPTURED_ENV_KEYS: &[&str] = &[
     "CORDY_DAEMON_AUTO_UPDATE",
     "CORDY_DAEMON_AUTO_UPDATE_INTERVAL",
     "CORDY_DAEMON_AUTO_RELOAD",
+    "CORDY_QUICK_CREATE_TASK_ID",
+    "CORDY_QUICK_CREATE_ATTACHMENT_IDS",
     TASK_CONFIG_ROOT_ENV,
 ];
 
@@ -1379,5 +1381,11 @@ mod tests {
     fn setup_input_rejects_empty_urls() {
         assert!(SetupProfileInput::new("", "https://app.example").is_err());
         assert!(SetupProfileInput::new("https://api.example", " ").is_err());
+    }
+
+    #[test]
+    fn captured_env_includes_quick_create_task_keys() {
+        assert!(CAPTURED_ENV_KEYS.contains(&"CORDY_QUICK_CREATE_TASK_ID"));
+        assert!(CAPTURED_ENV_KEYS.contains(&"CORDY_QUICK_CREATE_ATTACHMENT_IDS"));
     }
 }

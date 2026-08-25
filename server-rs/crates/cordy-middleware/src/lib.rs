@@ -10,5 +10,6 @@ pub mod csp;
 pub mod daemon_auth;
 pub mod plugin_auth;
 pub mod ratelimit;
+pub mod request_id;
 pub mod request_logger;
 pub mod workspace;

@@ -125,6 +125,7 @@ mod tests {
         let registry = crate::Registry::new(crate::RegistryOptions {
             pool: None,
             realtime: None,
+            daemonws: None,
             version: "test".to_string(),
             commit: "test".to_string(),
             sampler: None,

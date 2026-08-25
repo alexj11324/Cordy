@@ -65,8 +65,8 @@ fn configured() -> bool {
     !env("GITHUB_APP_SLUG").is_empty() && !env("GITHUB_WEBHOOK_SECRET").is_empty()
 }
 
-fn browse_configured() -> bool {
-    !env("GITHUB_APP_ID").is_empty() && !env("GITHUB_APP_PRIVATE_KEY").is_empty()
+fn browse_configured(state: &HandlerState) -> bool {
+    state.github_snapshots.client().is_some()
 }
 
 fn allowed_return(value: &str) -> bool {
@@ -277,9 +277,9 @@ async fn setup(State(state): State<HandlerState>, Query(query): Query<SetupQuery
         return Redirect::temporary(&format!("{target}&github_error=invalid_state"))
             .into_response();
     }
-    let account = match cordy_ghsnapshot::Client::new_from_env() {
-        Ok(Some(client)) => client.installation_account(installation_id).await.ok(),
-        _ => None,
+    let account = match state.github_snapshots.client() {
+        Some(client) => client.installation_account(installation_id).await.ok(),
+        None => None,
     };
     let (login, account_type, avatar) = account
         .map(|value| (value.login, value.account_type, Some(value.avatar_url)))
@@ -372,7 +372,7 @@ async fn list_installations(
         Ok(rows) => Json(json!({
             "installations": rows.into_iter().map(|row| installation_response(row, can_manage)).collect::<Vec<_>>(),
             "configured": configured(),
-            "repository_browse_configured": browse_configured(),
+            "repository_browse_configured": browse_configured(&state),
             "can_manage": can_manage,
         }))
         .into_response(),
@@ -443,9 +443,9 @@ async fn list_repositories(
         Ok(Some(row)) if row.workspace_id == workspace_id => row,
         _ => return error_response(StatusCode::NOT_FOUND, "github installation not found"),
     };
-    let client = match cordy_ghsnapshot::Client::new_from_env() {
-        Ok(Some(value)) => value,
-        _ => {
+    let client = match state.github_snapshots.client() {
+        Some(value) => value,
+        None => {
             return error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "github repository browsing is not configured",
@@ -534,9 +534,33 @@ async fn webhook(State(state): State<HandlerState>, headers: HeaderMap, body: Bo
         .unwrap_or_default()
     {
         "ping" => return Json(json!({"ok": "pong"})).into_response(),
-        "installation" => handle_installation_event(&state, &body).await,
-        "pull_request" => handle_pull_request_event(&state, &body).await,
-        "check_suite" | "check_run" | "status" => handle_ci_event(&state, &body).await,
+        "installation" => match handle_installation_event(&state, &body).await {
+            Ok(()) => {}
+            Err(_) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to persist github webhook",
+                )
+            }
+        },
+        "pull_request" => match handle_pull_request_event(&state, &body).await {
+            Ok(()) => {}
+            Err(_) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to persist github webhook",
+                )
+            }
+        },
+        "check_suite" | "check_run" | "status" => match handle_ci_event(&state, &body).await {
+            Ok(()) => {}
+            Err(_) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to persist github webhook",
+                )
+            }
+        },
         _ => {}
     }
     StatusCode::ACCEPTED.into_response()
@@ -561,31 +585,27 @@ struct InstallationAccountBody {
     avatar_url: Option<String>,
 }
 
-async fn handle_installation_event(state: &HandlerState, body: &[u8]) {
+async fn handle_installation_event(state: &HandlerState, body: &[u8]) -> anyhow::Result<()> {
     let Ok(event) = serde_json::from_slice::<InstallationEvent>(body) else {
-        return;
+        return Ok(());
     };
     match event.action.as_str() {
         "deleted" | "suspend" => {
-            if let Ok(rows) = github::delete_git_hub_installation_by_installation_id(
+            let rows = github::delete_git_hub_installation_by_installation_id(
                 &state.pool,
                 event.installation.id,
             )
-            .await
-            {
-                let _ =
-                    github::delete_pending_git_hub_installation(&state.pool, event.installation.id)
-                        .await;
-                for row in rows {
-                    if let (Some(id), Some(workspace_id)) = (row.id, row.workspace_id) {
-                        state.bus.publish(&cordy_events::Event {
-                            event_type: cordy_protocol::EVENT_GITHUB_INSTALLATION_DELETED.into(),
-                            workspace_id: workspace_id.to_string(),
-                            actor_type: "system".into(),
-                            payload: json!({"id": id}),
-                            ..Default::default()
-                        });
-                    }
+            .await?;
+            github::delete_pending_git_hub_installation(&state.pool, event.installation.id).await?;
+            for row in rows {
+                if let (Some(id), Some(workspace_id)) = (row.id, row.workspace_id) {
+                    state.bus.publish(&cordy_events::Event {
+                        event_type: cordy_protocol::EVENT_GITHUB_INSTALLATION_DELETED.into(),
+                        workspace_id: workspace_id.to_string(),
+                        actor_type: "system".into(),
+                        payload: json!({"id": id}),
+                        ..Default::default()
+                    });
                 }
             }
         }
@@ -601,30 +621,27 @@ async fn handle_installation_event(state: &HandlerState, body: &[u8]) {
                 &state.pool,
                 event.installation.id,
             )
-            .await
-            .unwrap_or_default();
+            .await?;
             if rows.is_empty() {
-                let _ = github::upsert_pending_git_hub_installation(
+                github::upsert_pending_git_hub_installation(
                     &state.pool,
                     event.installation.id,
                     &event.installation.account.login,
                     account_type,
                     event.installation.account.avatar_url.as_deref(),
                 )
-                .await;
-            } else if let Ok(refreshed) =
-                github::update_git_hub_installation_account_by_installation_id(
+                .await?;
+            } else {
+                let refreshed = github::update_git_hub_installation_account_by_installation_id(
                     &state.pool,
                     event.installation.id,
                     &event.installation.account.login,
                     account_type,
                     event.installation.account.avatar_url.as_deref(),
                 )
-                .await
-            {
-                let _ =
-                    github::delete_pending_git_hub_installation(&state.pool, event.installation.id)
-                        .await;
+                .await?;
+                github::delete_pending_git_hub_installation(&state.pool, event.installation.id)
+                    .await?;
                 for row in &refreshed {
                     publish_installation(state, row);
                 }
@@ -632,6 +649,7 @@ async fn handle_installation_event(state: &HandlerState, body: &[u8]) {
         }
         _ => {}
     }
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -717,27 +735,18 @@ where
     Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }
 
-async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) {
+async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) -> anyhow::Result<()> {
     let Ok(event) = serde_json::from_slice::<PullRequestEvent>(body) else {
-        return;
+        return Ok(());
     };
     if event.installation.id == 0 {
-        return;
+        return Ok(());
     }
-    let installations = match github::list_git_hub_installations_by_installation_id(
-        &state.pool,
-        event.installation.id,
-    )
-    .await
-    {
-        Ok(value) => value,
-        Err(error) => {
-            tracing::warn!(%error, installation_id = event.installation.id, "github: lookup installation failed");
-            return;
-        }
-    };
+    let installations =
+        github::list_git_hub_installations_by_installation_id(&state.pool, event.installation.id)
+            .await?;
     if installations.is_empty() {
-        return;
+        return Ok(());
     }
     let owner = event.repository.owner.login.to_lowercase();
     let repo = event.repository.name.to_lowercase();
@@ -761,7 +770,7 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) {
         let clear_mergeable =
             matches!(event.action.as_str(), "opened" | "synchronize" | "reopened")
                 || (event.action == "edited" && base_changed);
-        if let Ok(Some(pr)) = github::upsert_git_hub_pull_request(
+        let pr = github::upsert_git_hub_pull_request(
             &state.pool,
             installation.workspace_id,
             event.installation.id,
@@ -795,8 +804,8 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) {
             event.pull_request.mergeable_state.as_deref(),
             Some(clear_mergeable),
         )
-        .await
-        {
+        .await?;
+        if let Some(pr) = pr {
             mirror_issue_links(state, &event, &pr, &close_policy).await;
         }
     }
@@ -806,6 +815,7 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) {
         repo,
         event.pull_request.number,
     );
+    Ok(())
 }
 
 #[derive(Default)]
@@ -1022,14 +1032,14 @@ struct CiPr {
     number: i32,
 }
 
-async fn handle_ci_event(state: &HandlerState, body: &[u8]) {
+async fn handle_ci_event(state: &HandlerState, body: &[u8]) -> anyhow::Result<()> {
     let Ok(event) = serde_json::from_slice::<CiEvent>(body) else {
-        return;
+        return Ok(());
     };
     let owner = event.repository.owner.login.to_lowercase();
     let repo = event.repository.name.to_lowercase();
     if event.installation.id == 0 || repo.is_empty() {
-        return;
+        return Ok(());
     }
     let mut numbers = event
         .check_suite
@@ -1050,8 +1060,7 @@ async fn handle_ci_event(state: &HandlerState, body: &[u8]) {
                 &repo,
                 &sha,
             )
-            .await
-            .unwrap_or_default();
+            .await?;
         }
     }
     for number in numbers {
@@ -1059,6 +1068,7 @@ async fn handle_ci_event(state: &HandlerState, body: &[u8]) {
             .github_snapshots
             .enqueue(event.installation.id, owner.clone(), repo.clone(), number);
     }
+    Ok(())
 }
 
 fn ci_sha(event: &CiEvent) -> &str {
@@ -1191,5 +1201,58 @@ mod tests {
             .await
             .expect("response");
         assert!(response.status().is_redirection());
+    }
+
+    fn signed_webhook_body(body: &[u8]) -> String {
+        std::env::set_var("GITHUB_WEBHOOK_SECRET", "test-secret");
+        let mut mac = HmacSha256::new_from_slice(b"test-secret").unwrap();
+        mac.update(body);
+        format!("sha256={}", hex::encode(mac.finalize().into_bytes()))
+    }
+
+    #[tokio::test]
+    async fn webhook_persistence_failure_is_not_acked() {
+        let body = br#"{"action":"deleted","installation":{"id":1,"account":{"login":"x","type":"User"}}}"#;
+        let signature = signed_webhook_body(body);
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let response = crate::build_router(Some(pool), None)
+            .oneshot(
+                Request::post("/api/webhooks/github")
+                    .header("x-hub-signature-256", signature)
+                    .header("x-github-event", "installation")
+                    .body(Body::from(body.as_slice()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    #[tokio::test]
+    async fn invalid_webhook_json_is_still_acked() {
+        let body = b"not-json";
+        let signature = signed_webhook_body(body);
+        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
+        let response = crate::build_router(Some(pool), None)
+            .oneshot(
+                Request::post("/api/webhooks/github")
+                    .header("x-hub-signature-256", signature)
+                    .header("x-github-event", "installation")
+                    .body(Body::from(body.as_slice()))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+    }
+
+    #[test]
+    fn repository_browse_follows_live_github_client() {
+        let state = crate::HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        assert!(!browse_configured(&state));
     }
 }

@@ -16,7 +16,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{NaiveDate, SecondsFormat};
 use cordy_db::models::{
     AgentTaskQueue, Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber,
@@ -32,7 +32,7 @@ use cordy_service::issue_service::{
     IssueCreateError, IssueCreateOpts, IssueCreateParams, IssueTriggerInput, IssueTriggerProbe,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -4156,6 +4156,7 @@ async fn list_attachments(
 }
 
 fn hydrate_task_user_ref(
+    state: &HandlerState,
     attribution: &mut serde_json::Map<String, Value>,
     key: &str,
     users: &HashMap<Uuid, user::GetUsersByIDsRow>,
@@ -4178,7 +4179,10 @@ fn hydrate_task_user_ref(
         reference.insert("email".into(), Value::String(user.email.clone()));
     }
     if let Some(avatar_url) = user.avatar_url.as_deref().filter(|url| !url.is_empty()) {
-        reference.insert("avatar_url".into(), Value::String(avatar_url.into()));
+        reference.insert(
+            "avatar_url".into(),
+            Value::String(crate::avatar::resolve_url(state, avatar_url)),
+        );
     }
 }
 
@@ -4254,8 +4258,8 @@ pub(crate) async fn task_maps(
                 else {
                     continue;
                 };
-                hydrate_task_user_ref(attribution, "initiator", &users);
-                hydrate_task_user_ref(attribution, "originator", &users);
+                hydrate_task_user_ref(state, attribution, "initiator", &users);
+                hydrate_task_user_ref(state, attribution, "originator", &users);
             }
         }
     }
@@ -6596,7 +6600,11 @@ impl From<&Attachment> for AttachmentResponse {
 }
 
 fn object_or_empty(value: Value) -> Value {
-    if value.is_object() { value } else { json!({}) }
+    if value.is_object() {
+        value
+    } else {
+        json!({})
+    }
 }
 
 #[derive(Debug, Serialize)]

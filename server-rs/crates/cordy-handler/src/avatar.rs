@@ -44,13 +44,13 @@ fn key_from_served_url(raw: &str) -> Option<String> {
     (!key.is_empty() && signature_valid(key, signature)).then(|| key.to_string())
 }
 
-fn served_url(key: &str) -> String {
+fn served_url(state: &HandlerState, key: &str) -> String {
     let path = format!("/api/avatars/{}/{key}", sign_key(key));
-    let base = std::env::var("CORDY_PUBLIC_URL")
-        .unwrap_or_default()
+    let base = state
+        .attachment_download
+        .public_url
         .trim()
-        .trim_end_matches('/')
-        .to_string();
+        .trim_end_matches('/');
     if base.is_empty() {
         path
     } else {
@@ -66,7 +66,7 @@ pub(crate) fn resolve_url(state: &HandlerState, raw: &str) -> String {
         return raw.to_string();
     };
     if let Some(key) = key_from_served_url(raw) {
-        return served_url(&key);
+        return served_url(state, &key);
     }
     let Some(key) = storage.key_from_url(raw) else {
         return raw.to_string();
@@ -74,7 +74,7 @@ pub(crate) fn resolve_url(state: &HandlerState, raw: &str) -> String {
     if storage.object_url(&key) != raw || content_type(&key).is_none() || storage.is_local() {
         return raw.to_string();
     }
-    served_url(&key)
+    served_url(state, &key)
 }
 
 /// Normalizes and validates a client-supplied avatar URL before persistence.
@@ -242,5 +242,20 @@ mod tests {
     #[test]
     fn forged_served_urls_are_not_normalized() {
         assert!(key_from_served_url("/api/avatars/not-valid/users/u/avatar.png").is_none());
+    }
+
+    #[test]
+    fn served_urls_use_loaded_public_url_not_process_env() {
+        std::env::set_var("CORDY_PUBLIC_URL", "https://env.example");
+        let mut state = HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        state.attachment_download.public_url = "https://config.example".into();
+        let url = served_url(&state, "users/u/avatar.png");
+        assert!(url.starts_with("https://config.example/api/avatars/"));
+        assert!(!url.contains("env.example"));
+        std::env::remove_var("CORDY_PUBLIC_URL");
     }
 }
