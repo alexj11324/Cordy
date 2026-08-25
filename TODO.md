@@ -949,6 +949,15 @@
       the serial subagent is applying only the three explicit parent-module
       imports, with no Cargo run or behavior change. A new exact-head review is
       required after the non-amending fix.
+- [x] #252 blocker fix `d6a04b2a176f4b4306aeeb73a12c9b8db7ac05f9` (parent
+      `501b012fa7273dbb32a6a9f254baa7648cabe607`, tree
+      `8fb7702ff2d96dc4446691f90dd216ec87a2d6a2`) explicitly imports
+      `PropertyCreateArgs`, `PropertyUpdateArgs`, and `PropertyArchiveArgs` in
+      `property_commands.rs`; no production behavior or manifest changed.
+      Subagent `git diff --check` and coordinator scoped rustfmt/check pass;
+      old head/review/candidate are invalidated. New remote exact candidate is
+      `5a7f8c4f6579c52cb0d160d5a5d832fc8a3d83e4` (parents #251 base plus the
+      fix), and a new exact-head review is pending.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
