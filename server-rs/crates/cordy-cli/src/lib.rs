@@ -51,6 +51,7 @@ mod issue_update_commands;
 mod issue_usage_commands;
 mod issue_value_helpers;
 mod json_helpers;
+mod label_command_schema;
 mod label_commands;
 mod label_reference;
 mod login;
@@ -214,6 +215,7 @@ use issue_value_helpers::{
     format_metadata_value, issue_labels, validate_issue_priority, validate_issue_status,
 };
 pub(super) use json_helpers::value_string;
+pub(super) use label_command_schema::{LabelArgs, LabelCommand, LabelCreateArgs, LabelUpdateArgs};
 use label_commands::{
     format_label_result, format_label_table, format_workspace_label_table, run_label_create,
     run_label_delete, run_label_get, run_label_list, run_label_update,
@@ -594,63 +596,6 @@ struct DaemonLaunchArgs {
     auto_update_interval: Option<Duration>,
     #[arg(long = "no-auto-reload")]
     disable_auto_reload: bool,
-}
-
-#[derive(Debug, Args)]
-struct LabelArgs {
-    #[command(subcommand)]
-    command: LabelCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum LabelCommand {
-    #[command(about = "List labels in the workspace")]
-    List {
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-        #[arg(long, help = "Show full UUIDs in table output")]
-        full_id: bool,
-    },
-    #[command(about = "Get label details")]
-    Get {
-        #[arg(value_name = "ID")]
-        id: String,
-        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-        output: OutputFormat,
-    },
-    #[command(about = "Create a new label")]
-    Create(LabelCreateArgs),
-    #[command(about = "Update a label")]
-    Update(LabelUpdateArgs),
-    #[command(about = "Delete a label")]
-    Delete {
-        #[arg(value_name = "ID")]
-        id: String,
-        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-        output: OutputFormat,
-    },
-}
-
-#[derive(Debug, Args)]
-struct LabelCreateArgs {
-    #[arg(long, help = "Label name (required)")]
-    name: Option<String>,
-    #[arg(long, help = "Hex color like #3b82f6 (required)")]
-    color: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct LabelUpdateArgs {
-    #[arg(value_name = "ID")]
-    id: String,
-    #[arg(long, help = "New name")]
-    name: Option<String>,
-    #[arg(long, help = "New hex color")]
-    color: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
