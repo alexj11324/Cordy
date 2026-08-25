@@ -199,6 +199,7 @@ mod issue_metadata_mutation_commands;
 mod issue_metadata_schema;
 mod issue_property_commands;
 mod issue_property_actor;
+mod issue_property_actor_inputs;
 mod issue_property_output;
 mod issue_property_value_encoding;
 mod issue_property_values;
