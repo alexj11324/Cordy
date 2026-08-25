@@ -156,6 +156,15 @@
       `Arc`, `Mutex`, and `TcpListener` plus all prior dependency fixes remain
       present. No compile/behavior blocker was introduced. Subagent did not run
       Cargo or modify the worktree; coordinator rustfmt and `git diff --check` pass.
+- [x] PR #178 `codex/cord-50-cli-login-tests` is the next bounded child of #177:
+      base `2aaebaa6c8b0218814d6e5f0e50ec0301cb32b6f`, exact head
+      `8fdef9ba210096fda1915c4372a4958353025700`, tree
+      `0ee68bfb48f765cdabe489e3f7e9e2f7dbadde17`, candidate
+      `033a9d4b57f12294be38d19f8128bbc77ed446be`. It extracts only login/browser
+      callback state, safe URL, authenticated profile reset, and workspace-creation
+      polling tests into `login_command_tests.rs`; production behavior is unchanged.
+      New module rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`,
+      CLEAN/MERGEABLE). Cargo and review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
