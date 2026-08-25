@@ -1051,6 +1051,15 @@
       Scoped rustfmt/check and `git diff --check` pass; Cargo is delegated. PR
       #256 is Ready (`isDraft=false`), CLEAN/MERGEABLE; exact-head review
       pending.
+- [x] #256 exact-head subagent review PASS on
+      `f76ecdbd6c214db2a38e841fcb8f6b36f31bc703`: workspace create/update
+      payload construction, stdin/file mutual exclusion and workdir
+      containment, escaping/newline handling, empty-field validation, and
+      JSON/table output are preserved. Create remains unscoped; update still
+      resolves workspace and PATCHes the same path. `lib.rs` and
+      `dispatch_workspace` wiring are complete; subagent did not run Cargo or
+      modify files, and scoped rustfmt/check plus `git diff --check` remain
+      clean.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
