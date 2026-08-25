@@ -1201,6 +1201,17 @@
       Scoped rustfmt and `git diff --check` pass (the subagent environment
       lacked a rustfmt executable); Cargo was not run. Pro owns push/Ready PR,
       gate, and merge.
+- [ ] CLI issue-reorder structural refactor is committed at
+      `8e5cc1865d8cde9a25161fd65a286e1a40f6f4cf` (parent
+      `d016ad65a8bfd880ce49113ec545cabd2ff7c276`, tree
+      `a30b098ad9ff4afd031dce79417aa94f5f58bf35`): issue column loading,
+      before/after/top/bottom validation, position calculation, target checks,
+      and JSON/table output now live in
+      `cordy-cli/src/issue_reorder_commands.rs`; parent position-calculation
+      tests retain their `pub(super)` entry. The serial subagent reviewed the
+      exact head and found no issue. Scoped rustfmt and `git diff --check`
+      pass (the subagent environment lacked a rustfmt executable); Cargo was
+      not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
