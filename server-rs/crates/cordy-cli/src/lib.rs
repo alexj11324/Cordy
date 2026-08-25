@@ -57,6 +57,7 @@ mod label_reference;
 mod login;
 mod output_helpers;
 mod path_safety;
+mod project_command_schema;
 mod project_commands;
 mod project_resource_commands;
 mod property_commands;
@@ -229,6 +230,10 @@ use login::{
 };
 pub(super) use output_helpers::{display_id, format_table, truncate_text};
 use path_safety::{ensure_file_within_workdir, lexical_normalize};
+pub(super) use project_command_schema::{
+    ProjectArgs, ProjectCommand, ProjectCreateArgs, ProjectResourceAddArgs, ProjectResourceArgs,
+    ProjectResourceCommand, ProjectResourceUpdateArgs, ProjectUpdateArgs,
+};
 use project_commands::{
     format_project_details_table, format_project_list_table, format_project_mutation,
     project_actor_inputs, project_lead, run_project_create, run_project_delete, run_project_get,
@@ -596,220 +601,6 @@ struct DaemonLaunchArgs {
     auto_update_interval: Option<Duration>,
     #[arg(long = "no-auto-reload")]
     disable_auto_reload: bool,
-}
-
-#[derive(Debug, Args)]
-struct ProjectArgs {
-    #[command(subcommand)]
-    command: ProjectCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum ProjectCommand {
-    #[command(about = "List projects in the workspace")]
-    List {
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-        #[arg(long, help = "Show full UUIDs in table output")]
-        full_id: bool,
-        #[arg(long, help = "Filter by status")]
-        status: Option<String>,
-    },
-    #[command(about = "Get project details")]
-    Get {
-        #[arg(value_name = "ID")]
-        id: String,
-        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-        output: OutputFormat,
-    },
-    #[command(about = "Create a new project")]
-    Create(ProjectCreateArgs),
-    #[command(about = "Update a project")]
-    Update(ProjectUpdateArgs),
-    #[command(about = "Delete a project")]
-    Delete {
-        #[arg(value_name = "ID")]
-        id: String,
-        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-        output: OutputFormat,
-    },
-    #[command(about = "Change project status")]
-    Status {
-        #[arg(value_name = "ID")]
-        id: String,
-        #[arg(value_name = "STATUS")]
-        status: String,
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-    #[command(about = "Manage resources attached to a project")]
-    Resource(ProjectResourceArgs),
-}
-
-#[derive(Debug, Args)]
-struct ProjectResourceArgs {
-    #[command(subcommand)]
-    command: ProjectResourceCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum ProjectResourceCommand {
-    #[command(about = "List resources attached to a project")]
-    List {
-        #[arg(value_name = "PROJECT-ID")]
-        project_id: String,
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-        #[arg(long, help = "Show full UUIDs in table output")]
-        full_id: bool,
-    },
-    #[command(about = "Attach a resource to a project (e.g. --type github_repo --url <url>)")]
-    Add(ProjectResourceAddArgs),
-    #[command(about = "Edit an attached resource (ref payload, label, or position)")]
-    Update(ProjectResourceUpdateArgs),
-    #[command(about = "Detach a resource from a project")]
-    Remove {
-        #[arg(value_name = "PROJECT-ID")]
-        project_id: String,
-        #[arg(value_name = "RESOURCE-ID")]
-        resource_id: String,
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-}
-
-#[derive(Debug, Args)]
-struct ProjectResourceAddArgs {
-    #[arg(value_name = "PROJECT-ID")]
-    project_id: String,
-    #[arg(
-        long = "type",
-        default_value = "github_repo",
-        help = "Resource type (e.g. github_repo, local_directory — see docs)"
-    )]
-    resource_type: String,
-    #[arg(
-        long,
-        help = "Shortcut: the repo URL (only used when --type github_repo)"
-    )]
-    url: Option<String>,
-    #[arg(
-        long,
-        help = "Shortcut: optional default branch hint (only used when --type github_repo)"
-    )]
-    default_branch_hint: Option<String>,
-    #[arg(
-        long,
-        help = "Shortcut: absolute path to the working directory (only used when --type local_directory)"
-    )]
-    local_path: Option<String>,
-    #[arg(
-        long,
-        help = "Shortcut: id of the daemon that owns the local path (only used when --type local_directory)"
-    )]
-    daemon_id: Option<String>,
-    #[arg(
-        long,
-        help = "Shortcut: optional label embedded in resource_ref (only used when --type local_directory)"
-    )]
-    ref_label: Option<String>,
-    #[arg(
-        long,
-        help = "Shortcut: how tasks share the directory — in_place (default, one task at a time) or worktree (each task gets its own git worktree; requires a git repo) (only used when --type local_directory)"
-    )]
-    execution_mode: Option<String>,
-    #[arg(
-        long = "ref",
-        help = "Generic JSON resource_ref payload, or a github_repo checkout ref when used with --url"
-    )]
-    resource_ref: Option<String>,
-    #[arg(long, help = "Optional human-readable label")]
-    label: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct ProjectResourceUpdateArgs {
-    #[arg(value_name = "PROJECT-ID")]
-    project_id: String,
-    #[arg(value_name = "RESOURCE-ID")]
-    resource_id: String,
-    #[arg(long, help = "Shortcut: new repo URL (github_repo)")]
-    url: Option<String>,
-    #[arg(long, help = "Shortcut: new default branch hint (github_repo)")]
-    default_branch_hint: Option<String>,
-    #[arg(long, help = "Shortcut: new absolute local path (local_directory)")]
-    local_path: Option<String>,
-    #[arg(long, help = "Shortcut: new daemon id (local_directory)")]
-    daemon_id: Option<String>,
-    #[arg(
-        long,
-        help = "Shortcut: new label embedded in resource_ref (local_directory)"
-    )]
-    ref_label: Option<String>,
-    #[arg(
-        long,
-        help = "Shortcut: new execution mode — in_place or worktree (local_directory)"
-    )]
-    execution_mode: Option<String>,
-    #[arg(
-        long = "ref",
-        help = "Generic JSON resource_ref payload, or a github_repo checkout ref"
-    )]
-    resource_ref: Option<String>,
-    #[arg(long, help = "New human-readable label; pass an empty string to clear")]
-    label: Option<String>,
-    #[arg(long, help = "Clear the human-readable label")]
-    clear_label: bool,
-    #[arg(long, help = "New display position")]
-    position: Option<i32>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct ProjectCreateArgs {
-    #[arg(long, help = "Project title (required)")]
-    title: Option<String>,
-    #[arg(long, help = "Project description")]
-    description: Option<String>,
-    #[arg(long, help = "Project status")]
-    status: Option<String>,
-    #[arg(long, help = "Project icon (emoji)")]
-    icon: Option<String>,
-    #[arg(long, help = "Lead name (member or agent)")]
-    lead: Option<String>,
-    #[arg(long, help = "Start date (calendar day, YYYY-MM-DD)")]
-    start_date: Option<String>,
-    #[arg(long, help = "Due date (calendar day, YYYY-MM-DD)")]
-    due_date: Option<String>,
-    #[arg(long, action = clap::ArgAction::Append, help = "Attach a github_repo resource by URL")]
-    repo: Vec<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct ProjectUpdateArgs {
-    #[arg(value_name = "ID")]
-    id: String,
-    #[arg(long, help = "New title")]
-    title: Option<String>,
-    #[arg(long, help = "New description")]
-    description: Option<String>,
-    #[arg(long, help = "New status")]
-    status: Option<String>,
-    #[arg(long, help = "New icon (emoji)")]
-    icon: Option<String>,
-    #[arg(long, help = "New lead name (member or agent)")]
-    lead: Option<String>,
-    #[arg(long, help = "New start date; pass an empty string to clear")]
-    start_date: Option<String>,
-    #[arg(long, help = "New due date; pass an empty string to clear")]
-    due_date: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
