@@ -92,7 +92,7 @@ pub(super) async fn run_workspace_get(
 }
 
 #[derive(Debug, Serialize)]
-struct CreateWorkspaceBody {
+pub(super) struct CreateWorkspaceBody {
     name: String,
     slug: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -127,7 +127,7 @@ pub(super) async fn run_workspace_create<R: Read>(
 pub(super) fn build_workspace_create_body<R: Read>(
     args: &CreateWorkspaceArgs,
     input: &mut R,
-) -> Result<impl Serialize> {
+) -> Result<CreateWorkspaceBody> {
     let name = args.name.as_deref().unwrap_or_default();
     if name.trim().is_empty() {
         bail!("--name is required");
@@ -435,7 +435,7 @@ fn resolve_update_text_input<R: Read>(
     Ok(inline.map(unescape_backslash_escapes))
 }
 
-async fn resolve_workspace_arg(
+pub(super) async fn resolve_workspace_arg(
     cli: &Cli,
     environment: &Environment,
     workspace: Option<&str>,

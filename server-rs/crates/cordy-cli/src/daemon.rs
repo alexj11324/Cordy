@@ -284,7 +284,8 @@ mod tests {
             Err(error) => error,
             Ok(_) => panic!("foreground assembly must require profile credentials"),
         };
-        assert!(error.to_string().contains("cordy login"));
+        let message = format!("{error:#}");
+        assert!(message.contains("cordy login"), "unexpected error: {message}");
         assert!(!root.exists());
     }
 }

@@ -280,8 +280,10 @@ pub(crate) async fn wait_for_login_callback(
 pub(crate) fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
     let mut difference = left.len() ^ right.len();
     for index in 0..left.len().max(right.len()) {
-        difference |= left.get(index).copied().unwrap_or_default()
-            ^ right.get(index).copied().unwrap_or_default();
+        difference |= usize::from(
+            left.get(index).copied().unwrap_or_default()
+                ^ right.get(index).copied().unwrap_or_default(),
+        );
     }
     difference == 0
 }
@@ -303,8 +305,8 @@ async fn write_login_response(
 }
 #[derive(Debug, Deserialize, Serialize)]
 pub(super) struct AuthUser {
-    name: String,
-    email: String,
+    pub(super) name: String,
+    pub(super) email: String,
 }
 
 /// Authenticate either with a PAT or with the browser callback flow. The
@@ -314,7 +316,7 @@ pub(super) async fn run_login(cli: &Cli, environment: &Environment, args: &Login
     run_login_with_urls(cli, environment, args, None, None).await
 }
 
-async fn run_login_with_urls(
+pub(super) async fn run_login_with_urls(
     cli: &Cli,
     environment: &Environment,
     args: &LoginArgs,

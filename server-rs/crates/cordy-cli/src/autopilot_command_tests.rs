@@ -1164,7 +1164,7 @@ async fn autopilot_prefix_errors_match_go_resolver_contract() {
     assert!(
         error
             .to_string()
-            .starts_with("ambiguous autopilot id prefix \"abcd\"; matches:")
+            .starts_with("resolve autopilot: ambiguous autopilot id prefix \"abcd\"; matches:")
     );
     assert!(
         error

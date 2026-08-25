@@ -24,8 +24,13 @@ pub(super) fn ensure_file_within_workdir(
             .map_or_else(|| lexical_normalize(&absolute), |name| parent.join(name))
     });
     if !candidate.starts_with(&base) {
+        let flag = if field == "file" {
+            "--file".to_string()
+        } else {
+            format!("--{field}-file")
+        };
         bail!(
-            "--{field}-file path {:?} resolves outside the current working directory; write agent temp files inside the task workdir (e.g. ./{field}.md) rather than machine-shared paths like /tmp, where another run's stale file can be read by mistake. Pass --allow-external-file to override.",
+            "{flag} path {:?} resolves outside the current working directory; write agent temp files inside the task workdir (e.g. ./{field}.md) rather than machine-shared paths like /tmp, where another run's stale file can be read by mistake. Pass --allow-external-file to override.",
             file_path,
         );
     }

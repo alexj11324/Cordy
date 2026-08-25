@@ -895,10 +895,12 @@ impl S3Storage {
         if self.custom_endpoint {
             return false;
         }
-        if is_region_redirect(&failure.error) {
-            if let Some(region) = failure.bucket_region.clone() {
-                return self.update_correction(None, Some(region));
-            }
+        if let Some(region) = failure.bucket_region.clone() {
+            // AWS may include the authoritative bucket region on throttling
+            // and transient errors as well as explicit redirect responses.
+            // Retain it for the next request, especially for non-replayable
+            // streaming uploads that cannot retry the current body.
+            return self.update_correction(None, Some(region));
         }
         if is_clock_skew_error(failure.error.code.as_deref()) {
             if let Some(server_date) = failure.server_date {
@@ -1466,6 +1468,7 @@ fn retryable_s3_failure(error: &S3RequestError) -> bool {
     )
 }
 
+#[cfg(test)]
 fn is_region_redirect(error: &S3RequestError) -> bool {
     matches!(
         error.status,
@@ -2388,7 +2391,7 @@ mod tests {
 
     #[test]
     fn s3_request_paths_use_sigv4_segment_encoding() {
-        let virtual_host = test_s3("https://s3.us-west-2.amazonaws.com", false, true);
+        let virtual_host = test_s3("https://s3.us-west-2.amazonaws.com", false, false);
         assert_eq!(
             virtual_host
                 .request_url("workspace/report.c++/%done")
@@ -2403,7 +2406,7 @@ mod tests {
                 .request_url("workspace/report c++.txt")
                 .unwrap()
                 .path(),
-            "/base/test-bucket/workspace/report%20c%2B%2B.txt"
+            "/base/bucket/workspace/report%20c%2B%2B.txt"
         );
     }
 
