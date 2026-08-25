@@ -1346,7 +1346,7 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated.
       PR #304 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head
       subagent review PASS on `3b2b289f`; no Cargo was run.
-- [ ] PR #305 `codex/cord-137-cli-api-url-normalization` is the next bounded
+- [x] PR #305 `codex/cord-137-cli-api-url-normalization` is the completed bounded
       child of #304: base branch `codex/cord-136-cli-issue-timeline-output` at
       `3b2b289f99b639463a1bc3ebc224176944468474`, exact head
       `c0555e5b3b44253949f808b6b9bc9e9f00d35884`, tree
@@ -1356,7 +1356,8 @@
       conversion, `/ws` cleanup, query/fragment removal, validation, and all
       callers remain unchanged. Scoped pinned rustfmt and `git diff --check`
       pass; Cargo is delegated. PR #305 is Ready (`isDraft=false`),
-      CLEAN/MERGEABLE. Exact-head subagent review pending; no Cargo was run.
+      CLEAN/MERGEABLE. Exact-head subagent review PASS on `c0555e5b`; no Cargo
+      was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
