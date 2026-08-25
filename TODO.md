@@ -138,14 +138,17 @@
       or compile blocker. Subagent did not run Cargo or modify the worktree;
       coordinator's rustfmt and `git diff --check` pass.
 - [x] PR #177 `codex/cord-50-cli-setup-tests` is the next bounded child of #176:
-      base `57f2dc0e03d7972df7ea9c27a4ab9148f986a4d8`, exact head
-      `3bfefc9bc52463633c8ac20097666769c1b1fc28`, tree
-      `8d0f660c5b103480a29eb46173e77a62b8fa5e81`, candidate
-      `443d6483dd1b693bca77eb63c0be18dd5a6192bd`. It extracts only setup
+      base `57f2dc0e03d7972df7ea9c27a4ab9148f986a4d8`, original head
+      `3bfefc9bc52463633c8ac20097666769c1b1fc28` was superseded by the minimal
+      import fix; current exact head is
+      `3c25f0fe8f80736bc367383ad7d0ff64a47228fd3`, tree
+      `4bcbecea8e29ebfa890ee669bdb896a5cf4c49f2`. It extracts only setup
       cloud/self-host parser, preflight, profile replacement, confirmation, daemon
       handoff, and URL-normalization tests into `setup_command_tests.rs`; production
       behavior is unchanged. New module rustfmt and `git diff --check` pass; PR is
-      Ready (`isDraft=false`, MERGEABLE/UNSTABLE). Cargo and review remain delegated.
+      Ready (`isDraft=false`); candidate must be re-read after GitHub refresh. Cargo
+      and review remain delegated; current candidate is `4a41bcaae0a7ae5d43b7e545d8ee0775ad79c0dc`; any
+      review/gate for `3bfefc9b` is invalid.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
