@@ -111,6 +111,24 @@ pub fn build_dsh_args() -> Vec<String> {
         .collect()
 }
 
+fn build_dsh_args_for_command(command: &RuntimeCommand, tail: &str) -> Vec<String> {
+    let mut args = if has_profile_selector(&command.prefix) {
+        Vec::new()
+    } else {
+        ["--profile", DSH_PROFILE]
+            .into_iter()
+            .map(str::to_string)
+            .collect()
+    };
+    args.push(tail.to_string());
+    args
+}
+
+fn has_profile_selector(prefix: &[String]) -> bool {
+    prefix.iter().any(|arg| arg.starts_with("--profile="))
+        || prefix.windows(2).any(|window| window[0] == "--profile")
+}
+
 #[async_trait]
 impl Backend for DshBackend {
     async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
@@ -121,7 +139,10 @@ impl Backend for DshBackend {
         } else {
             self.config.command.path.as_str()
         };
-        let argv = self.config.command.argv(&build_dsh_args());
+        let argv = self
+            .config
+            .command
+            .argv(&build_dsh_args_for_command(&self.config.command, "--stdio"));
         let mut command = Command::new(command_path);
         command
             .args(&argv)
@@ -553,7 +574,7 @@ async fn read_frames(
                     }
                 };
                 state.frame_count += 1;
-                handle_frame(frame, &request_id, &messages, &mut state).await;
+                handle_frame(frame, &request_id, &messages, &mut state);
             }
             Ok(None) => return state,
             Err(error) => {
@@ -564,7 +585,7 @@ async fn read_frames(
     }
 }
 
-async fn handle_frame(
+fn handle_frame(
     frame: DshFrame,
     request_id: &str,
     messages: &tokio::sync::mpsc::Sender<Message>,
@@ -589,8 +610,7 @@ async fn handle_frame(
                     session_id: frame.session_id,
                     ..empty_message(MessageType::Status)
                 },
-            )
-            .await;
+            );
         }
         "text" => {
             if !frame.content.is_empty() {
@@ -601,8 +621,7 @@ async fn handle_frame(
                         content: frame.content,
                         ..empty_message(MessageType::Text)
                     },
-                )
-                .await;
+                );
             }
         }
         "thinking" => {
@@ -614,8 +633,7 @@ async fn handle_frame(
                         content: frame.content,
                         ..empty_message(MessageType::Thinking)
                     },
-                )
-                .await;
+                );
             }
         }
         "tool_call" => {
@@ -628,8 +646,7 @@ async fn handle_frame(
                     input: parse_tool_input(&frame.arguments),
                     ..empty_message(MessageType::ToolUse)
                 },
-            )
-            .await;
+            );
         }
         "tool_result" => {
             send_message(
@@ -641,8 +658,7 @@ async fn handle_frame(
                     output: frame.output,
                     ..empty_message(MessageType::ToolResult)
                 },
-            )
-            .await;
+            );
         }
         "usage" => {
             let key = if frame.provider.is_empty() {
@@ -692,8 +708,8 @@ fn parse_tool_input(arguments: &str) -> BTreeMap<String, Value> {
     object.into_iter().collect()
 }
 
-async fn send_message(sender: &tokio::sync::mpsc::Sender<Message>, message: Message) {
-    let _ = sender.send(message).await;
+fn send_message(sender: &tokio::sync::mpsc::Sender<Message>, message: Message) {
+    let _ = sender.try_send(message);
 }
 
 fn empty_message(message_type: MessageType) -> Message {
@@ -741,12 +757,10 @@ async fn discover_once(
     } else {
         config.command.path.as_str()
     };
-    let argv = config.command.argv(
-        &["--profile", DSH_PROFILE, "--list-models"]
-            .into_iter()
-            .map(str::to_string)
-            .collect::<Vec<_>>(),
-    );
+    let argv = config.command.argv(&build_dsh_args_for_command(
+        &config.command,
+        "--list-models",
+    ));
     let mut command = Command::new(command_path);
     command
         .args(argv)
@@ -966,6 +980,25 @@ mod tests {
         assert_eq!(model.id, "deepseek-v4/flash");
         assert!(parse_dsh_model_id("deepseek-v4-flash").is_err());
         assert!(parse_dsh_model_id("deepseek-official/deepseek-v4%2").is_err());
+    }
+
+    #[test]
+    fn dsh_profile_is_owned_by_the_fixed_prefix_when_already_present() {
+        let command =
+            RuntimeCommand::new("dsh", vec!["--profile".to_string(), "cordy".to_string()]);
+        assert_eq!(
+            build_dsh_args_for_command(&command, "--stdio"),
+            vec!["--stdio".to_string()]
+        );
+        let command = RuntimeCommand::new("dsh", vec!["--wrapper".to_string()]);
+        assert_eq!(
+            build_dsh_args_for_command(&command, "--list-models"),
+            vec![
+                "--profile".to_string(),
+                "cordy".to_string(),
+                "--list-models".to_string()
+            ]
+        );
     }
 
     #[test]
