@@ -95,6 +95,8 @@ mod issue_usage_command_tests;
 mod issue_rerun_command_tests;
 #[cfg(test)]
 mod cli_test_helpers;
+#[cfg(test)]
+mod private_helper_command_tests;
 mod attachment_input;
 mod auth_command_schema;
 mod auth_commands;
@@ -534,73 +536,4 @@ struct IssueListResponse {
     issues: Value,
     #[serde(default)]
     total: Value,
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use super::cli_test_helpers::*;
-    use axum::extract::Request;
-    use axum::http::{HeaderMap, StatusCode};
-    use axum::routing::{delete as delete_route, get, patch, post, put};
-    use axum::{Json, Router};
-    use clap::Parser;
-    use std::fs;
-    use std::io::Cursor;
-    use std::sync::{Arc, Mutex};
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    use tokio::net::TcpListener;
-
-    #[tokio::test]
-    async fn private_execenv_helper_dispatches_before_cli_parsing() {
-        let missing = tempfile::tempdir()
-            .expect("tempdir")
-            .path()
-            .join("missing-workdir");
-        let input = serde_json::to_vec(&serde_json::json!({
-            "action": "reuse",
-            "reuse": {
-                "WorkDir": missing,
-                "Provider": "codex"
-            }
-        }))
-        .expect("helper request");
-        let mut output = Vec::new();
-
-        let handled = run_private_helper(
-            &[
-                OsString::from("cordy"),
-                OsString::from(cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG),
-            ],
-            Cursor::new(input),
-            &mut output,
-        )
-        .await
-        .expect("private helper");
-
-        assert!(handled);
-        let response: Value = serde_json::from_slice(&output).expect("helper response");
-        assert!(response.get("environment").is_none());
-        assert!(response.get("error").is_none());
-    }
-
-    #[tokio::test]
-    async fn private_execenv_helper_requires_the_exact_private_argv() {
-        let mut output = Vec::new();
-        let handled = run_private_helper(
-            &[
-                OsString::from("cordy"),
-                OsString::from(cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG),
-                OsString::from("unexpected"),
-            ],
-            Cursor::new(Vec::<u8>::new()),
-            &mut output,
-        )
-        .await
-        .expect("ordinary CLI path");
-
-        assert!(!handled);
-        assert!(output.is_empty());
-    }
-
 }
