@@ -1144,7 +1144,8 @@ async fn discover_kimi_models_with_scope(
         .and_then(Value::as_str)
         .unwrap_or_default();
     if check_minimum(version, KIMI_THINKING_MIN_VERSION, false).is_ok() {
-        if let Some(thinking) = discover_kimi_thinking(config, cancellation.clone(), timeout).await {
+        if let Some(thinking) = discover_kimi_thinking(config, cancellation.clone(), timeout).await
+        {
             for model in &mut catalog.models {
                 if let Some(model_thinking) = thinking.get(&model.id) {
                     model.thinking = Some(model_thinking.clone());
