@@ -16,6 +16,7 @@ mod skill_mutation_commands;
 mod skill_catalog_commands;
 mod agent_helpers;
 mod api;
+mod api_attachments;
 mod cli_command_schema;
 #[cfg(test)]
 mod root_command_tests;
