@@ -1369,6 +1369,16 @@
       no issue. Scoped rustfmt and `git diff --check` pass (the subagent
       environment lacked a rustfmt executable); Cargo was not run. Pro owns
       push/Ready PR, gate, and merge.
+- [ ] CLI issue-safety refactor is committed at
+      `be099adcc275447cfe710f87e70d5c325b0e2034` (parent
+      `9b60bfdef2a539345dc2dc4c91f07eeb77d9b68c`, tree
+      `2fb5fc88fd7d31a3835c796a1d835a310dd535a2`): active-duplicate
+      response decoding and runtime-local Markdown link detection now live
+      in `cordy-cli/src/issue_safety.rs`; issue create/update/comment callers
+      retain their existing contracts and parent tests keep the guard import.
+      Scoped rustfmt and `git diff --check` pass; the serial subagent reviewed
+      the exact head and found no compile or behavior blocker. Cargo was not
+      run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
