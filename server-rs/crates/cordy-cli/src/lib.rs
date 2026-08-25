@@ -20,6 +20,7 @@ mod daemon_commands;
 mod disk_usage_commands;
 mod disk_usage_output;
 pub mod error;
+mod execution_policy;
 mod id_helpers;
 mod issue_actor_output;
 mod issue_actor_resolver;
@@ -146,6 +147,7 @@ use disk_usage_output::{
     append_disk_usage_warning, format_disk_ratio, format_disk_usage_aggregate_table,
     format_disk_usage_report_table,
 };
+pub(super) use execution_policy::{require_human_local_command, require_task_local_config_root};
 pub(super) use id_helpers::{compact_uuid, is_canonical_uuid, normalize_uuid_prefix};
 use issue_actor_output::{format_issue_list_table, load_issue_actor_names, IssueActorNames};
 use issue_actor_resolver::{
@@ -3920,29 +3922,6 @@ async fn run_with_input<R: Read>(
 
 const CLOUD_SERVER_URL: &str = "https://api.cordy.ai";
 const CLOUD_APP_URL: &str = "https://cordy.ai";
-
-fn require_task_local_config_root(environment: &Environment) -> Result<()> {
-    if !environment.in_daemon_managed_execution_context()
-        || environment.trimmed(config::TASK_CONFIG_ROOT_ENV).is_some()
-    {
-        return Ok(());
-    }
-    let suffix = environment
-        .leftover_marker_suffix()
-        .unwrap_or_else(|| environment.daemon_port_only_context_hint().into());
-    bail!(
-        "daemon-managed task requires a task-local Cordy config root in {}{suffix}",
-        config::TASK_CONFIG_ROOT_ENV
-    )
-}
-
-fn require_human_local_command(environment: &Environment, command: &str) -> Result<()> {
-    if !environment.in_daemon_task_identity_context() {
-        return Ok(());
-    }
-    let suffix = environment.leftover_marker_suffix().unwrap_or_default();
-    bail!("{command} is not available inside a daemon-managed task{suffix}")
-}
 
 const VALID_ISSUE_SORT_COLUMNS: &[&str] = &[
     "position",
