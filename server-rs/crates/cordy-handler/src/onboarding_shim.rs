@@ -163,6 +163,7 @@ fn client_platform(headers: &HeaderMap) -> &str {
         .unwrap_or("")
 }
 
+#[allow(clippy::too_many_arguments)]
 fn legacy_onboarding_metric_events(
     user_id: Uuid,
     workspace_id: Uuid,
@@ -218,6 +219,7 @@ fn legacy_onboarding_metric_events(
     events
 }
 
+#[allow(clippy::too_many_arguments)]
 fn record_legacy_onboarding_side_effects(
     state: &HandlerState,
     user_id: Uuid,

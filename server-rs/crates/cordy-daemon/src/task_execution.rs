@@ -340,6 +340,7 @@ impl Drop for TaskSlotRelease {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn execute_claimed_task<H: DaemonTaskExecutionHost>(
     parent_ctx: Ctx,
     task: Task,

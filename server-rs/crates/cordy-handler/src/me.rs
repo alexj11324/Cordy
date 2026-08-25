@@ -683,8 +683,10 @@ mod tests {
     }
 
     fn profile_state() -> HandlerState {
-        let mut download = crate::state::AttachmentDownloadSettings::default();
-        download.public_url = "https://api.example".into();
+        let download = crate::state::AttachmentDownloadSettings {
+            public_url: "https://api.example".into(),
+            ..Default::default()
+        };
         HandlerState::new(
             sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
             cordy_auth::pat_cache::PatCache::disabled(),

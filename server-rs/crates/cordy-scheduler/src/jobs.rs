@@ -105,6 +105,7 @@ fn rfc3339_seconds(value: DateTime<Utc>) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used)]
 mod tests {
     use super::*;
 

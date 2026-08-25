@@ -1408,6 +1408,7 @@ impl ProtocolOutcome {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_protocol(
     stdin: ChildStdin,
     stdout: ChildStdout,
@@ -2440,9 +2441,7 @@ impl UsageSnapshot {
         self.fields.cache_read |= fallback.fields.cache_read;
         self.fields.cache_write |= fallback.fields.cache_write;
         self.fields.cost |= fallback.fields.cost;
-        if input_from_fallback && fallback.input_normalized {
-            self.total = fallback.total;
-        } else if self.total.is_none() {
+        if (input_from_fallback && fallback.input_normalized) || self.total.is_none() {
             self.total = fallback.total;
         }
         self.normalize_input();
@@ -2750,11 +2749,11 @@ fn parse_acp_effort_option(value: &Value) -> Option<AcpEffortOption> {
             .trim();
         return Some(AcpEffortOption {
             config_id: config_id.to_string(),
-            current: choices
-                .iter()
-                .any(|choice| choice.value == current)
-                .then(|| current.to_string())
-                .unwrap_or_default(),
+            current: if choices.iter().any(|choice| choice.value == current) {
+                current.to_string()
+            } else {
+                String::new()
+            },
             choices,
         });
     }

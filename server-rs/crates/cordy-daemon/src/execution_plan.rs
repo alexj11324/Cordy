@@ -891,6 +891,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::type_complexity)]
     fn invalid_identity_or_auth_fails_closed_without_daemon_token_fallback() {
         let cases: [(&str, fn(&mut Task)); 5] = [
             ("missing token", |task: &mut Task| task.auth_token.clear()),

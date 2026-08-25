@@ -386,9 +386,11 @@ fn annotate_thinking(models: &mut [Model], result: &Value) {
             if levels.is_empty() {
                 return (static_thinking_levels(), "medium".to_string());
             }
-            let default = valid_effort(option.current.trim())
-                .then(|| option.current.trim().to_string())
-                .unwrap_or_default();
+            let default = if valid_effort(option.current.trim()) {
+                option.current.trim().to_string()
+            } else {
+                String::new()
+            };
             (levels, default)
         },
     );

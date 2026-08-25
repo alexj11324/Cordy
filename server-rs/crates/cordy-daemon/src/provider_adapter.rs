@@ -139,9 +139,11 @@ impl ProductionProviderAdapter {
             temp_dir: temp_dir.clone(),
             default_model,
             codex_version: launch.version.clone(),
-            openclaw_bin: (target.provider == "openclaw")
-                .then(|| launch.command_path.clone())
-                .unwrap_or_default(),
+            openclaw_bin: if target.provider == "openclaw" {
+                launch.command_path.clone()
+            } else {
+                String::new()
+            },
             path: provider_path(),
             ..ProviderExecutionInputs::default()
         };
@@ -773,9 +775,11 @@ fn result_outcome(
             work_dir: env.work_dir.clone(),
             env_root: env.root_dir.clone(),
             failure_reason,
-            retired_session_id: resume_rejected
-                .then(|| requested_session_id.to_string())
-                .unwrap_or_default(),
+            retired_session_id: if resume_rejected {
+                requested_session_id.to_string()
+            } else {
+                String::new()
+            },
             usage,
             ..TaskResult::default()
         },

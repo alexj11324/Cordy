@@ -42,9 +42,7 @@ where
     I: Read,
     O: IoWrite,
 {
-    if args.len() != 2
-        || args[1] != OsString::from(cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG)
-    {
+    if args.len() != 2 || args[1] != cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG {
         return Ok(false);
     }
     cordy_daemon::execenv::isolation::run_preparation_helper(input, output).await?;
@@ -3681,6 +3679,7 @@ fn read_setup_confirmation<R: Read>(input: &mut R) -> Result<String> {
 /// setup. Keeping this boundary separate lets the daemon handoff remain a
 /// real production operation while the persistence contract can be tested
 /// without spawning a child process.
+#[cfg(test)]
 async fn prepare_setup_profile(
     cli: &Cli,
     environment: &Environment,
@@ -3892,7 +3891,7 @@ async fn run_daemon_start(
     let options = start.bootstrap_options();
     let checkout_registry = Arc::new(cordy_daemon::health::RepoCheckoutRegistry::default());
     cordy_daemon::assembly::run_production_daemon(options, move |context| {
-        start.production_assembly_with_local_catalog(&context, CLIENT_VERSION, checkout_registry)
+        start.production_assembly_with_local_catalog(context, CLIENT_VERSION, checkout_registry)
     })
     .await
     .context("run foreground daemon")?;
