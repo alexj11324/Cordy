@@ -1473,6 +1473,18 @@
       rustfmt and `git diff --check` pass; Cargo is delegated. PR #314 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review PASS on
       `077d37b3`; no Cargo was run.
+- [ ] PR #315 `codex/cord-147-cli-daemon-launch-inputs` is the next bounded child
+      of #314: base branch `codex/cord-146-cli-daemon-lifecycle-output` at
+      `077d37b322b6659eef6d48cc0df40ef5cb94ab03`, exact head
+      `b3b62030f9843851a51cb0eb53b10c2b4df6b9c8`, tree
+      `21aac09327f575e424eb94efc8c23c53fe722534`, candidate
+      `b11df01c38095162563c8adfcec47bfdf270eba5` (parents base + head).
+      It isolates daemon launch flag conversion and validation; flag mapping,
+      restart foreground guard, health-port contract, duration parsing, and
+      lifecycle side effects remain unchanged. Scoped pinned rustfmt and
+      `git diff --check` pass; Cargo is delegated. PR #315 is Ready
+      (`isDraft=false`), MERGEABLE (checks pending). Exact-head subagent review
+      is pending; no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
