@@ -221,6 +221,7 @@ mod runtime_read_commands;
 mod runtime_delete;
 mod runtime_output;
 mod runtime_profile;
+mod runtime_profile_mutation_commands;
 mod runtime_profile_read_commands;
 mod runtime_update;
 mod setup_command_schema;
@@ -493,8 +494,10 @@ pub(super) use runtime_command_schema::{
 use runtime_delete::{format_runtime_delete_result, runtime_delete_conflict};
 use runtime_output::{format_runtime_rows, output_runtime_profiles};
 use runtime_profile::{
-    run_runtime_profile_create, run_runtime_profile_delete, run_runtime_profile_set_path,
-    run_runtime_profile_unset_path, run_runtime_profile_update,
+    run_runtime_profile_set_path, run_runtime_profile_unset_path,
+};
+use runtime_profile_mutation_commands::{
+    run_runtime_profile_create, run_runtime_profile_delete, run_runtime_profile_update,
 };
 use runtime_profile_read_commands::{run_runtime_profile_list, runtime_profiles_path};
 use runtime_update::{
