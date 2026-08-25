@@ -1622,7 +1622,9 @@
       the stale `issue_metadata_commands` import with the renamed input module.
       Subagent static review and `git diff --check` pass; no Cargo was run.
       The old head/review are stale. PR #327 remains Ready (`isDraft=false`),
-      CLEAN/MERGEABLE; a new exact-head review is pending.
+      CLEAN/MERGEABLE; exact-head subagent review PASS on `fe1832fd` confirmed
+      the renamed parser import is complete with no new P0/P1 or compile
+      blocker. No Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
