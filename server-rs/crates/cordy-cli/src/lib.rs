@@ -159,6 +159,7 @@ mod daemon_command_schema;
 mod daemon_diagnostics_commands;
 mod daemon_execenv_commands;
 mod daemon_lifecycle_commands;
+mod daemon_lifecycle_output;
 mod daemon_log_commands;
 mod daemon_status_commands;
 mod disk_usage_commands;
