@@ -37,6 +37,7 @@ mod issue_description;
 mod issue_get_commands;
 mod issue_label_commands;
 mod issue_list_commands;
+mod issue_list_schema;
 mod issue_metadata_commands;
 mod issue_metadata_schema;
 mod issue_property_schema;
@@ -201,6 +202,7 @@ use issue_label_commands::{
 use issue_list_commands::{
     build_issue_list_query, build_metadata_filter, issue_list_has_more, run_issue_list,
 };
+pub(super) use issue_list_schema::IssueListArgs;
 use issue_metadata_commands::{
     format_metadata_table, parse_metadata_value, run_issue_metadata_delete, run_issue_metadata_get,
     run_issue_metadata_list, run_issue_metadata_set,
@@ -668,58 +670,6 @@ struct IssueLabelMutationArgs {
     output: OutputFormat,
     #[arg(long, help = "Show full UUIDs in table output")]
     full_id: bool,
-}
-
-#[derive(Debug, Args)]
-struct IssueListArgs {
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-    #[arg(long, help = "Show full UUIDs in table output")]
-    full_id: bool,
-    #[arg(long, help = "Filter by status")]
-    status: Option<String>,
-    #[arg(long, help = "Filter by priority")]
-    priority: Option<String>,
-    #[arg(
-        long,
-        help = "Filter by assignee name (member, agent, or squad; fuzzy match)"
-    )]
-    assignee: Option<String>,
-    #[arg(
-        long,
-        help = "Filter by assignee UUID — member, agent, or squad (mutually exclusive with --assignee)"
-    )]
-    assignee_id: Option<String>,
-    #[arg(long, help = "Filter by project ID")]
-    project: Option<String>,
-    #[arg(
-        long,
-        value_delimiter = ',',
-        help = "Filter by metadata key=value (repeatable; combined with AND). Value is JSON-parsed: 'true'/'false' → bool, numbers → number, otherwise string. Wrap as '\"42\"' to force a string when the value would otherwise sniff as a number."
-    )]
-    metadata: Vec<String>,
-    #[arg(
-        long,
-        default_value_t = 50,
-        help = "Maximum number of issues to return"
-    )]
-    limit: i64,
-    #[arg(
-        long,
-        default_value_t = 0,
-        help = "Number of issues to skip (for pagination)"
-    )]
-    offset: i64,
-    #[arg(
-        long,
-        help = "Sort column: position (default, manual board order), title, created_at, start_date, due_date, priority"
-    )]
-    sort: Option<String>,
-    #[arg(
-        long,
-        help = "Sort direction (asc or desc); requires --sort to be a non-position column (position is always ascending)"
-    )]
-    direction: Option<String>,
 }
 
 #[derive(Debug, Args)]
