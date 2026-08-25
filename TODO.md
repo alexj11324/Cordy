@@ -1411,6 +1411,19 @@
       `git diff --check` pass; Cargo is delegated. PR #309 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review PASS on
       `ee0f82dd`; no Cargo was run.
+- [ ] PR #310 `codex/cord-142-cli-issue-markdown-safety` is the next bounded child
+      of #309: base branch `codex/cord-141-cli-autopilot-resolvers` at
+      `ee0f82ddb0f7f01b55a8a2d60f5f76dfab67f4f8`, exact head
+      `5563b95faa406b81335960778e45e50e1470a8c1`, tree
+      `0d99168f9e43de622bcf2834cb14700dc059121f`, candidate
+      `e4378a83cd4c6ff12ada1fa6499bcf1b8a0b3642` (parents base + head).
+      It isolates Markdown destination parsing and runtime-local target
+      classification in `issue_markdown_links.rs`; issue safety context checks,
+      remediation text, code-span/fence exclusions, file URL detection, path
+      normalization, deduplication, and errors remain unchanged. Scoped pinned
+      rustfmt and `git diff --check` pass; Cargo is delegated. PR #310 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review is pending;
+      no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
