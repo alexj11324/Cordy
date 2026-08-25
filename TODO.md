@@ -740,6 +740,23 @@
       and JSON output behavior remain intact. No compile or behavior blocker
       was found. Subagent did not run Cargo or modify the worktree; coordinator
       `git diff --check` remains clean.
+- [x] PR #212 `codex/cord-50-cli-issue-comment-list-tests` is the next bounded
+      child of #211: base branch `codex/cord-50-cli-issue-comment-mutation-tests`
+      at `75bf188316501e36f703e7ab4c7974e6d61b52d0`, exact head
+      `16ff023011d762163b2d9955cd766c071fae0cdc`, tree
+      `00285710b95ef656ae5cc0dfa9321fdd1107bbb8`, candidate
+      `f7cddcf42c5d4c64e00cf6df54eda9525e9b972e`. It extracts comment-list
+      parser/validation, folded recent query/cursor, and table rendering tests
+      into `issue_comment_list_command_tests.rs`; query encoding, cursor output,
+      compact JSON, and actor fallback behavior are unchanged. Scoped rustfmt
+      and `git diff --check` pass; PR #212 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #212 exact-head subagent review PASS on
+      `16ff023011d762163b2d9955cd766c071fae0cdc`: all three comment-list tests
+      are preserved; imports and module boundary are correct; query/cursor,
+      compact JSON, and table actor fallback behavior remain covered. No
+      compile or behavior blocker was found. Subagent did not run Cargo or
+      modify the worktree; coordinator `git diff --check` remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
