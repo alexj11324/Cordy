@@ -1334,6 +1334,18 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated.
       PR #303 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head
       subagent review PASS on `593e1db0`; no Cargo was run.
+- [ ] PR #304 `codex/cord-136-cli-issue-timeline-output` is the next bounded
+      child of #303: base branch `codex/cord-135-cli-issue-timeline-filter` at
+      `593e1db0a6ef39280e5eb3b8e18c1207e943f133`, exact head
+      `3b2b289f99b639463a1bc3ebc224176944468474`, tree
+      `66cedaecd9696eefa15de30bdcbe51467b16c53c`, candidate
+      `efac007137bb7cbe6e24eb7fb13ea1f2562ce8a8` (parents base + head).
+      It isolates timeline actor/detail/transition/table rendering in
+      `issue_timeline_output.rs`; filter semantics, actor lookup inputs, API
+      requests, truncation warnings, and command dispatch remain unchanged.
+      Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated.
+      PR #304 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head
+      subagent review pending; no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
