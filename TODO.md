@@ -83,6 +83,10 @@
       parser types to `workspace_command_schema.rs`; execution behavior is unchanged.
       New schema rustfmt and `git diff --check` pass; Cargo/review/gate are delegated
       and have not been run by this thread. PR is Ready (`isDraft=false`).
+- [x] #173 exact-head subagent review PASS: public `Cli` re-export, global flags,
+      all command variants, Parser metadata, `Command` visibility, dispatch/submodule
+      references, tests, and main `Cli::parse()` compatibility have no blocker. Cargo
+      remains delegated.
 - [x] Next structural slice #173, `codex/cord-50-cli-command-registry`, is based on
       #172 at `192b888c3f4caca725c1eff26503207e96acbadf`; exact head
       `98df028c30e763b323dcb7b6875cc93fc3ee9dcc`, tree
