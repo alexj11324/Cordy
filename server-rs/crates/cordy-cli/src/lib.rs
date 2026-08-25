@@ -17,6 +17,7 @@ mod command_dispatch;
 pub mod config;
 mod config_commands;
 pub mod daemon;
+mod daemon_command_schema;
 mod daemon_commands;
 mod disk_usage_commands;
 mod disk_usage_output;
@@ -149,6 +150,10 @@ pub(super) use command_dispatch::run_with_input;
 use config_commands::{
     config_display_values, format_config_table, run_config_set, run_config_show,
     validate_config_set,
+};
+pub(super) use daemon_command_schema::{
+    DaemonArgs, DaemonCommand, DaemonDiskUsageArgs, DaemonLaunchArgs, DaemonLogsArgs,
+    DaemonRestartArgs, DaemonStartArgs, DaemonStatusArgs,
 };
 pub use daemon_commands::run_private_helper;
 use daemon_commands::{
@@ -448,82 +453,6 @@ enum Command {
 }
 
 #[derive(Debug, Args)]
-struct DaemonArgs {
-    #[command(subcommand)]
-    command: DaemonCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum DaemonCommand {
-    #[command(about = "Start the production daemon")]
-    Start(DaemonStartArgs),
-    #[command(about = "Show daemon status")]
-    Status(DaemonStatusArgs),
-    #[command(about = "Show daemon logs")]
-    Logs(DaemonLogsArgs),
-    #[command(about = "Restart the production daemon")]
-    Restart(DaemonRestartArgs),
-    #[command(about = "Stop the production daemon")]
-    Stop,
-    #[command(
-        name = "probe-runtimes",
-        about = "Probe locally configured runtimes",
-        hide = true
-    )]
-    ProbeRuntimes,
-    #[command(about = "Show local daemon workspace disk usage")]
-    DiskUsage(DaemonDiskUsageArgs),
-}
-
-#[derive(Debug, Args)]
-struct DaemonStartArgs {
-    #[command(flatten)]
-    launch: DaemonLaunchArgs,
-}
-
-#[derive(Debug, Args)]
-struct DaemonStatusArgs {
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct DaemonLogsArgs {
-    #[arg(short = 'f', long, help = "Follow the log file as it grows")]
-    follow: bool,
-    #[arg(
-        short = 'n',
-        long,
-        default_value_t = 50,
-        value_parser = parse_log_lines,
-        help = "Number of recent log lines to show"
-    )]
-    lines: usize,
-}
-
-#[derive(Debug, Args)]
-struct DaemonRestartArgs {
-    #[command(flatten)]
-    launch: DaemonLaunchArgs,
-}
-
-#[derive(Debug, Args)]
-struct DaemonDiskUsageArgs {
-    #[arg(long, help = "Aggregate output by workspace instead of by task")]
-    by_workspace: bool,
-    #[arg(long, help = "Use the per-task view (default)")]
-    by_task: bool,
-    #[arg(long, default_value_t = 0, help = "Keep only the largest N entries")]
-    top: i64,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-    #[arg(long, help = "Override the workspaces root path")]
-    workspaces_root: Option<String>,
-    #[arg(long, help = "Scan the default root and every named profile root")]
-    all_profiles: bool,
-}
-
-#[derive(Debug, Args)]
 struct UpdateArgs {
     #[arg(
         long,
@@ -590,52 +519,6 @@ enum SetupError {
     HealthProbe(#[source] HealthProbeError),
     #[error("setup self-host requires --app-url when --server-url points at a remote host")]
     RemoteAppUrlRequired,
-}
-
-/// Launch flags shared by `daemon start` and `daemon restart`.
-///
-/// Restart remains a background lifecycle operation, but it must resolve the
-/// same launch contract as start so the replacement process cannot silently
-/// inherit a different daemon identity, workspace root, timeout, or reload
-/// policy. The root `--server-url`/`--profile` options remain global and are
-/// included by `to_launch_flags` below.
-#[derive(Debug, Args)]
-struct DaemonLaunchArgs {
-    /// Run the daemon in the current process. Without this flag the command
-    /// uses the typed lifecycle owner to launch the real foreground child.
-    #[arg(long)]
-    foreground: bool,
-    #[arg(long)]
-    daemon_id: Option<String>,
-    #[arg(long)]
-    device_name: Option<String>,
-    #[arg(long)]
-    runtime_name: Option<String>,
-    #[arg(long)]
-    workspaces_root: Option<String>,
-    #[arg(long, value_parser = parse_cli_duration)]
-    poll_interval: Option<Duration>,
-    #[arg(long, value_parser = parse_cli_duration)]
-    heartbeat_interval: Option<Duration>,
-    #[arg(long, value_parser = parse_cli_duration)]
-    agent_timeout: Option<Duration>,
-    #[arg(long, value_parser = parse_cli_duration)]
-    codex_semantic_inactivity_timeout: Option<Duration>,
-    #[arg(long, value_parser = parse_cli_duration)]
-    codex_handshake_timeout: Option<Duration>,
-    #[arg(long)]
-    max_concurrent_tasks: Option<i64>,
-    /// Successor invocations include the profile-derived health port. It is
-    /// validated against the canonical resolver rather than becoming a
-    /// second source of daemon configuration.
-    #[arg(long)]
-    health_port: Option<u16>,
-    #[arg(long = "no-auto-update")]
-    disable_auto_update: bool,
-    #[arg(long, value_parser = parse_cli_duration)]
-    auto_update_interval: Option<Duration>,
-    #[arg(long = "no-auto-reload")]
-    disable_auto_reload: bool,
 }
 
 #[derive(Debug, Args)]
