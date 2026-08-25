@@ -168,13 +168,13 @@ pub(super) async fn run_runtime_delete(
     format_runtime_delete_result(&Value::Object(result), output)
 }
 #[derive(Debug, Args)]
-struct RuntimeArgs {
+pub(super) struct RuntimeArgs {
     #[command(subcommand)]
-    command: RuntimeCommand,
+    pub(super) command: RuntimeCommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum RuntimeCommand {
+pub(super) enum RuntimeCommand {
     #[command(about = "List runtimes in the workspace")]
     List {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
@@ -236,13 +236,13 @@ enum RuntimeCommand {
 }
 
 #[derive(Debug, Args)]
-struct RuntimeProfileArgs {
+pub(super) struct RuntimeProfileArgs {
     #[command(subcommand)]
-    command: RuntimeProfileCommand,
+    pub(super) command: RuntimeProfileCommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum RuntimeProfileCommand {
+pub(super) enum RuntimeProfileCommand {
     #[command(about = "List custom runtime profiles in the workspace")]
     List {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
@@ -276,31 +276,31 @@ enum RuntimeProfileCommand {
 }
 
 #[derive(Debug, Args)]
-struct RuntimeProfileCreateArgs {
+pub(super) struct RuntimeProfileCreateArgs {
     #[arg(long, help = "Supported backend the profile routes to (required)")]
-    protocol_family: Option<String>,
+    pub(super) protocol_family: Option<String>,
     #[arg(long, help = "Executable the daemon resolves on PATH (required)")]
-    command_name: Option<String>,
+    pub(super) command_name: Option<String>,
     #[arg(long, help = "Human-readable profile name (required)")]
-    display_name: Option<String>,
+    pub(super) display_name: Option<String>,
     #[arg(long, default_value = "", help = "Optional description")]
-    description: String,
+    pub(super) description: String,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
-struct RuntimeProfileUpdateArgs {
+pub(super) struct RuntimeProfileUpdateArgs {
     #[arg(value_name = "PROFILE-ID")]
-    profile_id: String,
+    pub(super) profile_id: String,
     #[arg(long, help = "New display name")]
-    display_name: Option<String>,
+    pub(super) display_name: Option<String>,
     #[arg(long, help = "New command name")]
-    command_name: Option<String>,
+    pub(super) command_name: Option<String>,
     #[arg(long, help = "New description")]
-    description: Option<String>,
+    pub(super) description: Option<String>,
     #[arg(long, num_args = 0..=1, default_missing_value = "true", help = "Enable or disable the profile")]
-    enabled: Option<bool>,
+    pub(super) enabled: Option<bool>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
