@@ -208,8 +208,8 @@ use label_reference::{resolve_label_id, resolve_label_reference};
 use login::{
     build_login_url, build_workspace_creation_url, constant_time_equal, run_browser_login,
     run_login, validate_login_token, wait_for_login_callback, wait_for_workspace_creation,
-    wait_for_workspace_creation_with_opener, LoginWorkspace, WORKSPACE_DISCOVERY_INTERVAL,
-    WORKSPACE_DISCOVERY_TIMEOUT,
+    wait_for_workspace_creation_with_opener, AuthUser, LoginWorkspace,
+    WORKSPACE_DISCOVERY_INTERVAL, WORKSPACE_DISCOVERY_TIMEOUT,
 };
 pub(super) use output_helpers::{display_id, format_table, truncate_text};
 use path_safety::{ensure_file_within_workdir, lexical_normalize};

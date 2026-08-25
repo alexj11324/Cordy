@@ -302,7 +302,7 @@ async fn write_login_response(
     Ok(())
 }
 #[derive(Debug, Deserialize, Serialize)]
-struct AuthUser {
+pub(super) struct AuthUser {
     name: String,
     email: String,
 }
