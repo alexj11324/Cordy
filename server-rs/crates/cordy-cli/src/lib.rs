@@ -127,6 +127,7 @@ mod chat_command_schema;
 mod attachment_download_commands;
 mod chat_read_commands;
 mod client_factory;
+mod client_url;
 mod dispatch_agent;
 mod dispatch_autopilot;
 mod dispatch_auth;
@@ -325,8 +326,9 @@ pub(super) use chat_command_schema::{
 };
 pub(super) use client_factory::{
     new_api_client, new_unscoped_api_client, new_unscoped_authenticated_api_client,
-    normalize_api_base_url, required_workspace_id, resolve_current_workspace_id,
+    required_workspace_id, resolve_current_workspace_id,
 };
+pub(super) use client_url::normalize_api_base_url;
 pub(super) use command_dispatch::run_with_input;
 pub(super) use config_command_schema::{ConfigArgs, ConfigCommand};
 use config_mutation_commands::{run_config_set, validate_config_set};
