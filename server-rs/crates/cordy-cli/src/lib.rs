@@ -216,6 +216,7 @@ mod project_command_schema;
 mod project_commands;
 mod project_mutation_commands;
 mod project_resource_commands;
+mod project_resource_input;
 mod project_resource_support;
 mod project_status_commands;
 mod property_command_schema;
@@ -471,7 +472,7 @@ use project_resource_commands::{
     run_project_resource_add, run_project_resource_list, run_project_resource_remove,
     run_project_resource_update,
 };
-pub(super) use project_resource_support::{
+pub(super) use project_resource_input::{
     build_project_resource_add_ref, build_project_resource_update_ref,
 };
 pub(super) use property_commands::{
