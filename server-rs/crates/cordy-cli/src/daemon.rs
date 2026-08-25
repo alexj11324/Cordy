@@ -237,12 +237,8 @@ mod tests {
         let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
         environment.set("CORDY_DAEMON_PORT", "19876");
 
-        let assembly = DaemonStartAssembly::load(
-            "",
-            &DaemonLaunchFlags::default(),
-            &environment,
-        )
-        .expect("a daemon port without task identity is only a weak host hint");
+        let assembly = DaemonStartAssembly::load("", &DaemonLaunchFlags::default(), &environment)
+            .expect("a daemon port without task identity is only a weak host hint");
         assert!(assembly.profile_input.token.is_empty());
     }
 
@@ -284,9 +280,10 @@ mod tests {
             profile_input: DaemonProfileInput::default(),
         };
 
-        let error = assembly
-            .production_inputs(&context, "1.2.3")
-            .expect_err("foreground assembly must require profile credentials");
+        let error = match assembly.production_inputs(&context, "1.2.3") {
+            Err(error) => error,
+            Ok(_) => panic!("foreground assembly must require profile credentials"),
+        };
         assert!(error.to_string().contains("cordy login"));
         assert!(!root.exists());
     }

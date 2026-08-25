@@ -149,7 +149,6 @@ fn extract_server_message(body: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::Context;
     use reqwest::Method;
 
     #[test]

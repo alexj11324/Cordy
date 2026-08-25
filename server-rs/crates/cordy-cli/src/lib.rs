@@ -3614,7 +3614,7 @@ async fn run_setup<R: Read>(
             stderr: "Aborted.\n".into(),
         });
     }
-    let input = prepare_setup_profile_input(environment, setup_input).await?;
+    let input = prepare_setup_profile_input(cli, environment, setup_input).await?;
     let mut output = run_daemon_after_setup(cli, environment).await?;
     output.stderr = format!(
         "Configured {} for profile {:?}; token authentication preserved.\n{}",
@@ -3689,10 +3689,11 @@ async fn prepare_setup_profile(
     require_human_local_command(environment, "setup")?;
     let input = resolve_setup_profile_input(cli, environment, args)?;
 
-    prepare_setup_profile_input(environment, input).await
+    prepare_setup_profile_input(cli, environment, input).await
 }
 
 async fn prepare_setup_profile_input(
+    cli: &Cli,
     environment: &Environment,
     input: config::SetupProfileInput,
 ) -> Result<config::SetupProfileInput> {
@@ -16026,6 +16027,7 @@ mod tests {
             panic!("expected autopilot get");
         };
         assert_eq!(id, "abcd");
+        let _ = output;
 
         let trigger =
             Cli::try_parse_from(["cordy", "autopilot", "trigger", "abcd", "--output", "table"])
@@ -24335,7 +24337,7 @@ mod tests {
     #[tokio::test]
     async fn property_create_update_and_archive_use_go_patch_and_output_contracts() {
         let property_id = "11111111-1111-1111-1111-111111111111";
-        let definition = || {
+        let definition = move || {
             serde_json::json!({
                 "id":property_id,"name":"Severity","type":"select","description":"",
                 "icon":"shield","config":{"options":[{
@@ -26207,9 +26209,9 @@ mod tests {
         let flags = args
             .launch
             .to_launch_flags(Some("https://staging.example".to_string()));
-        assert_eq!(flags.server_url, "https://staging.example");
-        assert_eq!(flags.daemon_id, "daemon-2");
-        assert_eq!(flags.workspaces_root, "/srv/workspaces");
+        assert_eq!(flags.server_url.as_deref(), Some("https://staging.example"));
+        assert_eq!(flags.daemon_id.as_deref(), Some("daemon-2"));
+        assert_eq!(flags.workspaces_root.as_deref(), Some("/srv/workspaces"));
         let error = ensure_restart_is_background(&args.launch)
             .expect_err("restart foreground must fail closed");
         assert!(error

@@ -439,6 +439,10 @@ fn agent_response(
     })
 }
 
+pub(crate) fn agent_event_response(state: &HandlerState, target: &Agent) -> Value {
+    agent_response(Some(state), target.clone(), false, false)
+}
+
 fn has_mcp_config(value: &Value) -> bool {
     match value {
         Value::Null => false,
@@ -920,7 +924,7 @@ async fn create_agent(
         request.thinking_level.as_deref(),
         request.service_tier.as_deref(),
         &composio_toolkit_allowlist,
-        &permission_mode,
+        Some(&permission_mode),
     )
     .await;
     let created = match created {
@@ -2346,7 +2350,7 @@ mod tests {
         for mcp_config in [json!("secret"), json!(["secret"])] {
             let mut agent = agent_fixture();
             agent.mcp_config = Some(mcp_config);
-            let response = agent_response(agent, false, false);
+            let response = agent_response(None, agent, false, false);
             assert_eq!(response["mcp_config"], json!({}));
             assert_eq!(response["mcp_config_redacted"], true);
         }

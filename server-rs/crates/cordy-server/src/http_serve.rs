@@ -5,7 +5,6 @@
 //! running. This loop owns those tasks in a `JoinSet` so a timed-out drain can
 //! abort them before channel/maintenance workers stop.
 
-use std::net::SocketAddr;
 use std::time::Duration;
 
 use axum::body::Body;

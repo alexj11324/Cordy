@@ -5152,7 +5152,7 @@ pub(crate) async fn mutation_actor(
     }
 }
 
-async fn publish_issue_updated(
+pub(crate) async fn publish_issue_updated(
     state: &HandlerState,
     previous: &Issue,
     issue: &Issue,
