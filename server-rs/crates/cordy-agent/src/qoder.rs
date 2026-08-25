@@ -583,6 +583,25 @@ impl KimiBackend {
     ) -> Catalog {
         discover_kimi_models(&self.inner.config, cache, cancellation, timeout).await
     }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Kimi executable do not share an account/profile catalog entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_kimi_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await
+    }
 }
 
 #[async_trait]
@@ -1085,7 +1104,22 @@ async fn discover_kimi_models(
     cancellation: CancellationToken,
     timeout: Duration,
 ) -> Catalog {
-    let Some(key) = ModelDiscoveryCacheKey::new("kimi", &config.command) else {
+    discover_kimi_models_with_scope(config, "kimi", cache, cancellation, timeout).await
+}
+
+async fn discover_kimi_models_with_scope(
+    config: &QoderConfig,
+    runtime_scope: &str,
+    cache: &CatalogCache,
+    cancellation: CancellationToken,
+    timeout: Duration,
+) -> Catalog {
+    let scope = if runtime_scope.trim().is_empty() {
+        "kimi"
+    } else {
+        runtime_scope
+    };
+    let Some(key) = ModelDiscoveryCacheKey::new(scope, &config.command) else {
         return Catalog::default();
     };
     if let Some(catalog) = cache.get(&key) {
@@ -1096,6 +1130,9 @@ async fn discover_kimi_models(
     else {
         return Catalog::default();
     };
+    if cancellation.is_cancelled() {
+        return Catalog::default();
+    }
     let mut catalog = Catalog {
         models: parse_acp_session_models(&session, "kimi"),
         fallback: false,
@@ -1107,12 +1144,14 @@ async fn discover_kimi_models(
         .and_then(Value::as_str)
         .unwrap_or_default();
     if check_minimum(version, KIMI_THINKING_MIN_VERSION, false).is_ok() {
-        if let Some(thinking) = discover_kimi_thinking(config, cancellation, timeout).await {
+        if let Some(thinking) = discover_kimi_thinking(config, cancellation.clone(), timeout).await {
             for model in &mut catalog.models {
                 if let Some(model_thinking) = thinking.get(&model.id) {
                     model.thinking = Some(model_thinking.clone());
                 }
             }
+        } else if cancellation.is_cancelled() {
+            return Catalog::default();
         } else {
             tracing::debug!(
                 provider = "kimi",
@@ -1120,6 +1159,9 @@ async fn discover_kimi_models(
                 "per-model thinking discovery unavailable"
             );
         }
+    }
+    if cancellation.is_cancelled() {
+        return Catalog::default();
     }
     let _ = cache.insert(key, catalog.clone());
     catalog
