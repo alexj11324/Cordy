@@ -420,6 +420,17 @@
       `skip_children` and `git diff --check` pass; PR #223 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
       delegated.
+- [x] PR #224 `codex/cord-56-daemon-lifecycle` is the next bounded child of
+      #223: base branch `codex/cord-55-daemon-execenv` at
+      `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`, exact head
+      `a4d7e236066c0e30e0e7477b8ce9148f783ef185`, tree
+      `42010cc00e2df919fad3efdc74d32eb9d49f8b7d`, candidate
+      `8988d13957f8fdf2d7c19fcfc56403da57bbb375`. It renames the broad
+      `daemon_commands.rs` module to `daemon_lifecycle_commands.rs`, making
+      setup/start/restart/stop assembly the explicit ownership boundary with
+      no behavior changes. Scoped rustfmt with `skip_children` and
+      `git diff --check` pass; PR #224 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
