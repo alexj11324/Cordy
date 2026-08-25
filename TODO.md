@@ -1546,6 +1546,14 @@
       unchanged. `git diff --check` passes; rustfmt was unavailable in the
       subagent check and Cargo was not run. Pro owns push/Ready PR, gate, and
       merge.
+- [ ] CLI daemon-preparation-helper refactor is committed at
+      `ba0a0d3a495886225af292de5019b45b34435353` (tree
+      `e07c2052597726c38d3d2067cef394a3f758fb83`): the private execution
+      environment protocol now lives in `daemon_commands.rs` and is publicly
+      re-exported for `main.rs`; argv matching and stdin/stdout payload
+      behavior are unchanged. The serial subagent found no blocker;
+      `git diff --check` passes, rustfmt was unavailable in the subagent
+      check, and Cargo was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
