@@ -337,6 +337,17 @@
       formatter/handler visibility is valid. No compile or behavior blocker was
       found. Subagent did not run Cargo or modify the worktree; coordinator
       `git diff --check` remains clean.
+- [x] PR #189 `codex/cord-50-cli-issue-metadata-tests` is the next bounded child
+      of #188: base branch `codex/cord-50-cli-issue-label-tests` at
+      `66e27b87f6304a57011fa2c28f836edc5f5d5fe7`, exact head
+      `cbefb24e82f8b06c500cdb91973863712637b251`, tree
+      `1fd18feaad2d2f7e7ce836347d4f64ec2e9663b5`, candidate
+      `6f8c1df273cc1a3732eb2a49500c4bc11b491d2d`. It extracts the three issue-
+      metadata parser, value-coercion, not-found fallback, and typed-update
+      contract tests into `issue_metadata_command_tests.rs`; JSON/table output
+      and request payloads are unchanged. Scoped rustfmt and `git diff --check`
+      pass; PR #189 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Cargo and
+      exact-head review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
