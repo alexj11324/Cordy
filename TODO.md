@@ -1604,6 +1604,14 @@
       handlers, with defaults and parser metadata unchanged. `git diff --check`
       passes; rustfmt was unavailable in the subagent check and Cargo was not
       run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI runtime-schema refactor is structurally committed at
+      `edebfa932d9d3fbd4c32e0d4c7547444b1dd778c`; the serial subagent fixed
+      schema type/field visibility in `ff568e5b5158c11cffc6406dbe46a7c4f47d2a10`
+      (tree `0c0a5a03c445b37c52cc34fd16c2aba6556c3818`): runtime and custom
+      profile clap definitions now live beside runtime handlers, with dispatch,
+      profile commands, defaults, and parser metadata unchanged. `git diff
+      --check` passes; rustfmt was unavailable in the subagent check and Cargo
+      was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
