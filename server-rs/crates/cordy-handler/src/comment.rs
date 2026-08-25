@@ -7,7 +7,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use cordy_db::models::{Comment, CommentReaction};
-use cordy_db::queries::{activity, attachment, comment, issue as issue_q, reaction};
+use cordy_db::queries::{activity, agent, attachment, comment, issue as issue_q, reaction};
 use cordy_middleware::workspace::WorkspaceContext;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -365,7 +365,6 @@ async fn update(
     if content.is_empty() {
         return error_response(StatusCode::BAD_REQUEST, "content is required");
     }
-    let content_changed = content != current.content;
     let issue =
         match issue_q::get_issue_in_workspace(&state.pool, current.issue_id, current.workspace_id)
             .await
@@ -403,9 +402,9 @@ async fn update(
         }
     }
     let source = if actor_type == "agent" && current.author_id == actor_id {
-        task_id
+        task_id.unwrap_or_default()
     } else {
-        None
+        Uuid::nil()
     };
     let replacement_attachments = match request.attachment_ids.as_deref() {
         Some(values) => match uuid_list(values, "attachment_ids") {
@@ -418,29 +417,9 @@ async fn update(
         Ok(ids) => ids,
         Err(response) => return response,
     };
-    let mut cancelled = Vec::new();
-    if content_changed {
-        match state
-            .tasks
-            .cancel_tasks_by_trigger_comment(current.id)
-            .await
-        {
-            Ok(rows) => cancelled = rows,
-            Err(error) => {
-                tracing::warn!(%error, "failed to cancel tasks for edited trigger comment");
-                return error_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to update comment",
-                );
-            }
-        }
-    }
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
         Err(_) => {
-            if content_changed {
-                retrigger_cancelled_task_survivors(&state, &issue, &cancelled, None).await;
-            }
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to update comment",
@@ -459,21 +438,34 @@ async fn update(
     {
         Ok(Some(row)) => row,
         Ok(None) => {
-            if content_changed {
-                retrigger_cancelled_task_survivors(&state, &issue, &cancelled, None).await;
-            }
             return error_response(StatusCode::CONFLICT, "comment was edited concurrently");
         }
         Err(error) => {
             tracing::warn!(%error,"failed to update comment");
-            if content_changed {
-                retrigger_cancelled_task_survivors(&state, &issue, &cancelled, None).await;
-            }
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to update comment",
             );
         }
+    };
+    // Cancel only after the strict update has succeeded, and in the same
+    // transaction as the comment mutation. This prevents attachment-only,
+    // unchanged, and losing concurrent edits from cancelling a still-valid
+    // task batch; a later rollback also restores the queue rows.
+    let cancelled = if updated.content_changed {
+        match agent::cancel_agent_tasks_by_trigger_comment(&mut *tx, current.id).await {
+            Ok(cancelled) => cancelled,
+            Err(error) => {
+                tracing::warn!(%error, comment_id = %current.id, "failed to cancel tasks for edited trigger comment");
+                drop(tx);
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to prepare comment edit",
+                );
+            }
+        }
+    } else {
+        Vec::new()
     };
     let mut attachment_changed = false;
     if let Some(ids) = replacement_attachments {
@@ -482,9 +474,6 @@ async fn update(
         {
             Ok(changed) => attachment_changed = changed > 0,
             Err(_) => {
-                if content_changed {
-                    retrigger_cancelled_task_survivors(&state, &issue, &cancelled, None).await;
-                }
                 return error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "failed to replace comment attachments",
@@ -492,15 +481,12 @@ async fn update(
             }
         }
     }
-    let attachment_revision = if !content_changed && attachment_changed {
+    let attachment_revision = if !updated.content_changed && attachment_changed {
         match comment::touch_comment_after_attachment_edit(&mut *tx, current.id, current.issue_id)
             .await
         {
             Ok(Some((_, issue_revision))) => Some(issue_revision),
             Ok(None) | Err(_) => {
-                if content_changed {
-                    retrigger_cancelled_task_survivors(&state, &issue, &cancelled, None).await;
-                }
                 return error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "failed to update comment revision",
@@ -511,9 +497,6 @@ async fn update(
         None
     };
     if tx.commit().await.is_err() {
-        if content_changed {
-            retrigger_cancelled_task_survivors(&state, &issue, &cancelled, None).await;
-        }
         return error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to update comment",
@@ -526,7 +509,11 @@ async fn update(
         .expect("updated comment");
     let mut value = comment_json(&state, &comment, &headers).await;
     let mut outcomes = Vec::new();
-    if content_changed {
+    state
+        .tasks
+        .broadcast_cancelled_tasks(&current.workspace_id.to_string(), &cancelled)
+        .await;
+    if updated.content_changed {
         retrigger_cancelled_task_survivors(&state, &issue, &cancelled, Some(current.id)).await;
         let plan = compute_comment_agent_triggers(CommentTriggerInput {
             state: &state,
