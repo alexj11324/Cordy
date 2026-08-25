@@ -3,62 +3,10 @@ use serde_json::Value;
 use url::form_urlencoded;
 
 use super::{
-    display_id, format_table, load_issue_actor_names, new_api_client, resolve_current_workspace_id,
-    resolve_issue_project_id, resolve_project_reference, value_string, Cli, Environment,
-    IssueActorNames, OutputFormat, RunOutput,
+    format_project_details_table, format_project_list_table, load_issue_actor_names,
+    new_api_client, project_actor_inputs, resolve_current_workspace_id, resolve_issue_project_id,
+    Cli, Environment, OutputFormat, RunOutput,
 };
-
-pub(super) fn project_lead(project: &Value, actors: &IssueActorNames) -> String {
-    let actor_type = value_string(project, "lead_type");
-    let actor_id = value_string(project, "lead_id");
-    if actor_type.is_empty() || actor_id.is_empty() {
-        return String::new();
-    }
-    let key = format!("{actor_type}:{actor_id}");
-    actors
-        .0
-        .get(&key)
-        .map_or(key, |name| format!("{actor_type}:{name}"))
-}
-
-pub(super) fn project_actor_inputs(projects: &[Value]) -> Vec<Value> {
-    projects
-        .iter()
-        .map(|project| {
-            serde_json::json!({
-                "assignee_type":project.get("lead_type").cloned().unwrap_or(Value::Null),
-                "assignee_id":project.get("lead_id").cloned().unwrap_or(Value::Null),
-            })
-        })
-        .collect()
-}
-
-pub(super) fn format_project_list_table(
-    projects: &[Value],
-    actors: &IssueActorNames,
-    full_id: bool,
-) -> String {
-    let mut rows = vec![vec![
-        "ID".into(),
-        "TITLE".into(),
-        "STATUS".into(),
-        "LEAD".into(),
-        "CREATED".into(),
-    ]];
-    rows.extend(projects.iter().map(|project| {
-        vec![
-            display_id(&value_string(project, "id"), full_id),
-            value_string(project, "title"),
-            value_string(project, "status"),
-            project_lead(project, actors),
-            value_string(project, "created_at")
-                .chars()
-                .take(10)
-                .collect(),
-        ]
-    }));
-    format_table(&rows)
-}
 
 pub(super) async fn run_project_list(
     cli: &Cli,
@@ -100,25 +48,6 @@ pub(super) async fn run_project_list(
         stdout,
         stderr: String::new(),
     })
-}
-
-pub(super) fn format_project_details_table(project: &Value, actors: &IssueActorNames) -> String {
-    format_table(&[
-        vec![
-            "ID".into(),
-            "TITLE".into(),
-            "STATUS".into(),
-            "LEAD".into(),
-            "DESCRIPTION".into(),
-        ],
-        vec![
-            value_string(project, "id"),
-            value_string(project, "title"),
-            value_string(project, "status"),
-            project_lead(project, actors),
-            value_string(project, "description"),
-        ],
-    ])
 }
 
 pub(super) async fn run_project_get(
