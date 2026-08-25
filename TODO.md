@@ -1628,6 +1628,14 @@
       aliases, positional URL behavior, and output defaults unchanged. `git
       diff --check` passes; rustfmt was unavailable in the subagent check and
       Cargo was not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI chat/attachment-schema refactor is structurally committed at
+      `81faa66e1cda0a0f87ab23e5cdc15429cb024b9b`; the serial subagent fixed
+      schema type/field visibility in `b42f4dd3c79d3de89ee0aa96aecd89f7d3ac9064`
+      (tree `99742de6eb48fecbfd32fc97867a7654925d72df`): attachment download/
+      upload and chat history/thread clap definitions now live beside their
+      handlers, with path semantics and output defaults unchanged. `git
+      diff --check` passes; rustfmt was unavailable in the subagent check and
+      Cargo was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
