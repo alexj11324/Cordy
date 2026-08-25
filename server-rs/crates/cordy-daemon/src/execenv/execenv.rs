@@ -1635,6 +1635,46 @@ fn prepare_hermes_home(
     bail!("execenv: hermes provider family not yet ported (lane E2)")
 }
 
+/// Ensures the managed QwenPaw workspace root is a real directory.
+///
+/// `create_dir_all` follows a symlink when the final path already points to a
+/// directory. That is unsafe for this managed path because all of the cleanup
+/// and manifest writes below operate on descendants of it. Refuse symlinks and
+/// other non-directory entries before touching any descendant.
+fn ensure_qwenpaw_workspace_root(workspace: &str) -> anyhow::Result<()> {
+    let path = Path::new(workspace);
+    match path.symlink_metadata() {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            bail!("execenv: qwenpaw workspace root must not be a symlink: {workspace}");
+        }
+        Ok(metadata) if !metadata.is_dir() => {
+            bail!("execenv: qwenpaw workspace root must be a directory: {workspace}");
+        }
+        Ok(_) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            std::fs::create_dir_all(path)
+                .with_context(|| format!("create qwenpaw workspace directory {workspace}"))?;
+        }
+        Err(error) => {
+            return Err(anyhow::Error::new(error)
+                .context(format!("inspect qwenpaw workspace root {workspace}")));
+        }
+    }
+
+    // Re-check after creation so a path created between the initial probe and
+    // create_dir_all cannot become an accepted symlink or non-directory.
+    let metadata = path
+        .symlink_metadata()
+        .with_context(|| format!("inspect qwenpaw workspace root {workspace}"))?;
+    if metadata.file_type().is_symlink() {
+        bail!("execenv: qwenpaw workspace root must not be a symlink: {workspace}");
+    }
+    if !metadata.is_dir() {
+        bail!("execenv: qwenpaw workspace root must be a directory: {workspace}");
+    }
+    Ok(())
+}
+
 /// Prepares QwenPaw's per-task workspace and native skill manifest.
 ///
 /// QwenPaw does not read Cordy's generic `.agent_context/skills` tree: its ACP
@@ -1648,8 +1688,7 @@ fn prepare_qwenpaw_workspace(workspace: &str, skills: &[SkillContextForEnv]) -> 
         bail!("execenv: qwenpaw workspace is required");
     }
 
-    std::fs::create_dir_all(workspace)
-        .with_context(|| format!("create qwenpaw workspace directory {workspace}"))?;
+    ensure_qwenpaw_workspace_root(workspace)?;
     restrict_permissions(workspace)
         .with_context(|| format!("restrict qwenpaw workspace directory {workspace}"))?;
 
@@ -1993,6 +2032,48 @@ mod tests {
         prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &[]).unwrap();
         assert!(!workspace.join("skills").exists());
         assert!(!workspace.join("skill.json").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn qwenpaw_workspace_rejects_symlinked_root() {
+        use std::os::unix::fs::symlink;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let target = tmp.path().join("target");
+        std::fs::create_dir_all(target.join("skills")).unwrap();
+        std::fs::write(target.join("skills/keep.txt"), b"keep").unwrap();
+        let workspace = tmp.path().join("qwenpaw");
+        symlink(&target, &workspace).unwrap();
+
+        let err = prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &[]).unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("must not be a symlink"),
+            "unexpected error: {message}"
+        );
+        assert!(target.join("skills/keep.txt").is_file());
+        assert!(
+            workspace
+                .symlink_metadata()
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+    }
+
+    #[test]
+    fn qwenpaw_workspace_rejects_non_directory_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("qwenpaw");
+        std::fs::write(&workspace, b"not a directory").unwrap();
+
+        let err = prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &[]).unwrap_err();
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("must be a directory"),
+            "unexpected error: {message}"
+        );
     }
 
     #[test]
