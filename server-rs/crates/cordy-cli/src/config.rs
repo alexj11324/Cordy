@@ -4,6 +4,7 @@
 //! profile schema and launch precedence live in `config_profile`.
 
 mod config_environment;
+mod config_persistence;
 mod config_profile;
 
 pub use config_environment::{Environment, SetupProfileInput, TASK_CONFIG_ROOT_ENV};
