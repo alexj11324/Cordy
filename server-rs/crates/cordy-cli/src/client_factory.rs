@@ -115,6 +115,21 @@ pub(super) fn resolve_current_workspace_id(cli: &Cli, environment: &Environment)
     resolve_workspace_id(cli, environment, task_context, &config)
 }
 
+pub(super) fn required_workspace_id(cli: &Cli, environment: &Environment) -> Result<String> {
+    let workspace_id = resolve_current_workspace_id(cli, environment);
+    if workspace_id.is_empty() {
+        if environment.in_daemon_managed_execution_context() {
+            bail!(
+                "workspace_id is required: CORDY_WORKSPACE_ID must be set by the daemon in agent execution context (no fallback to user config)"
+            );
+        }
+        bail!(
+            "workspace_id is required: use --workspace-id flag, set CORDY_WORKSPACE_ID env, or run 'cordy config set workspace_id <id>'"
+        );
+    }
+    Ok(workspace_id)
+}
+
 fn resolve_workspace_id(
     cli: &Cli,
     environment: &Environment,

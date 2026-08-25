@@ -114,7 +114,7 @@ use autopilot_resolver::{
 use chat_commands::{run_attachment_download, run_attachment_upload, run_chat_read};
 pub(super) use client_factory::{
     new_api_client, new_unscoped_api_client, new_unscoped_authenticated_api_client,
-    normalize_api_base_url, resolve_current_workspace_id,
+    normalize_api_base_url, required_workspace_id, resolve_current_workspace_id,
 };
 use config_commands::{
     config_display_values, format_config_table, run_config_set, run_config_show,
@@ -4574,21 +4574,6 @@ fn confirm_webhook_rotation<R: Read>(input: &mut R) -> Result<bool> {
         .context("write webhook rotation abort")?;
     stderr.flush().context("flush webhook rotation abort")?;
     Ok(false)
-}
-
-fn required_workspace_id(cli: &Cli, environment: &Environment) -> Result<String> {
-    let workspace_id = resolve_current_workspace_id(cli, environment);
-    if workspace_id.is_empty() {
-        if environment.in_daemon_managed_execution_context() {
-            bail!(
-                "workspace_id is required: CORDY_WORKSPACE_ID must be set by the daemon in agent execution context (no fallback to user config)"
-            );
-        }
-        bail!(
-            "workspace_id is required: use --workspace-id flag, set CORDY_WORKSPACE_ID env, or run 'cordy config set workspace_id <id>'"
-        );
-    }
-    Ok(workspace_id)
 }
 
 #[derive(Debug, Deserialize, Serialize)]
