@@ -723,6 +723,17 @@
       parent/content handling, and missing-content rejection remain covered.
       No compile or behavior blocker was found. Subagent did not run Cargo or
       modify the worktree; coordinator `git diff --check` remains clean.
+- [x] PR #211 `codex/cord-50-cli-issue-comment-mutation-tests` is the next
+      bounded child of #210: base branch `codex/cord-50-cli-issue-comment-add-tests`
+      at `d9f96094b4d6b9d759aeffacd585fae345dfa1e4`, exact head
+      `75bf188316501e36f703e7ab4c7974e6d61b52d0`, tree
+      `91018f96908b89abef65da83c48506b459bd2c20`, candidate
+      `19470da2855bbc257ae870aea6e717be88fc9ffa`. It extracts comment
+      delete/resolve/unresolve HTTP and output contract tests into
+      `issue_comment_mutation_command_tests.rs`; endpoint methods, JSON/table
+      output, and status messages are unchanged. Scoped rustfmt and
+      `git diff --check` pass; PR #211 is Ready (`isDraft=false`),
+      MERGEABLE (checks settling). Cargo and exact-head review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
