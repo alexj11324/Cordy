@@ -83,6 +83,14 @@
       parser types to `workspace_command_schema.rs`; execution behavior is unchanged.
       New schema rustfmt and `git diff --check` pass; Cargo/review/gate are delegated
       and have not been run by this thread. PR is Ready (`isDraft=false`).
+- [x] Next structural slice #173, `codex/cord-50-cli-command-registry`, is based on
+      #172 at `192b888c3f4caca725c1eff26503207e96acbadf`; exact head
+      `98df028c30e763b323dcb7b6875cc93fc3ee9dcc`, tree
+      `1b56f12ff2d41e01d0687bba81ae165356471aa0`, candidate
+      `a91c86ee61d7be3181459d3494de48b68d6cac32`. It moves only the public Cli parser
+      and root Command registry to `cli_command_schema.rs`; dispatch and subcommand
+      behavior are unchanged. New schema rustfmt and `git diff --check` pass; Cargo,
+      review, and gate are delegated and have not been run by this thread. PR is Ready.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
