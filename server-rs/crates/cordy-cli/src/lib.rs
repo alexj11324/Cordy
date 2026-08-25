@@ -162,6 +162,7 @@ mod daemon_lifecycle_commands;
 mod daemon_launch_inputs;
 mod daemon_lifecycle_output;
 mod daemon_log_commands;
+mod daemon_profile_discovery;
 mod daemon_status_commands;
 mod daemon_status_output;
 mod disk_usage_commands;
@@ -357,9 +358,9 @@ use daemon_diagnostics_commands::{run_daemon_disk_usage, run_daemon_probe_runtim
 use daemon_log_commands::{
     parse_log_lines, read_daemon_log_tail, resolve_daemon_log_path, run_daemon_logs,
 };
+use daemon_profile_discovery::{known_daemon_profiles, require_known_daemon_profile};
 use daemon_status_commands::{
-    known_daemon_profiles, require_known_daemon_profile, resolve_daemon_status_port,
-    run_daemon_status,
+    resolve_daemon_status_port, run_daemon_status,
 };
 use daemon_status_output::{format_daemon_status_table, render_daemon_status};
 use disk_usage_commands::{
