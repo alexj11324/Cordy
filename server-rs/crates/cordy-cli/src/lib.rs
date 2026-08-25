@@ -15,6 +15,7 @@ mod chat_commands;
 mod client_factory;
 mod command_dispatch;
 pub mod config;
+mod config_command_schema;
 mod config_commands;
 pub mod daemon;
 mod daemon_command_schema;
@@ -147,6 +148,7 @@ pub(super) use client_factory::{
     normalize_api_base_url, required_workspace_id, resolve_current_workspace_id,
 };
 pub(super) use command_dispatch::run_with_input;
+pub(super) use config_command_schema::{ConfigArgs, ConfigCommand};
 use config_commands::{
     config_display_values, format_config_table, run_config_set, run_config_show,
     validate_config_set,
@@ -519,23 +521,6 @@ enum SetupError {
     HealthProbe(#[source] HealthProbeError),
     #[error("setup self-host requires --app-url when --server-url points at a remote host")]
     RemoteAppUrlRequired,
-}
-
-#[derive(Debug, Args)]
-struct ConfigArgs {
-    #[command(subcommand)]
-    command: Option<ConfigCommand>,
-}
-
-#[derive(Debug, Subcommand)]
-enum ConfigCommand {
-    #[command(about = "Show current CLI configuration")]
-    Show {
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-    #[command(about = "Set a CLI configuration value")]
-    Set { key: String, value: String },
 }
 
 #[derive(Debug, Args)]
