@@ -2,6 +2,7 @@ use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use std::time::{Duration, Instant};
 
+use super::runtime_update_output::format_runtime_update_result;
 use super::{
     http_timeout, new_api_client, value_string, Cli, Environment, OutputFormat, RunOutput,
 };
