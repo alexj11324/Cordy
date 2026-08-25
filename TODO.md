@@ -1173,7 +1173,7 @@
       route semantics; module registration and test re-exports are complete.
       Subagent did not run Cargo or modify files; `git diff --check` remains
       clean.
-- [ ] PR #263 `codex/cord-95-cli-agent-lifecycle` is the next bounded child
+- [x] PR #263 `codex/cord-95-cli-agent-lifecycle` is the next bounded child
       of #262: base branch `codex/cord-94-cli-project-resource-support` at
       `ae8bbde45c6ac80b29d7966a0b8da62f89b0e59b`, exact head
       `af34a524e7988b88a25883aae535043765d73e91`, tree
@@ -1184,8 +1184,12 @@
       validation/size limits, upload sequence, output, dispatch, and root
       re-exports remain unchanged. Scoped pinned rustfmt and `git diff --check`
       pass; Cargo is delegated. PR #263 is Ready (`isDraft=false`),
-      CLEAN/MERGEABLE. Exact-head subagent review pending; no duplicate
-      review request has been made.
+      CLEAN/MERGEABLE. Exact-head subagent review PASS on
+      `af34a524e7988b88a25883aae535043765d73e91`: lifecycle/tasks/avatar
+      imports and visibility are complete; avatar extension/5 MiB/path/
+      timeout/upload semantics, dispatch, and root re-exports remain
+      unchanged. Subagent did not run Cargo or modify files; `git diff --check`
+      remains clean.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
