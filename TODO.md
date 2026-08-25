@@ -320,6 +320,17 @@
       boundary/visibility is valid. No additional compile or behavior blocker
       was found. Subagent did not run Cargo or modify the worktree; coordinator
       `git diff --check` remains clean.
+- [x] PR #188 `codex/cord-50-cli-issue-label-tests` is the next bounded child of
+      #187: base branch `codex/cord-50-cli-issue-subscriber-tests` at
+      `747b97c133a5e412dfdace0989a5f3296f2270f3`, exact head
+      `66e27b87f6304a57011fa2c28f836edc5f5d5fe7`, tree
+      `0de99dc8d49a4161d2e734a40abb6cfc383659a5`, candidate
+      `d7bf40000f159f99154f909e0f6ea67aa36b0897`. It extracts the three issue-
+      label parser, add, and remove contract tests into `issue_label_command_tests.rs`;
+      prefix resolution, delete-refresh fail-soft behavior, and table/JSON output
+      are unchanged. Scoped rustfmt and `git diff --check` pass; PR #188 is Ready
+      (`isDraft=false`), MERGEABLE (checks settling). Cargo and exact-head review
+      remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
