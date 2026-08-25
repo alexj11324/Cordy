@@ -1609,7 +1609,7 @@
       pinned rustfmt and `git diff --check` pass; Cargo and exact-head
       subagent review PASS on `040dce27`; no Cargo was run. PR #326 is Ready
       (`isDraft=false`), MERGEABLE (checks pending).
-- [ ] PR #327 `codex/cord-159-cli-issue-metadata-input` is the next bounded child
+- [x] PR #327 `codex/cord-159-cli-issue-metadata-input` is the completed bounded child
       of #326: base branch `codex/cord-158-cli-issue-metadata-mutations` at
       `040dce279c3b4206e3e6134b93cf5a84bcaa803c`, exact head
       `fe1832fdbc64451582de6747e8b29516b772a2fb`, tree
@@ -1625,6 +1625,18 @@
       CLEAN/MERGEABLE; exact-head subagent review PASS on `fe1832fd` confirmed
       the renamed parser import is complete with no new P0/P1 or compile
       blocker. No Cargo was run.
+- [ ] PR #328 `codex/cord-160-cli-property-model` is the next bounded child of
+      #327: base branch `codex/cord-159-cli-issue-metadata-input` at
+      `fe1832fdbc64451582de6747e8b29516b772a2fb`, exact head
+      `825503ad866d20cd0bc55afb378cd3399eacf751`, tree
+      `75c004f23f49b1775977edd1d3f9c665de9209a1`, candidate
+      `deae89befda1c68d93686065c30343e097b37545` (parents base + head).
+      It extracts PropertyOption/PropertyConfig/PropertyDefinition into a
+      dedicated model module while preserving serde shapes, re-exports, and
+      property/issue-property command behavior. Pinned rustfmt checks and
+      `git diff --check` pass; Cargo is delegated. PR #328 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE; exact-head subagent review is
+      pending.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
