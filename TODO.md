@@ -757,6 +757,17 @@
       compact JSON, and table actor fallback behavior remain covered. No
       compile or behavior blocker was found. Subagent did not run Cargo or
       modify the worktree; coordinator `git diff --check` remains clean.
+- [x] PR #213 `codex/cord-50-cli-issue-runs-tests` is the next bounded child
+      of #212: base branch `codex/cord-50-cli-issue-comment-list-tests` at
+      `16ff023011d762163b2d9955cd766c071fae0cdc`, exact head
+      `b2246b0ea20e6207a56092e928d8e50551a3735a`, tree
+      `4321a9c7fa2f52c405751dc0a9f3ab10132fba81`, candidate
+      `bcdfabba821e8369a42200cd15f7d91df684069f`. It extracts the issue-runs
+      parser/table and task-run fetch contract tests into
+      `issue_runs_command_tests.rs`; full-id rendering, actor lookup,
+      truncation, and output behavior are unchanged. Scoped rustfmt and
+      `git diff --check` pass; PR #213 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
