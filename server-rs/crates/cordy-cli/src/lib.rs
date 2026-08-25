@@ -85,6 +85,7 @@ mod task_reference;
 mod text_input;
 mod update_commands;
 mod url_helpers;
+mod user_command_schema;
 mod user_commands;
 mod version_output;
 mod workspace_commands;
@@ -338,6 +339,9 @@ use update_commands::{
     render_update_outcome, resolve_update_download_timeout, run_update, validate_update_timeout,
 };
 pub(super) use url_helpers::encoded_path_segment;
+pub(super) use user_command_schema::{
+    ProfileArgs, ProfileCommand, UpdateProfileArgs, UserArgs, UserCommand,
+};
 use user_commands::{
     format_user_profile_table, resolve_profile_description, run_user_profile_get,
     run_user_profile_update,
@@ -523,24 +527,6 @@ enum SetupError {
     HealthProbe(#[source] HealthProbeError),
     #[error("setup self-host requires --app-url when --server-url points at a remote host")]
     RemoteAppUrlRequired,
-}
-
-#[derive(Debug, Args)]
-struct UserArgs {
-    #[command(subcommand)]
-    command: UserCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum UserCommand {
-    #[command(about = "Get or update your personal profile")]
-    Profile(ProfileArgs),
-}
-
-#[derive(Debug, Args)]
-struct ProfileArgs {
-    #[command(subcommand)]
-    command: ProfileCommand,
 }
 
 #[derive(Debug, Args)]
@@ -1099,52 +1085,6 @@ struct UpdateWorkspaceArgs {
     #[arg(long, help = "New issue prefix (uppercased server-side)")]
     issue_prefix: Option<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Subcommand)]
-enum ProfileCommand {
-    #[command(about = "Show your current user profile")]
-    Get {
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-    #[command(
-        about = "Update your user profile (currently: profile description)",
-        long_about = "Set the personal profile description that gets injected into agent briefs as `## Requesting User`. Pass an empty value to clear it.\n\nPick the input mode that preserves your content:\n  --description \"...\"          inline (decodes \\n / \\t escapes)\n  --description-stdin           pipe a HEREDOC (preserves verbatim)\n  --description-file <path>     read a UTF-8 file (Windows-safe)"
-    )]
-    Update(UpdateProfileArgs),
-}
-
-#[derive(Debug, Args)]
-struct UpdateProfileArgs {
-    #[arg(
-        long,
-        help = "New profile description (decodes \\n, \\r, \\t, \\\\; use --description-stdin to preserve literal backslashes)"
-    )]
-    description: Option<String>,
-    #[arg(
-        long,
-        help = "Read description from stdin (preserves multi-line content verbatim)"
-    )]
-    description_stdin: bool,
-    #[arg(
-        long,
-        value_name = "PATH",
-        help = "Read description from a UTF-8 file inside the current working directory"
-    )]
-    description_file: Option<PathBuf>,
-    #[arg(
-        long,
-        help = "Allow --description-file to read outside the current working directory"
-    )]
-    allow_external_file: bool,
-    #[arg(
-        long,
-        help = "Clear the profile description (equivalent to --description \"\")"
-    )]
-    clear: bool,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
     output: OutputFormat,
 }
 
