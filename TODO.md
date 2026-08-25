@@ -1279,7 +1279,7 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
-- [ ] PR #297 `codex/cord-129-cli-api-attachments` is the next bounded child of
+- [x] PR #297 `codex/cord-129-cli-api-attachments` is the completed bounded child of
       #296: base branch `codex/cord-128-cli-config-mutation` at
       `d01b432af7549bd0352e4ee267df9dd173f15fea`, exact head
       `e6f02837d0e50e3f76a1aed3f4f068010c006800`, tree
@@ -1290,8 +1290,10 @@
       headers, and decoding remain in `api.rs`. Multipart fields, filename
       normalization, download bounds, and errors are unchanged. Scoped pinned
       rustfmt and `git diff --check` pass; Cargo is delegated. PR #297 is Ready
-      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review is
-      pending; no Cargo was run.
+      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review PASS:
+      attachment transport, multipart fields, filename/auth/timeout behavior,
+      download bound, errors, DTOs, and core client wiring are unchanged; no
+      Cargo was run.
 - [x] PR #296 `codex/cord-128-cli-config-mutation` is the completed bounded child of
       #295: base branch `codex/cord-127-cli-config-read` at
       `766df45ccd2fa01aae7ac031d1c31651702c7641`, exact head
