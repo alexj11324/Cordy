@@ -13,7 +13,7 @@ use std::time::Duration;
 use cordy_agent::{
     BackendConfig, CatalogCache, GrokBackend, GrokConfig, HermesBackend, HermesConfig, KimiBackend,
     KimiConfig, KiroBackend, KiroConfig, QoderBackend, QoderConfig, ReasonixBackend,
-    ReasonixConfig, RuntimeCommand,
+    ReasonixConfig, RuntimeCommand, TraecliBackend, TraecliConfig,
 };
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
 use serde_json::{json, Value};
@@ -258,7 +258,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         };
         if !matches!(
             target.provider.as_str(),
-            "hermes" | "kimi" | "kiro" | "reasonix" | "grok" | "qoder" | "qoderclicn"
+            "hermes" | "kimi" | "kiro" | "reasonix" | "grok" | "qoder" | "qoderclicn" | "traecli"
         ) {
             return false;
         }
@@ -365,6 +365,17 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                     )
                     .await
                 }
+                "traecli" => TraecliBackend::new(TraecliConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
                 _ => unreachable!("provider filtered above"),
             };
             Ok::<_, anyhow::Error>(model_list_completed_payload(&target.provider, catalog))
