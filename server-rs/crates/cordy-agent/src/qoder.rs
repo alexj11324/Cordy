@@ -152,6 +152,8 @@ static HERMES_SESSION_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?im)^\s*(?:RuntimeError:\s*)?No LLM provider configured[^\r\n]*")
         .unwrap_or_else(|error| panic!("invalid Hermes provider-error regex: {error}"))
 });
+const HERMES_PROVIDER_UNCONFIGURED_HINT: &str =
+    " [cordy] hermes did not read the HERMES_HOME your shell uses: this task ran against a per-task overlay, seeded from the home the daemon process resolved. The daemon log line \"hermes home resolved\" for this task names that source home — if your hermes config lives somewhere else, set HERMES_HOME in the agent's custom_env to point at it.";
 
 #[derive(Debug, Default)]
 struct ProviderErrorState {
@@ -195,8 +197,10 @@ impl ProviderErrorTracker {
                             code[0] == b'4' && code.iter().all(u8::is_ascii_digit)
                         })
                     }));
-            state.found |=
-                TERMINAL_PROVIDER_ERROR.is_match(&rendered) || (state.marker && state.error_kind);
+            let transient_retry_warning = is_transient_retry_warning(&rendered);
+            state.found |= !transient_retry_warning
+                && (TERMINAL_PROVIDER_ERROR.is_match(&rendered)
+                    || (state.marker && state.error_kind));
             if ends_line {
                 state.suffix.clear();
                 state.marker = false;
@@ -213,6 +217,14 @@ impl ProviderErrorTracker {
     fn found(&self) -> bool {
         self.state.lock().is_ok_and(|state| state.found)
     }
+}
+
+fn is_transient_retry_warning(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    lower.contains("api call failed")
+        && lower.contains("attempt")
+        && (line.contains('⚠') || lower.contains("warning"))
+        && !lower.contains("after ")
 }
 
 #[derive(Debug, Clone)]
@@ -1308,6 +1320,8 @@ impl Backend for QoderBackend {
         let held_retry_attempts = self.config.held_retry_attempts;
         let held_retry_delay = self.config.held_retry_delay;
         let builtin_runtime = self.config.builtin_runtime;
+        let hermes_home_configured =
+            provider == "hermes" && effective_env_nonempty(&self.config.env, "HERMES_HOME");
         let have_api_key = effective_env_nonempty(&self.config.env, "XAI_API_KEY");
         let kimi_home = self.config.env.get("KIMI_CODE_HOME").cloned();
         let resumed = !options.resume_session_id.is_empty();
@@ -1429,6 +1443,10 @@ impl Backend for QoderBackend {
             }
             if !outcome.error.is_empty() {
                 outcome.error = with_stderr(&outcome.error, &provider, &stderr);
+            }
+            if provider == "hermes" {
+                outcome.error =
+                    annotate_hermes_provider_unconfigured(&outcome.error, hermes_home_configured);
             }
             let _ = result_tx.send(ExecutionResult {
                 status: outcome.status,
@@ -1799,6 +1817,17 @@ async fn run_protocol(
         apply_acp_effort(
             &mut client,
             "dim",
+            &session_result,
+            &session_id,
+            &options.thinking_level,
+            options.model.is_empty(),
+        )
+        .await;
+    }
+    if provider == "hermes" && !options.thinking_level.is_empty() {
+        apply_acp_effort(
+            &mut client,
+            "hermes",
             &session_result,
             &session_id,
             &options.thinking_level,
@@ -2370,6 +2399,29 @@ fn handle_tool_update(
         .get("status")
         .and_then(Value::as_str)
         .unwrap_or_default();
+    if status == "in_progress" {
+        let id = data
+            .get("toolCallId")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if id.is_empty() {
+            return;
+        }
+        let hermes_dialect = state.hermes_dialect;
+        if let Some(pending) = state.tools.get_mut(id) {
+            let update_input = tool_input(data);
+            if !update_input.is_empty() {
+                pending.input.extend(update_input);
+                pending.deferred_text.clear();
+            } else if hermes_dialect && !pending.emitted {
+                let update_text = hermes_tool_call_text(data);
+                if !update_text.is_empty() {
+                    pending.deferred_text = update_text;
+                }
+            }
+        }
+        return;
+    }
     if !matches!(status, "completed" | "failed") {
         return;
     }
@@ -3377,12 +3429,27 @@ fn provider_error(
             "{provider} provider reported a terminal upstream error on stderr"
         ));
     }
-    if let Some(found) = TERMINAL_PROVIDER_ERROR.find(stderr) {
+    if let Some(found) = TERMINAL_PROVIDER_ERROR
+        .find_iter(stderr)
+        .find(|found| !is_transient_retry_warning(found.as_str()))
+    {
         return Some(format!("{provider} provider error: {}", found.as_str()));
     }
     OUTPUT_PROVIDER_ERROR
         .find(output)
         .map(|found| format!("{provider} provider error: {}", found.as_str()))
+}
+
+fn annotate_hermes_provider_unconfigured(error: &str, hermes_home_configured: bool) -> String {
+    let lower = error.to_ascii_lowercase();
+    if hermes_home_configured
+        && lower.contains("no llm provider configured")
+        && !error.contains(HERMES_PROVIDER_UNCONFIGURED_HINT)
+    {
+        format!("{error}{HERMES_PROVIDER_UNCONFIGURED_HINT}")
+    } else {
+        error.to_string()
+    }
 }
 
 fn message(message_type: MessageType, content: &str) -> Message {
@@ -3892,6 +3959,29 @@ mod tests {
     }
 
     #[test]
+    fn transient_provider_retry_warning_is_not_terminal() {
+        let warning = "⚠️ API call failed (attempt 1/3): RateLimitError\n";
+        let tracker = ProviderErrorTracker::default();
+        tracker.push(warning.as_bytes());
+        assert!(!tracker.found());
+        assert_eq!(provider_error("hermes", false, warning, ""), None);
+
+        let terminal = "⚠️ API call failed after 3 retries: RateLimitError\n";
+        let tracker = ProviderErrorTracker::default();
+        tracker.push(terminal.as_bytes());
+        assert!(tracker.found());
+        assert!(provider_error("hermes", false, terminal, "").is_some());
+    }
+
+    #[test]
+    fn hermes_provider_hint_explains_overlay_configuration() {
+        let error = "hermes provider error: No LLM provider configured";
+        let annotated = annotate_hermes_provider_unconfigured(error, true);
+        assert!(annotated.contains("HERMES_HOME"));
+        assert_eq!(annotate_hermes_provider_unconfigured(error, false), error);
+    }
+
+    #[test]
     fn provider_error_tracker_does_not_join_unrelated_lines() {
         let tracker = ProviderErrorTracker::default();
         tracker.push(b"[ERROR] ordinary validation warning\n");
@@ -4017,6 +4107,61 @@ mod tests {
     }
 
     #[test]
+    fn custom_hermes_buffers_in_progress_arguments_until_completion() {
+        let (messages, mut received) = mpsc::channel(8);
+        let mut state = NotificationState {
+            hermes_dialect: true,
+            hermes_builtin_runtime: false,
+            ..NotificationState::default()
+        };
+        handle_tool_start(
+            &serde_json::json!({
+                "toolCallId": "tool-1",
+                "title": "terminal",
+                "content": []
+            }),
+            &messages,
+            &mut state,
+        );
+        for text in [
+            "{\"command\":",
+            "{\"command\":\"echo ",
+            "{\"command\":\"echo hi\"}",
+        ] {
+            handle_tool_update(
+                &serde_json::json!({
+                    "toolCallId": "tool-1",
+                    "status": "in_progress",
+                    "content": [{"type":"content","content":{"type":"text","text":text}}]
+                }),
+                &messages,
+                &mut state,
+            );
+        }
+        assert!(state.tools.get("tool-1").is_some_and(|tool| {
+            tool.input.is_empty() && tool.deferred_text == "{\"command\":\"echo hi\"}"
+        }));
+        handle_tool_update(
+            &serde_json::json!({
+                "toolCallId": "tool-1",
+                "status": "completed",
+                "rawOutput": "hi"
+            }),
+            &messages,
+            &mut state,
+        );
+        let tool = received
+            .try_recv()
+            .unwrap_or_else(|error| panic!("custom Hermes in-progress tool use: {error}"));
+        assert_eq!(tool.message_type, MessageType::ToolUse);
+        assert_eq!(tool.tool, "terminal");
+        assert_eq!(
+            tool.input.get("command").and_then(Value::as_str),
+            Some("echo hi")
+        );
+    }
+
+    #[test]
     fn hermes_mcp_remote_filter_matches_builtin_and_capability_contracts() {
         let servers = build_acp_mcp_servers(Some(&serde_json::json!({
             "mcpServers": {
@@ -4124,8 +4269,11 @@ while IFS= read -r line; do
         *'"name":"remote"'*) ;;
         *) exit 22 ;;
       esac
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"hermes-1","models":{"currentModelId":"custom:model"}}}\n' "$id" ;;
-    *'"method":"session/set_model"'*) exit 23 ;;
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"hermes-1","models":{"currentModelId":"custom:model"},"configOptions":[{"id":"effort","category":"thought_level","currentValue":"low","options":[{"value":"low"},{"value":"high"}]}]}}\n' "$id" ;;
+    *'"method":"session/set_config_option"'*)
+      case "$line" in *'"configId":"effort"'*'"value":"high"'*) ;; *) exit 23 ;; esac
+      printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":[{"id":"effort","currentValue":"high"}]}}\n' "$id" ;;
+    *'"method":"session/set_model"'*) exit 24 ;;
     *'"method":"session/prompt"'*)
       case "$line" in *'system-only'*) exit 24 ;; esac
       printf '%s\n' '{"jsonrpc":"2.0","method":"session/update","params":{"update":{"type":"AgentMessageChunk","content":{"text":"before tool"}}}}'
@@ -4143,6 +4291,7 @@ done
                 "prompt",
                 ExecOptions {
                     model: "custom:model".to_string(),
+                    thinking_level: "high".to_string(),
                     system_prompt: "system-only".to_string(),
                     mcp_config: Some(serde_json::json!({
                         "mcpServers": {
@@ -4189,6 +4338,7 @@ done
         let requests = std::fs::read_to_string(requests)
             .unwrap_or_else(|error| panic!("read Hermes requests: {error}"));
         assert_eq!(requests.matches("session/set_model").count(), 0);
+        assert_eq!(requests.matches("session/set_config_option").count(), 1);
     }
 
     #[cfg(unix)]
