@@ -108,6 +108,7 @@ mod cli_test_helpers;
 #[cfg(test)]
 mod private_helper_command_tests;
 mod attachment_input;
+mod attachment_upload_commands;
 mod auth_command_schema;
 mod auth_commands;
 mod autopilot_command_schema;
@@ -304,8 +305,9 @@ use autopilot_resolver::{
     resolve_autopilot_subscribers, resolve_autopilot_trigger_id,
 };
 pub(super) use chat_commands::{
-    run_attachment_download, run_attachment_upload,
+    run_attachment_download,
 };
+use attachment_upload_commands::run_attachment_upload;
 use chat_read_commands::run_chat_read;
 pub(super) use chat_command_schema::{
     AttachmentArgs, AttachmentCommand, ChatArgs, ChatCommand, ChatReadArgs, ChatThreadArgs,
