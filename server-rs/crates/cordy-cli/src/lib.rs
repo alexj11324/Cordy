@@ -147,6 +147,8 @@ use disk_usage_output::{
     append_disk_usage_warning, format_disk_ratio, format_disk_usage_aggregate_table,
     format_disk_usage_report_table,
 };
+pub use error::command_error_output;
+pub(super) use error::command_output_error;
 pub(super) use execution_policy::{require_human_local_command, require_task_local_config_root};
 pub(super) use id_helpers::{compact_uuid, is_canonical_uuid, normalize_uuid_prefix};
 use issue_actor_output::{format_issue_list_table, load_issue_actor_names, IssueActorNames};
@@ -3142,36 +3144,6 @@ enum VersionOutput {
 pub struct RunOutput {
     pub stdout: String,
     pub stderr: String,
-}
-
-#[derive(Debug)]
-struct CommandOutputError {
-    output: RunOutput,
-    cause: anyhow::Error,
-}
-
-impl std::fmt::Display for CommandOutputError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.cause.fmt(formatter)
-    }
-}
-
-impl std::error::Error for CommandOutputError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(self.cause.as_ref())
-    }
-}
-
-fn command_output_error(output: RunOutput, cause: anyhow::Error) -> anyhow::Error {
-    anyhow::Error::new(CommandOutputError { output, cause })
-}
-
-pub fn command_error_output(error: &anyhow::Error) -> Option<&RunOutput> {
-    error.chain().find_map(|cause| {
-        cause
-            .downcast_ref::<CommandOutputError>()
-            .map(|error| &error.output)
-    })
 }
 
 impl Cli {
