@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use super::repo_commands::{WorkspaceRepo, fetch_repo_workspace};
+use super::repo_mutation_commands::{WorkspaceRepo, fetch_repo_workspace};
 use super::{
     Cli, Environment, OutputFormat, RunOutput, format_table, new_api_client, required_workspace_id,
 };
