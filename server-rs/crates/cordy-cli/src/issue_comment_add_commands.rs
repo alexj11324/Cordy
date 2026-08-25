@@ -5,10 +5,11 @@ use std::fs;
 use std::io::Read;
 use std::path::Path;
 
+use super::issue_safety::guard_issue_description_local_links;
 use super::{
-    collect_local_attachments, ensure_file_within_workdir, guard_issue_description_local_links,
-    http_timeout, new_api_client, resolve_issue_ref, trim_one_trailing_newline,
-    unescape_backslash_escapes, Cli, Environment, IssueCommentAddArgs, OutputFormat, RunOutput,
+    collect_local_attachments, ensure_file_within_workdir, http_timeout, new_api_client,
+    resolve_issue_ref, trim_one_trailing_newline, unescape_backslash_escapes, Cli, Environment,
+    IssueCommentAddArgs, OutputFormat, RunOutput,
 };
 
 pub(super) async fn run_issue_comment_add<R: Read>(
