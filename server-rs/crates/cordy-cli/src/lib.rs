@@ -38,6 +38,7 @@ mod issue_get_commands;
 mod issue_label_commands;
 mod issue_list_commands;
 mod issue_metadata_commands;
+mod issue_metadata_schema;
 mod issue_pull_request_commands;
 mod issue_reference;
 mod issue_reorder_commands;
@@ -200,6 +201,10 @@ use issue_list_commands::{
 use issue_metadata_commands::{
     format_metadata_table, parse_metadata_value, run_issue_metadata_delete, run_issue_metadata_get,
     run_issue_metadata_list, run_issue_metadata_set,
+};
+pub(super) use issue_metadata_schema::{
+    IssueMetadataArgs, IssueMetadataCommand, IssueMetadataDeleteArgs, IssueMetadataKeyArgs,
+    IssueMetadataListArgs, IssueMetadataSetArgs,
 };
 use issue_pull_request_commands::{
     format_issue_pull_requests_table, run_issue_pull_request_attach, run_issue_pull_requests,
@@ -652,66 +657,6 @@ struct IssueLabelMutationArgs {
     output: OutputFormat,
     #[arg(long, help = "Show full UUIDs in table output")]
     full_id: bool,
-}
-
-#[derive(Debug, Args)]
-struct IssueMetadataArgs {
-    #[command(subcommand)]
-    command: IssueMetadataCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum IssueMetadataCommand {
-    #[command(about = "List all metadata keys on an issue")]
-    List(IssueMetadataListArgs),
-    #[command(about = "Get a single metadata key value")]
-    Get(IssueMetadataKeyArgs),
-    #[command(about = "Set a single metadata key value")]
-    Set(IssueMetadataSetArgs),
-    #[command(about = "Delete a single metadata key")]
-    Delete(IssueMetadataDeleteArgs),
-}
-
-#[derive(Debug, Args)]
-struct IssueMetadataListArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct IssueMetadataKeyArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(long, help = "Metadata key (required)")]
-    key: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct IssueMetadataDeleteArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(long, help = "Metadata key (required)")]
-    key: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct IssueMetadataSetArgs {
-    #[arg(value_name = "ISSUE-ID")]
-    issue_id: String,
-    #[arg(long, help = "Metadata key (required)")]
-    key: Option<String>,
-    #[arg(long, help = "Metadata value (required)")]
-    value: Option<String>,
-    #[arg(long = "type", help = "Force value type: string, number, or bool")]
-    value_type: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
