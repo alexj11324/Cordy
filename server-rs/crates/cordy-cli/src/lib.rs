@@ -176,7 +176,8 @@ mod issue_comment_add_commands;
 mod issue_comment_list_commands;
 mod issue_comment_mutation_commands;
 mod issue_create_commands;
-mod issue_description;
+mod issue_description_create;
+mod issue_description_update;
 mod issue_get_commands;
 mod issue_label_commands;
 mod issue_label_schema;
@@ -390,7 +391,8 @@ use issue_comment_add_commands::{resolve_issue_comment_content, run_issue_commen
 use issue_comment_list_commands::{format_issue_comments_table, run_issue_comment_list};
 use issue_comment_mutation_commands::{run_issue_comment_delete, run_issue_comment_resolution};
 use issue_create_commands::run_issue_create;
-use issue_description::{resolve_issue_create_description, resolve_issue_update_description};
+use issue_description_create::resolve_issue_create_description;
+use issue_description_update::resolve_issue_update_description;
 use issue_get_commands::{format_issue_get_table, run_issue_get};
 use issue_label_commands::{
     format_issue_labels, run_issue_label_add, run_issue_label_list, run_issue_label_remove,
