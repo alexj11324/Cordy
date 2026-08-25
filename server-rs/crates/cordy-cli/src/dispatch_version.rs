@@ -4,6 +4,6 @@
 
 use super::*;
 
-pub(super) fn run_version_command(output: OutputFormat) -> Result<RunOutput> {
+pub(super) fn run_version_command(output: VersionOutput) -> Result<RunOutput> {
     run_version(output)
 }
