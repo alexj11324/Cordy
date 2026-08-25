@@ -244,8 +244,8 @@ mod tests {
         assert!(key_from_served_url("/api/avatars/not-valid/users/u/avatar.png").is_none());
     }
 
-    #[test]
-    fn served_urls_use_loaded_public_url_not_process_env() {
+    #[tokio::test]
+    async fn served_urls_use_loaded_public_url_not_process_env() {
         std::env::set_var("CORDY_PUBLIC_URL", "https://env.example");
         let mut state = HandlerState::new(
             sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),

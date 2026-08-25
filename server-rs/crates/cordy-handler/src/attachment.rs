@@ -1232,8 +1232,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn bulk_comment_attachments_sign_cloudfront_unless_client_advertises_stable_urls() {
+    #[tokio::test]
+    async fn bulk_comment_attachments_sign_cloudfront_unless_client_advertises_stable_urls() {
         let attachment = sample_attachment();
         let stable = format!("/api/attachments/{}/download", attachment.id);
         let mut state = HandlerState::new(

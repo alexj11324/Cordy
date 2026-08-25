@@ -1246,8 +1246,8 @@ mod tests {
         assert_eq!(response.status(), StatusCode::ACCEPTED);
     }
 
-    #[test]
-    fn repository_browse_follows_live_github_client() {
+    #[tokio::test]
+    async fn repository_browse_follows_live_github_client() {
         let state = crate::HandlerState::new(
             sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
             cordy_auth::pat_cache::PatCache::disabled(),

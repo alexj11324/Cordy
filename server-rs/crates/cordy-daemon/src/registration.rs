@@ -143,7 +143,7 @@ impl PendingDeregistrations {
 }
 
 impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
-    pub fn new(
+    pub(crate) fn new(
         config: Arc<Config>,
         client: Arc<Client>,
         repo_state: Arc<DaemonRepoState>,

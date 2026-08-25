@@ -693,8 +693,8 @@ mod tests {
         .with_attachment_storage(std::sync::Arc::new(PrivateStorage), Vec::new(), download)
     }
 
-    #[test]
-    fn user_response_hides_private_avatar_object_url() {
+    #[tokio::test]
+    async fn user_response_hides_private_avatar_object_url() {
         let user = User {
             avatar_url: Some("https://objects.example/users/u/avatar.png".into()),
             cloud_waitlist_email: None,

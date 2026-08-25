@@ -7010,8 +7010,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn attachment_list_response_matches_go_stable_url_contract() {
+    #[tokio::test]
+    async fn attachment_list_response_matches_go_stable_url_contract() {
         let attachment =
             fixture_attachment(Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f13").unwrap());
         let response = serde_json::to_value(AttachmentResponse::from(&attachment)).unwrap();
