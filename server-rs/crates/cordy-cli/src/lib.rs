@@ -11,6 +11,7 @@ mod agent_mcp_commands;
 mod agent_copy_commands;
 mod agent_read_commands;
 mod agent_mutation_commands;
+mod skill_read_commands;
 mod agent_helpers;
 mod api;
 mod cli_command_schema;
@@ -498,11 +499,14 @@ pub(super) use skill_command_schema::{
     SkillGetArgs, SkillImportArgs, SkillRefreshArgs, SkillSearchArgs, SkillUpdateArgs,
 };
 use skill_commands::{
-    format_skill_files_table, format_skill_import_table, format_skill_list_table,
-    format_skill_search_table, read_skill_archive, resolve_skill_content,
+    format_skill_files_table, format_skill_import_table, format_skill_search_table,
+    read_skill_archive, resolve_skill_content,
     resolve_skill_content_sources, run_skill_create, run_skill_delete, run_skill_files_delete,
-    run_skill_files_list, run_skill_files_upsert, run_skill_get, run_skill_import, run_skill_list,
-    run_skill_refresh, run_skill_search, run_skill_update,
+    run_skill_files_list, run_skill_files_upsert, run_skill_import, run_skill_refresh,
+    run_skill_search, run_skill_update,
+};
+use skill_read_commands::{
+    format_skill_details_table, format_skill_list_table, run_skill_get, run_skill_list,
 };
 pub(super) use squad_command_schema::{
     SquadActivityArgs, SquadArgs, SquadCommand, SquadCreateArgs, SquadMemberAddArgs,
