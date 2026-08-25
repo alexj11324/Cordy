@@ -746,6 +746,16 @@
       arguments are preserved. `Command::Project` routing, lib registration,
       and parent visibility are correct and equivalent to the original match.
       `git diff --check` passes; subagent did not run Cargo or modify files.
+- [x] PR #242 `codex/cord-74-cli-property-dispatch` is the next bounded child
+      of #241: base branch `codex/cord-73-cli-project-dispatch` at
+      `3870dd16270024020f9557fec428f9970e2e591c`, exact head
+      `0fc096835b4a87a4ff3cdb5d3f039ee034d8efae`, tree
+      `d97f63d1de1c5d2b2fc1907485f5cb8887ffe07a`, candidate
+      `780c93abfe0157e7c614991982f206dd54b45f90`. It isolates Property CRUD
+      and archive/unarchive routing into `dispatch_property.rs`, preserving
+      include-archived and output semantics. Scoped rustfmt and
+      `git diff --check` pass; PR #242 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
