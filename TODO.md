@@ -1279,7 +1279,7 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
-- [ ] PR #276 `codex/cord-108-cli-squad-member` is the next bounded child of
+- [x] PR #276 `codex/cord-108-cli-squad-member` is the completed bounded child of
       #275: base branch `codex/cord-107-cli-squad-mutation` at
       `c24a4b026a9f37901d757114cddcf3711106f061`, exact head
       `5287fa671f9b269efac95d5f2baae4d80daeda64`, tree
@@ -1290,7 +1290,7 @@
       payloads, API calls, output, dispatch, and tests remain unchanged.
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #276 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
-      review pending; no duplicate review request has been made.
+      review PASS; no Cargo was run and no production behavior changed.
 - [x] PR #275 `codex/cord-107-cli-squad-mutation` is the completed bounded child of
       #274: base branch `codex/cord-106-cli-squad-read` at
       `478f1b4745de31c0d42b79531954898dd116acb9`, exact head
