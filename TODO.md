@@ -72,7 +72,9 @@
       `54c3a3ca7e2d70b7b21120a59dd3b63b5981ade6`. It moves only Skill parser/schema types to
       `skill_command_schema.rs`; execution behavior remains in `skill_commands.rs`.
       New schema rustfmt and `git diff --check` pass; Cargo/review/gate are delegated
-      and have not been run by this thread. PR is Ready (`isDraft=false`).
+      and have not been run by this thread. Subagent exact-head review PASS: clap
+      fields/defaults, `PathBuf` semantics, re-exports, handlers, dispatch, and tests
+      have no compile/behavior blocker. PR is Ready (`isDraft=false`).
 - [ ] After all replacement PRs are created and exact refs verified, close #159 as
       `SUPERSEDED` without deleting or rewriting its branch. Do not reuse #159's
       review/gate evidence for any replacement PR.
