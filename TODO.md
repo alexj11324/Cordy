@@ -478,6 +478,18 @@
       `Clone`/`Default`/`Deserialize` derives needed by existing call sites.
       No stale direct module references or behavior changes were found;
       `git diff --check` passes. Subagent did not run Cargo or modify files.
+- [x] PR #227 `codex/cord-59-cli-setup-profile` is the next bounded child of
+      #226: base branch `codex/cord-58-cli-config-profile` at
+      `e4f1c6806107df23372b1e2423fc8ad11cb04fbe`, exact head
+      `09b452a0cc18027c6d15b3972437b092b3a5b974`, tree
+      `bd06abe70ad6b8c7e097f39c8454a89648a6d86e`, candidate
+      `d626be0ff448c67f8f283b4a3e60078b8c7444ed`. It isolates setup deployment
+      selection, app/server URL precedence, callback selection, and the
+      active-daemon start/restart/leave-running policy in `setup_profile.rs`,
+      while preserving crate-local re-exports and behavior. Scoped rustfmt
+      with `skip_children` and `git diff --check` pass; PR #227 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
+      delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
