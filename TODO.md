@@ -1554,6 +1554,17 @@
       `git diff --check` pass; Cargo and exact-head subagent review are
       delegated. PR #321 is Ready (`isDraft=false`), MERGEABLE (checks pending).
       Exact-head subagent review PASS on `a76d9d40`; no Cargo was run.
+- [ ] PR #322 `codex/cord-154-cli-issue-reorder-output` is the next bounded child
+      of #321: base branch `codex/cord-153-cli-api-attachment-download` at
+      `a76d9d40459b4ecb446134f61f52be43668e2488`, exact head
+      `0737c6a104ca1bf2baf775f745ce530bdd41315b`, tree
+      `42e95b3d08201819ff21edaf4e2065556e4521e4`, candidate
+      `21003fe5ee86a4ac41e0e22ecf4a96fb780b41bf` (parents base + head).
+      It isolates issue reorder JSON/table formatting; key fallback, table
+      columns, and output wording remain unchanged. Scoped pinned rustfmt and
+      `git diff --check` pass; Cargo and exact-head subagent review are
+      delegated and pending. PR #322 is Ready (`isDraft=false`), CLEAN/MERGEABLE
+      (checks pending).
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
