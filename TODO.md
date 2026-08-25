@@ -458,6 +458,17 @@
       remain intact, and imports/module boundary are valid. No compile or
       behavior blocker was found. Subagent did not run Cargo or modify the
       worktree; coordinator `git diff --check` remains clean.
+- [x] PR #196 `codex/cord-50-cli-config-tests` is the next bounded child of #195:
+      base branch `codex/cord-50-cli-project-resource-tests` at
+      `0a0a45a719a374a961c4c645294bd79e1163eef7`, exact head
+      `631ade755b43cd733341e0154b823b3eb1f9473c`, tree
+      `c37041befdfb22e3acbe1e389a68ebea33e6eb4d`, candidate
+      `2a01861662c247d4563430afe08dcd4965e5cf27`. It extracts five config
+      show/set parser, persistence, validation, profile-scoping, redaction, and
+      task-local guard contract tests into `config_command_tests.rs`; production
+      behavior is unchanged. Scoped rustfmt and `git diff --check` pass; PR #196
+      is Ready (`isDraft=false`), MERGEABLE (checks settling). Cargo and
+      exact-head review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
