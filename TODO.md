@@ -1588,6 +1588,14 @@
       fields remain identical. The serial subagent found no blocker;
       `git diff --check` passes, rustfmt was unavailable in the subagent
       check, and Cargo was not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI debug-policy refactor is committed at
+      `c43939b370142a0586d20a4c53418195e7a5fe70` (tree
+      `43042c5e9631386e44ab47c3f54960500ca7d1e6`): `Cli::debug_enabled` now
+      lives with error presentation in `error.rs`, while `main.rs` keeps the
+      same public method and `CORDY_DEBUG` truth table. The serial subagent
+      found no blocker; `git diff --check` passes, rustfmt was unavailable in
+      the subagent check, and Cargo was not run. Pro owns push/Ready PR, gate,
+      and merge.
 
 ## Phase 4 — S8 route and API parity
 
