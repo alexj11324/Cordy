@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 use tokio::net::TcpListener;
+use url::form_urlencoded;
 
 #[test]
 fn issue_list_parser_matches_go_registry_flags() {
