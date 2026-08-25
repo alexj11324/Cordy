@@ -61,6 +61,7 @@ mod setup_commands;
 mod skill_commands;
 mod squad_commands;
 mod task_reference;
+mod text_input;
 mod update_commands;
 mod user_commands;
 mod workspace_commands;
@@ -235,6 +236,7 @@ use squad_commands::{
     run_squad_member_set_role, run_squad_update, squad_member_count_display,
 };
 use task_reference::resolve_task_run_id;
+pub(super) use text_input::{trim_one_trailing_newline, unescape_backslash_escapes};
 use update_commands::{
     render_update_outcome, resolve_update_download_timeout, run_update, validate_update_timeout,
 };
@@ -5095,44 +5097,6 @@ struct IssueListResponse {
 
 fn encoded_path_segment(value: &str) -> String {
     form_urlencoded::byte_serialize(value.as_bytes()).collect()
-}
-
-fn trim_one_trailing_newline(mut value: String) -> String {
-    if value.ends_with('\n') {
-        value.pop();
-    }
-    value
-}
-
-fn unescape_backslash_escapes(value: &str) -> String {
-    let mut output = String::with_capacity(value.len());
-    let mut chars = value.chars().peekable();
-    while let Some(character) = chars.next() {
-        if character != '\\' {
-            output.push(character);
-            continue;
-        }
-        match chars.peek().copied() {
-            Some('n') => {
-                chars.next();
-                output.push('\n');
-            }
-            Some('r') => {
-                chars.next();
-                output.push('\r');
-            }
-            Some('t') => {
-                chars.next();
-                output.push('\t');
-            }
-            Some('\\') => {
-                chars.next();
-                output.push('\\');
-            }
-            _ => output.push('\\'),
-        }
-    }
-    output
 }
 
 fn new_api_client(cli: &Cli, environment: &Environment) -> Result<ApiClient> {
