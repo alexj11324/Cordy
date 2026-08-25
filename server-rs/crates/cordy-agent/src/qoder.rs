@@ -487,6 +487,25 @@ impl KiroBackend {
             .discover_models(cache, cancellation, timeout)
             .await
     }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Kiro executable do not share an account/profile catalog entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await
+    }
 }
 
 #[async_trait]
@@ -961,7 +980,7 @@ async fn discover_models_with_scope(
     if let Some(catalog) = cache.get(&key) {
         return catalog;
     }
-    let catalog = discover_acp_session(config, cancellation, timeout)
+    let catalog = discover_acp_session(config, cancellation.clone(), timeout)
         .await
         .map_or_else(Catalog::default, |(initialize, session)| {
             if let Some(minimum) = config.minimum_agent_version {
@@ -978,6 +997,9 @@ async fn discover_models_with_scope(
                 fallback: false,
             }
         });
+    if cancellation.is_cancelled() {
+        return Catalog::default();
+    }
     let _ = cache.insert(key, catalog.clone());
     catalog
 }
@@ -4632,7 +4654,8 @@ done
 "#,
         );
         let catalog = backend
-            .discover_models(
+            .discover_models_for_runtime(
+                "kiro\0workspace=test\0runtime=test\0profile=",
                 &CatalogCache::default(),
                 CancellationToken::new(),
                 Duration::from_secs(5),
