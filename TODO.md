@@ -388,6 +388,18 @@
       routes, encoded query behavior, imports, and module visibility are intact.
       No compile or behavior blocker was found. Subagent did not run Cargo or
       modify the worktree; coordinator `git diff --check` remains clean.
+- [x] PR #221 `codex/cord-53-daemon-log-commands` is the next bounded child
+      of #220: base branch `codex/cord-52-daemon-status-commands` at
+      `6a80fafaf12814009a2155036d89a4ea1ef51d58`, exact head
+      `1ad8a5a57edfb33a5ad29f4c0d6b22390d89cac4`, tree
+      `e0eda48505b30d946014eefd657e7eed88543cf3`, candidate
+      `1101632e3f15b58412c710ab001edf6d4c2e1110`. It isolates daemon log
+      tail/follow I/O, line/byte bounds, and cancellation behavior in
+      `daemon_log_commands.rs`; lifecycle, status, and runtime diagnostics
+      remain unchanged. Scoped rustfmt with `skip_children` and
+      `git diff --check` pass; PR #221 is Ready (`isDraft=false`),
+      MERGEABLE (GitHub checks pending). Cargo and exact-head review remain
+      delegated.
 - [x] PR #192 `codex/cord-50-cli-repo-tests` is the next bounded child of #191:
       base branch `codex/cord-50-cli-chat-tests` at
       `30cdf04a076558ceb3e41032dca88d922d75bce8`, exact head
