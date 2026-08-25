@@ -1279,19 +1279,21 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
-- [ ] PR #300 `codex/cord-132-cli-api-transport` is the next bounded child of
+- [x] PR #300 `codex/cord-132-cli-api-transport` is the completed bounded child of
       #299: base branch `codex/cord-131-cli-api-health` at
-      `fe361f576355f41ec22af89781cf90b214bb0b07`, exact head
-      `03265f8e93cd88ee06dbad24854e7d10cc3e2bdd`, tree
-      `735adca42b76d9599abdf5ab39bdfb93192378d1`, candidate
-      `b7cea7587da89473e5c8e5fc5dda005d047c5873` (parents base + head).
+      `fe361f576355f41ec22af89781cf90b214bb0b07`, current exact head
+      `50ec9b1b08440a477e0a1019b4ac528ab30d437b`, tree
+      `e1cce4e681d424ba2c5728b29ec381c45b24fcc6`, candidate
+      `dd78137f592a71631508fb6031b21abdf959ca1c` (parents base + head).
       It isolates generic ApiClient request/response transport in
       `api_transport.rs`; headers/auth/workspace/task behavior, timeout and
       error decoding, public method signatures, capability extensions, and
-      root module wiring remain unchanged. Scoped pinned rustfmt and
-      `git diff --check` pass; Cargo is delegated. PR #300 is Ready
-      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review is
-      pending; no Cargo was run.
+      root module wiring remain unchanged. The initial exact-head review found
+      a real sibling-module privacy compile blocker; the delegated minimal fix
+      `50ec9b1b` exposes only the transport fields as `pub(super)`. Scoped
+      scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated.
+      PR #300 is Ready (`isDraft=false`), MERGEABLE. Exact-head subagent review
+      PASS on `50ec9b1b`; no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
