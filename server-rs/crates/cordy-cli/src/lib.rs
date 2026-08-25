@@ -124,6 +124,7 @@ mod dispatch_skill;
 mod dispatch_squad;
 mod dispatch_setup;
 mod dispatch_update;
+mod dispatch_version;
 mod command_dispatch;
 pub mod config;
 mod config_command_schema;
