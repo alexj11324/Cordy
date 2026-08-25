@@ -354,6 +354,17 @@
       not-found fallback behavior remain intact. No compile or behavior blocker
       was found. Subagent did not run Cargo or modify the worktree; coordinator
       `git diff --check` remains clean.
+- [x] PR #190 `codex/cord-50-cli-issue-timeline-tests` is the next bounded child
+      of #189: base branch `codex/cord-50-cli-issue-metadata-tests` at
+      `cbefb24e82f8b06c500cdb91973863712637b251`, exact head
+      `044b5f8dfebc3882f4320da0835bc5be3823fe4c`, tree
+      `ece20e45843dc5a0752844ef6da440ad0d592245`, candidate
+      `db0dd0f1fa5a04e7cab65a5c7f35e049d59cea6c`. It extracts the three issue-
+      timeline parser, filtering, validation, truncation, and rendering tests
+      into `issue_timeline_command_tests.rs`; history alias, RFC3339/tail
+      validation, activity filtering, and notices are unchanged. Scoped rustfmt
+      and `git diff --check` pass; PR #190 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
