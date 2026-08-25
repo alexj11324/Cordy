@@ -1508,6 +1508,16 @@
       JSON behavior. `git diff --check` passes; rustfmt was unavailable in the
       subagent check and Cargo was not run. Pro owns push/Ready PR, gate, and
       merge.
+- [ ] CLI autopilot-trigger refactor is committed at structural head
+      `159078c3a012ae96b4e76cc6976eba9e62631832`; the serial subagent found
+      and fixed the real visibility blocker in
+      `538441732ff6107798fc2ad3ba31d8bd83ace9c7` (tree
+      `9346883b55776b51057ba9eac124feaa3291bdbc`): trigger add/update/delete,
+      webhook rotation, and confirmation now live in `autopilot_commands.rs`,
+      while URL generation, timeout, validation, and prompt behavior remain
+      unchanged. `git diff --check` passes; rustfmt was unavailable in the
+      subagent check and Cargo was not run. Pro owns push/Ready PR, gate, and
+      merge.
 
 ## Phase 4 — S8 route and API parity
 
