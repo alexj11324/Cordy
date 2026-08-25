@@ -1,9 +1,9 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
 use super::{
-    Cli, Environment, OutputFormat, RunOutput, format_runtime_delete_result, new_api_client,
-    runtime_delete_conflict, value_string,
+    format_runtime_delete_result, new_api_client, runtime_delete_conflict, value_string, Cli,
+    Environment, OutputFormat, RunOutput,
 };
 
 pub(super) async fn run_runtime_rename(

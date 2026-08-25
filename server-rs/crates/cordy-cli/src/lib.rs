@@ -215,7 +215,7 @@ mod repo_checkout_commands;
 mod repo_mutation_commands;
 mod repo_read_commands;
 mod root_command_schema;
-mod runtime_commands;
+mod runtime_mutation_commands;
 mod runtime_command_schema;
 mod runtime_read_commands;
 mod runtime_delete;
@@ -481,7 +481,7 @@ pub(super) use repo_mutation_commands::{repo_urls, run_repo_add, run_repo_remove
 pub(super) use repo_read_commands::run_repo_list;
 pub(super) use repo_command_schema::{RepoArgs, RepoCommand, RepoMutationArgs, RepoRemoveArgs};
 pub(super) use root_command_schema::{UpdateArgs, VersionOutput};
-pub(super) use runtime_commands::{
+pub(super) use runtime_mutation_commands::{
     run_runtime_delete, run_runtime_rename,
 };
 pub(super) use runtime_read_commands::{run_runtime_activity, run_runtime_list, run_runtime_usage};
