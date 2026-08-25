@@ -608,6 +608,12 @@
       Scoped rustfmt and `git diff --check` pass; PR #233 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
       delegated.
+- [x] #233 exact-head subagent review PASS on
+      `1391a6e9dcac92c2b36bb3b2d3121cc17e2f6150`: `dispatch_autopilot.rs`
+      covers every `AutopilotCommand` variant, including trigger add/update/
+      delete/rotate and runs pagination. `TriggerRotateUrl` forwards `input`
+      correctly; root dispatcher delegation and lib module wiring are valid.
+      `git diff --check` passes; subagent did not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
