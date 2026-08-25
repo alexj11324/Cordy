@@ -1474,6 +1474,14 @@
       rustfmt and `git diff --check` pass; the serial subagent reviewed the
       exact head and found no compile or behavior blocker. Cargo was not run.
       Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI version-output refactor is committed at
+      `b1cc0061261ad0f6f7e460e0a0539310f76eeaaf` (parent
+      `1562c90672cc74f0491b2a87a6c81dff8f928f71`, tree
+      `008d3a233765343984a91710e13faa96a4436309`): text/JSON version output
+      now lives in `cordy-cli/src/version_output.rs`, preserving all fields
+      and newline formatting. Scoped rustfmt and `git diff --check` pass; the
+      serial subagent reviewed the exact head and found no compile or behavior
+      blocker. Cargo was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
