@@ -116,13 +116,14 @@ mod attachment_upload_commands;
 mod auth_command_schema;
 mod auth_commands;
 mod autopilot_command_schema;
+mod autopilot_member_resolver;
 mod autopilot_mutation_commands;
 mod autopilot_read_commands;
+mod autopilot_reference_resolver;
 mod autopilot_trigger_commands;
 mod autopilot_trigger_mutation_commands;
 mod autopilot_trigger_webhook_commands;
 mod autopilot_output;
-mod autopilot_resolver;
 mod chat_command_schema;
 mod attachment_download_commands;
 mod chat_read_commands;
@@ -158,8 +159,12 @@ mod daemon_command_schema;
 mod daemon_diagnostics_commands;
 mod daemon_execenv_commands;
 mod daemon_lifecycle_commands;
+mod daemon_launch_inputs;
+mod daemon_lifecycle_output;
 mod daemon_log_commands;
+mod daemon_profile_discovery;
 mod daemon_status_commands;
+mod daemon_status_output;
 mod disk_usage_commands;
 mod disk_usage_output;
 pub mod error;
@@ -175,12 +180,14 @@ mod issue_comment_add_commands;
 mod issue_comment_list_commands;
 mod issue_comment_mutation_commands;
 mod issue_create_commands;
-mod issue_description;
+mod issue_description_create;
+mod issue_description_update;
 mod issue_get_commands;
 mod issue_label_commands;
 mod issue_label_schema;
 mod issue_list_commands;
 mod issue_list_schema;
+mod issue_markdown_links;
 mod issue_metadata_commands;
 mod issue_metadata_schema;
 mod issue_property_commands;
@@ -215,6 +222,7 @@ mod path_safety;
 mod project_command_schema;
 mod project_commands;
 mod project_mutation_commands;
+mod project_output;
 mod project_resource_commands;
 mod project_resource_input;
 mod project_resource_support;
@@ -316,10 +324,10 @@ pub(super) use autopilot_command_schema::{
 use autopilot_output::{
     autopilot_webhook_url, format_autopilot_runs_table, format_autopilot_table,
 };
-use autopilot_resolver::{
-    load_autopilot_agent_names, resolve_autopilot_agent, resolve_autopilot_id,
-    resolve_autopilot_subscribers, resolve_autopilot_trigger_id,
+use autopilot_member_resolver::{
+    load_autopilot_agent_names, resolve_autopilot_agent, resolve_autopilot_subscribers,
 };
+use autopilot_reference_resolver::{resolve_autopilot_id, resolve_autopilot_trigger_id};
 use attachment_download_commands::run_attachment_download;
 use attachment_upload_commands::run_attachment_upload;
 use chat_read_commands::run_chat_read;
@@ -340,18 +348,21 @@ pub(super) use daemon_command_schema::{
     DaemonRestartArgs, DaemonStartArgs, DaemonStatusArgs,
 };
 pub use daemon_execenv_commands::run_private_helper;
+use daemon_launch_inputs::{
+    ensure_restart_is_background, parse_cli_duration, validate_daemon_health_port,
+};
 use daemon_lifecycle_commands::{
-    ensure_restart_is_background, parse_cli_duration, run_daemon_after_setup,
-    run_daemon_restart, run_daemon_start, run_daemon_stop, validate_daemon_health_port,
+    run_daemon_after_setup, run_daemon_restart, run_daemon_start, run_daemon_stop,
 };
 use daemon_diagnostics_commands::{run_daemon_disk_usage, run_daemon_probe_runtimes};
 use daemon_log_commands::{
     parse_log_lines, read_daemon_log_tail, resolve_daemon_log_path, run_daemon_logs,
 };
+use daemon_profile_discovery::{known_daemon_profiles, require_known_daemon_profile};
 use daemon_status_commands::{
-    format_daemon_status_table, known_daemon_profiles, render_daemon_status,
-    require_known_daemon_profile, resolve_daemon_status_port, run_daemon_status,
+    resolve_daemon_status_port, run_daemon_status,
 };
+use daemon_status_output::{format_daemon_status_table, render_daemon_status};
 use disk_usage_commands::{
     disk_usage_needs_parent_status, disk_usage_task_context, enumerate_disk_usage_roots,
     fill_disk_usage_parent_statuses, limit_disk_usage_aggregate, limit_disk_usage_report,
@@ -388,7 +399,8 @@ use issue_comment_add_commands::{resolve_issue_comment_content, run_issue_commen
 use issue_comment_list_commands::{format_issue_comments_table, run_issue_comment_list};
 use issue_comment_mutation_commands::{run_issue_comment_delete, run_issue_comment_resolution};
 use issue_create_commands::run_issue_create;
-use issue_description::{resolve_issue_create_description, resolve_issue_update_description};
+use issue_description_create::resolve_issue_create_description;
+use issue_description_update::resolve_issue_update_description;
 use issue_get_commands::{format_issue_get_table, run_issue_get};
 use issue_label_commands::{
     format_issue_labels, run_issue_label_add, run_issue_label_list, run_issue_label_remove,
@@ -461,9 +473,9 @@ pub(super) use project_command_schema::{
     ProjectArgs, ProjectCommand, ProjectCreateArgs, ProjectResourceAddArgs, ProjectResourceArgs,
     ProjectResourceCommand, ProjectResourceUpdateArgs, ProjectUpdateArgs,
 };
-use project_commands::{
+use project_commands::{run_project_get, run_project_list};
+use project_output::{
     format_project_details_table, format_project_list_table, project_actor_inputs, project_lead,
-    run_project_get, run_project_list,
 };
 use project_mutation_commands::{
     format_project_mutation, run_project_create, run_project_delete, run_project_update,

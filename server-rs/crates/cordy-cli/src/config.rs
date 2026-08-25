@@ -5,12 +5,13 @@
 
 mod config_environment;
 mod config_persistence;
-mod config_profile;
+mod config_profile_resolution;
+mod config_profile_schema;
 
 pub use config_environment::{Environment, SetupProfileInput, TASK_CONFIG_ROOT_ENV};
-pub use config_profile::{
-    resolve_daemon_launch_overrides, BackendOverrides, CliConfig, DaemonLaunchFlags,
-    OpenClawOverride,
+pub use config_profile_resolution::resolve_daemon_launch_overrides;
+pub use config_profile_schema::{
+    BackendOverrides, CliConfig, DaemonLaunchFlags, OpenClawOverride,
 };
 
 use serde_json::Value;
