@@ -475,6 +475,17 @@
       fail-closed behavior remain covered. No compile or behavior blocker was
       found. Subagent did not run Cargo or modify the worktree; coordinator
       `git diff --check` remains clean.
+- [x] PR #197 `codex/cord-50-cli-auth-tests` is the next bounded child of #196:
+      base branch `codex/cord-50-cli-config-tests` at
+      `631ade755b43cd733341e0154b823b3eb1f9473c`, exact head
+      `269a57eda39d0c7ed6e1b767a6b47e2aa211f4e5`, tree
+      `d1ce738a099580dc9128afa087fa45b8cfdf53df`, candidate
+      `62f49f74324840e0b66bcb015b32e32243c3a67d`. It extracts three auth
+      status/logout parser, API, redaction, profile-scoping, and task-guard
+      contract tests into `auth_command_tests.rs`; production behavior is
+      unchanged. Scoped rustfmt and `git diff --check` pass; PR #197 is Ready
+      (`isDraft=false`), MERGEABLE (checks settling). Cargo and exact-head
+      review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
