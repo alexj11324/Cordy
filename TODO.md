@@ -723,6 +723,12 @@
       output semantics. Scoped rustfmt and `git diff --check` pass; PR #240
       is Ready (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review
       remain delegated.
+- [x] #240 exact-head subagent review PASS on
+      `00c5dbef79d8acf7cfccab0e23ecd27e7e3dc47a`: `dispatch_label.rs` covers
+      List/Get/Create/Update/Delete; List forwards `output` and `full_id`, and
+      all ID/output/CRUD arguments remain unchanged. `Command::Label` routing,
+      lib module registration, and parent visibility are correct. `git diff
+      --check` passes; subagent did not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
