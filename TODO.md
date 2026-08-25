@@ -1518,6 +1518,17 @@
       unchanged. `git diff --check` passes; rustfmt was unavailable in the
       subagent check and Cargo was not run. Pro owns push/Ready PR, gate, and
       merge.
+- [ ] CLI login-command refactor is committed at structural head
+      `dc7d0c949d0a84511a41b19b83b97bd47bdeafe3`; the serial subagent fixed
+      the missing serde import and child-module visibility in
+      `e0c41139dab7505cc8ed1d49dba0d54bc0e07706` and
+      `5c92dd516fcbacfbde21d44e6c98d40c46bc6b2a` (final tree
+      `2ac8b4478f5525d69e8e0f65c8d6d817bed4ddd7`): login credential
+      verification, browser fallback, workspace discovery, and atomic profile
+      save now live with the existing login protocol module; behavior is
+      unchanged. `git diff --check` passes; rustfmt was unavailable in the
+      subagent check and Cargo was not run. Pro owns push/Ready PR, gate, and
+      merge.
 
 ## Phase 4 — S8 route and API parity
 
