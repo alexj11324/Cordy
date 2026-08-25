@@ -599,6 +599,18 @@
       behavior remain intact. No compile or behavior blocker was found.
       Subagent did not run Cargo or modify the worktree; coordinator
       `git diff --check` remains clean.
+- [x] PR #204 `codex/cord-50-cli-issue-children-tests` is the next bounded
+      child of #203: base branch `codex/cord-50-cli-issue-pull-request-attach-tests`
+      at `c0fc6b8ce066256dc7c6de619a20fc940902c8aa`, exact head
+      `fd9d0dc5b37c54e0aa8237adcdee2aba83cd9aab`, tree
+      `b77ebcbf74921a872b4389bc42b6536d929f554d`, candidate
+      `8cb315d47c3c87667a5907705848b3a1bf17cd3b`. It extracts the issue
+      children/subissues parser, stage grouping, HTTP fetch, and actor/table
+      contract tests into `issue_children_command_tests.rs`; production
+      dispatch, ordering, terminal counts, and output behavior are unchanged.
+      Scoped rustfmt and `git diff --check` pass; PR #204 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
+      delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
