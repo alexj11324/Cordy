@@ -11,6 +11,7 @@ use cordy_db::queries::invitation::{
 };
 use cordy_db::queries::{member, user, workspace};
 use cordy_middleware::workspace::WorkspaceContext;
+use cordy_redis::RecoveringConnection;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, VecDeque};
@@ -26,6 +27,7 @@ use crate::workspace::MemberWithUserResponse;
 #[derive(Clone, Default)]
 pub struct InvitationAdmission {
     entries: Arc<Mutex<HashMap<String, VecDeque<Instant>>>>,
+    redis: Option<RecoveringConnection>,
 }
 
 const REDIS_CHECK_SCRIPT: &str = r#"
@@ -46,6 +48,8 @@ redis.call('EXPIRE', KEYS[1], ARGV[4])
 return 1
 "#;
 
+const INVITATION_REDIS_TIMEOUT: Duration = Duration::from_millis(250);
+
 #[derive(Debug)]
 enum AdmissionError {
     Limited {
@@ -63,6 +67,11 @@ struct AdmissionGate {
 }
 
 impl InvitationAdmission {
+    pub fn with_redis(mut self, redis: RecoveringConnection) -> Self {
+        self.redis = Some(redis);
+        self
+    }
+
     fn gates(actor_id: Uuid, workspace_id: Uuid, email: &str) -> [AdmissionGate; 3] {
         let recipient = hex::encode(Sha256::digest(email.trim().to_ascii_lowercase().as_bytes()));
         [
@@ -89,14 +98,13 @@ impl InvitationAdmission {
 
     async fn admit(
         &self,
-        redis: Option<&redis::Client>,
         actor_id: Uuid,
         workspace_id: Uuid,
         email: &str,
     ) -> Result<(), AdmissionError> {
         let gates = Self::gates(actor_id, workspace_id, email);
-        if let Some(client) = redis {
-            return Self::admit_redis(client, &gates).await;
+        if let Some(redis) = self.redis.as_ref() {
+            return Self::admit_redis(redis, &gates).await;
         }
         self.admit_memory(&gates).await
     }
@@ -135,18 +143,12 @@ impl InvitationAdmission {
     }
 
     async fn admit_redis(
-        client: &redis::Client,
+        redis: &RecoveringConnection,
         gates: &[AdmissionGate],
     ) -> Result<(), AdmissionError> {
         use std::time::{SystemTime, UNIX_EPOCH};
 
-        let mut conn = client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(|error| {
-                tracing::error!(%error, "invitation rate limiter unavailable");
-                AdmissionError::Unavailable
-            })?;
+        let mut conn = redis.clone();
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default();
@@ -156,16 +158,21 @@ impl InvitationAdmission {
         for gate in gates {
             let cutoff =
                 now_nanos.saturating_sub(gate.window.as_nanos().min(i64::MAX as u128) as i64);
-            let allowed = redis::Script::new(REDIS_CHECK_SCRIPT)
-                .key(&gate.key)
-                .arg(cutoff)
-                .arg(gate.limit)
-                .invoke_async::<i64>(&mut conn)
-                .await
-                .map_err(|error| {
+            let check = redis::Script::new(REDIS_CHECK_SCRIPT);
+            let mut invocation = check.prepare_invoke();
+            invocation.key(&gate.key).arg(cutoff).arg(gate.limit);
+            let operation = invocation.invoke_async::<i64>(&mut conn);
+            let allowed = match tokio::time::timeout(INVITATION_REDIS_TIMEOUT, operation).await {
+                Ok(Ok(allowed)) => allowed,
+                Ok(Err(error)) => {
                     tracing::error!(%error, gate = gate.name, "invitation rate limiter unavailable");
-                    AdmissionError::Unavailable
-                })?;
+                    return Err(AdmissionError::Unavailable);
+                }
+                Err(_) => {
+                    tracing::error!(gate = gate.name, "invitation rate limiter check timed out");
+                    return Err(AdmissionError::Unavailable);
+                }
+            };
             if allowed == 0 {
                 denied.push(gate.name);
                 retry_after = retry_after.max(gate.window.as_secs().max(1));
@@ -181,17 +188,24 @@ impl InvitationAdmission {
         for gate in gates {
             let cutoff =
                 now_nanos.saturating_sub(gate.window.as_nanos().min(i64::MAX as u128) as i64);
-            let result = redis::Script::new(REDIS_CONSUME_SCRIPT)
+            let consume = redis::Script::new(REDIS_CONSUME_SCRIPT);
+            let mut invocation = consume.prepare_invoke();
+            invocation
                 .key(&gate.key)
                 .arg(now_nanos)
                 .arg(cutoff)
                 .arg(gate.limit)
                 .arg(gate.window.as_secs().saturating_mul(2).max(1))
-                .arg(Uuid::new_v4().to_string())
-                .invoke_async::<i64>(&mut conn)
-                .await;
-            if let Err(error) = result {
-                tracing::warn!(%error, gate = gate.name, "invitation rate limiter consume failed after successful checks; allowing bounded overshoot");
+                .arg(Uuid::new_v4().to_string());
+            let operation = invocation.invoke_async::<i64>(&mut conn);
+            match tokio::time::timeout(INVITATION_REDIS_TIMEOUT, operation).await {
+                Ok(Ok(_)) => {}
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, gate = gate.name, "invitation rate limiter consume failed after successful checks; allowing bounded overshoot");
+                }
+                Err(_) => {
+                    tracing::warn!(gate = gate.name, "invitation rate limiter consume timed out after successful checks; allowing bounded overshoot");
+                }
             }
         }
         Ok(())
@@ -262,9 +276,6 @@ pub fn workspace_admin_router() -> Router<HandlerState> {
             "/api/workspaces/{id}/invitations/{invitation_id}",
             axum::routing::delete(revoke),
         )
-        .route_layer(axum::middleware::from_fn(
-            crate::workspace::require_human_admin_actor,
-        ))
 }
 
 #[derive(Debug, Serialize)]
@@ -368,12 +379,7 @@ async fn create(
     }
     match state
         .invitation_admission
-        .admit(
-            state.rate_limit_client.as_ref(),
-            context.member.user_id,
-            context.member.workspace_id,
-            &email,
-        )
+        .admit(context.member.user_id, context.member.workspace_id, &email)
         .await
     {
         Ok(()) => {}
@@ -838,9 +844,10 @@ async fn accept(
         }),
         ..Default::default()
     });
-    if let Some(hub) = state.daemon_hub.as_ref() {
-        hub.notify_workspaces_changed(&user_id.to_string());
-    }
+    state
+        .daemon_notifier
+        .notify_workspaces_changed(&user_id.to_string())
+        .await;
     if let Some(metrics) = state.business_metrics.as_deref() {
         for event in acceptance_metric_events(
             user_id,
@@ -1016,16 +1023,16 @@ mod tests {
         let workspace_id = Uuid::new_v4();
         for _ in 0..6 {
             assert!(admission
-                .admit(None, actor_id, workspace_id, " recipient@example.com ")
+                .admit(actor_id, workspace_id, " recipient@example.com ")
                 .await
                 .is_ok());
         }
         assert!(admission
-            .admit(None, actor_id, workspace_id, "RECIPIENT@example.com")
+            .admit(actor_id, workspace_id, "RECIPIENT@example.com")
             .await
             .is_err());
         assert!(admission
-            .admit(None, actor_id, workspace_id, "another@example.com")
+            .admit(actor_id, workspace_id, "another@example.com")
             .await
             .is_ok());
     }
