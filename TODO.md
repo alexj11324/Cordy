@@ -717,6 +717,12 @@
       Scoped rustfmt and `git diff --check` pass; PR #210 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
       delegated.
+- [x] #210 exact-head subagent review PASS on
+      `d9f96094b4d6b9d759aeffacd585fae345dfa1e4`: all three comment-add tests
+      are preserved; imports/routes are correct; attachment upload,
+      parent/content handling, and missing-content rejection remain covered.
+      No compile or behavior blocker was found. Subagent did not run Cargo or
+      modify the worktree; coordinator `git diff --check` remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
