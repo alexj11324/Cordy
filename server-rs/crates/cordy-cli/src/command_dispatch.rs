@@ -6,6 +6,7 @@ use super::dispatch_autopilot::run_autopilot_command;
 use super::dispatch_config::run_config_command;
 use super::dispatch_issue::run_issue_command;
 use super::dispatch_skill::run_skill_command;
+use super::dispatch_squad::run_squad_command;
 use super::dispatch_user::run_user_command;
 use super::dispatch_workspace::run_workspace_command;
 use super::*;
@@ -25,48 +26,7 @@ pub(super) async fn run_with_input<R: Read>(
         Command::Config(args) => run_config_command(cli, environment, args),
         Command::User(args) => run_user_command(cli, environment, args, input).await,
         Command::Workspace(args) => run_workspace_command(cli, environment, args, input).await,
-        Command::Squad(SquadArgs {
-            command: SquadCommand::List { output },
-        }) => run_squad_list(cli, environment, *output).await,
-        Command::Squad(SquadArgs {
-            command: SquadCommand::Get { squad_id, output },
-        }) => run_squad_get(cli, environment, squad_id, *output).await,
-        Command::Squad(SquadArgs {
-            command: SquadCommand::Create(args),
-        }) => run_squad_create(cli, environment, args).await,
-        Command::Squad(SquadArgs {
-            command: SquadCommand::Update(args),
-        }) => run_squad_update(cli, environment, args).await,
-        Command::Squad(SquadArgs {
-            command: SquadCommand::Delete { squad_id, output },
-        }) => run_squad_delete(cli, environment, squad_id, *output).await,
-        Command::Squad(SquadArgs {
-            command:
-                SquadCommand::Member(SquadMemberArgs {
-                    command: SquadMemberCommand::List { squad_id, output },
-                }),
-        }) => run_squad_member_list(cli, environment, squad_id, *output).await,
-        Command::Squad(SquadArgs {
-            command:
-                SquadCommand::Member(SquadMemberArgs {
-                    command: SquadMemberCommand::Add(args),
-                }),
-        }) => run_squad_member_add(cli, environment, args).await,
-        Command::Squad(SquadArgs {
-            command:
-                SquadCommand::Member(SquadMemberArgs {
-                    command: SquadMemberCommand::SetRole(args),
-                }),
-        }) => run_squad_member_set_role(cli, environment, args).await,
-        Command::Squad(SquadArgs {
-            command:
-                SquadCommand::Member(SquadMemberArgs {
-                    command: SquadMemberCommand::Remove(args),
-                }),
-        }) => run_squad_member_remove(cli, environment, args).await,
-        Command::Squad(SquadArgs {
-            command: SquadCommand::Activity(args),
-        }) => run_squad_activity(cli, environment, args).await,
+        Command::Squad(args) => run_squad_command(cli, environment, args).await,
         Command::Label(LabelArgs {
             command: LabelCommand::List { output, full_id },
         }) => run_label_list(cli, environment, *output, *full_id).await,
