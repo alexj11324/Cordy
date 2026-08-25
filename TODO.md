@@ -870,6 +870,18 @@
       import boundaries are valid. No compile or behavior blocker was found.
       Subagent did not run Cargo or modify the worktree; coordinator
       `git diff --check` remains clean.
+- [x] PR #219 `codex/cord-51-private-helper-tests` is the next bounded child
+      of #218: base branch `codex/cord-50-cli-profile-test-fixtures` at
+      `ebab54e8cd27ad603456bc05058bb24997b8f457`, exact head
+      `5395016ea55499279b078e3f5d1159f3cce4dda8`, tree
+      `74d40bacc501ce0f240f00b87203e04f022b5ef8`, candidate
+      `274cb712fd54b225469d896675dd9c18d7ededbb`. It extracts the two
+      remaining private execenv helper contract tests into
+      `private_helper_command_tests.rs` and removes the obsolete monolithic
+      test wrapper; production behavior is unchanged. Scoped rustfmt with
+      `skip_children` and `git diff --check` pass; PR #219 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
+      delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
