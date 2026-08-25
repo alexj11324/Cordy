@@ -23,6 +23,7 @@ mod issue_label_commands;
 mod issue_metadata_commands;
 mod issue_rerun_commands;
 mod issue_search_commands;
+mod issue_status_commands;
 mod issue_subscriber_commands;
 mod issue_task_commands;
 mod issue_timeline_commands;
@@ -109,6 +110,7 @@ use issue_metadata_commands::{
 };
 use issue_rerun_commands::run_issue_rerun;
 use issue_search_commands::{format_issue_search_table, run_issue_search};
+use issue_status_commands::run_issue_status;
 use issue_subscriber_commands::{
     format_issue_subscribers_table, run_issue_subscriber_list, run_issue_subscriber_mutation,
 };
@@ -6503,39 +6505,6 @@ async fn run_issue_assign(
         OutputFormat::Table => String::new(),
     };
     Ok(RunOutput { stdout, stderr })
-}
-
-async fn run_issue_status(
-    cli: &Cli,
-    environment: &Environment,
-    args: &IssueStatusArgs,
-) -> Result<RunOutput> {
-    validate_issue_status(&args.status)?;
-    let client = new_api_client(cli, environment)?;
-    let issue_id = resolve_issue_ref(&client, &args.id)
-        .await
-        .context("resolve issue")?;
-    let mut body =
-        serde_json::Map::from_iter([("status".into(), Value::String(args.status.clone()))]);
-    if args.no_start {
-        body.insert("suppress_run".into(), Value::Bool(true));
-    }
-    let issue: Value = client
-        .put_json(&format!("/api/issues/{issue_id}"), &body)
-        .await
-        .context("update status")?;
-    let issue_key = match value_string(&issue, "identifier") {
-        value if value.is_empty() => value_string(&issue, "id"),
-        value => value,
-    };
-    let stdout = match args.output {
-        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&issue)?),
-        OutputFormat::Table => String::new(),
-    };
-    Ok(RunOutput {
-        stdout,
-        stderr: format!("Issue {issue_key} status changed to {}.\n", args.status),
-    })
 }
 
 async fn run_issue_reorder(
