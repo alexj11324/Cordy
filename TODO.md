@@ -435,6 +435,12 @@
       payloads, and Go-compatible output are unchanged. Scoped rustfmt and
       `git diff --check` pass; PR #194 is Ready (`isDraft=false`), MERGEABLE
       (checks settling). Cargo and exact-head review remain delegated.
+- [x] #194 exact-head subagent review PASS on
+      `5eb4da32ceb96a0b5be297d8a322f4f1e12c8925`: all five project tests are
+      preserved, project-resource tests remain untouched, imports and routing
+      are correct, and status/resource payload behavior plus module boundaries
+      are intact. No compile or behavior blocker was found. Subagent did not run
+      Cargo or modify the worktree; coordinator `git diff --check` remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
