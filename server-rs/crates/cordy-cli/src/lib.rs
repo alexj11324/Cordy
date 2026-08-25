@@ -4,6 +4,7 @@
 //! Shared configuration, API, error, and safe text-input behavior is ported
 //! with each vertical slice rather than exposing placeholder command trees.
 mod agent_commands;
+mod agent_command_schema;
 mod agent_helpers;
 mod api;
 mod cli_command_schema;
@@ -238,10 +239,12 @@ pub(super) use agent_commands::{
     agent_mcp_path, run_agent_avatar, run_agent_copy, run_agent_create, run_agent_env_get,
     run_agent_env_set, run_agent_get, run_agent_lifecycle, run_agent_list, run_agent_mcp_list,
     run_agent_mcp_mutation, run_agent_skills_list, run_agent_skills_mutation, run_agent_tasks,
-    run_agent_update, AgentArgs, AgentCommand, AgentCopyArgs, AgentCreateArgs, AgentEnvArgs,
-    AgentEnvCommand, AgentEnvSetArgs, AgentMcpAction, AgentMcpArgs, AgentMcpListArgs,
-    AgentMcpMutationArgs, AgentSkillsArgs, AgentSkillsCommand, AgentSkillsMutationArgs,
-    AgentUpdateArgs,
+    run_agent_update, AgentMcpAction,
+};
+pub(super) use agent_command_schema::{
+    AgentArgs, AgentCommand, AgentCopyArgs, AgentCreateArgs, AgentEnvArgs, AgentEnvCommand,
+    AgentEnvSetArgs, AgentMcpArgs, AgentMcpListArgs, AgentMcpMutationArgs, AgentSkillsArgs,
+    AgentSkillsCommand, AgentSkillsMutationArgs, AgentUpdateArgs,
 };
 pub(super) use agent_helpers::{
     apply_agent_permission_args, copied_agent_max_concurrent_tasks, format_agent_details_table,
