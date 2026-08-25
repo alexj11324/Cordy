@@ -241,6 +241,7 @@ mod property_command_schema;
 mod property_commands;
 mod property_models;
 mod property_mutation_input;
+mod property_mutation_output;
 mod property_read_commands;
 mod repo_command_schema;
 mod repo_checkout_commands;
