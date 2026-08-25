@@ -1218,7 +1218,7 @@
       `git diff --check` pass; Cargo is delegated. PR #265 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review PASS;
       no Cargo was run and no production behavior changed.
-- [ ] PR #266 `codex/cord-98-cli-agent-mcp` is the next bounded child of
+- [x] PR #266 `codex/cord-98-cli-agent-mcp` is the completed bounded child of
       #265: base branch `codex/cord-97-cli-agent-env` at
       `717bd90983e4e5ac1e678d13a0a1a97915972be0`, exact head
       `036da9b2bad7aaed29714617b25ecc84b53a8759`, tree
@@ -1228,8 +1228,8 @@
       `agent_mcp_commands.rs`; URL encoding, action semantics, output,
       dispatch, and root re-exports remain unchanged. Scoped pinned rustfmt and
       `git diff --check` pass; Cargo is delegated. PR #266 is Ready
-      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review pending;
-      no duplicate review request has been made.
+      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review PASS;
+      no Cargo was run and no production behavior changed.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
