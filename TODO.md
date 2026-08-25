@@ -1461,6 +1461,18 @@
       pass; Cargo is delegated. PR #313 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Exact-head subagent review PASS on `e44f110a`; no Cargo
       was run.
+- [ ] PR #314 `codex/cord-146-cli-daemon-lifecycle-output` is the next bounded
+      child of #313: base branch `codex/cord-145-cli-config-profile-resolution`
+      at `e44f110a35ea28430b32150bf1e591425698b1be`, exact head
+      `077d37b322b6659eef6d48cc0df40ef5cb94ab03`, tree
+      `04d7f5a6eea717567aba3b0b3f7bd22a0db8bffc`, candidate
+      `aa3aaa26b13de3ed25ae6302fb830f169d356b58` (parents base + head).
+      It isolates daemon start/restart outcome rendering from process-control
+      orchestration; readiness, timeout, exit-status, failure-evidence, stop
+      safety, and user-facing error wording remain unchanged. Scoped pinned
+      rustfmt and `git diff --check` pass; Cargo is delegated. PR #314 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review is pending;
+      no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
