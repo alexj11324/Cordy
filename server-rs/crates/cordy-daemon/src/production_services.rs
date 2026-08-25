@@ -127,6 +127,7 @@ impl ProviderRuntimeContext {
         Ok(BackendConfig {
             command: RuntimeCommand::new(launch.command_path, launch.fixed_args),
             env,
+            builtin_runtime: target.profile_id.is_empty(),
         })
     }
 
@@ -141,6 +142,7 @@ impl ProviderRuntimeContext {
         Ok(BackendConfig {
             command: RuntimeCommand::new(launch.command_path, prefix),
             env,
+            builtin_runtime: target.profile_id.is_empty(),
         })
     }
 
@@ -784,6 +786,7 @@ mod tests {
             config.env.get("CORDY_TASK_ID").map(String::as_str),
             Some("task-1")
         );
+        assert!(config.builtin_runtime);
     }
 
     #[test]
