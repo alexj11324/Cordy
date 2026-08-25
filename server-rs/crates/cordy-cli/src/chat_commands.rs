@@ -5,7 +5,8 @@ use std::path::Path;
 use url::form_urlencoded;
 
 use super::{
-    http_timeout, new_api_client, value_string, Cli, Environment, OutputFormat, RunOutput,
+    http_timeout, new_api_client, value_string, ChatReadArgs, Cli, Environment, OutputFormat,
+    RunOutput,
 };
 
 fn chat_reply_count(message: &Value) -> String {
