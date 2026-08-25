@@ -159,6 +159,7 @@ mod daemon_command_schema;
 mod daemon_diagnostics_commands;
 mod daemon_execenv_commands;
 mod daemon_lifecycle_commands;
+mod daemon_launch_inputs;
 mod daemon_lifecycle_output;
 mod daemon_log_commands;
 mod daemon_status_commands;
@@ -345,9 +346,11 @@ pub(super) use daemon_command_schema::{
     DaemonRestartArgs, DaemonStartArgs, DaemonStatusArgs,
 };
 pub use daemon_execenv_commands::run_private_helper;
+use daemon_launch_inputs::{
+    ensure_restart_is_background, parse_cli_duration, validate_daemon_health_port,
+};
 use daemon_lifecycle_commands::{
-    ensure_restart_is_background, parse_cli_duration, run_daemon_after_setup,
-    run_daemon_restart, run_daemon_start, run_daemon_stop, validate_daemon_health_port,
+    run_daemon_after_setup, run_daemon_restart, run_daemon_start, run_daemon_stop,
 };
 use daemon_diagnostics_commands::{run_daemon_disk_usage, run_daemon_probe_runtimes};
 use daemon_log_commands::{
