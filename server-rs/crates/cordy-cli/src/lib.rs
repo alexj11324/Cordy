@@ -238,9 +238,9 @@ use property_commands::{
     run_issue_property_unset, run_property_archive, run_property_create, run_property_get,
     run_property_list, run_property_update, PropertyDefinition, PropertyOption,
 };
-use repo_commands::{
+pub(super) use repo_commands::{
     repo_checkout_retry_delay, repo_urls, run_repo_add, run_repo_checkout, run_repo_list,
-    run_repo_remove, WorkspaceRepo,
+    run_repo_remove, RepoArgs, RepoCommand, RepoMutationArgs, RepoRemoveArgs, WorkspaceRepo,
 };
 pub(super) use runtime_commands::{
     run_runtime_activity, run_runtime_delete, run_runtime_list, run_runtime_rename,
@@ -588,60 +588,6 @@ struct DaemonLaunchArgs {
     auto_update_interval: Option<Duration>,
     #[arg(long = "no-auto-reload")]
     disable_auto_reload: bool,
-}
-
-#[derive(Debug, Args)]
-struct RepoArgs {
-    #[command(subcommand)]
-    command: RepoCommand,
-}
-
-#[derive(Debug, Subcommand)]
-enum RepoCommand {
-    #[command(about = "List workspace repositories")]
-    List {
-        #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
-        output: OutputFormat,
-    },
-    #[command(about = "Add repositories to the workspace registry")]
-    Add(RepoMutationArgs),
-    #[command(
-        alias = "rm",
-        about = "Remove repositories from the workspace registry"
-    )]
-    Remove(RepoRemoveArgs),
-    #[command(about = "Check out a repository into the working directory")]
-    Checkout {
-        #[arg(value_name = "URL")]
-        url: String,
-        #[arg(
-            long = "ref",
-            help = "branch, tag, or commit to check out instead of the remote default branch"
-        )]
-        checkout_ref: Option<String>,
-    },
-}
-
-#[derive(Debug, Args)]
-struct RepoMutationArgs {
-    #[arg(value_name = "URL")]
-    urls: Vec<String>,
-    #[arg(long = "url", action = clap::ArgAction::Append, help = "Repository URL (may be repeated)")]
-    flag_urls: Vec<String>,
-    #[arg(long, help = "Optional description; only valid when adding one URL")]
-    description: Option<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
-}
-
-#[derive(Debug, Args)]
-struct RepoRemoveArgs {
-    #[arg(value_name = "URL")]
-    urls: Vec<String>,
-    #[arg(long = "url", action = clap::ArgAction::Append, help = "Repository URL to remove (may be repeated)")]
-    flag_urls: Vec<String>,
-    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
