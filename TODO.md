@@ -554,6 +554,13 @@
       and crate-local exports. Scoped rustfmt with `skip_children` and
       `git diff --check` pass; PR #230 is Ready (`isDraft=false`), MERGEABLE.
       Cargo and exact-head review remain delegated.
+- [x] #230 exact-head subagent review PASS on
+      `743142853714962d0a1a432bdea56b449f4d3c10`: `client_scope.rs` preserves
+      workspace flag→environment→profile precedence and daemon task-context
+      fail-closed behavior. `required_workspace_id` and
+      `resolve_current_workspace_id` remain re-exported through
+      `client_factory`; root imports and parent visibility are valid.
+      `git diff --check` passes; subagent did not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
