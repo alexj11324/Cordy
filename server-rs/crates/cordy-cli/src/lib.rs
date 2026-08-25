@@ -210,6 +210,7 @@ mod property_command_schema;
 mod property_commands;
 mod repo_commands;
 mod repo_command_schema;
+mod repo_mutation_commands;
 mod repo_read_commands;
 mod root_command_schema;
 mod runtime_commands;
@@ -473,9 +474,9 @@ pub(super) use issue_property_commands::{
     run_issue_property_set, run_issue_property_unset,
 };
 pub(super) use repo_commands::{
-    repo_checkout_retry_delay, repo_urls, run_repo_add, run_repo_checkout, run_repo_remove,
-    WorkspaceRepo,
+    repo_checkout_retry_delay, run_repo_checkout,
 };
+pub(super) use repo_mutation_commands::{repo_urls, run_repo_add, run_repo_remove, WorkspaceRepo};
 pub(super) use repo_read_commands::run_repo_list;
 pub(super) use repo_command_schema::{RepoArgs, RepoCommand, RepoMutationArgs, RepoRemoveArgs};
 pub(super) use root_command_schema::{UpdateArgs, VersionOutput};
