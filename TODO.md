@@ -195,6 +195,12 @@
       into `agent_command_tests.rs`; production behavior is unchanged. Scoped
       rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #180 exact-head subagent review PASS on `88b516582fd316e9741005e2a3d848eb636909dc`:
+      `agent_command_tests.rs` preserves all 19 `agent_*` tests removed from
+      `lib.rs`; imports, `super::*` visibility, and module boundaries are valid.
+      No missing/duplicated tests or compile/behavior blocker was found. Subagent
+      did not run Cargo or modify the worktree; coordinator scoped rustfmt and
+      `git diff --check` pass.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
