@@ -813,13 +813,17 @@ impl GrokBackend {
         if catalog.models.is_empty() {
             return grok_fallback_catalog();
         }
-        for model in &mut catalog.models {
-            if model.provider == "grok" {
-                model.provider = "xai".to_string();
-            }
-        }
+        normalize_grok_providers(&mut catalog.models);
         annotate_grok_thinking(&mut catalog.models);
         catalog
+    }
+}
+
+fn normalize_grok_providers(models: &mut [Model]) {
+    for model in models {
+        if model.provider.is_empty() || model.provider == "grok" {
+            model.provider = "xai".to_string();
+        }
     }
 }
 
@@ -4162,6 +4166,31 @@ mod tests {
             provider_error("qoder", tracker.found(), "xxxxx", ""),
             Some("qoder provider reported a terminal upstream error on stderr".to_string())
         );
+    }
+
+    #[test]
+    fn grok_normalizes_empty_and_internal_provider_names() {
+        let mut models = vec![
+            Model {
+                id: "grok-4.5".to_string(),
+                provider: String::new(),
+                ..Model::default()
+            },
+            Model {
+                id: "grok-composer".to_string(),
+                provider: "grok".to_string(),
+                ..Model::default()
+            },
+            Model {
+                id: "custom".to_string(),
+                provider: "other".to_string(),
+                ..Model::default()
+            },
+        ];
+        normalize_grok_providers(&mut models);
+        assert_eq!(models[0].provider, "xai");
+        assert_eq!(models[1].provider, "xai");
+        assert_eq!(models[2].provider, "other");
     }
 
     #[test]
