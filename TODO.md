@@ -1542,7 +1542,7 @@
       and `git diff --check` pass; Cargo and exact-head subagent review are
       delegated. PR #320 is Ready (`isDraft=false`), MERGEABLE (checks pending).
       Exact-head subagent review PASS on `d4aa8ec0`; no Cargo was run.
-- [ ] PR #321 `codex/cord-153-cli-api-attachment-download` is the next bounded child
+- [x] PR #321 `codex/cord-153-cli-api-attachment-download` is the completed bounded child
       of #320: base branch `codex/cord-152-cli-api-request-builder` at
       `d4aa8ec04d04e94dcf23d9a1ec6489bb65a389cd`, exact head
       `a76d9d40459b4ecb446134f61f52be43668e2488`, tree
@@ -1552,8 +1552,8 @@
       reading; relative/absolute URL handling, default timeout, error mapping,
       and the 100 MiB cap remain unchanged. Scoped pinned rustfmt and
       `git diff --check` pass; Cargo and exact-head subagent review are
-      delegated and pending. PR #321 is Ready (`isDraft=false`), MERGEABLE
-      (checks pending).
+      delegated. PR #321 is Ready (`isDraft=false`), MERGEABLE (checks pending).
+      Exact-head subagent review PASS on `a76d9d40`; no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
