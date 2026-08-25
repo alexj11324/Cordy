@@ -1661,6 +1661,14 @@
       Scoped rustfmt with `skip_children` and `git diff --check` pass; Cargo
       was not run. The serial subagent owns blocker-only fixes/review; Pro
       owns the eventual Ready PR, gate, and merge.
+- [ ] CLI project-schema refactor is structurally committed at
+      `957beac6ef2527794064af8a59f64056d0ffe829` (tree
+      `871a8f98c66cc98529377b834c230360c961a339`): project and
+      project-resource clap schemas now live in `project_command_schema.rs`,
+      with resource shortcuts, defaults, aliases, and output behavior
+      unchanged. Scoped rustfmt with `skip_children` and `git diff --check`
+      pass; Cargo was not run. The serial subagent owns blocker-only
+      fixes/review; Pro owns the eventual Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
