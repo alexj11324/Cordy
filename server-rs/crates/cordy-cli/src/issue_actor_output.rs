@@ -4,7 +4,7 @@ use url::form_urlencoded;
 
 use super::{format_table, value_string, ApiClient};
 #[derive(Debug, Default)]
-pub(super) struct IssueActorNames(HashMap<String, String>);
+pub(super) struct IssueActorNames(pub(super) HashMap<String, String>);
 
 pub(super) async fn load_issue_actor_names(
     client: &ApiClient,
