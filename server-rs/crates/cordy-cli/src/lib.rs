@@ -53,6 +53,10 @@ mod project_command_tests;
 mod project_resource_command_tests;
 #[cfg(test)]
 mod config_command_tests;
+#[cfg(test)]
+mod auth_command_tests;
+#[cfg(test)]
+mod user_profile_command_tests;
 mod attachment_input;
 mod auth_command_schema;
 mod auth_commands;
@@ -495,6 +499,13 @@ struct IssueListResponse {
 }
 
 #[cfg(test)]
+pub(crate) use tests::{
+    issue_cancel_task_args, issue_list_args, issue_run_messages_args, issue_runs_args,
+    issue_rerun_args, issue_status_args, issue_update_args, patch_test_server, test_server,
+    update_args,
+};
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use axum::extract::Request;
@@ -564,7 +575,7 @@ mod tests {
 
 
 
-    async fn test_server() -> (String, tokio::task::JoinHandle<()>) {
+    pub(crate) async fn test_server() -> (String, tokio::task::JoinHandle<()>) {
         let app = Router::new().route(
             "/api/me",
             get(|request: Request| async move {
@@ -591,7 +602,7 @@ mod tests {
         (format!("http://{address}"), task)
     }
 
-    async fn patch_test_server() -> (
+    pub(crate) async fn patch_test_server() -> (
         String,
         Arc<Mutex<Option<Value>>>,
         tokio::task::JoinHandle<()>,
@@ -621,7 +632,7 @@ mod tests {
         (format!("http://{address}"), captured, task)
     }
 
-    fn update_args(cli: &Cli) -> &UpdateProfileArgs {
+    pub(crate) fn update_args(cli: &Cli) -> &UpdateProfileArgs {
         match &cli.command {
             Command::User(UserArgs {
                 command:
@@ -651,7 +662,7 @@ mod tests {
         }
     }
 
-    fn issue_list_args(cli: &Cli) -> &IssueListArgs {
+    pub(crate) fn issue_list_args(cli: &Cli) -> &IssueListArgs {
         match &cli.command {
             Command::Issue(IssueArgs {
                 command: IssueCommand::List(args),
@@ -669,7 +680,7 @@ mod tests {
         }
     }
 
-    fn issue_update_args(cli: &Cli) -> &IssueUpdateArgs {
+    pub(crate) fn issue_update_args(cli: &Cli) -> &IssueUpdateArgs {
         match &cli.command {
             Command::Issue(IssueArgs {
                 command: IssueCommand::Update(args),
@@ -687,7 +698,7 @@ mod tests {
         }
     }
 
-    fn issue_status_args(cli: &Cli) -> &IssueStatusArgs {
+    pub(crate) fn issue_status_args(cli: &Cli) -> &IssueStatusArgs {
         match &cli.command {
             Command::Issue(IssueArgs {
                 command: IssueCommand::Status(args),
@@ -729,7 +740,7 @@ mod tests {
         }
     }
 
-    fn issue_runs_args(cli: &Cli) -> &IssueRunsArgs {
+    pub(crate) fn issue_runs_args(cli: &Cli) -> &IssueRunsArgs {
         match &cli.command {
             Command::Issue(IssueArgs {
                 command: IssueCommand::Runs(args),
@@ -738,7 +749,7 @@ mod tests {
         }
     }
 
-    fn issue_run_messages_args(cli: &Cli) -> &IssueRunMessagesArgs {
+    pub(crate) fn issue_run_messages_args(cli: &Cli) -> &IssueRunMessagesArgs {
         match &cli.command {
             Command::Issue(IssueArgs {
                 command: IssueCommand::RunMessages(args),
@@ -747,7 +758,7 @@ mod tests {
         }
     }
 
-    fn issue_cancel_task_args(cli: &Cli) -> &IssueCancelTaskArgs {
+    pub(crate) fn issue_cancel_task_args(cli: &Cli) -> &IssueCancelTaskArgs {
         match &cli.command {
             Command::Issue(IssueArgs {
                 command: IssueCommand::CancelTask(args),
@@ -765,7 +776,7 @@ mod tests {
         }
     }
 
-    fn issue_rerun_args(cli: &Cli) -> &IssueRerunArgs {
+    pub(crate) fn issue_rerun_args(cli: &Cli) -> &IssueRerunArgs {
         match &cli.command {
             Command::Issue(IssueArgs {
                 command: IssueCommand::Rerun(args),
@@ -3372,421 +3383,6 @@ mod tests {
         assert_eq!(deleted["deleted"], true);
         task.abort();
     }
-
-    #[tokio::test]
-    async fn auth_status_matches_human_table_and_json_contracts() {
-        let app = Router::new().route(
-            "/api/me",
-            get(|request: Request| async move {
-                assert_eq!(
-                    request.headers()["authorization"],
-                    "Bearer mul_env_status_token"
-                );
-                assert!(request.headers().get("x-workspace-id").is_none());
-                assert!(request.headers().get("x-agent-id").is_none());
-                Json(serde_json::json!({"name":"Ada","email":"ada@example.com"}))
-            }),
-        );
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let address = listener.local_addr().expect("address");
-        let server = tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("serve");
-        });
-        let home = tempfile::tempdir().expect("temp home");
-        let cwd = tempfile::tempdir().expect("temp cwd");
-        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
-        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
-        environment.set("CORDY_TOKEN", "mul_env_status_token");
-
-        let table = Cli::try_parse_from(["cordy", "auth", "status"]).expect("status CLI");
-        let output = run_with_input(&table, &environment, &mut Cursor::new(Vec::<u8>::new()))
-            .await
-            .expect("table status");
-        assert!(output.stdout.is_empty());
-        assert_eq!(
-            output.stderr,
-            format!(
-                "Server:  http://{address}\nUser:    Ada (ada@example.com)\nToken:   {}\n",
-                display_token_prefix("mul_env_status_token")
-            )
-        );
-
-        let json = Cli::try_parse_from(["cordy", "auth", "status", "--output", "json"])
-            .expect("JSON status CLI");
-        let output = run_with_input(&json, &environment, &mut Cursor::new(Vec::<u8>::new()))
-            .await
-            .expect("JSON status");
-        let status: Value = serde_json::from_str(&output.stdout).expect("status JSON");
-        assert_eq!(status["authenticated"], true);
-        assert_eq!(status["user"]["email"], "ada@example.com");
-        assert_eq!(
-            status["token"],
-            display_token_prefix("mul_env_status_token")
-        );
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn auth_status_task_context_requires_mat_token_and_never_prints_it() {
-        let app = Router::new().route(
-            "/api/me",
-            get(|request: Request| async move {
-                assert_eq!(
-                    request.headers()["authorization"],
-                    "Bearer mat_task_status_secret"
-                );
-                Json(serde_json::json!({"name":"Task Agent","email":"task@example.test"}))
-            }),
-        );
-        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
-        let address = listener.local_addr().expect("address");
-        let server = tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("serve");
-        });
-        let home = tempfile::tempdir().expect("temp home");
-        let cwd = tempfile::tempdir().expect("temp cwd");
-        let task_root = tempfile::tempdir().expect("task root");
-        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
-        environment.set("CORDY_AGENT_ID", "agent-1");
-        environment.set("CORDY_TASK_ID", "task-1");
-        environment.set("CORDY_TOKEN", "mat_task_status_secret");
-        environment.set("CORDY_SERVER_URL", format!("http://{address}"));
-        let cli = Cli::try_parse_from(["cordy", "auth", "status", "--output", "json"])
-            .expect("task status CLI");
-        let missing_root = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
-            .await
-            .expect_err("task-local config root required");
-        assert!(missing_root
-            .to_string()
-            .contains(config::TASK_CONFIG_ROOT_ENV));
-
-        environment.set(
-            config::TASK_CONFIG_ROOT_ENV,
-            task_root.path().display().to_string(),
-        );
-        let output = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
-            .await
-            .expect("task status");
-        assert!(!output.stdout.contains("mat_task_status_secret"));
-        assert!(serde_json::from_str::<Value>(&output.stdout)
-            .expect("task status JSON")
-            .get("token")
-            .is_none());
-
-        environment.set("CORDY_TOKEN", "mul_owner_token");
-        let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
-            .await
-            .expect_err("human token rejected in task");
-        assert!(error.to_string().contains("task-scoped mat_ token"));
-        server.abort();
-    }
-
-    #[test]
-    fn auth_logout_only_clears_current_profile_and_is_task_guarded() {
-        let home = tempfile::tempdir().expect("temp home");
-        let cwd = tempfile::tempdir().expect("temp cwd");
-        let default_path = home.path().join(".cordy/config.json");
-        let profile_path = home.path().join(".cordy/profiles/dev/config.json");
-        fs::create_dir_all(default_path.parent().expect("default parent")).expect("default dir");
-        fs::create_dir_all(profile_path.parent().expect("profile parent")).expect("profile dir");
-        let default_bytes = br#"{"token":"mul_default","workspace_id":"default"}"#;
-        fs::write(&default_path, default_bytes).expect("default config");
-        fs::write(
-            &profile_path,
-            r#"{"token":"mul_dev","server_url":"https://dev.example","future":7}"#,
-        )
-        .expect("profile config");
-        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
-        environment.set("CORDY_TOKEN", "mul_env_must_not_affect_logout");
-        let cli = Cli::try_parse_from(["cordy", "--profile", "dev", "auth", "logout"])
-            .expect("logout CLI");
-        let output = run_auth_logout(&cli, &environment).expect("logout");
-        assert_eq!(output.stderr, "Token removed. You are now logged out.\n");
-        let saved: Value = serde_json::from_slice(&fs::read(&profile_path).expect("saved profile"))
-            .expect("profile JSON");
-        assert!(saved.get("token").is_none());
-        assert_eq!(saved["future"], 7);
-        assert_eq!(
-            fs::read(&default_path).expect("default unchanged"),
-            default_bytes
-        );
-        assert_eq!(
-            run_auth_logout(&cli, &environment)
-                .expect("idempotent logout")
-                .stderr,
-            "Not authenticated.\n"
-        );
-
-        environment.set("CORDY_AGENT_ID", "agent-1");
-        assert!(run_auth_logout(&cli, &environment)
-            .expect_err("task logout rejected")
-            .to_string()
-            .contains("not available inside a daemon-managed task"));
-    }
-
-    #[tokio::test]
-    async fn user_profile_get_is_a_real_configured_api_command() {
-        let home = tempfile::tempdir().expect("temp home");
-        let cwd = tempfile::tempdir().expect("temp cwd");
-        let config_dir = home.path().join(".cordy");
-        fs::create_dir_all(&config_dir).expect("config dir");
-        fs::write(
-            config_dir.join("config.json"),
-            r#"{"server_url":"http://127.0.0.1:1","token":"config-token","workspace_id":"config-workspace","future_field":true}"#,
-        )
-        .expect("config");
-        let (server_url, server) = test_server().await;
-        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
-        environment.set("CORDY_SERVER_URL", format!("{server_url}/ws?discard=yes"));
-        environment.set("CORDY_TOKEN", "token-from-env");
-        environment.set("CORDY_WORKSPACE_ID", "workspace-from-env");
-        let cli = Cli::try_parse_from(["cordy", "user", "profile", "get", "--output", "json"])
-            .expect("parse CLI");
-
-        let output = run(&cli, &environment).await.expect("run profile get");
-        let json: Value = serde_json::from_str(&output.stdout).expect("JSON output");
-        assert_eq!(json["profile_description"], "Maintainer");
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn user_profile_update_patches_resolved_description() {
-        let home = tempfile::tempdir().expect("temp home");
-        let cwd = tempfile::tempdir().expect("temp cwd");
-        let (server_url, captured, server) = patch_test_server().await;
-        let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
-        environment.set("CORDY_SERVER_URL", server_url);
-        environment.set("CORDY_TOKEN", "token-from-env");
-        let cli = Cli::try_parse_from([
-            "cordy",
-            "user",
-            "profile",
-            "update",
-            "--description",
-            r"Reviewer\nTypeScript",
-            "--output",
-            "json",
-        ])
-        .expect("parse CLI");
-        let mut input = Cursor::new(Vec::<u8>::new());
-
-        let output = run_with_input(&cli, &environment, &mut input)
-            .await
-            .expect("update profile");
-
-        assert_eq!(
-            captured
-                .lock()
-                .expect("captured body")
-                .as_ref()
-                .expect("body")["profile_description"],
-            "Reviewer\nTypeScript"
-        );
-        let json: Value = serde_json::from_str(&output.stdout).expect("JSON output");
-        assert_eq!(json["profile_description"], "Reviewer\nTypeScript");
-        server.abort();
-    }
-
-    #[test]
-    fn profile_update_text_sources_match_go_semantics() {
-        let home = tempfile::tempdir().expect("temp home");
-        let cwd = tempfile::tempdir().expect("temp cwd");
-        let environment = Environment::for_test(home.path().into(), cwd.path().into());
-
-        let stdin_cli =
-            Cli::try_parse_from(["cordy", "user", "profile", "update", "--description-stdin"])
-                .expect("stdin CLI");
-        let mut input = Cursor::new(b"first line\nsecond \\n literal\n".to_vec());
-        assert_eq!(
-            resolve_profile_description(update_args(&stdin_cli), &environment, &mut input)
-                .expect("stdin description"),
-            "first line\nsecond \\n literal"
-        );
-
-        fs::write(
-            cwd.path().join("description.md"),
-            "标题 / Заголовок\n\n中文段落\n",
-        )
-        .expect("description file");
-        let file_cli = Cli::try_parse_from([
-            "cordy",
-            "user",
-            "profile",
-            "update",
-            "--description-file",
-            "description.md",
-        ])
-        .expect("file CLI");
-        assert_eq!(
-            resolve_profile_description(
-                update_args(&file_cli),
-                &environment,
-                &mut Cursor::new(Vec::<u8>::new())
-            )
-            .expect("file description"),
-            "标题 / Заголовок\n\n中文段落"
-        );
-
-        let empty_cli =
-            Cli::try_parse_from(["cordy", "user", "profile", "update", "--description", ""])
-                .expect("empty inline CLI");
-        assert_eq!(
-            resolve_profile_description(
-                update_args(&empty_cli),
-                &environment,
-                &mut Cursor::new(Vec::<u8>::new())
-            )
-            .expect("empty inline clears"),
-            ""
-        );
-    }
-
-    #[test]
-    fn profile_update_rejects_ambiguous_or_empty_input() {
-        let home = tempfile::tempdir().expect("temp home");
-        let cwd = tempfile::tempdir().expect("temp cwd");
-        let environment = Environment::for_test(home.path().into(), cwd.path().into());
-        let ambiguous = Cli::try_parse_from([
-            "cordy",
-            "user",
-            "profile",
-            "update",
-            "--description",
-            "inline",
-            "--description-stdin",
-        ])
-        .expect("ambiguous CLI");
-        assert!(resolve_profile_description(
-            update_args(&ambiguous),
-            &environment,
-            &mut Cursor::new(b"stdin".to_vec())
-        )
-        .expect_err("ambiguous sources")
-        .to_string()
-        .contains("mutually exclusive"));
-
-        let missing =
-            Cli::try_parse_from(["cordy", "user", "profile", "update"]).expect("missing CLI");
-        assert!(resolve_profile_description(
-            update_args(&missing),
-            &environment,
-            &mut Cursor::new(Vec::<u8>::new())
-        )
-        .expect_err("missing source")
-        .to_string()
-        .contains("nothing to update"));
-
-        let clear_with_input = Cli::try_parse_from([
-            "cordy",
-            "user",
-            "profile",
-            "update",
-            "--clear",
-            "--description",
-            "inline",
-        ])
-        .expect("clear conflict CLI");
-        assert!(resolve_profile_description(
-            update_args(&clear_with_input),
-            &environment,
-            &mut Cursor::new(Vec::<u8>::new())
-        )
-        .expect_err("clear conflict")
-        .to_string()
-        .contains("--clear cannot be combined"));
-    }
-
-    #[test]
-    fn profile_update_file_input_fails_closed_outside_workdir() {
-        let home = tempfile::tempdir().expect("temp home");
-        let cwd = tempfile::tempdir().expect("temp cwd");
-        let outside = tempfile::tempdir().expect("outside dir");
-        let external_path = outside.path().join("description.md");
-        fs::write(&external_path, "external description").expect("external file");
-        let environment = Environment::for_test(home.path().into(), cwd.path().into());
-        let external_path = external_path.to_string_lossy().into_owned();
-        let guarded = Cli::try_parse_from([
-            "cordy",
-            "user",
-            "profile",
-            "update",
-            "--description-file",
-            &external_path,
-        ])
-        .expect("guarded CLI");
-        assert!(resolve_profile_description(
-            update_args(&guarded),
-            &environment,
-            &mut Cursor::new(Vec::<u8>::new())
-        )
-        .expect_err("external file rejected")
-        .to_string()
-        .contains("--allow-external-file"));
-
-        let allowed = Cli::try_parse_from([
-            "cordy",
-            "user",
-            "profile",
-            "update",
-            "--description-file",
-            &external_path,
-            "--allow-external-file",
-        ])
-        .expect("allowed CLI");
-        assert_eq!(
-            resolve_profile_description(
-                update_args(&allowed),
-                &environment,
-                &mut Cursor::new(Vec::<u8>::new())
-            )
-            .expect("external file allowed"),
-            "external description"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn profile_update_rejects_workdir_symlink_that_escapes() {
-        use std::os::unix::fs::symlink;
-
-        let home = tempfile::tempdir().expect("temp home");
-        let cwd = tempfile::tempdir().expect("temp cwd");
-        let outside = tempfile::tempdir().expect("outside dir");
-        let external_path = outside.path().join("description.md");
-        fs::write(&external_path, "escaped description").expect("external file");
-        symlink(&external_path, cwd.path().join("description.md")).expect("symlink");
-        let environment = Environment::for_test(home.path().into(), cwd.path().into());
-        let cli = Cli::try_parse_from([
-            "cordy",
-            "user",
-            "profile",
-            "update",
-            "--description-file",
-            "description.md",
-        ])
-        .expect("symlink CLI");
-
-        assert!(resolve_profile_description(
-            update_args(&cli),
-            &environment,
-            &mut Cursor::new(Vec::<u8>::new())
-        )
-        .expect_err("escaping symlink rejected")
-        .to_string()
-        .contains("--allow-external-file"));
-    }
-
-
-    #[test]
-    fn table_output_matches_go_vertical_table_contract() {
-        let profile = serde_json::json!({"id":"user-1","name":"Ada","email":"ada@example.com"});
-        assert_eq!(
-            format_user_profile_table(&profile),
-            "ID                   user-1\nNAME                 Ada\nEMAIL                ada@example.com\nPROFILE DESCRIPTION  (not set)\n"
-        );
-    }
-
-
 
 
 }
