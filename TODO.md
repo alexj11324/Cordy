@@ -911,6 +911,18 @@
       `VersionOutput`; root forwarding and lib module registration are valid
       with no new compile/behavior blocker. `git diff --check` passes;
       subagent did not run Cargo or modify files.
+- [x] PR #251 `codex/cord-83-cli-issue-property-commands` is the next bounded
+      child of #250: base branch `codex/cord-82-cli-version-dispatch` at
+      `81d69f95c33e3b98342f867f197813874bef3a8e`, exact head
+      `7ad99633ade3303f10379a4e554ad63d7106fb00`, tree
+      `bec251aa49735ceba53150cd6058894482e2d680`, candidate
+      `607e398a42bccdd8dcb8afc18da928f66d934548`. It extracts issue-property
+      actor resolution, typed value encoding, display formatting, and
+      list/set/unset execution into `issue_property_commands.rs`; workspace
+      property definition CRUD remains in `property_commands.rs`, with the
+      same API paths, output shapes, and dispatcher re-exports. Scoped
+      rustfmt/check and `git diff --check` pass; Cargo is delegated. PR #251
+      is Ready (`isDraft=false`), CLEAN/MERGEABLE; exact-head review pending.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
