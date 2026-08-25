@@ -106,6 +106,7 @@ mod autopilot_resolver;
 mod chat_commands;
 mod client_factory;
 mod dispatch_agent;
+mod dispatch_skill;
 mod command_dispatch;
 pub mod config;
 mod config_command_schema;
