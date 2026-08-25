@@ -1491,6 +1491,14 @@
       remain unchanged. Scoped rustfmt and `git diff --check` pass; the serial
       subagent reviewed the exact head and found no compile or behavior
       blocker. Cargo was not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI autopilot mutation refactor is structurally committed at
+      `a08c0a2ef27cf2c12dce3759fd89c518612372de`, with the serial subagent's
+      visibility fix at `95574b89139ee21c6acc2fbce0880512450f8cc7` (parent
+      `a08c0a2e`, tree `5fca7acab880a536ea5d4935048bbcc2d6d99baa`): create and
+      update now live in `autopilot_commands.rs`; mode/title/agent/project/
+      subscriber validation and output contracts are unchanged. Scoped
+      rustfmt and `git diff --check` pass; Cargo was not run. Pro owns
+      push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
