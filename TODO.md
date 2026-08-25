@@ -1678,6 +1678,20 @@
       `git diff --check` pass; Cargo was not run. The serial subagent owns
       blocker-only fixes/review; Pro owns the eventual Ready PR, gate, and
       merge.
+- [ ] The issue-core stack's real visibility blocker was fixed by the serial
+      subagent in `b961d619f7af628215e2f62f2bcdbe57b0f1cccb` (tree
+      `63b1fe763e54c09bab8cd214da1fdfe5318daa73`): the parent re-exports all
+      moved create/update/assign/status/reorder schemas needed by sibling
+      handlers. No behavior or production logic changed; Cargo was not run.
+- [ ] CLI issue-activity schema refactor is structurally committed at
+      `205f8d4de7b8d77a78d5292011a71f8c8d516fe1` (tree
+      `62939ff0e2729e084c7e70911d1a3ba06386e7cb`): comment, execution-history,
+      rerun/cancel, usage, and search clap schemas now live in
+      `issue_activity_schema.rs`; subcommand aliases, help text, defaults, and
+      field semantics remain unchanged. Scoped rustfmt with `skip_children`
+      and `git diff --check` pass; Cargo was not run. The serial subagent owns
+      blocker-only fixes/review; Pro owns the eventual Ready PR, gate, and
+      merge.
 
 ## Phase 4 — S8 route and API parity
 
