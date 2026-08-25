@@ -1,50 +1,13 @@
 use anyhow::{bail, Context, Result};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
+use super::property_models::PropertyConfig;
+pub(super) use super::property_models::{PropertyDefinition, PropertyOption};
 use super::{
     format_table, new_api_client, ApiClient, Cli, Environment, OutputFormat, PropertyArchiveArgs,
     PropertyCreateArgs, PropertyUpdateArgs, RunOutput,
 };
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub(super) struct PropertyOption {
-    pub(super) id: String,
-    pub(super) name: String,
-    #[serde(default)]
-    pub(super) color: String,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-pub(super) struct PropertyConfig {
-    #[serde(default)]
-    pub(super) options: Vec<PropertyOption>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub(super) struct PropertyDefinition {
-    pub(super) id: String,
-    pub(super) name: String,
-    #[serde(rename = "type")]
-    pub(super) property_type: String,
-    #[serde(default)]
-    pub(super) description: String,
-    #[serde(default)]
-    pub(super) icon: String,
-    #[serde(default)]
-    pub(super) config: PropertyConfig,
-    #[serde(default)]
-    pub(super) position: f64,
-    #[serde(default)]
-    pub(super) archived: bool,
-    #[serde(default)]
-    pub(super) usage_count: i64,
-    #[serde(default)]
-    pub(super) created_at: String,
-    #[serde(default)]
-    pub(super) updated_at: String,
-}
 
 pub(super) async fn fetch_property_definitions(
     client: &ApiClient,
