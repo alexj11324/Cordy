@@ -1683,6 +1683,17 @@
       list/set orchestration. Pinned rustfmt and `git diff --check` pass; Cargo
       is delegated. PR #332 is Ready (`isDraft=false`), CLEAN/MERGEABLE;
       exact-head subagent review PASS on `03a837a3`; no Cargo was run.
+- [ ] PR #333 `codex/cord-165-cli-issue-property-actor` is the next bounded
+      child of #332: base branch `codex/cord-164-cli-issue-property-output` at
+      `03a837a36d819c155b7089214322db44bdd2b848`, exact head
+      `7fc48f7cb4e9aab00fe43f37682bcdeb322b0394`, tree
+      `a5397f08a4c33888ae3157fc05a0af84ea3818a2`, candidate
+      `635b0f403de4b1b50c918547168383450c5d10a1` (parents base + head).
+      It extracts workspace member/actor resolution for issue-property values;
+      UUID/member-prefix, exact/display/email/name matching, ambiguity and
+      errors are unchanged. Pinned rustfmt and `git diff --check` pass; Cargo
+      is delegated. PR #333 is Ready (`isDraft=false`), CLEAN/MERGEABLE;
+      exact-head subagent review is pending.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
