@@ -1171,6 +1171,16 @@
       exact head and found no issue. Scoped rustfmt and `git diff --check`
       pass (the subagent environment lacked a rustfmt executable); Cargo was
       not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI issue comment-mutation structural refactor is committed at
+      `62f1594d92f55ff5d36989bed42ddacbf4753ade` (parent
+      `36fb32a187c583582c2e2c9f291b080d058edb22`, tree
+      `d6c0493ef15541bb34b4915a25cc13e78957ec2e`): comment delete,
+      resolve, and unresolve requests now live in
+      `cordy-cli/src/issue_comment_mutation_commands.rs`; URL encoding,
+      methods, output, and error semantics are unchanged. The serial subagent
+      reviewed the exact head and found no issue. Scoped rustfmt and
+      `git diff --check` pass (the subagent environment lacked a rustfmt
+      executable); Cargo was not run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
