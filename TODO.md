@@ -1428,6 +1428,15 @@
       pass; the serial subagent reviewed the exact head and found no compile
       or behavior blocker. Cargo was not run. Pro owns push/Ready PR, gate,
       and merge.
+- [ ] CLI JSON value-helper refactor is committed at
+      `1c50eb5f1b31bbbdbf064d0a31b5c3e9cc950394` (parent
+      `2d78cb93c28072d798f8931f730b3a3be0563eb5`, tree
+      `3daf62cec5cc11a292c215bef50597441a802b32`): null/string/JSON value
+      conversion now lives in `cordy-cli/src/json_helpers.rs`; the parent
+      re-exports it for all command and output helpers. Scoped rustfmt and
+      `git diff --check` pass; the serial subagent reviewed the exact head and
+      found no compile or behavior blocker. Cargo was not run. Pro owns
+      push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
