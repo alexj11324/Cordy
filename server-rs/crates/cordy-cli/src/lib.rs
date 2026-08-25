@@ -157,6 +157,7 @@ mod config_read_commands;
 pub mod daemon;
 mod daemon_command_schema;
 mod daemon_diagnostics_commands;
+mod daemon_disk_usage_commands;
 mod daemon_execenv_commands;
 mod daemon_lifecycle_commands;
 mod daemon_launch_inputs;
@@ -355,7 +356,8 @@ use daemon_launch_inputs::{
 use daemon_lifecycle_commands::{
     run_daemon_after_setup, run_daemon_restart, run_daemon_start, run_daemon_stop,
 };
-use daemon_diagnostics_commands::{run_daemon_disk_usage, run_daemon_probe_runtimes};
+use daemon_diagnostics_commands::run_daemon_probe_runtimes;
+use daemon_disk_usage_commands::run_daemon_disk_usage;
 use daemon_log_commands::{
     parse_log_lines, resolve_daemon_log_path, run_daemon_logs,
 };
