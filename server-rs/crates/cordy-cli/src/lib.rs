@@ -201,6 +201,7 @@ mod issue_pull_request_commands;
 mod issue_pull_request_schema;
 mod issue_reference;
 mod issue_reorder_commands;
+mod issue_reorder_output;
 mod issue_rerun_commands;
 mod issue_safety;
 mod issue_search_commands;

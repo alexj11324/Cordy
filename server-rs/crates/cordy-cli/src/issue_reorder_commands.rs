@@ -3,9 +3,10 @@ use serde_json::Value;
 use std::collections::HashMap;
 use url::form_urlencoded;
 
+use super::issue_reorder_output::{issue_reorder_output, issue_value_key};
 use super::{
-    format_table, new_api_client, resolve_current_workspace_id, resolve_issue_ref, value_string,
-    ApiClient, Cli, Environment, IssueReorderArgs, OutputFormat, RunOutput,
+    new_api_client, resolve_current_workspace_id, resolve_issue_ref, value_string, ApiClient, Cli,
+    Environment, IssueReorderArgs, OutputFormat, RunOutput,
 };
 
 pub(super) async fn run_issue_reorder(
@@ -142,34 +143,6 @@ pub(super) async fn run_issue_reorder(
         args.output,
         format!("Issue {result_key} reordered.\n"),
     )
-}
-
-fn issue_value_key(issue: &Value) -> String {
-    match value_string(issue, "identifier") {
-        value if value.is_empty() => value_string(issue, "id"),
-        value => value,
-    }
-}
-
-fn issue_reorder_output(issue: &Value, output: OutputFormat, stderr: String) -> Result<RunOutput> {
-    let stdout = match output {
-        OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(issue)?),
-        OutputFormat::Table => format_table(&[
-            vec![
-                "KEY".into(),
-                "TITLE".into(),
-                "STATUS".into(),
-                "PRIORITY".into(),
-            ],
-            vec![
-                issue_value_key(issue),
-                value_string(issue, "title"),
-                value_string(issue, "status"),
-                value_string(issue, "priority"),
-            ],
-        ]),
-    };
-    Ok(RunOutput { stdout, stderr })
 }
 
 async fn fetch_issue_column(
