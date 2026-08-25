@@ -128,6 +128,7 @@ use config_commands::{
     config_display_values, format_config_table, run_config_set, run_config_show,
     validate_config_set,
 };
+pub use daemon_commands::run_private_helper;
 use daemon_commands::{
     ensure_restart_is_background, format_daemon_status_table, known_daemon_profiles,
     parse_cli_duration, parse_log_lines, read_daemon_log_tail, render_daemon_status,
@@ -293,23 +294,6 @@ pub const BUILD_GO_VERSION: &str = env!("CORDY_BUILD_GO_VERSION");
 pub const BUILD_OS: &str = env!("CORDY_BUILD_OS");
 pub const BUILD_ARCH: &str = env!("CORDY_BUILD_ARCH");
 
-/// Handles the daemon's private execution-environment helper mode before
-/// normal CLI parsing or profile loading. The protocol never places task
-/// configuration or gateway credentials in argv; all payload data stays on
-/// the inherited stdin/stdout pipes.
-pub async fn run_private_helper<I, O>(args: &[OsString], input: I, output: &mut O) -> Result<bool>
-where
-    I: Read,
-    O: IoWrite,
-{
-    if args.len() != 2
-        || args[1] != OsString::from(cordy_daemon::execenv::isolation::PREPARATION_HELPER_ARG)
-    {
-        return Ok(false);
-    }
-    cordy_daemon::execenv::isolation::run_preparation_helper(input, output).await?;
-    Ok(true)
-}
 pub const ROOT_LONG_VERSION: &str = concat!(
     env!("CORDY_BUILD_VERSION"),
     " (commit: ",
