@@ -774,6 +774,18 @@
       truncation and task-run fetch behavior remain covered. No compile or
       behavior blocker was found. Subagent did not run Cargo or modify the
       worktree; coordinator `git diff --check` remains clean.
+- [x] PR #214 `codex/cord-50-cli-issue-run-controls-tests` is the next bounded
+      child of #213: base branch `codex/cord-50-cli-issue-runs-tests` at
+      `b2246b0ea20e6207a56092e928d8e50551a3735a`, exact head
+      `4615ddad46d9f8514a4d1b6d5ea0e1abf5ee3ae7`, tree
+      `e55a4dd966b573c783e2ec388e525c6bdee7354b`, candidate
+      `e98527ede475b1af228151e85eefc94c6cd4b7ef`. It extracts run-messages/
+      cancel-task parser, formatting, scoped resolution, and cancellation HTTP
+      tests into `issue_run_controls_command_tests.rs`; since query, task-prefix
+      scope validation, empty cancel body, and output behavior are unchanged.
+      Scoped rustfmt and `git diff --check` pass; PR #214 is Ready
+      (`isDraft=false`), MERGEABLE (checks settling). Cargo and exact-head
+      review remain delegated.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
