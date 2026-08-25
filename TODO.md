@@ -665,6 +665,16 @@
       default output remains `OutputFormat::Table`. Dispatcher delegation and
       lib wiring are correct with unchanged handler signatures. `git diff
       --check` passes; subagent did not run Cargo or modify files.
+- [x] PR #237 `codex/cord-69-cli-user-dispatch` is the next bounded child of
+      #236: base branch `codex/cord-68-cli-config-dispatch` at
+      `dd6efc516082c72c4a062cac52abcc5f67edc388`, exact head
+      `1a875c8d071a56f760042dc0daeb2ef088a6d913`, tree
+      `2c32b1d27a3e708ac8073d7edeb60e38b7554831`, candidate
+      `d722e52756bba961ee10954f63725490be0ce295`. It isolates User/Profile
+      routing into `dispatch_user.rs`, preserving profile get/update behavior
+      and update request-body forwarding. Scoped rustfmt and `git diff
+      --check` pass; PR #237 is Ready (`isDraft=false`), CLEAN/MERGEABLE.
+      Cargo and exact-head review remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
