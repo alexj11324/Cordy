@@ -1596,6 +1596,14 @@
       found no blocker; `git diff --check` passes, rustfmt was unavailable in
       the subagent check, and Cargo was not run. Pro owns push/Ready PR, gate,
       and merge.
+- [ ] CLI autopilot-schema refactor is structurally committed at
+      `0ba9843554324c2491ebb91acf62e371ea2aef29`; the serial subagent fixed
+      schema type/field visibility in `fb1342513d6d7cc312d4722cda52173fb2d3cae8`
+      (tree `88adda9b0919528eedd1e3a1932daffd7e16c2bd`): autopilot command,
+      trigger, create, and update clap definitions now live beside their
+      handlers, with defaults and parser metadata unchanged. `git diff --check`
+      passes; rustfmt was unavailable in the subagent check and Cargo was not
+      run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
