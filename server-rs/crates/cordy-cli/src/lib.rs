@@ -187,6 +187,7 @@ mod path_safety;
 mod project_command_schema;
 mod project_commands;
 mod project_resource_commands;
+mod project_status_commands;
 mod property_command_schema;
 mod property_commands;
 mod repo_commands;
@@ -409,9 +410,9 @@ pub(super) use project_command_schema::{
 use project_commands::{
     format_project_details_table, format_project_list_table, format_project_mutation,
     project_actor_inputs, project_lead, run_project_create, run_project_delete, run_project_get,
-    run_project_list, run_project_status, run_project_update, validate_project_status,
-    PROJECT_STATUSES,
+    run_project_list, run_project_update,
 };
+use project_status_commands::{run_project_status, validate_project_status, PROJECT_STATUSES};
 use project_resource_commands::{
     build_project_resource_add_ref, build_project_resource_update_ref, run_project_resource_add,
     run_project_resource_list, run_project_resource_remove, run_project_resource_update,
