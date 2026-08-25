@@ -45,6 +45,7 @@ mod issue_value_helpers;
 mod label_commands;
 mod label_reference;
 mod login;
+mod path_safety;
 mod project_commands;
 mod project_resource_commands;
 mod property_commands;
@@ -74,7 +75,7 @@ use std::ffi::OsString;
 use std::fmt::Write;
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write as IoWrite};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use url::{form_urlencoded, Url};
@@ -178,6 +179,7 @@ use login::{
     wait_for_workspace_creation_with_opener, LoginWorkspace, WORKSPACE_DISCOVERY_INTERVAL,
     WORKSPACE_DISCOVERY_TIMEOUT,
 };
+use path_safety::{ensure_file_within_workdir, lexical_normalize};
 use project_commands::{
     format_project_details_table, format_project_list_table, format_project_mutation,
     project_actor_inputs, project_lead, run_project_create, run_project_delete, run_project_get,
@@ -5391,51 +5393,6 @@ fn unescape_backslash_escapes(value: &str) -> String {
         }
     }
     output
-}
-
-fn ensure_file_within_workdir(
-    file_path: &Path,
-    current_dir: &Path,
-    allow_external_file: bool,
-    field: &str,
-) -> Result<()> {
-    if allow_external_file {
-        return Ok(());
-    }
-    let base = fs::canonicalize(current_dir).unwrap_or_else(|_| lexical_normalize(current_dir));
-    let absolute = if file_path.is_absolute() {
-        file_path.to_path_buf()
-    } else {
-        current_dir.join(file_path)
-    };
-    let candidate = fs::canonicalize(&absolute).unwrap_or_else(|_| {
-        let parent = absolute.parent().unwrap_or(current_dir);
-        let parent = fs::canonicalize(parent).unwrap_or_else(|_| lexical_normalize(parent));
-        absolute
-            .file_name()
-            .map_or_else(|| lexical_normalize(&absolute), |name| parent.join(name))
-    });
-    if !candidate.starts_with(&base) {
-        bail!(
-            "--{field}-file path {:?} resolves outside the current working directory; write agent temp files inside the task workdir (e.g. ./{field}.md) rather than machine-shared paths like /tmp, where another run's stale file can be read by mistake. Pass --allow-external-file to override.",
-            file_path,
-        );
-    }
-    Ok(())
-}
-
-fn lexical_normalize(path: &Path) -> PathBuf {
-    let mut normalized = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
-            _ => normalized.push(component.as_os_str()),
-        }
-    }
-    normalized
 }
 
 fn new_api_client(cli: &Cli, environment: &Environment) -> Result<ApiClient> {
