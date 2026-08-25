@@ -341,7 +341,7 @@ pub(super) async fn run_autopilot_runs(
         stderr: String::new(),
     })
 }
-async fn run_autopilot_trigger_add(
+pub(super) async fn run_autopilot_trigger_add(
     cli: &Cli,
     environment: &Environment,
     args: &AutopilotTriggerAddArgs,
@@ -405,7 +405,7 @@ async fn run_autopilot_trigger_add(
     })
 }
 
-async fn run_autopilot_trigger_update(
+pub(super) async fn run_autopilot_trigger_update(
     cli: &Cli,
     environment: &Environment,
     args: &AutopilotTriggerUpdateArgs,
@@ -452,7 +452,7 @@ async fn run_autopilot_trigger_update(
     })
 }
 
-async fn run_autopilot_trigger_delete(
+pub(super) async fn run_autopilot_trigger_delete(
     cli: &Cli,
     environment: &Environment,
     autopilot: &str,
@@ -478,7 +478,7 @@ async fn run_autopilot_trigger_delete(
     })
 }
 
-async fn run_autopilot_trigger_rotate_url<R: Read>(
+pub(super) async fn run_autopilot_trigger_rotate_url<R: Read>(
     cli: &Cli,
     environment: &Environment,
     args: &AutopilotTriggerRotateUrlArgs,
