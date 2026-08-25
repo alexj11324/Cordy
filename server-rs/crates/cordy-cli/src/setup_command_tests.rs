@@ -1,6 +1,11 @@
 use super::*;
+use axum::http::StatusCode;
+use axum::routing::get;
+use axum::Router;
 use clap::Parser;
 use std::io::Cursor;
+use std::sync::{Arc, Mutex};
+use tokio::net::TcpListener;
 
 #[test]
 fn setup_parser_exposes_cloud_and_self_host_boundaries() {
