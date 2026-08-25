@@ -1,6 +1,7 @@
 use std::io::Read;
 
 use super::dispatch_agent::run_agent_command;
+use super::dispatch_autopilot::run_autopilot_command;
 use super::dispatch_skill::run_skill_command;
 use super::*;
 
@@ -12,54 +13,7 @@ pub(super) async fn run_with_input<R: Read>(
     match &cli.command {
         Command::Agent(args) => run_agent_command(cli, environment, args, input).await,
         Command::Skill(args) => run_skill_command(cli, environment, args, input).await,
-        Command::Autopilot(AutopilotArgs {
-            command:
-                AutopilotCommand::List {
-                    status,
-                    output,
-                    full_id,
-                },
-        }) => run_autopilot_list(cli, environment, status, *output, *full_id).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::Get { id, output },
-        }) => run_autopilot_get(cli, environment, id, *output).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::Create(args),
-        }) => run_autopilot_create(cli, environment, args).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::Update(args),
-        }) => run_autopilot_update(cli, environment, args).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::Delete { id },
-        }) => run_autopilot_delete(cli, environment, id).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::Trigger { id, output },
-        }) => run_autopilot_trigger(cli, environment, id, *output).await,
-        Command::Autopilot(AutopilotArgs {
-            command:
-                AutopilotCommand::Runs {
-                    id,
-                    limit,
-                    offset,
-                    output,
-                },
-        }) => run_autopilot_runs(cli, environment, id, *limit, *offset, *output).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::TriggerAdd(args),
-        }) => run_autopilot_trigger_add(cli, environment, args).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::TriggerUpdate(args),
-        }) => run_autopilot_trigger_update(cli, environment, args).await,
-        Command::Autopilot(AutopilotArgs {
-            command:
-                AutopilotCommand::TriggerDelete {
-                    autopilot_id,
-                    trigger_id,
-                },
-        }) => run_autopilot_trigger_delete(cli, environment, autopilot_id, trigger_id).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::TriggerRotateUrl(args),
-        }) => run_autopilot_trigger_rotate_url(cli, environment, args, input).await,
+        Command::Autopilot(args) => run_autopilot_command(cli, environment, args, input).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,
