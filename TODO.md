@@ -536,6 +536,13 @@
       with `skip_children` and `git diff --check` pass; PR #229 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
       delegated.
+- [x] #229 exact-head subagent review PASS on
+      `18c844639ac101ce1d7a485e57468940f204fffc`: `api_error.rs` preserves
+      public `ErrorKind`, `HttpError`, `NetworkError`, `HealthProbeError`, and
+      `http_timeout` APIs; `api.rs` re-exports them and retains all ApiClient
+      call sites. The 4KiB response-body cap, network classification, and
+      Go-duration timeout parsing are unchanged. `git diff --check` passes;
+      subagent did not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
