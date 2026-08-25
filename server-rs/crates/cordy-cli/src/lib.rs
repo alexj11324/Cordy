@@ -159,8 +159,12 @@ mod daemon_command_schema;
 mod daemon_diagnostics_commands;
 mod daemon_execenv_commands;
 mod daemon_lifecycle_commands;
+mod daemon_launch_inputs;
+mod daemon_lifecycle_output;
 mod daemon_log_commands;
+mod daemon_profile_discovery;
 mod daemon_status_commands;
+mod daemon_status_output;
 mod disk_usage_commands;
 mod disk_usage_output;
 pub mod error;
@@ -218,6 +222,7 @@ mod path_safety;
 mod project_command_schema;
 mod project_commands;
 mod project_mutation_commands;
+mod project_output;
 mod project_resource_commands;
 mod project_resource_input;
 mod project_resource_support;
@@ -343,18 +348,21 @@ pub(super) use daemon_command_schema::{
     DaemonRestartArgs, DaemonStartArgs, DaemonStatusArgs,
 };
 pub use daemon_execenv_commands::run_private_helper;
+use daemon_launch_inputs::{
+    ensure_restart_is_background, parse_cli_duration, validate_daemon_health_port,
+};
 use daemon_lifecycle_commands::{
-    ensure_restart_is_background, parse_cli_duration, run_daemon_after_setup,
-    run_daemon_restart, run_daemon_start, run_daemon_stop, validate_daemon_health_port,
+    run_daemon_after_setup, run_daemon_restart, run_daemon_start, run_daemon_stop,
 };
 use daemon_diagnostics_commands::{run_daemon_disk_usage, run_daemon_probe_runtimes};
 use daemon_log_commands::{
     parse_log_lines, read_daemon_log_tail, resolve_daemon_log_path, run_daemon_logs,
 };
+use daemon_profile_discovery::{known_daemon_profiles, require_known_daemon_profile};
 use daemon_status_commands::{
-    format_daemon_status_table, known_daemon_profiles, render_daemon_status,
-    require_known_daemon_profile, resolve_daemon_status_port, run_daemon_status,
+    resolve_daemon_status_port, run_daemon_status,
 };
+use daemon_status_output::{format_daemon_status_table, render_daemon_status};
 use disk_usage_commands::{
     disk_usage_needs_parent_status, disk_usage_task_context, enumerate_disk_usage_roots,
     fill_disk_usage_parent_statuses, limit_disk_usage_aggregate, limit_disk_usage_report,
@@ -465,9 +473,9 @@ pub(super) use project_command_schema::{
     ProjectArgs, ProjectCommand, ProjectCreateArgs, ProjectResourceAddArgs, ProjectResourceArgs,
     ProjectResourceCommand, ProjectResourceUpdateArgs, ProjectUpdateArgs,
 };
-use project_commands::{
+use project_commands::{run_project_get, run_project_list};
+use project_output::{
     format_project_details_table, format_project_list_table, project_actor_inputs, project_lead,
-    run_project_get, run_project_list,
 };
 use project_mutation_commands::{
     format_project_mutation, run_project_create, run_project_delete, run_project_update,
