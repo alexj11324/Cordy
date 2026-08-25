@@ -9,6 +9,7 @@
 //! - SkillContextForEnv           → SkillContextForEnv
 //! - SkillFileContextForEnv       → SkillFileContextForEnv
 //! - Environment                  → Environment
+//! - InjectRuntimeConfig/CleanupRuntimeConfig → runtime_config module
 //! - PredictRootDir               → predict_root_dir
 //! - Prepare                      → prepare
 //! - ReuseParams / Reuse          → ReuseParams / reuse
@@ -36,7 +37,8 @@
 //! - slog logger parameter dropped; tracing macros used directly.
 //! - Prepare is async: the worktree branch shells out to git through
 //!   tokio::process with timeouts (local_worktree.rs).
-//! - Hermes, OpenClaw, and Reasonix are implemented in capability modules and
+//! - Hermes, OpenClaw, Reasonix, and runtime-config injection are implemented
+//!   in capability modules and
 //!   their prepare/reuse call sites are production-wired here.
 //! - OpenclawGatewayPin remains the wire type used by the isolation protocol;
 //!   config discovery and wrapper synthesis live in openclaw.rs.
@@ -640,6 +642,15 @@ pub async fn prepare(params: PrepareParams) -> anyhow::Result<Environment> {
             // local_directory flow writes into a directory that outlives the
             // task and belongs to the user.
             if !params.local_work_dir.is_empty() {
+                if let Err(cleanup_err) =
+                    super::runtime_config::cleanup_runtime_config(&work_dir, &params.provider)
+                {
+                    tracing::warn!(
+                        work_dir = %work_dir,
+                        error = %format!("{cleanup_err:#}"),
+                        "execenv: clean runtime config after failed prepare"
+                    );
+                }
                 if let Err(rb_err) = roll_back_prepared_sidecars(&manifest) {
                     tracing::warn!(
                         work_dir = %work_dir,

@@ -1,10 +1,8 @@
 //! Port of server/internal/daemon/execenv — module map mirrors the Go files
-//! one-to-one. Lane E1 owns the foundation + codex family; the remaining
-//! provider work is migrated as complete capabilities (Reasonix and QwenPaw
-//! are now production paths, while Hermes/OpenClaw still have explicit
-//! fail-closed stubs). Shared sidecar-manifest/runtime-skill-policy helpers
-//! remain hosted inside context.rs / execenv.rs until their owning capability
-//! moves them.
+//! one-to-one. Lane E1 owns the foundation + codex family; provider work is
+//! migrated as complete capabilities. Shared sidecar-manifest/runtime-skill-
+//! policy helpers remain hosted inside context.rs / execenv.rs until their
+//! owning capability moves them.
 
 pub mod channel_type;
 pub mod codex_home;
@@ -26,4 +24,5 @@ pub mod local_worktree;
 pub mod openclaw;
 pub mod reasonix;
 pub mod reclaimable;
+pub mod runtime_config;
 pub mod runtime_config_kind;

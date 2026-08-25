@@ -212,7 +212,13 @@ impl ProductionProviderAdapter {
                 anyhow::Error::new(error).context("create task temp directory"),
                 Some(&environment),
             );
-            return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
+            return finalize_environment(
+                outcome,
+                &mut environment,
+                assignment.as_ref(),
+                &target.provider,
+            )
+            .await;
         }
         let run = async {
             client
@@ -299,7 +305,13 @@ impl ProductionProviderAdapter {
         if let Err(error) = remove_tree(&temp_dir) {
             tracing::warn!(task = %task.id, %error, "task temp directory cleanup failed");
         }
-        outcome = finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
+        outcome = finalize_environment(
+            outcome,
+            &mut environment,
+            assignment.as_ref(),
+            &target.provider,
+        )
+        .await;
         drop(path_guard);
         outcome
     }
@@ -859,8 +871,19 @@ async fn finalize_environment(
     mut outcome: TaskRunOutcome,
     environment: &mut Environment,
     assignment: Option<&LocalDirectoryAssignment>,
+    provider: &str,
 ) -> TaskRunOutcome {
     if environment.local_directory || environment.local_worktree.is_some() {
+        if let Err(error) =
+            crate::execenv::runtime_config::cleanup_runtime_config(&environment.work_dir, provider)
+        {
+            tracing::warn!(%error, "execenv: cleanup runtime config failed");
+            if let Some(worktree) = environment.local_worktree.as_mut() {
+                worktree.abort_with_reason(&anyhow::anyhow!(
+                    "could not remove runtime config before worktree delivery: {error}"
+                ));
+            }
+        }
         if let Err(error) = cleanup_sidecars(&environment.root_dir) {
             tracing::warn!(%error, "execenv: cleanup sidecars failed");
             if let Some(worktree) = environment.local_worktree.as_mut() {

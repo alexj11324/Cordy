@@ -65,6 +65,7 @@ use serde::{Deserialize, Serialize};
 
 pub(crate) use super::execenv::SkillContextForEnv;
 use super::execenv::{clean_path, join_path, ProjectResourceForEnv, TaskContextForEnv};
+use super::runtime_config::inject_runtime_config;
 
 // ---------------------------------------------------------------------------
 // Daemon task marker
@@ -499,6 +500,12 @@ pub(crate) fn write_context_files(
     mut manifest: Option<&mut SidecarManifest>,
 ) -> anyhow::Result<()> {
     write_task_context_marker(work_dir, ctx, manifest.as_deref_mut())?;
+
+    // The runtime brief is a separate, stable provider-native file. It must
+    // not be recorded as an ordinary sidecar: local-directory/worktree
+    // cleanup removes its managed marker while preserving user-authored
+    // content byte-for-byte, and cloud environments are reclaimed wholesale.
+    inject_runtime_config(work_dir, provider, ctx).context("inject provider runtime config")?;
 
     let context_dir = join_path(&[work_dir, ".agent_context"]);
     record_mkdir_all(&context_dir, manifest.as_deref_mut()).context("create .agent_context dir")?;
