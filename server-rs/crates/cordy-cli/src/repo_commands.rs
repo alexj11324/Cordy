@@ -335,13 +335,13 @@ pub(super) async fn run_repo_checkout(
         .map_err(|_| anyhow::anyhow!("connect to daemon: deadline exceeded"))?
 }
 #[derive(Debug, Args)]
-struct RepoArgs {
+pub(super) struct RepoArgs {
     #[command(subcommand)]
-    command: RepoCommand,
+    pub(super) command: RepoCommand,
 }
 
 #[derive(Debug, Subcommand)]
-enum RepoCommand {
+pub(super) enum RepoCommand {
     #[command(about = "List workspace repositories")]
     List {
         #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
@@ -367,23 +367,23 @@ enum RepoCommand {
 }
 
 #[derive(Debug, Args)]
-struct RepoMutationArgs {
+pub(super) struct RepoMutationArgs {
     #[arg(value_name = "URL")]
-    urls: Vec<String>,
+    pub(super) urls: Vec<String>,
     #[arg(long = "url", action = clap::ArgAction::Append, help = "Repository URL (may be repeated)")]
-    flag_urls: Vec<String>,
+    pub(super) flag_urls: Vec<String>,
     #[arg(long, help = "Optional description; only valid when adding one URL")]
-    description: Option<String>,
+    pub(super) description: Option<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
 
 #[derive(Debug, Args)]
-struct RepoRemoveArgs {
+pub(super) struct RepoRemoveArgs {
     #[arg(value_name = "URL")]
-    urls: Vec<String>,
+    pub(super) urls: Vec<String>,
     #[arg(long = "url", action = clap::ArgAction::Append, help = "Repository URL to remove (may be repeated)")]
-    flag_urls: Vec<String>,
+    pub(super) flag_urls: Vec<String>,
     #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
-    output: OutputFormat,
+    pub(super) output: OutputFormat,
 }
