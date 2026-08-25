@@ -1100,6 +1100,17 @@
       subagent reviewed the exact head and found no issue. Scoped rustfmt and
       `git diff --check` pass (the subagent environment lacked a rustfmt
       executable); Cargo was not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI issue-timeline command structural refactor is committed at
+      `0b54230b232aa05522e64ec40ab549ea8fb4b8c3` (parent
+      `1beca9ca823ca268b3f2de016360d1a20d37d432`, tree
+      `bc3d321a2af2e36eae8a869135fd6e7476ad56c9`): timeline filter parsing,
+      server request/truncation handling, actor enrichment, detail rendering,
+      and table output now live in `cordy-cli/src/issue_timeline_commands.rs`;
+      parent dispatch and parser/filter/table regression tests retain their
+      contracts. The serial subagent reviewed the exact head and found no
+      issue. Scoped rustfmt and `git diff --check` pass (the subagent
+      environment lacked a rustfmt executable); Cargo was not run. Pro owns
+      push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
