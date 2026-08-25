@@ -1618,8 +1618,10 @@
       It isolates scalar metadata parsing; inferred string/bool/number,
       forced-type errors, and dispatch wiring remain unchanged. Scoped pinned
       rustfmt and `git diff --check` pass; Cargo and exact-head subagent
-      review are delegated and pending. PR #327 is Ready (`isDraft=false`),
-      MERGEABLE (checks pending).
+      review found one compile blocker: mutation wiring still imported the
+      pre-rename `issue_metadata_commands::parse_metadata_value`; subagent
+      owns the minimal import fix. The old head is stale pending that fix.
+      PR #327 remains Ready (`isDraft=false`), MERGEABLE (checks pending).
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
