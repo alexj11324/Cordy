@@ -1519,6 +1519,17 @@
       unchanged. Scoped pinned rustfmt and `git diff --check` pass; Cargo and
       exact-head subagent review PASS on `51a7ef84`; no Cargo was run. PR #318
       is Ready (`isDraft=false`), MERGEABLE (checks pending).
+- [ ] PR #319 `codex/cord-151-cli-daemon-disk-usage-command` is the next bounded
+      child of #318: base branch `codex/cord-150-cli-daemon-log-io` at
+      `51a7ef849afc828950ace7fa2854f69a102d141b`, exact head
+      `6e14593bd5d7cd51318bb6fa84f41f3f5576c91f`, tree
+      `eaac8bbb515eb1439e522ae8b6e5fc738e34bef1`, candidate
+      `2c198c05c71ce3cd5190af41a44f6d2d3e0a3512` (parents base + head).
+      It isolates one/all-profile disk-usage command orchestration; validation,
+      scan, parent-status enrichment, limits, and rendering remain unchanged.
+      Scoped pinned rustfmt and `git diff --check` pass; Cargo and exact-head
+      subagent review are delegated and pending. PR #319 is Ready
+      (`isDraft=false`), MERGEABLE (checks pending).
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
