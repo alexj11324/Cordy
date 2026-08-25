@@ -983,6 +983,18 @@
       equivalent. Existing status tests still reach the helpers through the
       parent re-exports. Subagent did not run Cargo or modify files; scoped
       rustfmt/check and `git diff --check` remain clean.
+- [x] PR #254 `codex/cord-86-cli-project-mutations` is the next bounded child
+      of #253: base branch `codex/cord-85-cli-project-status` at
+      `2f0010dcf99fb3f5c5d04394f09ed50e35d6bb86`, exact head
+      `df6203d708d5a9f89f1930aca1e7160551ee23db`, tree
+      `6419c38cc201ecf134402affab64cf0830a0e58a`, candidate
+      `a8cfcf64b0b39bb82e0e2c9e21f1a3d2b4827406`. It isolates project
+      create/update/delete payload assembly, lead/status validation, mutation
+      output, and delete lifecycle in `project_mutation_commands.rs`; read
+      formatting, status command, API paths, and error semantics are unchanged.
+      Scoped rustfmt/check and `git diff --check` pass; Cargo is delegated. PR
+      #254 is Ready (`isDraft=false`), CLEAN/MERGEABLE; exact-head review
+      pending.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
