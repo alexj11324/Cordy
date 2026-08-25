@@ -213,6 +213,7 @@ mod user_commands;
 mod version_output;
 mod workspace_command_schema;
 mod workspace_commands;
+mod workspace_member_commands;
 mod workspace_mcp_commands;
 
 use anyhow::{bail, Context, Result};
@@ -504,10 +505,12 @@ pub(super) use workspace_command_schema::{
 };
 use workspace_commands::{
     build_workspace_create_body, build_workspace_update_body, format_workspace_details_table,
-    format_workspace_members, format_workspace_table, normalize_workspace_invite_role,
-    resolve_workspace_reference, run_workspace_create, run_workspace_get, run_workspace_list,
-    run_workspace_member_invite, run_workspace_member_list, run_workspace_switch,
-    run_workspace_update, WorkspaceSummary,
+    format_workspace_table, resolve_workspace_reference, run_workspace_create, run_workspace_get,
+    run_workspace_list, run_workspace_switch, run_workspace_update, WorkspaceSummary,
+};
+use workspace_member_commands::{
+    format_workspace_members, normalize_workspace_invite_role, run_workspace_member_invite,
+    run_workspace_member_list,
 };
 use workspace_mcp_commands::{
     format_workspace_mcp_servers, parse_workspace_mcp_server_config,
