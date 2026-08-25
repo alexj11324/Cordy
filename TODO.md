@@ -509,6 +509,14 @@
       Scoped rustfmt with `skip_children` and `git diff --check` pass; PR #228
       is Ready (`isDraft=false`), MERGEABLE. Cargo and exact-head review remain
       delegated.
+- [x] #228 compile-follow-up head is
+      `786e09b80115851ad04ddefd1309f4b560358cd4` (parent
+      `d012a2d2993a213b7924646954737f7feffb83c9`, tree
+      `d1ab129fca78c8e40f31d5a44fe7ffb888a71392`, candidate
+      `d6fc271e3c7f5e13dc48a1c125c0274b943e45b2`). The delegated minimal fix
+      makes `run_login_with_urls` crate-visible and adds the root re-export
+      required by `setup_commands.rs`; no other behavior changed. The old
+      `d012a2d2` review is stale; the new exact-head review is delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
