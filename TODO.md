@@ -889,6 +889,12 @@
       behavior. Scoped rustfmt and `git diff --check` pass; PR #250 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
       delegated.
+- [ ] #250 exact-head subagent review FAIL on
+      `508c0aad06b42ceed3c0aadbe418b6fbcad3e4fc`: `Command::Version.output`
+      and `run_version` both use `VersionOutput`, but `dispatch_version.rs`
+      incorrectly declares `OutputFormat`, creating a real type mismatch.
+      Subagent did not modify files or run Cargo; delegate the minimal type
+      correction, then invalidate this head/review and re-review the new head.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
