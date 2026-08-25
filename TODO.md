@@ -1023,6 +1023,15 @@
       invalidated. The serial subagent is applying only the explicit
       `lib.rs` import, without Cargo or behavior changes; a new exact-head
       review is required.
+- [x] #255 blocker fix `6f53c3b1d0df7040d2650dac56125e9796d05785` (parent
+      `52c3c16608947a59b85221fa0934e2a816b7cc7e`, tree
+      `7ba2e9c91ed7b19f4c0e8db21c1d0bf3f2824086`) adds only the explicit
+      `resolve_workspace_arg` parent import in `lib.rs`, making the existing
+      MCP route and new member module compile-visible. `git diff --check` and
+      scoped rustfmt/check pass; old head/review/candidate are invalidated.
+      New remote candidate is
+      `a7129dc6c3fda173374f36ab87a502dd29df52af` (parents #254 base plus fix),
+      with exact-head review pending.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
