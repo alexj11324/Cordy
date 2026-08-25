@@ -814,6 +814,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "libc",
+ "percent-encoding",
  "regex",
  "serde",
  "serde_json",
