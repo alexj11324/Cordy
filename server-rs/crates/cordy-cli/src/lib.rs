@@ -159,6 +159,7 @@ mod issue_list_commands;
 mod issue_list_schema;
 mod issue_metadata_commands;
 mod issue_metadata_schema;
+mod issue_property_commands;
 mod issue_property_schema;
 mod issue_pull_request_commands;
 mod issue_pull_request_schema;
@@ -415,11 +416,14 @@ use project_resource_commands::{
     run_project_resource_list, run_project_resource_remove, run_project_resource_update,
 };
 pub(super) use property_commands::{
-    build_issue_property_rows, format_issue_property_rows, format_property_definitions,
-    parse_property_options, resolve_property, run_issue_property_list, run_issue_property_set,
-    run_issue_property_unset, run_property_archive, run_property_create, run_property_get,
-    run_property_list, run_property_update, PropertyArchiveArgs, PropertyArgs, PropertyCommand,
-    PropertyCreateArgs, PropertyDefinition, PropertyOption, PropertyUpdateArgs,
+    format_property_definitions, parse_property_options, resolve_property, run_property_archive,
+    run_property_create, run_property_get, run_property_list, run_property_update,
+    PropertyArchiveArgs, PropertyArgs, PropertyCommand, PropertyCreateArgs, PropertyDefinition,
+    PropertyOption, PropertyUpdateArgs,
+};
+pub(super) use issue_property_commands::{
+    build_issue_property_rows, format_issue_property_rows, run_issue_property_list,
+    run_issue_property_set, run_issue_property_unset,
 };
 pub(super) use repo_commands::{
     repo_checkout_retry_delay, repo_urls, run_repo_add, run_repo_checkout, run_repo_list,
