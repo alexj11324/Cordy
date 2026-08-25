@@ -1554,6 +1554,15 @@
       behavior are unchanged. The serial subagent found no blocker;
       `git diff --check` passes, rustfmt was unavailable in the subagent
       check, and Cargo was not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI execution-policy refactor is structurally committed at
+      `e8b364ccc30749fdb945c1f05ad8810edc343a85`; the serial subagent then
+      fixed the real cross-module auth DTO visibility blocker in
+      `38021d505b687219f9c08d90022a9e3f28d743b2` (tree
+      `26fff6ef6c5c538e8cf1e6ed9c060380f460239a`): task-local configuration
+      and human-only guards now live in `execution_policy.rs`, while
+      login/auth share `AuthUser` through the parent module. `git diff --check`
+      passes; rustfmt was unavailable in the subagent check and Cargo was not
+      run. Pro owns push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
