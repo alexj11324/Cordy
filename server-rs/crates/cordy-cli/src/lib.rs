@@ -499,6 +499,13 @@ struct IssueListResponse {
 }
 
 #[cfg(test)]
+pub(crate) use tests::{
+    issue_cancel_task_args, issue_list_args, issue_run_messages_args, issue_runs_args,
+    issue_rerun_args, issue_status_args, issue_update_args, patch_test_server, test_server,
+    update_args,
+};
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use axum::extract::Request;
@@ -568,7 +575,7 @@ mod tests {
 
 
 
-    async fn test_server() -> (String, tokio::task::JoinHandle<()>) {
+    pub(crate) async fn test_server() -> (String, tokio::task::JoinHandle<()>) {
         let app = Router::new().route(
             "/api/me",
             get(|request: Request| async move {
@@ -595,7 +602,7 @@ mod tests {
         (format!("http://{address}"), task)
     }
 
-    async fn patch_test_server() -> (
+    pub(crate) async fn patch_test_server() -> (
         String,
         Arc<Mutex<Option<Value>>>,
         tokio::task::JoinHandle<()>,
@@ -625,7 +632,7 @@ mod tests {
         (format!("http://{address}"), captured, task)
     }
 
-    fn update_args(cli: &Cli) -> &UpdateProfileArgs {
+    pub(crate) fn update_args(cli: &Cli) -> &UpdateProfileArgs {
         match &cli.command {
             Command::User(UserArgs {
                 command:
@@ -655,7 +662,7 @@ mod tests {
         }
     }
 
-    fn issue_list_args(cli: &Cli) -> &IssueListArgs {
+    pub(crate) fn issue_list_args(cli: &Cli) -> &IssueListArgs {
         match &cli.command {
             Command::Issue(IssueArgs {
                 command: IssueCommand::List(args),
@@ -673,7 +680,7 @@ mod tests {
         }
     }
 
-    fn issue_update_args(cli: &Cli) -> &IssueUpdateArgs {
+    pub(crate) fn issue_update_args(cli: &Cli) -> &IssueUpdateArgs {
         match &cli.command {
             Command::Issue(IssueArgs {
                 command: IssueCommand::Update(args),
@@ -691,7 +698,7 @@ mod tests {
         }
     }
 
-    fn issue_status_args(cli: &Cli) -> &IssueStatusArgs {
+    pub(crate) fn issue_status_args(cli: &Cli) -> &IssueStatusArgs {
         match &cli.command {
             Command::Issue(IssueArgs {
                 command: IssueCommand::Status(args),
@@ -733,7 +740,7 @@ mod tests {
         }
     }
 
-    fn issue_runs_args(cli: &Cli) -> &IssueRunsArgs {
+    pub(crate) fn issue_runs_args(cli: &Cli) -> &IssueRunsArgs {
         match &cli.command {
             Command::Issue(IssueArgs {
                 command: IssueCommand::Runs(args),
@@ -742,7 +749,7 @@ mod tests {
         }
     }
 
-    fn issue_run_messages_args(cli: &Cli) -> &IssueRunMessagesArgs {
+    pub(crate) fn issue_run_messages_args(cli: &Cli) -> &IssueRunMessagesArgs {
         match &cli.command {
             Command::Issue(IssueArgs {
                 command: IssueCommand::RunMessages(args),
@@ -751,7 +758,7 @@ mod tests {
         }
     }
 
-    fn issue_cancel_task_args(cli: &Cli) -> &IssueCancelTaskArgs {
+    pub(crate) fn issue_cancel_task_args(cli: &Cli) -> &IssueCancelTaskArgs {
         match &cli.command {
             Command::Issue(IssueArgs {
                 command: IssueCommand::CancelTask(args),
@@ -769,7 +776,7 @@ mod tests {
         }
     }
 
-    fn issue_rerun_args(cli: &Cli) -> &IssueRerunArgs {
+    pub(crate) fn issue_rerun_args(cli: &Cli) -> &IssueRerunArgs {
         match &cli.command {
             Command::Issue(IssueArgs {
                 command: IssueCommand::Rerun(args),
