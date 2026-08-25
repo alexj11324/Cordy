@@ -2229,7 +2229,7 @@ async fn run_quick_action(
     };
     let _ =
         quick_action::touch_quick_action_usage(&state.pool, action.id, issue.workspace_id).await;
-    let mut value = crate::comment::comment_json(&state, &comment).await;
+    let mut value = crate::comment::comment_json(&state, &comment, &headers).await;
     if let Some(object) = value.as_object_mut() {
         object.insert("issue_revision".into(), json!(row.issue_revision));
         object.insert("trigger_outcomes".into(), json!(trigger_outcomes));
@@ -6576,6 +6576,18 @@ pub(crate) struct AttachmentResponse {
     created_at: String,
 }
 
+impl AttachmentResponse {
+    pub(crate) fn for_request(
+        state: &HandlerState,
+        attachment: &Attachment,
+        headers: &HeaderMap,
+    ) -> Self {
+        let mut response = Self::from(attachment);
+        response.download_url = crate::attachment::bulk_download_url(state, attachment, headers);
+        response
+    }
+}
+
 impl From<&Attachment> for AttachmentResponse {
     fn from(attachment: &Attachment) -> Self {
         let stable_url = format!("/api/attachments/{}/download", attachment.id);
@@ -7009,6 +7021,19 @@ mod tests {
         assert_eq!(response["created_at"], "2026-08-23T03:30:00Z");
         assert_eq!(response["issue_id"], fixture_issue().id.to_string());
         assert!(response.get("task_id").is_none());
+
+        let state = HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let negotiated = serde_json::to_value(AttachmentResponse::for_request(
+            &state,
+            &attachment,
+            &HeaderMap::new(),
+        ))
+        .unwrap();
+        assert_eq!(negotiated["download_url"], stable_url);
     }
 
     #[test]

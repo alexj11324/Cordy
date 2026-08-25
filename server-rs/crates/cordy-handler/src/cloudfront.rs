@@ -151,6 +151,17 @@ impl CloudFrontSigner {
         ]
     }
 
+    #[cfg(test)]
+    pub(crate) fn test_signer() -> Self {
+        use rand::rngs::OsRng;
+        Self {
+            key_pair_id: Arc::from("KTEST"),
+            private_key: Arc::new(RsaPrivateKey::new(&mut OsRng, 2048).expect("test RSA key")),
+            domain: Arc::from("static.example.test"),
+            cookie_domain: Arc::from(".example.test"),
+        }
+    }
+
     fn sign(&self, policy: &str) -> anyhow::Result<Vec<u8>> {
         let digest = Sha1::digest(policy.as_bytes());
         self.private_key

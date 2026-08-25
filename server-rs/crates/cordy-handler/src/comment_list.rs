@@ -689,6 +689,7 @@ pub(crate) async fn list_comments(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(raw_issue): Path<String>,
+    headers: HeaderMap,
     Query(query): Query<ListQuery>,
 ) -> Response {
     let issue = match crate::issue::resolve_issue(&state, &context, &raw_issue).await {
@@ -742,8 +743,10 @@ pub(crate) async fn list_comments(
     for item in &attachments {
         if let Some(comment_id) = item.comment_id {
             attachments_by_id.entry(comment_id).or_default().push(
-                serde_json::to_value(crate::issue::AttachmentResponse::from(item))
-                    .unwrap_or(Value::Null),
+                serde_json::to_value(crate::issue::AttachmentResponse::for_request(
+                    &state, item, &headers,
+                ))
+                .unwrap_or(Value::Null),
             );
         }
     }

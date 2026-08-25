@@ -345,7 +345,7 @@ async fn create(
             outcomes.push(outcome);
         }
     }
-    let mut value = comment_json(&state, &created).await;
+    let mut value = comment_json(&state, &created, &headers).await;
     if let Some(object) = value.as_object_mut() {
         object.insert("issue_revision".into(), json!(row.issue_revision));
         object.insert("trigger_outcomes".into(), json!(outcomes));
@@ -466,7 +466,7 @@ async fn update(
         .ok()
         .flatten()
         .expect("updated comment");
-    let mut value = comment_json(&state, &comment).await;
+    let mut value = comment_json(&state, &comment, &headers).await;
     let issue =
         issue_q::get_issue_in_workspace(&state.pool, current.issue_id, current.workspace_id)
             .await
@@ -697,7 +697,11 @@ fn added_reaction_json(reaction: &reaction::AddReactionRow) -> Value {
     Value::Object(response)
 }
 
-pub(crate) async fn comment_json(state: &HandlerState, comment: &Comment) -> Value {
+pub(crate) async fn comment_json(
+    state: &HandlerState,
+    comment: &Comment,
+    headers: &HeaderMap,
+) -> Value {
     let reactions = reaction::list_reactions_by_comment_i_ds(&state.pool, vec![comment.id])
         .await
         .unwrap_or_else(|error| {
@@ -721,7 +725,7 @@ pub(crate) async fn comment_json(state: &HandlerState, comment: &Comment) -> Val
         serde_json::to_value(
             attachments
                 .iter()
-                .map(crate::issue::AttachmentResponse::from)
+                .map(|item| crate::issue::AttachmentResponse::for_request(state, item, headers))
                 .collect::<Vec<_>>(),
         )
         .unwrap_or_else(|_| json!([])),
@@ -845,7 +849,7 @@ async fn resolve(
     }
 
     for sibling in cleared {
-        let response = comment_json(&state, &sibling).await;
+        let response = comment_json(&state, &sibling, &headers).await;
         publish(
             &state,
             &context,
@@ -855,7 +859,7 @@ async fn resolve(
             response,
         );
     }
-    let response = comment_json(&state, &updated).await;
+    let response = comment_json(&state, &updated, &headers).await;
     if !was_resolved {
         publish(
             &state,
@@ -890,7 +894,7 @@ async fn unresolve(
             );
         }
     };
-    let response = comment_json(&state, &updated).await;
+    let response = comment_json(&state, &updated, &headers).await;
     if was_resolved {
         publish(
             &state,
