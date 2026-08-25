@@ -391,14 +391,21 @@
 - [x] PR #192 `codex/cord-50-cli-repo-tests` is the next bounded child of #191:
       base branch `codex/cord-50-cli-chat-tests` at
       `30cdf04a076558ceb3e41032dca88d922d75bce8`, exact head
-      `135b9b0f273cf9ff0be4d784ff8beaaf2497ceb2`, tree
-      `ae39f192630e2e58fcc0e11c66a621bf888db572`, candidate
-      `2f39138707ba45dab302312956308a7579e482ff`. It extracts four repo
+      `84746f9e23a277411905907c345bf7bede0e1841`, tree
+      `2f6cc4b7326d4dfba6cbc3065afe318a35746e2a`, candidate
+      `8351edf652e7214da353d14a1e51b3960e797fa4`. It extracts four repo
       registry/checkout parser, validation, patch, task-context, retry, and
       Retry-After contract tests into `repo_command_tests.rs`; production behavior
-      is unchanged. Scoped rustfmt and `git diff --check` pass; PR #192 is Ready
+      is unchanged. The exact-head static review found and fixed missing
+      `Arc`/`Mutex` imports in `84746f9e`; scoped diff-check passes and PR #192 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
-      delegated.
+      delegated; the pre-fix head and candidate are invalid.
+- [x] #192 final exact-head subagent review PASS on
+      `84746f9e23a277411905907c345bf7bede0e1841`: `Arc`/`Mutex` imports are
+      present, all four repo tests and retry behavior remain intact, and module
+      boundaries are valid. No compile or behavior blocker was found. Subagent
+      did not run Cargo or modify the worktree; coordinator `git diff --check`
+      remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
