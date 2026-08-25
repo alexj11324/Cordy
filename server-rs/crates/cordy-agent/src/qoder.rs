@@ -2725,7 +2725,7 @@ fn parse_acp_effort_option(value: &Value) -> Option<AcpEffortOption> {
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .trim();
-            if !value.is_empty() && !choices.iter().any(|choice| choice.value == value) {
+            if !value.is_empty() && !choices.iter().any(|existing| existing.value == value) {
                 let label = choice
                     .get("name")
                     .and_then(Value::as_str)
