@@ -268,14 +268,21 @@
 - [x] PR #185 `codex/cord-50-cli-property-tests` is the next bounded child of #184:
       base branch `codex/cord-50-cli-squad-tests` at
       `e12d80a1213155d40037a87aedf73616c3730f12`, exact head
-      `07581847c78426aec4773f7638ceab082a316735`, tree
-      `651d28c6e1e87372d0e0f60127cefe465e88bbd0`, candidate
-      `8be79cd61126e2136355401e3bc50b3866d92635`. It extracts seven property
+      `3e961b11741b006e20186e1ec48dee56b38e516d`, tree
+      `e78837f0f1652586c592643097accc39b78d87f5`, candidate
+      `20ef4d9e08f8ffde6a18219d919ee5c2d2a7b60c`. It extracts seven property
       and issue-property parser, archive, typed-value, actor-display, and output
       contract tests into `property_command_tests.rs`; production behavior is
-      unchanged. Scoped rustfmt and `git diff --check` pass; PR #185 is Ready
+      unchanged. The exact-head static review found and fixed a missing
+      `TcpListener` import in `3e961b11`; scoped diff-check passes and PR #185 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
-      delegated.
+      delegated; the pre-fix head and candidate are invalid.
+- [x] #185 final exact-head subagent review PASS on
+      `3e961b11741b006e20186e1ec48dee56b38e516d`: `tokio::net::TcpListener`
+      import covers all four uses, all seven property/issue-property tests match
+      the pre-extraction baseline, and module visibility is valid. No additional
+      compile or behavior blocker was found. Subagent did not run Cargo or modify
+      the worktree; coordinator `git diff --check` remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
