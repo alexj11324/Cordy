@@ -103,7 +103,9 @@ struct ClawSearchResult {
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ClawStats {
+    #[serde(default)]
     installs_all_time: i64,
+    #[serde(default)]
     installs_current: i64,
 }
 
@@ -647,7 +649,8 @@ async fn fetch_clawhub(
                 imported.content = String::from_utf8_lossy(&bytes).into_owned()
             }
             Ok(bytes) => imported.add_file(path, String::from_utf8_lossy(&bytes).into_owned())?,
-            Err(error) if path == "SKILL.md" || matches!(error, ImportError::Cap(_)) => {
+            Err(error) if matches!(error, ImportError::Cap(_)) => return Err(error),
+            Err(error) if path == "SKILL.md" => {
                 return Err(ImportError::Upstream(format!(
                     "clawhub import: {path}: {error}"
                 )))
@@ -691,7 +694,7 @@ struct ContentEntry {
     #[serde(rename = "type")]
     kind: String,
     #[serde(default)]
-    download_url: String,
+    download_url: Option<String>,
 }
 
 async fn fetch_skills_sh(client: &Client, raw_url: &str) -> Result<ImportedSkill, ImportError> {
@@ -1019,6 +1022,17 @@ async fn github_tree(
         .map_err(|error| ImportError::Upstream(error.to_string()))
 }
 
+fn github_token() -> Option<String> {
+    std::env::var("GITHUB_TOKEN")
+        .ok()
+        .and_then(|token| normalize_github_token(&token))
+}
+
+fn normalize_github_token(raw: &str) -> Option<String> {
+    let token = raw.trim();
+    (!token.is_empty()).then(|| token.to_string())
+}
+
 async fn github_get(client: &Client, url: String) -> Result<reqwest::Response, ImportError> {
     let parsed = Url::parse(&url).map_err(|error| ImportError::Upstream(error.to_string()))?;
     if parsed.scheme() != "https" || parsed.host_str() != Some("api.github.com") {
@@ -1030,10 +1044,8 @@ async fn github_get(client: &Client, url: String) -> Result<reqwest::Response, I
         .get(parsed)
         .header("Accept", "application/vnd.github+json")
         .header("User-Agent", "Cordy-Skill-Importer");
-    if let Ok(token) = std::env::var("GITHUB_TOKEN") {
-        if !token.trim().is_empty() {
-            request = request.bearer_auth(token);
-        }
+    if let Some(token) = github_token() {
+        request = request.bearer_auth(token);
     }
     request.send().await.map_err(upstream)
 }
@@ -1095,7 +1107,6 @@ async fn add_files_via_crawl(
                     if lower == "skill.md"
                         || matches!(lower.as_str(), "license" | "license.md" | "license.txt")
                         || likely_binary(&entry.path)
-                        || entry.download_url.is_empty()
                     {
                         continue;
                     }
@@ -1109,7 +1120,12 @@ async fn add_files_via_crawl(
                             .unwrap_or(&entry.path)
                             .to_string()
                     };
-                    let download = Url::parse(&entry.download_url)
+                    let Some(download_url) =
+                        entry.download_url.as_deref().filter(|url| !url.is_empty())
+                    else {
+                        continue;
+                    };
+                    let download = Url::parse(download_url)
                         .map_err(|error| ImportError::Upstream(error.to_string()))?;
                     if download.scheme() != "https"
                         || download.host_str() != Some("raw.githubusercontent.com")
@@ -1229,10 +1245,8 @@ async fn fetch_bytes(client: &Client, url: Url, github_auth: bool) -> Result<Vec
     }
     let mut request = client.get(url);
     if github_auth {
-        if let Ok(token) = std::env::var("GITHUB_TOKEN") {
-            if !token.trim().is_empty() {
-                request = request.bearer_auth(token);
-            }
+        if let Some(token) = github_token() {
+            request = request.bearer_auth(token);
         }
     }
     let response = request.send().await.map_err(upstream)?;
@@ -1331,14 +1345,29 @@ fn parse_frontmatter(content: &str) -> (String, String) {
         value
             .get(key)
             .and_then(|value| match value {
-                serde_yaml::Value::String(value) => Some(value.clone()),
+                serde_yaml::Value::String(value) => Some(value.trim().to_string()),
                 serde_yaml::Value::Number(value) => Some(value.to_string()),
                 serde_yaml::Value::Bool(value) => Some(value.to_string()),
+                serde_yaml::Value::Sequence(_) | serde_yaml::Value::Mapping(_) => {
+                    serde_json::to_string(value).ok()
+                }
                 _ => None,
             })
             .unwrap_or_default()
     };
     (string("name"), string("description"))
+}
+
+fn skill_archive_root_prefix(name: &str) -> String {
+    let normalized = name.replace('\\', "/");
+    match normalized.rsplit_once('/') {
+        Some((parent, basename))
+            if basename.eq_ignore_ascii_case("SKILL.md") && !parent.is_empty() =>
+        {
+            format!("{parent}/")
+        }
+        _ => String::new(),
+    }
 }
 
 fn likely_binary(path: &str) -> bool {
@@ -1366,6 +1395,11 @@ fn likely_binary(path: &str) -> bool {
             | "mp4"
             | "mov"
             | "avi"
+            | "wav"
+            | "bmp"
+            | "wasm"
+            | "so"
+            | "sqlite"
             | "doc"
             | "docx"
             | "xls"
@@ -1437,10 +1471,7 @@ fn parse_archive_with_cancel(
             .is_some_and(|name| name.eq_ignore_ascii_case("SKILL.md"))
             && safe_archive_path(&name)
         {
-            let prefix = name
-                .strip_suffix("SKILL.md")
-                .unwrap_or_default()
-                .to_string();
+            let prefix = skill_archive_root_prefix(&name);
             if primary
                 .as_ref()
                 .is_none_or(|(_, existing): &(usize, String)| prefix.len() < existing.len())
@@ -2097,6 +2128,23 @@ mod tests {
             parse_frontmatter("---\nname: x\ndescription: y\n---\n").0,
             "x"
         );
+        assert_eq!(
+            parse_frontmatter("---\nname: \" review \"\ndescription: \" notes \"\n---\n"),
+            ("review".into(), "notes".into())
+        );
+        assert_eq!(
+            parse_frontmatter("---\ndescription:\n  - first feature\n  - second feature\n---\n").1,
+            "[\"first feature\",\"second feature\"]"
+        );
+        assert!(likely_binary("assets/icon.bmp"));
+        assert!(likely_binary("native/lib.so"));
+        assert!(likely_binary("data.sqlite"));
+        assert_eq!(skill_archive_root_prefix("review/skill.md"), "review/");
+        assert_eq!(skill_archive_root_prefix("SKILL.md"), "");
+        assert_eq!(
+            normalize_github_token("  ghp_secret\n"),
+            Some("ghp_secret".into())
+        );
         let mut imported = ImportedSkill::new("x".into(), String::new(), "body".into(), None);
         assert!(imported
             .add_file("logo.png".into(), "binary".into())
@@ -2106,5 +2154,21 @@ mod tests {
             imported.add_file("large.md".into(), "x".repeat(MAX_FILE_SIZE + 1)),
             Err(ImportError::Cap(_))
         ));
+    }
+
+    #[test]
+    fn clawhub_partial_stats_default_missing_counters() {
+        let stats: ClawStats = serde_json::from_str(r#"{"installsAllTime":62,"stars":3}"#).unwrap();
+        assert_eq!(stats.installs_all_time, 62);
+        assert_eq!(stats.installs_current, 0);
+    }
+
+    #[test]
+    fn github_directory_entries_accept_null_download_url() {
+        let entry: ContentEntry = serde_json::from_str(
+            r#"{"name":"docs","path":"review/docs","type":"dir","download_url":null}"#,
+        )
+        .unwrap();
+        assert!(entry.download_url.is_none());
     }
 }

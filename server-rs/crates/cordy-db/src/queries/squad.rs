@@ -602,19 +602,41 @@ pub async fn transfer_squad_autopilots_to_leader(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     assignee_id: Uuid,
     assignee_id_2: Uuid,
-) -> anyhow::Result<u64> {
-    let r = sqlx::query(
+) -> anyhow::Result<Vec<Autopilot>> {
+    let rows = sqlx::query(
         r#"UPDATE autopilot
 SET assignee_type = 'agent',
     assignee_id = $2,
     updated_at = now()
-WHERE assignee_type = 'squad' AND assignee_id = $1"#,
+WHERE assignee_type = 'squad' AND assignee_id = $1
+RETURNING id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason"#,
     )
     .bind(assignee_id)
     .bind(assignee_id_2)
-    .execute(executor)
+    .fetch_all(executor)
     .await?;
-    Ok(r.rows_affected())
+    let mut out = Vec::with_capacity(rows.len());
+    for row in &rows {
+        out.push(Autopilot {
+            id: row.try_get(0)?,
+            workspace_id: row.try_get(1)?,
+            title: row.try_get(2)?,
+            description: row.try_get(3)?,
+            assignee_id: row.try_get(4)?,
+            status: row.try_get(5)?,
+            execution_mode: row.try_get(6)?,
+            issue_title_template: row.try_get(7)?,
+            created_by_type: row.try_get(8)?,
+            created_by_id: row.try_get(9)?,
+            last_run_at: row.try_get(10)?,
+            created_at: row.try_get(11)?,
+            updated_at: row.try_get(12)?,
+            assignee_type: row.try_get(13)?,
+            project_id: row.try_get(14)?,
+            pause_reason: row.try_get(15)?,
+        });
+    }
+    Ok(out)
 }
 
 pub async fn update_squad(
@@ -622,7 +644,7 @@ pub async fn update_squad(
     id: Uuid,
     name: Option<&str>,
     description: Option<&str>,
-    leader_id: Uuid,
+    leader_id: Option<Uuid>,
     avatar_url: Option<&str>,
     instructions: Option<&str>,
 ) -> anyhow::Result<Option<Squad>> {

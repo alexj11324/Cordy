@@ -6736,7 +6736,7 @@ pub async fn update_agent(
     avatar_url: Option<&str>,
     runtime_config: &serde_json::Value,
     runtime_mode: Option<&str>,
-    runtime_id: Uuid,
+    runtime_id: Option<Uuid>,
     visibility: Option<&str>,
     permission_mode: Option<&str>,
     status: Option<&str>,

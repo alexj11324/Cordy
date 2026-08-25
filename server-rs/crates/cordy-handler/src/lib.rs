@@ -620,7 +620,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(public_auth)
         .merge(session::public_router())
         .merge(workspace::public_router())
-        .merge(attachment::public_router())
+        .merge(attachment::public_router(&state))
         .merge(avatar::router())
         .merge(autopilot_webhook::router())
         .merge(github::public_router())

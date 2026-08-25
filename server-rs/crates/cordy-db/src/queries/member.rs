@@ -67,6 +67,30 @@ WHERE id = $1"#,
     }))
 }
 
+pub async fn lock_member_by_user_and_workspace(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    user_id: Uuid,
+    workspace_id: Uuid,
+) -> anyhow::Result<Option<Member>> {
+    let row = sqlx::query(
+        r#"SELECT id, workspace_id, user_id, role, created_at FROM member
+WHERE user_id = $1 AND workspace_id = $2
+FOR UPDATE"#,
+    )
+    .bind(user_id)
+    .bind(workspace_id)
+    .fetch_optional(executor)
+    .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(Member {
+        id: row.try_get(0)?,
+        workspace_id: row.try_get(1)?,
+        user_id: row.try_get(2)?,
+        role: row.try_get(3)?,
+        created_at: row.try_get(4)?,
+    }))
+}
+
 pub async fn get_member_by_user_and_workspace(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     user_id: Uuid,

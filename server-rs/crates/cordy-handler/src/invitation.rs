@@ -790,7 +790,20 @@ async fn accept(
     };
     let accepted = match invitation::accept_invitation(&mut *transaction, invitation.id).await {
         Ok(Some(accepted)) => accepted,
-        Ok(None) | Err(_) => {
+        Ok(None) => {
+            let found = invitation::get_invitation(&mut *transaction, invitation.id)
+                .await
+                .ok()
+                .flatten();
+            if found
+                .as_ref()
+                .is_some_and(|found| found.expires_at < chrono::Utc::now())
+            {
+                return error_response(StatusCode::GONE, "invitation has expired");
+            }
+            return error_response(StatusCode::BAD_REQUEST, "invitation is not pending");
+        }
+        Err(_) => {
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to accept invitation",

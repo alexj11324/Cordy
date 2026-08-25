@@ -4589,6 +4589,7 @@ async fn get_issue(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
+    headers: HeaderMap,
 ) -> Response {
     let issue = match resolve_issue(&state, &context, &id).await {
         Ok(issue) => issue,
@@ -4609,7 +4610,7 @@ async fn get_issue(
             .await
             .unwrap_or_default()
             .iter()
-            .map(AttachmentResponse::from)
+            .map(|item| AttachmentResponse::for_request(&state, item, &headers))
             .collect();
     Json(response).into_response()
 }
@@ -4675,6 +4676,7 @@ async fn list_attachments(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
+    headers: HeaderMap,
 ) -> Response {
     let issue = match resolve_issue(&state, &context, &id).await {
         Ok(issue) => issue,
@@ -4685,7 +4687,7 @@ async fn list_attachments(
         Ok(attachments) => Json(
             attachments
                 .iter()
-                .map(AttachmentResponse::from)
+                .map(|item| AttachmentResponse::for_request(&state, item, &headers))
                 .collect::<Vec<_>>(),
         )
         .into_response(),
@@ -7278,7 +7280,7 @@ mod tests {
             task_id: None,
             uploader_id: fixture_issue().creator_id,
             uploader_type: "member".into(),
-            url: "/uploads/diagram.png".into(),
+            url: "https://static.example.test/workspaces/w/diagram.png".into(),
             workspace_id: fixture_issue().workspace_id,
         }
     }
@@ -7598,6 +7600,31 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(negotiated["download_url"], stable_url);
+
+        let mut signing_state = HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        signing_state.attachment_download.cloudfront_signer = Some(std::sync::Arc::new(
+            crate::cloudfront::CloudFrontSigner::test_signer(),
+        ));
+        let signed =
+            AttachmentResponse::for_request(&signing_state, &attachment, &HeaderMap::new());
+        assert!(
+            signed.download_url.contains("Policy="),
+            "{}",
+            signed.download_url
+        );
+        assert_eq!(signed.markdown_url, stable_url);
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-client-capabilities",
+            "stable_attachment_urls".parse().unwrap(),
+        );
+        let stable = AttachmentResponse::for_request(&signing_state, &attachment, &headers);
+        assert_eq!(stable.download_url, stable_url);
     }
 
     #[test]

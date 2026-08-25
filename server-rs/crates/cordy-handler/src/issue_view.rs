@@ -246,8 +246,32 @@ async fn create(
     if let Err(response) = validate_name(&request.name) {
         return response;
     }
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to check view quota",
+            )
+        }
+    };
+    if member::lock_member_by_user_and_workspace(
+        &mut *transaction,
+        context.member.user_id,
+        context.member.workspace_id,
+    )
+    .await
+    .ok()
+    .flatten()
+    .is_none()
+    {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to check view quota",
+        );
+    }
     let count = match issue_view::count_issue_views_by_owner(
-        &state.pool,
+        &mut *transaction,
         context.member.workspace_id,
         context.member.user_id,
     )
@@ -325,7 +349,7 @@ async fn create(
         _ => None,
     };
     match issue_view::create_issue_view(
-        &state.pool,
+        &mut *transaction,
         context.member.workspace_id,
         context.member.user_id,
         &request.name,
@@ -340,6 +364,9 @@ async fn create(
     .await
     {
         Ok(Some(view)) => {
+            if transaction.commit().await.is_err() {
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to create view");
+            }
             (StatusCode::CREATED, Json(IssueViewResponse::from(view))).into_response()
         }
         Ok(None) | Err(_) => {
@@ -507,9 +534,16 @@ async fn delete(
     if !can_manage(&state, &view, context.member.user_id).await {
         return error_response(StatusCode::FORBIDDEN, "insufficient permissions");
     }
-    match issue_view::delete_issue_view(&state.pool, view.id, context.member.workspace_id).await {
+    match issue_view::delete_issue_view(
+        &state.pool,
+        view.id,
+        context.member.workspace_id,
+        context.member.user_id,
+    )
+    .await
+    {
         Ok(Some(_)) => StatusCode::NO_CONTENT.into_response(),
-        Ok(None) => error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete view"),
+        Ok(None) => error_response(StatusCode::NOT_FOUND, "view not found"),
         Err(error) => {
             tracing::warn!(%error, view_id = %view.id, "failed to delete issue view");
             error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete view")

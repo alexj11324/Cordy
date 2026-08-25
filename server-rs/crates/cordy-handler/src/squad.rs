@@ -84,8 +84,6 @@ impl From<Squad> for SquadResponse {
             name: value.name,
             description: value.description,
             instructions: value.instructions,
-            // HandlerState does not yet carry the Go object-store signer. This
-            // is the same raw-URL branch Go uses when storage is disabled.
             avatar_url: value.avatar_url,
             leader_id: value.leader_id.to_string(),
             creator_id: value.creator_id.to_string(),
@@ -133,7 +131,14 @@ async fn response_with_preview(
     }
     let mut response = SquadResponse::from(value);
     apply_summary(&mut response, Some(summary));
-    Ok(response)
+    Ok(with_resolved_avatar(state, response))
+}
+
+fn with_resolved_avatar(state: &HandlerState, mut response: SquadResponse) -> SquadResponse {
+    if let Some(url) = response.avatar_url.as_deref() {
+        response.avatar_url = Some(crate::avatar::resolve_url(state, url));
+    }
+    response
 }
 
 #[derive(Debug, Serialize)]
@@ -388,7 +393,7 @@ async fn create(
         1,
     );
     cordy_metrics::business_events::record_event(
-        None,
+        Some(state.analytics.as_ref()),
         state.business_metrics.as_deref(),
         &analytics,
     );
@@ -437,7 +442,7 @@ async fn list(
             let id = value.id;
             let mut response = SquadResponse::from(value);
             apply_summary(&mut response, summaries.remove(&id));
-            response
+            with_resolved_avatar(&state, response)
         })
         .collect::<Vec<_>>();
     Json(response).into_response()
@@ -608,16 +613,16 @@ async fn update(
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update squad")
         }
     }
-    let mut leader_id = existing.leader_id;
+    let mut leader_id = None;
     let mut new_leader_runtime_bound = true;
     if let Some(raw_leader_id) = request.leader_id.as_deref() {
-        leader_id = match Uuid::parse_str(raw_leader_id) {
+        let parsed_leader_id = match Uuid::parse_str(raw_leader_id) {
             Ok(id) => id,
             Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid leader_id"),
         };
         let new_leader = match agent::lock_agent_for_autopilot_assignment(
             &mut *transaction,
-            leader_id,
+            parsed_leader_id,
             context.member.workspace_id,
         )
         .await
@@ -644,26 +649,25 @@ async fn update(
                 "you can only use an agent you have access to as leader",
             );
         }
-        let is_member = match squad::is_squad_member(
-            &mut *transaction,
-            existing.id,
-            "agent",
-            leader_id,
-        )
-        .await
-        {
-            Ok(Some(is_member)) => is_member,
-            Ok(None) | Err(_) => {
-                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update squad")
-            }
-        };
+        let is_member =
+            match squad::is_squad_member(&mut *transaction, existing.id, "agent", parsed_leader_id)
+                .await
+            {
+                Ok(Some(is_member)) => is_member,
+                Ok(None) | Err(_) => {
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to update squad",
+                    )
+                }
+            };
         if !is_member
             && !matches!(
                 squad::add_squad_member(
                     &mut *transaction,
                     existing.id,
                     "agent",
-                    leader_id,
+                    parsed_leader_id,
                     "leader",
                 )
                 .await,
@@ -673,6 +677,7 @@ async fn update(
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update squad");
         }
         new_leader_runtime_bound = new_leader.runtime_id.is_some();
+        leader_id = Some(parsed_leader_id);
     }
     let updated = match squad::update_squad(
         &mut *transaction,
@@ -753,38 +758,62 @@ async fn remove(
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
         }
     };
-    if let Err(error) =
-        squad::transfer_squad_assignees(&mut *transaction, existing.id, existing.leader_id).await
-    {
-        tracing::warn!(%error, squad_id = %existing.id, "transfer squad assignees failed");
-        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
-    }
-    if let Err(error) = squad::transfer_squad_autopilots_to_leader(
+    let locked = match squad::lock_squad_for_update(
         &mut *transaction,
         existing.id,
-        existing.leader_id,
+        context.member.workspace_id,
     )
     .await
     {
-        tracing::warn!(%error, squad_id = %existing.id, "transfer squad autopilots failed");
+        Ok(Some(locked)) if locked.archived_at.is_none() => locked,
+        Ok(Some(_)) => return error_response(StatusCode::BAD_REQUEST, "squad is already archived"),
+        Ok(None) | Err(_) => {
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad")
+        }
+    };
+    if let Err(error) =
+        squad::transfer_squad_assignees(&mut *transaction, locked.id, locked.leader_id).await
+    {
+        tracing::warn!(%error, squad_id = %locked.id, "transfer squad assignees failed");
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
     }
-    match squad::archive_squad(&mut *transaction, existing.id, context.member.user_id).await {
+    let transferred_autopilots = match squad::transfer_squad_autopilots_to_leader(
+        &mut *transaction,
+        locked.id,
+        locked.leader_id,
+    )
+    .await
+    {
+        Ok(autopilots) => autopilots,
+        Err(error) => {
+            tracing::warn!(%error, squad_id = %locked.id, "transfer squad autopilots failed");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
+        }
+    };
+    match squad::archive_squad(&mut *transaction, locked.id, context.member.user_id).await {
         Ok(Some(_)) => {}
         Ok(None) | Err(_) => {
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad")
         }
     }
     if let Err(error) = transaction.commit().await {
-        tracing::warn!(%error, squad_id = %existing.id, "failed to commit squad archive");
+        tracing::warn!(%error, squad_id = %locked.id, "failed to commit squad archive");
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive squad");
     }
     publish_squad_event(
         &state,
         &context,
         cordy_protocol::EVENT_SQUAD_DELETED,
-        json!({ "squad_id": existing.id, "leader_id": existing.leader_id }),
+        json!({ "squad_id": locked.id, "leader_id": locked.leader_id }),
     );
+    for autopilot in transferred_autopilots {
+        publish_squad_event(
+            &state,
+            &context,
+            cordy_protocol::EVENT_AUTOPILOT_UPDATED,
+            json!({ "autopilot": AutopilotEventResponse::from(autopilot) }),
+        );
+    }
     StatusCode::NO_CONTENT.into_response()
 }
 

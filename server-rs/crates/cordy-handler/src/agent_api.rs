@@ -251,8 +251,13 @@ fn preserve_masked_gateway_token(incoming: &mut Value, existing: &Value) {
         .get("gateway")
         .and_then(Value::as_object)
         .and_then(|gateway| gateway.get("token"))
+        .filter(|value| value.as_str().is_some_and(|token| !token.is_empty()))
     {
         *token = old.clone();
+        return;
+    }
+    if let Some(gateway) = incoming.get_mut("gateway").and_then(Value::as_object_mut) {
+        gateway.remove("token");
     }
 }
 
@@ -673,6 +678,14 @@ fn resolve_permission(
             "private"
         }
     });
+    if let Some(visibility) = visibility {
+        if !matches!(visibility, "private" | "workspace") {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "visibility must be private or workspace",
+            ));
+        }
+    }
     if !matches!(permission_mode, "private" | "public_to") {
         return Err(error_response(
             StatusCode::BAD_REQUEST,
@@ -726,6 +739,44 @@ fn resolve_permission(
         }
     }
     Ok((permission_mode.to_string(), resolved))
+}
+
+fn permission_echo_is_unchanged(
+    existing: &Agent,
+    request: &AgentWrite,
+    existing_targets: &[AgentInvocationTarget],
+    workspace_id: Uuid,
+) -> bool {
+    if let Some(mode) = request.permission_mode.as_deref() {
+        if mode != existing.permission_mode {
+            return false;
+        }
+    }
+    if let Some(visibility) = request.visibility.as_deref() {
+        if visibility != existing.visibility {
+            return false;
+        }
+    }
+    if let Some(targets) = request.invocation_targets.as_ref() {
+        let Ok((_, mut resolved)) = resolve_permission(
+            workspace_id,
+            Some(existing.permission_mode.as_str()),
+            Some(existing.visibility.as_str()),
+            Some(targets),
+        ) else {
+            return false;
+        };
+        let mut current = existing_targets
+            .iter()
+            .map(|target| (target.target_type.clone(), target.target_id))
+            .collect::<Vec<_>>();
+        current.sort();
+        resolved.sort();
+        if current != resolved {
+            return false;
+        }
+    }
+    true
 }
 
 async fn replace_invocation_targets(
@@ -929,6 +980,12 @@ async fn create_agent(
     .await;
     let created = match created {
         Ok(Some(v)) => v,
+        Err(error) if crate::workspace::unique_violation(&error) => {
+            return error_response(
+                StatusCode::CONFLICT,
+                &format!("an agent named {name:?} already exists in this workspace"),
+            )
+        }
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to create agent"),
     };
     for id in skills {
@@ -1063,39 +1120,59 @@ async fn update_agent(
     if let Err(response) = manage_or_forbidden(&context, &existing) {
         return response;
     }
-    let runtime_id = match request.runtime_id.as_deref() {
-        Some(v) => match Uuid::parse_str(v) {
-            Ok(v) => v,
+    let requested_runtime_id = match request.runtime_id.as_deref() {
+        Some(value) => match Uuid::parse_str(value) {
+            Ok(value) => Some(value),
             Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
         },
-        None => match existing.runtime_id {
-            Some(v) => v,
-            None => return error_response(StatusCode::CONFLICT, "agent has no runtime"),
-        },
+        None => existing.runtime_id,
     };
-    let target_runtime =
-        match runtime::get_agent_runtime_for_workspace(&mut *tx, runtime_id, ws).await {
-            Ok(Some(runtime)) => runtime,
-            _ => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
+    let target_runtime = match requested_runtime_id {
+        Some(runtime_id) => {
+            match runtime::get_agent_runtime_for_workspace(&mut *tx, runtime_id, ws).await {
+                Ok(Some(runtime)) => Some(runtime),
+                _ => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
+            }
+        }
+        None => None,
+    };
+    if request.runtime_id.is_some() {
+        let Some(target_runtime) = target_runtime.as_ref() else {
+            return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id");
         };
-    if request.runtime_id.is_some()
-        && (target_runtime.owner_id.is_none()
+        if target_runtime.owner_id.is_none()
             || target_runtime.visibility != "public"
-                && target_runtime.owner_id != Some(context.member.user_id))
-    {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            "this runtime is private; only its owner can move agents onto it",
-        );
+                && target_runtime.owner_id != Some(context.member.user_id)
+        {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "this runtime is private; only its owner can move agents onto it",
+            );
+        }
     }
-    let permission_touched = request.permission_mode.is_some()
+    let mut permission_touched = request.permission_mode.is_some()
         || request.visibility.is_some()
         || request.invocation_targets.is_some();
     if permission_touched && existing.owner_id != Some(context.member.user_id) {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            "only the agent owner can change access (permission_mode / invocation_targets)",
-        );
+        let existing_targets =
+            match agent_invocation_target::list_agent_invocation_targets(&mut *tx, existing.id)
+                .await
+            {
+                Ok(targets) => targets,
+                Err(_) => {
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to load agent invocation targets",
+                    )
+                }
+            };
+        if !permission_echo_is_unchanged(&existing, &request, &existing_targets, ws) {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "only the agent owner can change access (permission_mode / invocation_targets)",
+            );
+        }
+        permission_touched = false;
     }
     let effective_targets = if request.invocation_targets.is_some() {
         request.invocation_targets.clone()
@@ -1149,59 +1226,67 @@ async fn update_agent(
             "private"
         }
     });
-    if request
-        .model
-        .as_deref()
-        .is_some_and(|model| model_known_incompatible(&target_runtime.provider, model))
-    {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "model is not valid for this runtime provider",
-        );
-    }
-    if request
-        .thinking_level
-        .as_deref()
-        .is_some_and(|value| !known_thinking_value(&target_runtime.provider, value))
-    {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "thinking_level is not recognised for this runtime",
-        );
-    }
-    if request
-        .service_tier
-        .as_deref()
-        .is_some_and(|value| !known_service_tier(&target_runtime.provider, value))
-    {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "service_tier is not recognised for this runtime",
-        );
-    }
-    if request.runtime_id.is_some() {
-        if request.thinking_level.is_none()
-            && existing
-                .thinking_level
-                .as_deref()
-                .is_some_and(|value| !known_thinking_value(&target_runtime.provider, value))
+    if let Some(target_runtime) = target_runtime.as_ref() {
+        if request
+            .model
+            .as_deref()
+            .is_some_and(|model| model_known_incompatible(&target_runtime.provider, model))
         {
             return error_response(
                 StatusCode::BAD_REQUEST,
-                "existing thinking_level is not valid for the new runtime; clear or replace it",
+                "model is not valid for this runtime provider",
             );
         }
-        if request.service_tier.is_none()
-            && existing
-                .service_tier
-                .as_deref()
-                .is_some_and(|value| !known_service_tier(&target_runtime.provider, value))
+        if request
+            .thinking_level
+            .as_deref()
+            .is_some_and(|value| !known_thinking_value(&target_runtime.provider, value))
         {
             return error_response(
                 StatusCode::BAD_REQUEST,
-                "existing service_tier is not valid for the new runtime; clear or replace it",
+                "thinking_level is not recognised for this runtime",
             );
         }
+        if request
+            .service_tier
+            .as_deref()
+            .is_some_and(|value| !known_service_tier(&target_runtime.provider, value))
+        {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "service_tier is not recognised for this runtime",
+            );
+        }
+        if request.runtime_id.is_some() {
+            if request.thinking_level.is_none()
+                && existing
+                    .thinking_level
+                    .as_deref()
+                    .is_some_and(|value| !known_thinking_value(&target_runtime.provider, value))
+            {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "existing thinking_level is not valid for the new runtime; clear or replace it",
+                );
+            }
+            if request.service_tier.is_none()
+                && existing
+                    .service_tier
+                    .as_deref()
+                    .is_some_and(|value| !known_service_tier(&target_runtime.provider, value))
+            {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "existing service_tier is not valid for the new runtime; clear or replace it",
+                );
+            }
+        }
+    } else if request.model.is_some()
+        || request.thinking_level.is_some()
+        || request.service_tier.is_some()
+        || request.runtime_id.is_some()
+    {
+        return error_response(StatusCode::CONFLICT, "agent has no runtime");
     }
     let avatar_url = match request.avatar_url.as_deref() {
         Some(raw) => {
@@ -1248,10 +1333,12 @@ async fn update_agent(
     let model = if request.model.is_some() {
         request.model.as_deref()
     } else if request.runtime_id.is_some()
-        && existing
-            .model
-            .as_deref()
-            .is_some_and(|model| model_known_incompatible(&target_runtime.provider, model))
+        && target_runtime.as_ref().is_some_and(|target_runtime| {
+            existing
+                .model
+                .as_deref()
+                .is_some_and(|model| model_known_incompatible(&target_runtime.provider, model))
+        })
     {
         Some("")
     } else {
@@ -1264,11 +1351,14 @@ async fn update_agent(
         request.description.as_deref().map(str::trim),
         avatar_url.as_deref(),
         &runtime_config,
-        request
-            .runtime_id
+        request.runtime_id.as_ref().and_then(|_| {
+            target_runtime
+                .as_ref()
+                .map(|target_runtime| target_runtime.runtime_mode.as_str())
+        }),
+        target_runtime
             .as_ref()
-            .map(|_| target_runtime.runtime_mode.as_str()),
-        runtime_id,
+            .map(|target_runtime| target_runtime.id),
         resolved_visibility.or(request.visibility.as_deref()),
         resolved_permission.as_deref(),
         request.status.as_deref(),
@@ -2429,6 +2519,21 @@ mod tests {
         let mut incoming = json!({"gateway":{"token":"***"}});
         preserve_masked_gateway_token(&mut incoming, &json!({"gateway":{"token":"secret"}}));
         assert_eq!(incoming["gateway"]["token"], "secret");
+    }
+
+    #[test]
+    fn orphaned_gateway_token_mask_is_dropped() {
+        let mut incoming = json!({"gateway":{"token":"***","url":"wss://example"}});
+        preserve_masked_gateway_token(&mut incoming, &json!({"gateway":{}}));
+        assert!(incoming["gateway"].get("token").is_none());
+        assert_eq!(incoming["gateway"]["url"], "wss://example");
+    }
+
+    #[test]
+    fn invalid_legacy_visibility_is_rejected() {
+        let workspace_id = Uuid::new_v4();
+        assert!(resolve_permission(workspace_id, None, Some("workpace"), None).is_err());
+        assert!(resolve_permission(workspace_id, None, Some("private"), None).is_ok());
     }
 
     #[test]

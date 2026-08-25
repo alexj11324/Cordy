@@ -29,13 +29,23 @@ const MAX_UPLOAD: usize = 100 << 20;
 const MAX_PREVIEW: usize = 2 << 20;
 const CAP_TTL: i64 = 60;
 
-pub fn public_router() -> Router<HandlerState> {
-    Router::new()
-        .route("/uploads/{*key}", get(serve_local_upload))
-        .route(
-            "/api/attachments/{id}/signed-download",
-            get(signed_download),
-        )
+pub fn public_router(state: &HandlerState) -> Router<HandlerState> {
+    let router = Router::new().route(
+        "/api/attachments/{id}/signed-download",
+        get(signed_download),
+    );
+    if mounts_local_uploads(state) {
+        router.route("/uploads/{*key}", get(serve_local_upload))
+    } else {
+        router
+    }
+}
+
+pub(crate) fn mounts_local_uploads(state: &HandlerState) -> bool {
+    state
+        .attachment_storage
+        .as_ref()
+        .is_some_and(|storage| storage.is_local())
 }
 pub fn authenticated_router() -> Router<HandlerState> {
     Router::new()
@@ -1260,5 +1270,29 @@ mod tests {
             "stable_attachment_urls".parse().unwrap(),
         );
         assert_eq!(bulk_download_url(&state, &attachment, &headers), stable);
+    }
+
+    #[tokio::test]
+    async fn uploads_route_is_mounted_only_for_local_storage() {
+        let mut state = HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        assert!(!mounts_local_uploads(&state));
+
+        let dir = tempfile::tempdir().expect("temp upload dir");
+        state = state.with_attachment_storage(
+            std::sync::Arc::new(
+                crate::attachment_storage::LocalStorage::new(
+                    dir.path().to_path_buf(),
+                    String::new(),
+                )
+                .expect("local storage"),
+            ),
+            Vec::new(),
+            crate::state::AttachmentDownloadSettings::default(),
+        );
+        assert!(mounts_local_uploads(&state));
     }
 }
