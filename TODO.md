@@ -1530,6 +1530,18 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #319 is Ready (`isDraft=false`), MERGEABLE (checks pending). Exact-head
       subagent review PASS on `6e14593b`; no Cargo was run.
+- [ ] PR #320 `codex/cord-152-cli-api-request-builder` is the next bounded child
+      of #319: base branch `codex/cord-151-cli-daemon-disk-usage-command` at
+      `6e14593bd5d7cd51318bb6fa84f41f3f5576c91f`, exact head
+      `d4aa8ec04d04e94dcf23d9a1ec6489bb65a389cd`, tree
+      `62ab6aa402d9bbebe5306ee8caa2751e3633317b`, candidate
+      `64b6133fa25db36f96a4d2124c7e2bf239787299` (parents base + head).
+      It isolates API request headers/auth/timeout construction from response
+      transport; client capability, workspace, agent/task identity, bearer,
+      and per-request timeout behavior remain unchanged. Scoped pinned rustfmt
+      and `git diff --check` pass; Cargo and exact-head subagent review are
+      delegated and pending. PR #320 is Ready (`isDraft=false`), MERGEABLE
+      (checks pending).
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
