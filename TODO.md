@@ -1563,6 +1563,14 @@
       login/auth share `AuthUser` through the parent module. `git diff --check`
       passes; rustfmt was unavailable in the subagent check and Cargo was not
       run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI command-output error refactor is committed at
+      `57c6d7199369a4a033076b993714be12ad32789d` (tree
+      `747bf1f8013c399f8c055c5dcb879a8acd173591`): the structured output error
+      wrapper and public extractor now live in `error.rs`, preserving anyhow
+      source-chain/downcast behavior for `main.rs`, skill commands, and tests.
+      The serial subagent found no blocker; `git diff --check` passes, rustfmt
+      was unavailable in the subagent check, and Cargo was not run. Pro owns
+      push/Ready PR, gate, and merge.
 
 ## Phase 4 — S8 route and API parity
 
