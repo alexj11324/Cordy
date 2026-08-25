@@ -151,6 +151,11 @@
       Ready (`isDraft=false`); candidate must be re-read after GitHub refresh. Cargo
       and review remain delegated; current candidate is `ec928eda3fbae82b9b935c8c02f2e69211e3d340`; any
       review/gate for `3bfefc9b` is invalid.
+- [x] #177 final exact-head subagent review PASS on `2aaebaa6c8b0218814d6e5f0e50ec0301cb32b6f`:
+      the follow-up only orders `axum` imports; `StatusCode`, `get`, `Router`,
+      `Arc`, `Mutex`, and `TcpListener` plus all prior dependency fixes remain
+      present. No compile/behavior blocker was introduced. Subagent did not run
+      Cargo or modify the worktree; coordinator rustfmt and `git diff --check` pass.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
