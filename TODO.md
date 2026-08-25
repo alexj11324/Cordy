@@ -790,6 +790,12 @@
       directory and optional task scope. Scoped rustfmt and
       `git diff --check` pass; PR #244 is Ready (`isDraft=false`),
       CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
+- [x] #244 exact-head subagent review PASS on
+      `1eb103724231f6ab322941bbf8ae2fdf836d5f9a`: `dispatch_attachment.rs`
+      covers Download/Upload; Download forwards `attachment_id` and
+      `output_dir`, while Upload forwards `path` and `task.as_deref()`.
+      `Command::Attachment` routing and lib registration are correct. `git
+      diff --check` passes; subagent did not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
