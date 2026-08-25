@@ -6,6 +6,7 @@
 mod agent_commands;
 mod agent_helpers;
 mod api;
+mod api_error;
 mod cli_command_schema;
 #[cfg(test)]
 mod root_command_tests;
@@ -105,13 +106,18 @@ mod autopilot_output;
 mod autopilot_resolver;
 mod chat_commands;
 mod client_factory;
+mod client_scope;
 mod command_dispatch;
 pub mod config;
 mod config_command_schema;
 mod config_commands;
 pub mod daemon;
 mod daemon_command_schema;
-mod daemon_commands;
+mod daemon_diagnostics_commands;
+mod daemon_execenv_commands;
+mod daemon_lifecycle_commands;
+mod daemon_log_commands;
+mod daemon_status_commands;
 mod disk_usage_commands;
 mod disk_usage_output;
 pub mod error;
@@ -256,14 +262,18 @@ pub(super) use daemon_command_schema::{
     DaemonArgs, DaemonCommand, DaemonDiskUsageArgs, DaemonLaunchArgs, DaemonLogsArgs,
     DaemonRestartArgs, DaemonStartArgs, DaemonStatusArgs,
 };
-pub use daemon_commands::run_private_helper;
-use daemon_commands::{
-    ensure_restart_is_background, format_daemon_status_table, known_daemon_profiles,
-    parse_cli_duration, parse_log_lines, read_daemon_log_tail, render_daemon_status,
-    require_known_daemon_profile, resolve_daemon_log_path, resolve_daemon_status_port,
-    run_daemon_after_setup, run_daemon_disk_usage, run_daemon_logs, run_daemon_probe_runtimes,
-    run_daemon_restart, run_daemon_start, run_daemon_status, run_daemon_stop,
-    validate_daemon_health_port,
+pub use daemon_execenv_commands::run_private_helper;
+use daemon_lifecycle_commands::{
+    ensure_restart_is_background, parse_cli_duration, run_daemon_after_setup,
+    run_daemon_restart, run_daemon_start, run_daemon_stop, validate_daemon_health_port,
+};
+use daemon_diagnostics_commands::{run_daemon_disk_usage, run_daemon_probe_runtimes};
+use daemon_log_commands::{
+    parse_log_lines, read_daemon_log_tail, resolve_daemon_log_path, run_daemon_logs,
+};
+use daemon_status_commands::{
+    format_daemon_status_table, known_daemon_profiles, render_daemon_status,
+    require_known_daemon_profile, resolve_daemon_status_port, run_daemon_status,
 };
 use disk_usage_commands::{
     disk_usage_needs_parent_status, disk_usage_task_context, enumerate_disk_usage_roots,
@@ -365,7 +375,8 @@ use label_commands::{
 use label_reference::{resolve_label_id, resolve_label_reference};
 use login::{
     build_login_url, build_workspace_creation_url, constant_time_equal, run_browser_login,
-    run_login, validate_login_token, wait_for_login_callback, wait_for_workspace_creation,
+    run_login, run_login_with_urls, validate_login_token, wait_for_login_callback,
+    wait_for_workspace_creation,
     wait_for_workspace_creation_with_opener, AuthUser, LoginWorkspace,
     WORKSPACE_DISCOVERY_INTERVAL, WORKSPACE_DISCOVERY_TIMEOUT,
 };
