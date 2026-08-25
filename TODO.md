@@ -1279,7 +1279,7 @@
       Scoped pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR
       #271 is Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent
       review PASS; no Cargo was run and no production behavior changed.
-- [ ] PR #296 `codex/cord-128-cli-config-mutation` is the next bounded child of
+- [x] PR #296 `codex/cord-128-cli-config-mutation` is the completed bounded child of
       #295: base branch `codex/cord-127-cli-config-read` at
       `766df45ccd2fa01aae7ac031d1c31651702c7641`, exact head
       `d01b432af7549bd0352e4ee267df9dd173f15fea`, tree
@@ -1289,8 +1289,9 @@
       `config_mutation_commands.rs`; supported keys, path/URL validation,
       writes, output, and config read wiring remain unchanged. Scoped pinned
       rustfmt and `git diff --check` pass; Cargo is delegated. PR #296 is
-      Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review is
-      pending; no Cargo was run.
+      Ready (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review
+      PASS: pure rename; set/validation, Go parsers, config read visibility,
+      dispatch, and tests are unchanged; no Cargo was run.
 - [x] PR #295 `codex/cord-127-cli-config-read` is the completed bounded child of
       #294: base branch `codex/cord-126-cli-runtime-update-output` at
       `a460d024c6138951b2088c8b0189014680a67282`, exact head
