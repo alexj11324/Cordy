@@ -56,8 +56,8 @@ use serde_json::Value;
 
 use super::codex_home::{codex_session_store_key, prepare_codex_home_with_opts, CodexHomeOptions};
 use super::context::{
-    ensure_workspaces_root_marker, prepare_claude_skill_settings, roll_back_prepared_sidecars,
-    write_context_files, SidecarManifest,
+    ensure_workspaces_root_marker, prepare_claude_skill_settings, resolve_skill_slugs,
+    roll_back_prepared_sidecars, write_context_files, write_skill_files, SidecarManifest,
 };
 use super::cursor_mcp::prepare_cursor_mcp_config;
 use super::git::task_key;
@@ -1635,12 +1635,75 @@ fn prepare_hermes_home(
     bail!("execenv: hermes provider family not yet ported (lane E2)")
 }
 
-// S9-integration: qwenpaw_workspace.go lands in lane E2.
-fn prepare_qwenpaw_workspace(
-    _workspace: &str,
-    _skills: &[SkillContextForEnv],
-) -> anyhow::Result<()> {
-    bail!("execenv: qwenpaw provider family not yet ported (lane E2)")
+/// Prepares QwenPaw's per-task workspace and native skill manifest.
+///
+/// QwenPaw does not read Cordy's generic `.agent_context/skills` tree: its ACP
+/// process discovers `<workspace>/skills` and enables entries listed by the
+/// workspace `skill.json` manifest. Rebuilding both paths on every prepare (and
+/// reuse) is therefore part of the provider contract, not an optional cache
+/// refresh. Removing the old tree first also revokes a skill when an agent's
+/// bindings change or become empty.
+fn prepare_qwenpaw_workspace(workspace: &str, skills: &[SkillContextForEnv]) -> anyhow::Result<()> {
+    if workspace.is_empty() {
+        bail!("execenv: qwenpaw workspace is required");
+    }
+
+    std::fs::create_dir_all(workspace)
+        .with_context(|| format!("create qwenpaw workspace directory {workspace}"))?;
+    restrict_permissions(workspace)
+        .with_context(|| format!("restrict qwenpaw workspace directory {workspace}"))?;
+
+    let skills_dir = join_path(&[workspace, "skills"]);
+    let manifest_path = join_path(&[workspace, "skill.json"]);
+    remove_tree(&skills_dir)
+        .with_context(|| format!("remove qwenpaw skills directory {skills_dir}"))?;
+    remove_tree(&manifest_path)
+        .with_context(|| format!("remove qwenpaw manifest {manifest_path}"))?;
+
+    if skills.is_empty() {
+        return Ok(());
+    }
+
+    // write_skill_files owns frontmatter normalization, collision-free slugs,
+    // and supporting-file materialization shared by the other providers. The
+    // QwenPaw tree was removed above, so its natural slug candidates are the
+    // same ones represented in the manifest below.
+    write_skill_files(&skills_dir, skills, None).context("write qwenpaw workspace skills")?;
+
+    let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let mut entries = serde_json::Map::new();
+    for slug in resolve_skill_slugs(skills) {
+        entries.insert(
+            slug.clone(),
+            serde_json::json!({
+                "enabled": true,
+                "channels": ["all"],
+                "source": "customized",
+                "metadata": {
+                    "name": slug,
+                    "description": "",
+                    "source": "customized",
+                    "protected": false,
+                    "updated_at": now.clone(),
+                },
+                "updated_at": now.clone(),
+            }),
+        );
+    }
+    let manifest = serde_json::json!({
+        "schema_version": "workspace-skill-manifest.v1",
+        "version": 0,
+        "skills": entries,
+    });
+    let data = serde_json::to_vec_pretty(&manifest).context("encode qwenpaw skill manifest")?;
+    std::fs::write(&manifest_path, data)
+        .with_context(|| format!("write qwenpaw skill manifest {manifest_path}"))?;
+    tracing::info!(
+        workspace,
+        skills = skills.len(),
+        "qwenpaw workspace prepared"
+    );
+    Ok(())
 }
 
 // S9-integration: reasonix_user_config.go lands in lane E2.
@@ -1861,6 +1924,104 @@ mod tests {
         let v: Value = serde_json::to_value(&no_ref).unwrap();
         assert_eq!(v["resource_ref"], serde_json::json!({}));
         assert_eq!(v["label"], "mine");
+    }
+
+    #[test]
+    fn qwenpaw_workspace_writes_native_skills_and_manifest() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("qwenpaw");
+        let skills = vec![
+            SkillContextForEnv {
+                name: "Review Helper".into(),
+                description: "Reviews changes".into(),
+                content: "# Review Helper\n\nReview body".into(),
+                files: vec![SkillFileContextForEnv {
+                    path: "scripts/check.py".into(),
+                    content: "print('ok')".into(),
+                }],
+            },
+            SkillContextForEnv {
+                name: "Bug Finder".into(),
+                content: "# Bug Finder\n\nFind bugs".into(),
+                ..Default::default()
+            },
+        ];
+
+        prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &skills).unwrap();
+
+        assert!(workspace.join("skills/review-helper/SKILL.md").is_file());
+        assert_eq!(
+            std::fs::read_to_string(workspace.join("skills/review-helper/scripts/check.py"))
+                .unwrap(),
+            "print('ok')"
+        );
+        let manifest: Value =
+            serde_json::from_slice(&std::fs::read(workspace.join("skill.json")).unwrap()).unwrap();
+        assert_eq!(manifest["schema_version"], "workspace-skill-manifest.v1");
+        assert_eq!(manifest["version"], 0);
+        assert_eq!(manifest["skills"]["review-helper"]["enabled"], true);
+        assert_eq!(manifest["skills"]["review-helper"]["channels"][0], "all");
+        assert_eq!(
+            manifest["skills"]["review-helper"]["metadata"]["name"],
+            "review-helper"
+        );
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&workspace).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+        }
+    }
+
+    #[test]
+    fn qwenpaw_workspace_rebuild_revokes_removed_skills() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("qwenpaw");
+        let skill = SkillContextForEnv {
+            name: "Deploy Helper".into(),
+            content: "# Deploy Helper".into(),
+            ..Default::default()
+        };
+
+        prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &[skill]).unwrap();
+        assert!(workspace.join("skills/deploy-helper").exists());
+        assert!(workspace.join("skill.json").exists());
+
+        prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &[]).unwrap();
+        assert!(!workspace.join("skills").exists());
+        assert!(!workspace.join("skill.json").exists());
+    }
+
+    #[test]
+    fn qwenpaw_workspace_deduplicates_skill_slugs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let workspace = tmp.path().join("qwenpaw");
+        let skills = vec![
+            SkillContextForEnv {
+                name: "A B".into(),
+                content: "# First".into(),
+                ..Default::default()
+            },
+            SkillContextForEnv {
+                name: "A-B".into(),
+                content: "# Second".into(),
+                ..Default::default()
+            },
+        ];
+
+        prepare_qwenpaw_workspace(workspace.to_str().unwrap(), &skills).unwrap();
+        assert!(workspace.join("skills/a-b/SKILL.md").is_file());
+        assert!(workspace.join("skills/a-b-cordy/SKILL.md").is_file());
+        let manifest: Value =
+            serde_json::from_slice(&std::fs::read(workspace.join("skill.json")).unwrap()).unwrap();
+        assert_eq!(manifest["skills"].as_object().unwrap().len(), 2);
+        assert_eq!(
+            manifest["skills"]["a-b-cordy"]["metadata"]["name"],
+            "a-b-cordy"
+        );
     }
 
     // Port of TestOpenclawGatewayPinZeroAndMasking.
