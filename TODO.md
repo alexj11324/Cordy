@@ -873,6 +873,12 @@
       handling. Scoped rustfmt and `git diff --check` pass; PR #249 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
       delegated.
+- [x] #249 exact-head subagent review PASS on
+      `b23be30fc54b8df9e16e6d9e02d1db8f1ec4dcbe`: `dispatch_update.rs`
+      receives `UpdateArgs` and forwards them unchanged to `run_update`;
+      `Command::Update` routing and lib registration are correct, and the
+      schema's `download_timeout` behavior is untouched. `git diff --check`
+      passes; subagent did not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
