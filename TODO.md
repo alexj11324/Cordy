@@ -857,6 +857,12 @@
       forwarding. Scoped rustfmt and `git diff --check` pass; PR #248 is
       Ready (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review
       remain delegated.
+- [x] #248 exact-head subagent review PASS on
+      `1c883c8d74e143680ac08dd61d4aec05c423f215`: `dispatch_setup.rs`
+      forwards `SetupArgs` and the shared stdin `Read` input unchanged to
+      `run_setup`; `Command::Setup` routing, lib registration, visibility,
+      and error behavior remain intact. `git diff --check` passes; subagent
+      did not run Cargo or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
