@@ -633,6 +633,16 @@
       forwarding; root routing and lib wiring are valid with no stale issue
       branches. `git diff --check` passes; subagent did not run Cargo or modify
       files.
+- [x] PR #235 `codex/cord-67-cli-auth-dispatch` is the next bounded child of
+      #234: base branch `codex/cord-66-cli-issue-dispatch` at
+      `0f1658d6b05c724ffc0ddba75aa4fd9a23f02d92`, exact head
+      `3447306d79aa7a5e228ccb43460e3f9d881f2577`, tree
+      `67db6b743ceddad13354450349de1031cad2416b`, candidate
+      `baea0681298ea87966a110478f13283628f9534c`. It isolates Auth status/
+      logout and Login routing into `dispatch_auth.rs`, preserving auth output
+      and browser/token login behavior. Scoped rustfmt and `git diff --check`
+      pass; PR #235 is Ready (`isDraft=false`), MERGEABLE. Cargo and
+      exact-head review remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
