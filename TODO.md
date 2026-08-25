@@ -863,6 +863,16 @@
       `run_setup`; `Command::Setup` routing, lib registration, visibility,
       and error behavior remain intact. `git diff --check` passes; subagent
       did not run Cargo or modify files.
+- [x] PR #249 `codex/cord-81-cli-update-dispatch` is the next bounded child of
+      #248: base branch `codex/cord-80-cli-setup-dispatch` at
+      `1c883c8d74e143680ac08dd61d4aec05c423f215`, exact head
+      `b23be30fc54b8df9e16e6d9e02d1db8f1ec4dcbe`, tree
+      `e44f21e95ac9fbad966bc0dc3cfea24d654de67e`, candidate
+      `9782fdbfe2d08c7fd199e32b44931ce16c4e74a4`. It isolates Update routing
+      into `dispatch_update.rs`, preserving target selection and updater error
+      handling. Scoped rustfmt and `git diff --check` pass; PR #249 is Ready
+      (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
+      delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
