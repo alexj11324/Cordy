@@ -358,7 +358,13 @@ pub(crate) fn write_reasonix_project_config(
     };
     let path = Path::new(work_dir).join(PROJECT_CONFIG_FILE);
     let path_string = path.to_string_lossy().into_owned();
-    match record_write_file(&path_string, &content, manifest) {
+    // Preserve the no-overwrite contract even for callers that do not need
+    // sidecar cleanup bookkeeping. `record_write_file` only performs its
+    // pre-existing-path check when given a manifest, so use an ephemeral one
+    // rather than falling back to an unconditional write.
+    let mut ephemeral_manifest = SidecarManifest::default();
+    let tracking_manifest = manifest.or(Some(&mut ephemeral_manifest));
+    match record_write_file(&path_string, &content, tracking_manifest) {
         Ok(()) => Ok(()),
         Err(error) if is_pre_exists(&error) => {
             tracing::warn!(path = %path_string, "execenv: project reasonix.toml already exists; leaving it untouched");
