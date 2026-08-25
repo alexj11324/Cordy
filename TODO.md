@@ -286,14 +286,21 @@
 - [x] PR #186 `codex/cord-50-cli-issue-search-tests` is the next bounded child of
       #185: base branch `codex/cord-50-cli-property-tests` at
       `3e961b11741b006e20186e1ec48dee56b38e516d`, exact head
-      `c10a0cc0661c744b59fc007e403797d031ae5124`, tree
-      `7545b6af626d0146b0dde95fe32a09b2935291cf`, candidate
-      `061748285b2609b672926cd0869ad8211d0e5047`. It extracts the two issue-search
+      `7efffb03c1887042b4ae753f1331c7361f38a0f8`, tree
+      `ea5397994ce3e9ff6e0db84b2cf7d47d2eef2ff3`, candidate
+      `d7244db6da15881e28b79d4b010ed9e8e53450e9`. It extracts the two issue-search
       parser/table and HTTP contract tests into `issue_search_command_tests.rs`;
       query encoding, flags, JSON envelope, and table rendering are unchanged.
-      Scoped rustfmt and `git diff --check` pass; PR #186 is Ready
+      The exact-head static review found and fixed a missing `TcpListener` import
+      in `7efffb03`; scoped diff-check passes and PR #186 is Ready
       (`isDraft=false`), CLEAN/MERGEABLE. Cargo and exact-head review remain
-      delegated.
+      delegated; the pre-fix head and candidate are invalid.
+- [x] #186 final exact-head subagent review PASS on
+      `7efffb03c1887042b4ae753f1331c7361f38a0f8`: `TcpListener` import is
+      present, both issue-search tests are intact, and parent helper/formatter
+      visibility plus module boundaries are valid. No additional compile or
+      behavior blocker was found. Subagent did not run Cargo or modify the
+      worktree; coordinator `git diff --check` remains clean.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
