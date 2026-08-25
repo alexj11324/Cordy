@@ -517,6 +517,13 @@
       makes `run_login_with_urls` crate-visible and adds the root re-export
       required by `setup_commands.rs`; no other behavior changed. The old
       `d012a2d2` review is stale; the new exact-head review is delegated.
+- [x] #228 exact-head subagent review PASS on
+      `786e09b80115851ad04ddefd1309f4b560358cd4`: `run_login_with_urls` is
+      `pub(super)` and re-exported from `lib.rs`, so the existing setup import
+      resolves. `login_browser` retains constant-time state comparison,
+      bounded callback reads, callback timeout, workspace polling, and all
+      helper re-exports. `git diff --check` passes; subagent did not run Cargo
+      or modify files.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
