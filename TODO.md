@@ -165,6 +165,11 @@
       polling tests into `login_command_tests.rs`; production behavior is unchanged.
       New module rustfmt and `git diff --check` pass; PR is Ready (`isDraft=false`,
       CLEAN/MERGEABLE). Cargo and review remain delegated.
+- [x] #178 exact-head subagent review PASS: `login_command_tests.rs` accesses the
+      parent crate's private/re-exported API; all 6 login/browser/profile/workspace-
+      creation tests and assertions are preserved, external imports cover actual
+      references, and no P0/P1 or compile blocker exists. Subagent did not run Cargo
+      or modify the worktree; coordinator rustfmt and `git diff --check` pass.
 - [x] #172 exact-head subagent review PASS: UpdateArgs retains `parse_cli_duration`,
       timeout help and `Duration` semantics; VersionOutput defaults/ValueEnum/visibility,
       handlers, dispatch, and tests have no compile/behavior blocker. Cargo remains
