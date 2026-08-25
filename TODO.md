@@ -543,6 +543,17 @@
       call sites. The 4KiB response-body cap, network classification, and
       Go-duration timeout parsing are unchanged. `git diff --check` passes;
       subagent did not run Cargo or modify files.
+- [x] PR #230 `codex/cord-62-cli-workspace-scope` is the next bounded child of
+      #229: base branch `codex/cord-61-cli-api-errors` at
+      `18c844639ac101ce1d7a485e57468940f204fffc`, exact head
+      `743142853714962d0a1a432bdea56b449f4d3c10`, tree
+      `f9db27590c1df4055002783d81ea3d3f07fed968`, candidate
+      `9cc139a36149619b6a3c464f45ca67d6cfed7fb8`. It isolates workspace
+      flag/environment/profile precedence and fail-closed daemon task-context
+      scope resolution in `client_scope.rs`, while preserving client factory
+      and crate-local exports. Scoped rustfmt with `skip_children` and
+      `git diff --check` pass; PR #230 is Ready (`isDraft=false`), MERGEABLE.
+      Cargo and exact-head review remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
