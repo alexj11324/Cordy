@@ -1537,6 +1537,15 @@
       unchanged. The serial subagent found no blocker; `git diff --check`
       passes, rustfmt was unavailable in the subagent check, and Cargo was
       not run. Pro owns push/Ready PR, gate, and merge.
+- [ ] CLI daemon-argument refactor is structurally committed at
+      `7f6c3a2e015db84aaead1eeed0917e6b454eac3e`; the serial subagent fixed
+      helper visibility in `36b1c12494c98fbfc05a460bdc1918dd3a94cf3f` (tree
+      `ac37b7dc83e5871e341aa11ab1fd280ab36df95b`): restart foreground guard,
+      profile-derived health-port validation, and Go-duration parsing now live
+      in `daemon_commands.rs`, while clap parsers and error behavior remain
+      unchanged. `git diff --check` passes; rustfmt was unavailable in the
+      subagent check and Cargo was not run. Pro owns push/Ready PR, gate, and
+      merge.
 
 ## Phase 4 — S8 route and API parity
 
