@@ -107,7 +107,8 @@ use attachment_input::{
 };
 use auth_commands::{display_token_prefix, run_auth_logout, run_auth_status};
 pub(super) use autopilot_commands::{
-    run_autopilot_create, run_autopilot_get, run_autopilot_list, run_autopilot_update,
+    run_autopilot_create, run_autopilot_delete, run_autopilot_get, run_autopilot_list,
+    run_autopilot_runs, run_autopilot_trigger, run_autopilot_update,
 };
 use autopilot_output::{
     autopilot_webhook_url, format_autopilot_runs_table, format_autopilot_table,
@@ -4027,98 +4028,6 @@ fn render_daemon_startup(
             bail!("daemon {verb} timed out before readiness (pid {pid}, status {status})")
         }
     }
-}
-
-async fn run_autopilot_delete(cli: &Cli, environment: &Environment, id: &str) -> Result<RunOutput> {
-    let client = new_api_client(cli, environment)?;
-    let workspace_id = resolve_current_workspace_id(cli, environment);
-    let (autopilot_id, display) = resolve_autopilot_id(&client, &workspace_id, id)
-        .await
-        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
-    client
-        .delete(&format!("/api/autopilots/{autopilot_id}"))
-        .await
-        .context("delete autopilot")?;
-    Ok(RunOutput {
-        stdout: format!("Autopilot {display} deleted.\n"),
-        stderr: String::new(),
-    })
-}
-
-async fn run_autopilot_trigger(
-    cli: &Cli,
-    environment: &Environment,
-    id: &str,
-    output: OutputFormat,
-) -> Result<RunOutput> {
-    let timeout = http_timeout(environment.raw("CORDY_HTTP_TIMEOUT"))
-        .saturating_add(Duration::from_secs(5))
-        .max(Duration::from_secs(30));
-    let client = new_api_client(cli, environment)?.with_request_timeout(timeout);
-    let workspace_id = resolve_current_workspace_id(cli, environment);
-    let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, id)
-        .await
-        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
-    let run: Value = client
-        .post_json(
-            &format!("/api/autopilots/{autopilot_id}/trigger"),
-            &Value::Null,
-        )
-        .await
-        .context("trigger autopilot")?;
-    Ok(RunOutput {
-        stdout: match output {
-            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&run)?),
-            OutputFormat::Table => format!(
-                "Autopilot triggered: run {} (status: {})\n",
-                value_string(&run, "id"),
-                value_string(&run, "status")
-            ),
-        },
-        stderr: String::new(),
-    })
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-struct AutopilotRunsEnvelope {
-    runs: Vec<Value>,
-    total: i64,
-}
-
-async fn run_autopilot_runs(
-    cli: &Cli,
-    environment: &Environment,
-    id: &str,
-    limit: i32,
-    offset: i32,
-    output: OutputFormat,
-) -> Result<RunOutput> {
-    let client = new_api_client(cli, environment)?;
-    let workspace_id = resolve_current_workspace_id(cli, environment);
-    let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, id)
-        .await
-        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
-    let mut query = form_urlencoded::Serializer::new(String::new());
-    if limit > 0 {
-        query.append_pair("limit", &limit.to_string());
-    }
-    if offset > 0 {
-        query.append_pair("offset", &offset.to_string());
-    }
-    let query = query.finish();
-    let path = if query.is_empty() {
-        format!("/api/autopilots/{autopilot_id}/runs")
-    } else {
-        format!("/api/autopilots/{autopilot_id}/runs?{query}")
-    };
-    let response: AutopilotRunsEnvelope = client.get_json(&path).await.context("list runs")?;
-    Ok(RunOutput {
-        stdout: match output {
-            OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&response)?),
-            OutputFormat::Table => format_autopilot_runs_table(&response.runs),
-        },
-        stderr: String::new(),
-    })
 }
 
 async fn run_autopilot_trigger_add(
