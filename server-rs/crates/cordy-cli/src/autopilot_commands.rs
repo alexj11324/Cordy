@@ -243,7 +243,7 @@ pub(super) async fn run_autopilot_update(
         stderr: String::new(),
     })
 }
-async fn run_autopilot_delete(cli: &Cli, environment: &Environment, id: &str) -> Result<RunOutput> {
+pub(super) async fn run_autopilot_delete(cli: &Cli, environment: &Environment, id: &str) -> Result<RunOutput> {
     let client = new_api_client(cli, environment)?;
     let workspace_id = resolve_current_workspace_id(cli, environment);
     let (autopilot_id, display) = resolve_autopilot_id(&client, &workspace_id, id)
@@ -259,7 +259,7 @@ async fn run_autopilot_delete(cli: &Cli, environment: &Environment, id: &str) ->
     })
 }
 
-async fn run_autopilot_trigger(
+pub(super) async fn run_autopilot_trigger(
     cli: &Cli,
     environment: &Environment,
     id: &str,
@@ -299,7 +299,7 @@ struct AutopilotRunsEnvelope {
     total: i64,
 }
 
-async fn run_autopilot_runs(
+pub(super) async fn run_autopilot_runs(
     cli: &Cli,
     environment: &Environment,
     id: &str,
