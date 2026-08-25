@@ -649,6 +649,16 @@
       `LoginArgs` unchanged to `run_login`. Dispatcher delegation and lib
       wiring are correct with no stale auth/login branches. `git diff --check`
       passes; subagent did not run Cargo or modify files.
+- [x] PR #236 `codex/cord-68-cli-config-dispatch` is the next bounded child of
+      #235: base branch `codex/cord-67-cli-auth-dispatch` at
+      `3447306d79aa7a5e228ccb43460e3f9d881f2577`, exact head
+      `dd6efc516082c72c4a062cac52abcc5f67edc388`, tree
+      `b8070a64a9886db9283a9aebf9f59ee497924183`, candidate
+      `84a1f12a74dd7bf1eecd174221a31a93df0add4e`. It isolates config
+      show/set/default routing into `dispatch_config.rs`, preserving default
+      table output and existing mutation handlers. Scoped rustfmt and
+      `git diff --check` pass; PR #236 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
