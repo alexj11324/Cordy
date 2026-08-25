@@ -1614,11 +1614,15 @@ mod tests {
             "assignee_id": "agent-1"
         })];
         let actors = IssueActorNames(HashMap::from([("agent:agent-1".into(), "CordyBot".into())]));
-        let table = format_issue_children_table(&children, &actors);
+        let table = format_issue_children_table(&children, false, &actors);
         assert!(table.starts_with("STAGE"));
         assert!(table.contains("CORD-19"));
         assert!(table.contains("First barrier"));
         assert!(table.contains("agent:CordyBot"));
+        assert!(!table.contains("child-1"));
+        let full = format_issue_children_table(&children, true, &actors);
+        assert!(full.contains("ID"));
+        assert!(full.contains("child-1"));
     }
 
     #[test]

@@ -914,6 +914,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
+ "tokio-util",
  "url",
 ]
 
@@ -1203,6 +1204,7 @@ dependencies = [
  "async-trait",
  "axum",
  "cordy-analytics",
+ "cordy-daemon",
  "cordy-realtime",
  "cordy-task-failure",
  "prometheus",
@@ -1230,6 +1232,7 @@ dependencies = [
  "sqlx",
  "tokio",
  "tokio-util",
+ "tower",
  "tracing",
  "uuid",
 ]
@@ -1347,8 +1350,8 @@ dependencies = [
  "cordy-config",
  "cordy-daemon",
  "cordy-db",
- "cordy-events",
  "cordy-dingtalk",
+ "cordy-events",
  "cordy-ghsnapshot",
  "cordy-handler",
  "cordy-lark",
@@ -1361,6 +1364,8 @@ dependencies = [
  "cordy-util",
  "cordy-wecom",
  "http-body-util",
+ "hyper 1.11.0",
+ "hyper-util",
  "redis",
  "serde_json",
  "sqlx",

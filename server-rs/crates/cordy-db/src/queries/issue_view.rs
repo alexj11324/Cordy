@@ -78,15 +78,21 @@ RETURNING id, workspace_id, owner_id, name, scope_type, scope_id, scope_variant,
     }))
 }
 
-pub async fn delete_issue_view(
-    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    id: Uuid,
-    workspace_id: Uuid,
-) -> anyhow::Result<Option<Option<Uuid>>> {
-    let row = sqlx::query(
-        r#"WITH deleted AS (
+const DELETE_ISSUE_VIEW_SQL: &str = r#"WITH deleted AS (
     DELETE FROM issue_view
     WHERE issue_view.id = $1 AND issue_view.workspace_id = $2
+      AND (
+        issue_view.owner_id = $3
+        OR (
+          issue_view.visibility = 'workspace'
+          AND EXISTS (
+            SELECT 1 FROM member
+            WHERE member.workspace_id = $2
+              AND member.user_id = $3
+              AND member.role IN ('owner', 'admin')
+          )
+        )
+      )
     RETURNING issue_view.id
 ),
 swept_pins AS (
@@ -95,12 +101,20 @@ swept_pins AS (
       AND pinned_item.workspace_id = $2
       AND pinned_item.item_id IN (SELECT deleted.id FROM deleted)
 )
-SELECT deleted.id FROM deleted"#,
-    )
-    .bind(id)
-    .bind(workspace_id)
-    .fetch_optional(executor)
-    .await?;
+SELECT deleted.id FROM deleted"#;
+
+pub async fn delete_issue_view(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+    workspace_id: Uuid,
+    actor_id: Uuid,
+) -> anyhow::Result<Option<Option<Uuid>>> {
+    let row = sqlx::query(DELETE_ISSUE_VIEW_SQL)
+        .bind(id)
+        .bind(workspace_id)
+        .bind(actor_id)
+        .fetch_optional(executor)
+        .await?;
     let Some(row) = row else { return Ok(None) };
     Ok(Some(row.try_get(0)?))
 }
@@ -293,4 +307,16 @@ RETURNING id, workspace_id, owner_id, name, scope_type, scope_id, scope_variant,
         created_at: row.try_get(12)?,
         updated_at: row.try_get(13)?,
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DELETE_ISSUE_VIEW_SQL;
+
+    #[test]
+    fn delete_issue_view_rechecks_owner_or_shared_admin_access() {
+        assert!(DELETE_ISSUE_VIEW_SQL.contains("issue_view.owner_id = $3"));
+        assert!(DELETE_ISSUE_VIEW_SQL.contains("issue_view.visibility = 'workspace'"));
+        assert!(DELETE_ISSUE_VIEW_SQL.contains("member.role IN ('owner', 'admin')"));
+    }
 }

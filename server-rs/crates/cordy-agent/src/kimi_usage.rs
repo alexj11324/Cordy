@@ -180,7 +180,7 @@ fn read_bounded_line<R: BufRead>(reader: &mut R, line: &mut Vec<u8>) -> io::Resu
         .unwrap_or(u64::MAX)
         .saturating_add(1);
     let bytes = {
-        let mut bounded = std::io::Read::take(reader, limit);
+        let mut bounded = std::io::Read::take(&mut *reader, limit);
         bounded.read_until(b'\n', line)?
     };
     if line.len() > MAX_LINE_BYTES && !line.ends_with(b"\n") {

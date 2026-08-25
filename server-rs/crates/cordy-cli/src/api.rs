@@ -536,22 +536,35 @@ fn classify_network_error(error: &reqwest::Error) -> ErrorKind {
     if error.is_timeout() {
         return ErrorKind::NetworkTimeout;
     }
-    let message = error.to_string().to_lowercase();
-    match () {
-        () if message.contains("dns")
-            || message.contains("no such host")
-            || message.contains("name resolution") =>
-        {
-            ErrorKind::NetworkDns
+    classify_network_message(&error_chain_text(error))
+}
+
+fn error_chain_text(error: &(dyn std::error::Error + 'static)) -> String {
+    let mut message = String::new();
+    let mut current = Some(error);
+    while let Some(err) = current {
+        if !message.is_empty() {
+            message.push(' ');
         }
-        () if message.contains("connection refused") => ErrorKind::NetworkRefused,
-        () if message.contains("tls")
-            || message.contains("certificate")
-            || message.contains("x509") =>
-        {
-            ErrorKind::NetworkTls
-        }
-        () => ErrorKind::NetworkOffline,
+        message.push_str(&err.to_string());
+        current = err.source();
+    }
+    message.to_ascii_lowercase()
+}
+
+fn classify_network_message(message: &str) -> ErrorKind {
+    if message.contains("dns")
+        || message.contains("no such host")
+        || message.contains("name resolution")
+    {
+        ErrorKind::NetworkDns
+    } else if message.contains("connection refused") {
+        ErrorKind::NetworkRefused
+    } else if message.contains("tls") || message.contains("certificate") || message.contains("x509")
+    {
+        ErrorKind::NetworkTls
+    } else {
+        ErrorKind::NetworkOffline
     }
 }
 
@@ -607,6 +620,39 @@ mod tests {
         assert_eq!(http_timeout(Some("45")), Duration::from_secs(45));
         assert_eq!(http_timeout(Some("0s")), DEFAULT_HTTP_TIMEOUT);
         assert_eq!(http_timeout(Some("nonsense")), DEFAULT_HTTP_TIMEOUT);
+    }
+
+    #[test]
+    fn network_classification_inspects_the_source_chain() {
+        #[derive(Debug)]
+        struct Outer(Inner);
+        impl std::fmt::Display for Outer {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("error sending request for url (https://example.test/)")
+            }
+        }
+        impl std::error::Error for Outer {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+        #[derive(Debug)]
+        struct Inner;
+        impl std::fmt::Display for Inner {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("dns error: no such host")
+            }
+        }
+        impl std::error::Error for Inner {}
+
+        assert_eq!(
+            classify_network_message(&error_chain_text(&Outer(Inner))),
+            ErrorKind::NetworkDns
+        );
+        assert_eq!(
+            classify_network_message("error sending request for url (https://example.test/)"),
+            ErrorKind::NetworkOffline
+        );
     }
 
     #[tokio::test]

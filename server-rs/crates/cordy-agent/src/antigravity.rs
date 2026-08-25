@@ -1,7 +1,8 @@
 //! Google's Antigravity CLI plain-text print-mode adapter.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io;
+use std::fs::File;
+use std::io::{self, BufRead, BufReader as StdBufReader};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, LazyLock};
@@ -19,6 +20,7 @@ use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, R
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session,
 };
+use crate::env::configure_child_env;
 use crate::model::{Catalog, CatalogCache, Model, ModelDiscoveryCacheKey};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
@@ -30,6 +32,7 @@ const NO_CAP_PRINT_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
 const TERMINATION_GRACE: Duration = Duration::from_secs(2);
 const KILL_GRACE: Duration = Duration::from_secs(10);
 const MAX_DISCOVERY_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_LOG_LINE_BYTES: usize = 64 * 1024;
 
 static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> = LazyLock::new(|| {
     BTreeMap::from([
@@ -190,8 +193,8 @@ impl Backend for AntigravityBackend {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        configure_child_env(&mut command, &self.config.env);
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd);
         }
@@ -277,8 +280,8 @@ impl Backend for AntigravityBackend {
                 read_error: format!("stdout task failed: {error}"),
                 ..PlainOutput::default()
             });
-            let log = std::fs::read_to_string(&_log_path).unwrap_or_default();
-            let session_id = last_capture(&CONVERSATION_ID, &log);
+            let markers = scan_provider_log(&_log_path);
+            let session_id = markers.conversation_id.clone();
             let mut status = "completed".to_string();
             let mut error = String::new();
             match end {
@@ -308,12 +311,10 @@ impl Backend for AntigravityBackend {
                                 .and_then(|e| e.as_ref().ok())
                                 .map_or_else(|| "unknown".to_string(), ToString::to_string)
                         );
-                    } else if PRINT_TIMEOUT.is_match(&log) {
+                    } else if markers.print_timeout {
                         status = "timeout".to_string();
                         error = format!("agy --print-timeout elapsed after {} waiting for the agent response; a long-running command likely outlived the print timeout", format_cli_duration(if timeout.is_zero() { NO_CAP_PRINT_TIMEOUT } else { timeout }));
-                    } else if let Some(provider_error) =
-                        last_optional_capture(&PROVIDER_ERROR, &log)
-                    {
+                    } else if let Some(provider_error) = markers.provider_error.as_deref() {
                         status = "failed".to_string();
                         error = format!("agy provider error: {provider_error}");
                     }
@@ -321,7 +322,7 @@ impl Backend for AntigravityBackend {
             }
             let mut output = stream.output;
             if status == "completed" && output.trim().is_empty() {
-                output = recover_transcript(&log, &session_id);
+                output = recover_transcript(&markers.app_data_dir, &session_id);
                 if !output.is_empty() {
                     let _ = recovery_message_tx.try_send(message(MessageType::Text, &output, ""));
                 }
@@ -423,8 +424,8 @@ async fn discover_once(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .envs(&config.env)
         .kill_on_drop(false);
+    configure_child_env(&mut command, &config.env);
     let mut tree = OwnedProcessTree::spawn(&mut command).await?;
     let stdout = tree
         .child_mut()
@@ -513,10 +514,6 @@ fn format_cli_duration(duration: Duration) -> String {
     }
 }
 
-fn last_capture(regex: &Regex, input: &str) -> String {
-    last_optional_capture(regex, input).unwrap_or_default()
-}
-
 fn last_optional_capture(regex: &Regex, input: &str) -> Option<String> {
     regex
         .captures_iter(input)
@@ -528,25 +525,75 @@ fn last_optional_capture(regex: &Regex, input: &str) -> Option<String> {
         .last()
 }
 
-#[derive(Deserialize)]
-struct TranscriptRecord {
-    #[serde(rename = "type")]
-    record_type: String,
-    #[serde(default)]
-    source: String,
-    #[serde(default)]
-    status: String,
-    #[serde(default)]
-    content: serde_json::Value,
+#[derive(Default)]
+struct LogMarkers {
+    conversation_id: String,
+    app_data_dir: String,
+    print_timeout: bool,
+    provider_error: Option<String>,
 }
 
-fn recover_transcript(log: &str, conversation_id: &str) -> String {
-    if conversation_id.is_empty() {
+fn scan_provider_log(path: &Path) -> LogMarkers {
+    let Ok(file) = File::open(path) else {
+        return LogMarkers::default();
+    };
+    let mut reader = StdBufReader::new(file);
+    let mut markers = LogMarkers::default();
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        let Ok(bytes) = read_bounded_line(&mut reader, &mut line) else {
+            break;
+        };
+        if bytes == 0 {
+            break;
+        }
+        let text = String::from_utf8_lossy(&line);
+        if let Some(conversation_id) = last_optional_capture(&CONVERSATION_ID, &text) {
+            markers.conversation_id = conversation_id;
+        }
+        if let Some(app_data) = last_optional_capture(&APP_DATA_DIR, &text) {
+            markers.app_data_dir = app_data;
+        }
+        if PRINT_TIMEOUT.is_match(&text) {
+            markers.print_timeout = true;
+        }
+        if let Some(provider_error) = last_optional_capture(&PROVIDER_ERROR, &text) {
+            markers.provider_error = Some(provider_error);
+        }
+    }
+    markers
+}
+
+fn read_bounded_line<R: BufRead>(reader: &mut R, line: &mut Vec<u8>) -> io::Result<usize> {
+    let limit = u64::try_from(MAX_LOG_LINE_BYTES)
+        .unwrap_or(u64::MAX)
+        .saturating_add(1);
+    let bytes = {
+        let mut bounded = std::io::Read::take(&mut *reader, limit);
+        bounded.read_until(b'\n', line)?
+    };
+    if line.len() > MAX_LOG_LINE_BYTES && !line.ends_with(b"\n") {
+        loop {
+            let buffer = reader.fill_buf()?;
+            if buffer.is_empty() {
+                break;
+            }
+            if let Some(newline) = buffer.iter().position(|byte| *byte == b'\n') {
+                reader.consume(newline + 1);
+                break;
+            }
+            let consumed = buffer.len();
+            reader.consume(consumed);
+        }
+    }
+    Ok(bytes)
+}
+
+fn recover_transcript(app_data: &str, conversation_id: &str) -> String {
+    if conversation_id.is_empty() || app_data.is_empty() {
         return String::new();
     }
-    let Some(app_data) = last_optional_capture(&APP_DATA_DIR, log) else {
-        return String::new();
-    };
     let path = PathBuf::from(app_data)
         .join("brain")
         .join(conversation_id)
@@ -579,6 +626,18 @@ fn recover_transcript(log: &str, conversation_id: &str) -> String {
         }
     }
     parts.join("\n\n")
+}
+
+#[derive(Deserialize)]
+struct TranscriptRecord {
+    #[serde(rename = "type")]
+    record_type: String,
+    #[serde(default)]
+    source: String,
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    content: serde_json::Value,
 }
 
 fn log_blocked_args(options: &ExecOptions) {
@@ -665,12 +724,26 @@ mod tests {
                 .unwrap_or_else(|| panic!("transcript parent")),
         )
         .unwrap_or_else(|error| panic!("create transcript: {error}"));
-        std::fs::write(&transcript, concat!("{\"type\":\"USER_INPUT\",\"content\":\"old\"}\n", "{\"type\":\"PLANNER_RESPONSE\",\"source\":\"MODEL\",\"status\":\"DONE\",\"content\":\"old answer\"}\n", "{\"type\":\"USER_INPUT\",\"content\":\"new\"}\n", "{\"type\":\"PLANNER_RESPONSE\",\"source\":\"MODEL\",\"status\":\"DONE\",\"content\":\"new narration\"}\n", "{\"type\":\"PLANNER_RESPONSE\",\"source\":\"MODEL\",\"status\":\"DONE\",\"content\":\"new answer\"}\n")).unwrap_or_else(|error| panic!("write transcript: {error}"));
-        let log = format!(
-            "CLI app data directory: {}\nconversation={cid}",
-            directory.path().display()
+        std::fs::write(&transcript, concat!("{\"type\":\"USER_INPUT\",\"content\":\"old\"}\n", "{\"type\":\"PLANNER_RESPONSE\",\"source\":\"MODEL\",\"status\":\"DONE\",\"content\":\"old answer\"}\n", "{\"type\":\"USER_INPUT\",\"content\":\"new\"}\n", "{\"type\":\"PLANNER_RESPONSE\",\"source\":\"MODEL\",\"status\":\"DONE\",\"content\":\"new narration\"}\n", "{\"type\":\"PLANNER_RESPONSE\",\"source\":\"MODEL\",\"status\":\"DONE\",\"content\":\"new answer\"}\n"))        .unwrap_or_else(|error| panic!("write transcript: {error}"));
+        assert_eq!(
+            recover_transcript(&directory.path().to_string_lossy(), cid),
+            "new narration\n\nnew answer"
         );
-        assert_eq!(recover_transcript(&log, cid), "new narration\n\nnew answer");
+    }
+
+    #[test]
+    fn provider_log_scan_keeps_markers_without_loading_the_whole_file() {
+        let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
+        let path = directory.path().join("agy.log");
+        let cid = "b8b263a4-4b2f-4339-acc9-78b248e2b606";
+        let mut body = format!("CLI app data directory: /tmp/agy\nconversation={cid}\n");
+        body.push_str(&"x".repeat(64 * 1024));
+        body.push_str("\nagent executor error: upstream 502\n");
+        std::fs::write(&path, body).unwrap_or_else(|error| panic!("write log: {error}"));
+        let markers = scan_provider_log(&path);
+        assert_eq!(markers.conversation_id, cid);
+        assert_eq!(markers.app_data_dir, "/tmp/agy");
+        assert_eq!(markers.provider_error.as_deref(), Some("upstream 502"));
     }
 
     #[cfg(unix)]

@@ -147,9 +147,9 @@ fn resolve_auth_status_credentials(
         .as_deref()
         .or_else(|| environment.trimmed("CORDY_SERVER_URL"));
     let server_url = if let Some(raw) = explicit_server_url.filter(|value| !value.is_empty()) {
-        normalize_api_base_url(raw).unwrap_or_else(|_| raw.into())
+        normalize_api_base_url(raw)?
     } else if may_read_config && !config.server_url.is_empty() {
-        normalize_api_base_url(&config.server_url).unwrap_or(config.server_url)
+        normalize_api_base_url(&config.server_url)?
     } else {
         String::new()
     };

@@ -11,18 +11,31 @@ pub trait FlagSource: Send + Sync {
     fn is_enabled(&self, key: &str, default: bool) -> bool;
 }
 
-/// Startup-loaded YAML defaults with live `FF_<KEY>` environment overrides.
-/// This is the boolean projection used by current Rust call sites; it mirrors
-/// the Go provider precedence and fail-closed behavior.
+/// Startup-loaded YAML rules with live `FF_<KEY>` environment overrides.
+/// The current Rust call sites have no user/workspace evaluation context, so
+/// percentage rollouts use the same stable anonymous bucket as the Go provider.
 #[derive(Debug, Default)]
 pub struct ConfiguredFlags {
-    defaults: std::collections::HashMap<String, bool>,
+    rules: std::collections::HashMap<String, ConfiguredRule>,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ConfiguredRule {
+    default: bool,
+    percent: Option<u32>,
 }
 
 #[derive(serde::Deserialize)]
 struct RuleConfig {
     #[serde(default)]
     default: bool,
+    #[serde(default)]
+    percent: Option<PercentRuleConfig>,
+}
+
+#[derive(serde::Deserialize)]
+struct PercentRuleConfig {
+    percent: u32,
 }
 
 impl ConfiguredFlags {
@@ -36,18 +49,33 @@ impl ConfiguredFlags {
         }
         let bytes = std::fs::read(&path)
             .map_err(|error| anyhow::anyhow!("featureflag: read {path}: {error}"))?;
-        if String::from_utf8_lossy(&bytes).trim().is_empty() {
+        Self::from_yaml_bytes(&bytes)
+    }
+
+    fn from_yaml_bytes(bytes: &[u8]) -> Result<Self, anyhow::Error> {
+        if String::from_utf8_lossy(bytes).trim().is_empty() {
             return Ok(Self::default());
         }
-        let rules: std::collections::HashMap<String, RuleConfig> =
-            serde_yaml::from_slice(&bytes)
-                .map_err(|error| anyhow::anyhow!("featureflag: parse: {error}"))?;
-        Ok(Self {
-            defaults: rules
-                .into_iter()
-                .map(|(key, rule)| (key, rule.default))
-                .collect(),
-        })
+        let rules: std::collections::HashMap<String, RuleConfig> = serde_yaml::from_slice(bytes)
+            .map_err(|error| anyhow::anyhow!("featureflag: parse: {error}"))?;
+        let mut configured = std::collections::HashMap::with_capacity(rules.len());
+        for (key, rule) in rules {
+            let percent = rule.percent.map(|rule| rule.percent);
+            if let Some(percent) = percent {
+                anyhow::ensure!(
+                    percent <= 100,
+                    "featureflag: {key} percent must be between 0 and 100"
+                );
+            }
+            configured.insert(
+                key,
+                ConfiguredRule {
+                    default: rule.default,
+                    percent,
+                },
+            );
+        }
+        Ok(Self { rules: configured })
     }
 
     fn env_name(key: &str) -> String {
@@ -65,13 +93,24 @@ impl ConfiguredFlags {
         output.trim_end_matches('_').to_string()
     }
 
+    fn anonymous_bucket(key: &str) -> u32 {
+        let mut hash = 2_166_136_261_u32;
+        for byte in key.bytes().chain(std::iter::once(0)) {
+            hash ^= u32::from(byte);
+            hash = hash.wrapping_mul(16_777_619);
+        }
+        hash % 100
+    }
+
+    fn percent_decision(key: &str, percent: u32) -> bool {
+        Self::anonymous_bucket(key) < percent.min(100)
+    }
+
     fn env_decision(key: &str, raw: &str) -> bool {
         let value = raw.trim();
         match value.to_ascii_lowercase().as_str() {
             "" | "false" | "off" | "0" | "no" => false,
             "true" | "on" | "1" | "yes" => true,
-            // Current FlagSource has no evaluation context. Match Go's stable
-            // anonymous bucket: the empty identifier is shared by all calls.
             _ if value.ends_with('%') => {
                 let Some(percent) = value[..value.len() - 1]
                     .trim()
@@ -81,12 +120,7 @@ impl ConfiguredFlags {
                 else {
                     return false;
                 };
-                let mut hash = 2_166_136_261_u32;
-                for byte in key.bytes().chain(std::iter::once(0)) {
-                    hash ^= u32::from(byte);
-                    hash = hash.wrapping_mul(16_777_619);
-                }
-                hash % 100 < percent
+                Self::percent_decision(key, percent)
             }
             _ => true,
         }
@@ -98,7 +132,13 @@ impl FlagSource for ConfiguredFlags {
         if let Ok(value) = std::env::var(Self::env_name(key)) {
             return Self::env_decision(key, &value);
         }
-        self.defaults.get(key).copied().unwrap_or(default)
+        let Some(rule) = self.rules.get(key) else {
+            return default;
+        };
+        match rule.percent {
+            Some(percent) => Self::percent_decision(key, percent),
+            None => rule.default,
+        }
     }
 }
 
@@ -233,5 +273,40 @@ mod tests {
             ConfiguredFlags::env_name("checkout.new-payment"),
             "FF_CHECKOUT_NEW_PAYMENT"
         );
+    }
+
+    #[test]
+    fn configured_flags_evaluate_yaml_percentage_rules() {
+        let flags = ConfiguredFlags::from_yaml_bytes(
+            br#"
+custom_issue_statuses:
+  default: false
+  percent:
+    percent: 100
+plugins_v1:
+  default: true
+  percent:
+    percent: 0
+billing_workspace_subscriptions:
+  default: true
+"#,
+        )
+        .unwrap();
+        assert!(flags.is_enabled(CUSTOM_ISSUE_STATUSES, false));
+        assert!(!flags.is_enabled(PLUGINS_V1, true));
+        assert!(flags.is_enabled(BILLING_WORKSPACE_SUBSCRIPTIONS, false));
+    }
+
+    #[test]
+    fn configured_flags_reject_invalid_yaml_percentages() {
+        let error = ConfiguredFlags::from_yaml_bytes(
+            br#"
+plugins_v1:
+  percent:
+    percent: 101
+"#,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("between 0 and 100"));
     }
 }

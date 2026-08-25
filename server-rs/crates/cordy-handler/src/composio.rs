@@ -134,16 +134,71 @@ pub fn authenticated_router() -> Router<ComposioState> {
 }
 
 pub(crate) fn build_service(pool: sqlx::PgPool) -> Result<Service> {
-    let api_key = env_trimmed("COMPOSIO_API_KEY");
+    build_service_from_values(
+        pool,
+        &env_trimmed("COMPOSIO_API_KEY"),
+        composio_state_secret(),
+        &callback_base_url(),
+        &app_url(),
+    )
+}
+
+pub(crate) fn build_service_from_config(
+    pool: sqlx::PgPool,
+    config: &cordy_config::Config,
+) -> Result<Service> {
+    let boot = composio_boot_config(config)?;
+    build_service_from_values(
+        pool,
+        &boot.api_key,
+        boot.state_secret,
+        &boot.callback_base_url,
+        &boot.frontend_base_url,
+    )
+}
+
+struct ComposioBootConfig {
+    api_key: String,
+    state_secret: Vec<u8>,
+    callback_base_url: String,
+    frontend_base_url: String,
+}
+
+fn composio_boot_config(config: &cordy_config::Config) -> Result<ComposioBootConfig> {
+    let api_key = option_trimmed(config.integrations.composio_api_key.as_deref());
+    if api_key.is_empty() {
+        anyhow::bail!("COMPOSIO_API_KEY is required");
+    }
+    let state_secret = composio_state_secret_from_config(config);
+    if state_secret.is_empty() {
+        anyhow::bail!("COMPOSIO_STATE_SECRET or JWT_SECRET is required");
+    }
+    let callback_base_url = composio_callback_base_url_from_config(config);
+    if callback_base_url.is_empty() {
+        anyhow::bail!("Composio callback base URL is required");
+    }
+    Ok(ComposioBootConfig {
+        api_key,
+        state_secret,
+        callback_base_url,
+        frontend_base_url: app_url_from_config(config),
+    })
+}
+
+fn build_service_from_values(
+    pool: sqlx::PgPool,
+    api_key: &str,
+    secret: Vec<u8>,
+    callback_base_url: &str,
+    frontend_base_url: &str,
+) -> Result<Service> {
     if api_key.is_empty() {
         anyhow::bail!("COMPOSIO_API_KEY is required");
     }
     let client = Arc::new(ClientBuilder::new(api_key).build()?);
-    let secret = composio_state_secret();
     if secret.is_empty() {
         anyhow::bail!("COMPOSIO_STATE_SECRET or JWT_SECRET is required");
     }
-    let callback_base_url = callback_base_url();
     if callback_base_url.is_empty() {
         anyhow::bail!("Composio callback base URL is required");
     }
@@ -152,8 +207,8 @@ pub(crate) fn build_service(pool: sqlx::PgPool) -> Result<Service> {
         Arc::new(DbStore { pool }),
         ServiceConfig {
             state_secret: secret,
-            callback_base_url,
-            frontend_base_url: app_url(),
+            callback_base_url: callback_base_url.to_string(),
+            frontend_base_url: frontend_base_url.to_string(),
             state_ttl: Duration::ZERO,
             auth_config_ttl: Duration::ZERO,
         },
@@ -166,6 +221,18 @@ fn composio_state_secret() -> Vec<u8> {
         return explicit.into_bytes();
     }
     let jwt = env_trimmed("JWT_SECRET");
+    hashed_jwt_state_secret(&jwt)
+}
+
+fn composio_state_secret_from_config(config: &cordy_config::Config) -> Vec<u8> {
+    let explicit = option_trimmed(config.integrations.composio_state_secret.as_deref());
+    if !explicit.is_empty() {
+        return explicit.into_bytes();
+    }
+    hashed_jwt_state_secret(&option_trimmed(config.auth.jwt_secret.as_deref()))
+}
+
+fn hashed_jwt_state_secret(jwt: &str) -> Vec<u8> {
     if jwt.is_empty() {
         Vec::new()
     } else {
@@ -183,6 +250,19 @@ fn callback_base_url() -> String {
         .to_string()
 }
 
+fn composio_callback_base_url_from_config(config: &cordy_config::Config) -> String {
+    [
+        option_trimmed(config.integrations.composio_callback_base_url.as_deref()),
+        option_trimmed(config.urls.public_url.as_deref()),
+        app_url_from_config(config),
+    ]
+    .into_iter()
+    .find(|value| !value.is_empty())
+    .unwrap_or_default()
+    .trim_end_matches('/')
+    .to_string()
+}
+
 fn app_url() -> String {
     ["CORDY_APP_URL", "FRONTEND_ORIGIN"]
         .into_iter()
@@ -193,8 +273,24 @@ fn app_url() -> String {
         .to_string()
 }
 
+fn app_url_from_config(config: &cordy_config::Config) -> String {
+    [
+        option_trimmed(config.urls.app_url.as_deref()),
+        option_trimmed(config.urls.frontend_origin.as_deref()),
+    ]
+    .into_iter()
+    .find(|value| !value.is_empty())
+    .unwrap_or_default()
+    .trim_end_matches('/')
+    .to_string()
+}
+
 fn env_trimmed(name: &str) -> String {
     std::env::var(name).unwrap_or_default().trim().to_string()
+}
+
+fn option_trimmed(value: Option<&str>) -> String {
+    value.unwrap_or("").trim().to_string()
 }
 
 #[derive(Debug, Deserialize)]
@@ -537,6 +633,38 @@ mod tests {
         let jwt = "jwt-secret";
         let expected = Sha256::digest(format!("composio-state:{jwt}").as_bytes()).to_vec();
         assert_ne!(expected, Sha256::digest(jwt.as_bytes()).to_vec());
+        assert_eq!(hashed_jwt_state_secret(jwt), expected);
+    }
+
+    #[test]
+    fn loaded_config_builds_composio_without_process_env() {
+        let mut config = cordy_config::Config::default();
+        config.integrations.composio_api_key = Some(" toml-api-key ".into());
+        config.integrations.composio_callback_base_url = Some("https://api.example/ ".into());
+        config.integrations.composio_state_secret = Some(" toml-state-secret ".into());
+        config.urls.app_url = Some("https://app.example/".into());
+        let boot = composio_boot_config(&config).unwrap();
+        assert_eq!(boot.api_key, "toml-api-key");
+        assert_eq!(boot.callback_base_url, "https://api.example");
+        assert_eq!(boot.frontend_base_url, "https://app.example");
+        assert_eq!(boot.state_secret, b"toml-state-secret");
+
+        config.integrations.composio_state_secret = None;
+        config.auth.jwt_secret = Some(" jwt-from-toml ".into());
+        let boot = composio_boot_config(&config).unwrap();
+        assert_eq!(boot.state_secret, hashed_jwt_state_secret("jwt-from-toml"));
+
+        config.integrations.composio_api_key = None;
+        assert!(composio_boot_config(&config).is_err());
+    }
+
+    #[tokio::test]
+    async fn loaded_config_composio_service_constructs() {
+        let mut config = cordy_config::Config::default();
+        config.integrations.composio_api_key = Some("toml-api-key".into());
+        config.integrations.composio_callback_base_url = Some("https://api.example".into());
+        config.integrations.composio_state_secret = Some("toml-state-secret".into());
+        build_service_from_config(lazy_pool(), &config).unwrap();
     }
 
     #[test]

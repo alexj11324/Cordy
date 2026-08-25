@@ -54,12 +54,12 @@ fn new_api_client_with_options(
         .as_deref()
         .or_else(|| environment.trimmed("CORDY_SERVER_URL"));
     let server_url = if let Some(raw) = explicit_server_url.filter(|value| !value.is_empty()) {
-        normalize_api_base_url(raw).unwrap_or_else(|_| raw.into())
+        normalize_api_base_url(raw)?
     } else if !task_context || environment.trimmed(config::TASK_CONFIG_ROOT_ENV).is_some() {
         if config.server_url.is_empty() {
             String::new()
         } else {
-            normalize_api_base_url(&config.server_url).unwrap_or_else(|_| config.server_url.clone())
+            normalize_api_base_url(&config.server_url)?
         }
     } else {
         String::new()

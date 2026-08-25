@@ -13,6 +13,7 @@ use cordy_db::queries::{
     agent, agent_invocation_target, chat, issue_label, runtime, skill, workspace,
 };
 use cordy_middleware::workspace::WorkspaceContext;
+use rand::Rng;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -21,6 +22,15 @@ use crate::error::error_response;
 use crate::HandlerState;
 
 const ENV_SENTINEL: &str = "****";
+const AGENT_EMOJI_AVATARS: &[&str] = &[
+    "🐙", "🦊", "🦉", "🐝", "🐼", "🐸", "🐯", "🦁", "🐨", "🐵", "🐧", "🐳", "🦋",
+    "🌞", "🌙", "⭐", "🔥", "⚡", "🍀", "🌈", "🚀", "🤖", "👾", "🧠",
+];
+
+fn random_agent_avatar() -> String {
+    let index = rand::thread_rng().gen_range(0..AGENT_EMOJI_AVATARS.len());
+    format!("emoji:{}", AGENT_EMOJI_AVATARS[index])
+}
 
 pub fn router() -> Router<HandlerState> {
     Router::new()
@@ -251,8 +261,13 @@ fn preserve_masked_gateway_token(incoming: &mut Value, existing: &Value) {
         .get("gateway")
         .and_then(Value::as_object)
         .and_then(|gateway| gateway.get("token"))
+        .filter(|value| value.as_str().is_some_and(|token| !token.is_empty()))
     {
         *token = old.clone();
+        return;
+    }
+    if let Some(gateway) = incoming.get_mut("gateway").and_then(Value::as_object_mut) {
+        gateway.remove("token");
     }
 }
 
@@ -362,6 +377,13 @@ fn normalise_allowlist(values: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+fn composio_enabled(state: &HandlerState) -> bool {
+    state
+        .feature_flags
+        .as_deref()
+        .is_some_and(cordy_service::feature_flags::composio_mcp_apps_enabled)
+}
+
 fn system_instructions_for(system_key: Option<&str>, display_name: &str) -> String {
     if system_key == Some(cordy_service::builtin_agents::MIKA_SYSTEM_KEY) {
         cordy_service::builtin_agents::mika_system_instructions(display_name)
@@ -380,7 +402,7 @@ fn agent_response(
     let system_instructions = system_instructions_for(target.system_key.as_deref(), &target.name);
     let mut mcp_config = target.mcp_config.clone().unwrap_or_else(|| json!({}));
     let mut mcp_config_redacted = false;
-    if !reveal_secrets && mcp_config.as_object().is_some_and(|map| !map.is_empty()) {
+    if !reveal_secrets && has_mcp_config(&mcp_config) {
         mcp_config = json!({});
         mcp_config_redacted = true;
     }
@@ -404,7 +426,7 @@ fn agent_response(
     json!({
         "id": target.id,
         "workspace_id": target.workspace_id,
-        "runtime_id": target.runtime_id,
+        "runtime_id": target.runtime_id.map(|id| id.to_string()).unwrap_or_default(),
         "runtime_bound": target.runtime_id.is_some(),
         "name": target.name,
         "description": target.description,
@@ -439,10 +461,18 @@ fn agent_response(
     })
 }
 
-/// Workspace-wide agent events must never expose fields whose visibility is
-/// scoped to an owner or administrator response.
 pub(crate) fn agent_event_response(state: &HandlerState, target: &Agent) -> Value {
     agent_response(Some(state), target.clone(), false, false)
+}
+
+fn has_mcp_config(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Object(value) => !value.is_empty(),
+        Value::Array(value) => !value.is_empty(),
+        Value::String(value) => !value.is_empty(),
+        Value::Bool(_) | Value::Number(_) => true,
+    }
 }
 
 #[derive(Default, Deserialize)]
@@ -634,6 +664,7 @@ struct AgentWrite {
     visibility: Option<String>,
     permission_mode: Option<String>,
     invocation_targets: Option<Vec<InvocationTargetInput>>,
+    status: Option<String>,
     max_concurrent_tasks: Option<i32>,
     model: Option<String>,
     thinking_level: Option<String>,
@@ -664,6 +695,14 @@ fn resolve_permission(
             "private"
         }
     });
+    if let Some(visibility) = visibility {
+        if !matches!(visibility, "private" | "workspace") {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "visibility must be private or workspace",
+            ));
+        }
+    }
     if !matches!(permission_mode, "private" | "public_to") {
         return Err(error_response(
             StatusCode::BAD_REQUEST,
@@ -717,6 +756,44 @@ fn resolve_permission(
         }
     }
     Ok((permission_mode.to_string(), resolved))
+}
+
+fn permission_echo_is_unchanged(
+    existing: &Agent,
+    request: &AgentWrite,
+    existing_targets: &[AgentInvocationTarget],
+    workspace_id: Uuid,
+) -> bool {
+    if let Some(mode) = request.permission_mode.as_deref() {
+        if mode != existing.permission_mode {
+            return false;
+        }
+    }
+    if let Some(visibility) = request.visibility.as_deref() {
+        if visibility != existing.visibility {
+            return false;
+        }
+    }
+    if let Some(targets) = request.invocation_targets.as_ref() {
+        let Ok((_, mut resolved)) = resolve_permission(
+            workspace_id,
+            Some(existing.permission_mode.as_str()),
+            Some(existing.visibility.as_str()),
+            Some(targets),
+        ) else {
+            return false;
+        };
+        let mut current = existing_targets
+            .iter()
+            .map(|target| (target.target_type.clone(), target.target_id))
+            .collect::<Vec<_>>();
+        current.sort();
+        resolved.sort();
+        if current != resolved {
+            return false;
+        }
+    }
+    true
 }
 
 async fn replace_invocation_targets(
@@ -850,12 +927,17 @@ async fn create_agent(
             "service_tier is not recognised for this runtime",
         );
     }
-    let avatar_url = match request.avatar_url.as_deref() {
+    let avatar_url = match request
+        .avatar_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|raw| !raw.is_empty())
+    {
         Some(raw) => match crate::avatar::accept_url(&state, raw, None).await {
             Ok(value) => Some(value),
             Err(message) => return error_response(StatusCode::FORBIDDEN, message),
         },
-        None => None,
+        None => Some(random_agent_avatar()),
     };
     let is_first_agent = sqlx::query_scalar::<_, bool>(
         "SELECT NOT EXISTS (SELECT 1 FROM agent WHERE workspace_id=$1)",
@@ -889,12 +971,16 @@ async fn create_agent(
     let custom_env = json!(request.custom_env.clone().unwrap_or_default());
     let custom_args = json!(request.custom_args.clone().unwrap_or_default());
     let mcp_config = request.mcp_config.clone().unwrap_or_else(|| json!({}));
-    let composio_toolkit_allowlist = normalise_allowlist(
-        request
-            .composio_toolkit_allowlist
-            .clone()
-            .unwrap_or_default(),
-    );
+    let composio_toolkit_allowlist = if composio_enabled(&state) {
+        normalise_allowlist(
+            request
+                .composio_toolkit_allowlist
+                .clone()
+                .unwrap_or_default(),
+        )
+    } else {
+        Vec::new()
+    };
     let created = agent::create_agent(
         &mut *tx,
         ws,
@@ -915,11 +1001,17 @@ async fn create_agent(
         request.thinking_level.as_deref(),
         request.service_tier.as_deref(),
         &composio_toolkit_allowlist,
-        Some(permission_mode.as_str()),
+        Some(&permission_mode),
     )
     .await;
     let created = match created {
         Ok(Some(v)) => v,
+        Err(error) if crate::workspace::unique_violation(&error) => {
+            return error_response(
+                StatusCode::CONFLICT,
+                &format!("an agent named {name:?} already exists in this workspace"),
+            )
+        }
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to create agent"),
     };
     for id in skills {
@@ -964,7 +1056,10 @@ async fn create_agent(
     let response = match hydrated_agent_response(&state, &context, &headers, created.clone()).await
     {
         Ok(response) => response,
-        Err(response) => return response,
+        Err(_) => {
+            tracing::warn!(agent_id = %created.id, "agent created but response hydration failed");
+            agent_response(Some(&state), created.clone(), false, false)
+        }
     };
     let analytics = cordy_analytics::events::agent_created(
         &context.member.user_id.to_string(),
@@ -1034,45 +1129,84 @@ async fn update_agent(
         Ok(value) => value,
         Err(response) => return response,
     };
-    let runtime_id = match request.runtime_id.as_deref() {
-        Some(v) => match Uuid::parse_str(v) {
-            Ok(v) => v,
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(_) => {
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to start agent update transaction",
+            )
+        }
+    };
+    let existing = match agent::get_agent_for_update(&mut *tx, existing.id).await {
+        Ok(Some(existing)) if existing.workspace_id == ws => existing,
+        Ok(Some(_)) | Ok(None) => return error_response(StatusCode::NOT_FOUND, "agent not found"),
+        Err(error) => {
+            tracing::warn!(%error, "failed to lock agent for update");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load agent");
+        }
+    };
+    if let Err(response) = manage_or_forbidden(&context, &existing) {
+        return response;
+    }
+    let requested_runtime_id = match request.runtime_id.as_deref() {
+        Some(value) => match Uuid::parse_str(value) {
+            Ok(value) => Some(value),
             Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
         },
-        None => match existing.runtime_id {
-            Some(v) => v,
-            None => return error_response(StatusCode::CONFLICT, "agent has no runtime"),
-        },
+        None => existing.runtime_id,
     };
-    let target_runtime =
-        match runtime::get_agent_runtime_for_workspace(&state.pool, runtime_id, ws).await {
-            Ok(Some(runtime)) => runtime,
-            _ => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
+    let target_runtime = match requested_runtime_id {
+        Some(runtime_id) => {
+            match runtime::get_agent_runtime_for_workspace(&mut *tx, runtime_id, ws).await {
+                Ok(Some(runtime)) => Some(runtime),
+                _ => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
+            }
+        }
+        None => None,
+    };
+    if request.runtime_id.is_some() {
+        let Some(target_runtime) = target_runtime.as_ref() else {
+            return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id");
         };
-    if request.runtime_id.is_some()
-        && (target_runtime.owner_id.is_none()
+        if target_runtime.owner_id.is_none()
             || target_runtime.visibility != "public"
-                && target_runtime.owner_id != Some(context.member.user_id))
-    {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            "this runtime is private; only its owner can move agents onto it",
-        );
+                && target_runtime.owner_id != Some(context.member.user_id)
+        {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "this runtime is private; only its owner can move agents onto it",
+            );
+        }
     }
-    let permission_touched = request.permission_mode.is_some()
+    let mut permission_touched = request.permission_mode.is_some()
         || request.visibility.is_some()
         || request.invocation_targets.is_some();
     if permission_touched && existing.owner_id != Some(context.member.user_id) {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            "only the agent owner can change access (permission_mode / invocation_targets)",
-        );
+        let existing_targets =
+            match agent_invocation_target::list_agent_invocation_targets(&mut *tx, existing.id)
+                .await
+            {
+                Ok(targets) => targets,
+                Err(_) => {
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to load agent invocation targets",
+                    )
+                }
+            };
+        if !permission_echo_is_unchanged(&existing, &request, &existing_targets, ws) {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "only the agent owner can change access (permission_mode / invocation_targets)",
+            );
+        }
+        permission_touched = false;
     }
     let effective_targets = if request.invocation_targets.is_some() {
         request.invocation_targets.clone()
     } else if permission_touched {
-        match agent_invocation_target::list_agent_invocation_targets(&state.pool, existing.id).await
-        {
+        match agent_invocation_target::list_agent_invocation_targets(&mut *tx, existing.id).await {
             Ok(targets) => Some(
                 targets
                     .into_iter()
@@ -1121,59 +1255,67 @@ async fn update_agent(
             "private"
         }
     });
-    if request
-        .model
-        .as_deref()
-        .is_some_and(|model| model_known_incompatible(&target_runtime.provider, model))
-    {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "model is not valid for this runtime provider",
-        );
-    }
-    if request
-        .thinking_level
-        .as_deref()
-        .is_some_and(|value| !known_thinking_value(&target_runtime.provider, value))
-    {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "thinking_level is not recognised for this runtime",
-        );
-    }
-    if request
-        .service_tier
-        .as_deref()
-        .is_some_and(|value| !known_service_tier(&target_runtime.provider, value))
-    {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "service_tier is not recognised for this runtime",
-        );
-    }
-    if request.runtime_id.is_some() {
-        if request.thinking_level.is_none()
-            && existing
-                .thinking_level
-                .as_deref()
-                .is_some_and(|value| !known_thinking_value(&target_runtime.provider, value))
+    if let Some(target_runtime) = target_runtime.as_ref() {
+        if request
+            .model
+            .as_deref()
+            .is_some_and(|model| model_known_incompatible(&target_runtime.provider, model))
         {
             return error_response(
                 StatusCode::BAD_REQUEST,
-                "existing thinking_level is not valid for the new runtime; clear or replace it",
+                "model is not valid for this runtime provider",
             );
         }
-        if request.service_tier.is_none()
-            && existing
-                .service_tier
-                .as_deref()
-                .is_some_and(|value| !known_service_tier(&target_runtime.provider, value))
+        if request
+            .thinking_level
+            .as_deref()
+            .is_some_and(|value| !known_thinking_value(&target_runtime.provider, value))
         {
             return error_response(
                 StatusCode::BAD_REQUEST,
-                "existing service_tier is not valid for the new runtime; clear or replace it",
+                "thinking_level is not recognised for this runtime",
             );
         }
+        if request
+            .service_tier
+            .as_deref()
+            .is_some_and(|value| !known_service_tier(&target_runtime.provider, value))
+        {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "service_tier is not recognised for this runtime",
+            );
+        }
+        if request.runtime_id.is_some() {
+            if request.thinking_level.is_none()
+                && existing
+                    .thinking_level
+                    .as_deref()
+                    .is_some_and(|value| !known_thinking_value(&target_runtime.provider, value))
+            {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "existing thinking_level is not valid for the new runtime; clear or replace it",
+                );
+            }
+            if request.service_tier.is_none()
+                && existing
+                    .service_tier
+                    .as_deref()
+                    .is_some_and(|value| !known_service_tier(&target_runtime.provider, value))
+            {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "existing service_tier is not valid for the new runtime; clear or replace it",
+                );
+            }
+        }
+    } else if request.model.is_some()
+        || request.thinking_level.is_some()
+        || request.service_tier.is_some()
+        || request.runtime_id.is_some()
+    {
+        return error_response(StatusCode::CONFLICT, "agent has no runtime");
     }
     let avatar_url = match request.avatar_url.as_deref() {
         Some(raw) => {
@@ -1198,19 +1340,21 @@ async fn update_agent(
         .unwrap_or_else(|| json!({}));
     let allowlist_touched = raw_request.get("composio_toolkit_allowlist").is_some();
     let is_owner = existing.owner_id == Some(context.member.user_id);
-    let clear_allowlist =
-        allowlist_touched && is_owner && raw_request["composio_toolkit_allowlist"].is_null();
-    let composio_toolkit_allowlist = if allowlist_touched && is_owner {
-        request
-            .composio_toolkit_allowlist
-            .clone()
-            .map(normalise_allowlist)
-            .unwrap_or_default()
+    let composio_rollout_enabled = composio_enabled(&state);
+    let clear_allowlist = composio_rollout_enabled
+        && allowlist_touched
+        && is_owner
+        && raw_request["composio_toolkit_allowlist"].is_null();
+    let composio_toolkit_allowlist = if composio_rollout_enabled && allowlist_touched && is_owner {
+        Some(
+            request
+                .composio_toolkit_allowlist
+                .clone()
+                .map(normalise_allowlist)
+                .unwrap_or_default(),
+        )
     } else {
-        existing
-            .composio_toolkit_allowlist
-            .clone()
-            .unwrap_or_default()
+        None
     };
     let mut runtime_config = request
         .runtime_config
@@ -1220,23 +1364,16 @@ async fn update_agent(
     let model = if request.model.is_some() {
         request.model.as_deref()
     } else if request.runtime_id.is_some()
-        && existing
-            .model
-            .as_deref()
-            .is_some_and(|model| model_known_incompatible(&target_runtime.provider, model))
+        && target_runtime.as_ref().is_some_and(|target_runtime| {
+            existing
+                .model
+                .as_deref()
+                .is_some_and(|model| model_known_incompatible(&target_runtime.provider, model))
+        })
     {
         Some("")
     } else {
         None
-    };
-    let mut tx = match state.pool.begin().await {
-        Ok(tx) => tx,
-        Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to start agent update transaction",
-            )
-        }
     };
     let updated = agent::update_agent(
         &mut *tx,
@@ -1245,14 +1382,17 @@ async fn update_agent(
         request.description.as_deref().map(str::trim),
         avatar_url.as_deref(),
         &runtime_config,
-        request
-            .runtime_id
+        request.runtime_id.as_ref().and_then(|_| {
+            target_runtime
+                .as_ref()
+                .map(|target_runtime| target_runtime.runtime_mode.as_str())
+        }),
+        target_runtime
             .as_ref()
-            .map(|_| target_runtime.runtime_mode.as_str()),
-        runtime_id,
+            .map(|target_runtime| target_runtime.id),
         resolved_visibility.or(request.visibility.as_deref()),
         resolved_permission.as_deref(),
-        None,
+        request.status.as_deref(),
         request.max_concurrent_tasks,
         request.instructions.as_deref().map(str::trim),
         &custom_env,
@@ -1267,7 +1407,7 @@ async fn update_agent(
             .service_tier
             .as_deref()
             .filter(|value| !value.is_empty()),
-        &composio_toolkit_allowlist,
+        composio_toolkit_allowlist.as_deref(),
     )
     .await;
     let mut updated = match updated {
@@ -1412,31 +1552,46 @@ async fn create_mika(
         Ok(v) => v,
         Err(r) => return r,
     };
-    let runtime_id = match Uuid::parse_str(&request.runtime_id) {
-        Ok(v) => v,
-        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
-    };
-    let rt = match runtime::get_agent_runtime_for_workspace(&state.pool, runtime_id, ws).await {
-        Ok(Some(v)) => v,
-        _ => {
+    let existing_target = match agent::get_agent_by_system_key(&state.pool, ws, Some("mika")).await
+    {
+        Ok(target) => target,
+        Err(_) => {
             return error_response(
-                StatusCode::BAD_REQUEST,
-                "runtime not found in this workspace",
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to look up the workspace agent",
             )
         }
     };
-    if rt.owner_id.is_none()
-        || rt.visibility != "public" && rt.owner_id != Some(context.member.user_id)
-    {
-        return error_response(
-            StatusCode::FORBIDDEN,
-            "you cannot bind an agent to this runtime",
-        );
-    }
+    let (runtime_id, runtime) = if existing_target.is_some() {
+        (None, None)
+    } else {
+        let runtime_id = match Uuid::parse_str(&request.runtime_id) {
+            Ok(v) => v,
+            Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
+        };
+        let runtime = match runtime::get_agent_runtime_for_workspace(&state.pool, runtime_id, ws).await {
+            Ok(Some(v)) => v,
+            _ => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "runtime not found in this workspace",
+                )
+            }
+        };
+        if runtime.owner_id.is_none()
+            || runtime.visibility != "public" && runtime.owner_id != Some(context.member.user_id)
+        {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "you cannot bind an agent to this runtime",
+            );
+        }
+        (Some(runtime_id), Some(runtime))
+    };
     let mut created_now = false;
-    let target = match agent::get_agent_by_system_key(&state.pool, ws, Some("mika")).await {
-        Ok(Some(existing)) => existing,
-        Ok(None) => {
+    let mut target = match existing_target {
+        Some(existing) => existing,
+        None => {
             let mut tx = match state.pool.begin().await {
                 Ok(tx) => tx,
                 Err(_) => {
@@ -1460,13 +1615,18 @@ async fn create_mika(
             let target = match agent::get_agent_by_system_key(&mut *tx, ws, Some("mika")).await {
                 Ok(Some(existing)) => existing,
                 Ok(None) => {
+                    let runtime = runtime
+                        .as_ref()
+                        .expect("Mika runtime is required when provisioning the agent");
+                    let runtime_id = runtime_id
+                        .expect("Mika runtime id is required when provisioning the agent");
                     let created = match agent::create_system_user_agent(
                         &mut *tx,
                         ws,
                         "Mika",
                         description,
                         Some("emoji:🦄"),
-                        &rt.runtime_mode,
+                        &runtime.runtime_mode,
                         runtime_id,
                         request
                             .model
@@ -1520,13 +1680,16 @@ async fn create_mika(
             }
             target
         }
-        Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to look up the workspace agent",
-            )
-        }
     };
+    if created_now && runtime.as_ref().is_some_and(|runtime| runtime.status == "online") {
+        state.tasks.reconcile_agent_status(target.id).await;
+        if let Ok(Some(reconciled)) = agent::get_agent(&state.pool, target.id).await {
+            target = reconciled;
+        }
+    }
+    if created_now {
+        publish(&state, "agent:created", &target, context.member.user_id);
+    }
     let session = match get_or_create_mika_session(
         &state,
         ws,
@@ -1545,14 +1708,11 @@ async fn create_mika(
             );
         }
     };
-    if created_now {
-        publish(&state, "agent:created", &target, context.member.user_id);
-    }
     let mut response = match hydrated_agent_response(&state, &context, &headers, target).await {
         Ok(response) => response,
         Err(response) => return response,
     };
-    response["onboarding_session"] = json!(session);
+    response["onboarding_session"] = crate::chat_api::session_json(&session);
     (
         if created_now {
             StatusCode::CREATED
@@ -1591,8 +1751,8 @@ async fn archive_agent(
         Ok(Some(v)) => v,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive agent"),
     };
-    if state.tasks.cancel_tasks_for_agent(target.id).await.is_err() {
-        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to cancel tasks");
+    if let Err(error) = state.tasks.cancel_tasks_for_agent(target.id).await {
+        tracing::warn!(%error, agent_id = %target.id, "failed to cancel tasks after archiving agent");
     }
     publish(&state, "agent:archived", &archived, context.member.user_id);
     match hydrated_agent_response(&state, &context, &headers, archived).await {
@@ -1831,7 +1991,16 @@ async fn attach_label(
     match issue_label::attach_label_to_agent(&state.pool, target.id, label_id, target.workspace_id)
         .await
     {
-        Ok(0) => error_response(StatusCode::NOT_FOUND, "label not found"),
+        Ok(0) => match issue_label::get_label(&state.pool, label_id, target.workspace_id).await {
+            Ok(Some(label)) if label.resource_type == "agent" => {
+                labels_response(&state, &target).await
+            }
+            Ok(Some(_)) | Ok(None) => error_response(StatusCode::NOT_FOUND, "label not found"),
+            Err(_) => error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to verify label",
+            ),
+        },
         Ok(_) => {
             publish_label_updated(
                 &state,
@@ -2232,7 +2401,7 @@ fn publish(state: &HandlerState, event_type: &str, target: &Agent, actor_id: Uui
         workspace_id: target.workspace_id.to_string(),
         actor_type: "member".into(),
         actor_id: actor_id.to_string(),
-        payload: json!({"agent":agent_event_response(state,target)}),
+        payload: json!({"agent":agent_response(Some(state),target.clone(),false,false)}),
         ..Default::default()
     });
 }
@@ -2302,10 +2471,14 @@ mod tests {
     }
 
     #[test]
+    fn agent_write_preserves_status_updates() {
+        let request: AgentWrite = serde_json::from_value(json!({ "status": "offline" })).unwrap();
+        assert_eq!(request.status.as_deref(), Some("offline"));
+    }
+
+    #[test]
     fn agent_actor_projection_redacts_every_secret_surface() {
-        let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
-        let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None);
-        let response = agent_event_response(&state, &agent_fixture());
+        let response = agent_response(None, agent_fixture(), false, false);
         assert_eq!(response["runtime_config"]["gateway"]["token"], "***");
         assert_eq!(response["mcp_config"], json!({}));
         assert_eq!(response["mcp_config_redacted"], true);
@@ -2313,6 +2486,18 @@ mod tests {
         assert_eq!(response["composio_toolkit_allowlist_redacted"], true);
         assert!(response.get("custom_env").is_none());
         assert_eq!(response["custom_env_key_count"], 1);
+        assert_eq!(response["runtime_id"], "");
+    }
+
+    #[test]
+    fn agent_actor_projection_redacts_non_object_mcp_configuration() {
+        for mcp_config in [json!("secret"), json!(["secret"])] {
+            let mut agent = agent_fixture();
+            agent.mcp_config = Some(mcp_config);
+            let response = agent_response(None, agent, false, false);
+            assert_eq!(response["mcp_config"], json!({}));
+            assert_eq!(response["mcp_config_redacted"], true);
+        }
     }
     #[test]
     fn skill_ids_are_validated_and_deduplicated() {
@@ -2388,6 +2573,21 @@ mod tests {
         let mut incoming = json!({"gateway":{"token":"***"}});
         preserve_masked_gateway_token(&mut incoming, &json!({"gateway":{"token":"secret"}}));
         assert_eq!(incoming["gateway"]["token"], "secret");
+    }
+
+    #[test]
+    fn orphaned_gateway_token_mask_is_dropped() {
+        let mut incoming = json!({"gateway":{"token":"***","url":"wss://example"}});
+        preserve_masked_gateway_token(&mut incoming, &json!({"gateway":{}}));
+        assert!(incoming["gateway"].get("token").is_none());
+        assert_eq!(incoming["gateway"]["url"], "wss://example");
+    }
+
+    #[test]
+    fn invalid_legacy_visibility_is_rejected() {
+        let workspace_id = Uuid::new_v4();
+        assert!(resolve_permission(workspace_id, None, Some("workpace"), None).is_err());
+        assert!(resolve_permission(workspace_id, None, Some("private"), None).is_ok());
     }
 
     #[test]

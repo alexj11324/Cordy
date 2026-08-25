@@ -7,7 +7,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
 pub const TASK_CONFIG_ROOT_ENV: &str = "CORDY_TASK_CONFIG_ROOT";
@@ -40,6 +40,8 @@ const CAPTURED_ENV_KEYS: &[&str] = &[
     "CORDY_DAEMON_AUTO_UPDATE",
     "CORDY_DAEMON_AUTO_UPDATE_INTERVAL",
     "CORDY_DAEMON_AUTO_RELOAD",
+    "CORDY_QUICK_CREATE_TASK_ID",
+    "CORDY_QUICK_CREATE_ATTACHMENT_IDS",
     TASK_CONFIG_ROOT_ENV,
 ];
 
@@ -446,14 +448,23 @@ fn normalize_path(path: &Path) -> PathBuf {
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::ParentDir => {
-                normalized.pop();
-            }
+            Component::CurDir => {}
+            Component::ParentDir => match normalized.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    let _ = normalized.pop();
+                }
+                Some(Component::RootDir) | Some(Component::Prefix(_)) => {}
+                _ if !normalized.has_root() => normalized.push(component.as_os_str()),
+                _ => {}
+            },
             _ => normalized.push(component.as_os_str()),
         }
     }
-    normalized
+    if normalized.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        normalized
+    }
 }
 
 fn read_config_document(path: &Path) -> Result<Value> {
@@ -476,11 +487,11 @@ fn ensure_config_directory(directory: &Path, task_root: Option<&str>) -> Result<
     let Some(task_root) = task_root else {
         return Ok(());
     };
-    let task_root = Path::new(task_root);
+    let task_root = normalize_path(Path::new(task_root));
     let mut current = directory;
     loop {
         restrict_directory_permissions(current)?;
-        if current == task_root {
+        if current == task_root.as_path() {
             return Ok(());
         }
         current = current.parent().with_context(|| {
@@ -1247,6 +1258,19 @@ mod tests {
     }
 
     #[test]
+    fn task_config_root_with_parent_segments_does_not_escape() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let mut env = Environment::for_test(home.path().into(), cwd.path().into());
+        let canonical = home.path().join("task-config");
+        let aliased = home.path().join("tasks").join("..").join("task-config");
+        env.set(TASK_CONFIG_ROOT_ENV, aliased.display().to_string());
+        env.set_profile_value("dev", "token", Some(Value::String("tok".into())))
+            .expect("save under aliased task root");
+        assert!(canonical.join("profiles/dev/config.json").is_file());
+    }
+
+    #[test]
     fn task_marker_is_fail_closed_and_actionable_only_when_task_scoped() {
         let home = tempfile::tempdir().expect("temp home");
         let cwd = tempfile::tempdir().expect("temp cwd");
@@ -1418,5 +1442,11 @@ mod tests {
     fn setup_input_rejects_empty_urls() {
         assert!(SetupProfileInput::new("", "https://app.example").is_err());
         assert!(SetupProfileInput::new("https://api.example", " ").is_err());
+    }
+
+    #[test]
+    fn captured_env_includes_quick_create_task_keys() {
+        assert!(CAPTURED_ENV_KEYS.contains(&"CORDY_QUICK_CREATE_TASK_ID"));
+        assert!(CAPTURED_ENV_KEYS.contains(&"CORDY_QUICK_CREATE_ATTACHMENT_IDS"));
     }
 }

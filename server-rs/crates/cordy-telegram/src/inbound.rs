@@ -516,7 +516,6 @@ mod tests {
             file_size: 1_024,
             file_name: "f.pdf".into(),
             mime_type: "application/pdf".into(),
-            ..Default::default()
         });
         m.caption = "see attached".into();
         let classified = inbound_from_update(

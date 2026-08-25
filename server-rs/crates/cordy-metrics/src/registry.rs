@@ -20,6 +20,7 @@ use crate::wecom::WecomMetrics;
 pub struct RegistryOptions {
     pub pool: Option<Arc<sqlx::PgPool>>,
     pub realtime: Option<&'static cordy_realtime::Metrics>,
+    pub daemonws: Option<&'static cordy_daemon::hub::Metrics>,
     pub version: String,
     pub commit: String,
     /// When `Some`, opts the registry into the scrape-time SQL sampler
@@ -101,6 +102,11 @@ impl Registry {
         }
         if let Some(realtime_metrics) = opts.realtime {
             let _ = reg.register(Box::new(RealtimeCollector::new(realtime_metrics)));
+        }
+        if let Some(daemonws_metrics) = opts.daemonws {
+            let _ = reg.register(Box::new(crate::daemonws::DaemonWsCollector::new(
+                daemonws_metrics,
+            )));
         }
 
         if let Some(sampler_opts) = opts.sampler {

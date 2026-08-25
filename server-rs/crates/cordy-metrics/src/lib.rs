@@ -15,6 +15,7 @@ pub mod business_events;
 pub mod channel_lease;
 pub mod channel_media;
 pub mod config;
+pub mod daemonws;
 pub mod db;
 pub mod http;
 pub mod labels;

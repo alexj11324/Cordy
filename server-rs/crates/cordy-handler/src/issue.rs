@@ -5,7 +5,7 @@
 //! workspace middleware resolves slugs/ids, verifies membership, and stamps a
 //! `WorkspaceContext` before these handlers run.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use axum::body::Bytes;
@@ -16,7 +16,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{NaiveDate, SecondsFormat};
 use cordy_db::models::{
     AgentTaskQueue, Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber,
@@ -24,15 +24,15 @@ use cordy_db::models::{
 use cordy_db::queries::issue_reaction::AddIssueReactionRow;
 use cordy_db::queries::{
     activity, agent, agent_invocation_target, attachment, autopilot, comment as comment_q,
-    issue as issue_q, issue_label, issue_property, issue_reaction, member, quick_action, squad,
-    subscriber, task_usage, user, workspace,
+    issue as issue_q, issue_label, issue_property, issue_reaction, member, quick_action, runtime,
+    squad, subscriber, task_usage, user, workspace,
 };
 use cordy_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use cordy_service::issue_service::{
     IssueCreateError, IssueCreateOpts, IssueCreateParams, IssueTriggerInput, IssueTriggerProbe,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -198,9 +198,23 @@ fn search_snippet(raw: &str, query: &str) -> String {
     if chars.len() <= MAX {
         return raw.to_string();
     }
-    let lower = raw.to_lowercase();
-    let byte_index = lower.find(&query.to_lowercase()).unwrap_or(0);
-    let char_index = raw[..byte_index.min(raw.len())].chars().count();
+    // `str::to_lowercase` can change the number of bytes (for example, some
+    // Unicode characters expand when case-folded), so an offset in the folded
+    // string is not safe to use as a byte offset into `raw`. Keep a mapping for
+    // every folded byte back to the original character index instead.
+    let mut folded = String::new();
+    let mut folded_byte_to_char = Vec::new();
+    for (char_index, character) in raw.chars().enumerate() {
+        for folded_character in character.to_lowercase() {
+            let byte_len = folded_character.len_utf8();
+            folded.push(folded_character);
+            folded_byte_to_char.extend(std::iter::repeat(char_index).take(byte_len));
+        }
+    }
+    let char_index = folded
+        .find(&query.to_lowercase())
+        .and_then(|byte_index| folded_byte_to_char.get(byte_index).copied())
+        .unwrap_or(0);
     let start = char_index.saturating_sub(60).min(chars.len() - MAX);
     let mut result = chars[start..start + MAX].iter().collect::<String>();
     if start > 0 {
@@ -286,7 +300,13 @@ async fn search_issues(
         .build_query_scalar::<i64>()
         .fetch_one(&state.pool)
         .await
-        .unwrap_or(issues.len() as i64);
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to count search results");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to count search results",
+            )
+        })?;
     let prefix = issue_prefix(&state, workspace_id).await;
     let mut response = Vec::with_capacity(issues.len());
     let terms = query
@@ -515,6 +535,8 @@ struct TableCursor {
     query: String,
     offset: i64,
     #[serde(default)]
+    last_id: Option<String>,
+    #[serde(default)]
     group_key: Option<String>,
     #[serde(default)]
     parent_id: Option<String>,
@@ -580,6 +602,75 @@ fn table_cursor(request: &TableRequest, fingerprint: &str) -> Result<(i64, i64),
     Ok((limit, decoded.offset.max(0)))
 }
 
+fn table_row_cursor(
+    request: &TableRequest,
+    fingerprint: &str,
+) -> Result<(i64, Option<Uuid>), Response> {
+    let limit = request
+        .page
+        .get("limit")
+        .and_then(Value::as_i64)
+        .unwrap_or(50);
+    if !(1..=100).contains(&limit) {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "page.limit must be between 1 and 100",
+        ));
+    }
+    let Some(raw) = request
+        .page
+        .get("cursor")
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return Ok((limit, None));
+    };
+    let decoded = URL_SAFE_NO_PAD
+        .decode(raw)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<TableCursor>(&bytes).ok())
+        .filter(|cursor| cursor.v == 1)
+        .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid cursor"))?;
+    let group_binding = request.group_key.clone().or_else(|| {
+        request
+            .group
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(|kind| {
+                format!(
+                    "group:{kind}:{}",
+                    request
+                        .group
+                        .get("property_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                )
+            })
+    });
+    if decoded.query != fingerprint
+        || decoded.group_key != group_binding
+        || decoded.parent_id != request.parent_id
+    {
+        return Err(error_response(
+            StatusCode::CONFLICT,
+            "cursor does not belong to this table query",
+        ));
+    }
+    let last_id = decoded
+        .last_id
+        .as_deref()
+        .map(Uuid::parse_str)
+        .transpose()
+        .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid cursor"))?;
+    if last_id.is_none() {
+        return Err(error_response(
+            StatusCode::CONFLICT,
+            "cursor requires a fresh table query",
+        ));
+    }
+    Ok((limit, last_id))
+}
+
 fn encode_table_cursor(request: &TableRequest, fingerprint: &str, offset: i64) -> String {
     let group_key = request.group_key.clone().or_else(|| {
         request
@@ -602,6 +693,37 @@ fn encode_table_cursor(request: &TableRequest, fingerprint: &str, offset: i64) -
             v: 1,
             query: fingerprint.into(),
             offset,
+            last_id: None,
+            group_key,
+            parent_id: request.parent_id.clone(),
+        })
+        .unwrap_or_default(),
+    )
+}
+
+fn encode_table_row_cursor(request: &TableRequest, fingerprint: &str, last_id: Uuid) -> String {
+    let group_key = request.group_key.clone().or_else(|| {
+        request
+            .group
+            .get("kind")
+            .and_then(Value::as_str)
+            .map(|kind| {
+                format!(
+                    "group:{kind}:{}",
+                    request
+                        .group
+                        .get("property_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                )
+            })
+    });
+    URL_SAFE_NO_PAD.encode(
+        serde_json::to_vec(&TableCursor {
+            v: 1,
+            query: fingerprint.into(),
+            offset: 0,
+            last_id: Some(last_id.to_string()),
             group_key,
             parent_id: request.parent_id.clone(),
         })
@@ -852,9 +974,15 @@ fn push_table_filters(
                         .push_bind(definition_id.clone())
                         .push(")");
                 } else {
-                    builder
-                        .push("i.properties @> ")
-                        .push_bind(json!({(definition_id): value}));
+                    let alternatives = property_filter_containment(definition_id, value);
+                    builder.push("(");
+                    for (alt_index, alternative) in alternatives.into_iter().enumerate() {
+                        if alt_index > 0 {
+                            builder.push(" OR ");
+                        }
+                        builder.push("i.properties @> ").push_bind(alternative);
+                    }
+                    builder.push(")");
                 }
             }
             builder.push(")");
@@ -926,6 +1054,19 @@ fn push_table_filters(
         builder.push(")");
     }
     Ok(())
+}
+
+fn property_filter_containment(definition_id: &str, value: &Value) -> Vec<Value> {
+    let mut alternatives = vec![json!({ definition_id: value })];
+    if let Some(raw) = value.as_str() {
+        alternatives.push(json!({ definition_id: [raw] }));
+        if raw == "true" {
+            alternatives.push(json!({ definition_id: true }));
+        } else if raw == "false" {
+            alternatives.push(json!({ definition_id: false }));
+        }
+    }
+    alternatives
 }
 
 fn push_table_branch(
@@ -1026,18 +1167,32 @@ fn push_table_branch(
                 })?;
             if value == "unset:" {
                 builder
-                    .push(" AND NOT(i.properties ? ")
+                    .push(" AND (NOT(i.properties ? ")
                     .push_bind(property_id.to_string())
-                    .push(")");
+                    .push(") OR i.properties->")
+                    .push_bind(property_id.to_string())
+                    .push(" = 'null'::jsonb OR CASE WHEN jsonb_typeof(i.properties->")
+                    .push_bind(property_id.to_string())
+                    .push(") = 'array' THEN jsonb_array_length(i.properties->")
+                    .push_bind(property_id.to_string())
+                    .push(") = 0 ELSE FALSE END)");
             } else {
+                let value = value.trim_start_matches("value:").to_string();
                 builder
-                    .push(" AND i.properties->>")
+                    .push(" AND (i.properties->>")
                     .push_bind(property_id.to_string())
                     .push("=")
-                    .push_bind(value.trim_start_matches("value:").to_string());
+                    .push_bind(value.clone())
+                    .push(" OR EXISTS (SELECT 1 FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(i.properties->")
+                    .push_bind(property_id.to_string())
+                    .push(") = 'array' THEN i.properties->")
+                    .push_bind(property_id.to_string())
+                    .push(" ELSE '[]'::jsonb END) AS property_value(value) WHERE property_value.value=")
+                    .push_bind(value)
+                    .push("))");
             }
         }
-        "compound" => {}
+        "compound" => push_compound_group_predicate(builder, request, value)?,
         _ => {
             return Err(error_response(
                 StatusCode::BAD_REQUEST,
@@ -1048,35 +1203,169 @@ fn push_table_branch(
     Ok(())
 }
 
-fn table_order(request: &TableRequest) -> Result<String, Response> {
+fn push_compound_group_predicate(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    request: &TableRequest,
+    encoded_and_status: &str,
+) -> Result<(), Response> {
+    let secondary = request
+        .group
+        .get("secondary")
+        .and_then(Value::as_str)
+        .unwrap_or("status");
+    let axis = match secondary {
+        "status" => ":status:",
+        "status_category" => ":status_category:",
+        _ => return Err(error_response(StatusCode::BAD_REQUEST, "invalid group_key")),
+    };
+    let Some((encoded, status)) = encoded_and_status.split_once(axis) else {
+        return Err(error_response(StatusCode::BAD_REQUEST, "invalid group_key"));
+    };
+    if status.is_empty() || status.len() > 64 {
+        return Err(error_response(StatusCode::BAD_REQUEST, "invalid group_key"));
+    }
+    let decoded = URL_SAFE_NO_PAD
+        .decode(encoded)
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid group_key"))?;
+    let primary = request
+        .group
+        .get("primary")
+        .and_then(Value::as_str)
+        .unwrap_or("assignee");
+    push_group_dimension_predicate(builder, primary, &decoded)?;
+    match secondary {
+        "status_category" => {
+            builder
+                .push(" AND issue_effective_status(i.workspace_id,i.status)=")
+                .push_bind(status.to_string());
+        }
+        _ => {
+            builder.push(" AND i.status=").push_bind(status.to_string());
+        }
+    }
+    Ok(())
+}
+
+fn push_group_dimension_predicate(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    kind: &str,
+    raw_key: &str,
+) -> Result<(), Response> {
+    let value = raw_key.strip_prefix(&format!("{kind}:")).unwrap_or(raw_key);
+    match kind {
+        "assignee" => {
+            if matches!(value, "unassigned" | "__none__" | "__unassigned__") {
+                builder.push(" AND i.assignee_id IS NULL");
+            } else {
+                let (actor_type, id) = value
+                    .split_once(':')
+                    .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid group_key"))?;
+                builder
+                    .push(" AND i.assignee_type=")
+                    .push_bind(actor_type.to_string())
+                    .push(" AND i.assignee_id=")
+                    .push_bind(Uuid::parse_str(id).map_err(|_| {
+                        error_response(StatusCode::BAD_REQUEST, "invalid group_key")
+                    })?);
+            }
+        }
+        "project" => {
+            if matches!(value, "unassigned" | "__none__" | "none" | "__no_project__") {
+                builder.push(" AND i.project_id IS NULL");
+            } else {
+                builder.push(" AND i.project_id=").push_bind(
+                    Uuid::parse_str(value).map_err(|_| {
+                        error_response(StatusCode::BAD_REQUEST, "invalid group_key")
+                    })?,
+                );
+            }
+        }
+        "parent" => {
+            if matches!(value, "root" | "none" | "__no_parent__") {
+                builder.push(" AND i.parent_issue_id IS NULL");
+            } else {
+                builder.push(" AND i.parent_issue_id=").push_bind(
+                    Uuid::parse_str(value).map_err(|_| {
+                        error_response(StatusCode::BAD_REQUEST, "invalid group_key")
+                    })?,
+                );
+            }
+        }
+        _ => {
+            return Err(error_response(StatusCode::BAD_REQUEST, "invalid group_key"));
+        }
+    }
+    Ok(())
+}
+
+fn table_sort_column(field: &str) -> Option<&'static str> {
+    match field {
+        "position" => Some("i.position"),
+        "title" => Some("i.title"),
+        "created_at" => Some("i.created_at"),
+        "updated_at" => Some("i.updated_at"),
+        "last_activity" | "last_activity_at" => Some("i.last_activity_at"),
+        "start_date" => Some("i.start_date"),
+        "due_date" => Some("i.due_date"),
+        "priority" => Some("i.priority"),
+        "status" => Some("i.status"),
+        "number" => Some("i.number"),
+        _ => None,
+    }
+}
+
+async fn table_sort_expression(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    request: &TableRequest,
+) -> Result<(String, bool), Response> {
     let sort = request.query.get("sort").unwrap_or(&Value::Null);
     let field = sort
         .get("field")
         .and_then(Value::as_str)
         .unwrap_or("position");
-    let column = match field {
-        "position" => "i.position",
-        "created_at" => "i.created_at",
-        "updated_at" => "i.updated_at",
-        "last_activity_at" => "i.last_activity_at",
-        "priority" => "i.priority",
-        "status" => "i.status",
-        "due_date" => "i.due_date",
-        "number" => "i.number",
-        _ => {
-            return Err(error_response(
-                StatusCode::BAD_REQUEST,
-                "invalid sort.field",
-            ));
+    let column = if let Some(column) = table_sort_column(field) {
+        column.to_string()
+    } else if let Some(raw_id) = field.strip_prefix("property:") {
+        let property_id = Uuid::parse_str(raw_id)
+            .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid sort.field"))?;
+        match issue_property::get_issue_property(&state.pool, property_id, workspace_id).await {
+            Ok(Some(definition)) if definition.archived_at.is_none() => {
+                let id = definition.id;
+                match definition.type_.as_str() {
+                    "number" => format!(
+                        "CASE WHEN jsonb_typeof(i.properties->'{id}') = 'number' THEN (i.properties->>'{id}')::numeric END"
+                    ),
+                    "date" | "text" | "url" | "select" => {
+                        format!("NULLIF(i.properties->>'{id}', '')")
+                    }
+                    _ => "i.position".into(),
+                }
+            }
+            Ok(_) => "i.position".into(),
+            Err(error) => {
+                tracing::warn!(%error, "failed to resolve table sort property");
+                return Err(error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to resolve table sort",
+                ));
+            }
         }
+    } else {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid sort.field",
+        ));
     };
-    let direction = match sort
+    let descending = match sort
         .get("direction")
         .and_then(Value::as_str)
         .unwrap_or("asc")
     {
-        "asc" => "ASC",
-        "desc" => "DESC",
+        "asc" => false,
+        "desc" => true,
         _ => {
             return Err(error_response(
                 StatusCode::BAD_REQUEST,
@@ -1084,9 +1373,74 @@ fn table_order(request: &TableRequest) -> Result<String, Response> {
             ));
         }
     };
+    Ok((column, descending))
+}
+
+async fn table_order(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    request: &TableRequest,
+) -> Result<String, Response> {
+    let (column, descending) = table_sort_expression(state, workspace_id, request).await?;
+    let direction = if descending { "DESC" } else { "ASC" };
     Ok(format!(
         "{column} {direction} NULLS LAST, i.created_at DESC, i.id DESC"
     ))
+}
+
+fn push_table_keyset(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    expression: &str,
+    descending: bool,
+    last_id: Uuid,
+) {
+    // The cursor stores the last row id, so the database can read the exact
+    // typed sort value from the same row. This preserves numeric/date ordering
+    // for custom properties without serializing values into an untyped cursor.
+    let last_expression = expression.replace("i.", "last_i.");
+    let primary_comparison = if descending { "<" } else { ">" };
+    builder.push(" AND (");
+    builder
+        .push("(")
+        .push(expression)
+        .push(" IS NULL AND ");
+    push_table_last_value(builder, &last_expression, last_id);
+    builder.push(" IS NOT NULL)");
+    builder.push(" OR (");
+    builder.push(expression).push(" IS NOT DISTINCT FROM ");
+    push_table_last_value(builder, &last_expression, last_id);
+    builder.push(" AND (");
+    builder
+        .push("i.created_at < (SELECT last_i.created_at FROM issue AS last_i WHERE last_i.id = ");
+    builder.push_bind(last_id).push(")");
+    builder.push(" OR (i.created_at IS NOT DISTINCT FROM (SELECT last_i.created_at FROM issue AS last_i WHERE last_i.id = ");
+    builder.push_bind(last_id).push(") AND i.id < ");
+    builder.push_bind(last_id).push(")");
+    builder.push(")");
+    builder.push(")");
+    builder.push(" OR (");
+    builder
+        .push(expression)
+        .push(" IS NOT NULL AND ");
+    push_table_last_value(builder, &last_expression, last_id);
+    builder.push(" IS NOT NULL AND ");
+    builder.push(expression).push(' ').push(primary_comparison).push(' ');
+    push_table_last_value(builder, &last_expression, last_id);
+    builder.push(")");
+    builder.push(")");
+}
+
+fn push_table_last_value(
+    builder: &mut QueryBuilder<'_, Postgres>,
+    expression: &str,
+    last_id: Uuid,
+) {
+    builder
+        .push("(SELECT ")
+        .push(expression)
+        .push(" FROM issue AS last_i WHERE last_i.id = ")
+        .push_bind(last_id)
+        .push(")");
 }
 
 async fn table_base_rows(
@@ -1096,8 +1450,10 @@ async fn table_base_rows(
     request: &TableRequest,
 ) -> Result<(Vec<Issue>, i64, Option<String>), Response> {
     let fingerprint = table_fingerprint(request);
-    let (limit, offset) = table_cursor(request, &fingerprint)?;
-    let order = table_order(request)?;
+    let (limit, last_id) = table_row_cursor(request, &fingerprint)?;
+    let order = table_order(state, workspace_id, request).await?;
+    let (sort_expression, descending) =
+        table_sort_expression(state, workspace_id, request).await?;
     let mut count = QueryBuilder::<Postgres>::new("SELECT count(*) FROM issue i WHERE ");
     push_table_filters(&mut count, request, workspace_id, user_id)?;
     push_table_branch(&mut count, request)?;
@@ -1116,13 +1472,14 @@ async fn table_base_rows(
         QueryBuilder::<Postgres>::new(format!("SELECT {ISSUE_COLUMNS} FROM issue i WHERE "));
     push_table_filters(&mut query, request, workspace_id, user_id)?;
     push_table_branch(&mut query, request)?;
+    if let Some(last_id) = last_id {
+        push_table_keyset(&mut query, &sort_expression, descending, last_id);
+    }
     query
         .push(" ORDER BY ")
         .push(order)
         .push(" LIMIT ")
-        .push_bind(limit)
-        .push(" OFFSET ")
-        .push_bind(offset);
+        .push_bind(limit);
     let rows = query
         .build_query_as::<Issue>()
         .fetch_all(&state.pool)
@@ -1134,8 +1491,9 @@ async fn table_base_rows(
                 "failed to query issue table",
             )
         })?;
-    let next = ((offset + rows.len() as i64) < total)
-        .then(|| encode_table_cursor(request, &fingerprint, offset + rows.len() as i64));
+    let next = (rows.len() == limit)
+        .then(|| rows.last().map(|row| encode_table_row_cursor(request, &fingerprint, row.id)))
+        .flatten();
     Ok((rows, total, next))
 }
 
@@ -1145,7 +1503,7 @@ async fn table_all_rows(
     user_id: Uuid,
     request: &TableRequest,
 ) -> Result<Vec<Issue>, Response> {
-    let order = table_order(request)?;
+    let order = table_order(state, workspace_id, request).await?;
     let mut query =
         QueryBuilder::<Postgres>::new(format!("SELECT {ISSUE_COLUMNS} FROM issue i WHERE "));
     push_table_filters(&mut query, request, workspace_id, user_id)?;
@@ -1180,20 +1538,309 @@ async fn table_rows(
     let prefix = issue_prefix(&state, workspace_id).await;
     let ids = rows.iter().map(|issue| issue.id).collect::<Vec<_>>();
     let child_counts = match sqlx::query_as::<_, (Uuid, i64)>("SELECT parent_issue_id, count(*)::bigint FROM issue WHERE workspace_id=$1 AND parent_issue_id=ANY($2) GROUP BY parent_issue_id")
-        .bind(workspace_id).bind(ids).fetch_all(&state.pool).await {
+        .bind(workspace_id).bind(&ids).fetch_all(&state.pool).await {
             Ok(rows) => rows.into_iter().collect::<HashMap<_, _>>(),
             Err(error) => {
                 tracing::warn!(%error, "failed to count issue table children");
                 return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to query issue table");
             }
         };
-    let response_rows = rows.iter().map(|issue| json!({ "issue": IssueResponse::from_issue(issue, &prefix), "direct_child_count": child_counts.get(&issue.id).copied().unwrap_or(0) })).collect::<Vec<_>>();
+    let mut labels = labels_for_issues(&state, workspace_id, &ids)
+        .await
+        .unwrap_or_default();
+    let mut status_resolver = cordy_service::issue_status::Resolver::new(workspace_id);
+    let mut response_rows = Vec::with_capacity(rows.len());
+    for issue in &rows {
+        let mut response = IssueResponse::from_issue(issue, &prefix);
+        response.status_category =
+            Some(status_resolver.effective(&state.pool, &issue.status).await);
+        response.labels = Some(labels.remove(&issue.id).unwrap_or_default());
+        response_rows.push(json!({
+            "issue": response,
+            "direct_child_count": child_counts.get(&issue.id).copied().unwrap_or(0),
+        }));
+    }
     Json(json!({
         "query_fingerprint": table_fingerprint(&request), "group_key": request.group_key,
         "parent_id": request.parent_id, "total": total, "rows": response_rows,
         "branch_total": total, "next_cursor": next_cursor,
     }))
     .into_response()
+}
+
+fn table_dimension_expr(kind: &str, property_id: Option<&str>) -> Result<String, Response> {
+    Ok(match kind {
+        "status" => "i.status".into(),
+        "status_category" => "issue_effective_status(i.workspace_id, i.status)".into(),
+        "priority" => "i.priority".into(),
+        "assignee" => "CASE WHEN i.assignee_id IS NULL THEN 'unassigned' ELSE i.assignee_type || ':' || i.assignee_id::text END".into(),
+        "creator" => "i.creator_type || ':' || i.creator_id::text".into(),
+        "project" => "COALESCE(i.project_id::text, 'unassigned')".into(),
+        "parent" => "COALESCE(i.parent_issue_id::text, 'root')".into(),
+        "property" => {
+            let id = property_id
+                .filter(|id| Uuid::parse_str(id).is_ok())
+                .ok_or_else(|| {
+                    error_response(StatusCode::BAD_REQUEST, "invalid group.property_id")
+                })?;
+            format!(
+                "CASE WHEN NOT (i.properties ? '{id}') THEN 'unset:' ELSE COALESCE(i.properties->>'{id}', 'unset:') END"
+            )
+        }
+        _ => {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "unsupported table group",
+            ))
+        }
+    })
+}
+
+async fn table_filtered_count(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    request: &TableRequest,
+) -> Result<i64, Response> {
+    let mut count = QueryBuilder::<Postgres>::new("SELECT count(*) FROM issue i WHERE ");
+    push_table_filters(&mut count, request, workspace_id, user_id)?;
+    count
+        .build_query_scalar::<i64>()
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to count issue table");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to query issue table",
+            )
+        })
+}
+
+async fn table_grouped_counts(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    request: &TableRequest,
+    expr: &str,
+) -> Result<Vec<(String, i64)>, Response> {
+    let mut query = QueryBuilder::<Postgres>::new(format!(
+        "SELECT {expr} AS group_value, count(*)::bigint FROM issue i WHERE "
+    ));
+    push_table_filters(&mut query, request, workspace_id, user_id)?;
+    query.push(" GROUP BY 1");
+    query
+        .build_query_as::<(Option<String>, i64)>()
+        .fetch_all(&state.pool)
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .map(|(key, count)| (key.unwrap_or_default(), count))
+                .collect()
+        })
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to aggregate issue table groups");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to query issue table",
+            )
+        })
+}
+
+async fn table_property_grouped_counts(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    request: &TableRequest,
+    property_id: &str,
+    group_keys: bool,
+) -> Result<Vec<(String, i64)>, Response> {
+    let property_id = Uuid::parse_str(property_id)
+        .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid group.property_id"))?
+        .to_string();
+    // The property id has been parsed as a UUID before interpolation. Values
+    // are expanded in SQL so an issue contributes once to every selected
+    // option, rather than being grouped under the JSON array's serialization.
+    let value_expression = if group_keys {
+        "'value:' || property_element.value"
+    } else {
+        "property_element.value"
+    };
+    let empty_expression = if group_keys { "'unset:'" } else { "'__none__'" };
+    let mut query = QueryBuilder::<Postgres>::new(format!(
+        "SELECT property_group.group_value, count(DISTINCT i.id)::bigint FROM issue i CROSS JOIN LATERAL (SELECT {empty_expression}::text AS group_value WHERE NOT (i.properties ? '{property_id}') OR i.properties -> '{property_id}' = 'null'::jsonb OR CASE WHEN jsonb_typeof(i.properties -> '{property_id}') = 'array' THEN jsonb_array_length(i.properties -> '{property_id}') = 0 ELSE FALSE END UNION ALL SELECT {value_expression} AS group_value FROM jsonb_array_elements_text(CASE WHEN jsonb_typeof(i.properties -> '{property_id}') = 'array' THEN i.properties -> '{property_id}' ELSE jsonb_build_array(i.properties ->> '{property_id}') END) AS property_element(value) WHERE i.properties ? '{property_id}' AND i.properties -> '{property_id}' <> 'null'::jsonb AND CASE WHEN jsonb_typeof(i.properties -> '{property_id}') = 'array' THEN jsonb_array_length(i.properties -> '{property_id}') > 0 ELSE TRUE END) AS property_group WHERE "
+    ));
+    push_table_filters(&mut query, request, workspace_id, user_id)?;
+    query.push(" GROUP BY 1");
+    query
+        .build_query_as::<(Option<String>, i64)>()
+        .fetch_all(&state.pool)
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .filter_map(|(key, count)| key.map(|key| (key, count)))
+                .collect()
+        })
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to aggregate issue property groups");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to query issue table",
+            )
+        })
+}
+
+async fn table_compound_counts(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    user_id: Uuid,
+    request: &TableRequest,
+    primary_expr: &str,
+    secondary_expr: &str,
+) -> Result<Vec<(String, String, i64)>, Response> {
+    let mut query = QueryBuilder::<Postgres>::new(format!(
+        "SELECT {primary_expr} AS primary_value, {secondary_expr} AS secondary_value, count(*)::bigint FROM issue i WHERE "
+    ));
+    push_table_filters(&mut query, request, workspace_id, user_id)?;
+    query.push(" GROUP BY 1, 2");
+    query
+        .build_query_as::<(Option<String>, Option<String>, i64)>()
+        .fetch_all(&state.pool)
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .map(|(primary, secondary, count)| {
+                    (
+                        primary.unwrap_or_default(),
+                        secondary.unwrap_or_default(),
+                        count,
+                    )
+                })
+                .collect()
+        })
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to aggregate compound issue table groups");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to query issue table",
+            )
+        })
+}
+
+fn compound_cell_group_key(primary_key: &str, status: &str, category: bool) -> String {
+    let axis = if category {
+        ":status_category:"
+    } else {
+        ":status:"
+    };
+    format!(
+        "compound:{}{}{}",
+        URL_SAFE_NO_PAD.encode(primary_key.as_bytes()),
+        axis,
+        status
+    )
+}
+
+fn table_group_descriptor(kind: &str, raw: &str, count: i64, property_id: Option<&str>) -> Value {
+    match kind {
+        "status" | "status_category" => json!({
+            "key": format!("status:{raw}"),
+            "value": { "kind": "status", "status": raw },
+            "count": count,
+        }),
+        "assignee" => {
+            if matches!(raw, "unassigned" | "__unassigned__" | "__none__") {
+                json!({
+                    "key": "assignee:unassigned",
+                    "value": { "kind": "assignee", "actor": Value::Null },
+                    "count": count,
+                })
+            } else if let Some((actor_type, id)) = raw.split_once(':') {
+                json!({
+                    "key": format!("assignee:{raw}"),
+                    "value": { "kind": "assignee", "actor": { "type": actor_type, "id": id } },
+                    "count": count,
+                })
+            } else {
+                json!({
+                    "key": format!("assignee:{raw}"),
+                    "value": { "kind": "assignee", "actor": Value::Null },
+                    "count": count,
+                })
+            }
+        }
+        "project" => {
+            if matches!(raw, "unassigned" | "__none__" | "none" | "__no_project__") {
+                json!({
+                    "key": "project:none",
+                    "value": { "kind": "project", "project_id": Value::Null },
+                    "count": count,
+                })
+            } else {
+                json!({
+                    "key": format!("project:{raw}"),
+                    "value": { "kind": "project", "project_id": raw },
+                    "count": count,
+                })
+            }
+        }
+        "parent" => {
+            if matches!(raw, "root" | "none" | "__no_parent__") {
+                json!({
+                    "key": "parent:none",
+                    "value": {
+                        "kind": "parent",
+                        "parent_id": Value::Null,
+                        "parent": Value::Null,
+                        "value_state": "unset",
+                    },
+                    "count": count,
+                })
+            } else {
+                json!({
+                    "key": format!("parent:{raw}"),
+                    "value": {
+                        "kind": "parent",
+                        "parent_id": raw,
+                        "parent": Value::Null,
+                        "value_state": "unavailable",
+                    },
+                    "count": count,
+                })
+            }
+        }
+        "property" => {
+            let property_id = property_id.unwrap_or_default();
+            let (state, value) = raw.split_once(':').unwrap_or(("unset", ""));
+            if state == "unset" || value.is_empty() && state != "value" {
+                json!({
+                    "key": format!("property:{property_id}:unset:"),
+                    "value": {
+                        "kind": "property",
+                        "property_id": property_id,
+                        "value_state": "unset",
+                    },
+                    "count": count,
+                })
+            } else {
+                json!({
+                    "key": format!("property:{property_id}:value:{value}"),
+                    "value": {
+                        "kind": "property",
+                        "property_id": property_id,
+                        "value": value,
+                        "value_state": "value",
+                    },
+                    "count": count,
+                })
+            }
+        }
+        _ => json!({
+            "key": format!("{kind}:{raw}"),
+            "value": { "kind": kind, "value": raw },
+            "count": count,
+        }),
+    }
 }
 
 async fn table_groups(
@@ -1203,10 +1850,6 @@ async fn table_groups(
 ) -> Response {
     let workspace_id = match context_workspace(&context) {
         Ok(id) => id,
-        Err(response) => return response,
-    };
-    let rows = match table_all_rows(&state, workspace_id, context.member.user_id, &request).await {
-        Ok(rows) => rows,
         Err(response) => return response,
     };
     let kind = request
@@ -1220,21 +1863,6 @@ async fn table_groups(
     ) {
         return error_response(StatusCode::BAD_REQUEST, "unsupported table group");
     }
-    let category_by_id = if matches!(kind, "status_category")
-        || (kind == "compound"
-            && request.group.get("secondary").and_then(Value::as_str) == Some("status_category"))
-    {
-        match sqlx::query_as::<_, (Uuid, String)>("SELECT id, issue_effective_status(workspace_id, status) FROM issue WHERE workspace_id=$1 AND id=ANY($2)")
-            .bind(workspace_id).bind(rows.iter().map(|row| row.id).collect::<Vec<_>>()).fetch_all(&state.pool).await {
-                Ok(rows) => rows.into_iter().collect::<HashMap<_, _>>(),
-                Err(error) => {
-                    tracing::warn!(%error, "failed to resolve issue table status categories");
-                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to query issue table");
-                }
-            }
-    } else {
-        HashMap::new()
-    };
     let property_id = request.group.get("property_id").and_then(Value::as_str);
     if kind == "property"
         && property_id
@@ -1253,47 +1881,70 @@ async fn table_groups(
         .get("secondary")
         .and_then(Value::as_str)
         .unwrap_or("status");
-    let dimension = |issue: &Issue, dimension: &str| -> String {
-        match dimension {
-            "status" => issue.status.clone(),
-            "status_category" => category_by_id
-                .get(&issue.id)
-                .cloned()
-                .unwrap_or_else(|| issue.status.clone()),
-            "assignee" => issue
-                .assignee_type
-                .as_ref()
-                .zip(issue.assignee_id)
-                .map(|(kind, id)| format!("{kind}:{id}"))
-                .unwrap_or_else(|| "unassigned".into()),
-            "project" => issue
-                .project_id
-                .map(|id| id.to_string())
-                .unwrap_or_else(|| "unassigned".into()),
-            "parent" => issue
-                .parent_issue_id
-                .map(|id| id.to_string())
-                .unwrap_or_else(|| "root".into()),
-            "property" => issue
-                .properties
-                .get(property_id.unwrap_or_default())
-                .map(|value| match value {
-                    Value::String(value) => value.clone(),
-                    Value::Null => "unset:".into(),
-                    other => other.to_string(),
-                })
-                .unwrap_or_else(|| "unset:".into()),
-            _ => "unassigned".into(),
-        }
-    };
+    let total =
+        match table_filtered_count(&state, workspace_id, context.member.user_id, &request).await {
+            Ok(total) => total,
+            Err(response) => return response,
+        };
     let mut counts =
         std::collections::BTreeMap::<String, (i64, std::collections::BTreeMap<String, i64>)>::new();
-    for issue in &rows {
-        let key = dimension(issue, if kind == "compound" { primary } else { kind });
-        let entry = counts.entry(key).or_default();
-        entry.0 += 1;
-        if kind == "compound" {
-            *entry.1.entry(dimension(issue, secondary)).or_default() += 1;
+    if kind == "compound" {
+        let primary_expr = match table_dimension_expr(primary, None) {
+            Ok(expr) => expr,
+            Err(response) => return response,
+        };
+        let secondary_expr = match table_dimension_expr(secondary, None) {
+            Ok(expr) => expr,
+            Err(response) => return response,
+        };
+        let rows = match table_compound_counts(
+            &state,
+            workspace_id,
+            context.member.user_id,
+            &request,
+            &primary_expr,
+            &secondary_expr,
+        )
+        .await
+        {
+            Ok(rows) => rows,
+            Err(response) => return response,
+        };
+        for (key, secondary_key, count) in rows {
+            let entry = counts.entry(key).or_default();
+            entry.0 += count;
+            *entry.1.entry(secondary_key).or_default() += count;
+        }
+    } else {
+        let expr = match table_dimension_expr(kind, property_id) {
+            Ok(expr) => expr,
+            Err(response) => return response,
+        };
+        let rows = match if kind == "property" {
+            table_property_grouped_counts(
+                &state,
+                workspace_id,
+                context.member.user_id,
+                &request,
+                property_id.unwrap_or_default(),
+                true,
+            )
+            .await
+        } else {
+            table_grouped_counts(
+                &state,
+                workspace_id,
+                context.member.user_id,
+                &request,
+                &expr,
+            )
+            .await
+        } {
+            Ok(rows) => rows,
+            Err(response) => return response,
+        };
+        for (key, count) in rows {
+            counts.insert(key, (count, std::collections::BTreeMap::new()));
         }
     }
     let fingerprint = table_fingerprint(&request);
@@ -1301,11 +1952,35 @@ async fn table_groups(
         Ok(page) => page,
         Err(response) => return response,
     };
-    let total = rows.len();
-    let all_groups = counts.into_iter().map(|(key,(count, secondary_counts))| {
-        let secondary_groups = secondary_counts.into_iter().map(|(secondary_key,count)| json!({"key":format!("{secondary}:{secondary_key}"),"value":{"kind":secondary,"value":secondary_key},"count":count})).collect::<Vec<_>>();
-        json!({ "key": format!("{}:{key}", if kind == "compound" { primary } else { kind }), "value": { "kind": if kind == "compound" { primary } else { kind }, "status": (kind == "status").then_some(key.clone()), "value": key }, "count": count, "secondary_groups": secondary_groups })
-    }).collect::<Vec<_>>();
+    let category = secondary == "status_category";
+    let all_groups = counts
+        .into_iter()
+        .map(|(key, (count, secondary_counts))| {
+            let descriptor_kind = if kind == "compound" { primary } else { kind };
+            let mut descriptor = table_group_descriptor(descriptor_kind, &key, count, property_id);
+            if kind == "compound" {
+                let primary_key = descriptor
+                    .get("key")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string();
+                let secondary_groups = cordy_service::issue_status::CANONICAL_ORDER
+                    .iter()
+                    .map(|status| {
+                        json!({
+                            "key": compound_cell_group_key(&primary_key, status, category),
+                            "value": { "kind": "status", "status": *status },
+                            "count": secondary_counts.get(*status).copied().unwrap_or(0),
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                if let Some(object) = descriptor.as_object_mut() {
+                    object.insert("secondary_groups".into(), json!(secondary_groups));
+                }
+            }
+            descriptor
+        })
+        .collect::<Vec<_>>();
     let next_offset = offset + limit;
     let next_cursor = (next_offset < all_groups.len() as i64)
         .then(|| encode_table_cursor(&request, &fingerprint, next_offset));
@@ -1332,10 +2007,11 @@ async fn table_facets(
         Ok(id) => id,
         Err(response) => return response,
     };
-    let rows = match table_all_rows(&state, workspace_id, context.member.user_id, &request).await {
-        Ok(rows) => rows,
-        Err(response) => return response,
-    };
+    let total =
+        match table_filtered_count(&state, workspace_id, context.member.user_id, &request).await {
+            Ok(total) => total,
+            Err(response) => return response,
+        };
     let mut facets = Vec::with_capacity(request.facets.len());
     for facet in &request.facets {
         let kind = facet
@@ -1398,87 +2074,110 @@ async fn table_facets(
                 _ => {}
             }
         }
-        let facet_rows = match table_all_rows(
-            &state,
-            workspace_id,
-            context.member.user_id,
-            &facet_request,
-        )
-        .await
-        {
-            Ok(rows) => rows,
-            Err(response) => return response,
-        };
-        let mut counts = std::collections::BTreeMap::<String, i64>::new();
-        for issue in &facet_rows {
-            let key = match kind {
-                "status" => issue.status.clone(),
-                "priority" => issue.priority.clone(),
-                "assignee" => issue
-                    .assignee_type
-                    .as_ref()
-                    .zip(issue.assignee_id)
-                    .map(|(t, id)| format!("{t}:{id}"))
-                    .unwrap_or_else(|| "__none__".into()),
-                "creator" => format!("{}:{}", issue.creator_type, issue.creator_id),
-                "project" => issue
-                    .project_id
-                    .map(|id| id.to_string())
-                    .unwrap_or_else(|| "__none__".into()),
-                "property" => {
-                    let Some(property_id) = facet
-                        .get("property_id")
-                        .and_then(Value::as_str)
-                        .filter(|id| Uuid::parse_str(id).is_ok())
-                    else {
+        let counts = match kind {
+            "label" => {
+                let mut query = QueryBuilder::<Postgres>::new(
+                    "SELECT itl.label_id::text, count(DISTINCT i.id)::bigint FROM issue i JOIN issue_to_label itl ON itl.issue_id=i.id WHERE ",
+                );
+                if let Err(response) = push_table_filters(
+                    &mut query,
+                    &facet_request,
+                    workspace_id,
+                    context.member.user_id,
+                ) {
+                    return response;
+                }
+                query.push(" GROUP BY 1");
+                match query
+                    .build_query_as::<(String, i64)>()
+                    .fetch_all(&state.pool)
+                    .await
+                {
+                    Ok(rows) => rows
+                        .into_iter()
+                        .collect::<std::collections::BTreeMap<_, _>>(),
+                    Err(error) => {
+                        tracing::warn!(%error, "failed to query issue label facets");
                         return error_response(
-                            StatusCode::BAD_REQUEST,
-                            "invalid facet.property_id",
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "failed to query issue facets",
                         );
-                    };
-                    issue
-                        .properties
-                        .get(property_id)
-                        .map(|value| match value {
-                            Value::String(value) => value.clone(),
-                            Value::Null => "unset:".into(),
-                            other => other.to_string(),
-                        })
-                        .unwrap_or_else(|| "unset:".into())
+                    }
                 }
-                "label" | "working_agents" => continue,
-                _ => unreachable!(),
-            };
-            *counts.entry(key).or_default() += 1;
-        }
-        let issue_ids = facet_rows.iter().map(|issue| issue.id).collect::<Vec<_>>();
-        if kind == "label" && !issue_ids.is_empty() {
-            let rows = match sqlx::query_as::<_, (Uuid, i64)>("SELECT label_id, count(DISTINCT issue_id)::bigint FROM issue_to_label WHERE issue_id=ANY($1) GROUP BY label_id").bind(&issue_ids).fetch_all(&state.pool).await {
-                Ok(rows) => rows,
-                Err(error) => {
-                    tracing::warn!(%error, "failed to query issue label facets");
-                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to query issue facets");
-                }
-            };
-            for (key, count) in rows {
-                counts.insert(key.to_string(), count);
             }
-        }
-        if kind == "working_agents" && !issue_ids.is_empty() {
-            let rows = match sqlx::query_as::<_, (Uuid, i64)>("SELECT agent_id, count(DISTINCT issue_id)::bigint FROM agent_task_queue WHERE workspace_id=$1 AND issue_id=ANY($2) AND status='running' GROUP BY agent_id").bind(workspace_id).bind(&issue_ids).fetch_all(&state.pool).await {
-                Ok(rows) => rows,
-                Err(error) => {
-                    tracing::warn!(%error, "failed to query working-agent facets");
-                    return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to query issue facets");
+            "working_agents" => {
+                let mut query = QueryBuilder::<Postgres>::new(
+                    "SELECT atq.agent_id::text, count(DISTINCT i.id)::bigint FROM issue i JOIN agent_task_queue atq ON atq.issue_id=i.id AND atq.workspace_id=i.workspace_id AND atq.status='running' WHERE ",
+                );
+                if let Err(response) = push_table_filters(
+                    &mut query,
+                    &facet_request,
+                    workspace_id,
+                    context.member.user_id,
+                ) {
+                    return response;
                 }
-            };
-            for (key, count) in rows {
-                counts.insert(key.to_string(), count);
+                query.push(" GROUP BY 1");
+                match query
+                    .build_query_as::<(String, i64)>()
+                    .fetch_all(&state.pool)
+                    .await
+                {
+                    Ok(rows) => rows
+                        .into_iter()
+                        .collect::<std::collections::BTreeMap<_, _>>(),
+                    Err(error) => {
+                        tracing::warn!(%error, "failed to query working-agent facets");
+                        return error_response(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "failed to query issue facets",
+                        );
+                    }
+                }
             }
-        }
-        facets.push(json!({ "kind": kind, "property_id": facet.get("property_id"), "values": counts.into_iter().map(|(key,count)| json!({"key":key,"count":count})).collect::<Vec<_>>() }));
+            _ => {
+                let property_id = facet.get("property_id").and_then(Value::as_str);
+                let expr = match table_dimension_expr(kind, property_id) {
+                    Ok(expr) => expr,
+                    Err(response) => return response,
+                };
+                match if kind == "property" {
+                    table_property_grouped_counts(
+                        &state,
+                        workspace_id,
+                        context.member.user_id,
+                        &facet_request,
+                        property_id.unwrap_or_default(),
+                        false,
+                    )
+                    .await
+                } else {
+                    table_grouped_counts(
+                        &state,
+                        workspace_id,
+                        context.member.user_id,
+                        &facet_request,
+                        &expr,
+                    )
+                    .await
+                } {
+                    Ok(rows) => rows.into_iter().collect(),
+                    Err(response) => return response,
+                }
+            }
+        };
+        facets.push(json!({
+            "kind": kind,
+            "property_id": facet.get("property_id"),
+            "values": counts.into_iter().map(|(key, count)| json!({"key": key, "count": count})).collect::<Vec<_>>(),
+        }));
     }
-    Json(json!({ "query_fingerprint": table_fingerprint(&request), "total": rows.len(), "facets": facets })).into_response()
+    Json(json!({
+        "query_fingerprint": table_fingerprint(&request),
+        "total": total,
+        "facets": facets,
+    }))
+    .into_response()
 }
 
 #[derive(Debug, Deserialize)]
@@ -1502,7 +2201,7 @@ async fn delete_issue_and_collect_attachment_urls(
     Ok(urls)
 }
 
-async fn delete_attachment_objects(state: &HandlerState, urls: Vec<String>) {
+pub(crate) async fn delete_attachment_objects(state: &HandlerState, urls: Vec<String>) {
     let Some(storage) = state.attachment_storage.as_ref() else {
         return;
     };
@@ -1865,6 +2564,30 @@ async fn preview_trigger(
             candidates.push((issue, previous, false));
         }
     }
+    let mut allowed_agents = HashSet::new();
+    for (issue, _, _) in &candidates {
+        let target_id = match (issue.assignee_type.as_deref(), issue.assignee_id) {
+            (Some("agent"), Some(agent_id)) => Some(agent_id),
+            (Some("squad"), Some(squad_id)) => {
+                squad::get_squad_in_workspace(&state.pool, squad_id, workspace_id)
+                    .await
+                    .ok()
+                    .flatten()
+                    .map(|squad| squad.leader_id)
+            }
+            _ => None,
+        };
+        let Some(agent_id) = target_id else {
+            continue;
+        };
+        if let Ok(Some(agent)) =
+            agent::get_agent_in_workspace(&state.pool, agent_id, workspace_id).await
+        {
+            if can_member_invoke_agent(&state, context.member.user_id, workspace_id, &agent).await {
+                allowed_agents.insert(agent.id);
+            }
+        }
+    }
     let mut triggers = Vec::new();
     for (issue, previous, is_create) in candidates {
         let input = IssueTriggerInput {
@@ -1874,35 +2597,55 @@ async fn preview_trigger(
             is_create,
             issue,
         };
+        let allowed = allowed_agents.clone();
         if let Some(trigger) = state
             .issues
             .will_enqueue_run(
                 input,
                 IssueTriggerProbe {
-                    can_access_agent: None,
+                    can_access_agent: Some(Box::new(move |agent| allowed.contains(&agent.id))),
                     is_self_loop: None,
                     suppress_active_self_assignment: None,
                 },
             )
             .await
         {
-            triggers.push(json!({ "issue_id": trigger.issue_id, "agent_id": trigger.agent_id, "source": trigger.source.as_str(), "handoff_supported": false }));
+            let handoff_supported = runtime_supports_handoff(&state, trigger.agent_id).await;
+            triggers.push(json!({ "issue_id": trigger.issue_id, "agent_id": trigger.agent_id, "source": trigger.source.as_str(), "handoff_supported": handoff_supported }));
         }
     }
     Json(json!({ "total_count": triggers.len(), "triggers": triggers })).into_response()
+}
+
+async fn runtime_supports_handoff(state: &HandlerState, agent_id: Uuid) -> bool {
+    let Ok(Some(agent)) = agent::get_agent(&state.pool, agent_id).await else {
+        return false;
+    };
+    let Some(runtime_id) = agent.runtime_id else {
+        return false;
+    };
+    let Ok(Some(runtime)) = runtime::get_agent_runtime(&state.pool, runtime_id).await else {
+        return false;
+    };
+    runtime
+        .metadata
+        .get("cli_version")
+        .and_then(Value::as_str)
+        .is_some_and(cordy_agent::version::handoff_supported)
 }
 
 async fn issue_timeline(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
+    headers: HeaderMap,
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
     let issue = match resolve_issue(&state, &context, &id).await {
         Ok(issue) => issue,
         Err(response) => return response,
     };
-    let comments =
+    let mut comments =
         match comment_q::list_comments_for_issue(&state.pool, issue.id, issue.workspace_id, 2001)
             .await
         {
@@ -1914,22 +2657,107 @@ async fn issue_timeline(
                 );
             }
         };
-    let activities = match activity::list_activities_for_issue(&state.pool, issue.id, 2001).await {
-        Ok(rows) => rows,
-        Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to list activities",
-            );
-        }
-    };
+    let mut activities =
+        match activity::list_activities_for_issue(&state.pool, issue.id, 2001).await {
+            Ok(rows) => rows,
+            Err(_) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to list activities",
+                );
+            }
+        };
     let truncated_comments = comments.len() > 2000;
     let truncated_activities = activities.len() > 2000;
-    let mut entries = Vec::new();
-    for comment in comments.into_iter().rev().take(2000) {
-        entries.push(json!({ "type":"comment", "id":comment.id, "actor_type":comment.author_type, "actor_id":comment.author_id, "created_at":crate::timefmt::rfc3339(comment.created_at), "content":comment.content, "parent_id":comment.parent_id, "updated_at":crate::timefmt::rfc3339(comment.updated_at), "revision":comment.revision, "comment_type":comment.type_, "quick_action_id":comment.quick_action_id, "resolved_at":comment.resolved_at.map(crate::timefmt::rfc3339), "resolved_by_type":comment.resolved_by_type, "resolved_by_id":comment.resolved_by_id, "source_task_id":comment.source_task_id }));
+    if truncated_comments {
+        comments.remove(0);
+        match crate::comment_list::complete_comment_threads(
+            &state,
+            issue.id,
+            issue.workspace_id,
+            comments,
+        )
+        .await
+        {
+            Ok(completed) => comments = completed,
+            Err(error) => {
+                tracing::warn!(%error, "failed to complete truncated timeline threads");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to complete comment threads",
+                );
+            }
+        }
     }
-    for row in activities.into_iter().rev().take(2000) {
+    if truncated_activities {
+        activities = activities.split_off(activities.len().saturating_sub(2000));
+    }
+    let comment_ids = comments
+        .iter()
+        .map(|comment| comment.id)
+        .collect::<Vec<_>>();
+    let mut reactions_by_comment = HashMap::<Uuid, Vec<Value>>::new();
+    if !comment_ids.is_empty() {
+        if let Ok(rows) = cordy_db::queries::reaction::list_reactions_by_comment_i_ds(
+            &state.pool,
+            comment_ids.clone(),
+        )
+        .await
+        {
+            for reaction in rows {
+                reactions_by_comment
+                    .entry(reaction.comment_id)
+                    .or_default()
+                    .push(crate::comment::reaction_json(&reaction));
+            }
+        }
+    }
+    let mut attachments_by_comment = HashMap::<Uuid, Vec<crate::issue::AttachmentResponse>>::new();
+    if !comment_ids.is_empty() {
+        if let Ok(rows) = attachment::list_attachments_by_comment_i_ds(
+            &state.pool,
+            comment_ids,
+            issue.workspace_id,
+        )
+        .await
+        {
+            for item in rows {
+                if let Some(comment_id) = item.comment_id {
+                    attachments_by_comment
+                        .entry(comment_id)
+                        .or_default()
+                        .push(AttachmentResponse::for_request(&state, &item, &headers));
+                }
+            }
+        }
+    }
+    let mut entries = Vec::new();
+    for comment in comments {
+        let reactions = reactions_by_comment.remove(&comment.id).unwrap_or_default();
+        let attachments = attachments_by_comment
+            .remove(&comment.id)
+            .unwrap_or_default();
+        entries.push(json!({
+            "type":"comment",
+            "id":comment.id,
+            "actor_type":comment.author_type,
+            "actor_id":comment.author_id,
+            "created_at":crate::timefmt::rfc3339(comment.created_at),
+            "content":comment.content,
+            "parent_id":comment.parent_id,
+            "updated_at":crate::timefmt::rfc3339(comment.updated_at),
+            "revision":comment.revision,
+            "comment_type":comment.type_,
+            "quick_action_id":comment.quick_action_id,
+            "resolved_at":comment.resolved_at.map(crate::timefmt::rfc3339),
+            "resolved_by_type":comment.resolved_by_type,
+            "resolved_by_id":comment.resolved_by_id,
+            "source_task_id":comment.source_task_id,
+            "reactions": reactions,
+            "attachments": attachments,
+        }));
+    }
+    for row in activities {
         entries.push(json!({ "type":"activity", "id":row.id, "actor_type":row.actor_type, "actor_id":row.actor_id, "created_at":crate::timefmt::rfc3339(row.created_at), "action":row.action, "details":row.details }));
     }
     entries.sort_by_key(|entry| {
@@ -2059,6 +2887,7 @@ async fn rerun_issue(
         return error_response(StatusCode::FORBIDDEN, "agent invocation is not allowed");
     }
 
+    let authorized_agent_id = target.id;
     match state
         .tasks
         .rerun_issue(
@@ -2066,7 +2895,7 @@ async fn rerun_issue(
             source_task_id,
             None,
             Some(context.member.user_id),
-            None,
+            Some(&move |agent: &cordy_db::models::Agent| agent.id == authorized_agent_id),
         )
         .await
     {
@@ -2078,6 +2907,9 @@ async fn rerun_issue(
             )),
         )
             .into_response(),
+        Err(cordy_service::task_service::TaskServiceError::RerunInvokeNotAllowed(_)) => {
+            error_response(StatusCode::FORBIDDEN, "agent invocation is not allowed")
+        }
         Err(error) => error_response(StatusCode::BAD_REQUEST, &error.to_string()),
     }
 }
@@ -2197,24 +3029,15 @@ async fn run_quick_action(
     .flatten()
     .expect("created comment");
     let trigger = if action.assignee_type == "squad" {
-        match squad::get_squad_in_workspace(&state.pool, action.assignee_id, issue.workspace_id)
+        state
+            .tasks
+            .enqueue_task_for_squad_leader(
+                &issue,
+                target_agent.id,
+                action.assignee_id,
+                Some(comment.id),
+            )
             .await
-        {
-            Ok(Some(squad)) => {
-                state
-                    .tasks
-                    .enqueue_task_for_squad_leader(
-                        &issue,
-                        target_agent.id,
-                        squad.id,
-                        Some(comment.id),
-                    )
-                    .await
-            }
-            _ => {
-                return error_response(StatusCode::CONFLICT, "quick action target unavailable");
-            }
-        }
     } else {
         state
             .tasks
@@ -2229,7 +3052,7 @@ async fn run_quick_action(
     };
     let _ =
         quick_action::touch_quick_action_usage(&state.pool, action.id, issue.workspace_id).await;
-    let mut value = crate::comment::comment_json(&state, &comment).await;
+    let mut value = crate::comment::comment_json(&state, &comment, &headers).await;
     if let Some(object) = value.as_object_mut() {
         object.insert("issue_revision".into(), json!(row.issue_revision));
         object.insert("trigger_outcomes".into(), json!(trigger_outcomes));
@@ -4045,6 +4868,7 @@ async fn get_issue(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
+    headers: HeaderMap,
 ) -> Response {
     let issue = match resolve_issue(&state, &context, &id).await {
         Ok(issue) => issue,
@@ -4065,7 +4889,7 @@ async fn get_issue(
             .await
             .unwrap_or_default()
             .iter()
-            .map(AttachmentResponse::from)
+            .map(|item| AttachmentResponse::for_request(&state, item, &headers))
             .collect();
     Json(response).into_response()
 }
@@ -4131,6 +4955,7 @@ async fn list_attachments(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
+    headers: HeaderMap,
 ) -> Response {
     let issue = match resolve_issue(&state, &context, &id).await {
         Ok(issue) => issue,
@@ -4141,7 +4966,7 @@ async fn list_attachments(
         Ok(attachments) => Json(
             attachments
                 .iter()
-                .map(AttachmentResponse::from)
+                .map(|item| AttachmentResponse::for_request(&state, item, &headers))
                 .collect::<Vec<_>>(),
         )
         .into_response(),
@@ -4156,6 +4981,7 @@ async fn list_attachments(
 }
 
 fn hydrate_task_user_ref(
+    state: &HandlerState,
     attribution: &mut serde_json::Map<String, Value>,
     key: &str,
     users: &HashMap<Uuid, user::GetUsersByIDsRow>,
@@ -4178,7 +5004,10 @@ fn hydrate_task_user_ref(
         reference.insert("email".into(), Value::String(user.email.clone()));
     }
     if let Some(avatar_url) = user.avatar_url.as_deref().filter(|url| !url.is_empty()) {
-        reference.insert("avatar_url".into(), Value::String(avatar_url.into()));
+        reference.insert(
+            "avatar_url".into(),
+            Value::String(crate::avatar::resolve_url(state, avatar_url)),
+        );
     }
 }
 
@@ -4254,8 +5083,8 @@ pub(crate) async fn task_maps(
                 else {
                     continue;
                 };
-                hydrate_task_user_ref(attribution, "initiator", &users);
-                hydrate_task_user_ref(attribution, "originator", &users);
+                hydrate_task_user_ref(state, attribution, "initiator", &users);
+                hydrate_task_user_ref(state, attribution, "originator", &users);
             }
         }
     }
@@ -5148,7 +5977,7 @@ pub(crate) async fn mutation_actor(
     }
 }
 
-async fn publish_issue_updated(
+pub(crate) async fn publish_issue_updated(
     state: &HandlerState,
     previous: &Issue,
     issue: &Issue,
@@ -6027,24 +6856,44 @@ pub(crate) async fn can_member_invoke_agent(
     workspace_id: Uuid,
     target: &cordy_db::models::Agent,
 ) -> bool {
-    if target.owner_id == Some(user_id) {
+    can_invoke_agent(state, "member", Some(user_id), workspace_id, target).await
+}
+
+/// Invoke gate keyed on the human originator, not the speaking agent owner.
+/// Agent/system actors with no originator may only hit a `public_to workspace`
+/// target; member-scoped grants stay fail-closed.
+pub(crate) async fn can_invoke_agent(
+    state: &HandlerState,
+    actor_type: &str,
+    originator_user_id: Option<Uuid>,
+    workspace_id: Uuid,
+    target: &cordy_db::models::Agent,
+) -> bool {
+    if originator_user_id.is_some_and(|user_id| target.owner_id == Some(user_id)) {
         return true;
     }
     if target.permission_mode != "public_to" {
         return false;
     }
-    let is_member = member::get_member_by_user_and_workspace(&state.pool, user_id, workspace_id)
-        .await
-        .ok()
-        .flatten()
-        .is_some();
+    let workspace_broad = matches!(actor_type, "agent" | "system");
+    let is_member = match originator_user_id {
+        Some(user_id) => {
+            member::get_member_by_user_and_workspace(&state.pool, user_id, workspace_id)
+                .await
+                .ok()
+                .flatten()
+                .is_some()
+        }
+        None => false,
+    };
     agent_invocation_target::list_agent_invocation_targets(&state.pool, target.id)
         .await
         .unwrap_or_default()
         .iter()
-        .any(|entry| {
-            (entry.target_type == "workspace" && is_member)
-                || (entry.target_type == "member" && entry.target_id == user_id)
+        .any(|entry| match entry.target_type.as_str() {
+            "workspace" => is_member || workspace_broad,
+            "member" => originator_user_id == Some(entry.target_id),
+            _ => false,
         })
 }
 
@@ -6572,6 +7421,18 @@ pub(crate) struct AttachmentResponse {
     created_at: String,
 }
 
+impl AttachmentResponse {
+    pub(crate) fn for_request(
+        state: &HandlerState,
+        attachment: &Attachment,
+        headers: &HeaderMap,
+    ) -> Self {
+        let mut response = Self::from(attachment);
+        response.download_url = crate::attachment::bulk_download_url(state, attachment, headers);
+        response
+    }
+}
+
 impl From<&Attachment> for AttachmentResponse {
     fn from(attachment: &Attachment) -> Self {
         let stable_url = format!("/api/attachments/{}/download", attachment.id);
@@ -6596,7 +7457,11 @@ impl From<&Attachment> for AttachmentResponse {
 }
 
 fn object_or_empty(value: Value) -> Value {
-    if value.is_object() { value } else { json!({}) }
+    if value.is_object() {
+        value
+    } else {
+        json!({})
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -6694,7 +7559,7 @@ mod tests {
             task_id: None,
             uploader_id: fixture_issue().creator_id,
             uploader_type: "member".into(),
-            url: "/uploads/diagram.png".into(),
+            url: "https://static.example.test/workspaces/w/diagram.png".into(),
             workspace_id: fixture_issue().workspace_id,
         }
     }
@@ -6990,8 +7855,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn attachment_list_response_matches_go_stable_url_contract() {
+    #[tokio::test]
+    async fn attachment_list_response_matches_go_stable_url_contract() {
         let attachment =
             fixture_attachment(Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f13").unwrap());
         let response = serde_json::to_value(AttachmentResponse::from(&attachment)).unwrap();
@@ -7001,6 +7866,44 @@ mod tests {
         assert_eq!(response["created_at"], "2026-08-23T03:30:00Z");
         assert_eq!(response["issue_id"], fixture_issue().id.to_string());
         assert!(response.get("task_id").is_none());
+
+        let state = HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let negotiated = serde_json::to_value(AttachmentResponse::for_request(
+            &state,
+            &attachment,
+            &HeaderMap::new(),
+        ))
+        .unwrap();
+        assert_eq!(negotiated["download_url"], stable_url);
+
+        let mut signing_state = HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        signing_state.attachment_download.cloudfront_signer = Some(std::sync::Arc::new(
+            crate::cloudfront::CloudFrontSigner::test_signer(),
+        ));
+        let signed =
+            AttachmentResponse::for_request(&signing_state, &attachment, &HeaderMap::new());
+        assert!(
+            signed.download_url.contains("Policy="),
+            "{}",
+            signed.download_url
+        );
+        assert_eq!(signed.markdown_url, stable_url);
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-client-capabilities",
+            "stable_attachment_urls".parse().unwrap(),
+        );
+        let stable = AttachmentResponse::for_request(&signing_state, &attachment, &headers);
+        assert_eq!(stable.download_url, stable_url);
     }
 
     #[test]
@@ -7020,6 +7923,14 @@ mod tests {
     }
 
     #[test]
+    fn search_snippet_handles_casefolded_unicode_without_slicing_mid_codepoint() {
+        let raw = format!("İ{}目标", "x".repeat(240));
+        let snippet = search_snippet(&raw, "目标");
+        assert!(snippet.chars().count() <= 242);
+        assert!(snippet.is_char_boundary(snippet.len()));
+    }
+
+    #[test]
     fn table_cursor_is_bound_to_query_group_and_parent() {
         let mut request = TableRequest {
             query: json!({"scope":{"kind":"workspace"},"filters":{},"sort":{"field":"position","direction":"asc"}}),
@@ -7036,5 +7947,90 @@ mod tests {
         assert_eq!(table_cursor(&request, &fingerprint).unwrap(), (25, 25));
         request.group_key = Some("status:done".into());
         assert!(table_cursor(&request, &fingerprint).is_err());
+    }
+
+    #[test]
+    fn table_sort_fields_include_frontend_contract() {
+        assert_eq!(table_sort_column("title"), Some("i.title"));
+        assert_eq!(
+            table_sort_column("last_activity"),
+            Some("i.last_activity_at")
+        );
+        assert_eq!(
+            table_sort_column("last_activity_at"),
+            Some("i.last_activity_at")
+        );
+        assert_eq!(table_sort_column("start_date"), Some("i.start_date"));
+        assert_eq!(table_sort_column("due_date"), Some("i.due_date"));
+        assert_eq!(table_sort_column("position"), Some("i.position"));
+        assert!(table_sort_column("property:018f03a0-c4d2-7a37-ae4d-5aa45de12f10").is_none());
+        assert!(table_sort_column("unknown").is_none());
+    }
+
+    #[test]
+    fn property_filters_expand_array_and_boolean_containment() {
+        let id = "018f03a0-c4d2-7a37-ae4d-5aa45de12f10";
+        let multi = property_filter_containment(id, &json!("opt-a"));
+        assert!(multi.contains(&json!({ id: "opt-a" })));
+        assert!(multi.contains(&json!({ id: ["opt-a"] })));
+        let checkbox = property_filter_containment(id, &json!("true"));
+        assert!(checkbox.contains(&json!({ id: true })));
+        let unset = property_filter_containment(id, &json!("false"));
+        assert!(unset.contains(&json!({ id: false })));
+    }
+
+    #[test]
+    fn group_descriptors_include_required_discriminator_fields() {
+        let assignee = table_group_descriptor(
+            "assignee",
+            "member:018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
+            3,
+            None,
+        );
+        assert_eq!(assignee["value"]["kind"], "assignee");
+        assert_eq!(assignee["value"]["actor"]["type"], "member");
+        assert_eq!(
+            assignee["value"]["actor"]["id"],
+            "018f03a0-c4d2-7a37-ae4d-5aa45de12f12"
+        );
+
+        let unassigned = table_group_descriptor("assignee", "unassigned", 1, None);
+        assert_eq!(unassigned["value"]["actor"], Value::Null);
+
+        let project =
+            table_group_descriptor("project", "018f03a0-c4d2-7a37-ae4d-5aa45de12f11", 2, None);
+        assert_eq!(
+            project["value"]["project_id"],
+            "018f03a0-c4d2-7a37-ae4d-5aa45de12f11"
+        );
+        assert_eq!(
+            table_group_descriptor("project", "unassigned", 0, None)["value"]["project_id"],
+            Value::Null
+        );
+
+        let parent =
+            table_group_descriptor("parent", "018f03a0-c4d2-7a37-ae4d-5aa45de12f11", 4, None);
+        assert_eq!(parent["value"]["kind"], "parent");
+        assert_eq!(parent["value"]["value_state"], "unavailable");
+        assert_eq!(
+            table_group_descriptor("parent", "root", 1, None)["value"]["value_state"],
+            "unset"
+        );
+
+        let property_id = "018f03a0-c4d2-7a37-ae4d-5aa45de12f13";
+        let property = table_group_descriptor("property", "value:red", 5, Some(property_id));
+        assert_eq!(property["value"]["kind"], "property");
+        assert_eq!(property["value"]["property_id"], property_id);
+        assert_eq!(property["value"]["value_state"], "value");
+        assert_eq!(property["value"]["value"], "red");
+    }
+
+    #[test]
+    fn compound_group_keys_round_trip_primary_and_status() {
+        let key = compound_cell_group_key("assignee:member:abc", "todo", false);
+        assert!(key.starts_with("compound:"));
+        assert!(key.contains(":status:todo"));
+        let category = compound_cell_group_key("project:none", "in_progress", true);
+        assert!(category.contains(":status_category:in_progress"));
     }
 }

@@ -81,11 +81,17 @@ async fn generated_user_queries_roundtrip() {
         .expect("user exists");
     assert_eq!(fetched.id, created.id);
 
+    let claimed = cordy_db::queries::user::claim_first_onboarding(&pool, created.id)
+        .await
+        .expect("generated claim_first_onboarding")
+        .expect("first onboarding claim returning row");
+    assert!(claimed.onboarded_at.is_some());
+
     let onboarded = cordy_db::queries::user::mark_user_onboarded(&pool, created.id)
         .await
         .expect("generated mark_user_onboarded")
         .expect("update returning row");
-    assert!(onboarded.onboarded_at.is_some());
+    assert_eq!(onboarded.onboarded_at, claimed.onboarded_at);
 
     let questionnaire = serde_json::json!({
         "role": "founder",
@@ -144,6 +150,11 @@ async fn generated_user_queries_roundtrip() {
         .expect("mark_user_onboarded idempotently")
         .expect("update returning row");
     assert_eq!(onboarded_again.onboarded_at, onboarded.onboarded_at);
+
+    let claimed_again = cordy_db::queries::user::claim_first_onboarding(&pool, created.id)
+        .await
+        .expect("claim_first_onboarding after onboarded");
+    assert!(claimed_again.is_none());
 
     let batch = cordy_db::queries::user::get_users_by_i_ds(&pool, vec![created.id])
         .await

@@ -80,6 +80,7 @@ impl Collector for DbCollector {
                 let mut mf = MetricFamily::default();
                 mf.set_name(d.fq_name.clone());
                 mf.set_help(d.help.clone());
+                mf.set_field_type(proto::MetricType::GAUGE);
                 mf.set_metric(vec![metric]);
                 mf
             })

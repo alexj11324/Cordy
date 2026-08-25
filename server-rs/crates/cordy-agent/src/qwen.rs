@@ -18,6 +18,7 @@ use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, R
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
+use crate::env::configure_child_env;
 use crate::mcp::{managed_object, write_managed_temp};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
@@ -122,8 +123,8 @@ impl Backend for QwenBackend {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        configure_child_env(&mut command, &self.config.env);
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd);
         }

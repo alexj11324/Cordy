@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 cordy-analytics = { path = "../cordy-analytics" }
+cordy-daemon = { path = "../cordy-daemon" }
 cordy-realtime = { path = "../cordy-realtime" }
 cordy-task-failure = { path = "../cordy-task-failure" }
 anyhow = { workspace = true }

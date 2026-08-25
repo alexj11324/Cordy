@@ -28,7 +28,9 @@ pub enum ProcessTreeSignal {
 /// Unix establishes a new process group atomically at spawn. Windows creates
 /// the child suspended, assigns it to a kill-on-close Job Object, and only then
 /// resumes its initial thread, closing the escape window in which a shim could
-/// otherwise launch the real agent outside the job.
+/// otherwise launch the real agent outside the job. Assignment failure is a
+/// hard launch error: the still-suspended child is killed rather than resumed
+/// unowned.
 pub struct OwnedProcessTree {
     child: Child,
     platform: platform::ProcessTree,
@@ -54,8 +56,6 @@ impl OwnedProcessTree {
     }
 
     /// True only when whole-tree termination and liveness can be confirmed.
-    /// Windows may return false when Job Object assignment was refused; the
-    /// child is still resumed and direct-child cleanup remains available.
     pub fn is_fully_owned(&self) -> bool {
         self.platform.is_fully_owned()
     }
@@ -85,7 +85,7 @@ impl OwnedProcessTree {
     }
 
     /// Waits for the ownership boundary, not merely the direct child, to have
-    /// no members. A degraded Windows launch deliberately returns false.
+    /// no members.
     pub async fn wait_tree_gone(&self, timeout: Duration) -> bool {
         self.platform.wait_gone(timeout).await
     }

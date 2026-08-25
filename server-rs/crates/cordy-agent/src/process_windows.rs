@@ -13,18 +13,21 @@ use windows_sys::Win32::System::JobObjects::{
     JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
 use windows_sys::Win32::System::Threading::{
-    OpenProcess, OpenThread, ResumeThread, CREATE_SUSPENDED, PROCESS_SET_QUOTA, PROCESS_TERMINATE,
-    THREAD_SUSPEND_RESUME,
+    OpenProcess, OpenThread, ResumeThread, CREATE_NEW_CONSOLE, CREATE_SUSPENDED, PROCESS_SET_QUOTA,
+    PROCESS_TERMINATE, THREAD_SUSPEND_RESUME,
 };
 
 use super::ProcessTreeSignal;
 
 pub(crate) struct ProcessTree {
-    job: Option<JobObject>,
+    job: JobObject,
 }
 
 pub(crate) fn prepare(command: &mut Command) {
-    command.creation_flags(CREATE_SUSPENDED);
+    use std::os::windows::process::CommandExt as _;
+    const SW_HIDE: u16 = 0;
+    command.creation_flags(CREATE_NEW_CONSOLE | CREATE_SUSPENDED);
+    command.as_std_mut().startupinfo_show_window(SW_HIDE);
 }
 
 pub(crate) async fn claim(child: &mut Child) -> io::Result<ProcessTree> {
@@ -33,21 +36,19 @@ pub(crate) async fn claim(child: &mut Child) -> io::Result<ProcessTree> {
         .ok_or_else(|| io::Error::other("spawned agent has no process id"))?;
 
     let job = match JobObject::new().and_then(|job| job.assign(pid).map(|()| job)) {
-        Ok(job) => Some(job),
+        Ok(job) => job,
         Err(error) => {
-            tracing::warn!(
-                %error,
-                pid,
-                "could not own agent process tree; descendant cleanup is best-effort"
-            );
-            None
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            return Err(io::Error::new(
+                error.kind(),
+                format!("could not assign agent process {pid} to a job object: {error}"),
+            ));
         }
     };
 
     if let Err(error) = resume_process(pid) {
-        if let Some(job) = &job {
-            let _ = job.terminate();
-        }
+        let _ = job.terminate();
         let _ = child.start_kill();
         let _ = child.wait().await;
         return Err(io::Error::new(
@@ -61,25 +62,20 @@ pub(crate) async fn claim(child: &mut Child) -> io::Result<ProcessTree> {
 
 impl ProcessTree {
     pub(crate) fn is_fully_owned(&self) -> bool {
-        self.job.is_some()
+        true
     }
 
     pub(crate) fn signal(&self, child: &mut Child, _signal: ProcessTreeSignal) -> io::Result<()> {
-        if let Some(job) = &self.job {
-            if job.terminate().is_ok() {
-                return Ok(());
-            }
+        if self.job.terminate().is_ok() {
+            return Ok(());
         }
         child.start_kill()
     }
 
     pub(crate) async fn wait_gone(&self, timeout: Duration) -> bool {
-        let Some(job) = &self.job else {
-            return false;
-        };
         let deadline = Instant::now() + timeout;
         loop {
-            match job.active_processes() {
+            match self.job.active_processes() {
                 Ok(0) => return true,
                 Ok(_) => {}
                 Err(_) => return false,
@@ -89,6 +85,12 @@ impl ProcessTree {
             }
             tokio::time::sleep(Duration::from_millis(10)).await;
         }
+    }
+}
+
+impl Drop for ProcessTree {
+    fn drop(&mut self) {
+        let _ = self.job.terminate();
     }
 }
 

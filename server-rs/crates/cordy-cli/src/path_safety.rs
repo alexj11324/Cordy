@@ -37,11 +37,20 @@ pub(super) fn lexical_normalize(path: &Path) -> PathBuf {
     for component in path.components() {
         match component {
             Component::CurDir => {}
-            Component::ParentDir => {
-                normalized.pop();
-            }
+            Component::ParentDir => match normalized.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    let _ = normalized.pop();
+                }
+                Some(Component::RootDir) | Some(Component::Prefix(_)) => {}
+                _ if !normalized.has_root() => normalized.push(component.as_os_str()),
+                _ => {}
+            },
             _ => normalized.push(component.as_os_str()),
         }
     }
-    normalized
+    if normalized.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        normalized
+    }
 }

@@ -206,6 +206,70 @@ RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onb
     }))
 }
 
+pub async fn claim_first_onboarding(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+) -> anyhow::Result<Option<User>> {
+    let row = sqlx::query(
+        r#"UPDATE "user" SET
+    onboarded_at = now(),
+    updated_at = now()
+WHERE id = $1 AND onboarded_at IS NULL
+RETURNING id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone"#
+    )
+        .bind(id)
+        .fetch_optional(executor)
+        .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(User {
+        id: row.try_get(0)?,
+        name: row.try_get(1)?,
+        email: row.try_get(2)?,
+        avatar_url: row.try_get(3)?,
+        created_at: row.try_get(4)?,
+        updated_at: row.try_get(5)?,
+        onboarded_at: row.try_get(6)?,
+        onboarding_questionnaire: row.try_get(7)?,
+        cloud_waitlist_email: row.try_get(8)?,
+        cloud_waitlist_reason: row.try_get(9)?,
+        starter_content_state: row.try_get(10)?,
+        language: row.try_get(11)?,
+        profile_description: row.try_get(12)?,
+        timezone: row.try_get(13)?,
+    }))
+}
+
+pub async fn get_user_for_update(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+) -> anyhow::Result<Option<User>> {
+    let row = sqlx::query(
+        r#"SELECT id, name, email, avatar_url, created_at, updated_at, onboarded_at, onboarding_questionnaire, cloud_waitlist_email, cloud_waitlist_reason, starter_content_state, language, profile_description, timezone FROM "user"
+WHERE id = $1
+FOR UPDATE"#
+    )
+        .bind(id)
+        .fetch_optional(executor)
+        .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(User {
+        id: row.try_get(0)?,
+        name: row.try_get(1)?,
+        email: row.try_get(2)?,
+        avatar_url: row.try_get(3)?,
+        created_at: row.try_get(4)?,
+        updated_at: row.try_get(5)?,
+        onboarded_at: row.try_get(6)?,
+        onboarding_questionnaire: row.try_get(7)?,
+        cloud_waitlist_email: row.try_get(8)?,
+        cloud_waitlist_reason: row.try_get(9)?,
+        starter_content_state: row.try_get(10)?,
+        language: row.try_get(11)?,
+        profile_description: row.try_get(12)?,
+        timezone: row.try_get(13)?,
+    }))
+}
+
 pub async fn patch_user_onboarding(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     questionnaire: Option<&serde_json::Value>,

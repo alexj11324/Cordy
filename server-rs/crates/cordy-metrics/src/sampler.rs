@@ -634,6 +634,11 @@ fn wrap_family(desc: &Desc, metric: proto::Metric) -> MetricFamily {
     let mut mf = MetricFamily::default();
     mf.set_name(desc.fq_name.clone());
     mf.set_help(desc.help.clone());
+    mf.set_field_type(if metric.histogram.is_some() {
+        proto::MetricType::HISTOGRAM
+    } else {
+        proto::MetricType::GAUGE
+    });
     mf.set_metric(vec![metric]);
     mf
 }
@@ -647,5 +652,35 @@ fn is_statement_timeout(err: &sqlx::Error) -> bool {
                     .contains("canceling statement due to statement timeout")
         }
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use prometheus::proto::MetricType;
+    use std::collections::HashMap;
+
+    fn test_desc() -> Desc {
+        Desc::new(
+            "cordy_sampler_test".to_string(),
+            "help".to_string(),
+            Vec::new(),
+            HashMap::new(),
+        )
+        .expect("valid descriptor")
+    }
+
+    #[test]
+    fn sampler_families_set_gauge_and_histogram_types() {
+        let gauge = gauge_family(&test_desc(), 1.0, vec![]);
+        assert_eq!(gauge.get_field_type(), MetricType::GAUGE);
+        let hist = SnapshotHistogram {
+            count: 1,
+            sum: 1.0,
+            buckets: vec![(1.0, 1)],
+        };
+        let histogram = histogram_family(&test_desc(), &hist, vec![]);
+        assert_eq!(histogram.get_field_type(), MetricType::HISTOGRAM);
     }
 }

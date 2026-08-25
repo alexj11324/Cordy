@@ -3,7 +3,7 @@
 use std::sync::LazyLock;
 
 use axum::body::Bytes;
-use axum::extract::State;
+use axum::extract::{DefaultBodyLimit, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
@@ -25,7 +25,10 @@ static FEEDBACK_IMAGE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"!\[[^\]]*\]\([^)]+\)").expect("feedback image regex is valid"));
 
 pub fn router() -> Router<HandlerState> {
-    Router::new().route("/api/feedback", post(create_feedback))
+    Router::new().route(
+        "/api/feedback",
+        post(create_feedback).layer(DefaultBodyLimit::max(FEEDBACK_BODY_LIMIT)),
+    )
 }
 
 #[derive(Debug, Default, Deserialize, Serialize)]
@@ -136,11 +139,19 @@ async fn create_feedback(
             .await
         {
             Ok(Some(feedback)) => feedback,
-            Ok(None) | Err(_) => {
+            Ok(None) => {
+                tracing::warn!(%user_id, "create feedback returned no row");
                 return error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "failed to submit feedback",
-                )
+                );
+            }
+            Err(error) => {
+                tracing::warn!(%error, %user_id, "create feedback failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to submit feedback",
+                );
             }
         };
 
@@ -239,5 +250,31 @@ mod tests {
         let request: CreateFeedbackRequest = decode_json_body(br#"{"context":{}}"#).unwrap();
         assert!(request.message.is_empty());
         assert!(!valid_feedback_context(request.context.as_ref()));
+    }
+
+    #[tokio::test]
+    async fn feedback_route_rejects_bodies_above_64_kib_while_reading() {
+        use axum::body::Body;
+        use axum::http::Request;
+        use tower::ServiceExt as _;
+
+        let state = crate::HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        let app = router().with_state(state);
+        let oversized = vec![b'x'; FEEDBACK_BODY_LIMIT + 1];
+        let response = app
+            .oneshot(
+                Request::post("/api/feedback")
+                    .header("content-type", "application/json")
+                    .header("x-user-id", Uuid::now_v7().to_string())
+                    .body(Body::from(oversized))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
     }
 }

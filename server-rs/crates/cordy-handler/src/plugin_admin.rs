@@ -25,12 +25,16 @@ use crate::error::error_response;
 use crate::plugin_action::{plugin_error, plugins_enabled};
 use crate::state::HandlerState;
 
-pub fn router() -> Router<HandlerState> {
+/// Member-visible plugin reads. The Go router keeps `GET /plugins` outside the
+/// owner/admin group so installed issue panels and hook actions remain usable.
+pub fn member_router() -> Router<HandlerState> {
+    Router::new().route("/api/workspaces/{id}/plugins", get(list_plugins))
+}
+
+/// Install, configure, token, and MCP-approval mutations stay admin-only.
+pub fn admin_router() -> Router<HandlerState> {
     Router::new()
-        .route(
-            "/api/workspaces/{id}/plugins",
-            get(list_plugins).post(install_plugin),
-        )
+        .route("/api/workspaces/{id}/plugins", post(install_plugin))
         .route("/api/workspaces/{id}/plugins/preview", post(preview_plugin))
         .route(
             "/api/workspaces/{id}/plugins/{installation_id}",
@@ -60,6 +64,10 @@ pub fn router() -> Router<HandlerState> {
             "/api/workspaces/{id}/plugins/{installation_id}/mcp/{hook_key}/tools",
             get(list_mcp_tools).put(approve_mcp_tools),
         )
+}
+
+pub fn router() -> Router<HandlerState> {
+    member_router().merge(admin_router())
 }
 
 fn require_enabled(state: &HandlerState) -> Result<(), Response> {
@@ -534,5 +542,54 @@ async fn approve_mcp_tools(
     match installation_payload(&state, &updated).await {
         Ok(payload) => Json(payload).into_response(),
         Err(error) => plugin_error(&error, "failed to load the Plugin"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt as _;
+
+    fn state() -> HandlerState {
+        HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        )
+    }
+
+    #[tokio::test]
+    async fn plugin_list_is_on_the_member_router_not_the_admin_router() {
+        let workspace = "018f03a0-c4d2-7a37-ae4d-5aa45de12f11";
+        let uri = format!("/api/workspaces/{workspace}/plugins");
+
+        let member_post = member_router()
+            .with_state(state())
+            .oneshot(
+                Request::post(&uri)
+                    .header("content-type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(member_post.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+        let admin_get = admin_router()
+            .with_state(state())
+            .oneshot(Request::get(&uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(admin_get.status(), StatusCode::METHOD_NOT_ALLOWED);
+
+        let member_get = member_router()
+            .with_state(state())
+            .oneshot(Request::get(&uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_ne!(member_get.status(), StatusCode::METHOD_NOT_ALLOWED);
+        assert_ne!(member_get.status(), StatusCode::NOT_FOUND);
     }
 }

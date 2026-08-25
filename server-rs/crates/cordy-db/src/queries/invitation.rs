@@ -9,16 +9,16 @@ use chrono::{DateTime, Utc};
 use sqlx::Row;
 use uuid::Uuid;
 
+const ACCEPT_INVITATION_SQL: &str = r#"UPDATE workspace_invitation
+SET status = 'accepted', updated_at = now()
+WHERE id = $1 AND status = 'pending' AND expires_at > now()
+RETURNING id, workspace_id, inviter_id, invitee_email, invitee_user_id, role, status, created_at, updated_at, expires_at"#;
+
 pub async fn accept_invitation(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
 ) -> anyhow::Result<Option<WorkspaceInvitation>> {
-    let row = sqlx::query(
-        r#"UPDATE workspace_invitation
-SET status = 'accepted', updated_at = now()
-WHERE id = $1 AND status = 'pending'
-RETURNING id, workspace_id, inviter_id, invitee_email, invitee_user_id, role, status, created_at, updated_at, expires_at"#
-    )
+    let row = sqlx::query(ACCEPT_INVITATION_SQL)
         .bind(id)
         .fetch_optional(executor)
         .await?;
@@ -298,4 +298,18 @@ WHERE id = $1 AND status = 'pending'"#,
     .execute(executor)
     .await?;
     Ok(r.rows_affected())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ACCEPT_INVITATION_SQL;
+
+    #[test]
+    fn accept_invitation_rechecks_expiry_in_the_update() {
+        assert!(
+            ACCEPT_INVITATION_SQL.contains("expires_at > now()"),
+            "{ACCEPT_INVITATION_SQL}"
+        );
+        assert!(ACCEPT_INVITATION_SQL.contains("status = 'pending'"));
+    }
 }

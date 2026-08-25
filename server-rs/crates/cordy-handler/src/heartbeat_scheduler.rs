@@ -31,10 +31,11 @@ impl PassthroughHeartbeatScheduler {
 #[async_trait]
 impl HeartbeatScheduler for PassthroughHeartbeatScheduler {
     async fn schedule(&self, agent_runtime: &AgentRuntime) -> anyhow::Result<()> {
-        if agent_runtime.status == "online" && agent_runtime.last_seen_at.is_some() {
-            if runtime::touch_agent_runtime_last_seen(&self.pool, agent_runtime.id).await? > 0 {
-                return Ok(());
-            }
+        if agent_runtime.status == "online"
+            && agent_runtime.last_seen_at.is_some()
+            && runtime::touch_agent_runtime_last_seen(&self.pool, agent_runtime.id).await? > 0
+        {
+            return Ok(());
         }
         runtime::mark_agent_runtime_online(&self.pool, agent_runtime.id).await?;
         Ok(())

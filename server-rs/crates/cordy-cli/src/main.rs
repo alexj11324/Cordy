@@ -24,8 +24,10 @@ async fn main() {
     };
     match run(&cli, &environment).await {
         Ok(output) => {
-            print!("{}", output.stdout);
-            eprint!("{}", output.stderr);
+            if error::write_output(std::io::stdout(), &output.stdout).is_err() {
+                std::process::exit(1);
+            }
+            let _ = error::write_output(std::io::stderr(), &output.stderr);
         }
         Err(cause) => {
             if let Some(output) = cordy_cli::command_error_output(&cause) {
