@@ -763,6 +763,16 @@
       existing handler. `Command::Property` routing, lib registration, and
       visibility are correct. `git diff --check` passes; subagent did not run
       Cargo or modify files.
+- [x] PR #243 `codex/cord-75-cli-chat-dispatch` is the next bounded child of
+      #242: base branch `codex/cord-74-cli-property-dispatch` at
+      `0fc096835b4a87a4ff3cdb5d3f039ee034d8efae`, exact head
+      `47aacbacfcc93bcf76056ff8dc4ddc043f6bf541`, tree
+      `9e65ca249d97fc1e77c8a729450e3cdc7c6fd127`, candidate
+      `4361472c1589bd2afea43d002f9c47b130500c16`. It isolates Chat
+      history/thread routing into `dispatch_chat.rs`, preserving endpoint,
+      thread identifier, and read-mode behavior. Scoped rustfmt and
+      `git diff --check` pass; PR #243 is Ready (`isDraft=false`),
+      CLEAN/MERGEABLE. Cargo and exact-head review remain delegated.
 - [x] #223 exact-head subagent review PASS on
       `0fbbcada375727a45c15da8a9bcba4526cc1a8cb`: the execenv module preserves
       exact two-argument argv matching, inherited stdin/stdout behavior, and
