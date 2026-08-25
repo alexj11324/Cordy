@@ -1694,6 +1694,17 @@
       errors are unchanged. Pinned rustfmt and `git diff --check` pass; Cargo
       is delegated. PR #333 is Ready (`isDraft=false`), CLEAN/MERGEABLE;
       exact-head subagent review PASS on `7fc48f7c`; no Cargo was run.
+- [ ] PR #334 `codex/cord-166-cli-issue-property-value-encoding` is the next
+      bounded child of #333: base branch `codex/cord-165-cli-issue-property-actor`
+      at `7fc48f7cb4e9aab00fe43f37682bcdeb322b0394`, exact head
+      `9d71ab4c1e667a0cb50f1a8875a89631364b640e`, tree
+      `d56bd81c3ac3cd8fae6afe25c0776e2ac9301b93`, candidate
+      `3a18a4eb8595cfc7550a496a935087f487cef14a` (parents base + head).
+      It extracts select/multi-select/actor/number/checkbox value encoding;
+      option lookup, actor resolution, empty-list validation, and errors stay
+      unchanged. Pinned rustfmt and `git diff --check` pass; Cargo is delegated.
+      PR #334 is Ready (`isDraft=false`), CLEAN/MERGEABLE; exact-head subagent
+      review is pending.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
