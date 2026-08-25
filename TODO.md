@@ -1436,7 +1436,7 @@
       pinned rustfmt and `git diff --check` pass; Cargo is delegated. PR #311
       is Ready (`isDraft=false`), MERGEABLE (checks pending). Exact-head
       subagent review PASS on `068dea73`; no Cargo was run.
-- [ ] PR #312 `codex/cord-144-cli-project-output` is the next bounded child of
+- [x] PR #312 `codex/cord-144-cli-project-output` is the completed bounded child of
       #311: base branch `codex/cord-143-cli-issue-description` at
       `068dea7373f28d508188d1f6f0ed2d090a6f4f0f`, exact head
       `e41de24e23a21decfbd78aecbef023690d48c275`, tree
@@ -1446,8 +1446,8 @@
       API list/get orchestration; output columns, full-ID behavior, actor lookup
       inputs, JSON output, and resource warnings remain unchanged. Scoped pinned
       rustfmt and `git diff --check` pass; Cargo is delegated. PR #312 is Ready
-      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review is pending;
-      no Cargo was run.
+      (`isDraft=false`), CLEAN/MERGEABLE. Exact-head subagent review PASS on
+      `e41de24e`; no Cargo was run.
 - [x] PR #299 `codex/cord-131-cli-api-health` is the completed bounded child of
       #298: base branch `codex/cord-130-cli-api-skill-import` at
       `bc0bb6d08b367d9715b0df2c34a2267686ae13e3`, exact head
