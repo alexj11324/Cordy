@@ -178,6 +178,13 @@ struct ExecOptionsSeed {
 }
 
 impl ProviderExecutionPlan {
+    pub(crate) fn validate_task_identity(
+        task: &Task,
+        target: &RuntimeExecutionTarget,
+    ) -> anyhow::Result<()> {
+        validate_identity(task, target).map(|_| ())
+    }
+
     pub fn build(
         config: &Config,
         task: &Task,

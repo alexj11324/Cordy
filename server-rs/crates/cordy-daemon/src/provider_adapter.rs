@@ -138,6 +138,9 @@ impl ProductionProviderAdapter {
             .get(&target.provider)
             .map(|entry| entry.model.clone())
             .unwrap_or_default();
+        if let Err(error) = ProviderExecutionPlan::validate_task_identity(&task, &target) {
+            return failed(error, None);
+        }
         runtime
             .resolve_task_model_selection(&ctx, &mut task, &target, &launch, &default_model)
             .await;

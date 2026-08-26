@@ -219,6 +219,16 @@ impl ProviderRuntimeContext {
         if !capability_checks_pending && !model_requires_catalog {
             return;
         }
+        if target.provider == "codex" && effective_model.is_empty() {
+            // Codex capability flags are only safe with an explicit model.
+            // Clear them locally instead of spending the discovery timeout on
+            // a catalog that cannot establish which model they belong to.
+            if let Some(agent) = task.agent.as_mut() {
+                agent.thinking_level.clear();
+                agent.service_tier.clear();
+            }
+            return;
+        }
 
         let catalog = self
             .discover_model_catalog(ctx, &task.workspace_id, &task.runtime_id, target, launch)
@@ -833,25 +843,17 @@ fn resolve_task_model_selection_from_catalog(
     thinking_level: &str,
     service_tier: &str,
 ) -> ResolvedTaskModelSelection {
-    // Discovery failures are represented by a fallback catalog. Go treats
-    // that case as fail-open: preserve values that may still be valid for the
-    // runtime and let the provider resolve them. The two deterministic guards
-    // remain fail-closed, matching Validate*With: non-Codex service tiers and
-    // unresolved Codex model capability overrides cannot be safely injected.
-    if catalog.fallback {
+    // Discovery failures and empty catalogs are non-authoritative. Go treats
+    // both cases as fail-open: preserve values that may still be valid for the
+    // runtime and let the provider resolve them. The unresolved Codex case is
+    // handled before discovery because its capability flags have no model to
+    // validate against.
+    if catalog.fallback || catalog.models.is_empty() {
         return ResolvedTaskModelSelection {
             model: configured_model.to_string(),
             model_rewritten: false,
-            thinking_level: if provider == "codex" && configured_model.is_empty() {
-                String::new()
-            } else {
-                thinking_level.to_string()
-            },
-            service_tier: if provider == "codex" && !configured_model.is_empty() {
-                service_tier.to_string()
-            } else {
-                String::new()
-            },
+            thinking_level: thinking_level.to_string(),
+            service_tier: service_tier.to_string(),
         };
     }
     let (qualified_model, model_rewritten) =
@@ -1457,8 +1459,19 @@ mod tests {
         let unresolved = resolve_task_model_selection_from_catalog(
             &catalog, "codex", "", "xhigh", "priority",
         );
-        assert!(unresolved.thinking_level.is_empty());
-        assert!(unresolved.service_tier.is_empty());
+        assert_eq!(unresolved.thinking_level, "xhigh");
+        assert_eq!(unresolved.service_tier, "priority");
+
+        let empty = cordy_agent::Catalog::default();
+        let empty_selection = resolve_task_model_selection_from_catalog(
+            &empty,
+            "opencode",
+            "gpt-5",
+            "high",
+            "priority",
+        );
+        assert_eq!(empty_selection.thinking_level, "high");
+        assert_eq!(empty_selection.service_tier, "priority");
     }
 
     #[test]
