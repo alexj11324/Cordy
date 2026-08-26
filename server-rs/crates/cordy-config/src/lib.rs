@@ -56,14 +56,18 @@ impl Default for ServerConfig {
 pub struct DatabaseConfig {
     /// `DATABASE_URL` (pgx conn string). Required.
     pub url: Option<String>,
+    /// Per-process pool ceiling. Go's production default is 25.
     pub max_connections: u32,
+    /// Warm pool floor. Go's production default is 5.
+    pub min_connections: u32,
 }
 
 impl Default for DatabaseConfig {
     fn default() -> Self {
         Self {
             url: None,
-            max_connections: 20,
+            max_connections: 25,
+            min_connections: 5,
         }
     }
 }
@@ -436,7 +440,8 @@ mod tests {
         clear_ambient_env();
         let cfg = Config::load(None).unwrap();
         assert_eq!(cfg.server.port, 8080);
-        assert_eq!(cfg.database.max_connections, 20);
+        assert_eq!(cfg.database.max_connections, 25);
+        assert_eq!(cfg.database.min_connections, 5);
         assert!(cfg.database.url.is_none());
         assert!(!cfg.is_production());
     }
