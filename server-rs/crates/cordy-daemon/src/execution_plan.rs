@@ -378,6 +378,32 @@ impl ProviderExecutionPlan {
         self.prepare.clone()
     }
 
+    /// Updates the launch-dependent inputs after a final process-boundary
+    /// resolution. Environment preparation normally consumes these values
+    /// before this point, but keeping the plan in sync makes a late self-heal
+    /// update both the provider command prefix and the version/path knobs that
+    /// a provider-specific refresh may consume.
+    pub(crate) fn update_launch(
+        &mut self,
+        target: &RuntimeExecutionTarget,
+        command_path: &str,
+        version: &str,
+        fixed_args: &[String],
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            self.prepare.provider == target.provider,
+            "launch provider changed while preparing task"
+        );
+        if target.provider == "codex" {
+            self.prepare.codex_version = version.to_string();
+        }
+        if target.provider == "openclaw" {
+            self.prepare.openclaw_bin = command_path.to_string();
+        }
+        self.launch_prefix = fixed_args.to_vec();
+        Ok(())
+    }
+
     pub fn task_context(&self) -> &TaskContextForEnv {
         &self.prepare.task
     }
