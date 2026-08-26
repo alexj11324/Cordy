@@ -170,14 +170,16 @@ impl Backend for CopilotBackend {
                 tree,
                 stdout,
                 stderr,
-                message_tx,
-                result_tx,
-                cancellation,
-                timeout,
-                seed_model,
-                resumed,
-                started,
-                stderr_tail,
+                CopilotRunContext {
+                    messages: message_tx,
+                    result_tx,
+                    cancellation,
+                    timeout,
+                    seed_model,
+                    resumed,
+                    started,
+                    stderr_tail,
+                },
             )
             .await;
         });
@@ -695,15 +697,18 @@ async fn run_copilot(
     mut tree: OwnedProcessTree,
     stdout: ChildStdout,
     stderr: ChildStderr,
-    messages: mpsc::Sender<Message>,
-    result_tx: oneshot::Sender<ExecutionResult>,
-    cancellation: CancellationToken,
-    timeout: Duration,
-    seed_model: String,
-    resumed: bool,
-    started: Instant,
-    stderr_tail: SharedDiagnosticBuffer,
+    context: CopilotRunContext,
 ) {
+    let CopilotRunContext {
+        messages,
+        result_tx,
+        cancellation,
+        timeout,
+        seed_model,
+        resumed,
+        started,
+        stderr_tail,
+    } = context;
     let mut stderr_task = tokio::spawn(pump_stderr(stderr, stderr_tail.clone()));
     let mut stdout_task = tokio::spawn(read_stream(
         stdout,
@@ -714,17 +719,17 @@ async fn run_copilot(
         let completion = async {
             let exit = tree.wait().await;
             let state = (&mut stdout_task).await;
-            (exit, state)
+            CopilotCompletion { exit, state }
         };
         tokio::pin!(completion);
         if timeout.is_zero() {
             tokio::select! {
-                completed = &mut completion => RunOutcome::Completed(completed),
+                completed = &mut completion => RunOutcome::Completed(Box::new(completed)),
                 () = cancellation.cancelled() => RunOutcome::Cancelled,
             }
         } else {
             tokio::select! {
-                completed = &mut completion => RunOutcome::Completed(completed),
+                completed = &mut completion => RunOutcome::Completed(Box::new(completed)),
                 () = cancellation.cancelled() => RunOutcome::Cancelled,
                 () = tokio::time::sleep(timeout) => RunOutcome::TimedOut,
             }
@@ -732,7 +737,10 @@ async fn run_copilot(
     };
 
     let (run_end, exit, stream) = match outcome {
-        RunOutcome::Completed((exit, state)) => (RunEnd::Completed, Some(exit), state),
+        RunOutcome::Completed(completed) => {
+            let CopilotCompletion { exit, state } = *completed;
+            (RunEnd::Completed, Some(exit), state)
+        }
         RunOutcome::Cancelled => {
             let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
             (RunEnd::Cancelled, None, (&mut stdout_task).await)
@@ -837,6 +845,23 @@ fn join_failure_state(error: JoinError) -> CopilotState {
     }
 }
 
+struct CopilotRunContext {
+    messages: mpsc::Sender<Message>,
+    result_tx: oneshot::Sender<ExecutionResult>,
+    cancellation: CancellationToken,
+    timeout: Duration,
+    seed_model: String,
+    resumed: bool,
+    started: Instant,
+    stderr_tail: SharedDiagnosticBuffer,
+}
+
+#[derive(Debug)]
+struct CopilotCompletion {
+    exit: io::Result<ExitStatus>,
+    state: Result<CopilotState, JoinError>,
+}
+
 fn empty_message(message_type: MessageType) -> Message {
     Message {
         message_type,
@@ -857,7 +882,7 @@ fn send_message(messages: &mpsc::Sender<Message>, message: Message) {
 
 #[derive(Debug)]
 enum RunOutcome {
-    Completed((io::Result<ExitStatus>, Result<CopilotState, JoinError>)),
+    Completed(Box<CopilotCompletion>),
     Cancelled,
     TimedOut,
 }
