@@ -15,7 +15,8 @@ use std::{env, time::Duration};
 use sqlx::postgres::PgPoolOptions;
 use tokio_util::sync::CancellationToken;
 
-use crate::backfill::task_usage::{self, OperatorOptions};
+use crate::backfill::task_usage::OperatorOptions;
+use crate::backfill::{issue_activity, task_usage};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -29,8 +30,11 @@ async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = env::args().skip(1).collect();
     let command = parse_command(&args)?;
 
-    if let Command::BackfillTaskUsageHourly(options) = command {
-        return run_operator_command(options).await;
+    if let Command::BackfillTaskUsageHourly(options) = &command {
+        return run_operator_command(BackfillCommand::TaskUsage(options.clone())).await;
+    }
+    if let Command::BackfillIssueLastActivity(options) = &command {
+        return run_operator_command(BackfillCommand::IssueActivity(options.clone())).await;
     }
 
     let db_url =
@@ -49,6 +53,7 @@ async fn main() -> anyhow::Result<()> {
         Command::Up => runner::run_migrations(&pool, "up").await,
         Command::Down => runner::run_migrations(&pool, "down").await,
         Command::BackfillTaskUsageHourly(_) => unreachable!("handled above"),
+        Command::BackfillIssueLastActivity(_) => unreachable!("handled above"),
     }
 }
 
@@ -57,6 +62,7 @@ enum Command {
     Down,
     Status,
     BackfillTaskUsageHourly(OperatorOptions),
+    BackfillIssueLastActivity(issue_activity::OperatorOptions),
 }
 
 fn parse_command(args: &[String]) -> anyhow::Result<Command> {
@@ -70,8 +76,15 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
         {
             Ok(Command::BackfillTaskUsageHourly(parse_operator_options(rest)?))
         }
+        [command, backfill, rest @ ..]
+            if command == "backfill" && backfill == "issue-last-activity" =>
+        {
+            Ok(Command::BackfillIssueLastActivity(
+                parse_issue_activity_options(rest)?,
+            ))
+        }
         _ => anyhow::bail!(
-            "usage: cordy-migrate up|down|status | cordy-migrate backfill task-usage-hourly [--dry-run] [--months-back N] [--force-partial] [--sleep-between-slices DURATION]"
+            "usage: cordy-migrate up|down|status | cordy-migrate backfill task-usage-hourly [flags] | cordy-migrate backfill issue-last-activity [flags]"
         ),
     }
 }
@@ -110,6 +123,71 @@ fn parse_operator_options(args: &[String]) -> anyhow::Result<OperatorOptions> {
             anyhow::bail!("unknown backfill option {arg:?}");
         }
         index += 1;
+    }
+    Ok(options)
+}
+
+fn parse_issue_activity_options(
+    args: &[String],
+) -> anyhow::Result<issue_activity::OperatorOptions> {
+    let mut options = issue_activity::OperatorOptions::default();
+    let mut index = 0;
+    while index < args.len() {
+        let arg = &args[index];
+        let option = arg
+            .strip_prefix("--")
+            .or_else(|| arg.strip_prefix('-'))
+            .unwrap_or(arg.as_str());
+        if let Some(value) = option.strip_prefix("batch-size=") {
+            options.batch_size = parse_i64(value, "--batch-size")?;
+        } else if option == "batch-size" {
+            index += 1;
+            options.batch_size = parse_i64(
+                args.get(index)
+                    .ok_or_else(|| anyhow::anyhow!("--batch-size requires a value"))?,
+                "--batch-size",
+            )?;
+        } else if let Some(value) = option.strip_prefix("sleep-between-batches=") {
+            options.sleep_between_batches =
+                parse_non_negative_duration(value, "--sleep-between-batches")?;
+        } else if option == "sleep-between-batches" {
+            index += 1;
+            options.sleep_between_batches = parse_non_negative_duration(
+                args.get(index)
+                    .ok_or_else(|| anyhow::anyhow!("--sleep-between-batches requires a value"))?,
+                "--sleep-between-batches",
+            )?;
+        } else if let Some(value) = option.strip_prefix("max-batches=") {
+            options.max_batches = parse_i64(value, "--max-batches")?;
+        } else if option == "max-batches" {
+            index += 1;
+            options.max_batches = parse_i64(
+                args.get(index)
+                    .ok_or_else(|| anyhow::anyhow!("--max-batches requires a value"))?,
+                "--max-batches",
+            )?;
+        } else if let Some(value) = option.strip_prefix("max-stalled-passes=") {
+            options.max_stalled_passes = parse_i64(value, "--max-stalled-passes")?;
+        } else if option == "max-stalled-passes" {
+            index += 1;
+            options.max_stalled_passes = parse_i64(
+                args.get(index)
+                    .ok_or_else(|| anyhow::anyhow!("--max-stalled-passes requires a value"))?,
+                "--max-stalled-passes",
+            )?;
+        } else {
+            anyhow::bail!("unknown issue last-activity option {arg:?}");
+        }
+        index += 1;
+    }
+    if options.batch_size < 1 {
+        anyhow::bail!("--batch-size must be at least 1");
+    }
+    if options.max_batches < 0 {
+        anyhow::bail!("--max-batches must not be negative");
+    }
+    if options.max_stalled_passes < 0 {
+        anyhow::bail!("--max-stalled-passes must not be negative");
     }
     Ok(options)
 }
@@ -230,7 +308,19 @@ fn fractional_nanos(fraction: &str, unit_nanos: u128) -> anyhow::Result<u128> {
         .ok_or_else(|| anyhow::anyhow!("invalid fractional duration"))
 }
 
-async fn run_operator_command(options: OperatorOptions) -> anyhow::Result<()> {
+fn parse_non_negative_duration(value: &str, flag: &str) -> anyhow::Result<Duration> {
+    if value.starts_with('-') {
+        anyhow::bail!("{flag} must not be negative");
+    }
+    parse_duration(value)
+}
+
+enum BackfillCommand {
+    TaskUsage(OperatorOptions),
+    IssueActivity(issue_activity::OperatorOptions),
+}
+
+async fn run_operator_command(command: BackfillCommand) -> anyhow::Result<()> {
     let cancellation = CancellationToken::new();
     let signal_task = spawn_signal_handler(cancellation.clone());
     let result = async {
@@ -245,7 +335,14 @@ async fn run_operator_command(options: OperatorOptions) -> anyhow::Result<()> {
             _ = cancellation.cancelled() => anyhow::bail!("execution cancelled"),
             result = sqlx::query("SELECT 1").execute(&pool) => { result?; },
         }
-        let result = task_usage::run_operator(&pool, options, &cancellation).await;
+        let result = match command {
+            BackfillCommand::TaskUsage(options) => {
+                task_usage::run_operator(&pool, options, &cancellation).await
+            }
+            BackfillCommand::IssueActivity(options) => {
+                issue_activity::run_operator(&pool, options, &cancellation).await
+            }
+        };
         pool.close().await;
         result
     }
@@ -302,6 +399,38 @@ mod tests {
         assert_eq!(options.months_back, 3);
         assert!(options.force_partial);
         assert_eq!(options.sleep_between_slices, Duration::from_millis(60_250));
+    }
+
+    #[test]
+    fn issue_activity_flags_accept_go_short_and_long_forms() {
+        let args = [
+            "backfill".to_string(),
+            "issue-last-activity".to_string(),
+            "-batch-size=17".to_string(),
+            "--sleep-between-batches".to_string(),
+            "250ms".to_string(),
+            "-max-batches".to_string(),
+            "4".to_string(),
+            "--max-stalled-passes=3".to_string(),
+        ];
+        let Command::BackfillIssueLastActivity(options) =
+            parse_command(&args).unwrap_or_else(|error| panic!("parse issue activity flags: {error}"))
+        else {
+            panic!("expected issue activity backfill command");
+        };
+        assert_eq!(options.batch_size, 17);
+        assert_eq!(options.sleep_between_batches, Duration::from_millis(250));
+        assert_eq!(options.max_batches, 4);
+        assert_eq!(options.max_stalled_passes, 3);
+    }
+
+    #[test]
+    fn issue_activity_defaults_match_go_operator() {
+        let options = issue_activity::OperatorOptions::default();
+        assert_eq!(options.batch_size, 1000);
+        assert_eq!(options.sleep_between_batches, Duration::from_millis(100));
+        assert_eq!(options.max_batches, 0);
+        assert_eq!(options.max_stalled_passes, 10);
     }
 
     #[test]
