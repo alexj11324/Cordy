@@ -45,6 +45,7 @@ const DEFAULT_FIRST_TURN_TIMEOUT: Duration = Duration::from_secs(60);
 const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 const MODEL_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 const MODEL_DISCOVERY_OUTPUT_MAX: usize = 4 * 1024 * 1024;
+const DISCOVERY_CLEANUP_TIMEOUT: Duration = Duration::from_secs(2);
 const TERMINATION_GRACE: Duration = Duration::from_millis(500);
 const KILL_GRACE: Duration = Duration::from_secs(10);
 const MAX_PATCH_BYTES: usize = 64 * 1024;
@@ -109,11 +110,12 @@ impl CodexBackend {
         } else {
             timeout
         };
+        let deadline = Instant::now() + timeout;
         let version = match capture_codex_command(
             &self.config,
             &["--version"],
             cancellation.clone(),
-            timeout,
+            deadline,
         )
         .await
         {
@@ -130,7 +132,7 @@ impl CodexBackend {
             &self.config,
             &["debug", "models", "--bundled"],
             cancellation.clone(),
-            timeout,
+            deadline,
         )
         .await
         .ok()
@@ -801,8 +803,11 @@ async fn capture_codex_command(
     config: &CodexConfig,
     arguments: &[&str],
     cancellation: CancellationToken,
-    timeout: Duration,
+    deadline: Instant,
 ) -> io::Result<Option<Vec<u8>>> {
+    if cancellation.is_cancelled() || deadline <= Instant::now() {
+        return Ok(None);
+    }
     let executable = command_path(&config.command);
     let prefix = filter_launch_prefix(&config.command.prefix, &BLOCKED_ARGS).args;
     let mut command = Command::new(&executable);
@@ -827,19 +832,44 @@ async fn capture_codex_command(
         .ok_or_else(|| io::Error::other("Codex discovery stderr pipe unavailable"))?;
     let mut stdout_task = tokio::spawn(read_discovery_output(stdout));
     let mut stderr_task = tokio::spawn(read_discovery_output(stderr));
-    let status = tokio::select! {
-        result = tree.wait() => Some(result?),
-        () = cancellation.cancelled() => None,
-        () = tokio::time::sleep(timeout) => None,
+    let outcome = tokio::select! {
+        result = tree.wait() => result.map(Some),
+        () = cancellation.cancelled() => Ok(None),
+        () = tokio::time::sleep(deadline.saturating_duration_since(Instant::now())) => Ok(None),
     };
-    let Some(status) = status else {
-        let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-        stdout_task.abort();
-        stderr_task.abort();
-        return Ok(None);
+    let status = match outcome {
+        Ok(Some(status)) => status,
+        Ok(None) => {
+            stop_codex_discovery(&mut tree, &mut stdout_task, &mut stderr_task).await;
+            return Ok(None);
+        }
+        Err(error) => {
+            stop_codex_discovery(&mut tree, &mut stdout_task, &mut stderr_task).await;
+            return Err(error);
+        }
     };
-    let stdout = join_discovery_output(&mut stdout_task).await?;
-    let _ = join_discovery_output(&mut stderr_task).await?;
+    let stdout = match join_discovery_output(&mut stdout_task, &cancellation, deadline).await {
+        Ok(Some(output)) => output,
+        Ok(None) => {
+            stop_codex_discovery(&mut tree, &mut stdout_task, &mut stderr_task).await;
+            return Ok(None);
+        }
+        Err(error) => {
+            stop_codex_discovery(&mut tree, &mut stdout_task, &mut stderr_task).await;
+            return Err(error);
+        }
+    };
+    match join_discovery_output(&mut stderr_task, &cancellation, deadline).await {
+        Ok(Some(_)) => {}
+        Ok(None) => {
+            stop_codex_discovery(&mut tree, &mut stdout_task, &mut stderr_task).await;
+            return Ok(None);
+        }
+        Err(error) => {
+            stop_codex_discovery(&mut tree, &mut stdout_task, &mut stderr_task).await;
+            return Err(error);
+        }
+    }
     if !status.success() {
         return Ok(None);
     }
@@ -864,20 +894,51 @@ async fn read_discovery_output(mut reader: impl AsyncRead + Unpin) -> io::Result
     }
 }
 
-async fn join_discovery_output(task: &mut JoinHandle<io::Result<Vec<u8>>>) -> io::Result<Vec<u8>> {
-    match tokio::time::timeout(KILL_GRACE, &mut *task).await {
-        Ok(Ok(output)) => output,
-        Ok(Err(error)) => Err(io::Error::other(format!(
+async fn join_discovery_output(
+    task: &mut JoinHandle<io::Result<Vec<u8>>>,
+    cancellation: &CancellationToken,
+    deadline: Instant,
+) -> io::Result<Option<Vec<u8>>> {
+    let outcome = tokio::select! {
+        result = &mut *task => Some(result),
+        () = cancellation.cancelled() => None,
+        () = tokio::time::sleep(deadline.saturating_duration_since(Instant::now())) => None,
+    };
+    match outcome {
+        Some(Ok(Ok(output))) => Ok(Some(output)),
+        Some(Ok(Err(error))) => Err(error),
+        Some(Err(error)) => Err(io::Error::other(format!(
             "Codex discovery reader failed: {error}"
         ))),
-        Err(_) => {
-            task.abort();
-            Err(io::Error::new(
-                io::ErrorKind::TimedOut,
-                "Codex model discovery output did not terminate",
-            ))
+        None => {
+            abort_discovery_output(task).await;
+            Ok(None)
         }
     }
+}
+
+async fn stop_codex_discovery(
+    tree: &mut OwnedProcessTree,
+    stdout_task: &mut JoinHandle<io::Result<Vec<u8>>>,
+    stderr_task: &mut JoinHandle<io::Result<Vec<u8>>>,
+) {
+    let shutdown = tokio::time::timeout(
+        DISCOVERY_CLEANUP_TIMEOUT,
+        tree.shutdown(TERMINATION_GRACE, KILL_GRACE),
+    )
+    .await;
+    if !matches!(shutdown, Ok(true)) {
+        let _ = tree.kill();
+    }
+    abort_discovery_output(stdout_task).await;
+    abort_discovery_output(stderr_task).await;
+}
+
+async fn abort_discovery_output(task: &mut JoinHandle<io::Result<Vec<u8>>>) {
+    if !task.is_finished() {
+        task.abort();
+    }
+    let _ = tokio::time::timeout(DISCOVERY_CLEANUP_TIMEOUT, &mut *task).await;
 }
 
 #[async_trait]
@@ -3097,7 +3158,7 @@ fn nonnegative_token_delta(total: i64, baseline: i64) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     use tempfile::tempdir;
 
@@ -3174,6 +3235,105 @@ mod tests {
         assert!(codex_supports_debug_models("codex-cli 0.122.0"));
         assert!(codex_supports_debug_models("0.144.1"));
         assert!(!codex_supports_debug_models("development"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn codex_model_discovery_uses_one_total_deadline() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempdir().unwrap_or_else(|error| panic!("temp dir: {error}"));
+        let script_path = directory.path().join("fake-codex");
+        std::fs::write(
+            &script_path,
+            r#"#!/bin/sh
+case "$1" in
+  --version)
+    sleep 0.15
+    printf 'codex-cli 0.122.0\n'
+    ;;
+  debug)
+    sleep 0.15
+    printf '%s\n' '{"models":[{"slug":"dynamic","display_name":"Dynamic","visibility":"show"}]}'
+    ;;
+esac
+"#,
+        )
+        .unwrap_or_else(|error| panic!("write fake Codex: {error}"));
+        let mut permissions = std::fs::metadata(&script_path)
+            .unwrap_or_else(|error| panic!("fake Codex metadata: {error}"))
+            .permissions();
+        permissions.set_mode(0o700);
+        std::fs::set_permissions(&script_path, permissions)
+            .unwrap_or_else(|error| panic!("chmod fake Codex: {error}"));
+
+        let backend = CodexBackend::new(CodexConfig {
+            command: RuntimeCommand::new(script_path.to_string_lossy().into_owned(), Vec::new()),
+            env: BTreeMap::new(),
+        });
+        let started = Instant::now();
+        let catalog = backend
+            .discover_models(
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_millis(250),
+            )
+            .await;
+
+        assert!(catalog.fallback);
+        assert!(started.elapsed() < Duration::from_secs(3));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn codex_discovery_fallback_is_not_cached() {
+        let directory = tempdir().unwrap_or_else(|error| panic!("temp dir: {error}"));
+        let marker = directory.path().join("version-calls");
+        let script = r#"case "$0" in
+  --version)
+    count=0
+    if [ -f "$CODEX_MODEL_CALLS" ]; then count=$(cat "$CODEX_MODEL_CALLS"); fi
+    count=$((count + 1))
+    printf '%s' "$count" > "$CODEX_MODEL_CALLS"
+    if [ "$count" -eq 1 ]; then
+      printf 'codex-cli 0.121.0\n'
+    else
+      printf 'codex-cli 0.122.0\n'
+    fi
+    ;;
+  debug)
+    printf '%s\n' '{"models":[{"slug":"dynamic","display_name":"Dynamic","visibility":"show"}]}'
+    ;;
+esac
+"#;
+
+        let backend = CodexBackend::new(CodexConfig {
+            command: RuntimeCommand::new("sh", vec!["-c".to_string(), script.to_string()]),
+            env: BTreeMap::from([(
+                "CODEX_MODEL_CALLS".to_string(),
+                marker.to_string_lossy().into_owned(),
+            )]),
+        });
+        let cache = CatalogCache::default();
+        let first = backend
+            .discover_models(&cache, CancellationToken::new(), Duration::from_secs(1))
+            .await;
+        assert!(first.fallback);
+
+        let second = backend
+            .discover_models(&cache, CancellationToken::new(), Duration::from_secs(1))
+            .await;
+        assert!(!second.fallback);
+        assert_eq!(second.models[0].id, "dynamic");
+
+        let third = backend
+            .discover_models(&cache, CancellationToken::new(), Duration::from_secs(1))
+            .await;
+        assert_eq!(third.models[0].id, "dynamic");
+        assert_eq!(
+            std::fs::read_to_string(marker).unwrap_or_else(|error| panic!("read calls: {error}")),
+            "2"
+        );
     }
 
     #[test]
