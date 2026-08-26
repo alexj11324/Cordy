@@ -6,7 +6,7 @@
 //! environment. Transcript draining, usage, terminal callbacks, and process
 //! ownership remain the responsibility of the future `ProviderRuntimeAdapter`.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::path::Path;
 use std::time::Duration;
@@ -501,17 +501,17 @@ impl ProviderExecutionPlan {
             "OPENCLAW_CONFIG_PATH",
             &environment.openclaw_config_path,
         );
-        if !prepared.openclaw_include_roots.trim().is_empty() {
-            let mut roots = vec![std::path::PathBuf::from(
-                prepared.openclaw_include_roots.as_str(),
-            )];
-            if let Some(existing) = values.get("OPENCLAW_INCLUDE_ROOTS") {
-                roots.extend(std::env::split_paths(existing));
+        if !prepared.openclaw_include_roots.is_empty() {
+            let existing = values
+                .get("OPENCLAW_INCLUDE_ROOTS")
+                .cloned()
+                .or_else(|| std::env::var("OPENCLAW_INCLUDE_ROOTS").ok())
+                .unwrap_or_default();
+            if let Some(joined) =
+                compose_openclaw_include_roots(&prepared.openclaw_include_roots, &existing)
+            {
+                values.insert("OPENCLAW_INCLUDE_ROOTS".to_string(), joined);
             }
-            let joined = std::env::join_paths(roots)
-                .map(|joined| joined.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| prepared.openclaw_include_roots.clone());
-            values.insert("OPENCLAW_INCLUDE_ROOTS".to_string(), joined);
         }
         // The prepared overlay is authoritative over custom_env.
         insert_nonempty(&mut values, "HERMES_HOME", &environment.hermes_home);
@@ -766,6 +766,25 @@ fn repo_checkout_mode_for(provider: &str, operating_system: &str) -> Option<&'st
     }
 }
 
+/// Prepends the task wrapper's granted OpenClaw config directory to the
+/// daemon user's include roots. Empty segments are ignored and exact duplicate
+/// strings are retained only once, matching the Go environment contract.
+fn compose_openclaw_include_roots(add_root: &str, user_value: &str) -> Option<String> {
+    if add_root.is_empty() {
+        return None;
+    }
+    let separator = if cfg!(windows) { ';' } else { ':' };
+    let mut seen = BTreeSet::from([add_root.to_string()]);
+    let mut parts = vec![add_root.to_string()];
+    for part in user_value.split(separator) {
+        if part.is_empty() || !seen.insert(part.to_string()) {
+            continue;
+        }
+        parts.push(part.to_string());
+    }
+    Some(parts.join(&separator.to_string()))
+}
+
 fn sanitize_custom_env(
     custom: Option<&std::collections::HashMap<String, String>>,
 ) -> anyhow::Result<BTreeMap<String, String>> {
@@ -997,6 +1016,53 @@ mod tests {
                 .get(REPO_CHECKOUT_MODE_ENV)
                 .map(String::as_str),
             expected
+        );
+    }
+
+    #[test]
+    fn composes_openclaw_include_roots_like_go() {
+        let separator = if cfg!(windows) { ';' } else { ':' };
+        let user_value = format!("{separator}/etc/openclaw{separator}/opt/openclaw{separator}");
+        let expected =
+            format!("/home/alice/.openclaw{separator}/etc/openclaw{separator}/opt/openclaw");
+        assert_eq!(
+            compose_openclaw_include_roots("/home/alice/.openclaw", &user_value),
+            Some(expected)
+        );
+        assert_eq!(compose_openclaw_include_roots("", "/some/user/dir"), None);
+    }
+
+    #[test]
+    fn bind_environment_preserves_existing_openclaw_include_roots() {
+        let separator = if cfg!(windows) { ';' } else { ':' };
+        let existing = format!("/etc/openclaw{separator}/opt/openclaw");
+        let mut inputs = inputs();
+        inputs
+            .runtime_env
+            .insert("OPENCLAW_INCLUDE_ROOTS".into(), existing);
+        let target = RuntimeExecutionTarget {
+            provider: "openclaw".into(),
+            profile_id: String::new(),
+        };
+        let plan = ProviderExecutionPlan::build(&config(), &task(), &target, inputs).unwrap();
+        let bound = plan
+            .bind_environment(
+                &Environment {
+                    work_dir: "/workdir".into(),
+                    cordy_config_root: "/config".into(),
+                    ..Environment::default()
+                },
+                PreparedEnvironmentInputs {
+                    openclaw_include_roots: "/home/alice/.openclaw".into(),
+                    ..PreparedEnvironmentInputs::default()
+                },
+            )
+            .unwrap();
+        let expected =
+            format!("/home/alice/.openclaw{separator}/etc/openclaw{separator}/opt/openclaw");
+        assert_eq!(
+            bound.child_env.get("OPENCLAW_INCLUDE_ROOTS"),
+            Some(expected.as_str())
         );
     }
 
