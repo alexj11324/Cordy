@@ -415,17 +415,20 @@ jobs:
         if: matrix.target == 'linux'
         run: sudo apt-get update && sudo apt-get install -y rpm
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
-        with:
-          # Deliberately independent from the minimum patch in server/go.mod:
-          # releases follow the newest 1.26 patch available to setup-go.
-          go-version: "1.26.x"
-          check-latest: true
-          cache-dependency-path: server/go.sum
+      - name: Install Linux ARM64 linker
+        if: matrix.target == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
 
-      - name: Record Go toolchain
-        run: go version
+      - name: Setup Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          if [[ "${{ matrix.target }}" == "linux" ]]; then
+            rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
+          else
+            rustup target add x86_64-pc-windows-msvc aarch64-pc-windows-msvc
+          fi
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -450,4 +453,7 @@ jobs:
           # trust boundary. Set CSC_LINK in repo secrets to enable
           # Windows signing later.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # The Rust desktop bundler cross-compiles the Linux ARM64 CLI with
+          # the linker installed above. Windows uses the runner's MSVC linker.
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: node scripts/package.mjs --${{ matrix.target }} --x64 --arm64 --publish always

@@ -1,17 +1,17 @@
 #!/usr/bin/env node
-// Builds the `cordy` CLI from server/cmd/cordy and copies the binary
+// Builds the Rust `cordy` CLI from server-rs and copies the binary
 // into apps/desktop/resources/bin/ so electron-vite (dev) and electron-
 // builder (prod) pick it up. Running this on every dev/build/package
-// invocation guarantees the bundled CLI always matches the current Go
-// source — no more stale binary surprises. Go's build cache makes the
+// invocation guarantees the bundled CLI always matches the current Rust
+// source — no more stale binary surprises. Cargo's build cache makes the
 // no-op case (nothing changed) effectively free.
 //
-// ldflags mirror `make build` so `cordy --version` reports a meaningful
-// version / commit / date.
+// Build environment variables mirror `make build` so `cordy --version`
+// reports a meaningful version / commit / date.
 //
-// Graceful: if `go` is not installed (e.g. frontend-only contributor), we
+// Graceful: if `cargo` is not installed (e.g. frontend-only contributor), we
 // skip the build and fall through to auto-install at runtime. A genuine
-// Go compile error is fatal — you want that to block dev, not hide.
+// Rust compile error is fatal — you want that to block dev, not hide.
 
 import { access, chmod, copyFile, mkdir, rm } from "node:fs/promises";
 import { constants } from "node:fs";
@@ -21,7 +21,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..", "..", "..");
-const serverDir = join(repoRoot, "server");
+const serverRsDir = join(repoRoot, "server-rs");
 
 const PLATFORM_TO_GOOS = {
   darwin: "darwin",
@@ -30,6 +30,21 @@ const PLATFORM_TO_GOOS = {
 };
 
 const SUPPORTED_ARCHS = new Set(["x64", "arm64"]);
+
+const RUST_TARGETS = {
+  darwin: {
+    x64: "x86_64-apple-darwin",
+    arm64: "aarch64-apple-darwin",
+  },
+  linux: {
+    x64: "x86_64-unknown-linux-gnu",
+    arm64: "aarch64-unknown-linux-gnu",
+  },
+  win32: {
+    x64: "x86_64-pc-windows-msvc",
+    arm64: "aarch64-pc-windows-msvc",
+  },
+};
 
 function runtimePlatformFromArgs(argv) {
   const flagIndex = argv.indexOf("--target-platform");
@@ -63,14 +78,26 @@ function binaryNameForPlatform(platform) {
   return platform === "win32" ? "cordy.exe" : "cordy";
 }
 
+function rustTargetFor(platform, arch) {
+  const target = RUST_TARGETS[platform]?.[arch];
+  if (!target) {
+    throw new Error(
+      `[bundle-cli] no Rust target for ${platform}/${arch}. ` +
+        "Use darwin, linux, or win32 with x64 or arm64.",
+    );
+  }
+  return target;
+}
+
 const targetPlatform = normalizeRuntimePlatform(
   runtimePlatformFromArgs(process.argv.slice(2)),
 );
 const targetArch = normalizeRuntimeArch(runtimeArchFromArgs(process.argv.slice(2)));
 const goos = PLATFORM_TO_GOOS[targetPlatform];
 const goarch = targetArch === "x64" ? "amd64" : targetArch;
+const rustTarget = rustTargetFor(targetPlatform, targetArch);
 const binName = binaryNameForPlatform(targetPlatform);
-const srcBinary = join(serverDir, "bin", `${goos}-${goarch}`, binName);
+const srcBinary = join(serverRsDir, "target", rustTarget, "release", binName);
 const destDir = join(repoRoot, "apps", "desktop", "resources", "bin");
 const destBinary = join(destDir, binName);
 
@@ -87,9 +114,9 @@ function git(...args) {
   }
 }
 
-function hasGo() {
+function hasCargo() {
   try {
-    execSync("go version", { stdio: "pipe" });
+    execSync("cargo --version", { stdio: "pipe" });
     return true;
   } catch {
     return false;
@@ -105,42 +132,43 @@ async function exists(p) {
   }
 }
 
-if (hasGo()) {
+if (hasCargo()) {
   const version =
     git("describe", "--tags", "--match", "v[0-9]*", "--always", "--dirty") ||
     "dev";
   const commit = git("rev-parse", "--short", "HEAD") || "unknown";
   const date = new Date().toISOString().replace(/\.\d+Z$/, "Z");
-  const ldflags = `-X main.version=${version} -X main.commit=${commit} -X main.date=${date}`;
 
   console.log(
-    `[bundle-cli] go build → ${srcBinary} (${goos}/${goarch}, version=${version} commit=${commit})`,
+    `[bundle-cli] cargo build → ${srcBinary} (${goos}/${goarch}, target=${rustTarget}, version=${version} commit=${commit})`,
   );
-  await mkdir(join(serverDir, "bin", `${goos}-${goarch}`), { recursive: true });
   execFileSync(
-    "go",
+    "cargo",
     [
       "build",
-      "-ldflags",
-      ldflags,
-      "-o",
-      srcBinary,
-      "./cmd/cordy",
+      "--release",
+      "--locked",
+      "-p",
+      "cordy-cli",
+      "--target",
+      rustTarget,
     ],
     {
-      cwd: serverDir,
+      cwd: serverRsDir,
       stdio: "inherit",
       env: {
         ...process.env,
-        CGO_ENABLED: "0",
-        GOOS: goos,
-        GOARCH: goarch,
+        CORDY_BUILD_VERSION: version,
+        CORDY_BUILD_COMMIT: commit,
+        CORDY_BUILD_DATE: date,
+        CORDY_BUILD_GO_VERSION: "unknown",
+        CORDY_GIT_COMMIT: commit,
       },
     },
   );
 } else {
   console.warn(
-    "[bundle-cli] `go` not found in PATH — skipping CLI build. " +
+    "[bundle-cli] `cargo` not found in PATH — skipping CLI build. " +
       "Desktop will use whatever is already in resources/bin/, or fall back " +
       "to auto-installing the latest release at runtime.",
   );

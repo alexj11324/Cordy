@@ -4,5 +4,5 @@ out
 .DS_Store
 .eslintcache
 *.log*
-# CLI binary bundled at build time (from server/bin/)
+# CLI binary bundled at build time (from server-rs/target/)
 resources/bin/
