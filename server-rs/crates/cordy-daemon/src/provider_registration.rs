@@ -1030,6 +1030,7 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
         let mut payload = RegistrationPayload {
             runtimes: self.builtins.clone(),
             failed_profiles: Vec::new(),
+            profile_set_signature: None,
         };
         if !self.include_profiles {
             return Ok(payload);
@@ -1049,6 +1050,7 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
                 return Ok(payload);
             }
         };
+        let profile_signature = profile_set_signature(&profiles);
         let mut launches = Vec::new();
         for profile in profiles {
             if !profile.enabled {
@@ -1109,6 +1111,7 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
                     .push(profile_failure(&profile, &error.reason)),
             }
         }
+        payload.profile_set_signature = Some(profile_signature);
         self.pending_profiles
             .lock()
             .unwrap()
@@ -1194,6 +1197,45 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
     }
 }
 
+/// Stable content hash of the workspace custom runtime profile set. This is
+/// the Rust counterpart of Go `profileSetSignature`: only fields that affect
+/// the register payload or launch policy participate, profile order is
+/// irrelevant, and an empty set has the explicit `"0"` sentinel.
+pub(crate) fn profile_set_signature(profiles: &[RuntimeProfile]) -> String {
+    if profiles.is_empty() {
+        return "0".to_string();
+    }
+
+    let mut sorted = profiles.to_vec();
+    sorted.sort_by(|left, right| left.id.cmp(&right.id));
+    let mut hash = 0xcbf29ce484222325u64;
+    let mut feed = |value: &str| {
+        for byte in value.as_bytes() {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+    };
+    const FIELD_SEPARATOR: &str = "\x1f";
+    for profile in sorted {
+        feed(&profile.id);
+        feed(FIELD_SEPARATOR);
+        feed(if profile.enabled { "true" } else { "false" });
+        feed(FIELD_SEPARATOR);
+        feed(&profile.protocol_family);
+        feed(FIELD_SEPARATOR);
+        feed(&profile.command_name);
+        feed(FIELD_SEPARATOR);
+        feed(&profile.visibility);
+        feed(FIELD_SEPARATOR);
+        for arg in profile.fixed_args {
+            feed(&arg);
+            feed(FIELD_SEPARATOR);
+        }
+        feed("\x1e");
+    }
+    format!("{hash:x}")
+}
+
 fn display_name(name: &str, device_name: &str) -> String {
     if device_name.is_empty() {
         name.to_string()
@@ -1235,6 +1277,40 @@ mod tests {
     #[derive(Default)]
     struct FakeCatalog {
         probes: Mutex<Vec<BuiltinProbeResult>>,
+    }
+
+    fn profile(
+        id: &str,
+        enabled: bool,
+        protocol_family: &str,
+        command_name: &str,
+        visibility: &str,
+        fixed_args: &[&str],
+    ) -> RuntimeProfile {
+        RuntimeProfile {
+            id: id.to_string(),
+            enabled,
+            protocol_family: protocol_family.to_string(),
+            command_name: command_name.to_string(),
+            visibility: visibility.to_string(),
+            fixed_args: fixed_args.iter().map(|arg| (*arg).to_string()).collect(),
+            ..RuntimeProfile::default()
+        }
+    }
+
+    #[test]
+    fn profile_signature_is_order_independent_and_tracks_launch_fields() {
+        let one = profile("profile-1", true, "codex", "wrapper", "private", &["acp"]);
+        let two = profile("profile-2", false, "claude", "claude", "workspace", &[]);
+        let forward = profile_set_signature(&[one.clone(), two.clone()]);
+        let reverse = profile_set_signature(&[two, one.clone()]);
+        assert_eq!(forward, reverse);
+        assert_ne!(forward, "0");
+
+        let mut changed = one;
+        changed.fixed_args.push("--verbose".to_string());
+        assert_ne!(forward, profile_set_signature(&[changed]));
+        assert_eq!(profile_set_signature(&[]), "0");
     }
 
     #[async_trait::async_trait]

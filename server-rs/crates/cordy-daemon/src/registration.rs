@@ -16,6 +16,7 @@ use crate::activity::DaemonActivity;
 use crate::agents_refresh::{ConvergeRetryState, RuntimeVerdict};
 use crate::client::{Client, RuntimeOfflineReason, WorkspaceInfo};
 use crate::config::Config;
+use crate::provider_registration::profile_set_signature;
 use crate::repo_state::DaemonRepoState;
 use crate::repocache::{Ctx, RepoInfo};
 use crate::runtime_registry::RuntimeRegistry;
@@ -28,6 +29,10 @@ pub struct RegistrationPayload {
     /// owns version probing and custom-profile launch resolution.
     pub runtimes: Vec<BTreeMap<String, String>>,
     pub failed_profiles: Vec<BTreeMap<String, String>>,
+    /// Stable signature of the successfully fetched profile set. `None` means
+    /// the profile endpoint was unavailable, so a transient failure must not
+    /// overwrite the last known signature.
+    pub profile_set_signature: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -278,31 +283,59 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             .map(|workspace| workspace.id.clone())
             .collect();
         let tracked: BTreeSet<String> = registry.workspace_ids().into_iter().collect();
-        let needs_registration: Vec<WorkspaceInfo> = workspaces
-            .into_iter()
-            .filter(|workspace| {
-                reconcile_profiles
-                    || !tracked.contains(&workspace.id)
-                    || registry.workspace_needs_runtime_recovery(&workspace.id)
-            })
-            .collect();
+        let mut needs_registration = Vec::new();
+        for workspace in &workspaces {
+            let is_tracked = tracked.contains(&workspace.id);
+            let needs_recovery = registry.workspace_needs_runtime_recovery(&workspace.id);
+            let profile_changed = if reconcile_profiles && is_tracked {
+                match self
+                    .workspace_profiles_changed(&ctx, registry, &workspace.id)
+                    .await
+                {
+                    Ok(changed) => changed,
+                    Err(error) => {
+                        // A reconnect-time profile read is best effort. The
+                        // normal recovery path below still runs, but a
+                        // transient profile endpoint failure must not turn
+                        // into an empty registration or force a re-register.
+                        tracing::debug!(
+                            workspace_id = %workspace.id,
+                            %error,
+                            "workspace profile reconcile failed"
+                        );
+                        false
+                    }
+                }
+            } else {
+                false
+            };
+
+            // Go refreshes tracked profiles only after the signature changes;
+            // ordinary membership sync and empty-runtime recovery remain
+            // independent of the profile notification path.
+            if !is_tracked || needs_recovery || profile_changed {
+                needs_registration.push((
+                    workspace.clone(),
+                    !is_tracked || (needs_recovery && !profile_changed),
+                    profile_changed,
+                ));
+            }
+        }
 
         let mut registered = 0usize;
         if !needs_registration.is_empty() {
             let demotion_generation = registry.demotion_generation();
             let round = self.source.begin_round(ctx.child()).await?;
             registry.clear_provider_demotions(&round.recovered_providers(), demotion_generation);
-            for workspace in &needs_registration {
-                let recover_orphans = !tracked.contains(&workspace.id)
-                    || registry.workspace_needs_runtime_recovery(&workspace.id);
+            for (workspace, recover_orphans, profile_changed) in &needs_registration {
                 match self
                     .register_workspace(
                         ctx.child(),
                         registry,
                         workspace,
                         Arc::clone(&round),
-                        recover_orphans,
-                        reconcile_profiles && tracked.contains(&workspace.id),
+                        *recover_orphans,
+                        *profile_changed,
                     )
                     .await
                 {
@@ -340,6 +373,24 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             );
         }
         Ok(())
+    }
+
+    async fn workspace_profiles_changed(
+        &self,
+        ctx: &Ctx,
+        registry: &RuntimeRegistry,
+        workspace_id: &str,
+    ) -> anyhow::Result<bool> {
+        let response = tokio::time::timeout(
+            WORKSPACE_SYNC_TIMEOUT,
+            self.client.get_runtime_profiles(ctx, workspace_id),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("runtime profile list timed out"))??;
+        let live = profile_set_signature(&response.runtime_profiles);
+        Ok(registry
+            .workspace_profile_signature(workspace_id)
+            .is_none_or(|cached| cached != live))
     }
 
     /// Runtime-gone recovery prunes the stale identity before re-registering
@@ -544,10 +595,11 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             // Publish zero locally first so WebSocket/heartbeat/claim stop
             // using stale IDs, then take those rows offline server-side while
             // the workspace registration serial remains held.
-            let delta = registry.apply_registration(
+            let delta = registry.apply_registration_with_profile_signature(
                 workspace.id.clone(),
                 workspace.name.clone(),
                 Vec::new(),
+                payload.profile_set_signature.as_deref(),
             )?;
             round.registration_applied(&workspace.id);
             self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
@@ -593,12 +645,14 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 .collect();
             let repos = response.repos;
             let settings = response.settings;
-            let delta = match registry.apply_registration_preserving_builtins(
-                workspace.id.clone(),
-                workspace.name.clone(),
-                response.runtimes,
-                &preserve_providers,
-            ) {
+            let delta = match registry
+                .apply_registration_preserving_builtins_with_profile_signature(
+                    workspace.id.clone(),
+                    workspace.name.clone(),
+                    response.runtimes,
+                    &preserve_providers,
+                    payload.profile_set_signature.as_deref(),
+                ) {
                 Ok(delta) => delta,
                 Err(error) => {
                     // The server already accepted these rows. Retain them for
@@ -837,6 +891,7 @@ mod tests {
                 "profile_id".to_string(),
                 "profile-2".to_string(),
             )])],
+            profile_set_signature: None,
         };
 
         let wire = json!({

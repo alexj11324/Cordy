@@ -24,6 +24,10 @@ pub struct WorkspaceRuntimeState {
     /// with the latest machine probe so one failed workspace does not hide
     /// behind a global payload cache.
     pub builtin_versions: BTreeMap<String, String>,
+    /// Stable content signature of the last successfully fetched custom
+    /// runtime profile set. An empty value means the profile endpoint has not
+    /// produced an authoritative snapshot yet.
+    pub profile_set_signature: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -75,6 +79,20 @@ impl RuntimeRegistry {
         workspace_id: impl Into<String>,
         workspace_name: impl Into<String>,
         runtimes: Vec<Runtime>,
+    ) -> anyhow::Result<RegistrationDelta> {
+        self.apply_registration_with_profile_signature(workspace_id, workspace_name, runtimes, None)
+    }
+
+    /// Applies a full registration and optionally records the profile-set
+    /// snapshot that produced it. `None` deliberately preserves the prior
+    /// signature: the profile endpoint is best-effort and a transient 404/5xx
+    /// must not make the next reconnect look like a profile deletion.
+    pub fn apply_registration_with_profile_signature(
+        &self,
+        workspace_id: impl Into<String>,
+        workspace_name: impl Into<String>,
+        runtimes: Vec<Runtime>,
+        profile_set_signature: Option<&str>,
     ) -> anyhow::Result<RegistrationDelta> {
         let workspace_id = workspace_id.into();
         anyhow::ensure!(!workspace_id.is_empty(), "workspace id is required");
@@ -130,6 +148,11 @@ impl RuntimeRegistry {
             .get(&workspace_id)
             .map(|workspace| workspace.runtime_ids.iter().cloned().collect())
             .unwrap_or_default();
+        let previous_profile_set_signature = state
+            .workspaces
+            .get(&workspace_id)
+            .map(|workspace| workspace.profile_set_signature.clone())
+            .unwrap_or_default();
         let added = incoming_ids.difference(&previous_ids).cloned().collect();
         let dropped: Vec<String> = previous_ids.difference(&incoming_ids).cloned().collect();
 
@@ -150,6 +173,9 @@ impl RuntimeRegistry {
                 name: workspace_name.into(),
                 runtime_ids: incoming_ids.into_iter().collect(),
                 builtin_versions: BTreeMap::new(),
+                profile_set_signature: profile_set_signature
+                    .map(str::to_owned)
+                    .unwrap_or(previous_profile_set_signature),
             },
         );
         publish_runtime_set(&state, &self.runtime_set);
@@ -208,6 +234,25 @@ impl RuntimeRegistry {
         runtimes: Vec<Runtime>,
         preserve_providers: &BTreeSet<String>,
     ) -> anyhow::Result<RegistrationDelta> {
+        self.apply_registration_preserving_builtins_with_profile_signature(
+            workspace_id,
+            workspace_name,
+            runtimes,
+            preserve_providers,
+            None,
+        )
+    }
+
+    /// Full registration variant used when the provider source has an
+    /// authoritative profile snapshot for this request.
+    pub fn apply_registration_preserving_builtins_with_profile_signature(
+        &self,
+        workspace_id: impl Into<String>,
+        workspace_name: impl Into<String>,
+        runtimes: Vec<Runtime>,
+        preserve_providers: &BTreeSet<String>,
+        profile_set_signature: Option<&str>,
+    ) -> anyhow::Result<RegistrationDelta> {
         let workspace_id = workspace_id.into();
         let incoming_builtins: BTreeSet<String> = runtimes
             .iter()
@@ -243,7 +288,12 @@ impl RuntimeRegistry {
         };
         let mut combined = runtimes;
         combined.extend(preserved_runtimes);
-        let delta = self.apply_registration(workspace_id.clone(), workspace_name, combined)?;
+        let delta = self.apply_registration_with_profile_signature(
+            workspace_id.clone(),
+            workspace_name,
+            combined,
+            profile_set_signature,
+        )?;
         if !preserved_versions.is_empty() {
             let mut state = self.state.write().unwrap();
             if let Some(workspace) = state.workspaces.get_mut(&workspace_id) {
@@ -610,6 +660,21 @@ impl RuntimeRegistry {
             .cloned()
     }
 
+    /// Returns the last authoritative custom-profile snapshot for a tracked
+    /// workspace. `None` means the workspace has never completed a profile
+    /// fetch, so the next reconnect must reconcile it once.
+    pub fn workspace_profile_signature(&self, workspace_id: &str) -> Option<String> {
+        self.state
+            .read()
+            .unwrap()
+            .workspaces
+            .get(workspace_id)
+            .and_then(|workspace| {
+                (!workspace.profile_set_signature.is_empty())
+                    .then(|| workspace.profile_set_signature.clone())
+            })
+    }
+
     pub fn workspace_needs_runtime_recovery(&self, workspace_id: &str) -> bool {
         self.state
             .read()
@@ -684,6 +749,34 @@ mod tests {
         assert_eq!(second.added, vec!["r-3".to_string()]);
         assert_eq!(second.dropped, vec!["r-1".to_string(), "r-2".to_string()]);
         assert_eq!(published.snapshot(), vec!["r-3".to_string()]);
+    }
+
+    #[test]
+    fn profile_signature_survives_non_authoritative_registration() {
+        let published = Arc::new(RuntimeSet::new());
+        let registry = RuntimeRegistry::new(Arc::clone(&published));
+        registry
+            .apply_registration_with_profile_signature(
+                "ws-1",
+                "One",
+                vec![runtime("r-1", "codex")],
+                Some("profile-digest"),
+            )
+            .unwrap();
+        assert_eq!(
+            registry.workspace_profile_signature("ws-1").as_deref(),
+            Some("profile-digest")
+        );
+
+        // Built-in refresh and a failed profile fetch use the legacy wrapper;
+        // neither is allowed to erase the last successful profile snapshot.
+        registry
+            .apply_registration("ws-1", "One", vec![runtime("r-2", "codex")])
+            .unwrap();
+        assert_eq!(
+            registry.workspace_profile_signature("ws-1").as_deref(),
+            Some("profile-digest")
+        );
     }
 
     #[test]
