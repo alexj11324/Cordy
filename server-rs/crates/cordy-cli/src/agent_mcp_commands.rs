@@ -3,7 +3,7 @@ use url::Url;
 
 use super::{
     format_workspace_mcp_servers, new_api_client, AgentMcpListArgs, AgentMcpMutationArgs, Cli,
-    Environment, OutputFormat, RunOutput, WorkspaceMcpServer,
+    Environment, RunOutput, WorkspaceMcpServer,
 };
 
 #[derive(Clone, Copy)]

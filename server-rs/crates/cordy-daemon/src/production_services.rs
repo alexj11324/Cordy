@@ -13,8 +13,9 @@ use std::time::Duration;
 use cordy_agent::{
     AntigravityBackend, AntigravityConfig, BackendConfig, CatalogCache, CodebuddyBackend,
     CodebuddyConfig, DimBackend, DimConfig, DshBackend, DshConfig, GrokBackend, GrokConfig,
-    HermesBackend, HermesConfig, KimiBackend, KimiConfig, KiroBackend, KiroConfig, QoderBackend,
-    QoderConfig, ReasonixBackend, ReasonixConfig, RuntimeCommand, TraecliBackend, TraecliConfig,
+    HermesBackend, HermesConfig, KimiBackend, KimiConfig, KiroBackend, KiroConfig, PiBackend,
+    PiConfig, QoderBackend, QoderConfig, ReasonixBackend, ReasonixConfig, RuntimeCommand,
+    TraecliBackend, TraecliConfig,
 };
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
 use serde_json::{json, Value};
@@ -270,6 +271,8 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 | "antigravity"
                 | "codebuddy"
                 | "dsh"
+                | "pi"
+                | "omp"
                 | "qwen"
                 | "qwenpaw"
                 | "mcode"
@@ -424,6 +427,19 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                     ACP_MODEL_DISCOVERY_TIMEOUT,
                 )
                 .await,
+                "pi" | "omp" => PiBackend::new(PiConfig {
+                    command,
+                    env: BTreeMap::new(),
+                    default_executable: target.provider.clone(),
+                    provider_label: target.provider.clone(),
+                })
+                .discover_models_for_runtime(
+                    &target.provider,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
                 "qwen" | "qwenpaw" | "mcode" => cordy_agent::Catalog::default(),
                 "dim" => DimBackend::new(DimConfig {
                     command,
@@ -451,7 +467,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             );
             return false;
         }
-        let payload = result.unwrap_or_else(|error| model_list_failed_payload(error));
+        let payload = result.unwrap_or_else(model_list_failed_payload);
         self.report_model_list_result_with_retry(
             &ctx,
             &target.provider,

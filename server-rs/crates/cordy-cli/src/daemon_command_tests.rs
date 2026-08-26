@@ -137,16 +137,14 @@ fn daemon_restart_reuses_start_flags_and_rejects_foreground() {
     let flags = args
         .launch
         .to_launch_flags(Some("https://staging.example".to_string()));
-    assert_eq!(flags.server_url, "https://staging.example");
-    assert_eq!(flags.daemon_id, "daemon-2");
-    assert_eq!(flags.workspaces_root, "/srv/workspaces");
+    assert_eq!(flags.server_url.as_deref(), Some("https://staging.example"));
+    assert_eq!(flags.daemon_id.as_deref(), Some("daemon-2"));
+    assert_eq!(flags.workspaces_root.as_deref(), Some("/srv/workspaces"));
     let error = ensure_restart_is_background(&args.launch)
         .expect_err("restart foreground must fail closed");
-    assert!(
-        error
-            .to_string()
-            .contains("daemon restart does not support")
-    );
+    assert!(error
+        .to_string()
+        .contains("daemon restart does not support"));
 
     let restart = Cli::try_parse_from([
         "cordy",
@@ -249,11 +247,9 @@ fn daemon_status_task_port_uses_injected_port_and_rejects_profile_override() {
         .expect("profile status CLI");
     let error =
         resolve_daemon_status_port(&profile_cli, &environment).expect_err("task profile override");
-    assert!(
-        error
-            .to_string()
-            .contains("--profile is not available inside a daemon-managed task")
-    );
+    assert!(error
+        .to_string()
+        .contains("--profile is not available inside a daemon-managed task"));
 }
 
 #[test]
@@ -350,11 +346,9 @@ async fn daemon_logs_is_rejected_inside_a_daemon_task() {
     let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect_err("task context must be rejected");
-    assert!(
-        error
-            .to_string()
-            .contains("daemon logs is not available inside a daemon-managed task")
-    );
+    assert!(error
+        .to_string()
+        .contains("daemon logs is not available inside a daemon-managed task"));
 }
 
 #[tokio::test]
@@ -367,11 +361,9 @@ async fn daemon_stop_is_rejected_inside_a_daemon_task_before_control_access() {
     let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect_err("task context must be rejected");
-    assert!(
-        error
-            .to_string()
-            .contains("daemon stop is not available inside a daemon-managed task")
-    );
+    assert!(error
+        .to_string()
+        .contains("daemon stop is not available inside a daemon-managed task"));
 }
 
 #[tokio::test]
@@ -384,9 +376,7 @@ async fn daemon_restart_is_rejected_inside_a_daemon_task_before_control_access()
     let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect_err("task context must be rejected");
-    assert!(
-        error
-            .to_string()
-            .contains("daemon restart is not available inside a daemon-managed task")
-    );
+    assert!(error
+        .to_string()
+        .contains("daemon restart is not available inside a daemon-managed task"));
 }

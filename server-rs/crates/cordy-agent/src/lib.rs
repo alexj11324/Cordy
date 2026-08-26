@@ -16,6 +16,7 @@ pub mod dsh;
 mod kimi_usage;
 pub mod mcp;
 pub mod model;
+pub mod pi;
 pub mod process;
 pub mod qoder;
 pub mod qwen;
@@ -40,6 +41,7 @@ pub use model::{
     parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey,
     ModelServiceTier, ModelThinking, ThinkingLevel,
 };
+pub use pi::{build_pi_args, PiBackend, PiConfig};
 pub use process::{OwnedProcessTree, ProcessTreeSignal};
 pub use qoder::{
     DimBackend, DimConfig, GrokBackend, GrokConfig, HermesBackend, HermesConfig, KimiBackend,

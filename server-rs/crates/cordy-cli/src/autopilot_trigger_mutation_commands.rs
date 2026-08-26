@@ -1,11 +1,11 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use std::fmt::Write;
 
 use super::{
+    autopilot_webhook_url, context_autopilot_resolution, new_api_client, resolve_autopilot_id,
+    resolve_autopilot_trigger_id, resolve_current_workspace_id, value_string,
     AutopilotTriggerAddArgs, AutopilotTriggerUpdateArgs, Cli, Environment, OutputFormat, RunOutput,
-    autopilot_webhook_url, new_api_client, resolve_autopilot_id, resolve_autopilot_trigger_id,
-    resolve_current_workspace_id, value_string,
 };
 
 pub(super) async fn run_autopilot_trigger_add(
@@ -45,7 +45,7 @@ pub(super) async fn run_autopilot_trigger_add(
     let workspace_id = resolve_current_workspace_id(cli, environment);
     let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, &args.autopilot_id)
         .await
-        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+        .map_err(context_autopilot_resolution)?;
     let result: Value = client
         .post_json(&format!("/api/autopilots/{autopilot_id}/triggers"), &body)
         .await
@@ -97,7 +97,7 @@ pub(super) async fn run_autopilot_trigger_update(
     let workspace_id = resolve_current_workspace_id(cli, environment);
     let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, &args.autopilot_id)
         .await
-        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+        .map_err(context_autopilot_resolution)?;
     let trigger_id = resolve_autopilot_trigger_id(&client, &autopilot_id, &args.trigger_id)
         .await
         .map_err(|error| anyhow::anyhow!("resolve trigger: {error:#}"))?;
@@ -127,7 +127,7 @@ pub(super) async fn run_autopilot_trigger_delete(
     let workspace_id = resolve_current_workspace_id(cli, environment);
     let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, autopilot)
         .await
-        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+        .map_err(context_autopilot_resolution)?;
     let trigger_id = resolve_autopilot_trigger_id(&client, &autopilot_id, trigger)
         .await
         .map_err(|error| anyhow::anyhow!("resolve trigger: {error:#}"))?;

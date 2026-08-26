@@ -4,9 +4,9 @@ use std::fmt::Write;
 use std::io::{Read, Write as IoWrite};
 
 use super::{
+    autopilot_webhook_url, context_autopilot_resolution, new_api_client, read_setup_confirmation,
+    resolve_autopilot_id, resolve_autopilot_trigger_id, resolve_current_workspace_id, value_string,
     AutopilotTriggerRotateUrlArgs, Cli, Environment, OutputFormat, RunOutput,
-    autopilot_webhook_url, new_api_client, read_setup_confirmation, resolve_autopilot_id,
-    resolve_autopilot_trigger_id, resolve_current_workspace_id, value_string,
 };
 
 pub(super) async fn run_autopilot_trigger_rotate_url<R: Read>(
@@ -19,7 +19,7 @@ pub(super) async fn run_autopilot_trigger_rotate_url<R: Read>(
     let workspace_id = resolve_current_workspace_id(cli, environment);
     let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, &args.autopilot_id)
         .await
-        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+        .map_err(context_autopilot_resolution)?;
     let trigger_id = resolve_autopilot_trigger_id(&client, &autopilot_id, &args.trigger_id)
         .await
         .map_err(|error| anyhow::anyhow!("resolve trigger: {error:#}"))?;

@@ -4,17 +4,13 @@
 //! `login_browser`; this module keeps credential selection, verification,
 //! and atomic profile update orchestration together.
 
-mod login_browser;
-pub(crate) use login_browser::{
-    build_login_url, build_workspace_creation_url, callback_host_is_loopback, constant_time_equal,
-    run_browser_login, validate_login_token, wait_for_login_callback, wait_for_workspace_creation,
-    wait_for_workspace_creation_with_opener, LoginWorkspace, LOGIN_CALLBACK_TIMEOUT,
+pub(crate) use crate::login_browser::{
+    run_browser_login, validate_login_token, wait_for_workspace_creation, LoginWorkspace,
     WORKSPACE_DISCOVERY_INTERVAL, WORKSPACE_DISCOVERY_TIMEOUT,
 };
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
 use super::api::{http_timeout, ApiClient};
 use super::config::Environment;
@@ -25,8 +21,8 @@ use super::{
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(super) struct AuthUser {
-    name: String,
-    email: String,
+    pub(crate) name: String,
+    pub(crate) email: String,
 }
 
 /// Authenticate either with a PAT or with the browser callback flow. The

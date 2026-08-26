@@ -6,7 +6,7 @@ use super::issue_reorder_output::{issue_reorder_output, issue_value_key};
 use super::issue_reorder_query::{fetch_issue_column, reorder_target_not_in_column};
 use super::{
     new_api_client, resolve_current_workspace_id, resolve_issue_ref, value_string, Cli,
-    Environment, IssueReorderArgs, OutputFormat, RunOutput,
+    Environment, IssueReorderArgs, RunOutput,
 };
 
 pub(super) async fn run_issue_reorder(

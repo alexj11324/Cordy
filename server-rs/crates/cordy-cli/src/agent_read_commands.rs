@@ -4,7 +4,7 @@ use url::form_urlencoded;
 
 use super::{
     format_agent_details_table, format_agent_list_table, new_api_client, required_workspace_id,
-    value_string, Cli, Environment, OutputFormat, RunOutput,
+    Cli, Environment, OutputFormat, RunOutput,
 };
 
 pub(super) async fn run_agent_list(

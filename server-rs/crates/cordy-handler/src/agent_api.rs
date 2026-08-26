@@ -2301,8 +2301,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn agent_actor_projection_redacts_every_secret_surface() {
+    #[tokio::test]
+    async fn agent_actor_projection_redacts_every_secret_surface() {
         let pool = sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap();
         let state = HandlerState::new(pool, cordy_auth::pat_cache::PatCache::disabled(), None);
         let response = agent_event_response(&state, &agent_fixture());

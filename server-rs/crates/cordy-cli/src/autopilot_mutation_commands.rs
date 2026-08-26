@@ -1,11 +1,11 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
 use super::{
-    AutopilotCreateArgs, AutopilotUpdateArgs, Cli, Environment, OutputFormat, RunOutput,
-    new_api_client, required_workspace_id, resolve_autopilot_agent, resolve_autopilot_id,
-    resolve_autopilot_subscribers, resolve_current_workspace_id, resolve_project_reference,
-    value_string,
+    context_autopilot_resolution, new_api_client, required_workspace_id, resolve_autopilot_agent,
+    resolve_autopilot_id, resolve_autopilot_subscribers, resolve_current_workspace_id,
+    resolve_project_reference, value_string, AutopilotCreateArgs, AutopilotUpdateArgs, Cli,
+    Environment, OutputFormat, RunOutput,
 };
 
 pub(super) async fn run_autopilot_create(
@@ -96,7 +96,7 @@ pub(super) async fn run_autopilot_update(
     let workspace_id = resolve_current_workspace_id(cli, environment);
     let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, &args.id)
         .await
-        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+        .map_err(context_autopilot_resolution)?;
 
     let mut body = serde_json::Map::new();
     for (key, value) in [
@@ -180,7 +180,7 @@ pub(super) async fn run_autopilot_delete(
     let workspace_id = resolve_current_workspace_id(cli, environment);
     let (autopilot_id, display) = resolve_autopilot_id(&client, &workspace_id, id)
         .await
-        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+        .map_err(context_autopilot_resolution)?;
     client
         .delete(&format!("/api/autopilots/{autopilot_id}"))
         .await

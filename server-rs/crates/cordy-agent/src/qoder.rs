@@ -1580,14 +1580,14 @@ impl Backend for QoderBackend {
                     stderr_errors.push(&buffer[..bytes]);
                 }
             });
-            let mut protocol_task = tokio::spawn(run_protocol(
+            let mut protocol_task = tokio::spawn(run_protocol(ProtocolContext {
                 stdin,
                 stdout,
                 prompt,
                 options,
                 mcp_servers,
-                message_tx,
-                provider.clone(),
+                messages: message_tx,
+                provider: provider.clone(),
                 resume_method,
                 prompt_content_alias,
                 model_selection,
@@ -1607,7 +1607,7 @@ impl Backend for QoderBackend {
                 held_retry_attempts,
                 held_retry_delay,
                 builtin_runtime,
-            ));
+            }));
             let end = if timeout.is_zero() {
                 tokio::select! {
                     result = &mut protocol_task => RunEnd::Protocol(result),
@@ -1728,7 +1728,7 @@ impl ProtocolOutcome {
     }
 }
 
-async fn run_protocol(
+struct ProtocolContext {
     stdin: ChildStdin,
     stdout: ChildStdout,
     prompt: String,
@@ -1755,7 +1755,37 @@ async fn run_protocol(
     held_retry_attempts: u8,
     held_retry_delay: Duration,
     builtin_runtime: bool,
-) -> ProtocolOutcome {
+}
+
+async fn run_protocol(context: ProtocolContext) -> ProtocolOutcome {
+    let ProtocolContext {
+        stdin,
+        stdout,
+        prompt,
+        options,
+        mcp_servers,
+        messages,
+        provider,
+        resume_method,
+        prompt_content_alias,
+        model_selection,
+        reject_failed_load,
+        coding_project_meta,
+        full_text_output,
+        usage_model_unknown,
+        use_system_prompt,
+        strict_stop_reason,
+        explicit_authentication,
+        have_api_key,
+        require_load_capability,
+        minimum_agent_version,
+        session_config,
+        close_session,
+        retry_held_session,
+        held_retry_attempts,
+        held_retry_delay,
+        builtin_runtime,
+    } = context;
     let mut client = AcpClient::new(BufReader::new(stdout), stdin);
     let initialize = match client
         .request(
@@ -2978,9 +3008,7 @@ impl UsageSnapshot {
         self.fields.cache_read |= fallback.fields.cache_read;
         self.fields.cache_write |= fallback.fields.cache_write;
         self.fields.cost |= fallback.fields.cost;
-        if input_from_fallback && fallback.input_normalized {
-            self.total = fallback.total;
-        } else if self.total.is_none() {
+        if (input_from_fallback && fallback.input_normalized) || self.total.is_none() {
             self.total = fallback.total;
         }
         self.normalize_input();
@@ -3318,11 +3346,11 @@ fn parse_acp_effort_option(value: &Value) -> Option<AcpEffortOption> {
             .trim();
         return Some(AcpEffortOption {
             config_id: config_id.to_string(),
-            current: choices
-                .iter()
-                .any(|choice| choice.value == current)
-                .then(|| current.to_string())
-                .unwrap_or_default(),
+            current: if choices.iter().any(|choice| choice.value == current) {
+                current.to_string()
+            } else {
+                Default::default()
+            },
             choices,
         });
     }
@@ -3870,12 +3898,16 @@ mod tests {
             Ok("cached_token")
         );
         let api_only = serde_json::json!({"authMethods":[{"id":"xai.api_key"}]});
-        assert!(select_grok_auth_method(&api_only, false)
-            .unwrap_err()
-            .contains("XAI_API_KEY"));
-        assert!(select_grok_auth_method(&Value::Null, false)
-            .unwrap_err()
-            .contains("grok login"));
+        let api_only_error = match select_grok_auth_method(&api_only, false) {
+            Ok(method) => panic!("expected missing API key error, got {method}"),
+            Err(error) => error,
+        };
+        assert!(api_only_error.contains("XAI_API_KEY"));
+        let null_error = match select_grok_auth_method(&Value::Null, false) {
+            Ok(method) => panic!("expected missing auth method error, got {method}"),
+            Err(error) => error,
+        };
+        assert!(null_error.contains("grok login"));
     }
 
     #[test]
@@ -5426,9 +5458,28 @@ done
         let requests = std::fs::read_to_string(requests)
             .unwrap_or_else(|error| panic!("read Dim requests: {error}"));
         assert_eq!(requests.matches("session/load").count(), 2);
-        assert!(requests.contains(r#""configId":"permission","value":"full-access""#));
-        assert!(requests.contains(r#""configId":"mode","value":"agent""#));
-        assert!(requests.contains(r#""configId":"thought_level","value":"high""#));
+        let has_config = |config_id: &str, value: &str| {
+            requests
+                .lines()
+                .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+                .any(|request| {
+                    request.get("method").and_then(Value::as_str)
+                        == Some("session/set_config_option")
+                        && request
+                            .get("params")
+                            .and_then(|params| params.get("configId"))
+                            .and_then(Value::as_str)
+                            == Some(config_id)
+                        && request
+                            .get("params")
+                            .and_then(|params| params.get("value"))
+                            .and_then(Value::as_str)
+                            == Some(value)
+                })
+        };
+        assert!(has_config("permission", "full-access"));
+        assert!(has_config("mode", "agent"));
+        assert!(has_config("thought_level", "high"));
         assert!(requests.contains("session/close"));
     }
 

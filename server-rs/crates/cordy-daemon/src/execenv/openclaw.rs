@@ -11,7 +11,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::mpsc;
@@ -205,7 +205,7 @@ fn active_config_path(bin: &str, timeout: Duration) -> anyhow::Result<(String, b
             if !Path::new(&path).is_absolute() {
                 path = std::env::current_dir()?.join(path).display().to_string();
             }
-            return Ok((path.clone(), Path::new(&path).is_file()));
+            Ok((path.clone(), Path::new(&path).is_file()))
         }
         Err(error) if unsupported_config_file(&error) => fallback_config_path(),
         Err(error) => Err(error),
@@ -350,10 +350,7 @@ fn build_wrapper(
     let mut root = Map::new();
     root.insert("agents".into(), Value::Object(agent_cfg));
     if has_managed_mcp {
-        let servers = managed_mcp
-            .into_iter()
-            .map(|(name, value)| (name, value))
-            .collect::<Map<_, _>>();
+        let servers = managed_mcp.into_iter().collect::<Map<_, _>>();
         root.insert(
             "mcp".into(),
             Value::Object(Map::from_iter([("servers".into(), Value::Object(servers))])),

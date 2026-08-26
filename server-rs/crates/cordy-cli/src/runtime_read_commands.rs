@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 
-use super::{Cli, Environment, OutputFormat, RunOutput, format_runtime_rows, new_api_client};
+use super::{format_runtime_rows, new_api_client, Cli, Environment, OutputFormat, RunOutput};
 
 pub(super) async fn run_runtime_list(
     cli: &Cli,

@@ -8,6 +8,7 @@ use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
 use crate::dsh::{DshBackend, DshConfig};
+use crate::pi::{PiBackend, PiConfig};
 use crate::qoder::{
     DimBackend, DimConfig, GrokBackend, GrokConfig, HermesBackend, HermesConfig, KimiBackend,
     KimiConfig, KiroBackend, KiroConfig, McodeBackend, McodeConfig, QoderBackend, QoderConfig,
@@ -97,6 +98,19 @@ pub fn build_backend(
             command: config.command,
             env: config.env,
         }))),
+        "pi" => {
+            let (default_executable, provider_label) = if runtime_id == "omp" {
+                ("omp", "omp")
+            } else {
+                ("pi", "pi")
+            };
+            Ok(Arc::new(PiBackend::new(PiConfig {
+                command: config.command,
+                env: config.env,
+                default_executable: default_executable.to_string(),
+                provider_label: provider_label.to_string(),
+            })))
+        }
         "qoder" | "qoderclicn" => Ok(Arc::new(QoderBackend::new(QoderConfig {
             command: config.command,
             env: config.env,
@@ -519,6 +533,10 @@ mod tests {
         assert!(build_backend("kimi", BackendConfig::default()).is_ok());
         assert!(build_backend("reasonix", BackendConfig::default()).is_ok());
         assert!(build_backend("dsh", BackendConfig::default()).is_ok());
+        let pi = build_backend("pi", BackendConfig::default());
+        assert!(pi.is_ok(), "custom Pi runtime must build");
+        let omp = build_backend("omp", BackendConfig::default());
+        assert!(omp.is_ok(), "OMP runtime must reuse the Pi backend family");
         assert!(build_backend("grok", BackendConfig::default()).is_ok());
         assert!(build_backend("mcode", BackendConfig::default()).is_ok());
         assert!(build_backend("dim", BackendConfig::default()).is_ok());

@@ -82,7 +82,10 @@ async fn fetch_issue_actors(
     [members, agents, squads]
 }
 
-async fn retry_actor_get<T: DeserializeOwned>(client: &ApiClient, path: &str) -> Result<T> {
+pub(super) async fn retry_actor_get<T: DeserializeOwned>(
+    client: &ApiClient,
+    path: &str,
+) -> Result<T> {
     let delays = [100_u64, 250];
     for (attempt, delay) in [0_u64, 100, 250].into_iter().enumerate() {
         if delay > 0 {
@@ -269,7 +272,7 @@ async fn resolve_actor_name(
     bail!("no member or agent found matching {input:?}")
 }
 
-fn normalize_assignee_input(raw: &str) -> String {
+pub(super) fn normalize_assignee_input(raw: &str) -> String {
     let input = raw.trim();
     if let Some(marker) = input.find("](mention://") {
         if input.starts_with('[') && input.ends_with(')') {

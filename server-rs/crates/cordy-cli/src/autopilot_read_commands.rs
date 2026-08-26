@@ -4,9 +4,9 @@ use serde_json::Value;
 use url::form_urlencoded;
 
 use super::{
-    Cli, Environment, OutputFormat, RunOutput, format_autopilot_runs_table, format_autopilot_table,
+    context_autopilot_resolution, format_autopilot_runs_table, format_autopilot_table,
     load_autopilot_agent_names, new_api_client, required_workspace_id, resolve_autopilot_id,
-    resolve_current_workspace_id,
+    resolve_current_workspace_id, Cli, Environment, OutputFormat, RunOutput,
 };
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -58,7 +58,7 @@ pub(super) async fn run_autopilot_get(
     let workspace_id = resolve_current_workspace_id(cli, environment);
     let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, id)
         .await
-        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+        .map_err(context_autopilot_resolution)?;
     let response: Value = client
         .get_json(&format!("/api/autopilots/{autopilot_id}"))
         .await
@@ -97,7 +97,7 @@ pub(super) async fn run_autopilot_runs(
     let workspace_id = resolve_current_workspace_id(cli, environment);
     let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, id)
         .await
-        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+        .map_err(context_autopilot_resolution)?;
     let mut query = form_urlencoded::Serializer::new(String::new());
     if limit > 0 {
         query.append_pair("limit", &limit.to_string());

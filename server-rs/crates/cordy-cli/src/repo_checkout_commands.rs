@@ -1,7 +1,7 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
-use super::{Environment, RunOutput, value_string};
+use super::{value_string, Environment, RunOutput};
 
 pub(super) fn repo_checkout_retry_delay(
     value: &str,

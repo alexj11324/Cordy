@@ -18,6 +18,7 @@ pub(super) async fn resolve_autopilot_agent(
     workspace_id: &str,
     input: &str,
 ) -> Result<String> {
+    let input = input.trim();
     if is_canonical_uuid(input) {
         return Ok(input.into());
     }
@@ -31,6 +32,12 @@ pub(super) async fn resolve_autopilot_agent(
         form_urlencoded::byte_serialize(workspace_id.as_bytes()).collect::<String>()
     );
     let agents: Vec<Value> = client.get_json(&path).await.context("fetch agents")?;
+    if let Some(agent) = agents
+        .iter()
+        .find(|agent| value_string(agent, "id").eq_ignore_ascii_case(input))
+    {
+        return Ok(value_string(agent, "id"));
+    }
     let input_lower = input.to_ascii_lowercase();
     let matches = agents
         .iter()

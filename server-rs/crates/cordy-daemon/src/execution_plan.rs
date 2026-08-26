@@ -1084,7 +1084,8 @@ mod tests {
 
     #[test]
     fn invalid_identity_or_auth_fails_closed_without_daemon_token_fallback() {
-        let cases: [(&str, fn(&mut Task)); 5] = [
+        type TaskMutation = fn(&mut Task);
+        let cases: [(&str, TaskMutation); 5] = [
             ("missing token", |task: &mut Task| task.auth_token.clear()),
             ("daemon token", |task: &mut Task| {
                 task.auth_token = "owner-token".to_string()

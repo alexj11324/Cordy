@@ -118,9 +118,10 @@ mod tests {
 
     #[test]
     fn task_usage_result_uses_go_timestamp_precision() {
-        let watermark = DateTime::parse_from_rfc3339("2026-08-23T12:34:56.789Z")
-            .expect("timestamp")
-            .with_timezone(&Utc);
+        let watermark = match DateTime::parse_from_rfc3339("2026-08-23T12:34:56.789Z") {
+            Ok(timestamp) => timestamp.with_timezone(&Utc),
+            Err(error) => panic!("timestamp: {error}"),
+        };
         assert_eq!(
             task_usage_result(Some(watermark), None)["watermark_before"],
             json!("2026-08-23T12:34:56Z")

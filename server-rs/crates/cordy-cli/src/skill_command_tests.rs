@@ -294,11 +294,9 @@ async fn skill_create_matches_go_content_config_and_output_contracts() {
     )
     .await
     .expect_err("invalid config");
-    assert!(
-        error
-            .to_string()
-            .starts_with("--config must be valid JSON:")
-    );
+    assert!(error
+        .to_string()
+        .starts_with("--config must be valid JSON:"));
     server.abort();
 }
 
@@ -618,7 +616,7 @@ async fn skill_import_matches_go_url_and_multipart_contracts() {
 async fn skill_import_rejects_ambiguous_input_and_preserves_legacy_conflict_output() {
     let home = tempfile::tempdir().expect("temp home");
     let cwd = tempfile::tempdir().expect("temp cwd");
-    let mut environment = Environment::for_test(home.path().into(), cwd.path().into());
+    let environment = Environment::for_test(home.path().into(), cwd.path().into());
     let cli = Cli::try_parse_from([
         "cordy",
         "skill",
@@ -659,7 +657,10 @@ async fn skill_import_rejects_ambiguous_input_and_preserves_legacy_conflict_outp
     fs::write(&outside_file, b"outside").expect("outside archive");
     let error = read_skill_archive(&outside_file, &environment, false)
         .expect_err("external archive must be refused");
-    assert!(error.to_string().contains("--file path"));
+    assert!(
+        error.to_string().contains("--file path"),
+        "actual error: {error:#}"
+    );
     let (bytes, filename) =
         read_skill_archive(&archive, &environment, false).expect("workdir archive");
     assert_eq!(bytes, b"archive");
@@ -704,12 +705,10 @@ async fn skill_import_legacy_conflict_is_structured_and_nonzero() {
     let result: Value = serde_json::from_str(&output.stdout).expect("conflict JSON");
     assert_eq!(result["status"], "conflict");
     assert_eq!(result["existing_skill"]["id"], "skill-1");
-    assert!(
-        result["reason"]
-            .as_str()
-            .expect("reason")
-            .contains("--on-conflict overwrite")
-    );
+    assert!(result["reason"]
+        .as_str()
+        .expect("reason")
+        .contains("--on-conflict overwrite"));
     assert_eq!(crate::error::exit_code(&error), 1);
     server.abort();
 }

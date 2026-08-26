@@ -101,11 +101,9 @@ async fn agent_list_and_get_match_go_requests_and_outputs() {
         .await
         .expect("list agents");
     assert!(listed.stdout.starts_with("ID"));
-    assert!(
-        listed
-            .stdout
-            .contains("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
-    );
+    assert!(listed
+        .stdout
+        .contains("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"));
     assert!(listed.stdout.contains("Builder"));
     assert!(listed.stdout.contains("cloud"));
     assert!(listed.stdout.contains("yes"));
@@ -300,20 +298,18 @@ fn agent_create_rejects_invalid_and_ambiguous_secret_inputs_without_leaking() {
     else {
         panic!("expected agent create");
     };
-    assert!(
-        resolve_agent_secret_json(
-            args.mcp_config.as_deref(),
-            args.mcp_config_stdin,
-            args.mcp_config_file.as_deref(),
-            "mcp-config",
-            true,
-            &environment,
-            &mut Cursor::new(b"{}".to_vec()),
-        )
-        .expect_err("ambiguous MCP inputs")
-        .to_string()
-        .contains("mutually exclusive")
-    );
+    assert!(resolve_agent_secret_json(
+        args.mcp_config.as_deref(),
+        args.mcp_config_stdin,
+        args.mcp_config_file.as_deref(),
+        "mcp-config",
+        true,
+        &environment,
+        &mut Cursor::new(b"{}".to_vec()),
+    )
+    .expect_err("ambiguous MCP inputs")
+    .to_string()
+    .contains("mutually exclusive"));
 }
 
 #[test]
@@ -521,13 +517,11 @@ async fn agent_avatar_prechecks_uploads_and_updates_agent() {
         .route(
             "/api/upload-file",
             post(|request: Request| async move {
-                assert!(
-                    request
-                        .headers()
-                        .get("content-type")
-                        .and_then(|value| value.to_str().ok())
-                        .is_some_and(|value| value.starts_with("multipart/form-data; boundary="))
-                );
+                assert!(request
+                    .headers()
+                    .get("content-type")
+                    .and_then(|value| value.to_str().ok())
+                    .is_some_and(|value| value.starts_with("multipart/form-data; boundary=")));
                 let bytes = axum::body::to_bytes(request.into_body(), usize::MAX)
                     .await
                     .expect("multipart body");
@@ -788,11 +782,9 @@ async fn agent_env_set_requires_one_secret_safe_input_channel() {
     let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect_err("env input required");
-    assert!(
-        error
-            .to_string()
-            .contains("specify the new env via --custom-env")
-    );
+    assert!(error
+        .to_string()
+        .contains("specify the new env via --custom-env"));
 }
 
 #[test]

@@ -4,13 +4,24 @@
 //! agent resolution lives in `autopilot_member_resolver` so the two lookup
 //! domains do not accumulate unrelated matching rules.
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Error, Result};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashSet;
 use url::form_urlencoded;
 
 use super::{compact_uuid, is_canonical_uuid, normalize_uuid_prefix, value_string, ApiClient};
+
+pub(super) fn context_autopilot_resolution(error: Error) -> Error {
+    if error
+        .to_string()
+        .starts_with("ambiguous autopilot id prefix ")
+    {
+        error
+    } else {
+        anyhow::anyhow!("resolve autopilot: {error:#}")
+    }
+}
 
 #[derive(Debug, Deserialize)]
 struct AutopilotResolverEnvelope {

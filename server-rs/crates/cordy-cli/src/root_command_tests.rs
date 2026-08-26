@@ -75,11 +75,9 @@ fn update_output_matches_go_states_without_sensitive_details() {
     });
     assert!(output.stdout.is_empty());
     assert!(output.stderr.contains("Latest version:  v1.2.4"));
-    assert!(
-        output
-            .stderr
-            .contains("Downloading v1.2.4 from GitHub Releases...")
-    );
+    assert!(output
+        .stderr
+        .contains("Downloading v1.2.4 from GitHub Releases..."));
     assert!(output.stderr.contains("Update complete."));
     for forbidden in ["https://", "/home/", "token", "Authorization"] {
         assert!(!output.stderr.contains(forbidden), "leaked {forbidden}");
@@ -104,11 +102,9 @@ fn update_homebrew_warning_continues_without_latest_details() {
         latest_query_failed: true,
         message: "Homebrew upgraded cordy-ai/tap/cordy".into(),
     });
-    assert!(
-        output
-            .stderr
-            .contains("Warning: could not check latest version; continuing.")
-    );
+    assert!(output
+        .stderr
+        .contains("Warning: could not check latest version; continuing."));
     assert!(output.stderr.contains("Updating via Homebrew..."));
     assert!(output.stderr.contains("Update complete."));
     assert!(!output.stderr.contains("https://"));
@@ -117,11 +113,9 @@ fn update_homebrew_warning_continues_without_latest_details() {
 #[test]
 fn update_rejects_zero_timeout_before_executor_detection() {
     let error = validate_update_timeout(Duration::ZERO).expect_err("zero timeout");
-    assert!(
-        error
-            .to_string()
-            .contains("download timeout must be greater than zero")
-    );
+    assert!(error
+        .to_string()
+        .contains("download timeout must be greater than zero"));
 }
 
 #[tokio::test]
@@ -134,9 +128,7 @@ async fn update_is_unavailable_in_daemon_task_context() {
     let error = run_with_input(&cli, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect_err("task context must be rejected");
-    assert!(
-        error
-            .to_string()
-            .contains("update is not available inside a daemon-managed task")
-    );
+    assert!(error
+        .to_string()
+        .contains("update is not available inside a daemon-managed task"));
 }

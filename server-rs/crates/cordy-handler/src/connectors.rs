@@ -421,9 +421,7 @@ FOR SHARE OF m, a"#,
     .bind(agent_id)
     .fetch_optional(&mut **tx)
     .await?;
-    Ok(current.is_some_and(|(role, owner_id)| {
-        can_manage_lark_agent(&role, owner_id, actor)
-    }))
+    Ok(current.is_some_and(|(role, owner_id)| can_manage_lark_agent(&role, owner_id, actor)))
 }
 
 fn lark_sessions() -> &'static Mutex<HashMap<String, LarkSession>> {

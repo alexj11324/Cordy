@@ -326,6 +326,13 @@ impl SlackChannel {
                 }
                 Ok(())
             }
+            // `SocketModeStream::run` turns this control envelope into an
+            // infrastructure error before invoking the handler. Keep the
+            // match exhaustive so a direct caller still fails closed if the
+            // transport invariant ever changes.
+            EnvelopeKind::Disconnect => {
+                anyhow::bail!("slack: disconnect envelope reached channel handler")
+            }
             // hello/connecting/incoming-errors are lifecycle noise.
             EnvelopeKind::Other => Ok(()),
         }

@@ -224,19 +224,13 @@ impl RuntimeTaskSweeper {
             Vec::new(),
         )
         .await?;
-        let undrained = match undrained {
-            Some(value) => value,
-            None => 0,
-        };
+        let undrained = undrained.unwrap_or_default();
         if undrained > 0 {
             return Ok(None);
         }
         runtime::unbind_tasks_from_runtime(&mut *tx, runtime_id).await?;
         let remaining = runtime::count_tasks_by_runtime(&mut *tx, runtime_id).await?;
-        let remaining = match remaining {
-            Some(value) => value,
-            None => 0,
-        };
+        let remaining = remaining.unwrap_or_default();
         anyhow::ensure!(
             remaining == 0,
             "task history still references runtime after detach: {remaining}"
@@ -318,14 +312,8 @@ impl RuntimeTaskSweeper {
             .await
         {
             Ok(result) => {
-                report.recoveries_replayed = match usize::try_from(result.replayed) {
-                    Ok(value) => value,
-                    Err(_) => 0,
-                };
-                report.recoveries_exhausted = match usize::try_from(result.exhausted) {
-                    Ok(value) => value,
-                    Err(_) => 0,
-                };
+                report.recoveries_replayed = usize::try_from(result.replayed).unwrap_or_default();
+                report.recoveries_exhausted = usize::try_from(result.exhausted).unwrap_or_default();
             }
             Err(error) => tracing::warn!(%error, "delegated failure recovery sweep failed"),
         }
