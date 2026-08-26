@@ -6,7 +6,7 @@
 //! environment. Transcript draining, usage, terminal callbacks, and process
 //! ownership remain the responsibility of the future `ProviderRuntimeAdapter`.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt;
 use std::path::Path;
 use std::time::Duration;
@@ -35,6 +35,8 @@ use crate::task_execution::InvalidTaskIdentity;
 use crate::types::{AgentData, RuntimeExecutionTarget, Task};
 
 const TASK_CONFIG_ROOT_ENV: &str = "CORDY_TASK_CONFIG_ROOT";
+const REPO_CHECKOUT_MODE_ENV: &str = "CORDY_REPO_CHECKOUT_MODE";
+const REPO_CHECKOUT_MODE_ISOLATED: &str = "isolated";
 
 /// Non-claim values resolved by the daemon before building a task plan.
 ///
@@ -330,6 +332,12 @@ impl ProviderExecutionPlan {
         for (key, value) in canonical {
             values.insert(key.to_string(), value);
         }
+        if let Some(checkout_mode) = repo_checkout_mode_for(&provider, std::env::consts::OS) {
+            values.insert(
+                REPO_CHECKOUT_MODE_ENV.to_string(),
+                checkout_mode.to_string(),
+            );
+        }
         if !task.autopilot_run_id.is_empty() {
             values.insert(
                 "CORDY_AUTOPILOT_RUN_ID".to_string(),
@@ -493,17 +501,17 @@ impl ProviderExecutionPlan {
             "OPENCLAW_CONFIG_PATH",
             &environment.openclaw_config_path,
         );
-        if !prepared.openclaw_include_roots.trim().is_empty() {
-            let mut roots = vec![std::path::PathBuf::from(
-                prepared.openclaw_include_roots.as_str(),
-            )];
-            if let Some(existing) = values.get("OPENCLAW_INCLUDE_ROOTS") {
-                roots.extend(std::env::split_paths(existing));
+        if !prepared.openclaw_include_roots.is_empty() {
+            let existing = values
+                .get("OPENCLAW_INCLUDE_ROOTS")
+                .cloned()
+                .or_else(|| std::env::var("OPENCLAW_INCLUDE_ROOTS").ok())
+                .unwrap_or_default();
+            if let Some(joined) =
+                compose_openclaw_include_roots(&prepared.openclaw_include_roots, &existing)
+            {
+                values.insert("OPENCLAW_INCLUDE_ROOTS".to_string(), joined);
             }
-            let joined = std::env::join_paths(roots)
-                .map(|joined| joined.to_string_lossy().into_owned())
-                .unwrap_or_else(|_| prepared.openclaw_include_roots.clone());
-            values.insert("OPENCLAW_INCLUDE_ROOTS".to_string(), joined);
         }
         // The prepared overlay is authoritative over custom_env.
         insert_nonempty(&mut values, "HERMES_HOME", &environment.hermes_home);
@@ -565,7 +573,8 @@ impl ProviderExecutionPlan {
             .iter()
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect::<HashMap<_, _>>();
-        let authorized_explicit = self.child_env.custom_env.keys().cloned().collect();
+        let authorized_explicit: Vec<String> =
+            self.child_env.custom_env.keys().cloned().collect();
         let include_only =
             codex_shell_env_allowlist(&inherited, &explicit, &authorized_explicit);
         ensure_codex_shell_env_policy_config(
@@ -744,6 +753,36 @@ fn default_args(config: &Config, provider: &str) -> Vec<String> {
         "qwenpaw" => config.qwenpaw_args.clone(),
         _ => Vec::new(),
     }
+}
+
+/// Selects the Git metadata layout used by the task's repo checkout.
+/// Codex's sandboxed linked worktrees need isolated metadata on Linux and
+/// Windows; other providers and platforms preserve the default layout.
+fn repo_checkout_mode_for(provider: &str, operating_system: &str) -> Option<&'static str> {
+    if provider == "codex" && matches!(operating_system, "linux" | "windows") {
+        Some(REPO_CHECKOUT_MODE_ISOLATED)
+    } else {
+        None
+    }
+}
+
+/// Prepends the task wrapper's granted OpenClaw config directory to the
+/// daemon user's include roots. Empty segments are ignored and exact duplicate
+/// strings are retained only once, matching the Go environment contract.
+fn compose_openclaw_include_roots(add_root: &str, user_value: &str) -> Option<String> {
+    if add_root.is_empty() {
+        return None;
+    }
+    let separator = if cfg!(windows) { ';' } else { ':' };
+    let mut seen = BTreeSet::from([add_root.to_string()]);
+    let mut parts = vec![add_root.to_string()];
+    for part in user_value.split(separator) {
+        if part.is_empty() || !seen.insert(part.to_string()) {
+            continue;
+        }
+        parts.push(part.to_string());
+    }
+    Some(parts.join(&separator.to_string()))
 }
 
 fn sanitize_custom_env(
@@ -951,6 +990,80 @@ mod tests {
                 Some("/tmp/cordy-task-private")
             );
         }
+    }
+
+    #[test]
+    fn codex_checkout_mode_matches_go_platform_contract() {
+        assert_eq!(
+            repo_checkout_mode_for("codex", "linux"),
+            Some(REPO_CHECKOUT_MODE_ISOLATED)
+        );
+        assert_eq!(
+            repo_checkout_mode_for("codex", "windows"),
+            Some(REPO_CHECKOUT_MODE_ISOLATED)
+        );
+        assert_eq!(repo_checkout_mode_for("codex", "darwin"), None);
+        assert_eq!(repo_checkout_mode_for("claude", "linux"), None);
+    }
+
+    #[test]
+    fn codex_plan_injects_checkout_mode_for_current_platform() {
+        let plan = ProviderExecutionPlan::build(&config(), &task(), &target(), inputs()).unwrap();
+        let expected = repo_checkout_mode_for("codex", std::env::consts::OS);
+        assert_eq!(
+            plan.child_env
+                .values
+                .get(REPO_CHECKOUT_MODE_ENV)
+                .map(String::as_str),
+            expected
+        );
+    }
+
+    #[test]
+    fn composes_openclaw_include_roots_like_go() {
+        let separator = if cfg!(windows) { ';' } else { ':' };
+        let user_value = format!("{separator}/etc/openclaw{separator}/opt/openclaw{separator}");
+        let expected =
+            format!("/home/alice/.openclaw{separator}/etc/openclaw{separator}/opt/openclaw");
+        assert_eq!(
+            compose_openclaw_include_roots("/home/alice/.openclaw", &user_value),
+            Some(expected)
+        );
+        assert_eq!(compose_openclaw_include_roots("", "/some/user/dir"), None);
+    }
+
+    #[test]
+    fn bind_environment_preserves_existing_openclaw_include_roots() {
+        let separator = if cfg!(windows) { ';' } else { ':' };
+        let existing = format!("/etc/openclaw{separator}/opt/openclaw");
+        let mut inputs = inputs();
+        inputs
+            .runtime_env
+            .insert("OPENCLAW_INCLUDE_ROOTS".into(), existing);
+        let target = RuntimeExecutionTarget {
+            provider: "openclaw".into(),
+            profile_id: String::new(),
+        };
+        let plan = ProviderExecutionPlan::build(&config(), &task(), &target, inputs).unwrap();
+        let bound = plan
+            .bind_environment(
+                &Environment {
+                    work_dir: "/workdir".into(),
+                    cordy_config_root: "/config".into(),
+                    ..Environment::default()
+                },
+                PreparedEnvironmentInputs {
+                    openclaw_include_roots: "/home/alice/.openclaw".into(),
+                    ..PreparedEnvironmentInputs::default()
+                },
+            )
+            .unwrap();
+        let expected =
+            format!("/home/alice/.openclaw{separator}/etc/openclaw{separator}/opt/openclaw");
+        assert_eq!(
+            bound.child_env.get("OPENCLAW_INCLUDE_ROOTS"),
+            Some(expected.as_str())
+        );
     }
 
     #[test]
