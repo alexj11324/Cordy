@@ -44,6 +44,8 @@ const DEFAULT_SEMANTIC_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const DEFAULT_FIRST_TURN_TIMEOUT: Duration = Duration::from_secs(60);
 const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 const MODEL_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
+pub const CODEX_MODEL_CATALOG_REFRESH_RETRY_MARKER: &str = "codex model catalog refresh retry safe";
+const CODEX_MODEL_CATALOG_REFRESH_FAILURE_SIGNAL: &str = "failed to refresh available models";
 const MODEL_DISCOVERY_OUTPUT_MAX: usize = 4 * 1024 * 1024;
 const DISCOVERY_CLEANUP_TIMEOUT: Duration = Duration::from_secs(2);
 const TERMINATION_GRACE: Duration = Duration::from_millis(500);
@@ -58,6 +60,8 @@ static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
 pub struct CodexConfig {
     pub command: RuntimeCommand,
     pub env: BTreeMap<String, String>,
+    pub catalog_cache: Arc<CatalogCache>,
+    pub runtime_scope: String,
 }
 
 #[derive(Debug, Clone)]
@@ -156,6 +160,40 @@ fn fallback_or_cancelled(cancellation: &CancellationToken) -> Catalog {
         Catalog::default()
     } else {
         static_codex_catalog()
+    }
+}
+
+fn validate_codex_capability_overrides(options: &mut ExecOptions, catalog: &Catalog) {
+    if catalog.fallback || catalog.models.is_empty() {
+        return;
+    }
+    let Some(model_id) = (!options.model.trim().is_empty()).then(|| options.model.trim()) else {
+        options.thinking_level.clear();
+        options.service_tier.clear();
+        return;
+    };
+    let Some(model) = catalog.models.iter().find(|model| model.id == model_id) else {
+        options.thinking_level.clear();
+        options.service_tier.clear();
+        return;
+    };
+    if !options.thinking_level.is_empty()
+        && !model.thinking.as_ref().is_some_and(|thinking| {
+            thinking
+                .supported_levels
+                .iter()
+                .any(|level| level.value == options.thinking_level)
+        })
+    {
+        options.thinking_level.clear();
+    }
+    if !options.service_tier.is_empty()
+        && !model
+            .service_tiers
+            .iter()
+            .any(|tier| tier.id == options.service_tier)
+    {
+        options.service_tier.clear();
     }
 }
 
@@ -1042,7 +1080,23 @@ fn toml_value(value: &Value) -> Result<String, String> {
 
 #[async_trait]
 impl Backend for CodexBackend {
-    async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
+    async fn execute(&self, prompt: &str, mut options: ExecOptions) -> Result<Session, AgentError> {
+        if !options.thinking_level.is_empty() || !options.service_tier.is_empty() {
+            let runtime_scope = if self.config.runtime_scope.trim().is_empty() {
+                "codex"
+            } else {
+                self.config.runtime_scope.as_str()
+            };
+            let catalog = self
+                .discover_models_for_runtime(
+                    runtime_scope,
+                    &self.config.catalog_cache,
+                    options.cancellation.clone(),
+                    MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await;
+            validate_codex_capability_overrides(&mut options, &catalog);
+        }
         let (event_tx, event_rx) = mpsc::channel(256);
         let process = spawn_codex_process(&self.config, &options, event_tx).await?;
         let (messages_tx, messages_rx) = mpsc::channel(MESSAGE_BUFFER);
@@ -1518,6 +1572,7 @@ struct ObserverState {
     protocol: ProtocolKind,
     gate_armed: bool,
     turn_started: bool,
+    turn_start_response_received: bool,
     turn_done: bool,
     semantic_activity: bool,
     completed_turns: BTreeSet<String>,
@@ -1525,6 +1580,7 @@ struct ObserverState {
     last_agent_message: String,
     turn_error: String,
     usage: TokenUsage,
+    pending_notifications: Vec<(String, Value)>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -1563,9 +1619,17 @@ impl CodexObserver {
         self.state.lock().await.thread_id = thread_id.to_string();
     }
 
-    async fn set_turn_id(&self, turn_id: &str) {
-        if !turn_id.is_empty() {
-            self.state.lock().await.turn_id = turn_id.to_string();
+    async fn mark_turn_start_response(&self, turn_id: &str) {
+        let pending = {
+            let mut state = self.state.lock().await;
+            state.turn_start_response_received = true;
+            if !turn_id.is_empty() {
+                state.turn_id = turn_id.to_string();
+            }
+            std::mem::take(&mut state.pending_notifications)
+        };
+        for (method, params) in pending {
+            Box::pin(self.handle_notification(&method, params)).await;
         }
     }
 
@@ -1595,7 +1659,7 @@ impl CodexObserver {
 
     async fn handle_notification(&self, method: &str, params: Value) {
         {
-            let state = self.state.lock().await;
+            let mut state = self.state.lock().await;
             if !state.gate_armed {
                 return;
             }
@@ -1622,15 +1686,12 @@ impl CodexObserver {
                     return;
                 }
                 if !state.turn_started
-                    && state.turn_id.is_empty()
+                    && !state.turn_start_response_received
                     && (method.starts_with("item/") || method == "turn/completed")
                 {
-                    // A resumed thread may replay a prior raw event before
-                    // this turn's start boundary. Older app-server versions
-                    // omit turn/started for live streams, so only events
-                    // carrying an unknown turn id are held back here; the
-                    // turn/start response supplies the live id when it has
-                    // one, and id-less legacy-style raw events remain valid.
+                    state
+                        .pending_notifications
+                        .push((method.to_string(), params));
                     return;
                 }
             }
@@ -1790,6 +1851,7 @@ impl CodexObserver {
                     "status:running",
                 )
                 .await;
+                self.replay_pending_notifications().await;
             }
             "turn/completed" => {
                 let turn_id = nested_string(&params, &["turn", "id"]);
@@ -1855,6 +1917,16 @@ impl CodexObserver {
             }
             _ if method.starts_with("item/") => self.handle_item(method, &params).await,
             _ => {}
+        }
+    }
+
+    async fn replay_pending_notifications(&self) {
+        let pending = {
+            let mut state = self.state.lock().await;
+            std::mem::take(&mut state.pending_notifications)
+        };
+        for (method, params) in pending {
+            Box::pin(self.handle_notification(&method, params)).await;
         }
     }
 
@@ -2394,7 +2466,7 @@ async fn run_codex(
     let input = if options.resume_expected && !resumed {
         format!("{}{}", options.resume_continuity_notice, prompt)
     } else {
-        prompt
+        prompt.clone()
     };
     let mut turn_params = serde_json::json!({
         "threadId": thread_id,
@@ -2417,7 +2489,7 @@ async fn run_codex(
     };
     if let Ok(value) = &turn_start {
         observer
-            .set_turn_id(&nested_string(value, &["turn", "id"]))
+            .mark_turn_start_response(&nested_string(value, &["turn", "id"]))
             .await;
     }
     if let Err(error) = turn_start {
@@ -2556,7 +2628,7 @@ async fn run_codex(
     if status == "failed" && error.is_empty() {
         error = snapshot.turn_error.clone();
     }
-    let stderr = cleanup_codex(
+    let cleanup = cleanup_codex_with_status(
         &mut tree,
         &client,
         reader_task,
@@ -2565,6 +2637,96 @@ async fn run_codex(
         &stderr_tail,
     )
     .await;
+    let stderr = cleanup.stderr;
+    let startup_refresh_retry_safe = attempt == 1
+        && cleanup.confirmed
+        && first_started
+        && !first_progress
+        && status == "timeout"
+        && error.contains("codex app-server no progress timeout")
+        && stderr.contains(CODEX_MODEL_CATALOG_REFRESH_FAILURE_SIGNAL)
+        && !options.cancellation.is_cancelled()
+        && !execution_deadline.is_some_and(|deadline| deadline <= tokio::time::Instant::now());
+    if startup_refresh_retry_safe {
+        let mut retry_options = options.clone();
+        if !retry_options.resume_session_id.trim().is_empty() {
+            retry_options.resume_session_id.clear();
+            retry_options.resume_expected = true;
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(Duration::from_millis(500)) => {}
+            _ = options.cancellation.cancelled() => {
+                let _ = result_tx.send(codex_aborted_result(started));
+                return;
+            }
+            _ = async {
+                if let Some(deadline) = execution_deadline {
+                    tokio::time::sleep_until(deadline).await;
+                } else {
+                    std::future::pending::<()>().await;
+                }
+            } => {
+                let _ = result_tx.send(codex_timeout_result(options.timeout, started));
+                return;
+            }
+        }
+        let (retry_event_tx, retry_event_rx) = mpsc::channel(256);
+        let (retry_activity_tx, retry_activity_rx) = mpsc::channel(ACTIVITY_BUFFER);
+        let (retry_turn_done_tx, retry_turn_done_rx) = mpsc::channel(8);
+        let spawn_result = tokio::select! {
+            result = spawn_codex_process(&config, &retry_options, retry_event_tx) => result,
+            _ = options.cancellation.cancelled() => {
+                let _ = result_tx.send(codex_aborted_result(started));
+                return;
+            }
+        };
+        match spawn_result {
+            Ok(process) => {
+                if options.cancellation.is_cancelled() {
+                    stop_spawned_codex_process(process).await;
+                    let _ = result_tx.send(codex_aborted_result(started));
+                    return;
+                }
+                if execution_deadline
+                    .is_some_and(|deadline| deadline <= tokio::time::Instant::now())
+                {
+                    stop_spawned_codex_process(process).await;
+                    let _ = result_tx.send(codex_timeout_result(options.timeout, started));
+                    return;
+                }
+                let retry_observer = CodexObserver::new(
+                    observer.messages.clone(),
+                    retry_activity_tx,
+                    retry_turn_done_tx,
+                );
+                Box::pin(run_codex(
+                    process.tree,
+                    process.client,
+                    retry_observer,
+                    process.stdout,
+                    process.stderr,
+                    retry_event_rx,
+                    retry_activity_rx,
+                    retry_turn_done_rx,
+                    result_tx,
+                    prompt,
+                    retry_options,
+                    config,
+                    started,
+                    wall_started,
+                    attempt + 1,
+                    execution_deadline,
+                ))
+                .await;
+                return;
+            }
+            Err(spawn_error) => {
+                error = format!(
+                    "{CODEX_MODEL_CATALOG_REFRESH_RETRY_MARKER}: {error}; retry spawn failed: {spawn_error}"
+                );
+            }
+        }
+    }
     if status != "completed" && !stderr.is_empty() {
         error = with_stderr(&error, "codex", &sanitize_diagnostic(&stderr));
     }
@@ -3518,6 +3680,44 @@ mod tests {
     }
 
     #[test]
+    fn codex_capability_overrides_are_scoped_to_the_selected_model() {
+        let catalog = Catalog {
+            models: vec![Model {
+                id: "model-a".to_string(),
+                thinking: Some(ModelThinking {
+                    supported_levels: vec![ThinkingLevel {
+                        value: "high".to_string(),
+                        ..ThinkingLevel::default()
+                    }],
+                    ..ModelThinking::default()
+                }),
+                service_tiers: vec![ModelServiceTier {
+                    id: "priority".to_string(),
+                    ..ModelServiceTier::default()
+                }],
+                ..Model::default()
+            }],
+            fallback: false,
+        };
+        let mut options = ExecOptions {
+            model: "model-a".to_string(),
+            thinking_level: "ultra".to_string(),
+            service_tier: "priority".to_string(),
+            ..ExecOptions::default()
+        };
+        validate_codex_capability_overrides(&mut options, &catalog);
+        assert!(options.thinking_level.is_empty());
+        assert_eq!(options.service_tier, "priority");
+
+        options.model.clear();
+        options.thinking_level = "high".to_string();
+        options.service_tier = "priority".to_string();
+        validate_codex_capability_overrides(&mut options, &catalog);
+        assert!(options.thinking_level.is_empty());
+        assert!(options.service_tier.is_empty());
+    }
+
+    #[test]
     fn codex_debug_model_version_gate_matches_cli_contract() {
         assert!(!codex_supports_debug_models("0.121.9"));
         assert!(codex_supports_debug_models("codex-cli 0.122.0"));
@@ -3558,6 +3758,7 @@ esac
         let backend = CodexBackend::new(CodexConfig {
             command: RuntimeCommand::new(script_path.to_string_lossy().into_owned(), Vec::new()),
             env: BTreeMap::new(),
+            ..CodexConfig::default()
         });
         let started = Instant::now();
         let catalog = backend
@@ -3601,6 +3802,7 @@ esac
                 "CODEX_MODEL_CALLS".to_string(),
                 marker.to_string_lossy().into_owned(),
             )]),
+            ..CodexConfig::default()
         });
         let cache = CatalogCache::default();
         let first = backend
@@ -3967,6 +4169,7 @@ done
         let backend = CodexBackend::new(CodexConfig {
             command: RuntimeCommand::new("sh", vec!["-c".to_string(), script.to_string()]),
             env: BTreeMap::new(),
+            ..CodexConfig::default()
         });
         let options = ExecOptions {
             handshake_timeout: Duration::from_secs(2),
@@ -4026,6 +4229,7 @@ done
                 "CODEX_FAKE_MARKER".to_string(),
                 marker.to_string_lossy().to_string(),
             )]),
+            ..CodexConfig::default()
         });
         let options = ExecOptions {
             handshake_timeout: Duration::from_millis(50),
@@ -4049,6 +4253,66 @@ done
         assert_eq!(result.status, "completed");
         assert_eq!(result.output, "retried");
         assert_eq!(result.session_id, "thread-retry");
+        assert!(marker.exists());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn backend_retries_safe_model_catalog_refresh_failure() {
+        let directory = tempdir().unwrap_or_else(|error| panic!("temp dir: {error}"));
+        let marker = directory.path().join("model-refresh-first-attempt");
+        let script = r#"
+if [ -e "$CODEX_MODEL_REFRESH_MARKER" ]; then
+  first=0
+else
+  : > "$CODEX_MODEL_REFRESH_MARKER"
+  first=1
+fi
+while IFS= read -r line; do
+  case "$line" in
+    *'"method":"initialize"'*) printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{}}' ;;
+    *'"method":"thread/start"'*) printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-refresh"}}}' ;;
+    *'"method":"turn/start"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-refresh","turn":{"id":"turn-refresh"}}}'
+      if [ "$first" -eq 1 ]; then
+        printf '%s\n' 'failed to refresh available models: child cleanup timeout' >&2
+        printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":{}}'
+      else
+        printf '%s\n' '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-refresh","item":{"type":"agentMessage","phase":"final_answer","text":"retried after catalog refresh"}}}'
+        printf '%s\n' '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-refresh","turn":{"id":"turn-refresh","status":"completed"}}}'
+        printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":{}}'
+      fi
+      ;;
+  esac
+done
+"#;
+        let backend = CodexBackend::new(CodexConfig {
+            command: RuntimeCommand::new("sh", vec!["-c".to_string(), script.to_string()]),
+            env: BTreeMap::from([(
+                "CODEX_MODEL_REFRESH_MARKER".to_string(),
+                marker.to_string_lossy().to_string(),
+            )]),
+            ..CodexConfig::default()
+        });
+        let options = ExecOptions {
+            handshake_timeout: Duration::from_secs(2),
+            timeout: Duration::from_secs(4),
+            semantic_inactivity_timeout: Duration::from_secs(2),
+            first_turn_no_progress_timeout: Duration::from_millis(50),
+            ..ExecOptions::default()
+        };
+        let mut session = backend
+            .execute("hello", options)
+            .await
+            .unwrap_or_else(|error| panic!("start catalog-refresh fake Codex: {error}"));
+        while session.messages.recv().await.is_some() {}
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("catalog-refresh retry result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "retried after catalog refresh");
+        assert_eq!(result.session_id, "thread-refresh");
         assert!(marker.exists());
     }
 

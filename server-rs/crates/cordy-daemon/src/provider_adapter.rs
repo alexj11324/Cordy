@@ -12,7 +12,6 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::Context as _;
 use cordy_agent::{ExecutionResult, Message, MessageType, Session};
 use cordy_protocol::DaemonHeartbeatAckPayload;
 use serde_json::{Map, Value};
@@ -39,6 +38,7 @@ use crate::local_directory::{
     is_git_work_tree, local_directory_assignment_for_task, validate_local_path,
     LocalDirectoryAssignment, LocalPathLocker, PathLockRelease,
 };
+use crate::poisoned::classify_resume_unsafe_timeout;
 use crate::production_services::{ProviderRuntimeAdapter, ProviderRuntimeContext};
 use crate::prompt::build_prompt;
 use crate::repocache::Ctx;
@@ -272,12 +272,13 @@ impl ProductionProviderAdapter {
                 },
             );
             let prompt = build_prompt(task.clone(), &target.provider);
+            let mut execution_options = bound.options;
             let session = backend
-                .execute(&prompt, bound.options)
+                .execute(&prompt, execution_options.clone())
                 .await
                 .map_err(|error| anyhow::anyhow!("execute {}: {error}", target.provider))?;
             let _running = CounterGuard::new(&self.running_tasks);
-            drain_session(
+            let first = drain_session(
                 &ctx,
                 &client,
                 &task.id,
@@ -285,19 +286,80 @@ impl ProductionProviderAdapter {
                 &environment.codex_home,
                 session,
             )
-            .await
+            .await?;
+            let mut execution = first.result;
+            let mut fresh_session_retry = false;
+            if should_retry_with_fresh_session(
+                &execution,
+                &requested_session_id,
+                first.tool_count,
+            ) {
+                fresh_session_retry = true;
+                task.prior_session_id.clear();
+                task.prior_session_resume_unavailable = true;
+                execution_options.resume_session_id.clear();
+                execution_options.resume_expected = true;
+                let fresh_prompt = build_prompt(task.clone(), &target.provider);
+                match backend.execute(&fresh_prompt, execution_options).await {
+                    Ok(fresh_session) => match drain_session(
+                        &ctx,
+                        &client,
+                        &task.id,
+                        &environment.work_dir,
+                        &environment.codex_home,
+                        fresh_session,
+                    )
+                    .await
+                    {
+                        Ok(retry) if retry.result.status == "completed" || !retry.result.session_id.is_empty() => {
+                            execution = retry.result;
+                        }
+                        Ok(retry) => {
+                            tracing::warn!(
+                                task = %task.id,
+                                status = %retry.result.status,
+                                error = %retry.result.error,
+                                "fresh Codex session retry did not establish a session; keeping the original result"
+                            );
+                        }
+                        Err(error) => tracing::warn!(
+                            task = %task.id,
+                            %error,
+                            "fresh Codex session retry drain failed; keeping the original result"
+                        ),
+                    },
+                    Err(error) => tracing::warn!(
+                        task = %task.id,
+                        %error,
+                        "fresh Codex session retry failed to start; keeping the original result"
+                    ),
+                }
+            }
+            Ok(ProviderRunResult {
+                execution,
+                fresh_session_retry,
+            })
         }
         .await;
 
-        let mut outcome = match run {
-            Ok(result) => result_outcome(
-                &target.provider,
-                result,
-                &environment,
-                &requested_session_id,
-            ),
-            Err(error) => failed(error, Some(&environment)),
+        let (mut outcome, fresh_session_retry) = match run {
+            Ok(run_result) => {
+                let fresh_session_retry = run_result.fresh_session_retry;
+                (
+                    result_outcome(
+                        &target.provider,
+                        run_result.execution,
+                        &environment,
+                        &requested_session_id,
+                    ),
+                    fresh_session_retry,
+                )
+            }
+            Err(error) => (failed(error, Some(&environment)), false),
         };
+        if fresh_session_retry && outcome.result.retired_session_id.is_empty() {
+            outcome.result.retired_session_id = requested_session_id.clone();
+        }
         if let Err(error) = remove_tree(&temp_dir) {
             tracing::warn!(task = %task.id, %error, "task temp directory cleanup failed");
         }
@@ -505,6 +567,16 @@ impl Drop for PrepareLeaseExtender {
     }
 }
 
+struct ProviderRunResult {
+    execution: ExecutionResult,
+    fresh_session_retry: bool,
+}
+
+struct DrainedSession {
+    result: ExecutionResult,
+    tool_count: usize,
+}
+
 async fn drain_session(
     ctx: &Ctx,
     client: &Client,
@@ -512,7 +584,7 @@ async fn drain_session(
     work_dir: &str,
     codex_home: &str,
     session: Session,
-) -> anyhow::Result<ExecutionResult> {
+) -> anyhow::Result<DrainedSession> {
     let Session {
         mut messages,
         mut result,
@@ -524,6 +596,7 @@ async fn drain_session(
     let mut cancelled = false;
     let mut messages_closed = false;
     let mut result_closed = false;
+    let mut tool_count: usize = 0;
     let mut pending_session_id: Option<String> = None;
     let mut drain_deadline = Box::pin(tokio::time::sleep(Duration::from_secs(365 * 24 * 3600)));
     let mut drain_armed = false;
@@ -548,6 +621,9 @@ async fn drain_session(
             received = messages.recv(), if !messages_closed => {
                 match received {
                     Some(message) => {
+                        if message.message_type == MessageType::ToolUse {
+                            tool_count = tool_count.saturating_add(1);
+                        }
                         if let Some(session_id) = transcript.push(message) {
                             pending_session_id = Some(session_id);
                             pin_session_if_ready(client, task_id, work_dir, codex_home, &mut pending_session_id).await;
@@ -602,11 +678,14 @@ async fn drain_session(
     )
     .await;
     flush_transcript(client, task_id, &mut transcript).await;
-    Ok(terminal.unwrap_or_else(|| ExecutionResult {
-        status: "failed".to_string(),
-        error: "provider messages closed without a terminal result".to_string(),
-        ..ExecutionResult::default()
-    }))
+    Ok(DrainedSession {
+        result: terminal.unwrap_or_else(|| ExecutionResult {
+            status: "failed".to_string(),
+            error: "provider messages closed without a terminal result".to_string(),
+            ..ExecutionResult::default()
+        }),
+        tool_count,
+    })
 }
 
 fn session_pin_ready(codex_home: &str, session_id: &str) -> bool {
@@ -761,6 +840,17 @@ fn bounded_text(value: &str, max_bytes: usize) -> String {
     value[..end].to_string()
 }
 
+fn should_retry_with_fresh_session(
+    result: &ExecutionResult,
+    requested_session_id: &str,
+    tool_count: usize,
+) -> bool {
+    result.status == "failed"
+        && !requested_session_id.trim().is_empty()
+        && tool_count == 0
+        && result.resume_rejected
+}
+
 fn result_outcome(
     provider: &str,
     result: ExecutionResult,
@@ -796,7 +886,7 @@ fn result_outcome(
             if result.error.is_empty() {
                 "task cancelled by server".to_string()
             } else {
-                result.error
+                result.error.clone()
             },
             "cancelled".to_string(),
         ),
@@ -805,9 +895,11 @@ fn result_outcome(
             if result.error.is_empty() {
                 format!("{provider} timed out")
             } else {
-                result.error
+                result.error.clone()
             },
-            "timeout".to_string(),
+            classify_resume_unsafe_timeout(provider, &result.error)
+                .unwrap_or("timeout")
+                .to_string(),
         ),
         "idle_watchdog" => ("blocked", result.error, "idle_watchdog".to_string()),
         _ => (
@@ -1058,6 +1150,45 @@ mod tests {
         assert_eq!(outcome.result.session_id, "session-1");
         assert_eq!(outcome.result.usage[0].provider, "qwen");
         assert_eq!(outcome.result.usage[0].input_tokens, 10);
+    }
+
+    #[test]
+    fn codex_timeout_preserves_resume_unsafe_classification() {
+        let outcome = result_outcome(
+            "codex",
+            ExecutionResult {
+                status: "timeout".to_string(),
+                error: "codex semantic inactivity timeout after 600s".to_string(),
+                ..ExecutionResult::default()
+            },
+            &Environment::default(),
+            "session-old",
+        );
+        assert_eq!(outcome.result.failure_reason, "codex_semantic_inactivity");
+    }
+
+    #[test]
+    fn fresh_session_retry_requires_resume_rejection_without_tools() {
+        let rejected = ExecutionResult {
+            status: "failed".to_string(),
+            resume_rejected: true,
+            ..ExecutionResult::default()
+        };
+        assert!(should_retry_with_fresh_session(&rejected, "session-old", 0));
+        assert!(!should_retry_with_fresh_session(
+            &rejected,
+            "session-old",
+            1
+        ));
+        assert!(!should_retry_with_fresh_session(&rejected, "", 0));
+        assert!(!should_retry_with_fresh_session(
+            &ExecutionResult {
+                status: "failed".to_string(),
+                ..ExecutionResult::default()
+            },
+            "session-old",
+            0,
+        ));
     }
 
     #[test]
