@@ -5,9 +5,11 @@
 //! lookup, runtime-gone recovery, health, and control transport therefore
 //! cannot observe independently maintained identity maps.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, RwLock};
 
+use crate::agents_refresh::RuntimeVerdict;
+use crate::client::RuntimeOfflineReason;
 use crate::health::HealthWorkspace;
 use crate::runtime_set::RuntimeSet;
 use crate::types::{Runtime, RuntimeExecutionTarget};
@@ -28,6 +30,13 @@ pub struct WorkspaceRuntimeState {
 pub struct RegistrationDelta {
     pub added: Vec<String>,
     pub dropped: Vec<String>,
+    /// Server accepted these rows, but a confirmed local demotion prevented
+    /// them from re-entering the daemon's authoritative runtime set. Callers
+    /// must deregister them with the stored demotion reason.
+    pub revived: Vec<String>,
+    /// Structured reasons for demoted rows removed or rejected in this
+    /// transition, keyed by runtime id.
+    pub offline_reasons: HashMap<String, RuntimeOfflineReason>,
 }
 
 #[derive(Default)]
@@ -35,6 +44,14 @@ struct RegistryState {
     workspaces: BTreeMap<String, WorkspaceRuntimeState>,
     runtimes: BTreeMap<String, Runtime>,
     runtime_workspaces: BTreeMap<String, String>,
+    demoted_providers: BTreeMap<String, DemotionRecord>,
+    demotion_seq: u64,
+}
+
+#[derive(Debug, Clone)]
+struct DemotionRecord {
+    offline: Option<RuntimeOfflineReason>,
+    seq: u64,
 }
 
 pub struct RuntimeRegistry {
@@ -78,6 +95,27 @@ impl RuntimeRegistry {
         }
 
         let mut state = self.state.write().unwrap();
+        let mut revived = Vec::new();
+        let mut offline_reasons = HashMap::new();
+        let runtimes: Vec<Runtime> = runtimes
+            .into_iter()
+            .filter(|runtime| {
+                let demoted = runtime.profile_id.is_empty()
+                    && state.demoted_providers.contains_key(&runtime.provider);
+                if demoted {
+                    revived.push(runtime.id.clone());
+                    if let Some(reason) = state
+                        .demoted_providers
+                        .get(&runtime.provider)
+                        .and_then(|record| record.offline.clone())
+                    {
+                        offline_reasons.insert(runtime.id.clone(), reason);
+                    }
+                }
+                !demoted
+            })
+            .collect();
+        incoming_ids = runtimes.iter().map(|runtime| runtime.id.clone()).collect();
         for runtime_id in &incoming_ids {
             if let Some(owner) = state.runtime_workspaces.get(runtime_id) {
                 anyhow::ensure!(
@@ -115,7 +153,13 @@ impl RuntimeRegistry {
             },
         );
         publish_runtime_set(&state, &self.runtime_set);
-        Ok(RegistrationDelta { added, dropped })
+        revived.sort();
+        Ok(RegistrationDelta {
+            added,
+            dropped,
+            revived,
+            offline_reasons,
+        })
     }
 
     /// Applies a built-in-only registration response while preserving custom
@@ -150,6 +194,159 @@ impl RuntimeRegistry {
         let mut combined = builtins;
         combined.extend(custom_runtimes);
         self.apply_registration(workspace_id, workspace_name, combined)
+    }
+
+    /// Replaces a full workspace registration while preserving built-in rows
+    /// whose probe was not authoritative for this round. This is used by
+    /// profile/reconnect registration: a transient version probe failure must
+    /// not silently remove a working runtime, while a periodic version round
+    /// can still explicitly demote it under the claim barrier.
+    pub fn apply_registration_preserving_builtins(
+        &self,
+        workspace_id: impl Into<String>,
+        workspace_name: impl Into<String>,
+        runtimes: Vec<Runtime>,
+        preserve_providers: &BTreeSet<String>,
+    ) -> anyhow::Result<RegistrationDelta> {
+        let workspace_id = workspace_id.into();
+        let incoming_builtins: BTreeSet<String> = runtimes
+            .iter()
+            .filter(|runtime| runtime.profile_id.is_empty())
+            .map(|runtime| runtime.provider.clone())
+            .collect();
+        let (preserved_runtimes, preserved_versions) = {
+            let state = self.state.read().unwrap();
+            match state.workspaces.get(&workspace_id) {
+                Some(workspace) => {
+                    let mut runtimes = Vec::new();
+                    for runtime_id in &workspace.runtime_ids {
+                        let Some(runtime) = state.runtimes.get(runtime_id) else {
+                            continue;
+                        };
+                        if runtime.profile_id.is_empty()
+                            && preserve_providers.contains(&runtime.provider)
+                            && !incoming_builtins.contains(&runtime.provider)
+                        {
+                            runtimes.push(runtime.clone());
+                        }
+                    }
+                    let versions = workspace
+                        .builtin_versions
+                        .iter()
+                        .filter(|(provider, _)| preserve_providers.contains(*provider))
+                        .map(|(provider, version)| (provider.clone(), version.clone()))
+                        .collect();
+                    (runtimes, versions)
+                }
+                None => (Vec::new(), BTreeMap::new()),
+            }
+        };
+        let mut combined = runtimes;
+        combined.extend(preserved_runtimes);
+        let delta = self.apply_registration(workspace_id.clone(), workspace_name, combined)?;
+        if !preserved_versions.is_empty() {
+            let mut state = self.state.write().unwrap();
+            if let Some(workspace) = state.workspaces.get_mut(&workspace_id) {
+                workspace.builtin_versions.extend(preserved_versions);
+            }
+        }
+        Ok(delta)
+    }
+
+    /// Takes confirmed unusable built-in providers out of every workspace in
+    /// one authoritative state transition and records a generation-fenced
+    /// hold. Later register responses for a condemned provider are filtered by
+    /// [`apply_registration`] and [`merge_builtin_registration`] until a newer
+    /// successful probe clears the hold.
+    pub fn demote_builtins(&self, causes: &BTreeMap<String, RuntimeVerdict>) -> RegistrationDelta {
+        if causes.is_empty() {
+            return RegistrationDelta::default();
+        }
+
+        let mut state = self.state.write().unwrap();
+        let workspaces: BTreeMap<String, Vec<String>> = state
+            .workspaces
+            .iter()
+            .map(|(id, workspace)| (id.clone(), workspace.runtime_ids.clone()))
+            .collect();
+        let runtime_index = state.runtimes.clone();
+        let (kept_by_workspace, partition) = crate::agents_refresh::partition_demotable_runtimes(
+            &workspaces,
+            &runtime_index,
+            causes,
+        );
+
+        state.demotion_seq = state.demotion_seq.saturating_add(1);
+        let demotion_seq = state.demotion_seq;
+        for (provider, verdict) in causes {
+            state.demoted_providers.insert(
+                provider.clone(),
+                DemotionRecord {
+                    offline: verdict.offline.clone(),
+                    seq: demotion_seq,
+                },
+            );
+        }
+        for runtime_id in &partition.demoted_ids {
+            state.runtimes.remove(runtime_id);
+            state.runtime_workspaces.remove(runtime_id);
+        }
+        for (workspace_id, kept) in kept_by_workspace {
+            if let Some(workspace) = state.workspaces.get_mut(&workspace_id) {
+                workspace.runtime_ids = kept;
+            }
+        }
+        for (workspace_id, provider) in partition.dropped_version_records {
+            if let Some(workspace) = state.workspaces.get_mut(&workspace_id) {
+                workspace.builtin_versions.remove(&provider);
+            }
+        }
+        publish_runtime_set(&state, &self.runtime_set);
+
+        let mut offline_reasons = HashMap::new();
+        // The partition intentionally carries ids grouped by workspace, while
+        // the runtime index was removed above. Reconstruct structured causes
+        // from the pre-demotion runtime snapshot before returning the delta.
+        for runtime_ids in partition.demoted_by_workspace.values() {
+            for runtime_id in runtime_ids {
+                let Some(runtime) = runtime_index.get(runtime_id) else {
+                    continue;
+                };
+                if let Some(reason) = causes
+                    .get(&runtime.provider)
+                    .and_then(|verdict| verdict.offline.clone())
+                {
+                    offline_reasons.insert(runtime_id.clone(), reason);
+                }
+            }
+        }
+        RegistrationDelta {
+            added: Vec::new(),
+            dropped: partition.demoted_ids,
+            revived: Vec::new(),
+            offline_reasons,
+        }
+    }
+
+    /// Returns the current demotion generation used to fence a probe round
+    /// that started before a concurrent demotion verdict was recorded.
+    pub fn demotion_generation(&self) -> u64 {
+        self.state.read().unwrap().demotion_seq
+    }
+
+    /// Clears only demotion holds that predate `sampled_generation`. A probe
+    /// that began before a newer demotion must not release that newer hold just
+    /// because its successful result arrived later.
+    pub fn clear_provider_demotions(&self, providers: &[String], sampled_generation: u64) {
+        let mut state = self.state.write().unwrap();
+        for provider in providers {
+            let Some(record) = state.demoted_providers.get(provider) else {
+                continue;
+            };
+            if record.seq <= sampled_generation {
+                state.demoted_providers.remove(provider);
+            }
+        }
     }
 
     /// Returns whether a workspace is missing one of the built-in providers
@@ -233,6 +430,26 @@ impl RuntimeRegistry {
         }
 
         let mut state = self.state.write().unwrap();
+        let mut revived = Vec::new();
+        let mut offline_reasons = HashMap::new();
+        let builtins: Vec<Runtime> = builtins
+            .into_iter()
+            .filter(|runtime| {
+                let demoted = state.demoted_providers.contains_key(&runtime.provider);
+                if demoted {
+                    revived.push(runtime.id.clone());
+                    if let Some(reason) = state
+                        .demoted_providers
+                        .get(&runtime.provider)
+                        .and_then(|record| record.offline.clone())
+                    {
+                        offline_reasons.insert(runtime.id.clone(), reason);
+                    }
+                }
+                !demoted
+            })
+            .collect();
+        incoming_ids = builtins.iter().map(|runtime| runtime.id.clone()).collect();
         let previous_ids = state
             .workspaces
             .get(workspace_id)
@@ -296,7 +513,13 @@ impl RuntimeRegistry {
             .expect("workspace checked above")
             .runtime_ids = kept;
         publish_runtime_set(&state, &self.runtime_set);
-        Ok(RegistrationDelta { added, dropped })
+        revived.sort();
+        Ok(RegistrationDelta {
+            added,
+            dropped,
+            revived,
+            offline_reasons,
+        })
     }
 
     /// Removes one runtime after a server `runtime_gone` event. Returns its
@@ -420,6 +643,7 @@ fn publish_runtime_set(state: &RegistryState, runtime_set: &RuntimeSet) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::client::RUNTIME_OFFLINE_CODE_NOT_EXECUTABLE;
 
     fn runtime(id: &str, provider: &str) -> Runtime {
         Runtime {
@@ -657,5 +881,61 @@ mod tests {
             vec!["new".to_string()]
         );
         assert_eq!(published.snapshot(), vec!["new".to_string()]);
+    }
+
+    #[test]
+    fn demotion_removes_builtins_and_holds_inflight_revival_until_recovery() {
+        let published = Arc::new(RuntimeSet::new());
+        let registry = RuntimeRegistry::new(Arc::clone(&published));
+        let mut profile = runtime("profile-1", "codex");
+        profile.profile_id = "custom-1".to_string();
+        registry
+            .apply_registration("ws-1", "One", vec![runtime("codex-1", "codex"), profile])
+            .unwrap();
+        registry.record_builtin_versions("ws-1", &[builtin_payload("codex", "1.0.0")]);
+
+        let offline = RuntimeOfflineReason {
+            code: RUNTIME_OFFLINE_CODE_NOT_EXECUTABLE.to_string(),
+            detail: "exec format error".to_string(),
+            repair: None,
+        };
+        let causes = BTreeMap::from([(
+            "codex".to_string(),
+            RuntimeVerdict {
+                reason: "agent CLI is not executable".to_string(),
+                offline: Some(offline.clone()),
+            },
+        )]);
+        let delta = registry.demote_builtins(&causes);
+        assert_eq!(delta.dropped, vec!["codex-1".to_string()]);
+        assert_eq!(delta.offline_reasons.get("codex-1"), Some(&offline));
+        assert_eq!(
+            registry.workspace("ws-1").unwrap().runtime_ids,
+            vec!["profile-1".to_string()]
+        );
+        assert_eq!(published.snapshot(), vec!["profile-1".to_string()]);
+        assert!(
+            registry.workspace_needs_builtin_refresh("ws-1", &[builtin_payload("codex", "1.0.0")])
+        );
+
+        // A register sent before the demotion can still arrive from the
+        // server, but the hold rejects it locally and returns its id for
+        // structured deregistration instead of reviving a bad runtime.
+        let revived = registry
+            .merge_builtin_registration("ws-1", "One", vec![runtime("codex-2", "codex")])
+            .unwrap();
+        assert_eq!(revived.revived, vec!["codex-2".to_string()]);
+        assert_eq!(revived.offline_reasons.get("codex-2"), Some(&offline));
+        assert!(revived.added.is_empty());
+        assert!(registry.execution_target_for_runtime("codex-2").is_none());
+
+        let generation = registry.demotion_generation();
+        registry.clear_provider_demotions(&["codex".to_string()], generation);
+        let recovered = registry
+            .merge_builtin_registration("ws-1", "One", vec![runtime("codex-3", "codex")])
+            .unwrap();
+        assert_eq!(recovered.added, vec!["codex-3".to_string()]);
+        assert!(recovered.revived.is_empty());
+        assert_eq!(published.snapshot(), vec!["codex-3", "profile-1"]);
     }
 }

@@ -54,6 +54,11 @@ const CHECKOUT_MODE_ISOLATED: &str = "isolated";
 /// concrete implementation.
 #[async_trait::async_trait]
 pub trait ProductionRuntimeServices: DaemonCoreServices {
+    /// Installs the process-wide activity owner used by periodic runtime
+    /// demotion. The default keeps embedders source-compatible; the concrete
+    /// daemon services wire the same owner task execution uses.
+    fn install_activity(&self, _activity: Arc<DaemonActivity>) {}
+
     /// Initial workspace sync, agent probing, and runtime registration.
     /// Authentication renewal is owned by the production stack and completes
     /// its best-effort first attempt before this method is called.
@@ -212,6 +217,7 @@ impl<S: ProductionRuntimeServices> DaemonProductionStack<S> {
         let ready = Arc::new(AtomicBool::new(false));
         let started_at = self.clock.now();
         let activity = DaemonActivity::new();
+        self.services.install_activity(Arc::clone(&activity));
         let reconcile = Arc::new(ReconcileBroadcaster::new());
         let workspace_changes = Arc::new(WorkspaceChangeSignal::new());
         let (events_tx, events_rx) = tokio::sync::mpsc::unbounded_channel::<ControlEvent>();

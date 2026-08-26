@@ -5,11 +5,15 @@
 //! This module joins those responsibilities without providing a fallback
 //! catalog: production construction requires a real [`ProviderCatalog`].
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::path::Path;
 use std::sync::{Arc, Mutex, RwLock};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use crate::client::{Client, RuntimeProfile};
+use crate::agents_refresh::RuntimeVerdict;
+use crate::client::{
+    Client, Repair, RuntimeOfflineReason, RuntimeProfile, RUNTIME_OFFLINE_CODE_NOT_EXECUTABLE,
+};
 use crate::config::Config;
 use crate::registration::{
     BuiltinRefreshReason, RegistrationPayload, RuntimeRegistrationRound, RuntimeRegistrationSource,
@@ -50,11 +54,18 @@ pub struct DetectedProviderRuntime {
 /// its availability set even when version probing or Rust backend capability
 /// prevents registration, so health can explain the skipped provider and the
 /// next discovery round can retry it.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default)]
 pub struct BuiltinProbeResult {
     pub available: BTreeMap<String, AgentEntry>,
     pub detected: Vec<DetectedProviderRuntime>,
     pub skipped: BTreeMap<String, String>,
+    /// Confirmed version/launch verdicts. These are acted on only by the
+    /// periodic version refresh, which owns the claim barrier and demotion
+    /// hold needed to take an existing runtime offline safely.
+    pub demotable: BTreeMap<String, RuntimeVerdict>,
+    /// Raw exec-format findings. The source requires the Go-compatible
+    /// confirmation window before moving one into `demotable`.
+    pub not_executable: BTreeMap<String, RuntimeVerdict>,
 }
 
 /// Provider-owned resolution of a workspace profile after applying its safe
@@ -73,8 +84,8 @@ pub struct ProfileResolutionError {
 }
 
 /// Mandatory provider-core surface. Failures must be returned as errors;
-/// returning an empty successful probe is authoritative and removes vanished
-/// built-in runtimes during a refresh.
+/// returning an empty successful probe is authoritative for a full workspace
+/// registration, while built-in refresh preserves the current runtime set.
 #[async_trait::async_trait]
 pub trait ProviderCatalog: Send + Sync + 'static {
     async fn probe_builtins(
@@ -112,6 +123,9 @@ impl Default for LocalProviderCatalog {
 
 impl LocalProviderCatalog {
     const DEFAULT_VERSION_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+    const VERSION_PROBE_ATTEMPTS: usize = 2;
+    const VERSION_PROBE_RETRY_DELAY: Duration = Duration::from_millis(500);
+    const VERSION_PROBE_RETRY_WINDOW: Duration = Duration::from_secs(1);
 
     pub const fn new() -> Self {
         Self {
@@ -161,6 +175,50 @@ impl LocalProviderCatalog {
         Ok(extract_version_line(&String::from_utf8_lossy(&output)))
     }
 
+    async fn probe_version_with_retry(
+        &self,
+        ctx: &Ctx,
+        command_path: &str,
+        fixed_args: &[String],
+    ) -> Result<String, VersionProbeFailure> {
+        let mut last_error: Option<(String, bool)> = None;
+        for attempt in 0..Self::VERSION_PROBE_ATTEMPTS {
+            if attempt > 0 {
+                let sleep = tokio::time::sleep(Self::VERSION_PROBE_RETRY_DELAY);
+                tokio::pin!(sleep);
+                tokio::select! {
+                    () = ctx.cancelled() => break,
+                    () = &mut sleep => {}
+                }
+                if ctx.err().is_some() {
+                    break;
+                }
+            }
+            let started = Instant::now();
+            match self.probe_version(ctx, command_path, fixed_args).await {
+                Ok(version) => return Ok(version),
+                Err(error) => {
+                    let is_exec_format = is_exec_format_error(&error);
+                    last_error = Some((error.to_string(), is_exec_format));
+                    if attempt + 1 < Self::VERSION_PROBE_ATTEMPTS
+                        && started.elapsed() < Self::VERSION_PROBE_RETRY_WINDOW
+                    {
+                        continue;
+                    }
+                    break;
+                }
+            }
+        }
+
+        let (reason, is_exec_format) =
+            last_error.unwrap_or_else(|| ("provider version probe cancelled".to_string(), false));
+        if is_exec_format {
+            Err(VersionProbeFailure::NotExecutable(reason))
+        } else {
+            Err(VersionProbeFailure::Unavailable(reason))
+        }
+    }
+
     async fn resolve_command(
         &self,
         ctx: &Ctx,
@@ -203,6 +261,90 @@ impl LocalProviderCatalog {
     }
 }
 
+#[derive(Debug)]
+enum VersionProbeFailure {
+    Unavailable(String),
+    NotExecutable(String),
+}
+
+fn is_exec_format_error(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<std::io::Error>()
+            .and_then(std::io::Error::raw_os_error)
+            .is_some_and(|code| {
+                #[cfg(unix)]
+                {
+                    code == libc::ENOEXEC
+                }
+                #[cfg(windows)]
+                {
+                    code == 193
+                }
+                #[cfg(not(any(unix, windows)))]
+                {
+                    let _ = code;
+                    false
+                }
+            })
+    })
+}
+
+fn exec_format_repair_for(command_path: &str) -> Option<Repair> {
+    let bin = Path::new(command_path).parent()?;
+    let bin_name = bin.file_name()?.to_string_lossy();
+    if !bin_name.eq_ignore_ascii_case("bin") {
+        return None;
+    }
+    let root = bin.parent()?;
+    let manifest = std::fs::read(root.join("package.json")).ok()?;
+    #[derive(serde::Deserialize)]
+    struct PackageManifest {
+        #[serde(default)]
+        name: String,
+        #[serde(default)]
+        scripts: PackageScripts,
+    }
+    #[derive(Default, serde::Deserialize)]
+    struct PackageScripts {
+        #[serde(default)]
+        postinstall: String,
+    }
+    let manifest: PackageManifest = serde_json::from_slice(&manifest).ok()?;
+    let script = manifest.scripts.postinstall.trim();
+    if script.is_empty() {
+        return None;
+    }
+    let package = if manifest.name.trim().is_empty() {
+        root.file_name()?.to_string_lossy().into_owned()
+    } else {
+        manifest.name.trim().to_string()
+    };
+    let root = root.to_string_lossy();
+    #[cfg(windows)]
+    let (shell, command) = (
+        "powershell",
+        format!("Set-Location {}\n{script}", powershell_quote(&root)),
+    );
+    #[cfg(not(windows))]
+    let (shell, command) = ("bash", format!("cd {} && {script}", shell_quote(&root)));
+    Some(Repair {
+        package,
+        command,
+        shell: shell.to_string(),
+    })
+}
+
+#[cfg(not(windows))]
+fn shell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "'\\''"))
+}
+
+#[cfg(windows)]
+fn powershell_quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
 #[async_trait::async_trait]
 impl ProviderCatalog for LocalProviderCatalog {
     async fn probe_builtins(
@@ -214,6 +356,8 @@ impl ProviderCatalog for LocalProviderCatalog {
         let available = agents.clone();
         let mut detected = Vec::new();
         let mut skipped = BTreeMap::new();
+        let mut demotable = BTreeMap::new();
+        let mut not_executable = BTreeMap::new();
         for (provider, entry) in agents {
             if !Self::supports_backend(&provider) {
                 let reason = "provider CLI discovered without a Rust backend";
@@ -229,14 +373,31 @@ impl ProviderCatalog for LocalProviderCatalog {
             };
             let fixed_args = Self::fixed_args(&provider);
             let version = match self
-                .probe_version(&ctx.child(), &entry.path, &fixed_args)
+                .probe_version_with_retry(&ctx.child(), &entry.path, &fixed_args)
                 .await
             {
                 Ok(version) => version,
-                Err(error) => {
+                Err(VersionProbeFailure::Unavailable(error)) => {
                     let reason = format!("provider version probe failed: {error}");
-                    tracing::debug!(%provider, %error, "withholding provider registration");
+                    tracing::debug!(%provider, error, "withholding provider registration");
                     skipped.insert(provider, reason);
+                    continue;
+                }
+                Err(VersionProbeFailure::NotExecutable(error)) => {
+                    let reason = format!("agent CLI is not executable: {error}");
+                    tracing::warn!(%provider, error, "withholding provider registration");
+                    skipped.insert(provider.clone(), reason.clone());
+                    not_executable.insert(
+                        provider,
+                        RuntimeVerdict {
+                            reason: reason.clone(),
+                            offline: Some(RuntimeOfflineReason {
+                                code: RUNTIME_OFFLINE_CODE_NOT_EXECUTABLE.to_string(),
+                                detail: reason,
+                                repair: exec_format_repair_for(&entry.path),
+                            }),
+                        },
+                    );
                     continue;
                 }
             };
@@ -244,7 +405,16 @@ impl ProviderCatalog for LocalProviderCatalog {
                 let reason =
                     format!("provider CLI version {version:?} is below its minimum: {error}");
                 tracing::warn!(%provider, %version, %error, "withholding provider registration");
-                skipped.insert(provider, reason);
+                skipped.insert(provider.clone(), reason.clone());
+                if matches!(error, cordy_agent::version::VersionError::TooOld) {
+                    demotable.insert(
+                        provider,
+                        RuntimeVerdict {
+                            reason,
+                            offline: None,
+                        },
+                    );
+                }
                 continue;
             }
             detected.push(DetectedProviderRuntime {
@@ -259,6 +429,8 @@ impl ProviderCatalog for LocalProviderCatalog {
             available,
             detected,
             skipped,
+            demotable,
+            not_executable,
         })
     }
 
@@ -371,6 +543,7 @@ pub struct ProviderRegistrationSource<C: ProviderCatalog> {
     launches: Arc<RuntimeLaunchRegistry>,
     available_agents: Mutex<BTreeMap<String, AgentEntry>>,
     skipped_agents: Mutex<BTreeMap<String, String>>,
+    not_executable_since: Mutex<BTreeMap<String, Instant>>,
 }
 
 impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
@@ -388,6 +561,7 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
             launches,
             available_agents: Mutex::new(available_agents),
             skipped_agents: Mutex::new(BTreeMap::new()),
+            not_executable_since: Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -418,7 +592,7 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
         ctx: Ctx,
         reason: ProviderProbeReason,
     ) -> anyhow::Result<BuiltinSnapshot> {
-        let probe = self.catalog.probe_builtins(ctx, reason).await?;
+        let mut probe = self.catalog.probe_builtins(ctx, reason).await?;
         let gained = {
             let mut current = self.available_agents.lock().unwrap();
             if let Some(merged) =
@@ -430,6 +604,35 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
                 false
             }
         };
+
+        // Only a provider that completed a supported version probe is healthy
+        // enough to clear an old exec-format sighting. `available` also
+        // contains CLIs whose probe failed, so using it here would reset the
+        // confirmation clock on every broken executable and make demotion
+        // unreachable.
+        let recovered = probe
+            .detected
+            .iter()
+            .map(|runtime| runtime.provider.clone())
+            .collect::<Vec<_>>();
+        let now = Instant::now();
+        {
+            let mut pending = self.not_executable_since.lock().unwrap();
+            for provider in &recovered {
+                pending.remove(provider);
+            }
+            let not_executable = probe.not_executable.keys().cloned().collect::<Vec<_>>();
+            for provider in not_executable {
+                let first = pending.entry(provider.clone()).or_insert(now);
+                if now.duration_since(*first) >= NOT_EXECUTABLE_CONFIRM_WINDOW {
+                    if let Some(verdict) = probe.not_executable.remove(&provider) {
+                        probe.demotable.insert(provider, verdict);
+                    }
+                }
+            }
+        }
+
+        let preserve_providers = probe.skipped.keys().cloned().collect::<BTreeSet<_>>();
         *self.skipped_agents.lock().unwrap() = probe.skipped;
 
         let mut detected = probe.detected;
@@ -472,14 +675,31 @@ impl<C: ProviderCatalog> ProviderRegistrationSource<C> {
             payload,
             launches,
             gained,
+            demotable: probe.demotable,
+            recovered,
+            preserve_providers,
         })
     }
+
+    #[cfg(test)]
+    fn age_not_executable_for_test(&self, provider: &str) {
+        let mut pending = self.not_executable_since.lock().unwrap();
+        pending.insert(
+            provider.to_string(),
+            Instant::now() - NOT_EXECUTABLE_CONFIRM_WINDOW - Duration::from_secs(1),
+        );
+    }
 }
+
+const NOT_EXECUTABLE_CONFIRM_WINDOW: Duration = Duration::from_secs(60);
 
 struct BuiltinSnapshot {
     payload: Vec<BTreeMap<String, String>>,
     launches: Vec<RuntimeLaunchSpec>,
     gained: bool,
+    demotable: BTreeMap<String, RuntimeVerdict>,
+    recovered: Vec<String>,
+    preserve_providers: BTreeSet<String>,
 }
 
 struct ProviderRegistrationRound<C: ProviderCatalog> {
@@ -490,6 +710,9 @@ struct ProviderRegistrationRound<C: ProviderCatalog> {
     builtins: Vec<BTreeMap<String, String>>,
     builtin_launches: Vec<RuntimeLaunchSpec>,
     gained: bool,
+    demotable: BTreeMap<String, RuntimeVerdict>,
+    recovered: Vec<String>,
+    preserve_providers: BTreeSet<String>,
     include_profiles: bool,
     pending_profiles: Mutex<HashMap<String, Vec<RuntimeLaunchSpec>>>,
 }
@@ -601,6 +824,18 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
     fn gained_providers(&self) -> bool {
         self.gained
     }
+
+    fn demotable_providers(&self) -> BTreeMap<String, RuntimeVerdict> {
+        self.demotable.clone()
+    }
+
+    fn recovered_providers(&self) -> Vec<String> {
+        self.recovered.clone()
+    }
+
+    fn preserve_providers(&self) -> BTreeSet<String> {
+        self.preserve_providers.clone()
+    }
 }
 
 #[async_trait::async_trait]
@@ -615,6 +850,9 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
             builtins: snapshot.payload,
             builtin_launches: snapshot.launches,
             gained: snapshot.gained,
+            demotable: snapshot.demotable,
+            recovered: snapshot.recovered,
+            preserve_providers: snapshot.preserve_providers,
             include_profiles: true,
             pending_profiles: Mutex::new(HashMap::new()),
         }))
@@ -634,6 +872,9 @@ impl<C: ProviderCatalog> RuntimeRegistrationSource for ProviderRegistrationSourc
             builtins: snapshot.payload,
             builtin_launches: snapshot.launches,
             gained: snapshot.gained,
+            demotable: snapshot.demotable,
+            recovered: snapshot.recovered,
+            preserve_providers: snapshot.preserve_providers,
             include_profiles: false,
             pending_profiles: Mutex::new(HashMap::new()),
         })))
@@ -734,6 +975,7 @@ mod tests {
                     )]),
                     detected: Vec::new(),
                     skipped: BTreeMap::new(),
+                    ..BuiltinProbeResult::default()
                 },
                 BuiltinProbeResult {
                     available: BTreeMap::from([(
@@ -748,6 +990,7 @@ mod tests {
                         "claude".to_string(),
                         "provider version probe failed".to_string(),
                     )]),
+                    ..BuiltinProbeResult::default()
                 },
             ]),
         });
@@ -780,6 +1023,113 @@ mod tests {
             skipped.get("claude").map(String::as_str),
             Some("provider version probe failed")
         );
+    }
+
+    #[tokio::test]
+    async fn not_executable_probe_requires_confirmation_before_demotion() {
+        let catalog = Arc::new(FakeCatalog {
+            probes: Mutex::new(vec![
+                BuiltinProbeResult {
+                    available: BTreeMap::from([(
+                        "claude".to_string(),
+                        AgentEntry {
+                            path: "/bin/claude".to_string(),
+                            ..AgentEntry::default()
+                        },
+                    )]),
+                    skipped: BTreeMap::from([(
+                        "claude".to_string(),
+                        "agent CLI is not executable".to_string(),
+                    )]),
+                    not_executable: BTreeMap::from([(
+                        "claude".to_string(),
+                        RuntimeVerdict {
+                            reason: "agent CLI is not executable".to_string(),
+                            offline: Some(RuntimeOfflineReason {
+                                code: RUNTIME_OFFLINE_CODE_NOT_EXECUTABLE.to_string(),
+                                detail: "exec format error".to_string(),
+                                repair: None,
+                            }),
+                        },
+                    )]),
+                    ..BuiltinProbeResult::default()
+                },
+                BuiltinProbeResult {
+                    available: BTreeMap::from([(
+                        "claude".to_string(),
+                        AgentEntry {
+                            path: "/bin/claude".to_string(),
+                            ..AgentEntry::default()
+                        },
+                    )]),
+                    skipped: BTreeMap::from([(
+                        "claude".to_string(),
+                        "agent CLI is not executable".to_string(),
+                    )]),
+                    not_executable: BTreeMap::from([(
+                        "claude".to_string(),
+                        RuntimeVerdict {
+                            reason: "agent CLI is not executable".to_string(),
+                            offline: Some(RuntimeOfflineReason {
+                                code: RUNTIME_OFFLINE_CODE_NOT_EXECUTABLE.to_string(),
+                                detail: "exec format error".to_string(),
+                                repair: None,
+                            }),
+                        },
+                    )]),
+                    ..BuiltinProbeResult::default()
+                },
+            ]),
+        });
+        let source = ProviderRegistrationSource::new(
+            Arc::new(Config::default()),
+            Arc::new(Client::new("http://127.0.0.1:1")),
+            catalog,
+            Arc::new(RuntimeLaunchRegistry::default()),
+        );
+
+        let first = source
+            .begin_builtin_refresh(Ctx::new(), BuiltinRefreshReason::Version)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(first.demotable_providers().is_empty());
+        assert!(first.preserve_providers().contains("claude"));
+
+        // The second probe is deliberately aged past the window. This keeps
+        // the test fast while still proving that `available` alone cannot
+        // clear the pending not-executable sighting.
+        source.age_not_executable_for_test("claude");
+        let second = source
+            .begin_builtin_refresh(Ctx::new(), BuiltinRefreshReason::Version)
+            .await
+            .unwrap()
+            .unwrap();
+        let verdict = second.demotable_providers().remove("claude");
+        assert!(verdict.is_some(), "confirmed probe must be demotable");
+        assert_eq!(
+            verdict.unwrap().offline.unwrap().code,
+            RUNTIME_OFFLINE_CODE_NOT_EXECUTABLE
+        );
+    }
+
+    #[test]
+    fn exec_format_repair_uses_packaged_cli_postinstall() {
+        let temporary = tempfile::tempdir().unwrap();
+        let root = temporary.path().join("claude-code");
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        std::fs::write(
+            root.join("package.json"),
+            br#"{"name":"@anthropic-ai/claude-code","scripts":{"postinstall":"node install.cjs"}}"#,
+        )
+        .unwrap();
+        let command_path = root.join("bin").join("claude");
+        let repair = exec_format_repair_for(command_path.to_str().unwrap()).unwrap();
+
+        assert_eq!(repair.package, "@anthropic-ai/claude-code");
+        assert_eq!(repair.shell, "bash");
+        assert!(repair.command.contains("cd "));
+        assert!(repair.command.contains("node install.cjs"));
     }
 
     #[test]

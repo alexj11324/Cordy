@@ -12,8 +12,9 @@ use std::time::{Duration, Instant};
 use serde_json::json;
 use tokio::sync::{mpsc, Mutex as AsyncMutex};
 
-use crate::agents_refresh::ConvergeRetryState;
-use crate::client::{Client, WorkspaceInfo};
+use crate::activity::DaemonActivity;
+use crate::agents_refresh::{ConvergeRetryState, RuntimeVerdict};
+use crate::client::{Client, RuntimeOfflineReason, WorkspaceInfo};
 use crate::config::Config;
 use crate::repo_state::DaemonRepoState;
 use crate::repocache::{Ctx, RepoInfo};
@@ -104,6 +105,26 @@ pub trait RuntimeRegistrationRound: Send + Sync + 'static {
     fn gained_providers(&self) -> bool {
         false
     }
+
+    /// Confirmed provider verdicts from this probe round. Only the periodic
+    /// version path may act on them because demotion must hold the claim
+    /// barrier while removing runtime identities.
+    fn demotable_providers(&self) -> BTreeMap<String, RuntimeVerdict> {
+        BTreeMap::new()
+    }
+
+    /// Providers that probed successfully in this round and may release an
+    /// older demotion hold, subject to the registry's generation fence.
+    fn recovered_providers(&self) -> Vec<String> {
+        Vec::new()
+    }
+
+    /// Providers omitted from this round for a transient/confirmed probe
+    /// reason. Full registration preserves their already accepted rows;
+    /// built-in refresh uses additive merge instead.
+    fn preserve_providers(&self) -> BTreeSet<String> {
+        BTreeSet::new()
+    }
 }
 
 #[async_trait::async_trait]
@@ -145,19 +166,34 @@ pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
     pending_deregistrations: PendingDeregistrations,
     deregistration_flush: AsyncMutex<()>,
     builtin_retry: Mutex<ConvergeRetryState>,
+    activity: Mutex<Option<Arc<DaemonActivity>>>,
 }
 
 #[derive(Default)]
 struct PendingDeregistrations {
     runtime_ids: Mutex<BTreeSet<String>>,
+    reasons: Mutex<HashMap<String, RuntimeOfflineReason>>,
 }
 
 impl PendingDeregistrations {
     fn queue(&self, runtime_ids: &[String]) {
+        self.queue_with_reasons(runtime_ids, HashMap::new());
+    }
+
+    fn queue_with_reasons(
+        &self,
+        runtime_ids: &[String],
+        reasons: HashMap<String, RuntimeOfflineReason>,
+    ) {
         self.runtime_ids
             .lock()
             .unwrap()
             .extend(runtime_ids.iter().filter(|id| !id.is_empty()).cloned());
+        self.reasons.lock().unwrap().extend(
+            reasons
+                .into_iter()
+                .filter(|(runtime_id, _)| !runtime_id.is_empty()),
+        );
     }
 
     fn snapshot(&self) -> Vec<String> {
@@ -169,6 +205,23 @@ impl PendingDeregistrations {
         for runtime_id in runtime_ids {
             pending.remove(runtime_id);
         }
+        let mut reasons = self.reasons.lock().unwrap();
+        for runtime_id in runtime_ids {
+            reasons.remove(runtime_id);
+        }
+    }
+
+    fn reasons(&self, runtime_ids: &[String]) -> HashMap<String, RuntimeOfflineReason> {
+        let reasons = self.reasons.lock().unwrap();
+        runtime_ids
+            .iter()
+            .filter_map(|runtime_id| {
+                reasons
+                    .get(runtime_id)
+                    .cloned()
+                    .map(|reason| (runtime_id.clone(), reason))
+            })
+            .collect()
     }
 }
 
@@ -190,7 +243,12 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             pending_deregistrations: PendingDeregistrations::default(),
             deregistration_flush: AsyncMutex::new(()),
             builtin_retry: Mutex::new(ConvergeRetryState::new()),
+            activity: Mutex::new(None),
         }
+    }
+
+    pub(crate) fn set_activity(&self, activity: Arc<DaemonActivity>) {
+        *self.activity.lock().unwrap() = Some(activity);
     }
 
     /// Delegates the provider source's machine discovery state to the health
@@ -231,7 +289,9 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
 
         let mut registered = 0usize;
         if !needs_registration.is_empty() {
+            let demotion_generation = registry.demotion_generation();
             let round = self.source.begin_round(ctx.child()).await?;
+            registry.clear_provider_demotions(&round.recovered_providers(), demotion_generation);
             for workspace in &needs_registration {
                 let recover_orphans = !tracked.contains(&workspace.id)
                     || registry.workspace_needs_runtime_recovery(&workspace.id);
@@ -346,6 +406,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         registry: &RuntimeRegistry,
         reason: BuiltinRefreshReason,
     ) -> anyhow::Result<BuiltinRefreshOutcome> {
+        let demotion_generation = registry.demotion_generation();
         let Some(round) = self
             .source
             .begin_builtin_refresh(ctx.child(), reason)
@@ -353,6 +414,14 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         else {
             return Ok(BuiltinRefreshOutcome::default());
         };
+        registry.clear_provider_demotions(&round.recovered_providers(), demotion_generation);
+        if reason == BuiltinRefreshReason::Version {
+            let demotable = round.demotable_providers();
+            if !demotable.is_empty() {
+                self.demote_unusable_runtimes(ctx.child(), registry, &demotable)
+                    .await;
+            }
+        }
         let now = Instant::now();
         let discovery_allowed = reason != BuiltinRefreshReason::Discovery
             || self
@@ -398,6 +467,58 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         Ok(outcome)
     }
 
+    async fn demote_unusable_runtimes(
+        &self,
+        ctx: Ctx,
+        registry: &RuntimeRegistry,
+        causes: &BTreeMap<String, RuntimeVerdict>,
+    ) {
+        let Some(activity) = self.activity.lock().unwrap().clone() else {
+            tracing::error!("cannot demote unusable runtimes before activity is installed");
+            return;
+        };
+        if !activity.try_set_claim_barrier() {
+            tracing::info!(providers = ?causes.keys().collect::<Vec<_>>(), "defer runtime demotion: task or claim in flight");
+            return;
+        }
+
+        // Hold every workspace registration serial while the registry removes
+        // rows and the server receives the matching deregistration. This keeps
+        // an in-flight full/profile refresh from reviving a condemned runtime
+        // between the local demotion and cleanup.
+        let workspace_ids = registry.workspace_ids();
+        let locks: Vec<Arc<AsyncMutex<()>>> = workspace_ids
+            .iter()
+            .map(|workspace_id| self.workspace_lock(workspace_id))
+            .collect();
+        let mut guards = Vec::with_capacity(workspace_ids.len());
+        for lock in &locks {
+            guards.push(lock.lock().await);
+        }
+
+        let delta = registry.demote_builtins(causes);
+        if !delta.dropped.is_empty() {
+            let reasons = delta.offline_reasons.clone();
+            self.pending_deregistrations
+                .queue_with_reasons(&delta.dropped, reasons);
+            if let Err(error) = self.flush_pending_deregistrations(&ctx).await {
+                tracing::warn!(
+                    runtimes = delta.dropped.len(),
+                    %error,
+                    "demoted runtime deregistration deferred"
+                );
+            }
+            tracing::warn!(
+                providers = ?causes.keys().collect::<Vec<_>>(),
+                runtimes = delta.dropped.len(),
+                "agent CLI is no longer usable; taking runtimes offline"
+            );
+        }
+
+        drop(guards);
+        activity.release_claim_barrier();
+    }
+
     async fn register_workspace(
         &self,
         ctx: Ctx,
@@ -438,6 +559,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             return Ok(());
         }
         let (runtime_ids, repos, settings, delta) = {
+            let preserve_providers = round.preserve_providers();
             // A failed deregistration may be retried while this workspace is
             // being re-added. Fence the server register and authoritative
             // apply together so an old retry cannot take a newly accepted,
@@ -471,10 +593,11 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 .collect();
             let repos = response.repos;
             let settings = response.settings;
-            let delta = match registry.apply_registration(
+            let delta = match registry.apply_registration_preserving_builtins(
                 workspace.id.clone(),
                 workspace.name.clone(),
                 response.runtimes,
+                &preserve_providers,
             ) {
                 Ok(delta) => delta,
                 Err(error) => {
@@ -491,7 +614,11 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         };
         self.repo_state
             .replace_workspace(&workspace.id, &repos, settings);
-        self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
+        let mut cleanup = delta.dropped.clone();
+        cleanup.extend(delta.revived.clone());
+        let reasons = delta.offline_reasons.clone();
+        self.queue_and_flush_dropped_with_reasons(&ctx, &cleanup, reasons)
+            .await;
         if recover_orphans {
             for runtime_id in runtime_ids {
                 if let Err(error) = self.client.recover_orphans(&ctx, &runtime_id).await {
@@ -574,7 +701,11 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             round.registration_applied(&workspace.id);
             delta
         };
-        self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
+        let mut cleanup = delta.dropped.clone();
+        cleanup.extend(delta.revived.clone());
+        let reasons = delta.offline_reasons.clone();
+        self.queue_and_flush_dropped_with_reasons(&ctx, &cleanup, reasons)
+            .await;
         Ok(true)
     }
 
@@ -586,7 +717,18 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
     }
 
     async fn queue_and_flush_dropped(&self, ctx: &Ctx, runtime_ids: &[String]) {
-        self.pending_deregistrations.queue(runtime_ids);
+        self.queue_and_flush_dropped_with_reasons(ctx, runtime_ids, HashMap::new())
+            .await;
+    }
+
+    async fn queue_and_flush_dropped_with_reasons(
+        &self,
+        ctx: &Ctx,
+        runtime_ids: &[String],
+        reasons: HashMap<String, RuntimeOfflineReason>,
+    ) {
+        self.pending_deregistrations
+            .queue_with_reasons(runtime_ids, reasons);
         if let Err(error) = self.flush_pending_deregistrations(ctx).await {
             tracing::warn!(
                 runtimes = runtime_ids.len(),
@@ -602,9 +744,8 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         if runtime_ids.is_empty() {
             return Ok(());
         }
-        self.client
-            .deregister(ctx, &runtime_ids, HashMap::new())
-            .await?;
+        let reasons = self.pending_deregistrations.reasons(&runtime_ids);
+        self.client.deregister(ctx, &runtime_ids, reasons).await?;
         self.pending_deregistrations.acknowledge(&runtime_ids);
         Ok(())
     }

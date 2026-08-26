@@ -7,18 +7,18 @@
 //! The file splits in two. This module carries the **strategy half** — the
 //! parts whose behavior does not touch the Daemon struct: the tick intervals,
 //! the converge retry/backoff policy, the one-directional availability merge,
-//! the missing-provider and version-lag scans, and the demotion partition.
-//! They are free functions over injected state, in the [`GcHost`] /
-//! [`AutoUpdateHost`] trait-seam pattern, so daemon-core wiring calls them
-//! directly instead of re-deriving them.
+//! the missing-provider and version-lag scans, the demotion partition, and the
+//! confirmed runtime verdict type. They are free functions over injected
+//! state, in the [`GcHost`] / [`AutoUpdateHost`] trait-seam pattern, so the
+//! daemon wiring calls them directly instead of re-deriving them.
 //!
-//! The **orchestration half** stays with daemon.go core: the
-//! `agentDiscoveryLoop` ticker select, `refreshAgentVersions`' register calls
-//! behind `withWorkspaceRegisterLock`, `demoteUnusableRuntimes`' claim
-//! barrier and deregister I/O, and `convergeRuntimeRegistrations`'
-//! register/merge round. All of them read `d.mu`, `d.workspaces`,
-//! `d.runtimeIndex`, `d.client` and `detectBuiltinRuntimes` — none of which
-//! exist before the Daemon struct.
+//! Rust's registration service now owns the migrated version-refresh and
+//! demotion orchestration: it applies the lag scan through the authoritative
+//! registry, holds the claim barrier, performs structured deregistration, and
+//! runs beside workspace reconciliation from the production refresh loop.
+//! Remaining daemon-wide capabilities continue to migrate by complete
+//! business boundary; this module no longer claims that version/demotion
+//! orchestration is still implemented in Go.
 //!
 //! Symbol map (Go → Rust):
 //! - `agentDiscoveryInterval` → [`AGENT_DISCOVERY_INTERVAL`]
@@ -31,8 +31,7 @@
 //! - `refreshAgentAvailability` merge half → [`merge_discovered_agents`] /
 //!   [`gained_providers`] / [`refresh_agent_availability`]
 //! - `providersMissingRuntimes` scan → [`providers_missing_runtimes`]
-//! - `runtimeVerdict` → [`RuntimeVerdict`] (construction — `newRuntimeVerdict`,
-//!   daemon.go:2237 — ports with the probe machinery in daemon.go core)
+//! - `runtimeVerdict` → [`RuntimeVerdict`] (constructed by the provider probe)
 //! - `revivedRuntimes`(+`reasonsFor`) → [`RevivedRuntimes`]
 //! - `builtinVersionsFromPayload` → [`builtin_versions_from_payload`]
 //! - `refreshAgentVersions` lag scan → [`workspaces_behind_on_versions`]
@@ -365,7 +364,7 @@ pub(crate) fn workspaces_behind_on_versions(
 /// `detectBuiltinRuntimes` in daemon.go core; consumers only need these two
 /// fields.
 #[derive(Debug, Clone, Default)]
-pub(crate) struct RuntimeVerdict {
+pub struct RuntimeVerdict {
     /// Evidence against the provider — user-visible in skipped_agents.
     pub reason: String,
     /// Stable code + repair command clients act on; `None` for verdicts that

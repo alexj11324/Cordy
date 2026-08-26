@@ -1024,6 +1024,10 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
 impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeServices
     for DaemonProductionServices<P, R>
 {
+    fn install_activity(&self, activity: Arc<DaemonActivity>) {
+        self.registration.set_activity(activity);
+    }
+
     async fn preflight(&self, ctx: Ctx, registry: Arc<RuntimeRegistry>) -> anyhow::Result<()> {
         self.registration.sync_once(ctx, &registry, false).await
     }
