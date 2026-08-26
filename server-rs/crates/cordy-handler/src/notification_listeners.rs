@@ -3,15 +3,16 @@
 
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use cordy_db::models::{InboxItem, Issue};
 use cordy_db::queries::{inbox, issue, member, notification_preference, squad, subscriber};
 use cordy_events::{Bus, Event};
-use regex::Regex;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
+
+use cordy_util::mentions::{parse_mentions, Mention};
 
 #[derive(Debug)]
 struct IssueFields {
@@ -25,12 +26,6 @@ struct IssueFields {
     assignee_id: Option<Uuid>,
     start_date: Option<String>,
     due_date: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Mention {
-    user_type: String,
-    user_id: String,
 }
 
 struct InboxSpec<'a> {
@@ -920,23 +915,6 @@ fn deliver_to_subscriber(reason: &str, notif_type: &str, status: &str) -> bool {
     }
     notif_type == "status_changed"
         && matches!(status, "in_review" | "done" | "cancelled" | "blocked")
-}
-
-fn parse_mentions(content: &str) -> Vec<Mention> {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE.get_or_init(|| {
-        Regex::new(r"\[@?(.+?)\]\(mention://(member|agent|squad|issue|all)/([0-9a-fA-F-]+|all)\)")
-            .expect("mention regex is valid")
-    });
-    let mut seen = HashSet::new();
-    re.captures_iter(content)
-        .filter_map(|capture| {
-            let user_type = capture.get(2)?.as_str().to_string();
-            let user_id = capture.get(3)?.as_str().to_string();
-            seen.insert((user_type.clone(), user_id.clone()))
-                .then_some(Mention { user_type, user_id })
-        })
-        .collect()
 }
 
 fn mention_keys(mentions: &[Mention]) -> HashSet<(String, String)> {
