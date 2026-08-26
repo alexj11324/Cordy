@@ -10,6 +10,8 @@
 //! - SkillFileContextForEnv       → SkillFileContextForEnv
 //! - Environment                  → Environment
 //! - PredictRootDir               → predict_root_dir
+//! - ensureTaskTempDir / taskTempBaseDir
+//!   → ensure_task_temp_dir / task_temp_base_dir
 //! - Prepare                      → prepare
 //! - ReuseParams / Reuse          → ReuseParams / reuse
 //! - hydrateCodexSkills           → hydrate_codex_skills
@@ -43,7 +45,7 @@
 
 use std::collections::HashMap;
 use std::io::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
@@ -532,6 +534,81 @@ pub fn predict_root_dir(workspaces_root: &str, workspace_id: &str, task_id: &str
         return String::new();
     }
     join_path(&[workspaces_root, workspace_id, &task_key(task_id)])
+}
+
+/// Creates the private temporary directory exported to one provider process.
+///
+/// The directory deliberately lives outside the task env root: provider tools
+/// commonly place Unix sockets below `$TMPDIR`, and the env root can already
+/// be long enough to exhaust the platform socket-path budget. `env_root` is
+/// still validated because the Go contract performs the same task-start
+/// identity checks before allocating the directory.
+pub(crate) fn ensure_task_temp_dir(
+    env_root: &str,
+    workspace_id: &str,
+    task_id: &str,
+) -> anyhow::Result<tempfile::TempDir> {
+    anyhow::ensure!(!env_root.trim().is_empty(), "env root is empty");
+    anyhow::ensure!(!workspace_id.trim().is_empty(), "workspace id is empty");
+    anyhow::ensure!(!task_id.trim().is_empty(), "task id is empty");
+
+    let (base, override_configured) = task_temp_base_dir()?;
+    let directory = tempfile::Builder::new()
+        .prefix("cordy-task-")
+        .tempdir_in(&base)
+        .map_err(|error| {
+            if override_configured {
+                anyhow::anyhow!("CORDY_AGENT_TEMP_BASE: create task temp dir: {error}")
+            } else {
+                anyhow::anyhow!("create task temp dir: {error}")
+            }
+        })?;
+
+    restrict_permissions(directory.path()).context("restrict task temp directory")?;
+    Ok(directory)
+}
+
+/// Resolves the parent directory for private task temp directories.
+///
+/// Unix honors `CORDY_AGENT_TEMP_BASE` only when it is an absolute path. A
+/// configured but unusable directory is reported by the actual `tempdir_in`
+/// call above, rather than silently falling back to the platform temp dir.
+/// Windows intentionally ignores the variable to match the Go daemon.
+fn task_temp_base_dir() -> anyhow::Result<(std::path::PathBuf, bool)> {
+    #[cfg(windows)]
+    {
+        return Ok((socket_safe_temp_base_dir(), false));
+    }
+
+    #[cfg(not(windows))]
+    {
+        let Some(configured) = std::env::var_os("CORDY_AGENT_TEMP_BASE") else {
+            return Ok((socket_safe_temp_base_dir(), false));
+        };
+        let path = PathBuf::from(configured);
+        if path.as_os_str().is_empty() {
+            return Ok((socket_safe_temp_base_dir(), false));
+        }
+        anyhow::ensure!(
+            path.is_absolute(),
+            "CORDY_AGENT_TEMP_BASE must be an absolute path, got {path:?}"
+        );
+        Ok((path, true))
+    }
+}
+
+/// Prefer `/tmp` on Unix because it is short enough to leave headroom for
+/// provider-created AF_UNIX sockets. Other platforms keep their standard
+/// temporary-directory resolution.
+fn socket_safe_temp_base_dir() -> std::path::PathBuf {
+    #[cfg(unix)]
+    {
+        let unix_tmp = Path::new("/tmp");
+        if unix_tmp.is_dir() {
+            return unix_tmp.to_path_buf();
+        }
+    }
+    std::env::temp_dir()
 }
 
 // ---------------------------------------------------------------------------
@@ -1389,7 +1466,8 @@ pub(crate) fn remove_tree(path: &str) -> anyhow::Result<()> {
 
 /// restrict_permissions applies chmod 0o700 on unix; on windows Go's
 /// os.Chmod only toggles the read-only bit, which we deliberately skip.
-fn restrict_permissions(path: &str) -> std::io::Result<()> {
+fn restrict_permissions(path: impl AsRef<Path>) -> std::io::Result<()> {
+    let path = path.as_ref();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -1728,6 +1806,9 @@ fn prepare_openclaw_config(
 mod tests {
     use super::*;
 
+    #[cfg(not(windows))]
+    static TASK_TEMP_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     // Port of TestPredictRootDir (execenv_test.go).
     #[test]
     fn test_predict_root_dir() {
@@ -1738,6 +1819,101 @@ mod tests {
         assert_eq!(predict_root_dir("", "ws1", "task"), "");
         assert_eq!(predict_root_dir("/tmp/ws", "", "task"), "");
         assert_eq!(predict_root_dir("/tmp/ws", "ws1", ""), "");
+    }
+
+    #[test]
+    fn test_task_temp_dir_requires_task_identity() {
+        assert!(ensure_task_temp_dir("", "ws", "task").is_err());
+        assert!(ensure_task_temp_dir("/tmp/root", "", "task").is_err());
+        assert!(ensure_task_temp_dir("/tmp/root", "ws", "").is_err());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_task_temp_dir_honors_absolute_override_and_is_private() {
+        let _env_lock = TASK_TEMP_ENV_LOCK.lock().unwrap();
+        struct EnvRestore(Option<std::ffi::OsString>);
+
+        impl Drop for EnvRestore {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(value) => std::env::set_var("CORDY_AGENT_TEMP_BASE", value),
+                    None => std::env::remove_var("CORDY_AGENT_TEMP_BASE"),
+                }
+            }
+        }
+
+        let _restore = EnvRestore(std::env::var_os("CORDY_AGENT_TEMP_BASE"));
+        let base = tempfile::tempdir().unwrap();
+        std::env::set_var("CORDY_AGENT_TEMP_BASE", base.path());
+
+        let directory = ensure_task_temp_dir("/tmp/root", "ws", "task").unwrap();
+        let path = directory.path().to_path_buf();
+        assert_eq!(path.parent(), Some(base.path()));
+        assert!(path.is_dir());
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+        drop(directory);
+        assert!(!path.exists());
+
+        std::env::set_var("CORDY_AGENT_TEMP_BASE", "relative/base");
+        let error = ensure_task_temp_dir("/tmp/root", "ws", "task").unwrap_err();
+        assert!(error.to_string().contains("CORDY_AGENT_TEMP_BASE"));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_task_temp_dir_reports_unusable_configured_base() {
+        let _env_lock = TASK_TEMP_ENV_LOCK.lock().unwrap();
+        struct EnvRestore(Option<std::ffi::OsString>);
+
+        impl Drop for EnvRestore {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(value) => std::env::set_var("CORDY_AGENT_TEMP_BASE", value),
+                    None => std::env::remove_var("CORDY_AGENT_TEMP_BASE"),
+                }
+            }
+        }
+
+        let _restore = EnvRestore(std::env::var_os("CORDY_AGENT_TEMP_BASE"));
+        let missing = tempfile::tempdir().unwrap().path().join("missing");
+        std::env::set_var("CORDY_AGENT_TEMP_BASE", &missing);
+        let error = ensure_task_temp_dir("/tmp/root", "ws", "task").unwrap_err();
+        assert!(error.to_string().contains("CORDY_AGENT_TEMP_BASE"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_task_temp_dir_honors_non_unicode_override_without_fallback() {
+        let _env_lock = TASK_TEMP_ENV_LOCK.lock().unwrap();
+        use std::os::unix::ffi::OsStringExt;
+
+        struct EnvRestore(Option<std::ffi::OsString>);
+
+        impl Drop for EnvRestore {
+            fn drop(&mut self) {
+                match &self.0 {
+                    Some(value) => std::env::set_var("CORDY_AGENT_TEMP_BASE", value),
+                    None => std::env::remove_var("CORDY_AGENT_TEMP_BASE"),
+                }
+            }
+        }
+
+        let _restore = EnvRestore(std::env::var_os("CORDY_AGENT_TEMP_BASE"));
+        let root = tempfile::tempdir().unwrap();
+        let base = root
+            .path()
+            .join(std::ffi::OsString::from_vec(b"base-\xff".to_vec()));
+        std::fs::create_dir_all(&base).unwrap();
+        std::env::set_var("CORDY_AGENT_TEMP_BASE", &base);
+
+        let directory = ensure_task_temp_dir("/tmp/root", "ws", "task").unwrap();
+        assert_eq!(directory.path().parent(), Some(base.as_path()));
+        drop(directory);
     }
 
     // join_path / clean_path must reproduce Go's filepath.Join/Clean cleaning

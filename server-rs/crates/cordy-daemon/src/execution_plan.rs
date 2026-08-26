@@ -387,6 +387,23 @@ impl ProviderExecutionPlan {
         self.prepare.clone()
     }
 
+    /// Rebinds the task temp directory after execenv has claimed/prepared the
+    /// task root. Planning remains pure, while all provider retries receive
+    /// the same private directory selected for this task.
+    pub fn set_task_temp_dir(&mut self, temp_dir: &str) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !temp_dir.trim().is_empty(),
+            "invalid execution configuration: missing task temp directory"
+        );
+        validate_env_value("temp_dir", temp_dir)?;
+        for key in ["TMPDIR", "TMP", "TEMP"] {
+            self.child_env
+                .values
+                .insert(key.to_string(), temp_dir.to_string());
+        }
+        Ok(())
+    }
+
     pub fn task_context(&self) -> &TaskContextForEnv {
         &self.prepare.task
     }
@@ -920,6 +937,20 @@ mod tests {
             prepare.codex_custom_args,
             vec!["--sandbox", "workspace-write", "--agent-flag", "secret-arg"]
         );
+    }
+
+    #[test]
+    fn rebinds_all_provider_temp_variables_to_one_task_directory() {
+        let mut plan =
+            ProviderExecutionPlan::build(&config(), &task(), &target(), inputs()).unwrap();
+        plan.set_task_temp_dir("/tmp/cordy-task-private").unwrap();
+
+        for key in ["TMPDIR", "TMP", "TEMP"] {
+            assert_eq!(
+                plan.child_env.values.get(key).map(String::as_str),
+                Some("/tmp/cordy-task-private")
+            );
+        }
     }
 
     #[test]
