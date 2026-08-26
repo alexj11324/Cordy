@@ -300,10 +300,22 @@ struct CreateSquadRequest {
     avatar_url: Option<String>,
 }
 
-fn accepted_avatar_url(value: Option<String>) -> Option<String> {
-    // HandlerState has no object-storage signer yet. This is exactly Go's
-    // Storage == nil branch: trim and persist without owned-object checks.
+fn trimmed_avatar_url(value: Option<String>) -> Option<String> {
     value.map(|value| value.trim().to_string())
+}
+
+async fn accepted_avatar_url(
+    state: &HandlerState,
+    value: Option<String>,
+    current: Option<&str>,
+) -> Result<Option<String>, Response> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    crate::avatar::accept_url(state, &value, current)
+        .await
+        .map(Some)
+        .map_err(|message| error_response(StatusCode::FORBIDDEN, message))
 }
 
 async fn create(
@@ -345,7 +357,10 @@ async fn create(
             "you can only use an agent you have access to as leader",
         );
     }
-    let avatar_url = accepted_avatar_url(request.avatar_url);
+    let avatar_url = match accepted_avatar_url(&state, request.avatar_url, None).await {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     let created = match squad::create_squad(
         &state.pool,
         context.member.workspace_id,
@@ -589,7 +604,12 @@ async fn update(
         Ok(request) => request,
         Err(()) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
     };
-    let avatar_url = accepted_avatar_url(request.avatar_url);
+    let avatar_url =
+        match accepted_avatar_url(&state, request.avatar_url, existing.avatar_url.as_deref()).await
+        {
+            Ok(value) => value,
+            Err(response) => return response,
+        };
     let mut transaction = match state.pool.begin().await {
         Ok(transaction) => transaction,
         Err(error) => {
@@ -1160,7 +1180,7 @@ mod tests {
         assert!(create.description.is_empty());
         assert!(create.leader_id.is_empty());
         assert_eq!(
-            accepted_avatar_url(create.avatar_url).as_deref(),
+            trimmed_avatar_url(create.avatar_url).as_deref(),
             Some("emoji:robot")
         );
 
