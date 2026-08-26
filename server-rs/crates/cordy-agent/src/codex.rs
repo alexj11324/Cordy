@@ -424,74 +424,25 @@ fn toml_string(value: &str) -> String {
 #[async_trait]
 impl Backend for CodexBackend {
     async fn execute(&self, prompt: &str, options: ExecOptions) -> Result<Session, AgentError> {
-        let executable = command_path(&self.config.command);
-        let mut prefix = filter_launch_prefix(&self.config.command.prefix, &BLOCKED_ARGS).args;
-        if has_managed_config(options.mcp_config.as_ref()) {
-            prefix = filter_managed_mcp_overrides(prefix);
-        }
-        if options.service_tier == "priority" {
-            prefix = strip_fast_mode_conflicts(prefix);
-        }
-        let args = build_codex_args(&options);
-        let mut command = Command::new(&executable);
-        command
-            .args(prefix.iter().chain(args.iter()))
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(false);
-        configure_child_environment(&mut command, &self.config.env);
-        if !options.cwd.is_empty() {
-            command.current_dir(&options.cwd);
-        }
-
-        if self.config.env.contains_key("CODEX_HOME") {
-            write_managed_codex_mcp(
-                self.config.env.get("CODEX_HOME").map(String::as_str),
-                options.mcp_config.as_ref(),
-            )
-            .await?;
-        }
-
-        let mut tree = OwnedProcessTree::spawn(&mut command)
-            .await
-            .map_err(|error| {
-                if error.kind() == io::ErrorKind::NotFound {
-                    AgentError::ExecutableNotFound(executable.clone())
-                } else {
-                    AgentError::Process(error)
-                }
-            })?;
-        let stdin = tree.child_mut().stdin.take().ok_or_else(|| {
-            AgentError::Protocol("Codex stdin pipe unavailable after spawn".to_string())
-        })?;
-        let stdout = tree.child_mut().stdout.take().ok_or_else(|| {
-            AgentError::Protocol("Codex stdout pipe unavailable after spawn".to_string())
-        })?;
-        let stderr = tree.child_mut().stderr.take().ok_or_else(|| {
-            AgentError::Protocol("Codex stderr pipe unavailable after spawn".to_string())
-        })?;
-
+        let (event_tx, event_rx) = mpsc::channel(256);
+        let process = spawn_codex_process(&self.config, &options, event_tx).await?;
         let (messages_tx, messages_rx) = mpsc::channel(MESSAGE_BUFFER);
         let (result_tx, result_rx) = oneshot::channel();
         let (activity_tx, activity_rx) = mpsc::channel(ACTIVITY_BUFFER);
         let (turn_done_tx, turn_done_rx) = mpsc::channel(8);
-        let (event_tx, event_rx) = mpsc::channel(256);
-        let client = CodexClient::new(stdin, event_tx);
         let observer = CodexObserver::new(messages_tx, activity_tx, turn_done_tx);
         let started = Instant::now();
         let wall_started = SystemTime::now();
         let prompt = prompt.to_string();
-        let cancellation = options.cancellation.clone();
         let config = self.config.clone();
 
         tokio::spawn(async move {
             run_codex(
-                tree,
-                client,
+                process.tree,
+                process.client,
                 observer,
-                stdout,
-                stderr,
+                process.stdout,
+                process.stderr,
                 event_rx,
                 activity_rx,
                 turn_done_rx,
@@ -501,9 +452,9 @@ impl Backend for CodexBackend {
                 config,
                 started,
                 wall_started,
+                1,
             )
             .await;
-            drop(cancellation);
         });
 
         Ok(Session {
@@ -511,6 +462,74 @@ impl Backend for CodexBackend {
             result: result_rx,
         })
     }
+}
+
+struct CodexProcess {
+    tree: OwnedProcessTree,
+    client: CodexClient,
+    stdout: ChildStdout,
+    stderr: ChildStderr,
+}
+
+async fn spawn_codex_process(
+    config: &CodexConfig,
+    options: &ExecOptions,
+    event_tx: mpsc::Sender<WireEvent>,
+) -> Result<CodexProcess, AgentError> {
+    let executable = command_path(&config.command);
+    let mut prefix = filter_launch_prefix(&config.command.prefix, &BLOCKED_ARGS).args;
+    if has_managed_config(options.mcp_config.as_ref()) {
+        prefix = filter_managed_mcp_overrides(prefix);
+    }
+    if options.service_tier == "priority" {
+        prefix = strip_fast_mode_conflicts(prefix);
+    }
+    let args = build_codex_args(options);
+    let mut command = Command::new(&executable);
+    command
+        .args(prefix.iter().chain(args.iter()))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(false);
+    configure_child_environment(&mut command, &config.env);
+    if !options.cwd.is_empty() {
+        command.current_dir(&options.cwd);
+    }
+
+    if config.env.contains_key("CODEX_HOME") {
+        write_managed_codex_mcp(
+            config.env.get("CODEX_HOME").map(String::as_str),
+            options.mcp_config.as_ref(),
+        )
+        .await?;
+    }
+
+    let mut tree = OwnedProcessTree::spawn(&mut command)
+        .await
+        .map_err(|error| {
+            if error.kind() == io::ErrorKind::NotFound {
+                AgentError::ExecutableNotFound(executable.clone())
+            } else {
+                AgentError::Process(error)
+            }
+        })?;
+    let stdin = tree.child_mut().stdin.take().ok_or_else(|| {
+        AgentError::Protocol("Codex stdin pipe unavailable after spawn".to_string())
+    })?;
+    let stdout = tree.child_mut().stdout.take().ok_or_else(|| {
+        AgentError::Protocol("Codex stdout pipe unavailable after spawn".to_string())
+    })?;
+    let stderr = tree.child_mut().stderr.take().ok_or_else(|| {
+        AgentError::Protocol("Codex stderr pipe unavailable after spawn".to_string())
+    })?;
+    let client = CodexClient::new(stdin, event_tx);
+    Ok(CodexProcess {
+        tree,
+        client,
+        stdout,
+        stderr,
+    })
 }
 
 #[derive(Clone)]
@@ -1374,6 +1393,7 @@ async fn run_codex(
     config: CodexConfig,
     started: Instant,
     wall_started: SystemTime,
+    attempt: u8,
 ) {
     let stderr_tail = SharedDiagnosticBuffer::new(DEFAULT_TAIL_BYTES);
     let reader_task: JoinHandle<()> = tokio::spawn(read_codex_stdout(stdout, client.clone()));
@@ -1420,6 +1440,66 @@ async fn run_codex(
             &stderr_tail,
         )
         .await;
+        let task_deadline_exhausted =
+            options.timeout > Duration::ZERO && started.elapsed() >= options.timeout;
+        if attempt == 1 && !task_deadline_exhausted && is_initialize_retryable(&error) {
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_millis(75)) => {}
+                _ = options.cancellation.cancelled() => {
+                    let _ = result_tx.send(ExecutionResult {
+                        status: "aborted".to_string(),
+                        error: "execution cancelled".to_string(),
+                        duration_ms: started.elapsed().as_millis() as i64,
+                        ..ExecutionResult::default()
+                    });
+                    return;
+                }
+            }
+            let (retry_event_tx, retry_event_rx) = mpsc::channel(256);
+            let (retry_activity_tx, retry_activity_rx) = mpsc::channel(ACTIVITY_BUFFER);
+            let (retry_turn_done_tx, retry_turn_done_rx) = mpsc::channel(8);
+            let mut retry_options = options.clone();
+            if retry_options.timeout > Duration::ZERO {
+                retry_options.timeout = retry_options.timeout.saturating_sub(started.elapsed());
+            }
+            match spawn_codex_process(&config, &retry_options, retry_event_tx).await {
+                Ok(process) => {
+                    let retry_observer = CodexObserver::new(
+                        observer.messages.clone(),
+                        retry_activity_tx,
+                        retry_turn_done_tx,
+                    );
+                    Box::pin(run_codex(
+                        process.tree,
+                        process.client,
+                        retry_observer,
+                        process.stdout,
+                        process.stderr,
+                        retry_event_rx,
+                        retry_activity_rx,
+                        retry_turn_done_rx,
+                        result_tx,
+                        prompt,
+                        retry_options,
+                        config,
+                        started,
+                        wall_started,
+                        attempt + 1,
+                    ))
+                    .await;
+                    return;
+                }
+                Err(spawn_error) => {
+                    let _ = result_tx.send(ExecutionResult {
+                        status: "failed".to_string(),
+                        error: format!("codex retry spawn failed: {spawn_error}"),
+                        duration_ms: started.elapsed().as_millis() as i64,
+                        ..ExecutionResult::default()
+                    });
+                    return;
+                }
+            }
+        }
         let mut message = format!("codex initialize failed: {error}");
         if !stderr.is_empty() {
             message = with_stderr(&message, "codex", &sanitize_diagnostic(&stderr));
@@ -1884,6 +1964,13 @@ fn is_resume_overflow(error: &AgentError) -> bool {
     let text = error.to_string().to_ascii_lowercase();
     text.contains("thread/resume")
         && (text.contains("line exceeds") || text.contains("token too long"))
+}
+
+fn is_initialize_retryable(error: &AgentError) -> bool {
+    let text = error.to_string().to_ascii_lowercase();
+    text.contains("initialize")
+        && text.contains("handshake timeout")
+        && !text.contains("execution cancelled")
 }
 
 fn string_field(object: &Map<String, Value>, key: &str) -> String {
@@ -2878,6 +2965,61 @@ done
         assert!(messages
             .iter()
             .any(|message| message.content == "fake answer"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn backend_retries_initialize_handshake_once() {
+        let directory = tempdir().unwrap_or_else(|error| panic!("temp dir: {error}"));
+        let marker = directory.path().join("first-attempt");
+        let script = r#"
+if [ ! -e "$CODEX_FAKE_MARKER" ]; then
+  : > "$CODEX_FAKE_MARKER"
+  while IFS= read -r line; do :; done
+fi
+while IFS= read -r line; do
+  case "$line" in
+    *'"method":"initialize"'*) printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{}}' ;;
+    *'"method":"thread/start"'*) printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-retry"}}}' ;;
+    *'"method":"turn/start"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-retry","turn":{"id":"turn-retry"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-retry","item":{"type":"agentMessage","phase":"final_answer","text":"retried"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-retry","turn":{"id":"turn-retry","status":"completed"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":{}}'
+      ;;
+  esac
+done
+"#;
+        let backend = CodexBackend::new(CodexConfig {
+            command: RuntimeCommand::new("sh", vec!["-c".to_string(), script.to_string()]),
+            env: BTreeMap::from([(
+                "CODEX_FAKE_MARKER".to_string(),
+                marker.to_string_lossy().to_string(),
+            )]),
+        });
+        let options = ExecOptions {
+            handshake_timeout: Duration::from_millis(50),
+            timeout: Duration::from_secs(2),
+            semantic_inactivity_timeout: Duration::from_secs(2),
+            first_turn_no_progress_timeout: Duration::from_secs(1),
+            ..ExecOptions::default()
+        };
+        let mut session = backend
+            .execute("hello", options)
+            .await
+            .unwrap_or_else(|error| panic!("start retrying fake Codex: {error}"));
+        let mut messages = Vec::new();
+        while let Some(message) = session.messages.recv().await {
+            messages.push(message);
+        }
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("retry result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "retried");
+        assert_eq!(result.session_id, "thread-retry");
+        assert!(marker.exists());
     }
 
     #[test]
