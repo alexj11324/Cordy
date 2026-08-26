@@ -20,6 +20,7 @@ use cordy_agent::{
     ReasonixConfig, RuntimeCommand, TraecliBackend, TraecliConfig,
 };
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
+use futures_util::{stream, StreamExt};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
@@ -37,6 +38,7 @@ use crate::health::{
     ActiveRepoCheckoutTask, HealthResponse, RepoCheckoutRegistry, RepoCheckoutRequest,
     REPO_CHECKOUT_LOCK_WAIT_TIMEOUT,
 };
+use crate::local_skills::{list_runtime_local_skills, load_runtime_local_skill_bundle};
 use crate::production_stack::{ProductionRuntimeServices, RepoCheckoutFailure};
 use crate::provider_registration::RuntimeLaunchRegistry;
 use crate::reconcile::{ReconcileBroadcaster, WorkspaceChangeSignal};
@@ -504,6 +506,158 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         .await
     }
 
+    /// `handleLocalSkillList` (daemon.go:4180): report the runtime-local skill
+    /// inventory and the redacted local MCP inventory. The filesystem scan is
+    /// isolated from the async runtime because it follows symlinks and reads
+    /// bounded directory trees synchronously, just like Go's goroutine-owned
+    /// handler.
+    async fn handle_local_skill_list(
+        &self,
+        ctx: Ctx,
+        registry: Arc<RuntimeRegistry>,
+        runtime_id: &str,
+        request_id: &str,
+    ) -> bool {
+        let Some(target) = registry.execution_target_for_runtime(runtime_id) else {
+            return false;
+        };
+        let provider = target.provider.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            let (skills, supported) = list_runtime_local_skills(&provider)?;
+            let (mcp_servers, mcp_supported) =
+                match crate::runtime_mcp::list_runtime_local_mcp_servers(&provider) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        tracing::warn!(
+                            %provider,
+                            %error,
+                            "runtime local MCP discovery failed"
+                        );
+                        (Vec::new(), false)
+                    }
+                };
+            Ok::<_, anyhow::Error>(json!({
+                "status": "completed",
+                "skills": skills,
+                "supported": supported,
+                "mcp_servers": mcp_servers,
+                "mcp_supported": mcp_supported,
+            }))
+        })
+        .await;
+
+        if ctx.err().is_some() {
+            tracing::debug!(
+                %runtime_id,
+                %request_id,
+                "runtime local-skill list action cancelled; leaving pending action unhandled"
+            );
+            return false;
+        }
+        let payload = match result {
+            Ok(Ok(payload)) => payload,
+            Ok(Err(error)) => json!({
+                "status": "failed",
+                "error": error.to_string(),
+            }),
+            Err(error) => json!({
+                "status": "failed",
+                "error": format!("local skill list worker failed: {error}"),
+            }),
+        };
+        self.report_runtime_action_result_with_retry(
+            &ctx,
+            &target.provider,
+            runtime_id,
+            request_id,
+            "local_skill_list",
+            payload,
+        )
+        .await
+    }
+
+    /// `handleLocalSkillImport` (daemon.go:4207): load exactly the skill key
+    /// shown by the list endpoint, then report the full bounded bundle. The
+    /// provider support bit is kept distinct from a missing/invalid key so
+    /// unsupported runtimes receive the same actionable error as Go.
+    async fn handle_local_skill_import(
+        &self,
+        ctx: Ctx,
+        registry: Arc<RuntimeRegistry>,
+        runtime_id: &str,
+        request: cordy_protocol::DaemonHeartbeatPendingLocalSkillImport,
+    ) -> bool {
+        let Some(target) = registry.execution_target_for_runtime(runtime_id) else {
+            return false;
+        };
+        let provider = target.provider.clone();
+        let skill_key = request.skill_key.clone();
+        let result = tokio::task::spawn_blocking(move || {
+            load_runtime_local_skill_bundle(&provider, &skill_key)
+        })
+        .await;
+
+        if ctx.err().is_some() {
+            tracing::debug!(
+                %runtime_id,
+                request_id = %request.id,
+                "runtime local-skill import action cancelled; leaving pending action unhandled"
+            );
+            return false;
+        }
+
+        let payload = match result {
+            Ok(Ok((Some(skill), _supported))) => json!({
+                "status": "completed",
+                "skill": skill,
+            }),
+            Ok(Ok((None, false))) => json!({
+                "status": "failed",
+                "error": format!(
+                    "provider {:?} does not expose runtime local skills",
+                    target.provider
+                ),
+            }),
+            Ok(Ok((None, true))) => json!({
+                "status": "failed",
+                "error": "local skill not found",
+            }),
+            Ok(Err(error)) => json!({
+                "status": "failed",
+                "error": error.to_string(),
+            }),
+            Err(error) => json!({
+                "status": "failed",
+                "error": format!("local skill import worker failed: {error}"),
+            }),
+        };
+        self.report_runtime_action_result_with_retry(
+            &ctx,
+            &target.provider,
+            runtime_id,
+            &request.id,
+            "local_skill_import",
+            payload,
+        )
+        .await
+    }
+
+    async fn handle_local_skill_imports(
+        &self,
+        ctx: Ctx,
+        registry: Arc<RuntimeRegistry>,
+        runtime_id: &str,
+        requests: Vec<cordy_protocol::DaemonHeartbeatPendingLocalSkillImport>,
+    ) {
+        let concurrency = requests.len().max(1);
+        stream::iter(requests.into_iter().map(|request| {
+            self.handle_local_skill_import(ctx.child(), Arc::clone(&registry), runtime_id, request)
+        }))
+        .buffer_unordered(concurrency)
+        .for_each(|_handled| async {})
+        .await;
+    }
+
     async fn report_model_list_result_with_retry(
         &self,
         ctx: &Ctx,
@@ -544,6 +698,78 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                         %provider,
                         error = %error,
                         "ACP model-list report failed; retrying"
+                    );
+                }
+            }
+        }
+        false
+    }
+
+    async fn report_runtime_action_result_with_retry(
+        &self,
+        ctx: &Ctx,
+        provider: &str,
+        runtime_id: &str,
+        request_id: &str,
+        kind: &str,
+        payload: Value,
+    ) -> bool {
+        for (attempt, wait) in RUNTIME_REPORT_BACKOFFS.iter().copied().enumerate() {
+            if !wait.is_zero() {
+                tokio::select! {
+                    () = ctx.cancelled() => return false,
+                    _ = tokio::time::sleep(wait) => {}
+                }
+            }
+            let result = match kind {
+                "local_skill_list" => {
+                    self.client
+                        .report_local_skill_list_result(
+                            ctx,
+                            runtime_id,
+                            request_id,
+                            payload.clone(),
+                        )
+                        .await
+                }
+                "local_skill_import" => {
+                    self.client
+                        .report_local_skill_import_result(
+                            ctx,
+                            runtime_id,
+                            request_id,
+                            payload.clone(),
+                        )
+                        .await
+                }
+                _ => {
+                    tracing::error!(%kind, "unknown runtime action report kind");
+                    return false;
+                }
+            };
+            match result {
+                Ok(()) => return true,
+                Err(error) => {
+                    let permanent = request_status_code(&error)
+                        .is_some_and(|status| (400..500).contains(&status));
+                    if permanent || attempt + 1 == RUNTIME_REPORT_BACKOFFS.len() {
+                        tracing::error!(
+                            %runtime_id,
+                            %request_id,
+                            %provider,
+                            %kind,
+                            error = %error,
+                            "runtime action report failed"
+                        );
+                        return false;
+                    }
+                    tracing::warn!(
+                        %runtime_id,
+                        %request_id,
+                        %provider,
+                        %kind,
+                        error = %error,
+                        "runtime action report failed; retrying"
                     );
                 }
             }
@@ -1193,14 +1419,43 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
         runtime_id: String,
         mut ack: DaemonHeartbeatAckPayload,
     ) {
-        if let Some(request) = ack.pending_model_list.clone() {
-            if self
-                .handle_acp_model_list(ctx.child(), Arc::clone(&registry), &runtime_id, &request.id)
-                .await
-            {
-                ack.pending_model_list = None;
+        let model_request = ack.pending_model_list.take();
+        let local_skill_request = ack.pending_local_skills.take();
+        let local_skill_imports = if ack.pending_local_skill_imports.is_empty() {
+            ack.pending_local_skill_import.take().into_iter().collect()
+        } else {
+            ack.pending_local_skill_imports.drain(..).collect()
+        };
+
+        let model = async {
+            if let Some(request) = model_request {
+                self.handle_acp_model_list(
+                    ctx.child(),
+                    Arc::clone(&registry),
+                    &runtime_id,
+                    &request.id,
+                )
+                .await;
             }
-        }
+        };
+        let local_skills = async {
+            if let Some(request) = local_skill_request {
+                self.handle_local_skill_list(
+                    ctx.child(),
+                    Arc::clone(&registry),
+                    &runtime_id,
+                    &request.id,
+                )
+                .await;
+            }
+        };
+        let local_imports = self.handle_local_skill_imports(
+            ctx.child(),
+            Arc::clone(&registry),
+            &runtime_id,
+            local_skill_imports,
+        );
+        tokio::join!(model, local_skills, local_imports);
         self.provider
             .handle_non_update_heartbeat_actions(ctx, registry, runtime_id, ack)
             .await;
