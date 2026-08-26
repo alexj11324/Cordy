@@ -476,12 +476,8 @@ fn validate_auth_config(cfg: &cordy_config::Config) -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "cordy=info,tower=info".into()),
-        )
-        .init();
+    cordy_util::logging::init("cordy=info,tower=info")
+        .map_err(|error| anyhow::anyhow!(error.to_string()))?;
 
     let cfg = cordy_config::Config::load(Some(std::path::Path::new("cordy.toml")))?;
     cfg.validate()?;
