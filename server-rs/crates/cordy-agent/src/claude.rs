@@ -205,15 +205,17 @@ impl Backend for ClaudeBackend {
                 stdin,
                 stdout,
                 stderr,
-                prompt_bytes,
-                message_tx,
-                result_tx,
-                cancellation,
-                timeout,
-                requested_resume,
-                fallback_model,
-                started,
-                stderr_tail,
+                ClaudeRunContext {
+                    prompt: prompt_bytes,
+                    messages: message_tx,
+                    result_tx,
+                    cancellation,
+                    timeout,
+                    requested_resume,
+                    fallback_model,
+                    started,
+                    stderr_tail,
+                },
             )
             .await;
         });
@@ -437,16 +439,19 @@ async fn run_claude(
     stdin: SharedStdin,
     stdout: ChildStdout,
     stderr: ChildStderr,
-    prompt: Vec<u8>,
-    messages: mpsc::Sender<Message>,
-    result_tx: oneshot::Sender<ExecutionResult>,
-    cancellation: CancellationToken,
-    timeout: Duration,
-    requested_resume: String,
-    fallback_model: String,
-    started: Instant,
-    stderr_tail: SharedDiagnosticBuffer,
+    context: ClaudeRunContext,
 ) {
+    let ClaudeRunContext {
+        prompt,
+        messages,
+        result_tx,
+        cancellation,
+        timeout,
+        requested_resume,
+        fallback_model,
+        started,
+        stderr_tail,
+    } = context;
     let mut stderr_task = tokio::spawn(pump_stderr(stderr, stderr_tail.clone()));
     let prompt_stdin = Arc::clone(&stdin);
     let mut prompt_task = tokio::spawn(async move { write_stdin(prompt_stdin, &prompt).await });
@@ -462,17 +467,21 @@ async fn run_claude(
             let exit = tree.wait().await;
             let stream = (&mut stdout_task).await;
             let write = (&mut prompt_task).await;
-            (exit, stream, write)
+            ClaudeCompletion {
+                exit,
+                stream,
+                write,
+            }
         };
         tokio::pin!(completion);
         if timeout.is_zero() {
             tokio::select! {
-                completed = &mut completion => RunOutcome::Completed(completed),
+                completed = &mut completion => RunOutcome::Completed(Box::new(completed)),
                 () = cancellation.cancelled() => RunOutcome::Cancelled,
             }
         } else {
             tokio::select! {
-                completed = &mut completion => RunOutcome::Completed(completed),
+                completed = &mut completion => RunOutcome::Completed(Box::new(completed)),
                 () = cancellation.cancelled() => RunOutcome::Cancelled,
                 () = tokio::time::sleep(timeout) => RunOutcome::TimedOut,
             }
@@ -480,7 +489,12 @@ async fn run_claude(
     };
 
     let (run_end, exit, stream, write) = match end {
-        RunOutcome::Completed((exit, stream, write)) => {
+        RunOutcome::Completed(completed) => {
+            let ClaudeCompletion {
+                exit,
+                stream,
+                write,
+            } = *completed;
             (RunEnd::Completed, Some(exit), stream, write)
         }
         RunOutcome::Cancelled => {
@@ -1045,14 +1059,26 @@ async fn pump_stderr(mut stderr: ChildStderr, tail: SharedDiagnosticBuffer) {
     }
 }
 
+struct ClaudeRunContext {
+    prompt: Vec<u8>,
+    messages: mpsc::Sender<Message>,
+    result_tx: oneshot::Sender<ExecutionResult>,
+    cancellation: CancellationToken,
+    timeout: Duration,
+    requested_resume: String,
+    fallback_model: String,
+    started: Instant,
+    stderr_tail: SharedDiagnosticBuffer,
+}
+
+struct ClaudeCompletion {
+    exit: io::Result<ExitStatus>,
+    stream: Result<ClaudeStreamState, JoinError>,
+    write: Result<io::Result<()>, JoinError>,
+}
+
 enum RunOutcome {
-    Completed(
-        (
-            io::Result<ExitStatus>,
-            Result<ClaudeStreamState, JoinError>,
-            Result<io::Result<()>, JoinError>,
-        ),
-    ),
+    Completed(Box<ClaudeCompletion>),
     Cancelled,
     TimedOut,
 }
