@@ -775,7 +775,7 @@ async fn main() -> anyhow::Result<()> {
 
 fn parse_shutdown_hold_duration(raw: &str) -> Option<Duration> {
     let mut remaining = raw.trim();
-    if remaining.is_empty() {
+    if remaining.is_empty() || remaining == "0" {
         return Some(Duration::ZERO);
     }
     let mut total = Duration::ZERO;
