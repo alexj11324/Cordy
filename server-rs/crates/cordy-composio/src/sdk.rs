@@ -250,6 +250,14 @@ pub struct ConnectedAccount {
     pub toolkit: Toolkit,
     #[serde(default)]
     pub status: String,
+    #[serde(default, rename = "status_reason")]
+    pub status_reason: String,
+    #[serde(default, rename = "created_at")]
+    pub created_at: String,
+    #[serde(default, rename = "updated_at")]
+    pub updated_at: String,
+    #[serde(default, rename = "last_used_at")]
+    pub last_used_at: String,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -1182,11 +1190,15 @@ mod tests {
     #[test]
     fn connected_account_decodes_camel_case_wire() {
         let acct: ConnectedAccount = serde_json::from_str(
-            r#"{"id":"ca_1","user_id":"u","auth_config_id":"ac","auth_config":{"id":"ac"},"toolkit":{"slug":"gh"},"status":"ACTIVE"}"#,
+            r#"{"id":"ca_1","user_id":"u","auth_config_id":"ac","auth_config":{"id":"ac"},"toolkit":{"slug":"gh"},"status":"ACTIVE","status_reason":"healthy","created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-02T00:00:00Z","last_used_at":"2026-01-03T00:00:00Z"}"#,
         )
         .unwrap();
         assert_eq!(acct.auth_config.id, "ac");
         assert_eq!(acct.toolkit.slug, "gh");
+        assert_eq!(acct.status_reason, "healthy");
+        assert_eq!(acct.created_at, "2026-01-01T00:00:00Z");
+        assert_eq!(acct.updated_at, "2026-01-02T00:00:00Z");
+        assert_eq!(acct.last_used_at, "2026-01-03T00:00:00Z");
     }
 
     #[test]
