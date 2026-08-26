@@ -197,7 +197,17 @@ async fn update_me(State(state): State<HandlerState>, headers: HeaderMap, body: 
         }
         None => current_user.name.clone(),
     };
-    let avatar_url = request.avatar_url.map(|value| value.trim().to_string());
+    let avatar_url = match request.avatar_url {
+        Some(value) => {
+            match crate::avatar::accept_url(&state, &value, current_user.avatar_url.as_deref())
+                .await
+            {
+                Ok(value) => Some(value),
+                Err(message) => return error_response(StatusCode::FORBIDDEN, message),
+            }
+        }
+        None => None,
+    };
     let language = match request.language {
         Some(language) => {
             let language = language.trim().to_string();
