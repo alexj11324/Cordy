@@ -97,7 +97,7 @@ impl RedisRelay {
             registry,
             write_conn,
             read_client,
-            node_id: ulid::Ulid::new().to_string(),
+            node_id: cordy_util::new_ulid(),
             ttl: StreamTtlRefresher::new(retention.stream_ttl, retention.ttl_refresh_interval),
             retention,
             consumers: Mutex::new(HashMap::new()),
@@ -724,7 +724,7 @@ impl RelayPublisher for RedisRelay {
 #[async_trait]
 impl Broadcaster for RedisRelay {
     async fn broadcast_to_scope(&self, scope_type: &str, scope_id: &str, message: &[u8]) {
-        let id = ulid::Ulid::new().to_string();
+        let id = cordy_util::new_ulid();
         let _ = self
             .publish_with_id(scope_type, scope_id, "", message, &id)
             .await;
@@ -732,7 +732,7 @@ impl Broadcaster for RedisRelay {
 
     async fn send_to_user(&self, user_id: &str, message: &[u8], exclude_workspace: Option<&str>) {
         let exclude = exclude_workspace.unwrap_or("");
-        let id = ulid::Ulid::new().to_string();
+        let id = cordy_util::new_ulid();
         let _ = self
             .publish_with_id(SCOPE_USER, user_id, exclude, message, &id)
             .await;
@@ -741,7 +741,7 @@ impl Broadcaster for RedisRelay {
     /// Daemon broadcast — writes to a special "global" stream so other nodes
     /// can fan out to all clients regardless of subscriptions.
     async fn broadcast(&self, message: &[u8]) {
-        let id = ulid::Ulid::new().to_string();
+        let id = cordy_util::new_ulid();
         let _ = self
             .publish_with_id("global", "all", "", message, &id)
             .await;
@@ -800,7 +800,7 @@ impl DualWriteBroadcaster {
         exclude: &str,
         message: &[u8],
     ) {
-        let event_id = ulid::Ulid::new().to_string();
+        let event_id = cordy_util::new_ulid();
         let frame = inject_event_id(message, &event_id);
         if scope_type == "global" {
             self.hub.fanout_all_dedup(&frame, exclude, &event_id).await;

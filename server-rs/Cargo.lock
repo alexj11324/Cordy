@@ -1319,13 +1319,13 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
+ "cordy-util",
  "redis",
  "serde",
  "serde_json",
  "tokio",
  "tokio-util",
  "tracing",
- "ulid",
 ]
 
 [[package]]
@@ -1552,6 +1552,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.20",
+ "ulid",
  "uuid",
 ]
 
@@ -4863,6 +4864,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "470dbf6591da1b39d43c14523b2b469c86879a53e8b758c8e090a470fe7b1fbe"
 dependencies = [
  "rand 0.9.5",
+ "serde",
  "web-time",
 ]
 

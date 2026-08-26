@@ -10,26 +10,40 @@ use serde::{Deserialize, Serialize};
 
 /// Typed ULID wrapper.
 ///
-/// Go side uses `oklog/ulid/v2`; on the wire ULIDs are 26-char uppercase
-/// Crockford base32 strings. Serde serializes as that string to keep API
-/// contracts byte-identical (see migration plan §二 hard constraints).
+/// Go side uses `oklog/ulid/v2`; on the wire ULIDs are 26-character uppercase
+/// Crockford base32 strings. Wrapping the Rust ULID type makes that canonical
+/// representation the only serde representation instead of accidentally
+/// emitting a UUIDv7 string.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub struct Ulid(#[serde(with = "ulid_string")] pub uuid::Uuid);
+pub struct Ulid(pub ulid::Ulid);
 
-mod ulid_string {
-    use serde::{Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S: Serializer>(v: &uuid::Uuid, s: S) -> Result<S::Ok, S::Error> {
-        // TODO(S2): switch to Crockford base32 via the `ulid` crate once ids
-        // are generated natively; UUIDv7 hyphenated form is accepted by the
-        // frontend today but must be re-audited before cutover.
-        s.serialize_str(&v.to_string())
+impl Ulid {
+    /// Generates a canonical ULID for production event and node identifiers.
+    pub fn new() -> Self {
+        Self(ulid::Ulid::new())
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<uuid::Uuid, D::Error> {
-        let s = String::deserialize(d)?;
-        uuid::Uuid::parse_str(&s).map_err(serde::de::Error::custom)
+    /// Parses the canonical Go-compatible Crockford base32 representation.
+    pub fn from_string(value: &str) -> Result<Self, ulid::DecodeError> {
+        ulid::Ulid::from_string(value).map(Self)
     }
+}
+
+impl Default for Ulid {
+    fn default() -> Self {
+        Self(ulid::Ulid::nil())
+    }
+}
+
+impl std::fmt::Display for Ulid {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+/// Generates a canonical uppercase 26-character ULID string.
+pub fn new_ulid() -> String {
+    Ulid::new().to_string()
 }
 
 /// Domain error type shared across crates.
@@ -119,11 +133,26 @@ mod tests {
 
     #[test]
     fn ulid_roundtrips_as_string() {
-        let id = Ulid(uuid::Uuid::now_v7());
+        let id = Ulid::new();
         let json = serde_json::to_string(&id).unwrap();
-        assert!(json.starts_with('"'));
+        let encoded = json.trim_matches('"');
+        assert_eq!(encoded.len(), 26);
+        assert!(encoded
+            .chars()
+            .all(|character| character.is_ascii_digit() || ('A'..='Z').contains(&character)));
         let back: Ulid = serde_json::from_str(&json).unwrap();
         assert_eq!(back, id);
+    }
+
+    #[test]
+    fn known_ulid_keeps_go_wire_shape() {
+        let encoded = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+        let id = Ulid::from_string(encoded).unwrap();
+        assert_eq!(id.to_string(), encoded);
+        assert_eq!(
+            serde_json::to_string(&id).unwrap(),
+            format!("\"{encoded}\"")
+        );
     }
 
     #[test]

@@ -245,7 +245,7 @@ impl<H: HubFanout + 'static> ShardedStreamRelay<H> {
             hub,
             write_conn,
             read_client,
-            node_id: ulid::Ulid::new().to_string(),
+            node_id: cordy_util::new_ulid(),
             config,
             ttl,
             shutdown: CancellationToken::new(),
@@ -791,7 +791,7 @@ impl<H: HubFanout + 'static> RelayPublisher for ShardedStreamRelay<H> {
 #[async_trait]
 impl<H: HubFanout + 'static> Broadcaster for ShardedStreamRelay<H> {
     async fn broadcast_to_scope(&self, scope_type: &str, scope_id: &str, message: &[u8]) {
-        let id = ulid::Ulid::new().to_string();
+        let id = cordy_util::new_ulid();
         let _ = self
             .publish_with_id_inner(scope_type, scope_id, "", message, &id)
             .await;
@@ -799,14 +799,14 @@ impl<H: HubFanout + 'static> Broadcaster for ShardedStreamRelay<H> {
 
     async fn send_to_user(&self, user_id: &str, message: &[u8], exclude_workspace: Option<&str>) {
         let exclude = exclude_workspace.unwrap_or("");
-        let id = ulid::Ulid::new().to_string();
+        let id = cordy_util::new_ulid();
         let _ = self
             .publish_with_id_inner(SCOPE_USER, user_id, exclude, message, &id)
             .await;
     }
 
     async fn broadcast(&self, message: &[u8]) {
-        let id = ulid::Ulid::new().to_string();
+        let id = cordy_util::new_ulid();
         let _ = self
             .publish_with_id_inner("global", "all", "", message, &id)
             .await;
