@@ -55,9 +55,35 @@ pub fn env_filter(explicit: Option<&str>, default_filter: &str) -> EnvFilter {
     }
 
     if let Ok(log_level) = std::env::var("LOG_LEVEL") {
-        return EnvFilter::new(parse_level(&log_level).to_string());
+        return EnvFilter::new(scoped_log_level_filter(
+            default_filter,
+            parse_level(&log_level),
+        ));
     }
     EnvFilter::new(default_filter)
+}
+
+fn scoped_log_level_filter(default_filter: &str, level: LevelFilter) -> String {
+    let directives = default_filter
+        .split(',')
+        .map(str::trim)
+        .filter(|directive| !directive.is_empty())
+        .collect::<Vec<_>>();
+    let has_scoped_directive = directives.iter().any(|directive| directive.contains('='));
+    if !has_scoped_directive {
+        return level.to_string();
+    }
+
+    directives
+        .into_iter()
+        .map(|directive| {
+            directive.split_once('=').map_or_else(
+                || directive.to_string(),
+                |(target, _)| format!("{target}={level}"),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// Initializes the process-global tracing subscriber with the shared log
@@ -76,7 +102,7 @@ pub fn init(default_filter: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
 /// Callers can enter the span around a standalone component's work while
 /// retaining the same global subscriber and filter policy.
 pub fn component_span(component: &str) -> tracing::Span {
-    tracing::info_span!("component", component = component)
+    tracing::warn_span!("component", component = component)
 }
 
 #[cfg(test)]
@@ -107,5 +133,18 @@ mod tests {
                 Some("component")
             );
         });
+    }
+
+    #[test]
+    fn log_level_overrides_application_scopes_without_widening_dependencies() {
+        assert_eq!(
+            scoped_log_level_filter("cordy=info,tower=info", LevelFilter::DEBUG),
+            "cordy=debug,tower=debug"
+        );
+        assert_eq!(
+            scoped_log_level_filter("cordy=info,tower=off", LevelFilter::WARN),
+            "cordy=warn,tower=warn"
+        );
+        assert_eq!(scoped_log_level_filter("info", LevelFilter::ERROR), "error");
     }
 }
