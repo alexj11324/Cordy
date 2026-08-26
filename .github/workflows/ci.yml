@@ -84,6 +84,8 @@ jobs:
               - '.env.example'
               - 'docker-compose.selfhost.yml'
               - 'docker-compose.selfhost.build.yml'
+              - 'Dockerfile.web'
+              - '.dockerignore'
               - 'Makefile'
             # Go remains compatibility-test relevant during the migration,
             # while Rust owns the deployed server and migration gates.
@@ -92,6 +94,7 @@ jobs:
               - 'server/**'
               - 'deploy/helm/**'
               - 'Dockerfile'
+              - '.dockerignore'
               - 'docker/**'
               - 'docker-compose.selfhost.yml'
               - 'docker-compose.selfhost.build.yml'
