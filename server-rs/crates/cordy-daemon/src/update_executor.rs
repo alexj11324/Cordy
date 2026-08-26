@@ -907,66 +907,8 @@ fn replace_binary(temporary: &Path, executable: &Path) -> Result<()> {
 }
 
 fn resolve_executable() -> Result<PathBuf> {
-    if let Ok(path) = std::env::current_exe() {
-        return validate_executable(path);
-    }
-    let argv0 = std::env::args_os()
-        .next()
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            UpdateExecutorError::new(UpdateFailureKind::ResolveExecutable, "argv[0] is empty")
-        })?;
-    let candidate = if Path::new(&argv0).components().count() > 1 {
-        std::env::current_dir()
-            .map_err(|err| {
-                classified_io(
-                    UpdateFailureKind::ResolveExecutable,
-                    "read current directory",
-                    err,
-                )
-            })?
-            .join(argv0)
-    } else {
-        find_on_path(&argv0).ok_or_else(|| {
-            UpdateExecutorError::new(
-                UpdateFailureKind::ResolveExecutable,
-                "executable is absent from PATH",
-            )
-        })?
-    };
-    validate_executable(candidate)
-}
-
-fn validate_executable(path: PathBuf) -> Result<PathBuf> {
-    let absolute = if path.is_absolute() {
-        path
-    } else {
-        std::env::current_dir()
-            .map_err(|err| {
-                classified_io(
-                    UpdateFailureKind::ResolveExecutable,
-                    "read current directory",
-                    err,
-                )
-            })?
-            .join(path)
-    };
-    let metadata = fs::metadata(&absolute).map_err(|err| {
-        classified_io(UpdateFailureKind::ResolveExecutable, "stat executable", err)
-    })?;
-    if !metadata.is_file() {
-        return Err(UpdateExecutorError::new(
-            UpdateFailureKind::ResolveExecutable,
-            "resolved executable is not a regular file",
-        ));
-    }
-    Ok(absolute)
-}
-
-fn find_on_path(name: &OsStr) -> Option<PathBuf> {
-    std::env::split_paths(&std::env::var_os("PATH")?).find_map(|directory| {
-        let candidate = directory.join(name);
-        candidate.is_file().then_some(candidate)
+    cordy_util::self_exec::resolve().map_err(|error| {
+        UpdateExecutorError::new(UpdateFailureKind::ResolveExecutable, error.to_string())
     })
 }
 

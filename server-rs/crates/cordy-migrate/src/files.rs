@@ -9,7 +9,7 @@ const CANDIDATE_LEAVES: [&str; 2] = ["migrations", "server/migrations"];
 /// (then the executable's directory), matching the Go runner's resolution.
 pub fn resolve_dir() -> anyhow::Result<PathBuf> {
     let mut roots = vec![std::env::current_dir()?];
-    if let Ok(exe) = std::env::current_exe() {
+    if let Ok(exe) = cordy_util::self_exec::resolve() {
         if let Some(dir) = exe.parent() {
             roots.push(dir.to_path_buf());
         }
