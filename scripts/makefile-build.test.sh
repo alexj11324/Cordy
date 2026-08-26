@@ -119,11 +119,11 @@ for target in build rust-build; do
   rust_build_output="$(make -n "$target")"
   grep -Fq -- "cargo build --release --locked -p cordy-server -p cordy-cli -p cordy-migrate" <<<"$rust_build_output" ||
     fail "$target: expected the Rust release build, got:\n$rust_build_output"
-  for artifact in cordy-server cordy-cli cordy-migrate; do
+  for artifact in cordy-server cordy cordy-migrate; do
     grep -Fq -- "cp server-rs/target/release/${artifact}" <<<"$rust_build_output" ||
       fail "$target: expected Rust artifact ${artifact} to be copied, got:\n$rust_build_output"
   done
-  if grep -Fq -- "go build" <<<"$rust_build_output"; then
+  if grep -Eq -- '(^|[[:space:];])go[[:space:]]+build([[:space:]]|$)' <<<"$rust_build_output"; then
     fail "$target: unexpectedly resolved to the legacy Go build:\n$rust_build_output"
   fi
 done
