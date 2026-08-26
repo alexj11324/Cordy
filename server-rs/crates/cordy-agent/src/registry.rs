@@ -6,6 +6,7 @@ use std::sync::Arc;
 use crate::antigravity::{AntigravityBackend, AntigravityConfig};
 use crate::claude::{ClaudeBackend, ClaudeConfig};
 use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
+use crate::codex::{CodexBackend, CodexConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
 use crate::copilot::{CopilotBackend, CopilotConfig};
@@ -64,6 +65,10 @@ pub fn build_backend(
             env: config.env,
         }))),
         "copilot" => Ok(Arc::new(CopilotBackend::new(CopilotConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "codex" => Ok(Arc::new(CodexBackend::new(CodexConfig {
             command: config.command,
             env: config.env,
         }))),
@@ -550,6 +555,8 @@ mod tests {
         assert!(claude.is_ok());
         let copilot = build_backend("copilot", BackendConfig::default());
         assert!(copilot.is_ok());
+        let codex = build_backend("codex", BackendConfig::default());
+        assert!(codex.is_ok());
 
         let cursor = build_backend("cursor", BackendConfig::default());
         assert!(cursor.is_ok());
