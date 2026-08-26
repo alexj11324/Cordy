@@ -179,7 +179,7 @@ impl ProductionProviderAdapter {
                 Some(runtime.activity().mark_stores(paths).await)
             }
         };
-        let requested_session_id = plan.resume_session_id().to_string();
+        let mut requested_session_id = plan.resume_session_id().to_string();
 
         let client = runtime.client();
         let prepare_lease = PrepareLeaseExtender::start(
@@ -247,6 +247,17 @@ impl ProductionProviderAdapter {
             if !resumed && !task.prior_session_id.is_empty() {
                 task.prior_session_id.clear();
                 task.prior_session_resume_unavailable = true;
+            }
+            if target.provider == "hermes"
+                && should_drop_hermes_resume_for_missing_history(
+                    &requested_session_id,
+                    environment.hermes_session_history_present,
+                )
+            {
+                requested_session_id.clear();
+                task.prior_session_id.clear();
+                task.prior_session_resume_unavailable = true;
+                plan.drop_resume();
             }
             let bound = plan.bind_environment(
                 &environment,
@@ -846,6 +857,13 @@ fn should_retry_with_fresh_session(
         && tools_seen == 0
 }
 
+fn should_drop_hermes_resume_for_missing_history(
+    requested_session_id: &str,
+    history_present: bool,
+) -> bool {
+    !requested_session_id.is_empty() && !history_present
+}
+
 fn result_outcome(
     provider: &str,
     result: ExecutionResult,
@@ -1138,6 +1156,19 @@ mod tests {
             "old-session",
             0,
         ));
+    }
+
+    #[test]
+    fn hermes_resume_requires_persisted_session_history() {
+        assert!(should_drop_hermes_resume_for_missing_history(
+            "old-session",
+            false
+        ));
+        assert!(!should_drop_hermes_resume_for_missing_history(
+            "old-session",
+            true
+        ));
+        assert!(!should_drop_hermes_resume_for_missing_history("", false));
     }
 
     #[test]

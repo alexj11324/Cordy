@@ -302,15 +302,6 @@ fn platform_default_home() -> String {
         .unwrap_or_else(|| std::env::temp_dir().join(".hermes").display().to_string())
 }
 
-fn platform_user_home() -> Option<PathBuf> {
-    let key = if cfg!(windows) { "USERPROFILE" } else { "HOME" };
-    std::env::var_os(key)
-        .filter(|value| !value.is_empty())
-        .or_else(|| std::env::var_os("HOME").filter(|value| !value.is_empty()))
-        .or_else(|| std::env::var_os("USERPROFILE").filter(|value| !value.is_empty()))
-        .map(PathBuf::from)
-}
-
 fn absolute_clean(path: &str) -> String {
     let path = PathBuf::from(path);
     if path.is_absolute() {
@@ -385,7 +376,7 @@ fn resolve_path_best_effort(path: &Path) -> PathBuf {
 fn read_active_profile(root: &str) -> Option<String> {
     let raw = fs::read_to_string(Path::new(root).join("active_profile")).ok()?;
     let value = raw.trim().to_ascii_lowercase();
-    (!value.is_empty()).then_some(value)
+    (!value.is_empty() && value != "default").then_some(value)
 }
 
 /// Persistent store path used by the daemon's profile-scoped execution plan.
@@ -435,28 +426,17 @@ pub fn hermes_session_store_path(
 }
 
 fn profile_dir(profile: &str) -> Option<PathBuf> {
-    if profile.contains(['/', '\\']) || matches!(profile, "." | "..") {
+    if profile.is_empty()
+        || profile == "."
+        || profile == ".."
+        || Path::new(profile).is_absolute()
+        || profile.split(['/', '\\']).any(|segment| {
+            segment.is_empty() || segment == "." || segment == ".."
+        })
+    {
         return None;
     }
-    if let Some(root) = std::env::var_os("CORDY_TASK_CONFIG_ROOT")
-        .filter(|value| !value.is_empty())
-    {
-        let root = PathBuf::from(root);
-        if !root.is_absolute() {
-            return None;
-        }
-        return Some(if profile.is_empty() {
-            root
-        } else {
-            root.join("profiles").join(profile)
-        });
-    }
-    let home = platform_user_home()?;
-    Some(if profile.is_empty() {
-        home.join(".cordy")
-    } else {
-        home.join(".cordy").join("profiles").join(profile)
-    })
+    crate::identity::profile_dir(profile).ok()
 }
 
 fn safe_segment(value: &str) -> String {
@@ -564,13 +544,7 @@ fn prepare_task_local_state(home: &str) -> anyhow::Result<()> {
         }
         return Ok(());
     }
-    for entry in fs::read_dir(home)? {
-        let entry = entry?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if is_state_entry(&name) {
-            remove_path(&entry.path())?;
-        }
-    }
+    remove_state_files_at(Path::new(home))?;
     atomic_write(&marker, b"task-local Hermes state\n", 0o600)
 }
 
@@ -924,11 +898,24 @@ fn has_session_db(store: &Path) -> bool {
 }
 
 fn migrate_session_files(overlay: &str, store: &Path) -> anyhow::Result<()> {
-    let files = fs::read_dir(overlay)?
-        .filter_map(Result::ok)
-        .filter(|entry| is_state_entry(&entry.file_name().to_string_lossy()))
-        .filter(|entry| entry.file_type().map(|f| f.is_file()).unwrap_or(false))
-        .collect::<Vec<_>>();
+    let mut files = Vec::new();
+    for entry in fs::read_dir(overlay)? {
+        let entry = entry?;
+        if !is_state_entry(&entry.file_name().to_string_lossy()) {
+            continue;
+        }
+        let file_type = entry.file_type()?;
+        if file_type.is_file() || file_type.is_symlink() {
+            if file_type.is_file() {
+                files.push(entry);
+            }
+        } else {
+            bail!(
+                "refusing to migrate unexpected Hermes session entry {:?}",
+                entry.path()
+            );
+        }
+    }
     if files.is_empty() {
         return Ok(());
     }
@@ -1011,6 +998,13 @@ fn remove_state_files_at(dir: &Path) -> anyhow::Result<()> {
     for entry in fs::read_dir(dir)? {
         let entry = entry?;
         if is_state_entry(&entry.file_name().to_string_lossy()) {
+            let file_type = entry.file_type()?;
+            if !file_type.is_file() && !file_type.is_symlink() {
+                bail!(
+                    "refusing to remove unexpected Hermes session entry {:?}",
+                    entry.path()
+                );
+            }
             remove_path(&entry.path())?;
         }
     }
@@ -1139,6 +1133,23 @@ mod tests {
     }
 
     #[test]
+    fn profile_resolution_ignores_sticky_default_for_custom_home() {
+        let root = tempdir().unwrap();
+        let custom = root.path().join("team-a");
+        fs::create_dir_all(&custom).unwrap();
+        fs::write(custom.join("active_profile"), "default\n").unwrap();
+        let resolution = resolve_hermes_profile(&custom.display().to_string(), None);
+        assert_eq!(resolution.source_home, custom.display().to_string());
+        assert!(!resolution.must_exist);
+    }
+
+    #[test]
+    fn nested_cordy_profiles_have_persistent_hermes_store_paths() {
+        let store = hermes_memory_store_path("team/dev", "agent-1", "/tmp/hermes");
+        assert!(store.contains("profiles/team/dev/hermes-state/agent-1/"));
+    }
+
+    #[test]
     fn profile_root_reuses_native_root_for_nested_and_symlinked_homes() {
         let root = tempdir().unwrap();
         let native = root.path().join("native-hermes");
@@ -1235,5 +1246,14 @@ mod tests {
             .file_type()
             .is_symlink());
         assert!(has_session_db(&session));
+    }
+
+    #[test]
+    fn session_cleanup_rejects_unexpected_directory_entries() {
+        let root = tempdir().unwrap();
+        fs::create_dir(root.path().join("state.db-wal")).unwrap();
+        let error = remove_state_files_at(root.path()).unwrap_err();
+        assert!(error.to_string().contains("unexpected Hermes session entry"));
+        assert!(root.path().join("state.db-wal").is_dir());
     }
 }

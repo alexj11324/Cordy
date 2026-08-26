@@ -152,6 +152,12 @@ static HERMES_SESSION_PROVIDER_ERROR: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?im)^\s*(?:RuntimeError:\s*)?No LLM provider configured[^\r\n]*")
         .unwrap_or_else(|error| panic!("invalid Hermes provider-error regex: {error}"))
 });
+static HERMES_LOG_RECORD_PREFIX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}(?:,[0-9]+)? \[([A-Z]+)\] ([A-Za-z0-9_.-]+):\s*(.*)$",
+    )
+    .unwrap_or_else(|error| panic!("invalid Hermes log-record regex: {error}"))
+});
 const HERMES_PROVIDER_UNCONFIGURED_HINT: &str =
     " [cordy] hermes did not read the HERMES_HOME your shell uses: this task ran against a per-task overlay, seeded from the home the daemon process resolved. The daemon log line \"hermes home resolved\" for this task names that source home — if your hermes config lives somewhere else, set HERMES_HOME in the agent's custom_env to point at it.";
 
@@ -161,6 +167,11 @@ struct ProviderErrorState {
     marker: bool,
     error_kind: bool,
     found: bool,
+    diagnostic: Vec<u8>,
+    echo_record: bool,
+    echo_depth: usize,
+    echo_in_string: bool,
+    echo_escaped: bool,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -178,45 +189,181 @@ impl ProviderErrorTracker {
             let mut window = Vec::with_capacity(state.suffix.len().saturating_add(segment.len()));
             window.extend_from_slice(&state.suffix);
             window.extend_from_slice(segment);
-            let rendered = String::from_utf8_lossy(&window);
-            let lower = rendered.to_ascii_lowercase();
-            state.marker |=
-                lower.contains("[error]") || rendered.contains('⚠') || rendered.contains('❌');
-            state.error_kind |= [
-                "badrequesterror",
-                "authenticationerror",
-                "ratelimiterror",
-                "non-retryable",
-                "api call failed",
-            ]
-            .iter()
-            .any(|needle| lower.contains(needle))
-                || (lower.contains("http ")
-                    && lower.split("http ").skip(1).any(|tail| {
-                        tail.as_bytes().get(..3).is_some_and(|code| {
-                            code[0] == b'4' && code.iter().all(u8::is_ascii_digit)
-                        })
-                    }));
-            let transient_retry_warning = is_transient_retry_warning(&rendered);
-            state.found |= !transient_retry_warning
-                && (TERMINAL_PROVIDER_ERROR.is_match(&rendered)
-                    || (state.marker && state.error_kind));
-            if ends_line {
+            if !ends_line {
+                if state.echo_record {
+                    if state.echo_depth > 0 {
+                        state.consume_echo_json(&String::from_utf8_lossy(segment));
+                    }
+                    state.suffix.clear();
+                    continue;
+                }
+                let rendered = String::from_utf8_lossy(&window);
+                if let Some(captures) = HERMES_LOG_RECORD_PREFIX.captures(rendered.trim()) {
+                    let level = captures.get(1).map(|value| value.as_str());
+                    let logger = captures.get(2).map(|value| value.as_str());
+                    if matches!(level, Some("INFO" | "DEBUG")) && logger == Some("root") {
+                        state.start_echo(
+                            captures
+                                .get(3)
+                                .map(|value| value.as_str())
+                                .unwrap_or_default(),
+                        );
+                        state.suffix.clear();
+                        continue;
+                    }
+                }
                 state.suffix.clear();
-                state.marker = false;
-                state.error_kind = false;
-            } else {
-                const SUFFIX_BYTES: usize = 256;
-                state.suffix.clear();
-                let start = window.len().saturating_sub(SUFFIX_BYTES);
-                state.suffix.extend_from_slice(&window[start..]);
+                state.suffix.extend_from_slice(&window);
+                retain_tail(&mut state.suffix, 256);
+                continue;
             }
+
+            let rendered = String::from_utf8_lossy(&window);
+            let echoed = process_provider_error_line(&mut state, &rendered);
+            if !echoed {
+                state.diagnostic.extend_from_slice(&window);
+                retain_tail(&mut state.diagnostic, DEFAULT_TAIL_BYTES);
+            }
+            state.suffix.clear();
         }
     }
 
     fn found(&self) -> bool {
         self.state.lock().is_ok_and(|state| state.found)
     }
+
+    fn diagnostic_tail(&self) -> String {
+        self.state
+            .lock()
+            .map(|state| String::from_utf8_lossy(&state.diagnostic).into_owned())
+            .unwrap_or_default()
+    }
+}
+
+impl ProviderErrorState {
+    fn start_echo(&mut self, payload: &str) {
+        self.echo_record = true;
+        self.echo_depth = 0;
+        self.echo_in_string = false;
+        self.echo_escaped = false;
+        let payload = payload.trim();
+        if payload.starts_with('{') || payload.starts_with('[') {
+            self.consume_echo_json(payload);
+        }
+    }
+
+    fn consume_echo_json(&mut self, fragment: &str) {
+        for byte in fragment.bytes() {
+            if self.echo_escaped {
+                self.echo_escaped = false;
+                continue;
+            }
+            if self.echo_in_string {
+                match byte {
+                    b'\\' => self.echo_escaped = true,
+                    b'"' => self.echo_in_string = false,
+                    _ => {}
+                }
+                continue;
+            }
+            match byte {
+                b'"' => self.echo_in_string = true,
+                b'{' | b'[' => self.echo_depth = self.echo_depth.saturating_add(1),
+                b'}' | b']' => self.echo_depth = self.echo_depth.saturating_sub(1),
+                _ => {}
+            }
+        }
+    }
+
+    fn reset_echo(&mut self) {
+        self.echo_record = false;
+        self.echo_depth = 0;
+        self.echo_in_string = false;
+        self.echo_escaped = false;
+    }
+}
+
+fn retain_tail(target: &mut Vec<u8>, max_bytes: usize) {
+    if target.len() > max_bytes {
+        let drop = target.len() - max_bytes;
+        target.drain(..drop);
+    }
+}
+
+fn process_provider_error_line(state: &mut ProviderErrorState, raw_line: &str) -> bool {
+    let line = raw_line.trim_end_matches(['\r', '\n']).trim();
+    if line.is_empty() {
+        state.marker = false;
+        state.error_kind = false;
+        return false;
+    }
+
+    if let Some(captures) = HERMES_LOG_RECORD_PREFIX.captures(line) {
+        state.reset_echo();
+        let level = captures.get(1).map(|value| value.as_str());
+        let logger = captures.get(2).map(|value| value.as_str());
+        if matches!(level, Some("INFO" | "DEBUG")) && logger == Some("root") {
+            state.start_echo(
+                captures
+                    .get(3)
+                    .map(|value| value.as_str())
+                    .unwrap_or_default(),
+            );
+            state.marker = false;
+            state.error_kind = false;
+            if state.echo_depth == 0 {
+                state.reset_echo();
+            }
+            return true;
+        }
+    } else if state.echo_record {
+        if state.echo_depth == 0 {
+            state.reset_echo();
+            state.marker = false;
+            state.error_kind = false;
+            return true;
+        }
+        let indented = raw_line
+            .as_bytes()
+            .first()
+            .is_some_and(|byte| *byte == b' ' || *byte == b'\t');
+        let bare_error =
+            line.starts_with('⚠') || line.starts_with('❌') || line.starts_with("[ERROR]");
+        if !(bare_error && !indented && TERMINAL_PROVIDER_ERROR.is_match(line)) {
+            state.consume_echo_json(raw_line);
+            if state.echo_depth == 0 {
+                state.reset_echo();
+            }
+            state.marker = false;
+            state.error_kind = false;
+            return true;
+        }
+        state.reset_echo();
+    }
+
+    let lower = line.to_ascii_lowercase();
+    state.marker = lower.contains("[error]") || line.contains('⚠') || line.contains('❌');
+    state.error_kind = [
+        "badrequesterror",
+        "authenticationerror",
+        "ratelimiterror",
+        "non-retryable",
+        "api call failed",
+    ]
+    .iter()
+    .any(|needle| lower.contains(needle))
+        || (lower.contains("http ")
+            && lower.split("http ").skip(1).any(|tail| {
+                tail.as_bytes()
+                    .get(..3)
+                    .is_some_and(|code| code[0] == b'4' && code.iter().all(u8::is_ascii_digit))
+            }));
+    let transient_retry_warning = is_transient_retry_warning(line);
+    state.found |= !transient_retry_warning
+        && (TERMINAL_PROVIDER_ERROR.is_match(line) || (state.marker && state.error_kind));
+    state.marker = false;
+    state.error_kind = false;
+    false
 }
 
 fn is_transient_retry_warning(line: &str) -> bool {
@@ -1406,13 +1553,18 @@ impl Backend for QoderBackend {
                 stderr_task.abort();
             }
             let stderr = stderr_tail.tail();
+            let diagnostic_stderr = if provider == "hermes" {
+                terminal_stderr.diagnostic_tail()
+            } else {
+                stderr.clone()
+            };
             let promote_provider_error = outcome.status == "completed"
                 || (provider == "hermes" && outcome.error == HERMES_RESUME_LOST_ERROR);
             if promote_provider_error {
                 if let Some(provider_error) = provider_error(
                     &provider,
                     terminal_stderr.found(),
-                    &stderr,
+                    &diagnostic_stderr,
                     &outcome.full_output,
                 ) {
                     outcome.status = "failed".to_string();
@@ -3971,6 +4123,58 @@ mod tests {
         tracker.push(terminal.as_bytes());
         assert!(tracker.found());
         assert!(provider_error("hermes", false, terminal, "").is_some());
+    }
+
+    #[test]
+    fn hermes_info_echo_records_do_not_promote_provider_errors() {
+        let tracker = ProviderErrorTracker::default();
+        let stream = "2026-07-24 10:09:00 [INFO] root: {\n"
+            .to_string()
+            + "  \"content\": \"❌ Error: quoted KeyError and HTTP 429\"\n"
+            + "}\n"
+            + "2026-07-24 10:09:01 [ERROR] acp_adapter.server: ❌ API call failed after 3 retries: HTTP 429\n";
+        tracker.push(stream.as_bytes());
+        assert!(tracker.found());
+        let info_only = ProviderErrorTracker::default();
+        info_only.push(
+            "2026-07-24 10:09:00 [INFO] root: {\"content\":\"❌ API call failed after 3 retries: HTTP 429\"}\n"
+                .as_bytes(),
+        );
+        assert!(!info_only.found());
+        assert_eq!(
+            provider_error("hermes", false, &info_only.diagnostic_tail(), ""),
+            None
+        );
+    }
+
+    #[test]
+    fn hermes_split_info_echo_records_ignore_oversized_payloads() {
+        let tracker = ProviderErrorTracker::default();
+        let echo = format!(
+            "2026-07-24 10:09:00 [INFO] root: {{\"content\":\"{} ❌ Error: quoted KeyError and HTTP 429\"}}\n",
+            "reference documentation body ".repeat(512)
+        );
+        for chunk in echo.as_bytes().chunks(17) {
+            tracker.push(chunk);
+        }
+        assert!(!tracker.found());
+        assert_eq!(
+            provider_error("hermes", false, &tracker.diagnostic_tail(), ""),
+            None
+        );
+    }
+
+    #[test]
+    fn hermes_split_info_echo_does_not_hide_a_real_error_record() {
+        let tracker = ProviderErrorTracker::default();
+        let echo = "2026-07-24 10:09:00 [INFO] root: {\"content\":\"ordinary echo\"}\n";
+        for chunk in echo.as_bytes().chunks(11) {
+            tracker.push(chunk);
+        }
+        tracker.push(
+            b"2026-07-24 10:09:01 [ERROR] acp_adapter.server: \xE2\x9D\x8C API call failed after 3 retries: HTTP 429\n",
+        );
+        assert!(tracker.found());
     }
 
     #[test]
