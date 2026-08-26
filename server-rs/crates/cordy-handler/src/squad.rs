@@ -84,8 +84,6 @@ impl From<Squad> for SquadResponse {
             name: value.name,
             description: value.description,
             instructions: value.instructions,
-            // HandlerState does not yet carry the Go object-store signer. This
-            // is the same raw-URL branch Go uses when storage is disabled.
             avatar_url: value.avatar_url,
             leader_id: value.leader_id.to_string(),
             creator_id: value.creator_id.to_string(),
@@ -96,6 +94,19 @@ impl From<Squad> for SquadResponse {
             member_count: 0,
             member_preview: Vec::new(),
         }
+    }
+}
+
+impl SquadResponse {
+    /// Resolves the durable object URL at read time, matching Go's
+    /// `resolveAvatarURLPtr`. Persisted squad rows keep the raw object URL;
+    /// private object storage receives the same signed capability endpoint as
+    /// users, agents, and workspaces.
+    fn resolve_avatar_url(&mut self, state: &HandlerState) {
+        self.avatar_url = self
+            .avatar_url
+            .take()
+            .map(|raw| crate::avatar::resolve_url(state, &raw));
     }
 }
 
@@ -132,6 +143,7 @@ async fn response_with_preview(
         add_preview(&mut summary, row.member_type, row.member_id, row.role);
     }
     let mut response = SquadResponse::from(value);
+    response.resolve_avatar_url(state);
     apply_summary(&mut response, Some(summary));
     Ok(response)
 }
@@ -425,6 +437,7 @@ async fn list(
         .map(|value| {
             let id = value.id;
             let mut response = SquadResponse::from(value);
+            response.resolve_avatar_url(&state);
             apply_summary(&mut response, summaries.remove(&id));
             response
         })
