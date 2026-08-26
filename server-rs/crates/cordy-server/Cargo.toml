@@ -3,6 +3,7 @@ name = "cordy-server"
 description = "Cordy HTTP server (axum) — Rust replacement for cmd/server"
 version.workspace = true
 edition.workspace = true
+build = "build.rs"
 license.workspace = true
 
 [[bin]]
