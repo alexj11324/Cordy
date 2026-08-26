@@ -81,9 +81,10 @@ make start            # start backend + frontend
 make stop             # stop app processes for this checkout
 make db-drop          # permanently drop this checkout's local database
 make remove-worktree WORKTREE=../path  # drop a linked worktree DB, then remove it
-make server           # run Go server only
+make server           # run Rust server only
+make go-server        # run legacy Go server only
 make daemon           # run local daemon
-make test             # Go tests
+make test             # local verification (Rust-first)
 make sqlc             # regenerate sqlc code after SQL changes
 pnpm install
 pnpm dev:web
