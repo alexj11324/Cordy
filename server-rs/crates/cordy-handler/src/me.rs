@@ -124,9 +124,6 @@ impl From<&User> for UserResponse {
             id: user.id.to_string(),
             name: user.name.clone(),
             email: user.email.clone(),
-            // Current Rust handler state has no storage signer. This is the
-            // same raw-URL branch the Go handler uses when Storage/CFSigner
-            // are nil; private URL signing lands with the storage slice.
             avatar_url: user.avatar_url.clone(),
             language: user.language.clone(),
             timezone: user.timezone.clone(),
@@ -140,13 +137,32 @@ impl From<&User> for UserResponse {
     }
 }
 
+impl UserResponse {
+    /// Resolves the durable object URL at read time, matching Go's
+    /// `resolveAvatarURLPtr` used by `userToResponse`. Persisted user rows
+    /// keep the raw object URL; private object storage receives the same
+    /// signed capability endpoint as other user-facing resources.
+    fn resolve_avatar_url(&mut self, state: &HandlerState) {
+        self.avatar_url = self
+            .avatar_url
+            .take()
+            .map(|raw| crate::avatar::resolve_url(state, &raw));
+    }
+}
+
+fn resolved_user_response(state: &HandlerState, user: &User) -> UserResponse {
+    let mut response = UserResponse::from(user);
+    response.resolve_avatar_url(state);
+    response
+}
+
 async fn get_me(State(state): State<HandlerState>, headers: HeaderMap) -> Response {
     let user_id = match authenticated_user_id(&headers) {
         Some(user_id) => user_id,
         None => return error_response(StatusCode::UNAUTHORIZED, "user not authenticated"),
     };
     match user::get_user(&state.pool, user_id).await {
-        Ok(Some(user)) => Json(UserResponse::from(&user)).into_response(),
+        Ok(Some(user)) => Json(resolved_user_response(&state, &user)).into_response(),
         Ok(None) | Err(_) => error_response(StatusCode::NOT_FOUND, "user not found"),
     }
 }
@@ -181,7 +197,17 @@ async fn update_me(State(state): State<HandlerState>, headers: HeaderMap, body: 
         }
         None => current_user.name.clone(),
     };
-    let avatar_url = request.avatar_url.map(|value| value.trim().to_string());
+    let avatar_url = match request.avatar_url {
+        Some(value) => {
+            match crate::avatar::accept_url(&state, &value, current_user.avatar_url.as_deref())
+                .await
+            {
+                Ok(value) => Some(value),
+                Err(message) => return error_response(StatusCode::FORBIDDEN, message),
+            }
+        }
+        None => None,
+    };
     let language = match request.language {
         Some(language) => {
             let language = language.trim().to_string();
@@ -227,7 +253,7 @@ async fn update_me(State(state): State<HandlerState>, headers: HeaderMap, body: 
     )
     .await
     {
-        Ok(Some(user)) => Json(UserResponse::from(&user)).into_response(),
+        Ok(Some(user)) => Json(resolved_user_response(&state, &user)).into_response(),
         Ok(None) | Err(_) => {
             error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update user")
         }
@@ -326,7 +352,7 @@ async fn patch_onboarding(
         );
     }
 
-    Json(UserResponse::from(&updated)).into_response()
+    Json(resolved_user_response(&state, &updated)).into_response()
 }
 
 async fn complete_onboarding(
@@ -399,7 +425,7 @@ async fn complete_onboarding(
         );
     }
 
-    Json(UserResponse::from(&updated)).into_response()
+    Json(resolved_user_response(&state, &updated)).into_response()
 }
 
 async fn join_cloud_waitlist(
@@ -445,7 +471,7 @@ async fn join_cloud_waitlist(
         &state,
         &cordy_analytics::cloud_waitlist_joined(&user_id.to_string(), reason.is_some()),
     );
-    Json(UserResponse::from(&updated)).into_response()
+    Json(resolved_user_response(&state, &updated)).into_response()
 }
 
 fn valid_email_address(value: &str) -> bool {
