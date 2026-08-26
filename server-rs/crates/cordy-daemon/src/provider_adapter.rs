@@ -48,8 +48,14 @@ use crate::remote_mcp_broker::{
 use crate::repocache::Ctx;
 use crate::runtime_mcp;
 use crate::runtime_registry::RuntimeRegistry;
+use crate::skill_cache::{
+    skill_bundle_resolve_timeout, skill_ref_from_bundle, validate_skill_bundle, SkillBundleCache,
+    SOURCE_PLUGIN,
+};
 use crate::task_execution::{TaskRunFailure, TaskRunOutcome};
-use crate::types::{RuntimeExecutionTarget, Task, TaskResult, TaskUsageEntry};
+use crate::types::{
+    RuntimeExecutionTarget, SkillData, SkillRefData, Task, TaskResult, TaskUsageEntry,
+};
 
 const TRANSCRIPT_FLUSH_INTERVAL: Duration = Duration::from_millis(500);
 const TRANSCRIPT_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
@@ -69,6 +75,132 @@ struct TaskMcpBootstrap {
     effective_mcp_config: Option<Value>,
     _remote_brokers: Option<RemoteMCPBrokerSet>,
     _plugin_hook_server: Option<PluginHookMCPSet>,
+}
+
+fn skill_ref_key(source: &str, id: &str) -> String {
+    format!("{source}\x00{id}")
+}
+
+/// Resolves all claim-time skill references before the execution plan is
+/// built. Cache hits and misses are serialized per reference; each miss is
+/// downloaded and persisted independently so a later failure does not discard
+/// successful progress. This mirrors Go's ensureTaskSkillBundles contract.
+async fn ensure_task_skill_bundles(
+    ctx: &Ctx,
+    task: &mut Task,
+    client: &Client,
+    cache: &SkillBundleCache,
+) -> anyhow::Result<()> {
+    let refs = match task.agent.as_ref() {
+        Some(agent) if !agent.skill_refs.is_empty() => agent.skill_refs.clone(),
+        _ => return Ok(()),
+    };
+
+    let mut resolved = HashMap::<String, SkillData>::with_capacity(refs.len());
+    let mut misses = Vec::<SkillRefData>::new();
+    for r#ref in &refs {
+        let cached = cache.with_ref_lock(&task.workspace_id, r#ref, || {
+            cache.load(&task.workspace_id, r#ref)
+        });
+        if let Some(bundle) = cached {
+            resolved.insert(skill_ref_key(&bundle.source, &bundle.id), bundle);
+        } else {
+            misses.push(r#ref.clone());
+        }
+    }
+
+    for r#ref in misses {
+        let started = Instant::now();
+        let result = tokio::time::timeout(
+            skill_bundle_resolve_timeout(r#ref.size_bytes),
+            client.resolve_skill_bundle(ctx, &task.runtime_id, &task.id, r#ref.clone()),
+        )
+        .await;
+        let bundle = match result {
+            Ok(Ok(bundle)) => bundle,
+            Ok(Err(error)) => {
+                return Err(skill_bundle_unavailable(&r#ref, started, error));
+            }
+            Err(_) => {
+                return Err(skill_bundle_unavailable(
+                    &r#ref,
+                    started,
+                    anyhow::anyhow!("resolve deadline exceeded"),
+                ));
+            }
+        };
+        if bundle.id != r#ref.id || bundle.source != r#ref.source {
+            return Err(skill_bundle_unavailable(
+                &r#ref,
+                started,
+                anyhow::anyhow!(
+                    "resolve returned wrong skill: got source={} id={}",
+                    bundle.source,
+                    bundle.id
+                ),
+            ));
+        }
+
+        let validation_ref = if r#ref.source == SOURCE_PLUGIN {
+            r#ref.clone()
+        } else {
+            skill_ref_from_bundle(&bundle)
+        };
+        if !validate_skill_bundle(&validation_ref, &bundle) {
+            return Err(skill_bundle_unavailable(
+                &r#ref,
+                started,
+                anyhow::anyhow!("resolve returned an invalid bundle"),
+            ));
+        }
+        cache.with_ref_lock(&task.workspace_id, &validation_ref, || {
+            if let Err(error) = cache.store(&task.workspace_id, &bundle) {
+                tracing::warn!(
+                    workspace = %task.workspace_id,
+                    skill = %bundle.id,
+                    source = %bundle.source,
+                    %error,
+                    "skill bundle cache store failed; continuing with downloaded bundle"
+                );
+            }
+        });
+        resolved.insert(skill_ref_key(&bundle.source, &bundle.id), bundle);
+    }
+
+    let agent = task
+        .agent
+        .as_mut()
+        .ok_or_else(|| anyhow::anyhow!("skill refs require an agent"))?;
+    agent.skills = refs
+        .iter()
+        .map(|r#ref| {
+            resolved
+                .get(&skill_ref_key(&r#ref.source, &r#ref.id))
+                .cloned()
+                .ok_or_else(|| {
+                    skill_bundle_unavailable(
+                        r#ref,
+                        Instant::now(),
+                        anyhow::anyhow!("bundle missing after resolve"),
+                    )
+                })
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    Ok(())
+}
+
+fn skill_bundle_unavailable(
+    r#ref: &SkillRefData,
+    started: Instant,
+    error: anyhow::Error,
+) -> anyhow::Error {
+    anyhow::anyhow!(
+        "skill bundle unavailable: skill {:?} (id={}, {} bytes) after {:?}: {error}",
+        r#ref.name,
+        r#ref.id,
+        r#ref.size_bytes,
+        started.elapsed(),
+    )
 }
 
 /// Assemble the complete task MCP contract from the claim payload. This is the
@@ -239,6 +371,7 @@ fn merge_optional_mcp_config(
 /// pretend success path.
 pub struct ProductionProviderAdapter {
     config: Arc<Config>,
+    skill_cache: SkillBundleCache,
     local_paths: Arc<LocalPathLocker>,
     started_at: Instant,
     active_tasks: AtomicI64,
@@ -248,8 +381,12 @@ pub struct ProductionProviderAdapter {
 
 impl ProductionProviderAdapter {
     pub fn new(config: Arc<Config>) -> Self {
+        let skill_cache_root = Path::new(&config.workspaces_root)
+            .join(".skill-cache")
+            .join("v1");
         Self {
             config,
+            skill_cache: SkillBundleCache::new(&skill_cache_root.to_string_lossy()),
             local_paths: Arc::new(LocalPathLocker::new()),
             started_at: Instant::now(),
             active_tasks: AtomicI64::new(0),
@@ -312,6 +449,15 @@ impl ProductionProviderAdapter {
             task.runtime_id.clone(),
             task.id.clone(),
         );
+        if let Err(error) =
+            ensure_task_skill_bundles(&ctx, &mut task, &client, &self.skill_cache).await
+        {
+            return failed_with_reason(
+                error,
+                None,
+                cordy_task_failure::Reason::SKILL_BUNDLE_UNAVAILABLE.as_str(),
+            );
+        }
         let default_model = self
             .config
             .agents
@@ -1040,6 +1186,18 @@ fn failed(error: anyhow::Error, environment: Option<&Environment>) -> TaskRunOut
     }
 }
 
+fn failed_with_reason(
+    error: anyhow::Error,
+    environment: Option<&Environment>,
+    failure_reason: &str,
+) -> TaskRunOutcome {
+    let mut outcome = failed(error, environment);
+    if let Some(failure) = outcome.failure.as_mut() {
+        failure.failure_reason = failure_reason.to_string();
+    }
+    outcome
+}
+
 async fn finalize_environment(
     mut outcome: TaskRunOutcome,
     environment: &mut Environment,
@@ -1163,6 +1321,39 @@ mod tests {
     use super::*;
     use cordy_agent::TokenUsage;
 
+    fn resolvable_skill_bundle(
+        source: &str,
+        id: &str,
+        name: &str,
+        content: &str,
+        file_content: Option<&str>,
+    ) -> (SkillData, SkillRefData) {
+        let mut bundle = SkillData {
+            id: id.into(),
+            source: source.into(),
+            name: name.into(),
+            content: content.into(),
+            files: file_content
+                .map(|content| {
+                    vec![crate::types::SkillFileData {
+                        path: "rules.md".into(),
+                        content: content.into(),
+                        ..Default::default()
+                    }]
+                })
+                .unwrap_or_default(),
+            ..Default::default()
+        };
+        let bundle_ref = skill_ref_from_bundle(&bundle);
+        bundle.hash = bundle_ref.hash.clone();
+        bundle.size_bytes = bundle_ref.size_bytes;
+        for (file, file_ref) in bundle.files.iter_mut().zip(&bundle_ref.files) {
+            file.sha256 = file_ref.sha256.clone();
+            file.size_bytes = file_ref.size_bytes;
+        }
+        (bundle, bundle_ref)
+    }
+
     #[test]
     fn tool_input_is_redacted_before_it_becomes_transcript_data() {
         let input = BTreeMap::from([
@@ -1272,6 +1463,201 @@ mod tests {
         let base = Some(serde_json::json!({"native": true}));
         assert_eq!(merge_optional_mcp_config(base.clone(), None).unwrap(), base);
         assert_eq!(merge_optional_mcp_config(None, None).unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn task_skill_bundles_resolve_once_then_use_the_cache() {
+        let mut bundle = SkillData {
+            id: "skill-1".into(),
+            source: "workspace".into(),
+            name: "deploy".into(),
+            content: "main".into(),
+            files: vec![crate::types::SkillFileData {
+                path: "rules.md".into(),
+                content: "rules".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let bundle_ref = skill_ref_from_bundle(&bundle);
+        bundle.hash = bundle_ref.hash.clone();
+        bundle.size_bytes = bundle_ref.size_bytes;
+        bundle.files[0].sha256 = bundle_ref.files[0].sha256.clone();
+        bundle.files[0].size_bytes = bundle_ref.files[0].size_bytes;
+
+        let calls = Arc::new(std::sync::atomic::AtomicI64::new(0));
+        let response_bundle = bundle.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let route = "/api/daemon/runtimes/runtime-1/tasks/task-1/skill-bundles/resolve";
+        let app = axum::Router::new().route(
+            route,
+            axum::routing::post({
+                let calls = Arc::clone(&calls);
+                move || {
+                    calls.fetch_add(1, Ordering::AcqRel);
+                    let response_bundle = response_bundle.clone();
+                    async move { axum::Json(serde_json::json!({"bundles": [response_bundle]})) }
+                }
+            }),
+        );
+        let shutdown = CancellationToken::new();
+        let serve_shutdown = shutdown.clone();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    serve_shutdown.cancelled().await;
+                })
+                .await;
+        });
+
+        let client = Client::new(format!("http://{address}"));
+        let cache_root = tempfile::tempdir().unwrap();
+        let cache = SkillBundleCache::new(&cache_root.path().to_string_lossy());
+        let mut task = Task {
+            id: "task-1".into(),
+            runtime_id: "runtime-1".into(),
+            workspace_id: "workspace-1".into(),
+            agent: Some(crate::types::AgentData {
+                skill_refs: vec![bundle_ref],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        ensure_task_skill_bundles(&Ctx::new(), &mut task, &client, &cache)
+            .await
+            .unwrap();
+        assert_eq!(task.agent.as_ref().unwrap().skills, vec![bundle.clone()]);
+
+        ensure_task_skill_bundles(&Ctx::new(), &mut task, &client, &cache)
+            .await
+            .unwrap();
+        assert_eq!(calls.load(Ordering::Acquire), 1);
+        shutdown.cancel();
+    }
+
+    #[tokio::test]
+    async fn task_skill_bundles_accept_current_workspace_update_and_rekey_cache() {
+        let (_, stale_ref) =
+            resolvable_skill_bundle("workspace", "skill-1", "deploy", "v1", Some("rules-v1"));
+        let (current_bundle, current_ref) =
+            resolvable_skill_bundle("workspace", "skill-1", "deploy", "v2", Some("rules-v2"));
+        assert_ne!(stale_ref.hash, current_ref.hash);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let route = "/api/daemon/runtimes/runtime-1/tasks/task-1/skill-bundles/resolve";
+        let app = axum::Router::new().route(
+            route,
+            axum::routing::post({
+                let current_bundle = current_bundle.clone();
+                move || {
+                    let current_bundle = current_bundle.clone();
+                    async move { axum::Json(serde_json::json!({"bundles": [current_bundle]})) }
+                }
+            }),
+        );
+        let shutdown = CancellationToken::new();
+        let serve_shutdown = shutdown.clone();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    serve_shutdown.cancelled().await;
+                })
+                .await;
+        });
+
+        let client = Client::new(format!("http://{address}"));
+        let cache_root = tempfile::tempdir().unwrap();
+        let cache = SkillBundleCache::new(&cache_root.path().to_string_lossy());
+        let mut task = Task {
+            id: "task-1".into(),
+            runtime_id: "runtime-1".into(),
+            workspace_id: "workspace-1".into(),
+            agent: Some(crate::types::AgentData {
+                skill_refs: vec![stale_ref.clone()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        ensure_task_skill_bundles(&Ctx::new(), &mut task, &client, &cache)
+            .await
+            .unwrap();
+        assert_eq!(
+            task.agent.as_ref().unwrap().skills,
+            vec![current_bundle.clone()]
+        );
+        assert_eq!(
+            cache.load("workspace-1", &current_ref),
+            Some(current_bundle)
+        );
+        assert!(cache.load("workspace-1", &stale_ref).is_none());
+        shutdown.cancel();
+    }
+
+    #[tokio::test]
+    async fn task_skill_bundles_reject_plugin_hash_drift() {
+        let (_, pinned_ref) = resolvable_skill_bundle(
+            SOURCE_PLUGIN,
+            "plugin:review-readiness",
+            "review-readiness",
+            "pinned-content",
+            None,
+        );
+        let (mutated_bundle, mutated_ref) = resolvable_skill_bundle(
+            SOURCE_PLUGIN,
+            "plugin:review-readiness",
+            "review-readiness",
+            "mutated-content",
+            None,
+        );
+        assert_ne!(pinned_ref.hash, mutated_ref.hash);
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let route = "/api/daemon/runtimes/runtime-1/tasks/task-plugin-pin/skill-bundles/resolve";
+        let app = axum::Router::new().route(
+            route,
+            axum::routing::post({
+                let mutated_bundle = mutated_bundle.clone();
+                move || {
+                    let mutated_bundle = mutated_bundle.clone();
+                    async move { axum::Json(serde_json::json!({"bundles": [mutated_bundle]})) }
+                }
+            }),
+        );
+        let shutdown = CancellationToken::new();
+        let serve_shutdown = shutdown.clone();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app)
+                .with_graceful_shutdown(async move {
+                    serve_shutdown.cancelled().await;
+                })
+                .await;
+        });
+
+        let client = Client::new(format!("http://{address}"));
+        let cache_root = tempfile::tempdir().unwrap();
+        let cache = SkillBundleCache::new(&cache_root.path().to_string_lossy());
+        let mut task = Task {
+            id: "task-plugin-pin".into(),
+            runtime_id: "runtime-1".into(),
+            workspace_id: "workspace-1".into(),
+            agent: Some(crate::types::AgentData {
+                skill_refs: vec![pinned_ref.clone()],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let error = ensure_task_skill_bundles(&Ctx::new(), &mut task, &client, &cache)
+            .await
+            .expect_err("plugin hash drift must fail closed");
+        assert!(error.to_string().contains("skill bundle unavailable"));
+        assert!(cache.load("workspace-1", &pinned_ref).is_none());
+        shutdown.cancel();
     }
 
     #[test]

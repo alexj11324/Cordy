@@ -484,7 +484,7 @@ impl Client {
         let path =
             format!("/api/daemon/runtimes/{runtime_id}/tasks/{task_id}/skill-bundles/resolve");
         let resp: Resp = self
-            .post_json_with_retry(
+            .post_json_without_timeout_with_retry(
                 ctx,
                 &path,
                 json!({ "skills": vec![skill_ref] }),
@@ -1477,6 +1477,32 @@ impl Client {
         req_body: Value,
         schedule: &[Duration],
     ) -> anyhow::Result<R> {
+        self.post_json_via_with_retry(ctx, path, req_body, schedule, Some(CONTROL_PLANE_TIMEOUT))
+            .await
+    }
+
+    /// Retry a response-bearing request without the fixed control-plane
+    /// timeout. Skill bundles use a deadline scaled to their declared size at
+    /// the task layer, matching Go's dedicated no-timeout `bundleClient`.
+    async fn post_json_without_timeout_with_retry<R: DeserializeOwned>(
+        &self,
+        ctx: &crate::repocache::Ctx,
+        path: &str,
+        req_body: Value,
+        schedule: &[Duration],
+    ) -> anyhow::Result<R> {
+        self.post_json_via_with_retry(ctx, path, req_body, schedule, None)
+            .await
+    }
+
+    async fn post_json_via_with_retry<R: DeserializeOwned>(
+        &self,
+        ctx: &crate::repocache::Ctx,
+        path: &str,
+        req_body: Value,
+        schedule: &[Duration],
+        request_timeout: Option<Duration>,
+    ) -> anyhow::Result<R> {
         let mut last_err: Option<anyhow::Error> = None;
         for attempt in 0..=schedule.len() {
             if let Some(cancelled) = ctx.err() {
@@ -1485,7 +1511,17 @@ impl Client {
                 }
                 anyhow::bail!("{cancelled}");
             }
-            match self.post_json::<R>(ctx, path, req_body.clone()).await {
+            let result = match request_timeout {
+                Some(timeout) => {
+                    self.post_json_with_timeout(ctx, path, req_body.clone(), timeout)
+                        .await
+                }
+                None => {
+                    self.post_json_without_timeout(ctx, path, req_body.clone())
+                        .await
+                }
+            };
+            match result {
                 Ok(resp) => return Ok(resp),
                 Err(err) => {
                     if !is_transient_error(&err) {
@@ -1575,6 +1611,23 @@ impl Client {
         let opt = self
             .execute_json::<R>(
                 apply_ctx_deadline(builder, ctx, timeout),
+                ctx.clone(),
+                true,
+                "POST",
+            )
+            .await?;
+        Ok(opt.unwrap_or_else(|| serde_json::from_value(Value::Null).unwrap()))
+    }
+
+    async fn post_json_without_timeout<R: DeserializeOwned>(
+        &self,
+        ctx: &crate::repocache::Ctx,
+        path: &str,
+        req_body: Value,
+    ) -> anyhow::Result<R> {
+        let opt = self
+            .execute_json::<R>(
+                self.builder_post(path, req_body)?,
                 ctx.clone(),
                 true,
                 "POST",

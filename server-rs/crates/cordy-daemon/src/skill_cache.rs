@@ -20,6 +20,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -27,6 +28,9 @@ use sha2::{Digest, Sha256};
 use crate::types::{SkillData, SkillRefData};
 
 pub(crate) const SOURCE_PLUGIN: &str = "plugin";
+const SKILL_BUNDLE_RESOLVE_MIN_TIMEOUT: Duration = Duration::from_secs(30);
+const SKILL_BUNDLE_RESOLVE_MAX_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+const SKILL_BUNDLE_RESOLVE_MIN_THROUGHPUT: i64 = 50 * 1024;
 
 pub(crate) struct SkillBundleCache {
     root: String,
@@ -236,6 +240,62 @@ pub(crate) fn validate_skill_bundle(r#ref: &SkillRefData, bundle: &SkillData) ->
         return false;
     }
     true
+}
+
+/// Returns the per-bundle deadline used by the task resolver. Small bundles
+/// still get enough time for connection setup; large bundles are given a
+/// size-scaled budget, capped so a stalled server cannot pin task preparation
+/// forever (Go: skillBundleResolveTimeout).
+pub(crate) fn skill_bundle_resolve_timeout(size_bytes: i64) -> Duration {
+    if size_bytes <= 0 {
+        return SKILL_BUNDLE_RESOLVE_MIN_TIMEOUT;
+    }
+    let scaled_seconds = size_bytes / SKILL_BUNDLE_RESOLVE_MIN_THROUGHPUT;
+    Duration::from_secs(scaled_seconds.max(30) as u64).min(SKILL_BUNDLE_RESOLVE_MAX_TIMEOUT)
+}
+
+/// Reconstructs the current bundle reference from the bundle itself. The
+/// server may return a newer non-plugin bundle between claim and preparation;
+/// callers use this reference to validate the returned bundle's self-consistent
+/// manifest while plugin bundles remain pinned to the claim-time reference.
+pub(crate) fn skill_ref_from_bundle(bundle: &SkillData) -> SkillRefData {
+    let files = bundle
+        .files
+        .iter()
+        .map(|file| SkillBundleFile {
+            path: file.path.clone(),
+            content: file.content.clone(),
+        })
+        .collect();
+    let manifest = build_manifest(&SkillBundleSkill {
+        id: bundle.id.clone(),
+        source: bundle.source.clone(),
+        name: bundle.name.clone(),
+        description: bundle.description.clone(),
+        content: bundle.content.clone(),
+        files,
+    });
+    SkillRefData {
+        id: bundle.id.clone(),
+        source: bundle.source.clone(),
+        // Go's skillRefFromBundle intentionally carries only identity and
+        // manifest fields; name/description are claim metadata, not part of
+        // the cache validation ref.
+        name: String::new(),
+        description: String::new(),
+        hash: manifest.hash,
+        size_bytes: manifest.size_bytes,
+        file_count: manifest.files.len() as i64,
+        files: manifest
+            .files
+            .into_iter()
+            .map(|file| crate::types::SkillFileRefData {
+                path: file.path,
+                sha256: file.sha256,
+                size_bytes: file.size_bytes,
+            })
+            .collect(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -474,5 +534,29 @@ mod tests {
         assert!(!safe_skill_file_path("../up"));
         assert!(!safe_skill_file_path("./x"));
         assert!(safe_skill_file_path("sub/dir/file.md"));
+    }
+
+    #[test]
+    fn skill_bundle_resolve_timeout_matches_size_budget() {
+        assert_eq!(
+            skill_bundle_resolve_timeout(0),
+            SKILL_BUNDLE_RESOLVE_MIN_TIMEOUT
+        );
+        assert_eq!(
+            skill_bundle_resolve_timeout(-1),
+            SKILL_BUNDLE_RESOLVE_MIN_TIMEOUT
+        );
+        assert_eq!(
+            skill_bundle_resolve_timeout(1024),
+            SKILL_BUNDLE_RESOLVE_MIN_TIMEOUT
+        );
+        assert_eq!(
+            skill_bundle_resolve_timeout(2 * 1024 * 1024),
+            Duration::from_secs(40)
+        );
+        assert_eq!(
+            skill_bundle_resolve_timeout(100 * 1024 * 1024),
+            SKILL_BUNDLE_RESOLVE_MAX_TIMEOUT
+        );
     }
 }
