@@ -420,6 +420,9 @@ pub struct ListAuthConfigsRequest {
     /// Filters to specific toolkits; sent as comma-separated `toolkit_slug`
     /// query param per the v3 spec.
     pub toolkit_slugs: Vec<String>,
+    /// Filters managed versus custom auth configs. `Some(false)` is distinct
+    /// from an omitted filter and must be sent to the upstream API.
+    pub is_composio_managed: Option<bool>,
     pub show_disabled: bool,
     pub search: String,
     /// Page size (max 1000 upstream). 0 = upstream default.
@@ -454,6 +457,29 @@ pub struct ClientBuilder {
     base_url: String,
     user_agent: String,
     timeout: Option<Duration>,
+}
+
+fn auth_configs_query(req: &ListAuthConfigsRequest) -> Vec<(&'static str, String)> {
+    let mut q = Vec::new();
+    if !req.toolkit_slugs.is_empty() {
+        q.push(("toolkit_slug", req.toolkit_slugs.join(",")));
+    }
+    if let Some(is_composio_managed) = req.is_composio_managed {
+        q.push(("is_composio_managed", is_composio_managed.to_string()));
+    }
+    if req.show_disabled {
+        q.push(("show_disabled", "true".to_string()));
+    }
+    if !req.search.is_empty() {
+        q.push(("search", req.search.clone()));
+    }
+    if req.limit > 0 {
+        q.push(("limit", req.limit.to_string()));
+    }
+    if !req.cursor.is_empty() {
+        q.push(("cursor", req.cursor.clone()));
+    }
+    q
 }
 
 impl ClientBuilder {
@@ -649,22 +675,7 @@ impl Client {
         &self,
         req: ListAuthConfigsRequest,
     ) -> Result<ListAuthConfigsResponse, Error> {
-        let mut q: Vec<(&str, String)> = Vec::new();
-        if !req.toolkit_slugs.is_empty() {
-            q.push(("toolkit_slug", req.toolkit_slugs.join(",")));
-        }
-        if req.show_disabled {
-            q.push(("show_disabled", "true".to_string()));
-        }
-        if !req.search.is_empty() {
-            q.push(("search", req.search.clone()));
-        }
-        if req.limit > 0 {
-            q.push(("limit", req.limit.to_string()));
-        }
-        if !req.cursor.is_empty() {
-            q.push(("cursor", req.cursor.clone()));
-        }
+        let q = auth_configs_query(&req);
         self.decode(self.get("/auth_configs", &q).await?).await
     }
 
@@ -1140,6 +1151,25 @@ mod tests {
 
         let decoded: Toolkit = serde_json::from_value(json).unwrap();
         assert_eq!(decoded.meta.unwrap()["provider"], "github");
+    }
+
+    #[test]
+    fn auth_config_query_preserves_explicit_false_filter() {
+        let req = ListAuthConfigsRequest {
+            is_composio_managed: Some(false),
+            ..Default::default()
+        };
+        let query = auth_configs_query(&req);
+        assert_eq!(
+            query
+                .iter()
+                .find(|(key, _)| *key == "is_composio_managed")
+                .map(|(_, value)| value.as_str()),
+            Some("false")
+        );
+
+        let omitted = auth_configs_query(&ListAuthConfigsRequest::default());
+        assert!(!omitted.iter().any(|(key, _)| *key == "is_composio_managed"));
     }
 
     #[tokio::test]
