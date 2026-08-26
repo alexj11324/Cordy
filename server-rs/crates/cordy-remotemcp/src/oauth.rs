@@ -174,12 +174,18 @@ pub async fn discover_oauth(
     let endpoint =
         validate_public_https_endpoint(raw_endpoint, allowed_hosts, Some(&SystemResolver)).await?;
 
-    let metadata_url = match probe_resource_metadata_url(&endpoint).await {
-        Some(url) => validate_oauth_url(&url).await?,
-        None => {
-            let url = protected_resource_metadata_url(&endpoint);
-            validate_oauth_url(url.as_str()).await?
-        }
+    let metadata_url = if let Some(url) = probe_resource_metadata_url(&endpoint).await {
+        validate_oauth_url(&url).await?
+    } else {
+        let url = protected_resource_metadata_url(&endpoint);
+        // Validate the exact fallback URL with the same boundary and host
+        // policy as the original request before using it for discovery.
+        validate_public_https_endpoint(
+            url.as_str(),
+            allowed_hosts,
+            Some(&SystemResolver),
+        )
+        .await?
     };
 
     let resource: ProtectedResourceMetadata = get_oauth_json(&metadata_url)
@@ -320,14 +326,14 @@ pub async fn exchange_oauth_code(
     registration: &OAuthRegistration,
 ) -> Result<OAuthToken, Error> {
     let values = vec![
-        ("grant_type", "authorization_code"),
-        ("code", code),
-        ("redirect_uri", redirect_uri),
-        ("client_id", registration.client_id.as_str()),
-        ("code_verifier", verifier),
-        ("resource", resource),
+        ("grant_type".to_string(), "authorization_code".to_string()),
+        ("code".to_string(), code.to_string()),
+        ("redirect_uri".to_string(), redirect_uri.to_string()),
+        ("client_id".to_string(), registration.client_id.clone()),
+        ("code_verifier".to_string(), verifier.to_string()),
+        ("resource".to_string(), resource.to_string()),
     ];
-    request_oauth_token(token_endpoint, &values, registration).await
+    request_oauth_token(token_endpoint, values, registration).await
 }
 
 /// Exchanges a refresh token for a new Bearer token.
@@ -338,28 +344,31 @@ pub async fn refresh_oauth_token(
     registration: &OAuthRegistration,
 ) -> Result<OAuthToken, Error> {
     let values = vec![
-        ("grant_type", "refresh_token"),
-        ("refresh_token", refresh_token),
-        ("client_id", registration.client_id.as_str()),
-        ("resource", resource),
+        ("grant_type".to_string(), "refresh_token".to_string()),
+        ("refresh_token".to_string(), refresh_token.to_string()),
+        ("client_id".to_string(), registration.client_id.clone()),
+        ("resource".to_string(), resource.to_string()),
     ];
-    request_oauth_token(token_endpoint, &values, registration).await
+    request_oauth_token(token_endpoint, values, registration).await
 }
 
 async fn request_oauth_token(
     raw_endpoint: &str,
-    values: &[(&str, &str)],
+    mut values: Vec<(String, String)>,
     registration: &OAuthRegistration,
 ) -> Result<OAuthToken, Error> {
     let endpoint = validate_oauth_url(raw_endpoint).await?;
     let mut serializer = form_urlencoded::Serializer::new(String::new());
-    for (key, value) in values.iter() {
-        serializer.append_pair(key, value);
-    }
     if !registration.client_secret.is_empty()
         && registration.token_endpoint_auth_method == "client_secret_post"
     {
-        serializer.append_pair("client_secret", &registration.client_secret);
+        values.push((
+            "client_secret".to_string(),
+            registration.client_secret.clone(),
+        ));
+    }
+    for (key, value) in &values {
+        serializer.append_pair(key, value);
     }
     let body = serializer.finish().into_bytes();
     let mut request = Request::builder()
@@ -620,5 +629,24 @@ mod tests {
         assert_eq!(oauth_expiry(now, 3600), now + Duration::from_secs(3600));
         assert_eq!(oauth_expiry(now, 0), SystemTime::UNIX_EPOCH);
         assert_eq!(oauth_expiry(now, -1), SystemTime::UNIX_EPOCH);
+    }
+
+    #[test]
+    fn authorization_metadata_urls_are_converted_before_validation() {
+        let issuer = Url::parse("https://login.example.com/tenant").unwrap();
+        let candidates = authorization_metadata_urls(&issuer);
+        assert_eq!(
+            candidates[0].as_str(),
+            "https://login.example.com/.well-known/oauth-authorization-server/tenant"
+        );
+        assert_eq!(
+            candidates[1].as_str(),
+            "https://login.example.com/.well-known/openid-configuration/tenant"
+        );
+    }
+
+    #[tokio::test]
+    async fn oauth_url_rejects_empty_userinfo() {
+        assert!(validate_oauth_url("https://@8.8.8.8/token").await.is_err());
     }
 }
