@@ -879,12 +879,21 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 _ = discovery.tick() => BuiltinRefreshReason::Discovery,
                 _ = versions.tick() => BuiltinRefreshReason::Version,
             };
-            if let Err(error) = self
+            match self
                 .registration
                 .refresh_builtins_once(ctx.child(), &registry, reason)
                 .await
             {
-                tracing::debug!(?reason, %error, "built-in runtime refresh round failed");
+                Ok(outcome) if outcome.attempted > outcome.progressed => tracing::debug!(
+                    ?reason,
+                    attempted = outcome.attempted,
+                    progressed = outcome.progressed,
+                    "built-in runtime refresh will retry lagging workspaces"
+                ),
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::debug!(?reason, %error, "built-in runtime refresh round failed");
+                }
             }
         }
     }
@@ -1369,6 +1378,10 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeS
     fn health_snapshot(&self) -> HealthResponse {
         let mut snapshot = self.provider.health_snapshot();
         snapshot.profile = self.config.profile.clone();
+        if let Some((agents, skipped_agents)) = self.registration.health_snapshot() {
+            snapshot.agents = agents;
+            snapshot.skipped_agents = skipped_agents;
+        }
         snapshot
     }
 

@@ -7,11 +7,12 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::json;
 use tokio::sync::{mpsc, Mutex as AsyncMutex};
 
+use crate::agents_refresh::ConvergeRetryState;
 use crate::client::{Client, WorkspaceInfo};
 use crate::config::Config;
 use crate::repo_state::DaemonRepoState;
@@ -32,6 +33,25 @@ pub struct RegistrationPayload {
 pub enum BuiltinRefreshReason {
     Discovery,
     Version,
+}
+
+/// Cheap, version-independent discovery state used to decide whether a
+/// discovery tick has work before starting version probes.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct BuiltinAvailability {
+    pub providers: BTreeSet<String>,
+    pub gained: bool,
+}
+
+/// Result of one machine-level built-in refresh round. `attempted` counts
+/// workspaces whose live state said a registration was needed; `progressed`
+/// counts accepted responses. The distinction keeps a failed workspace in
+/// the next discovery round's retry set instead of treating a completed probe
+/// as convergence.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct BuiltinRefreshOutcome {
+    pub attempted: usize,
+    pub progressed: usize,
 }
 
 /// Best-effort cache warmup request. Correctness does not depend on queue
@@ -70,9 +90,11 @@ pub(crate) fn enqueue_repo_warmup(
 
 #[async_trait::async_trait]
 pub trait RuntimeRegistrationRound: Send + Sync + 'static {
-    /// A successful empty payload is authoritative for refresh rounds: the
-    /// workspace currently has no runnable providers. Transient probe/fetch
-    /// failures must be returned as `Err` rather than disguised as empty.
+    /// A successful empty payload is authoritative for full workspace/profile
+    /// convergence. Built-in refresh rounds handle an empty probe as a
+    /// transient/no-provider observation and preserve the current runtime set.
+    /// Probe/fetch failures must be returned as `Err` rather than disguised as
+    /// empty.
     async fn payload_for_workspace(
         &self,
         ctx: Ctx,
@@ -83,6 +105,13 @@ pub trait RuntimeRegistrationRound: Send + Sync + 'static {
     /// server response has been accepted into the authoritative registry.
     /// Failed register calls never invoke this hook.
     fn registration_applied(&self, workspace_id: &str);
+
+    /// Whether this machine probe discovered a provider not present in the
+    /// previously published availability set. Discovery gains bypass the
+    /// convergence backoff, matching Go's immediate first attempt rule.
+    fn gained_providers(&self) -> bool {
+        false
+    }
 }
 
 #[async_trait::async_trait]
@@ -91,19 +120,35 @@ pub trait RuntimeRegistrationSource: Send + Sync + 'static {
     /// every workspace in this sync so N workspaces never cause N×M CLI probes.
     async fn begin_round(&self, ctx: Ctx) -> anyhow::Result<Arc<dyn RuntimeRegistrationRound>>;
 
-    /// Probes built-in providers for the requested cadence. `None` means a
-    /// real probe found no registration change; `Some` carries one shared
-    /// built-in-only round for every tracked workspace.
+    /// Probes built-in providers for the requested cadence. `Some` carries one
+    /// shared built-in-only round for every tracked workspace; the round itself
+    /// decides whether each workspace is missing a provider or version.
     async fn begin_builtin_refresh(
         &self,
         ctx: Ctx,
         reason: BuiltinRefreshReason,
     ) -> anyhow::Result<Option<Arc<dyn RuntimeRegistrationRound>>>;
 
+    /// Performs only the cheap PATH/availability half of discovery. Returning
+    /// `None` keeps generic test sources on the old combined path; the
+    /// production provider source uses this to avoid version probes while the
+    /// convergence backoff is active or no workspace is missing a provider.
+    fn refresh_builtin_availability(&self) -> Option<BuiltinAvailability> {
+        None
+    }
+
     /// Releases provider-owned launch state when workspace membership is
     /// removed. A later re-add must not revive stale custom profile commands
     /// if its first profile fetch fails.
     fn workspace_removed(&self, workspace_id: &str);
+
+    /// Returns the source-owned machine discovery state for `/health`.
+    /// Implementations that do not own provider discovery return `None`; the
+    /// production provider source supplies the copy-on-write availability set
+    /// and current skip reasons.
+    fn health_snapshot(&self) -> Option<(Vec<String>, HashMap<String, String>)> {
+        None
+    }
 }
 
 pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
@@ -115,6 +160,7 @@ pub struct RuntimeRegistrationService<S: RuntimeRegistrationSource> {
     serial: Mutex<HashMap<String, Arc<AsyncMutex<()>>>>,
     pending_deregistrations: PendingDeregistrations,
     deregistration_flush: AsyncMutex<()>,
+    builtin_retry: Mutex<ConvergeRetryState>,
 }
 
 #[derive(Default)]
@@ -159,7 +205,14 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             serial: Mutex::new(HashMap::new()),
             pending_deregistrations: PendingDeregistrations::default(),
             deregistration_flush: AsyncMutex::new(()),
+            builtin_retry: Mutex::new(ConvergeRetryState::new()),
         }
+    }
+
+    /// Delegates the provider source's machine discovery state to the health
+    /// owner without exposing the source itself to the stack.
+    pub fn health_snapshot(&self) -> Option<(Vec<String>, HashMap<String, String>)> {
+        self.source.health_snapshot()
     }
 
     /// One workspace membership/reconciliation round. Startup calls this with
@@ -308,26 +361,104 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         ctx: Ctx,
         registry: &RuntimeRegistry,
         reason: BuiltinRefreshReason,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<BuiltinRefreshOutcome> {
+        let now = Instant::now();
+        let availability = if reason == BuiltinRefreshReason::Discovery {
+            self.source.refresh_builtin_availability()
+        } else {
+            None
+        };
+        let discovery_workspaces = availability.as_ref().map(|state| {
+            registry
+                .workspace_ids()
+                .into_iter()
+                .filter(|workspace_id| {
+                    registry.workspace_missing_builtin_provider(workspace_id, &state.providers)
+                })
+                .collect::<BTreeSet<_>>()
+        });
+        if let Some(workspaces) = discovery_workspaces.as_ref() {
+            let mut retry = self.builtin_retry.lock().unwrap();
+            if workspaces.is_empty() {
+                retry.reset_backoff();
+                return Ok(BuiltinRefreshOutcome::default());
+            }
+            if !retry.should_attempt(availability.as_ref().is_some_and(|state| state.gained), now) {
+                return Ok(BuiltinRefreshOutcome::default());
+            }
+        }
         let Some(round) = self
             .source
             .begin_builtin_refresh(ctx.child(), reason)
             .await?
         else {
-            return Ok(());
+            return Ok(BuiltinRefreshOutcome::default());
         };
+        let discovery_allowed = reason != BuiltinRefreshReason::Discovery
+            || self.builtin_retry.lock().unwrap().should_attempt(
+                availability.as_ref().is_some_and(|state| state.gained) || round.gained_providers(),
+                now,
+            );
+        if !discovery_allowed {
+            return Ok(BuiltinRefreshOutcome::default());
+        }
+        let mut outcome = BuiltinRefreshOutcome::default();
         for workspace_id in registry.workspace_ids() {
+            let selected_by_cheap_discovery = discovery_workspaces
+                .as_ref()
+                .is_none_or(|workspaces| workspaces.contains(&workspace_id));
+            if !selected_by_cheap_discovery {
+                continue;
+            }
             let Some(workspace) = registry.workspace(&workspace_id) else {
                 continue;
             };
-            if let Err(error) = self
+            match self
                 .register_builtin_workspace(ctx.child(), registry, &workspace, Arc::clone(&round))
                 .await
             {
-                tracing::warn!(%workspace_id, %error, "built-in runtime refresh failed");
+                Ok(Some(true)) => {
+                    outcome.attempted += 1;
+                    outcome.progressed += 1;
+                }
+                Ok(Some(false)) => {
+                    // A workspace selected by the cheap missing-provider scan
+                    // still attempted convergence even when this probe round
+                    // returned no launchable provider.
+                    if discovery_workspaces.is_some() {
+                        outcome.attempted += 1;
+                    }
+                }
+                Ok(None) => {
+                    // A production workspace selected by the cheap scan can
+                    // still return only already-known providers. That is a
+                    // failed convergence attempt, not a no-op.
+                    if discovery_workspaces.is_some() {
+                        outcome.attempted += 1;
+                    }
+                }
+                Err(error) => {
+                    // The workspace was selected from live state and the
+                    // request was therefore needed, even when the payload
+                    // fetch or register call failed before an accepted
+                    // response. Keep it counted as attempted so the caller
+                    // can apply its retry policy.
+                    outcome.attempted += 1;
+                    tracing::warn!(%workspace_id, %error, "built-in runtime refresh failed");
+                }
             }
         }
-        Ok(())
+        if reason == BuiltinRefreshReason::Discovery {
+            let progressed = discovery_workspaces
+                .as_ref()
+                .map(|workspaces| workspaces.is_empty() || outcome.progressed > 0)
+                .unwrap_or(outcome.attempted == 0 || outcome.progressed > 0);
+            self.builtin_retry
+                .lock()
+                .unwrap()
+                .record_attempt(progressed, now);
+        }
+        Ok(outcome)
     }
 
     async fn register_workspace(
@@ -417,6 +548,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 }
             };
             self.pending_deregistrations.acknowledge(&runtime_ids);
+            registry.record_builtin_versions(&workspace.id, &payload.runtimes);
             round.registration_applied(&workspace.id);
             (runtime_ids, repos, settings, delta)
         };
@@ -440,7 +572,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         registry: &RuntimeRegistry,
         workspace: &crate::runtime_registry::WorkspaceRuntimeState,
         round: Arc<dyn RuntimeRegistrationRound>,
-    ) -> anyhow::Result<()> {
+    ) -> anyhow::Result<Option<bool>> {
         let serial = self.workspace_lock(&workspace.id);
         let _guard = serial.lock().await;
         let payload = round
@@ -452,14 +584,14 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             workspace.id
         );
         if payload.runtimes.is_empty() {
-            // `Some(round)` means the provider completed an authoritative
-            // changed probe. Applying an empty built-in set removes the last
-            // vanished executable while preserving custom-profile runtimes.
-            let delta =
-                registry.apply_builtin_registration(&workspace.id, &workspace.name, Vec::new())?;
-            round.registration_applied(&workspace.id);
-            self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
-            return Ok(());
+            // A discovery/version probe can be empty because a CLI is
+            // temporarily unreadable or because no provider is installed.
+            // Go keeps existing runtime rows in this path; only an explicit
+            // workspace/profile convergence owns authoritative empty state.
+            return Ok(Some(false));
+        }
+        if !registry.workspace_needs_builtin_refresh(&workspace.id, &payload.runtimes) {
+            return Ok(None);
         }
         let delta = {
             let _fence = self.deregistration_flush.lock().await;
@@ -489,7 +621,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 .iter()
                 .map(|runtime| runtime.id.clone())
                 .collect::<Vec<_>>();
-            let delta = match registry.apply_builtin_registration(
+            let delta = match registry.merge_builtin_registration(
                 &workspace.id,
                 &workspace.name,
                 response.runtimes,
@@ -501,11 +633,12 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
                 }
             };
             self.pending_deregistrations.acknowledge(&runtime_ids);
+            registry.record_builtin_versions(&workspace.id, &payload.runtimes);
             round.registration_applied(&workspace.id);
             delta
         };
         self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
-        Ok(())
+        Ok(Some(true))
     }
 
     /// Final best-effort delivery for rows dropped before the daemon's current
