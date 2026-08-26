@@ -27,8 +27,8 @@ use crate::execenv::context::{
     TASK_CONTEXT_MARKER_REL_PATH,
 };
 use crate::execenv::execenv::{
-    predict_root_dir, prepare, read_managed_env_provenance, remove_tree, reuse, Environment,
-    MANAGED_ENV_PROVENANCE_MANAGED_BY,
+    ensure_task_temp_dir, predict_root_dir, prepare, read_managed_env_provenance, remove_tree,
+    reuse, Environment, MANAGED_ENV_PROVENANCE_MANAGED_BY,
 };
 use crate::execenv::local_worktree::LocalWorktreeParams;
 use crate::execenv::runtime_config::{cleanup_runtime_config, inject_runtime_config};
@@ -475,7 +475,10 @@ impl ProductionProviderAdapter {
 
         let predicted_root =
             predict_root_dir(&self.config.workspaces_root, &task.workspace_id, &task.id);
-        let temp_dir = Path::new(&predicted_root)
+        // The plan needs a non-empty placeholder before Prepare can claim the
+        // root. It is replaced with the short, private directory selected by
+        // ensure_task_temp_dir once the environment exists.
+        let planned_temp_dir = Path::new(&predicted_root)
             .join("tmp")
             .to_string_lossy()
             .into_owned();
@@ -518,7 +521,7 @@ impl ProductionProviderAdapter {
             };
         let mut inputs = ProviderExecutionInputs {
             slot,
-            temp_dir: temp_dir.clone(),
+            temp_dir: planned_temp_dir,
             default_model,
             codex_version: launch.version.clone(),
             openclaw_bin: (target.provider == "openclaw")
@@ -579,9 +582,25 @@ impl ProductionProviderAdapter {
         };
         prepare_lease.stop().await;
 
-        if let Err(error) = std::fs::create_dir_all(&temp_dir) {
+        let task_temp_dir =
+            match ensure_task_temp_dir(&environment.root_dir, &task.workspace_id, &task.id) {
+                Ok(path) => path,
+                Err(error) => {
+                    let outcome =
+                        failed(error.context("prepare task temp dir"), Some(&environment));
+                    return finalize_environment(
+                        outcome,
+                        &mut environment,
+                        assignment.as_ref(),
+                        &target.provider,
+                    )
+                    .await;
+                }
+            };
+        if let Err(error) = plan.set_task_temp_dir(&task_temp_dir) {
+            let _ = remove_tree(&task_temp_dir);
             let outcome = failed(
-                anyhow::Error::new(error).context("create task temp directory"),
+                error.context("bind task temp directory"),
                 Some(&environment),
             );
             return finalize_environment(
@@ -812,7 +831,7 @@ impl ProductionProviderAdapter {
             }
             Err(error) => failed(error, Some(&environment)),
         };
-        if let Err(error) = remove_tree(&temp_dir) {
+        if let Err(error) = remove_tree(&task_temp_dir) {
             tracing::warn!(task = %task.id, %error, "task temp directory cleanup failed");
         }
         outcome = finalize_environment(
