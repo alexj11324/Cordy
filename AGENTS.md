@@ -50,7 +50,8 @@ Go backend + monorepo frontend (pnpm workspaces + Turborepo) with shared package
 make dev              # Auto-setup + start everything
 pnpm typecheck        # TypeScript check
 pnpm test             # TS unit tests (Vitest)
-make test             # Go tests
+make test             # Rust workspace tests
+make go-test          # Go compatibility tests
 make check            # Full verification pipeline
 ```
 

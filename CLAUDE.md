@@ -84,7 +84,9 @@ make remove-worktree WORKTREE=../path  # drop a linked worktree DB, then remove 
 make server           # run Rust server only
 make go-server        # run legacy Go server only
 make daemon           # run local daemon
-make test             # Go tests (Rust checks are run by make check)
+make test             # Rust workspace and Go compatibility tests
+make rust-test        # Rust workspace tests only
+make go-test          # Go compatibility tests
 make sqlc             # regenerate sqlc code after SQL changes
 pnpm install
 pnpm dev:web
@@ -234,7 +236,8 @@ Useful checks:
 ```bash
 pnpm typecheck
 pnpm test
-make test
+make test             # Rust workspace tests
+make go-test          # Go compatibility tests
 pnpm exec playwright test
 make check
 ```
