@@ -14,12 +14,16 @@ pub use dispatch::{
     MCP_OVERLAY_SERVER_NAME,
 };
 pub use sdk::{
-    parse_api_error, verify_webhook, ApiError, AuthConfig, AuthConfigRef, Client, ClientBuilder,
-    ConnectedAccount, CreateLinkRequest, CreateLinkResponse, CreateSessionRequest,
-    CreateSessionResponse, Error as SdkError, ExecuteToolRequest, ExecuteToolResponse,
-    ListAuthConfigsRequest, ListAuthConfigsResponse, ListConnectedAccountsRequest,
-    ListConnectedAccountsResponse, ListToolkitsRequest, ListToolkitsResponse, ManageConnections,
-    McpDescriptor, SessionWarning, Toolkit, DEFAULT_BASE_URL, DEFAULT_WEBHOOK_TOLERANCE,
+    parse_api_error, parse_event, verify_http_request, verify_webhook, ApiError, AuthConfig,
+    AuthConfigRef, Client, ClientBuilder, ConnectedAccount, CreateLinkRequest, CreateLinkResponse,
+    CreateSessionRequest, CreateSessionResponse, Error as SdkError, EventEnvelope,
+    ExecuteToolRequest, ExecuteToolResponse,
+    InvalidWebhookSignatureError, ListAuthConfigsRequest, ListAuthConfigsResponse,
+    ListConnectedAccountsRequest, ListConnectedAccountsResponse, ListToolkitsRequest,
+    ListToolkitsResponse, ManageConnections, McpDescriptor, MissingWebhookHeadersError,
+    ParseEventError, SessionWarning, Toolkit, WebhookHeaders, WebhookSecretMissingError,
+    WebhookTimestampStaleError, DEFAULT_BASE_URL, DEFAULT_WEBHOOK_TOLERANCE, HEADER_WEBHOOK_ID,
+    HEADER_WEBHOOK_SIGNATURE, HEADER_WEBHOOK_TIMESTAMP,
 };
 pub use service::{
     better_auth_config, Sdk, Service, ServiceConfig, ServiceError, Store, ToolkitView,
