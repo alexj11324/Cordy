@@ -695,7 +695,11 @@ pub(crate) async fn preview_explicit_mentions(
         .map(|trigger| PreviewAgent {
             id: trigger.agent.id,
             name: trigger.agent.name,
-            avatar_url: trigger.agent.avatar_url,
+            avatar_url: trigger
+                .agent
+                .avatar_url
+                .as_deref()
+                .map(|raw| crate::avatar::resolve_url(state, raw)),
             source: if trigger.is_leader {
                 "mention_squad_leader".to_string()
             } else {
