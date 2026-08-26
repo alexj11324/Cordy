@@ -71,6 +71,9 @@ const PREPARE_LEASE_TIMEOUT: Duration = Duration::from_secs(10);
 const PREPARE_LEASE_STOP_TIMEOUT: Duration = Duration::from_secs(1);
 const CODEX_ROLLOUT_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const CODEX_ROLLOUT_FLUSH_WAIT: Duration = Duration::from_secs(2);
+const REASONIX_STATE_HOME_ENV: &str = "REASONIX_STATE_HOME";
+const DSH_SESSION_ROOT_ENV: &str = "CORDY_DSH_SESSION_ROOT";
+const DSH_TELEMETRY_DISABLED_ENV: &str = "DSH_TELEMETRY_DISABLED";
 const TASK_PREPARE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const PREPARATION_PENDING: u8 = 0;
 const PREPARATION_COMPLETE: u8 = 1;
@@ -634,7 +637,7 @@ impl ProductionProviderAdapter {
                 task.prior_session_id.clear();
                 task.prior_session_resume_unavailable = true;
             }
-            let bound = plan.bind_environment(
+            let mut bound = plan.bind_environment(
                 &environment,
                 PreparedEnvironmentInputs {
                     cancellation: ctx.token().clone(),
@@ -642,6 +645,11 @@ impl ProductionProviderAdapter {
                     ..PreparedEnvironmentInputs::default()
                 },
             )?;
+            bound.child_env.extend(prepare_provider_state_env(
+                &self.config,
+                &task,
+                &target.provider,
+            )?);
             plan.configure_codex_shell_environment(&bound)?;
             let backend_config = runtime.backend_config_from_launch(
                 &launch,
@@ -1777,10 +1785,105 @@ fn provider_path() -> String {
     }
 }
 
+/// Ports the Go daemon's provider-owned state isolation contract. The user
+/// configuration home remains provider-owned; only durable transcripts and
+/// session metadata are redirected into a runtime/agent-specific Cordy path.
+fn prepare_provider_state_env(
+    config: &Config,
+    task: &Task,
+    provider: &str,
+) -> anyhow::Result<BTreeMap<String, String>> {
+    if !matches!(provider, "reasonix" | "dsh") {
+        return Ok(BTreeMap::new());
+    }
+    let profile_dir = crate::identity::profile_dir(&config.profile)?;
+    prepare_provider_state_env_at(&profile_dir, task, provider)
+}
+
+fn prepare_provider_state_env_at(
+    profile_dir: &Path,
+    task: &Task,
+    provider: &str,
+) -> anyhow::Result<BTreeMap<String, String>> {
+    let mut values = BTreeMap::new();
+    match provider {
+        "reasonix" => {
+            let state_home =
+                prepare_reasonix_task_state_home_at(profile_dir, &task.runtime_id, &task.agent_id)
+                    .context("prepare reasonix state home")?;
+            values.insert(REASONIX_STATE_HOME_ENV.to_string(), state_home);
+        }
+        "dsh" => {
+            let session_root =
+                prepare_dsh_task_session_root_at(profile_dir, &task.runtime_id, &task.agent_id)
+                    .context("prepare dsh session root")?;
+            values.insert(DSH_SESSION_ROOT_ENV.to_string(), session_root);
+            values.insert(DSH_TELEMETRY_DISABLED_ENV.to_string(), "1".to_string());
+        }
+        _ => {}
+    }
+    Ok(values)
+}
+
+fn prepare_reasonix_task_state_home_at(
+    profile_dir: &Path,
+    runtime_id: &str,
+    agent_id: &str,
+) -> anyhow::Result<String> {
+    let runtime_segment = validate_reasonix_state_segment("runtime", runtime_id)?;
+    let agent_segment = validate_reasonix_state_segment("agent", agent_id)?;
+    let path = profile_dir
+        .join("reasonix-state")
+        .join(runtime_segment)
+        .join(agent_segment);
+    prepare_private_state_directory(path)
+}
+
+fn prepare_dsh_task_session_root_at(
+    profile_dir: &Path,
+    runtime_id: &str,
+    agent_id: &str,
+) -> anyhow::Result<String> {
+    let runtime_segment = validate_reasonix_state_segment("runtime", runtime_id)?;
+    let agent_segment = validate_reasonix_state_segment("agent", agent_id)?;
+    let path = profile_dir
+        .join("dsh-sessions")
+        .join(runtime_segment)
+        .join(agent_segment);
+    prepare_private_state_directory(path)
+}
+
+fn prepare_private_state_directory(path: std::path::PathBuf) -> anyhow::Result<String> {
+    std::fs::create_dir_all(&path).context("create provider state directory")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
+            .context("restrict provider state directory")?;
+    }
+    Ok(path.to_string_lossy().into_owned())
+}
+
+fn validate_reasonix_state_segment<'a>(name: &str, value: &'a str) -> anyhow::Result<&'a str> {
+    anyhow::ensure!(!value.is_empty(), "{name} ID is required");
+    anyhow::ensure!(
+        value.bytes().all(|byte| {
+            matches!(
+                byte,
+                b'a'..=b'z' | b'A'..=b'Z' | b'0'..=b'9' | b'-' | b'_'
+            )
+        }),
+        "{name} ID contains an unsafe path character"
+    );
+    Ok(value)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use cordy_agent::TokenUsage;
+    #[cfg(unix)]
+    use std::os::unix::fs::PermissionsExt;
 
     fn resume_gate_fixture(provider: &str) -> (Task, ProviderExecutionPlan) {
         let task = Task {
@@ -1819,6 +1922,80 @@ mod tests {
         )
         .unwrap();
         (task, plan)
+    }
+
+    fn provider_state_task() -> Task {
+        Task {
+            runtime_id: "runtime-1".into(),
+            agent_id: "agent_2".into(),
+            ..Task::default()
+        }
+    }
+
+    #[test]
+    fn reasonix_state_home_is_runtime_agent_scoped_and_private() {
+        let profile_dir = tempfile::tempdir().unwrap();
+        let got = prepare_reasonix_task_state_home_at(profile_dir.path(), "runtime-1", "agent_2")
+            .unwrap();
+
+        assert_eq!(
+            Path::new(&got),
+            profile_dir.path().join("reasonix-state/runtime-1/agent_2")
+        );
+        assert!(Path::new(&got).is_dir());
+        #[cfg(unix)]
+        assert_eq!(
+            std::fs::metadata(&got).unwrap().permissions().mode() & 0o777,
+            0o700
+        );
+    }
+
+    #[test]
+    fn dsh_state_env_is_injected_with_telemetry_disabled() {
+        let profile_dir = tempfile::tempdir().unwrap();
+        let task = provider_state_task();
+        let values = prepare_provider_state_env_at(profile_dir.path(), &task, "dsh").unwrap();
+
+        assert_eq!(
+            Path::new(values.get(DSH_SESSION_ROOT_ENV).unwrap()),
+            profile_dir.path().join("dsh-sessions/runtime-1/agent_2")
+        );
+        assert_eq!(
+            values.get(DSH_TELEMETRY_DISABLED_ENV),
+            Some(&"1".to_string())
+        );
+        #[cfg(unix)]
+        assert_eq!(
+            std::fs::metadata(values.get(DSH_SESSION_ROOT_ENV).unwrap())
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o700
+        );
+    }
+
+    #[test]
+    fn provider_state_env_leaves_other_providers_unchanged() {
+        let profile_dir = tempfile::tempdir().unwrap();
+        let values =
+            prepare_provider_state_env_at(profile_dir.path(), &provider_state_task(), "codex")
+                .unwrap();
+        assert!(values.is_empty());
+    }
+
+    #[test]
+    fn reasonix_state_segments_reject_empty_traversal_and_non_ascii_values() {
+        for value in ["", "../agent", "runtime/agent", "agent id", "代理"] {
+            assert!(
+                validate_reasonix_state_segment("agent", value).is_err(),
+                "{value:?}"
+            );
+        }
+        assert_eq!(
+            validate_reasonix_state_segment("agent", "agent-1_uuid").unwrap(),
+            "agent-1_uuid"
+        );
     }
 
     fn resolvable_skill_bundle(

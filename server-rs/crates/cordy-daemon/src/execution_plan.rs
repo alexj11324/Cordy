@@ -131,6 +131,10 @@ impl ChildProcessEnvironment {
         self.0.get(key).map(String::as_str)
     }
 
+    pub fn extend(&mut self, values: impl IntoIterator<Item = (String, String)>) {
+        self.0.extend(values);
+    }
+
     pub fn into_inner(self) -> BTreeMap<String, String> {
         self.0
     }
