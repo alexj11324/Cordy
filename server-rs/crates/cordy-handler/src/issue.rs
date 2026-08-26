@@ -40,6 +40,7 @@ use crate::error::error_response;
 use crate::state::HandlerState;
 
 const PRIORITIES: &[&str] = &["urgent", "high", "medium", "low", "none"];
+const ISSUE_SEARCH_STATEMENT_TIMEOUT_MS: i64 = 3_000;
 
 pub fn router() -> Router<HandlerState> {
     Router::new()
@@ -129,6 +130,50 @@ fn context_workspace(context: &WorkspaceContext) -> Result<Uuid, Response> {
 }
 
 const ISSUE_COLUMNS: &str = "id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at";
+
+async fn configure_issue_search_transaction(
+    transaction: &mut sqlx::Transaction<'_, Postgres>,
+    timeout_ms: i64,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(&format!("SET LOCAL statement_timeout = {timeout_ms}"))
+        .execute(&mut **transaction)
+        .await?;
+    sqlx::query("SET LOCAL transaction_read_only = on")
+        .execute(&mut **transaction)
+        .await?;
+    Ok(())
+}
+
+fn is_issue_search_statement_timeout_code(code: Option<&str>) -> bool {
+    code == Some("57014")
+}
+
+fn is_issue_search_statement_timeout(error: &sqlx::Error) -> bool {
+    is_issue_search_statement_timeout_code(
+        error
+            .as_database_error()
+            .and_then(|database_error| database_error.code())
+            .as_deref(),
+    )
+}
+
+async fn rollback_issue_search_transaction(transaction: sqlx::Transaction<'_, Postgres>) {
+    if let Err(error) = transaction.rollback().await {
+        tracing::warn!(%error, "failed to rollback issue search transaction");
+    }
+}
+
+fn issue_search_error(error: &sqlx::Error, workspace_id: Uuid, query: &str) -> Response {
+    if is_issue_search_statement_timeout(error) {
+        tracing::warn!(%error, %workspace_id, query, "issue search timed out");
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "search timed out; please refine your query or try again",
+        );
+    }
+    tracing::warn!(%error, %workspace_id, query, "failed to search issues");
+    error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to search issues")
+}
 
 fn search_patterns(raw: &str) -> Vec<String> {
     raw.split_whitespace()
@@ -244,6 +289,10 @@ async fn search_issues(
         .is_some_and(|value| value == "true");
     let patterns = search_patterns(query);
     let number = search_number(query).filter(|number| *number > 0);
+    let terms = query
+        .split_whitespace()
+        .map(str::to_lowercase)
+        .collect::<Vec<_>>();
     let phrase = format!(
         "%{}%",
         query
@@ -269,71 +318,90 @@ async fn search_issues(
             .push(" THEN 0 ");
     }
     statement.push("WHEN LOWER(i.title) = ").push_bind(query.to_lowercase()).push(" THEN 1 WHEN LOWER(i.title) LIKE ").push_bind(phrase.clone()).push(" ESCAPE '\\\\' THEN 2 WHEN LOWER(COALESCE(i.description,'')) LIKE ").push_bind(phrase.clone()).push(" ESCAPE '\\\\' THEN 3 ELSE 4 END, CASE i.status WHEN 'in_progress' THEN 0 WHEN 'in_review' THEN 1 WHEN 'todo' THEN 2 ELSE 3 END, i.updated_at DESC, i.id DESC LIMIT ").push_bind(limit).push(" OFFSET ").push_bind(offset);
-    let issues = match statement
-        .build_query_as::<Issue>()
-        .fetch_all(&state.pool)
-        .await
-    {
-        Ok(issues) => issues,
-        Err(error) => {
-            tracing::warn!(%error, "failed to search issues");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to search issues");
-        }
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => return issue_search_error(&error, workspace_id, query),
     };
+    if let Err(error) =
+        configure_issue_search_transaction(&mut transaction, ISSUE_SEARCH_STATEMENT_TIMEOUT_MS)
+            .await
+    {
+        rollback_issue_search_transaction(transaction).await;
+        return issue_search_error(&error, workspace_id, query);
+    }
+
     let mut count = QueryBuilder::<Postgres>::new("SELECT count(*) FROM issue i WHERE ");
     push_search_membership(&mut count, workspace_id, include_closed, &patterns, number);
-    let total = count
-        .build_query_scalar::<i64>()
-        .fetch_one(&state.pool)
-        .await
-        .unwrap_or(issues.len() as i64);
+    let search_data = async {
+        let issues = statement
+            .build_query_as::<Issue>()
+            .fetch_all(&mut *transaction)
+            .await?;
+        let total = count
+            .build_query_scalar::<i64>()
+            .fetch_one(&mut *transaction)
+            .await?;
+
+        let mut search_matches = Vec::with_capacity(issues.len());
+        for issue in &issues {
+            let source =
+                if terms
+                    .iter()
+                    .all(|term| issue.title.to_lowercase().contains(term))
+                {
+                    "title"
+                } else if issue.description.as_deref().is_some_and(|value| {
+                    terms.iter().all(|term| value.to_lowercase().contains(term))
+                }) {
+                    "description"
+                } else {
+                    "comment"
+                };
+            let matching_comment = if source == "comment" || patterns.len() > 1 {
+                let mut comment = QueryBuilder::<Postgres>::new(
+                    "SELECT content FROM comment c WHERE c.issue_id=",
+                );
+                comment
+                    .push_bind(issue.id)
+                    .push(" AND c.workspace_id=")
+                    .push_bind(workspace_id)
+                    .push(" AND (");
+                for (index, pattern) in patterns.iter().enumerate() {
+                    if index > 0 {
+                        comment.push(" AND ");
+                    }
+                    comment
+                        .push("LOWER(c.content) LIKE ")
+                        .push_bind(pattern.clone())
+                        .push(" ESCAPE '\\\\'");
+                }
+                comment.push(") ORDER BY c.created_at DESC LIMIT 1");
+                comment
+                    .build_query_scalar::<String>()
+                    .fetch_optional(&mut *transaction)
+                    .await?
+            } else {
+                None
+            };
+            search_matches.push((source, matching_comment));
+        }
+        Ok::<_, sqlx::Error>((issues, total, search_matches))
+    }
+    .await;
+    let (issues, total, search_matches) = match search_data {
+        Ok(data) => data,
+        Err(error) => {
+            rollback_issue_search_transaction(transaction).await;
+            return issue_search_error(&error, workspace_id, query);
+        }
+    };
+    if let Err(error) = transaction.commit().await {
+        return issue_search_error(&error, workspace_id, query);
+    }
+
     let prefix = issue_prefix(&state, workspace_id).await;
     let mut response = Vec::with_capacity(issues.len());
-    let terms = query
-        .split_whitespace()
-        .map(str::to_lowercase)
-        .collect::<Vec<_>>();
-    for issue in issues {
-        let source = if terms
-            .iter()
-            .all(|term| issue.title.to_lowercase().contains(term))
-        {
-            "title"
-        } else if issue
-            .description
-            .as_deref()
-            .is_some_and(|value| terms.iter().all(|term| value.to_lowercase().contains(term)))
-        {
-            "description"
-        } else {
-            "comment"
-        };
-        let matching_comment = if source == "comment" || patterns.len() > 1 {
-            let mut comment =
-                QueryBuilder::<Postgres>::new("SELECT content FROM comment c WHERE c.issue_id=");
-            comment
-                .push_bind(issue.id)
-                .push(" AND c.workspace_id=")
-                .push_bind(workspace_id)
-                .push(" AND (");
-            for (index, pattern) in patterns.iter().enumerate() {
-                if index > 0 {
-                    comment.push(" AND ");
-                }
-                comment
-                    .push("LOWER(c.content) LIKE ")
-                    .push_bind(pattern.clone())
-                    .push(" ESCAPE '\\\\'");
-            }
-            comment.push(") ORDER BY c.created_at DESC LIMIT 1");
-            comment
-                .build_query_scalar::<String>()
-                .fetch_optional(&state.pool)
-                .await
-                .unwrap_or(None)
-        } else {
-            None
-        };
+    for (issue, (source, matching_comment)) in issues.into_iter().zip(search_matches) {
         let mut value = serde_json::to_value(IssueResponse::from_issue(&issue, &prefix))
             .unwrap_or_else(|_| json!({}));
         if let Some(object) = value.as_object_mut() {
@@ -7017,6 +7085,62 @@ mod tests {
             search_patterns(r"100% _done"),
             vec![r"%100\%%", r"%\_done%"]
         );
+    }
+
+    #[test]
+    fn issue_search_timeout_code_matches_postgres_contract() {
+        assert_eq!(ISSUE_SEARCH_STATEMENT_TIMEOUT_MS, 3_000);
+        assert!(is_issue_search_statement_timeout_code(Some("57014")));
+        assert!(!is_issue_search_statement_timeout_code(Some("57015")));
+        assert!(!is_issue_search_statement_timeout_code(None));
+    }
+
+    #[tokio::test]
+    async fn issue_search_transaction_applies_guards_and_rolls_back_after_timeout() {
+        let Ok(database_url) = std::env::var("DATABASE_URL") else {
+            eprintln!("skipping live issue search transaction test: DATABASE_URL is unset");
+            return;
+        };
+        let pool = match sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .connect(&database_url)
+            .await
+        {
+            Ok(pool) => pool,
+            Err(error) => {
+                eprintln!("skipping live issue search transaction test: {error}");
+                return;
+            }
+        };
+
+        let mut transaction = pool.begin().await.unwrap();
+        configure_issue_search_transaction(&mut transaction, 50)
+            .await
+            .unwrap();
+        let timeout: String = sqlx::query_scalar("SHOW statement_timeout")
+            .fetch_one(&mut *transaction)
+            .await
+            .unwrap();
+        assert_eq!(timeout, "50ms");
+        let read_only: String = sqlx::query_scalar("SHOW transaction_read_only")
+            .fetch_one(&mut *transaction)
+            .await
+            .unwrap();
+        assert_eq!(read_only, "on");
+
+        let error = sqlx::query("SELECT pg_sleep(1)")
+            .execute(&mut *transaction)
+            .await
+            .unwrap_err();
+        assert!(is_issue_search_statement_timeout(&error), "{error}");
+
+        rollback_issue_search_transaction(transaction).await;
+        let value: i32 = sqlx::query_scalar("SELECT 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(value, 1);
+        pool.close().await;
     }
 
     #[test]
