@@ -383,9 +383,10 @@ async fn run_cursor(
 }
 
 async fn write_cursor_prompt(stdin: SharedStdin, prompt: Vec<u8>) -> io::Result<()> {
-    let mut guard = stdin.lock().await;
-    let writer = guard
-        .as_mut()
+    let mut writer = stdin
+        .lock()
+        .await
+        .take()
         .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "Cursor stdin closed"))?;
     writer.write_all(&prompt).await?;
     writer.flush().await
