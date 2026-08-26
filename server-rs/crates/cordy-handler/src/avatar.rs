@@ -83,7 +83,7 @@ pub(crate) fn resolve_url(state: &HandlerState, raw: &str) -> String {
     {
         return raw.to_string();
     }
-    served_url(state, &key)
+    served_url(&key)
 }
 
 fn durable_public_url(raw: &str) -> bool {
@@ -103,7 +103,10 @@ fn durable_public_url(raw: &str) -> bool {
         "X-Amz-Expires",
     ];
     !url.query_pairs().any(|(key, value)| {
-        !value.is_empty() && expiring_query_keys.iter().any(|candidate| key == *candidate)
+        !value.is_empty()
+            && expiring_query_keys
+                .iter()
+                .any(|candidate| key == *candidate)
     })
 }
 
