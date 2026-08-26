@@ -12,11 +12,12 @@ use std::time::Duration;
 
 use cordy_agent::{
     AntigravityBackend, AntigravityConfig, BackendConfig, CatalogCache, ClaudeBackend,
-    ClaudeConfig, CodebuddyBackend, CodebuddyConfig, CopilotBackend, CopilotConfig, DevecoBackend,
-    DevecoConfig, DimBackend, DimConfig, DshBackend, DshConfig, GrokBackend, GrokConfig,
-    HermesBackend, HermesConfig, KimiBackend, KimiConfig, KiroBackend, KiroConfig, OpenclawBackend,
-    OpenclawConfig, OpencodeBackend, OpencodeConfig, PiBackend, PiConfig, QoderBackend,
-    QoderConfig, ReasonixBackend, ReasonixConfig, RuntimeCommand, TraecliBackend, TraecliConfig,
+    ClaudeConfig, CodebuddyBackend, CodebuddyConfig, CopilotBackend, CopilotConfig, CursorBackend,
+    CursorConfig, DevecoBackend, DevecoConfig, DimBackend, DimConfig, DshBackend, DshConfig,
+    GrokBackend, GrokConfig, HermesBackend, HermesConfig, KimiBackend, KimiConfig, KiroBackend,
+    KiroConfig, OpenclawBackend, OpenclawConfig, OpencodeBackend, OpencodeConfig, PiBackend,
+    PiConfig, QoderBackend, QoderConfig, ReasonixBackend, ReasonixConfig, RuntimeCommand,
+    TraecliBackend, TraecliConfig,
 };
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
 use serde_json::{json, Value};
@@ -264,6 +265,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             target.provider.as_str(),
             "claude"
                 | "copilot"
+                | "cursor"
                 | "hermes"
                 | "kimi"
                 | "kiro"
@@ -325,6 +327,17 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 )
                 .await,
                 "copilot" => CopilotBackend::new(CopilotConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "cursor" => CursorBackend::new(CursorConfig {
                     command,
                     env: BTreeMap::new(),
                 })

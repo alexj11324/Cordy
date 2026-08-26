@@ -14,6 +14,7 @@ pub mod codebuddy_discovery;
 pub mod command;
 pub mod contract;
 pub mod copilot;
+pub mod cursor;
 pub mod deveco;
 pub mod dsh;
 mod kimi_usage;
@@ -44,6 +45,7 @@ pub use contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
 pub use copilot::{build_copilot_args, CopilotBackend, CopilotConfig};
+pub use cursor::{build_cursor_args, CursorBackend, CursorConfig};
 pub use deveco::{build_deveco_args, DevecoBackend, DevecoConfig};
 pub use dsh::{build_dsh_args, DshBackend, DshConfig};
 pub use model::{
