@@ -326,6 +326,10 @@ impl SlackChannel {
                 }
                 Ok(())
             }
+            EnvelopeKind::Disconnect => Err(anyhow::anyhow!(
+                "slack: socket mode disconnect requested: {}",
+                envelope.disconnect_reason.as_deref().unwrap_or("unknown")
+            )),
             // hello/connecting/incoming-errors are lifecycle noise.
             EnvelopeKind::Other => Ok(()),
         }
