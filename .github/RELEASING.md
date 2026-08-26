@@ -7,8 +7,11 @@ version tag such as `v0.18.4`. The Release workflow intentionally has no manual
 trigger: a tag push is the only event that can publish binaries, Homebrew
 formulae, and container images.
 
-The verification job runs the Go tests and `govulncheck` before any publishing
-job starts. The vulnerability scan is fail-closed by default.
+The verification job runs the Go compatibility tests and `govulncheck` before
+any publishing job starts. The CLI release matrix then builds the Rust CLI on
+native runners, packages both legacy and versioned archive names, publishes
+`checksums.txt`, and updates the Homebrew formula. The vulnerability scan is
+fail-closed by default.
 
 ## Emergency vulnerability-scan bypass
 
@@ -30,5 +33,6 @@ unresolved reachable vulnerability.
    completes. The tag-scoped value prevents a concurrent release with another
    tag from inheriting the bypass.
 
-Every Go binary retains its compiler version in the standard Go build metadata;
-use `go version -m <binary>` when auditing a downloaded release artifact.
+Release CLI archives contain the Rust `cordy` binary. Audit a downloaded
+artifact with the platform's native `file`/signature tooling and verify its
+SHA-256 entry against `checksums.txt` before installation.

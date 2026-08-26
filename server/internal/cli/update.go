@@ -24,9 +24,8 @@ import (
 	"github.com/cordy-ai/cordy/server/internal/selfexec"
 )
 
-// ChecksumManifestName is the asset name GoReleaser publishes for the
-// checksum manifest (`checksum.name_template: "checksums.txt"` in
-// .goreleaser.yml). Kept as a constant rather than inlined so a future rename
+// ChecksumManifestName is the asset name the release workflow publishes for
+// the checksum manifest. Kept as a constant rather than inlined so a future rename
 // changes one place.
 const ChecksumManifestName = "checksums.txt"
 
@@ -167,7 +166,7 @@ func findReleaseAsset(assets []GitHubReleaseAsset, targetVersion, goos, goarch s
 	return nil, fmt.Errorf("no matching release asset for %s/%s (tried: %s)", goos, goarch, candidates)
 }
 
-// findChecksumManifestAsset locates the GoReleaser-generated checksums.txt
+// findChecksumManifestAsset locates the release-generated checksums.txt
 // among a release's assets. Required for the direct-download path's SHA-256
 // verification — if it is missing we refuse to replace the binary rather
 // than fall back to unverified install, because the auto-update poller runs
@@ -181,7 +180,7 @@ func findChecksumManifestAsset(assets []GitHubReleaseAsset) (*GitHubReleaseAsset
 	return nil, fmt.Errorf("checksum manifest %q not present in release", ChecksumManifestName)
 }
 
-// parseChecksumManifest reads a GoReleaser-style "<sha256>  <filename>"
+// parseChecksumManifest reads the release workflow's "<sha256>  <filename>"
 // manifest and returns the lowercase hex SHA-256 for assetName. Returns an
 // error if the asset is absent so a typo (or the wrong manifest from a
 // different release) fails closed rather than silently disabling
@@ -194,7 +193,7 @@ func parseChecksumManifest(manifest []byte, assetName string) (string, error) {
 			continue
 		}
 		fields := strings.Fields(line)
-		// GoReleaser's default separator is two spaces; some tools use one
+		// The release workflow's default separator is two spaces; some tools use one
 		// or pad with tabs. strings.Fields handles all of those at once.
 		if len(fields) < 2 {
 			continue
