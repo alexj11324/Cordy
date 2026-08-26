@@ -1897,6 +1897,7 @@ async fn issue_timeline(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(id): Path<String>,
+    headers: HeaderMap,
     Query(params): Query<HashMap<String, String>>,
 ) -> Response {
     let issue = match resolve_issue(&state, &context, &id).await {
@@ -1954,7 +1955,7 @@ async fn issue_timeline(
         activities = activities.into_iter().rev().take(2000).collect();
     }
 
-    let mut entries = timeline_comment_entries(&state, &comments).await;
+    let mut entries = timeline_comment_entries(&state, &comments, &headers).await;
     entries.extend(activities.iter().map(timeline_activity_entry));
     entries.sort_by_key(|entry| {
         (
@@ -2010,7 +2011,11 @@ async fn issue_timeline(
 /// records as the Go handler's groupReactions/groupAttachments helpers.
 /// Related-query failures are deliberately fail-soft: the Go endpoint still
 /// returns the comment with empty related arrays when enrichment is unavailable.
-async fn timeline_comment_entries(state: &HandlerState, comments: &[Comment]) -> Vec<Value> {
+async fn timeline_comment_entries(
+    state: &HandlerState,
+    comments: &[Comment],
+    headers: &HeaderMap,
+) -> Vec<Value> {
     if comments.is_empty() {
         return Vec::new();
     }
@@ -2037,10 +2042,10 @@ async fn timeline_comment_entries(state: &HandlerState, comments: &[Comment]) ->
     let mut attachments_by_id: HashMap<Uuid, Vec<Value>> = HashMap::new();
     for item in attachments {
         if let Some(comment_id) = item.comment_id {
-            attachments_by_id
-                .entry(comment_id)
-                .or_default()
-                .push(serde_json::to_value(AttachmentResponse::from(&item)).unwrap_or(Value::Null));
+            attachments_by_id.entry(comment_id).or_default().push(
+                serde_json::to_value(AttachmentResponse::for_request(state, &item, headers))
+                    .unwrap_or(Value::Null),
+            );
         }
     }
 
@@ -6730,6 +6735,18 @@ pub(crate) struct AttachmentResponse {
     content_type: String,
     size_bytes: i64,
     created_at: String,
+}
+
+impl AttachmentResponse {
+    pub(crate) fn for_request(
+        state: &HandlerState,
+        attachment: &Attachment,
+        headers: &HeaderMap,
+    ) -> Self {
+        let mut response = Self::from(attachment);
+        response.download_url = crate::attachment::bulk_download_url(state, attachment, headers);
+        response
+    }
 }
 
 impl From<&Attachment> for AttachmentResponse {

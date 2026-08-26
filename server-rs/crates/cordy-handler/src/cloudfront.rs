@@ -157,6 +157,18 @@ impl CloudFrontSigner {
             .sign(Pkcs1v15Sign::new::<Sha1>(), &digest)
             .map_err(|_| anyhow::anyhow!("CloudFront policy signing failed"))
     }
+
+    #[cfg(test)]
+    pub(crate) fn test_signer() -> Self {
+        use rand::rngs::OsRng;
+
+        Self {
+            key_pair_id: Arc::from("KTEST"),
+            private_key: Arc::new(RsaPrivateKey::new(&mut OsRng, 2048).expect("test RSA key")),
+            domain: Arc::from("static.example.test"),
+            cookie_domain: Arc::from(".example.test"),
+        }
+    }
 }
 
 pub async fn refresh_signed_cookies(

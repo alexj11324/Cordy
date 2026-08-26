@@ -680,6 +680,31 @@ fn attachment_download_mode(state: &HandlerState, att: &Attachment) -> Attachmen
         .resolve_mode(state.attachment_storage.as_deref(), &att.url)
 }
 
+/// Bulk comment/issue payloads follow the Go `attachmentToResponse` policy:
+/// callers that advertise `stable_attachment_urls` keep the auth-gated
+/// `/download` path; everyone else receives a CloudFront-signed URL when a
+/// signer is configured. Presign and proxy deployments resolve at download
+/// time, so they stay on the stable path.
+pub(crate) fn bulk_download_url(
+    state: &HandlerState,
+    attachment: &Attachment,
+    headers: &HeaderMap,
+) -> String {
+    let stable = format!("/api/attachments/{}/download", attachment.id);
+    if crate::claim_response::request_has_client_capability(headers, "stable_attachment_urls") {
+        return stable;
+    }
+    let Some(signer) = state.attachment_download.cloudfront_signer.as_ref() else {
+        return stable;
+    };
+    let Ok(expiry) = cloudfront_expiry(state) else {
+        return stable;
+    };
+    signer
+        .signed_url(&attachment.url, expiry, None)
+        .unwrap_or(stable)
+}
+
 fn attachment_redirect(state: &HandlerState, location: &str) -> Response {
     let Ok(location) = HeaderValue::from_str(location) else {
         return error_response(StatusCode::BAD_GATEWAY, "failed to create download URL");
@@ -1186,5 +1211,47 @@ mod tests {
         assert!(!got.contains('\r'));
         assert!(!got.contains('\n'));
         assert!(got.contains("filename*=UTF-8''"));
+    }
+
+    #[tokio::test]
+    async fn bulk_download_url_matches_go_capability_policy() {
+        let attachment = Attachment {
+            chat_message_id: None,
+            chat_session_id: None,
+            comment_id: Some(Uuid::nil()),
+            content_type: "image/png".into(),
+            created_at: chrono::Utc::now(),
+            filename: "diagram.png".into(),
+            id: Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f13").unwrap(),
+            issue_id: Some(Uuid::nil()),
+            size_bytes: 42,
+            task_id: None,
+            uploader_id: Uuid::nil(),
+            uploader_type: "member".into(),
+            url: "https://static.example.test/workspaces/w/file.png".into(),
+            workspace_id: Uuid::nil(),
+        };
+        let mut state = HandlerState::new(
+            sqlx::PgPool::connect_lazy("postgres://invalid/invalid").unwrap(),
+            cordy_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        state.attachment_download.cloudfront_signer = Some(std::sync::Arc::new(
+            crate::cloudfront::CloudFrontSigner::test_signer(),
+        ));
+
+        let signed = bulk_download_url(&state, &attachment, &HeaderMap::new());
+        assert!(signed.contains("Policy="), "{signed}");
+        assert!(signed.contains("Key-Pair-Id=KTEST"), "{signed}");
+
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-client-capabilities",
+            "stable_attachment_urls".parse().unwrap(),
+        );
+        assert_eq!(
+            bulk_download_url(&state, &attachment, &headers),
+            format!("/api/attachments/{}/download", attachment.id)
+        );
     }
 }
