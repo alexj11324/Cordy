@@ -313,7 +313,9 @@ If you are upgrading from a binary that pre-dates MUL-2957 (or the auto-hook fai
 
 If you prefer to build and run services manually:
 
-**Prerequisites:** Go 1.26.6, Node.js 22, pnpm 10.28.2, PostgreSQL 17 with pgvector.
+**Prerequisites:** Rust stable with Cargo, Go 1.26.6 (for the explicit legacy
+`go-build` / `go-migrate-*` targets), Node.js 22, pnpm 10.28.2, PostgreSQL
+17 with pgvector.
 
 ```bash
 # Start your PostgreSQL (or use: docker compose up -d postgres)
