@@ -3,4 +3,5 @@
 
 pub mod attribution;
 pub mod issue_activity;
+pub mod codex_usage;
 pub mod task_usage;
