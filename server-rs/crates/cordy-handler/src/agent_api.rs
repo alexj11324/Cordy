@@ -766,13 +766,13 @@ async fn create_agent(
             "description must be 255 characters or fewer",
         );
     }
-    let max_concurrent_tasks = request.max_concurrent_tasks.unwrap_or(6);
-    if !(1..=50).contains(&max_concurrent_tasks) {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "max_concurrent_tasks must be between 1 and 50",
-        );
-    }
+    let max_concurrent_tasks =
+        match crate::agent_validation::default_and_validate_max_concurrent_tasks(
+            request.max_concurrent_tasks,
+        ) {
+            Ok(value) => value,
+            Err(error) => return error_response(StatusCode::BAD_REQUEST, &error),
+        };
     let runtime_id = match request
         .runtime_id
         .as_deref()
@@ -1015,14 +1015,10 @@ async fn update_agent(
             "description must be 255 characters or fewer",
         );
     }
-    if request
-        .max_concurrent_tasks
-        .is_some_and(|value| !(1..=50).contains(&value))
-    {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "max_concurrent_tasks must be between 1 and 50",
-        );
+    if let Some(value) = request.max_concurrent_tasks {
+        if let Err(error) = crate::agent_validation::validate_max_concurrent_tasks(value) {
+            return error_response(StatusCode::BAD_REQUEST, &error);
+        }
     }
     if raw_request.get("custom_env").is_some() {
         return error_response(

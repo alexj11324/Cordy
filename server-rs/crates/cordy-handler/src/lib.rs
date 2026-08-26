@@ -14,6 +14,7 @@ pub mod agent_aggregation;
 pub mod agent_api;
 pub mod agent_builder;
 pub mod agent_mcp;
+mod agent_validation;
 pub mod attachment;
 pub mod attachment_storage;
 pub mod auth;
