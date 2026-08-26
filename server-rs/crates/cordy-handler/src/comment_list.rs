@@ -550,7 +550,7 @@ async fn add_missing_descendants(
     Ok(false)
 }
 
-async fn complete_comment_threads(
+pub(crate) async fn complete_comment_threads(
     state: &HandlerState,
     issue_id: Uuid,
     workspace_id: Uuid,
