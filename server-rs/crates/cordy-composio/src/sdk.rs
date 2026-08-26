@@ -179,6 +179,8 @@ pub struct Toolkit {
         rename = "auth_schemes"
     )]
     pub auth_schemes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
 }
 
 // ── connect links ────────────────────────────────────────────────────────
@@ -709,6 +711,17 @@ impl Client {
         self.decode(self.post_json(&path, &req).await?).await
     }
 
+    /// GET /toolkits/{slug}
+    pub async fn get_toolkit(&self, slug: &str) -> Result<Toolkit, Error> {
+        if slug.is_empty() {
+            return Err(Error::Other(
+                "composio: GetToolkit: slug is required".into(),
+            ));
+        }
+        let path = format!("/toolkits/{}", urlencode_component(slug));
+        self.decode(self.get(&path, &[]).await?).await
+    }
+
     /// POST /tool_router/session
     pub async fn create_session(
         &self,
@@ -1113,6 +1126,27 @@ mod tests {
         assert!(
             matches!(missing_identity, Err(Error::Other(message)) if message.contains("ConnectedAccountID"))
         );
+    }
+
+    #[test]
+    fn toolkit_preserves_meta_wire_field() {
+        let toolkit = Toolkit {
+            slug: "github".into(),
+            meta: Some(serde_json::json!({"provider": "github"})),
+            ..Default::default()
+        };
+        let json = serde_json::to_value(&toolkit).unwrap();
+        assert_eq!(json["meta"]["provider"], "github");
+
+        let decoded: Toolkit = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded.meta.unwrap()["provider"], "github");
+    }
+
+    #[tokio::test]
+    async fn get_toolkit_validates_slug_before_network_request() {
+        let client = ClientBuilder::new("key").build().unwrap();
+        let result = client.get_toolkit("").await;
+        assert!(matches!(result, Err(Error::Other(message)) if message.contains("slug")));
     }
 
     #[test]
