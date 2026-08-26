@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::antigravity::{AntigravityBackend, AntigravityConfig};
+use crate::claude::{ClaudeBackend, ClaudeConfig};
 use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
@@ -55,6 +56,10 @@ pub fn build_backend(
             command: config.command,
             env: config.env,
             ..AntigravityConfig::default()
+        }))),
+        "claude" => Ok(Arc::new(ClaudeBackend::new(ClaudeConfig {
+            command: config.command,
+            env: config.env,
         }))),
         "codebuddy" => Ok(Arc::new(CodebuddyBackend::new(CodebuddyConfig {
             command: config.command,
@@ -531,6 +536,9 @@ mod tests {
 
     #[test]
     fn backend_registry_constructs_only_landed_protocols() {
+        let claude = build_backend("claude", BackendConfig::default());
+        assert!(claude.is_ok());
+
         let qwen = build_backend("qwen", BackendConfig::default());
         assert!(qwen.is_ok());
 
@@ -559,11 +567,6 @@ mod tests {
         assert!(build_backend("mcode", BackendConfig::default()).is_ok());
         assert!(build_backend("dim", BackendConfig::default()).is_ok());
 
-        let metadata_only = build_backend("claude", BackendConfig::default());
-        assert!(matches!(
-            metadata_only,
-            Err(AgentError::UnsupportedRuntime(runtime)) if runtime == "claude"
-        ));
         let unknown = build_backend("unknown", BackendConfig::default());
         assert!(matches!(
             unknown,

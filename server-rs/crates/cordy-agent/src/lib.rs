@@ -8,6 +8,7 @@
 pub mod acp;
 pub mod acp_mcp;
 pub mod antigravity;
+pub mod claude;
 pub mod codebuddy;
 pub mod codebuddy_discovery;
 pub mod command;
@@ -35,6 +36,7 @@ pub use acp_mcp::{
     AcpMcpCapabilityDeclaration, AcpMcpServer,
 };
 pub use antigravity::{AntigravityBackend, AntigravityConfig};
+pub use claude::{build_claude_args, ClaudeBackend, ClaudeConfig};
 pub use codebuddy::{CodebuddyBackend, CodebuddyConfig};
 pub use command::{BlockedArgMode, FilteredArgs, RuntimeCommand};
 pub use contract::{
