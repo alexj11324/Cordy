@@ -36,6 +36,7 @@ use crate::health::{
     ActiveRepoCheckoutTask, HealthResponse, RepoCheckoutRegistry, RepoCheckoutRequest,
     REPO_CHECKOUT_LOCK_WAIT_TIMEOUT,
 };
+use crate::local_skills::{RuntimeLocalSkillBundle, RuntimeLocalSkillSummary};
 use crate::production_stack::{ProductionRuntimeServices, RepoCheckoutFailure};
 use crate::provider_registration::RuntimeLaunchRegistry;
 use crate::reconcile::{ReconcileBroadcaster, WorkspaceChangeSignal};
@@ -61,6 +62,23 @@ const RUNTIME_REPORT_BACKOFFS: &[Duration] = &[
     Duration::from_secs(2),
     Duration::from_secs(4),
 ];
+
+#[derive(Debug, Clone, Copy)]
+enum RuntimeReportKind {
+    ModelList,
+    LocalSkillList,
+    LocalSkillImport,
+}
+
+impl RuntimeReportKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::ModelList => "model-list",
+            Self::LocalSkillList => "local-skill-list",
+            Self::LocalSkillImport => "local-skill-import",
+        }
+    }
+}
 
 #[async_trait::async_trait]
 pub trait ProviderRuntimeAdapter: Send + Sync + 'static {
@@ -573,6 +591,26 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         request_id: &str,
         payload: Value,
     ) -> bool {
+        self.report_runtime_result_with_retry(
+            ctx,
+            provider,
+            runtime_id,
+            request_id,
+            RuntimeReportKind::ModelList,
+            payload,
+        )
+        .await
+    }
+
+    async fn report_runtime_result_with_retry(
+        &self,
+        ctx: &Ctx,
+        provider: &str,
+        runtime_id: &str,
+        request_id: &str,
+        kind: RuntimeReportKind,
+        payload: Value,
+    ) -> bool {
         for (attempt, wait) in RUNTIME_REPORT_BACKOFFS.iter().copied().enumerate() {
             if !wait.is_zero() {
                 tokio::select! {
@@ -580,11 +618,34 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                     _ = tokio::time::sleep(wait) => {}
                 }
             }
-            match self
-                .client
-                .report_model_list_result(ctx, runtime_id, request_id, payload.clone())
-                .await
-            {
+            let result = match kind {
+                RuntimeReportKind::ModelList => {
+                    self.client
+                        .report_model_list_result(ctx, runtime_id, request_id, payload.clone())
+                        .await
+                }
+                RuntimeReportKind::LocalSkillList => {
+                    self.client
+                        .report_local_skill_list_result(
+                            ctx,
+                            runtime_id,
+                            request_id,
+                            payload.clone(),
+                        )
+                        .await
+                }
+                RuntimeReportKind::LocalSkillImport => {
+                    self.client
+                        .report_local_skill_import_result(
+                            ctx,
+                            runtime_id,
+                            request_id,
+                            payload.clone(),
+                        )
+                        .await
+                }
+            };
+            match result {
                 Ok(()) => return true,
                 Err(error) => {
                     let permanent = request_status_code(&error)
@@ -594,8 +655,9 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                             %runtime_id,
                             %request_id,
                             %provider,
+                            kind = kind.label(),
                             error = %error,
-                            "ACP model-list report failed"
+                            "runtime async result report failed"
                         );
                         return false;
                     }
@@ -603,13 +665,153 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                         %runtime_id,
                         %request_id,
                         %provider,
+                        kind = kind.label(),
                         error = %error,
-                        "ACP model-list report failed; retrying"
+                        "runtime async result report failed; retrying"
                     );
                 }
             }
         }
         false
+    }
+
+    /// Completes Go `handleLocalSkillList` for one accepted runtime. The
+    /// inventory walk is filesystem-bound, so it runs outside the async
+    /// executor; the report itself remains on the authenticated daemon client
+    /// and uses the same transient retry contract as model discovery.
+    async fn handle_local_skill_list(
+        &self,
+        ctx: Ctx,
+        registry: Arc<RuntimeRegistry>,
+        runtime_id: &str,
+        request_id: &str,
+    ) -> bool {
+        let Some(target) = registry.execution_target_for_runtime(runtime_id) else {
+            return false;
+        };
+        let provider = target.provider;
+        let provider_for_walk = provider.clone();
+        let inventory = tokio::task::spawn_blocking(move || {
+            let (skills, supported) =
+                crate::local_skills::list_runtime_local_skills(&provider_for_walk)?;
+            let (mcp_servers, mcp_supported) =
+                match crate::runtime_mcp::list_runtime_local_mcp_servers(&provider_for_walk) {
+                    Ok(result) => result,
+                    Err(error) => {
+                        tracing::warn!(
+                            provider = %provider_for_walk,
+                            %error,
+                            "runtime local MCP discovery failed"
+                        );
+                        (Vec::new(), false)
+                    }
+                };
+            Ok::<_, anyhow::Error>((skills, supported, mcp_servers, mcp_supported))
+        });
+        let (skills, supported, mcp_servers, mcp_supported) = tokio::select! {
+            () = ctx.cancelled() => return false,
+            result = inventory => match result {
+                Ok(Ok(result)) => result,
+                Ok(Err(error)) => {
+                    let payload = local_skill_list_failed_payload(error);
+                    return self.report_runtime_result_with_retry(
+                        &ctx,
+                        &provider,
+                        runtime_id,
+                        request_id,
+                        RuntimeReportKind::LocalSkillList,
+                        payload,
+                    ).await;
+                }
+                Err(error) => {
+                    let payload = local_skill_list_failed_payload(format!(
+                        "local skill discovery worker failed: {error}"
+                    ));
+                    return self.report_runtime_result_with_retry(
+                        &ctx,
+                        &provider,
+                        runtime_id,
+                        request_id,
+                        RuntimeReportKind::LocalSkillList,
+                        payload,
+                    ).await;
+                }
+            },
+        };
+        if ctx.err().is_some() {
+            return false;
+        }
+        self.report_runtime_result_with_retry(
+            &ctx,
+            &provider,
+            runtime_id,
+            request_id,
+            RuntimeReportKind::LocalSkillList,
+            local_skill_list_completed_payload(skills, supported, mcp_servers, mcp_supported),
+        )
+        .await
+    }
+
+    /// Completes Go `handleLocalSkillImport`, preserving the distinction
+    /// between an unsupported provider and a failed/missing skill key.
+    async fn handle_local_skill_import(
+        &self,
+        ctx: Ctx,
+        registry: Arc<RuntimeRegistry>,
+        runtime_id: &str,
+        request: cordy_protocol::DaemonHeartbeatPendingLocalSkillImport,
+    ) -> bool {
+        let Some(target) = registry.execution_target_for_runtime(runtime_id) else {
+            return false;
+        };
+        let provider = target.provider;
+        let skill_key = request.skill_key;
+        let provider_for_load = provider.clone();
+        let load = tokio::task::spawn_blocking(move || {
+            crate::local_skills::load_runtime_local_skill_bundle(&provider_for_load, &skill_key)
+        });
+        let loaded = tokio::select! {
+            () = ctx.cancelled() => return false,
+            result = load => match result {
+                Ok(result) => result,
+                Err(error) => {
+                    let payload = local_skill_import_failed_payload(format!(
+                        "local skill import worker failed: {error}"
+                    ));
+                    return self.report_runtime_result_with_retry(
+                        &ctx,
+                        &provider,
+                        runtime_id,
+                        &request.id,
+                        RuntimeReportKind::LocalSkillImport,
+                        payload,
+                    ).await;
+                }
+            },
+        };
+        if ctx.err().is_some() {
+            return false;
+        }
+        let payload = match loaded {
+            Ok((Some(skill), true)) => local_skill_import_completed_payload(skill),
+            Ok((Some(_), false)) => local_skill_import_failed_payload(
+                "runtime local skill loader returned a skill for an unsupported provider",
+            ),
+            Ok((None, false)) => local_skill_import_failed_payload(format!(
+                "provider {provider:?} does not expose runtime local skills"
+            )),
+            Ok((None, true)) => local_skill_import_failed_payload("local skill not found"),
+            Err(error) => local_skill_import_failed_payload(error),
+        };
+        self.report_runtime_result_with_retry(
+            &ctx,
+            &provider,
+            runtime_id,
+            &request.id,
+            RuntimeReportKind::LocalSkillImport,
+            payload,
+        )
+        .await
     }
 
     fn sync_base_interval(&self, registry: &RuntimeRegistry) -> Duration {
@@ -886,6 +1088,42 @@ fn model_list_failed_payload(error: impl std::fmt::Display) -> Value {
     })
 }
 
+fn local_skill_list_completed_payload(
+    skills: Vec<RuntimeLocalSkillSummary>,
+    supported: bool,
+    mcp_servers: Vec<crate::runtime_mcp::RuntimeLocalMcpServerSummary>,
+    mcp_supported: bool,
+) -> Value {
+    json!({
+        "status": "completed",
+        "skills": skills,
+        "supported": supported,
+        "mcp_servers": mcp_servers,
+        "mcp_supported": mcp_supported,
+    })
+}
+
+fn local_skill_list_failed_payload(error: impl std::fmt::Display) -> Value {
+    json!({
+        "status": "failed",
+        "error": error.to_string(),
+    })
+}
+
+fn local_skill_import_completed_payload(skill: RuntimeLocalSkillBundle) -> Value {
+    json!({
+        "status": "completed",
+        "skill": skill,
+    })
+}
+
+fn local_skill_import_failed_payload(error: impl std::fmt::Display) -> Value {
+    json!({
+        "status": "failed",
+        "error": error.to_string(),
+    })
+}
+
 struct TaskRepoRefGuard {
     state: Arc<DaemonRepoState>,
     workspace_id: String,
@@ -967,6 +1205,41 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
                 .await
             {
                 ack.pending_model_list = None;
+            }
+        }
+        if let Some(request) = ack.pending_local_skills.clone() {
+            if self
+                .handle_local_skill_list(
+                    ctx.child(),
+                    Arc::clone(&registry),
+                    &runtime_id,
+                    &request.id,
+                )
+                .await
+            {
+                ack.pending_local_skills = None;
+            }
+        }
+
+        // New servers may return several imports at once. Keep the batch
+        // field authoritative and only use the singular field for older
+        // servers, matching the Go daemon's compatibility rule.
+        let imports = if !ack.pending_local_skill_imports.is_empty() {
+            std::mem::take(&mut ack.pending_local_skill_imports)
+        } else {
+            ack.pending_local_skill_import.take().into_iter().collect()
+        };
+        for request in imports {
+            if !self
+                .handle_local_skill_import(
+                    ctx.child(),
+                    Arc::clone(&registry),
+                    &runtime_id,
+                    request.clone(),
+                )
+                .await
+            {
+                ack.pending_local_skill_imports.push(request);
             }
         }
         self.provider
@@ -1215,5 +1488,49 @@ mod tests {
             )
             .expect_err("unregistered launch must fail closed");
         assert!(error.to_string().contains("no accepted launch"));
+    }
+
+    #[test]
+    fn local_skill_action_payloads_preserve_go_wire_contract() {
+        let summary = RuntimeLocalSkillSummary {
+            key: "deploy/release".to_string(),
+            name: "Release".to_string(),
+            description: "Ship a release".to_string(),
+            source_path: "~/.claude/skills/deploy/release".to_string(),
+            provider: "claude".to_string(),
+            root: "provider".to_string(),
+            plugin: String::new(),
+            can_disable: true,
+            file_count: 2,
+        };
+        let mcp = crate::runtime_mcp::RuntimeLocalMcpServerSummary {
+            name: "release-tools".to_string(),
+            transport: "stdio".to_string(),
+            source: "User config".to_string(),
+            enabled: true,
+        };
+        let list = local_skill_list_completed_payload(vec![summary], true, vec![mcp], true);
+        assert_eq!(list["status"], "completed");
+        assert_eq!(list["skills"][0]["key"], "deploy/release");
+        assert_eq!(list["skills"][0]["can_disable"], true);
+        assert_eq!(list["mcp_servers"][0]["name"], "release-tools");
+        assert_eq!(list["mcp_supported"], true);
+
+        let bundle = RuntimeLocalSkillBundle {
+            name: "Release".to_string(),
+            description: "Ship a release".to_string(),
+            content: "# Release".to_string(),
+            source_path: "~/.claude/skills/deploy/release".to_string(),
+            provider: "claude".to_string(),
+            files: vec![crate::types::SkillFileData {
+                path: "README.md".to_string(),
+                content: "details".to_string(),
+                ..crate::types::SkillFileData::default()
+            }],
+        };
+        let import = local_skill_import_completed_payload(bundle);
+        assert_eq!(import["status"], "completed");
+        assert_eq!(import["skill"]["provider"], "claude");
+        assert_eq!(import["skill"]["files"][0]["path"], "README.md");
     }
 }
