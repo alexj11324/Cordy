@@ -266,22 +266,18 @@ server: ## Run only the Go server for the current checkout
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	cd server && go run ./cmd/server
 
-RUST_CLI_CMD = cd server-rs && CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" cargo run -p cordy-cli --
+daemon: CORDY_ARGS := daemon restart --profile local
+daemon: rust-cli ## Restart the local agent daemon using the CLI's stored auth/session
 
-daemon: ## Restart the local agent daemon using the CLI's stored auth/session
-	@$(RUST_CLI_CMD) daemon restart --profile local
+cli: rust-cli ## Run the Rust cordy CLI with ARGS or CORDY_ARGS from source
 
-cli: ## Run the Rust cordy CLI with ARGS or CORDY_ARGS from source
-	@$(RUST_CLI_CMD) $(CORDY_ARGS)
-
-cordy: ## Run the Rust cordy CLI entrypoint
-	@$(RUST_CLI_CMD) $(CORDY_ARGS)
+cordy: rust-cli ## Run the Rust cordy CLI entrypoint
 
 go-cordy: ## Run the legacy Go CLI entrypoint during the migration
 	cd server && go run -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" ./cmd/cordy $(CORDY_ARGS)
 
 rust-cli: ## Run the migrated Rust CLI slice with ARGS or CORDY_ARGS
-	@$(RUST_CLI_CMD) $(CORDY_ARGS)
+	CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(RUST_BUILD_DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" ./scripts/run-rust-cli.sh $(CORDY_ARGS)
 
 build-rust-cli: ## Build the migrated Rust CLI slice in release mode
 	cd server-rs && CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" cargo build --release -p cordy-cli
@@ -290,6 +286,7 @@ VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 GO_VERSION ?= $(shell go env GOVERSION 2>/dev/null || echo unknown)
+RUST_BUILD_DATE ?= $(shell git show -s --format=%cI HEAD 2>/dev/null || echo unknown)
 # Windows will not execute an extensionless binary, so a source build there has
 # to name its outputs the way the target platform expects — otherwise the CLI
 # builds fine and then fails to re-exec itself as a daemon (#7255). GOOS reaches

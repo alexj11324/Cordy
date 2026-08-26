@@ -3,9 +3,13 @@
 //! Environment capture and atomic persistence live in `config_environment`;
 //! profile schema and launch precedence live in `config_profile`.
 
+#[path = "config_environment.rs"]
 mod config_environment;
+#[path = "config_persistence.rs"]
 mod config_persistence;
+#[path = "config_profile_resolution.rs"]
 mod config_profile_resolution;
+#[path = "config_profile_schema.rs"]
 mod config_profile_schema;
 
 pub use config_environment::{Environment, SetupProfileInput, TASK_CONFIG_ROOT_ENV};

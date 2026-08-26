@@ -1,5 +1,6 @@
 //! HTTP client foundation ported from `server/internal/cli/client.go`.
 
+#[path = "api_error.rs"]
 mod api_error;
 
 pub(crate) use api_error::{

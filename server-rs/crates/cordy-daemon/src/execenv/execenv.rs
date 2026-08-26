@@ -565,10 +565,7 @@ pub(crate) fn ensure_task_temp_dir(
         })?;
 
     restrict_permissions(directory.path()).context("restrict task temp directory")?;
-    let path = directory
-        .into_temp_path()
-        .keep()
-        .map_err(|error| anyhow::anyhow!("retain task temp directory: {}", error.error))?;
+    let path = directory.into_path();
     Ok(path.to_string_lossy().into_owned())
 }
 

@@ -4,6 +4,7 @@
 //! `login_browser`; this module keeps credential selection, verification,
 //! and atomic profile update orchestration together.
 
+#[path = "login_browser.rs"]
 mod login_browser;
 pub(crate) use login_browser::{
     build_login_url, build_workspace_creation_url, callback_host_is_loopback, constant_time_equal,

@@ -469,9 +469,9 @@ make cli ARGS="daemon start --profile $PROFILE"
 ```
 
 The daemon runs from the current worktree's Rust source, connecting to the
-local backend. Use `make go-cordy` only for the legacy Go CLI rollback path.
-Agent-executed `cordy` commands automatically use the same binary (the daemon
-prepends its own directory to `PATH`).
+local backend. Agent-executed `cordy` commands automatically use the same
+binary (the daemon prepends its own directory to `PATH`). If you need to
+exercise the legacy implementation during the migration, use `make go-cordy`.
 
 ### Stop the Isolated Environment
 
@@ -507,8 +507,9 @@ pnpm dev:desktop
 
 This automatically:
 
-1. Compiles the Rust `cordy` CLI from `server-rs` into
-   `apps/desktop/resources/bin/cordy`
+1. Compiles the legacy Go `cordy` CLI from `server/cmd/cordy` into
+   `apps/desktop/resources/bin/cordy` (the desktop bundler remains Go-backed
+   until its Rust packaging path is migrated)
 2. Creates an isolated profile named `desktop-localhost-<PORT>`
 3. Starts and manages its own daemon instance
 4. Connects to the local backend
