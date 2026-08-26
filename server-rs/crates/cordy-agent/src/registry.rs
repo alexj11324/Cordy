@@ -7,7 +7,9 @@ use crate::antigravity::{AntigravityBackend, AntigravityConfig};
 use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
+use crate::deveco::{DevecoBackend, DevecoConfig};
 use crate::dsh::{DshBackend, DshConfig};
+use crate::opencode::{OpencodeBackend, OpencodeConfig};
 use crate::pi::{PiBackend, PiConfig};
 use crate::qoder::{
     DimBackend, DimConfig, GrokBackend, GrokConfig, HermesBackend, HermesConfig, KimiBackend,
@@ -95,6 +97,14 @@ pub fn build_backend(
             env: config.env,
         }))),
         "dsh" => Ok(Arc::new(DshBackend::new(DshConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "deveco" => Ok(Arc::new(DevecoBackend::new(DevecoConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "opencode" => Ok(Arc::new(OpencodeBackend::new(OpencodeConfig {
             command: config.command,
             env: config.env,
         }))),
@@ -533,6 +543,8 @@ mod tests {
         assert!(build_backend("kimi", BackendConfig::default()).is_ok());
         assert!(build_backend("reasonix", BackendConfig::default()).is_ok());
         assert!(build_backend("dsh", BackendConfig::default()).is_ok());
+        assert!(build_backend("deveco", BackendConfig::default()).is_ok());
+        assert!(build_backend("opencode", BackendConfig::default()).is_ok());
         let pi = build_backend("pi", BackendConfig::default());
         assert!(pi.is_ok(), "custom Pi runtime must build");
         let omp = build_backend("omp", BackendConfig::default());
