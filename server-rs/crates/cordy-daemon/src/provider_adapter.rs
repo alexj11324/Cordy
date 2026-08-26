@@ -1481,9 +1481,7 @@ fn result_outcome(
             String::new(),
         ),
     };
-    if resume_rejected {
-        failure_reason = "resume_rejected".to_string();
-    } else if status == "completed" {
+    if status == "completed" {
         if let Some(reason) = classify_poisoned_output(&comment) {
             tracing::warn!(
                 provider = %provider,
@@ -1520,6 +1518,13 @@ fn result_outcome(
             if retired_session_id.is_empty() && !requested_session_id.is_empty() {
                 retired_session_id = requested_session_id.to_string();
             }
+        } else if resume_rejected {
+            // `resume_rejected` is the fallback signal for an ordinary
+            // failed resume. Specific poisoned error/transport classifiers
+            // above must win: Codex overflow also sets this bit so the
+            // fresh-session retry gate can recover the current turn, but its
+            // terminal reason still needs to be `codex_resume_oversized`.
+            failure_reason = "resume_rejected".to_string();
         } else {
             failure_reason = cordy_task_failure::classify(&comment).to_string();
         }
@@ -2854,16 +2859,18 @@ mod tests {
             ExecutionResult {
                 status: "completed".to_string(),
                 output: "I reached the iteration limit and stopped".to_string(),
+                resume_rejected: true,
                 ..ExecutionResult::default()
             },
             &Environment::default(),
-            "",
+            "session-poisoned",
             "",
             false,
         );
 
         assert_eq!(outcome.result.status, "blocked");
         assert_eq!(outcome.result.failure_reason, "iteration_limit");
+        assert_eq!(outcome.result.retired_session_id, "session-poisoned");
     }
 
     #[test]
@@ -2873,6 +2880,7 @@ mod tests {
             ExecutionResult {
                 status: "timeout".to_string(),
                 error: "codex semantic inactivity timeout".to_string(),
+                resume_rejected: true,
                 ..ExecutionResult::default()
             },
             &Environment::default(),
@@ -2882,6 +2890,7 @@ mod tests {
         );
 
         assert_eq!(outcome.result.failure_reason, "codex_semantic_inactivity");
+        assert_eq!(outcome.result.retired_session_id, "session-stuck");
     }
 
     #[test]
@@ -2891,6 +2900,7 @@ mod tests {
             ExecutionResult {
                 status: "failed".to_string(),
                 error: "thread/resume failed: token too long".to_string(),
+                resume_rejected: true,
                 ..ExecutionResult::default()
             },
             &Environment::default(),
