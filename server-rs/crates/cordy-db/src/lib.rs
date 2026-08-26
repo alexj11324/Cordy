@@ -37,8 +37,8 @@ pub async fn connect(cfg: &cordy_config::DatabaseConfig) -> anyhow::Result<PgPoo
 
 /// Applies the Go server's pool precedence:
 /// environment overrides win over `pool_*` DATABASE_URL parameters, which
-/// win over the Rust config defaults. Invalid positive overrides fall back to
-/// the next lower-precedence value and are logged.
+/// win over the Rust config defaults. Invalid overrides fall back to the next
+/// lower-precedence value and are logged.
 pub fn effective_pool_limits(cfg: &cordy_config::DatabaseConfig, url: &str) -> (u32, u32) {
     let max_env = std::env::var("DATABASE_MAX_CONNS").ok();
     let min_env = std::env::var("DATABASE_MIN_CONNS").ok();
@@ -51,20 +51,24 @@ fn effective_pool_limits_with_env(
     max_env: Option<&str>,
     min_env: Option<&str>,
 ) -> (u32, u32) {
-    let max_fallback = pool_url_param(url, "pool_max_conns").unwrap_or(cfg.max_connections);
-    let min_fallback = pool_url_param(url, "pool_min_conns").unwrap_or(cfg.min_connections);
-    let max_connections = positive_env_u32("DATABASE_MAX_CONNS", max_env, max_fallback.max(1));
+    let max_fallback = pool_url_param(url, "pool_max_conns", false).unwrap_or(cfg.max_connections);
+    let min_fallback = pool_url_param(url, "pool_min_conns", true).unwrap_or(cfg.min_connections);
+    let max_connections = pool_env_u32("DATABASE_MAX_CONNS", max_env, max_fallback.max(1), false);
     let min_connections =
-        positive_env_u32("DATABASE_MIN_CONNS", min_env, min_fallback).min(max_connections);
+        pool_env_u32("DATABASE_MIN_CONNS", min_env, min_fallback, true).min(max_connections);
     (max_connections, min_connections)
 }
 
-fn pool_url_param(url: &str, key: &str) -> Option<u32> {
+fn pool_url_param(url: &str, key: &str, allow_zero: bool) -> Option<u32> {
     let parsed = url::Url::parse(url).ok()?;
     let raw = parsed
         .query_pairs()
         .find_map(|(name, value)| (name == key).then(|| value.into_owned()))?;
-    match raw.parse::<u32>().ok().filter(|value| *value > 0) {
+    match raw
+        .parse::<u32>()
+        .ok()
+        .filter(|value| *value > 0 || allow_zero)
+    {
         Some(value) => Some(value),
         None => {
             tracing::warn!(key, value = %raw, "invalid database pool URL parameter; using fallback");
@@ -73,11 +77,15 @@ fn pool_url_param(url: &str, key: &str) -> Option<u32> {
     }
 }
 
-fn positive_env_u32(name: &str, raw: Option<&str>, fallback: u32) -> u32 {
+fn pool_env_u32(name: &str, raw: Option<&str>, fallback: u32, allow_zero: bool) -> u32 {
     let Some(raw) = raw.filter(|value| !value.is_empty()) else {
         return fallback;
     };
-    match raw.parse::<u32>().ok().filter(|value| *value > 0) {
+    match raw
+        .parse::<u32>()
+        .ok()
+        .filter(|value| *value > 0 || allow_zero)
+    {
         Some(value) => value,
         None => {
             tracing::warn!(name, value = %raw, default = fallback, "invalid database pool env override; using fallback");
@@ -103,9 +111,10 @@ pub async fn run_pool_stats_logger(pool: PgPool, cancellation: CancellationToken
         let total = pool.size() as usize;
         let idle = pool.num_idle();
         let acquired = total.saturating_sub(idle);
-        if acquired >= total && total > 0 {
+        let max_connections = pool.options().get_max_connections();
+        if pool_at_capacity(total, acquired, max_connections) {
             tracing::warn!(
-                max_connections = pool.options().get_max_connections(),
+                max_connections,
                 total_conns = total,
                 acquired_conns = acquired,
                 idle_conns = idle,
@@ -121,6 +130,11 @@ pub async fn run_pool_stats_logger(pool: PgPool, cancellation: CancellationToken
             );
         }
     }
+}
+
+fn pool_at_capacity(total: usize, acquired: usize, max_connections: u32) -> bool {
+    let max_connections = max_connections as usize;
+    max_connections > 0 && total >= max_connections && acquired >= max_connections
 }
 
 /// Cheap liveness probe used by `/readyz`.
@@ -183,6 +197,36 @@ mod tests {
     }
 
     #[test]
+    fn zero_is_valid_for_min_connections_but_not_max_connections() {
+        let cfg = test_config();
+        assert_eq!(
+            effective_pool_limits_with_env(
+                &cfg,
+                "postgres://localhost/cordy?pool_max_conns=25&pool_min_conns=0",
+                Some("25"),
+                Some("0"),
+            ),
+            (25, 0)
+        );
+        assert_eq!(
+            effective_pool_limits_with_env(
+                &cfg,
+                "postgres://localhost/cordy?pool_max_conns=0&pool_min_conns=0",
+                Some("0"),
+                Some("0"),
+            ),
+            (25, 0)
+        );
+    }
+
+    #[test]
+    fn pool_pressure_requires_reaching_the_configured_maximum() {
+        assert!(!pool_at_capacity(5, 5, 25));
+        assert!(!pool_at_capacity(25, 24, 25));
+        assert!(pool_at_capacity(25, 25, 25));
+    }
+
+    #[test]
     fn invalid_pool_overrides_fall_back_without_using_sqlx_defaults() {
         let cfg = cordy_config::DatabaseConfig {
             url: None,
@@ -196,7 +240,7 @@ mod tests {
                 Some("not-a-number"),
                 Some(" "),
             ),
-            (1, 1)
+            (1, 0)
         );
     }
 }
