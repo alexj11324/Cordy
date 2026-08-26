@@ -1989,7 +1989,7 @@ async fn run_codex(
             &stderr_tail,
         )
         .await;
-        let stderr = cleanup.stderr;
+        let stderr = sanitize_diagnostic(&cleanup.stderr);
         let task_deadline_exhausted =
             options.timeout > Duration::ZERO && started.elapsed() >= options.timeout;
         if attempt == 1
@@ -2055,8 +2055,18 @@ async fn run_codex(
             }
         }
         let mut message = format!("codex initialize failed: {error}");
-        if !stderr.is_empty() {
-            message = with_stderr(&message, "codex", &sanitize_diagnostic(&stderr));
+        let suppress_stderr = should_suppress_initialize_stderr(&error);
+        if suppress_stderr {
+            // Provider stderr can echo opaque config/auth values even after
+            // pattern redaction. Keep only bounded metadata in internal logs;
+            // never duplicate that stream into the task-visible Result.error.
+            tracing::debug!(
+                provider = "codex",
+                stderr_bytes = stderr.len(),
+                "suppressed Codex initialize stderr from result"
+            );
+        } else if !stderr.is_empty() {
+            message = with_stderr(&message, "codex", &stderr);
         }
         let _ = result_tx.send(ExecutionResult {
             status: "failed".to_string(),
@@ -2719,11 +2729,24 @@ fn is_resume_overflow(error: &AgentError) -> bool {
         && (text.contains("line exceeds") || text.contains("token too long"))
 }
 
-fn is_initialize_retryable(error: &AgentError) -> bool {
+fn is_initialize_timeout(error: &AgentError) -> bool {
     let text = error.to_string().to_ascii_lowercase();
-    text.contains("initialize")
-        && text.contains("handshake timeout")
-        && !text.contains("execution cancelled")
+    text.contains("initialize") && text.contains("handshake timeout")
+}
+
+fn is_execution_cancelled(error: &AgentError) -> bool {
+    error
+        .to_string()
+        .to_ascii_lowercase()
+        .contains("execution cancelled")
+}
+
+fn should_suppress_initialize_stderr(error: &AgentError) -> bool {
+    is_initialize_timeout(error) || is_execution_cancelled(error)
+}
+
+fn is_initialize_retryable(error: &AgentError) -> bool {
+    is_initialize_timeout(error) && !is_execution_cancelled(error)
 }
 
 fn is_startup_refresh_retry_safe(
@@ -4161,5 +4184,21 @@ done
             nonzero_duration(Duration::ZERO, Duration::from_secs(2)),
             Duration::from_secs(2)
         );
+    }
+
+    #[test]
+    fn initialize_timeout_and_cancellation_suppress_provider_stderr() {
+        assert!(should_suppress_initialize_stderr(&AgentError::Protocol(
+            "codex app-server handshake timeout: initialize did not respond after 30s".to_string(),
+        )));
+        assert!(should_suppress_initialize_stderr(&AgentError::Protocol(
+            "execution cancelled".to_string(),
+        )));
+        assert!(!should_suppress_initialize_stderr(&AgentError::Protocol(
+            "codex initialize failed: malformed response".to_string(),
+        )));
+        assert!(!is_initialize_retryable(&AgentError::Protocol(
+            "execution cancelled".to_string(),
+        )));
     }
 }
