@@ -9,11 +9,12 @@ missing=()
 command -v node >/dev/null 2>&1 || missing+=("node")
 command -v pnpm >/dev/null 2>&1 || missing+=("pnpm")
 command -v go >/dev/null 2>&1 || missing+=("go")
+command -v cargo >/dev/null 2>&1 || missing+=("cargo")
 command -v docker >/dev/null 2>&1 || missing+=("docker")
 
 if [ ${#missing[@]} -gt 0 ]; then
   echo "✗ Missing prerequisites: ${missing[*]}"
-  echo "  Please install: Node.js 22, pnpm 10.28.2, Go 1.26.6, Docker"
+  echo "  Please install: Node.js 22, pnpm 10.28.2, Go 1.26.6, Rust/Cargo, Docker"
   exit 1
 fi
 
