@@ -27,8 +27,8 @@ use crate::execenv::context::{
     TASK_CONTEXT_MARKER_REL_PATH,
 };
 use crate::execenv::execenv::{
-    ensure_task_temp_dir, predict_root_dir, prepare, read_managed_env_provenance, remove_tree,
-    reuse, Environment, MANAGED_ENV_PROVENANCE_MANAGED_BY,
+    ensure_task_temp_dir, predict_root_dir, prepare, read_managed_env_provenance, reuse,
+    Environment, MANAGED_ENV_PROVENANCE_MANAGED_BY,
 };
 use crate::execenv::local_worktree::LocalWorktreeParams;
 use crate::execenv::runtime_config::{cleanup_runtime_config, inject_runtime_config};
@@ -580,11 +580,9 @@ impl ProductionProviderAdapter {
         } else {
             path_guard
         };
-        prepare_lease.stop().await;
-
         let task_temp_dir =
             match ensure_task_temp_dir(&environment.root_dir, &task.workspace_id, &task.id) {
-                Ok(path) => path,
+                Ok(directory) => directory,
                 Err(error) => {
                     let outcome =
                         failed(error.context("prepare task temp dir"), Some(&environment));
@@ -597,8 +595,23 @@ impl ProductionProviderAdapter {
                     .await;
                 }
             };
-        if let Err(error) = plan.set_task_temp_dir(&task_temp_dir) {
-            let _ = remove_tree(&task_temp_dir);
+        let task_temp_dir_path = match task_temp_dir.path().to_str() {
+            Some(path) => path.to_string(),
+            None => {
+                let outcome = failed(
+                    anyhow::anyhow!("task temp directory path is not valid UTF-8"),
+                    Some(&environment),
+                );
+                return finalize_environment(
+                    outcome,
+                    &mut environment,
+                    assignment.as_ref(),
+                    &target.provider,
+                )
+                .await;
+            }
+        };
+        if let Err(error) = plan.set_task_temp_dir(&task_temp_dir_path) {
             let outcome = failed(
                 error.context("bind task temp directory"),
                 Some(&environment),
@@ -616,6 +629,10 @@ impl ProductionProviderAdapter {
                 .start_task(&ctx, &task.id)
                 .await
                 .map_err(|error| anyhow::anyhow!("start task failed: {error}"))?;
+            // Keep renewing the dispatched-task lease through temp allocation
+            // and the start transition. Once the server confirms running, the
+            // provider run owns the task and no prepare lease is needed.
+            prepare_lease.stop().await;
             if preparation_state
                 .compare_exchange(
                     PREPARATION_PENDING,
@@ -831,7 +848,7 @@ impl ProductionProviderAdapter {
             }
             Err(error) => failed(error, Some(&environment)),
         };
-        if let Err(error) = remove_tree(&task_temp_dir) {
+        if let Err(error) = task_temp_dir.close() {
             tracing::warn!(task = %task.id, %error, "task temp directory cleanup failed");
         }
         outcome = finalize_environment(
