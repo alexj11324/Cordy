@@ -85,13 +85,16 @@ jobs:
               - 'docker-compose.selfhost.yml'
               - 'docker-compose.selfhost.build.yml'
               - 'Makefile'
-            # Both backends remain production-relevant during the migration.
-            # A backend change exercises the Go deployment gate and the Rust
-            # migration gate until the deployed server switches fully.
+            # Go remains compatibility-test relevant during the migration,
+            # while Rust owns the deployed server and migration gates.
             backend:
               - 'server-rs/**'
               - 'server/**'
               - 'deploy/helm/**'
+              - 'Dockerfile'
+              - 'docker/**'
+              - 'docker-compose.selfhost.yml'
+              - 'docker-compose.selfhost.build.yml'
               - 'scripts/**'
               - 'packages/core/runtimes/cli-version.ts'
               - 'Makefile'
@@ -439,6 +442,17 @@ jobs:
           check-latest: true
           cache-dependency-path: server/go.sum
 
+      - name: Install Rust toolchain
+        run: rustup toolchain install stable --profile minimal
+
+      - name: Use stable Rust
+        run: rustup default stable
+
+      - name: Restore Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server-rs -> target
+
       - name: Setup Helm
         uses: azure/setup-helm@v4
 
@@ -454,13 +468,13 @@ jobs:
           bash scripts/makefile-build.test.sh
           bash scripts/test-go.test.sh
 
-      - name: Build deployed Go server
-        working-directory: server
-        run: go build ./...
+      - name: Build deployed Rust server
+        working-directory: server-rs
+        run: cargo build --locked -p cordy-server
 
-      - name: Apply database migrations
-        working-directory: server
-        run: go run ./cmd/migrate up
+      - name: Apply database migrations with the Rust runner
+        working-directory: server-rs
+        run: cargo run --locked -p cordy-migrate -- up
 
       - name: Run Go tests
         run: bash scripts/test-go.sh --race
@@ -579,8 +593,8 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           working-directory: server-rs
 
-  # Preserve the required check name while both production Go and migration
-  # Rust implementations are validated.
+  # Preserve the required check name while Go compatibility and Rust
+  # production implementations are validated.
   backend:
     needs: [changes, go-backend-tests, go-vulnerability-scan, rust-quality, rust-tests, rust-platform, rust-audit]
     if: ${{ !cancelled() }}
