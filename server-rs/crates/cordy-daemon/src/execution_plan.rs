@@ -35,6 +35,8 @@ use crate::task_execution::InvalidTaskIdentity;
 use crate::types::{AgentData, RuntimeExecutionTarget, Task};
 
 const TASK_CONFIG_ROOT_ENV: &str = "CORDY_TASK_CONFIG_ROOT";
+const REPO_CHECKOUT_MODE_ENV: &str = "CORDY_REPO_CHECKOUT_MODE";
+const REPO_CHECKOUT_MODE_ISOLATED: &str = "isolated";
 
 /// Non-claim values resolved by the daemon before building a task plan.
 ///
@@ -329,6 +331,12 @@ impl ProviderExecutionPlan {
         ];
         for (key, value) in canonical {
             values.insert(key.to_string(), value);
+        }
+        if let Some(checkout_mode) = repo_checkout_mode_for(&provider, std::env::consts::OS) {
+            values.insert(
+                REPO_CHECKOUT_MODE_ENV.to_string(),
+                checkout_mode.to_string(),
+            );
         }
         if !task.autopilot_run_id.is_empty() {
             values.insert(
@@ -746,6 +754,17 @@ fn default_args(config: &Config, provider: &str) -> Vec<String> {
     }
 }
 
+/// Selects the Git metadata layout used by the task's repo checkout.
+/// Codex's sandboxed linked worktrees need isolated metadata on Linux and
+/// Windows; other providers and platforms preserve the default layout.
+fn repo_checkout_mode_for(provider: &str, operating_system: &str) -> Option<&'static str> {
+    if provider == "codex" && matches!(operating_system, "linux" | "windows") {
+        Some(REPO_CHECKOUT_MODE_ISOLATED)
+    } else {
+        None
+    }
+}
+
 fn sanitize_custom_env(
     custom: Option<&std::collections::HashMap<String, String>>,
 ) -> anyhow::Result<BTreeMap<String, String>> {
@@ -951,6 +970,33 @@ mod tests {
                 Some("/tmp/cordy-task-private")
             );
         }
+    }
+
+    #[test]
+    fn codex_checkout_mode_matches_go_platform_contract() {
+        assert_eq!(
+            repo_checkout_mode_for("codex", "linux"),
+            Some(REPO_CHECKOUT_MODE_ISOLATED)
+        );
+        assert_eq!(
+            repo_checkout_mode_for("codex", "windows"),
+            Some(REPO_CHECKOUT_MODE_ISOLATED)
+        );
+        assert_eq!(repo_checkout_mode_for("codex", "darwin"), None);
+        assert_eq!(repo_checkout_mode_for("claude", "linux"), None);
+    }
+
+    #[test]
+    fn codex_plan_injects_checkout_mode_for_current_platform() {
+        let plan = ProviderExecutionPlan::build(&config(), &task(), &target(), inputs()).unwrap();
+        let expected = repo_checkout_mode_for("codex", std::env::consts::OS);
+        assert_eq!(
+            plan.child_env
+                .values
+                .get(REPO_CHECKOUT_MODE_ENV)
+                .map(String::as_str),
+            expected
+        );
     }
 
     #[test]
