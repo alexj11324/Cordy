@@ -70,6 +70,7 @@ const PREPARE_LEASE_REFRESH: Duration = Duration::from_secs(15);
 const PREPARE_LEASE_TIMEOUT: Duration = Duration::from_secs(10);
 const PREPARE_LEASE_STOP_TIMEOUT: Duration = Duration::from_secs(1);
 const CODEX_ROLLOUT_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const CODEX_ROLLOUT_FLUSH_WAIT: Duration = Duration::from_secs(2);
 const TASK_PREPARE_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const PREPARATION_PENDING: u8 = 0;
 const PREPARATION_COMPLETE: u8 = 1;
@@ -764,13 +765,18 @@ impl ProductionProviderAdapter {
         .await;
 
         let mut outcome = match run {
-            Ok((result, _tools, retired_session_id, requested_session_id)) => result_outcome(
-                &target.provider,
-                result,
-                &environment,
-                &requested_session_id,
-                &retired_session_id,
-            ),
+            Ok((result, _tools, retired_session_id, requested_session_id)) => {
+                let (result, session_rollout_missing) =
+                    withhold_unresumable_codex_session(result, &environment).await;
+                result_outcome(
+                    &target.provider,
+                    result,
+                    &environment,
+                    &requested_session_id,
+                    &retired_session_id,
+                    session_rollout_missing,
+                )
+            }
             Err(error) => failed(error, Some(&environment)),
         };
         if let Err(error) = remove_tree(&temp_dir) {
@@ -1327,6 +1333,7 @@ fn result_outcome(
     env: &Environment,
     requested_session_id: &str,
     retired_session_id: &str,
+    session_rollout_missing: bool,
 ) -> TaskRunOutcome {
     let resume_rejected = result.resume_rejected && !requested_session_id.is_empty();
     let mut usage = result
@@ -1392,6 +1399,7 @@ fn result_outcome(
             work_dir: env.work_dir.clone(),
             env_root: env.root_dir.clone(),
             failure_reason,
+            session_rollout_missing,
             retired_session_id: resume_rejected
                 .then(|| requested_session_id.to_string())
                 .unwrap_or_else(|| retired_session_id.to_string()),
@@ -1399,6 +1407,58 @@ fn result_outcome(
             ..TaskResult::default()
         },
         failure: None,
+    }
+}
+
+/// Withholds a Codex session from terminal delivery until its rollout has
+/// reached the task-local store. A provider can report its session id before
+/// the filesystem writer flushes the rollout; persisting that id would make
+/// the next task claim an apparently resumable conversation that Codex cannot
+/// actually open. Other providers have no Codex rollout store and pass
+/// through unchanged.
+async fn withhold_unresumable_codex_session(
+    mut result: ExecutionResult,
+    environment: &Environment,
+) -> (ExecutionResult, bool) {
+    if result.session_id.is_empty()
+        || !codex_session_resumable(
+            &environment.codex_home,
+            &result.session_id,
+            CODEX_ROLLOUT_FLUSH_WAIT,
+        )
+        .await
+    {
+        if !result.session_id.is_empty() && !environment.codex_home.is_empty() {
+            tracing::warn!(
+                session_id = %result.session_id,
+                codex_home = %environment.codex_home,
+                status = %result.status,
+                "withholding codex session: rollout not present in task CODEX_HOME"
+            );
+            result.session_id.clear();
+            return (result, true);
+        }
+    }
+    (result, false)
+}
+
+/// Waits briefly for a Codex rollout to flush before deciding that the session
+/// cannot be persisted. The bounded wait mirrors Go's codexSessionResumable
+/// contract without blocking a Tokio worker thread.
+async fn codex_session_resumable(codex_home: &str, session_id: &str, wait: Duration) -> bool {
+    if codex_home.is_empty() || session_id.is_empty() {
+        return true;
+    }
+    let deadline = Instant::now() + wait;
+    loop {
+        if codex_resume_rollout_present(codex_home, session_id) {
+            return true;
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return false;
+        }
+        tokio::time::sleep(remaining.min(CODEX_ROLLOUT_POLL_INTERVAL)).await;
     }
 }
 
@@ -1862,6 +1922,7 @@ mod tests {
             },
             "session-old",
             "",
+            false,
         );
         assert_eq!(outcome.result.status, "blocked");
         assert_eq!(outcome.result.failure_reason, "timeout");
@@ -2369,6 +2430,7 @@ mod tests {
             &Environment::default(),
             "",
             "",
+            false,
         );
         assert!(outcome.failure.is_none());
         assert_eq!(outcome.result.status, "cancelled");
@@ -2388,6 +2450,7 @@ mod tests {
             &Environment::default(),
             "session-poisoned",
             "",
+            false,
         );
         assert_eq!(outcome.result.failure_reason, "resume_rejected");
         assert_eq!(outcome.result.retired_session_id, "session-poisoned");
@@ -2405,6 +2468,7 @@ mod tests {
             &Environment::default(),
             "session-poisoned",
             "session-poisoned",
+            false,
         );
         assert_eq!(outcome.result.status, "completed");
         assert_eq!(outcome.result.session_id, "fresh-session");
@@ -2429,5 +2493,55 @@ mod tests {
             home.path().to_str().unwrap(),
             "provider-session"
         ));
+    }
+
+    #[tokio::test]
+    async fn codex_session_resumable_waits_for_a_late_rollout() {
+        assert!(codex_session_resumable("", "provider-session", Duration::ZERO).await);
+
+        let home = tempfile::tempdir().unwrap();
+        assert!(!codex_session_resumable(
+            home.path().to_str().unwrap(),
+            "missing-session",
+            Duration::from_millis(1),
+        )
+        .await);
+
+        let home_path = home.path().to_path_buf();
+        let writer = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            let rollout = home_path
+                .join("sessions/2026/08/26/rollout-2026-08-26T00-00-00-late-session.jsonl");
+            std::fs::create_dir_all(rollout.parent().unwrap()).unwrap();
+            std::fs::write(rollout, b"{}\n").unwrap();
+        });
+        assert!(codex_session_resumable(
+            home.path().to_str().unwrap(),
+            "late-session",
+            Duration::from_millis(500),
+        )
+        .await);
+        writer.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn terminal_codex_result_withholds_missing_rollout() {
+        let home = tempfile::tempdir().unwrap();
+        let environment = Environment {
+            codex_home: home.path().to_string_lossy().into_owned(),
+            ..Environment::default()
+        };
+        let (result, missing) = withhold_unresumable_codex_session(
+            ExecutionResult {
+                status: "completed".into(),
+                session_id: "missing-session".into(),
+                ..ExecutionResult::default()
+            },
+            &environment,
+        )
+        .await;
+
+        assert!(missing);
+        assert!(result.session_id.is_empty());
     }
 }
