@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev server daemon cli cordy go-cordy rust-cli build-rust-cli build test migrate-up migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
+.PHONY: help makehelp dev server go-server rust-server daemon cli cordy go-cordy rust-cli build-rust-cli build test migrate-up migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -39,6 +39,11 @@ define REQUIRE_ENV
 		exit 1; \
 	fi
 endef
+
+# The Rust HTTP server is the default source entrypoint. Keep the build commit
+# in the process environment so metrics retain the same release metadata as
+# the legacy Go command during the staged migration.
+RUST_SERVER_CMD = cd server-rs && CORDY_GIT_COMMIT="$(COMMIT)" cargo run -p cordy-server
 
 # Self-hosting requires the Docker Compose CLI plugin (`docker compose`).
 # The self-host compose files use compose-spec syntax (top-level `name:`, no
@@ -167,7 +172,7 @@ start: ## Start backend and frontend for the current checkout and run migrations
 	cd server && go run ./cmd/migrate up
 	@echo "Starting backend and frontend..."
 	@trap 'kill 0' EXIT; \
-		(cd server && go run ./cmd/server) & \
+		($(RUST_SERVER_CMD)) & \
 		pnpm dev:web & \
 		wait
 
@@ -261,13 +266,20 @@ remove-worktree: ## Drop a linked worktree's database, then remove it (WORKTREE=
 dev: ## Bootstrap this checkout end-to-end: create env if needed, ensure DB, migrate, start services
 	@bash scripts/dev.sh
 
-server: ## Run only the Go server for the current checkout
+daemon: CORDY_ARGS := daemon restart --profile local
+daemon: rust-cli ## Restart the local agent daemon using the CLI's stored auth/session
+
+server: ## Run only the Rust server for the current checkout
+	$(REQUIRE_ENV)
+	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
+	$(RUST_SERVER_CMD)
+
+go-server: ## Run the legacy Go server entrypoint during the migration
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	cd server && go run ./cmd/server
 
-daemon: CORDY_ARGS := daemon restart --profile local
-daemon: rust-cli ## Restart the local agent daemon using the CLI's stored auth/session
+rust-server: server ## Run the migrated Rust server entrypoint
 
 cli: rust-cli ## Run the Rust cordy CLI with ARGS or CORDY_ARGS from source
 

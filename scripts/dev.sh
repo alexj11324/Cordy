@@ -63,6 +63,6 @@ echo "  Frontend: http://localhost:${FRONTEND_PORT:-3000}"
 echo ""
 
 trap 'kill 0' EXIT
-(cd server && go run ./cmd/server) &
+(cd server-rs && cargo run -p cordy-server) &
 pnpm dev:web &
 wait

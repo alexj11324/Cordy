@@ -110,8 +110,8 @@ echo "==> [4/5] Starting services for E2E..."
 if curl -sf "http://localhost:${PORT}/health" > /dev/null 2>&1; then
   echo "    Backend already running on :$PORT"
 else
-  echo "    Starting backend..."
-  (cd server && go run ./cmd/server) > /tmp/cordy-check-backend.log 2>&1 &
+  echo "    Starting backend (Rust)..."
+  (cd server-rs && cargo run -p cordy-server) > /tmp/cordy-check-backend.log 2>&1 &
   BACKEND_PID=$!
   STARTED_BACKEND=true
   wait_for_port "$PORT" "Backend" 90 "/health"
