@@ -1,9 +1,9 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
 
-use super::{Cli, Environment, RunOutput, http_timeout, new_api_client, value_string};
+use super::{http_timeout, new_api_client, value_string, Cli, Environment, RunOutput};
 
 pub(super) async fn run_attachment_download(
     cli: &Cli,

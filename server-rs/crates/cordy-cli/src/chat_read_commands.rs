@@ -3,8 +3,8 @@ use serde_json::Value;
 use url::form_urlencoded;
 
 use super::{
-    ChatReadArgs, Cli, Environment, OutputFormat, RunOutput, format_table, new_api_client,
-    value_string,
+    format_table, new_api_client, value_string, ChatReadArgs, Cli, Environment, OutputFormat,
+    RunOutput,
 };
 
 fn chat_reply_count(message: &Value) -> String {

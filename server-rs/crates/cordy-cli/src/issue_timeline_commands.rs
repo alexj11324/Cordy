@@ -4,8 +4,8 @@ use serde_json::Value;
 use super::issue_timeline_filter::{build_timeline_filter, filter_timeline};
 use super::issue_timeline_output::format_issue_timeline_table;
 use super::{
-    load_issue_actor_names, new_api_client, resolve_current_workspace_id, resolve_issue_ref,
-    value_string, Cli, Environment, IssueTimelineArgs, OutputFormat, RunOutput,
+    load_issue_actor_names, new_api_client, resolve_current_workspace_id, resolve_issue_ref, Cli,
+    Environment, IssueTimelineArgs, OutputFormat, RunOutput,
 };
 
 fn timeline_actor_inputs(entries: &[Value]) -> Vec<Value> {

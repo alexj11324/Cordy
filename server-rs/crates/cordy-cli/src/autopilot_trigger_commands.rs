@@ -3,8 +3,8 @@ use serde_json::Value;
 use std::time::Duration;
 
 use super::{
-    Cli, Environment, OutputFormat, RunOutput, http_timeout, new_api_client, resolve_autopilot_id,
-    resolve_current_workspace_id, value_string,
+    context_autopilot_resolution, http_timeout, new_api_client, resolve_autopilot_id,
+    resolve_current_workspace_id, value_string, Cli, Environment, OutputFormat, RunOutput,
 };
 
 pub(super) async fn run_autopilot_trigger(
@@ -20,7 +20,7 @@ pub(super) async fn run_autopilot_trigger(
     let workspace_id = resolve_current_workspace_id(cli, environment);
     let (autopilot_id, _) = resolve_autopilot_id(&client, &workspace_id, id)
         .await
-        .map_err(|error| anyhow::anyhow!("resolve autopilot: {error:#}"))?;
+        .map_err(context_autopilot_resolution)?;
     let run: Value = client
         .post_json(
             &format!("/api/autopilots/{autopilot_id}/trigger"),

@@ -1,11 +1,11 @@
 use async_trait::async_trait;
-use aws_config::{Region, default_provider::credentials::DefaultCredentialsChain};
+use aws_config::{default_provider::credentials::DefaultCredentialsChain, Region};
 use aws_credential_types::{
-    Credentials,
     provider::{ProvideCredentials, SharedCredentialsProvider},
+    Credentials,
 };
 use axum::body::Body;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
+use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
 use reqwest::header::{HeaderMap, HeaderValue};
@@ -895,7 +895,7 @@ impl S3Storage {
         if self.custom_endpoint {
             return false;
         }
-        if is_region_redirect(&failure.error) {
+        if is_region_redirect(&failure.error) || failure.bucket_region.is_some() {
             if let Some(region) = failure.bucket_region.clone() {
                 return self.update_correction(None, Some(region));
             }
@@ -1832,18 +1832,16 @@ mod tests {
             .upload(key, b"old".to_vec(), "application/octet-stream", "old.bin")
             .await
             .unwrap();
-        assert!(
-            store
-                .upload_stream(
-                    key,
-                    Box::new(std::io::Cursor::new(b"too-long".to_vec())),
-                    3,
-                    "application/octet-stream",
-                    "new.bin",
-                )
-                .await
-                .is_err()
-        );
+        assert!(store
+            .upload_stream(
+                key,
+                Box::new(std::io::Cursor::new(b"too-long".to_vec())),
+                3,
+                "application/octet-stream",
+                "new.bin",
+            )
+            .await
+            .is_err());
         let old = store.get(key, None).await.unwrap();
         assert_eq!(old.body.collect().await.unwrap().to_bytes(), &b"old"[..]);
 
@@ -1972,13 +1970,11 @@ mod tests {
         let key = "workspaces/w/file.微信";
         let url = store.object_url(key);
         assert_eq!(store.key_from_url(&url).as_deref(), Some(key));
-        assert!(
-            !store
-                .request_url(store.key_from_url(&url).as_deref().unwrap())
-                .unwrap()
-                .as_str()
-                .contains("%25")
-        );
+        assert!(!store
+            .request_url(store.key_from_url(&url).as_deref().unwrap())
+            .unwrap()
+            .as_str()
+            .contains("%25"));
     }
 
     fn test_s3(endpoint: &str, custom_endpoint: bool, path_style: bool) -> S3Storage {
@@ -2170,12 +2166,10 @@ mod tests {
         assert_eq!(empty.payload_hash, UNSIGNED_PAYLOAD);
         assert_eq!(empty.headers.get(CRC32_TRAILER).unwrap(), "AAAAAA==");
         assert!(empty.headers.get("x-amz-trailer").is_none());
-        assert!(
-            empty
-                .headers
-                .get(reqwest::header::CONTENT_ENCODING)
-                .is_none()
-        );
+        assert!(empty
+            .headers
+            .get(reqwest::header::CONTENT_ENCODING)
+            .is_none());
 
         let http = prepare_buffered_put(
             b"123456789".to_vec(),
@@ -2388,15 +2382,13 @@ mod tests {
             .unwrap()
             .to_str()
             .unwrap();
-        assert!(
-            authorization
-                .contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-storage-class")
-        );
+        assert!(authorization
+            .contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-storage-class"));
     }
 
     #[test]
     fn s3_request_paths_use_sigv4_segment_encoding() {
-        let virtual_host = test_s3("https://s3.us-west-2.amazonaws.com", false, true);
+        let virtual_host = test_s3("https://s3.us-west-2.amazonaws.com", false, false);
         assert_eq!(
             virtual_host
                 .request_url("workspace/report.c++/%done")
@@ -2411,7 +2403,7 @@ mod tests {
                 .request_url("workspace/report c++.txt")
                 .unwrap()
                 .path(),
-            "/base/test-bucket/workspace/report%20c%2B%2B.txt"
+            "/base/bucket/workspace/report%20c%2B%2B.txt"
         );
     }
 
@@ -2466,16 +2458,12 @@ mod tests {
             headers.get("x-amz-security-token").unwrap(),
             "temporary-session-token"
         );
-        assert!(
-            headers
-                .get(reqwest::header::AUTHORIZATION)
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .contains(
-                    "SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token"
-                )
-        );
+        assert!(headers
+            .get(reqwest::header::AUTHORIZATION)
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date;x-amz-security-token"));
     }
 
     #[tokio::test]
@@ -2565,21 +2553,17 @@ mod tests {
                 .as_deref(),
             Some("workspaces/w/file.txt")
         );
-        assert!(
-            store
-                .key_from_url("https://attacker.example/base/bucket/workspaces/w/file.txt")
-                .is_none()
-        );
+        assert!(store
+            .key_from_url("https://attacker.example/base/bucket/workspaces/w/file.txt")
+            .is_none());
         assert!(store
             .key_from_url(
                 "https://objects.example.test/base/bucket/workspaces/w/file.txt?X-Amz-Signature=x"
             )
             .is_none());
-        assert!(
-            store
-                .key_from_url("https://objects.example.test/base/bucket/workspaces%2Fw/file.txt")
-                .is_none()
-        );
+        assert!(store
+            .key_from_url("https://objects.example.test/base/bucket/workspaces%2Fw/file.txt")
+            .is_none());
     }
 
     #[test]
@@ -2607,32 +2591,22 @@ mod tests {
                 .as_deref(),
             Some("workspaces/w/file.txt")
         );
-        assert!(
-            store
-                .key_from_url("https://bucket.s3.cn-north-1.amazonaws.com/workspaces/w/file.txt")
-                .is_none()
-        );
-        assert!(
-            store
-                .key_from_url(
-                    "https://bucket.s3.eu-central-1.amazonaws.com.cn/workspaces/w/file.txt"
-                )
-                .is_none()
-        );
-        assert!(
-            store
-                .key_from_url(
-                    "https://test-bucket.s3.evil.amazonaws.com.attacker.test/workspaces/w/file.txt"
-                )
-                .is_none()
-        );
-        assert!(
-            store
-                .key_from_url(
-                    "https://other-bucket.s3.eu-central-1.amazonaws.com/workspaces/w/file.txt"
-                )
-                .is_none()
-        );
+        assert!(store
+            .key_from_url("https://bucket.s3.cn-north-1.amazonaws.com/workspaces/w/file.txt")
+            .is_none());
+        assert!(store
+            .key_from_url("https://bucket.s3.eu-central-1.amazonaws.com.cn/workspaces/w/file.txt")
+            .is_none());
+        assert!(store
+            .key_from_url(
+                "https://test-bucket.s3.evil.amazonaws.com.attacker.test/workspaces/w/file.txt"
+            )
+            .is_none());
+        assert!(store
+            .key_from_url(
+                "https://other-bucket.s3.eu-central-1.amazonaws.com/workspaces/w/file.txt"
+            )
+            .is_none());
     }
 
     #[test]

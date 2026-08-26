@@ -188,12 +188,12 @@ impl Backend for DshBackend {
                 tokio::pin!(completion);
                 if timeout.is_zero() {
                     tokio::select! {
-                        completed = &mut completion => DshCompletionOutcome::Completed(completed),
+                        completed = &mut completion => DshCompletionOutcome::Completed(Box::new(completed)),
                         () = cancellation.cancelled() => DshCompletionOutcome::Cancelled,
                     }
                 } else {
                     tokio::select! {
-                        completed = &mut completion => DshCompletionOutcome::Completed(completed),
+                        completed = &mut completion => DshCompletionOutcome::Completed(Box::new(completed)),
                         () = cancellation.cancelled() => DshCompletionOutcome::Cancelled,
                         () = tokio::time::sleep(timeout) => DshCompletionOutcome::DeadlineExceeded,
                     }
@@ -841,7 +841,7 @@ enum RunEnd {
 }
 
 enum DshCompletionOutcome {
-    Completed((io::Result<ExitStatus>, Result<DshStreamState, JoinError>)),
+    Completed(Box<(io::Result<ExitStatus>, Result<DshStreamState, JoinError>)>),
     Cancelled,
     DeadlineExceeded,
 }

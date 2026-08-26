@@ -1,17 +1,16 @@
 use anyhow::{Context, Result};
 
-pub(super) use super::property_models::{PropertyDefinition, PropertyOption};
+pub(super) use super::property_models::PropertyDefinition;
 pub(super) use super::property_mutation_input::{
-    build_property_create_body, build_property_update_body, parse_property_options,
+    build_property_create_body, build_property_update_body,
 };
 use super::property_mutation_output::{format_property_archive, format_property_mutation};
 pub(super) use super::property_read_commands::{
-    fetch_property_definitions, format_property_definitions, list_property_definitions,
-    resolve_property, run_property_get, run_property_list,
+    fetch_property_definitions, resolve_property, run_property_get, run_property_list,
 };
 use super::{
-    new_api_client, Cli, Environment, OutputFormat, PropertyArchiveArgs, PropertyCreateArgs,
-    PropertyUpdateArgs, RunOutput,
+    new_api_client, Cli, Environment, PropertyArchiveArgs, PropertyCreateArgs, PropertyUpdateArgs,
+    RunOutput,
 };
 
 pub(super) async fn run_property_create(

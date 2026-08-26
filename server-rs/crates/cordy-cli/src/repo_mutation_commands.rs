@@ -1,11 +1,10 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 
 use super::{
-    ApiClient, Cli, Environment, OutputFormat, RepoMutationArgs, RepoRemoveArgs, RunOutput,
-    format_table, new_api_client, required_workspace_id,
+    format_table, new_api_client, required_workspace_id, ApiClient, Cli, Environment, OutputFormat,
+    RepoMutationArgs, RepoRemoveArgs, RunOutput,
 };
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

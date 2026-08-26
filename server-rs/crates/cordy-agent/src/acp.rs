@@ -349,15 +349,12 @@ fn rpc_error(method: &str, error: &Value) -> AcpError {
     let data = error
         .get("data")
         .filter(|data| !data.is_null())
-        .map_or_else(
-            || String::new(),
-            |data| {
-                let rendered = data
-                    .as_str()
-                    .map_or_else(|| data.to_string(), str::to_string);
-                format!(", data={rendered}")
-            },
-        );
+        .map_or_else(String::new, |data| {
+            let rendered = data
+                .as_str()
+                .map_or_else(|| data.to_string(), str::to_string);
+            format!(", data={rendered}")
+        });
     AcpError::Rpc {
         method: method.to_string(),
         code,

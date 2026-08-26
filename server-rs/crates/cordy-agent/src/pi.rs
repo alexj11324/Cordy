@@ -460,18 +460,18 @@ impl Backend for PiBackend {
             }
             let stderr = stderr_tail.tail();
             let state = stream.unwrap_or_else(join_failure_state);
-            let result = finalize_pi_result(
+            let result = finalize_pi_result(PiResultContext {
                 run_end,
                 timeout,
-                exit.as_ref().ok(),
-                exit.as_ref().err(),
-                write_error.as_deref(),
+                exit: exit.as_ref().ok(),
+                wait_error: exit.as_ref().err(),
+                write_error: write_error.as_deref(),
                 state,
-                &session_id,
-                &label,
-                &stderr,
-                started.elapsed(),
-            );
+                session_id: &session_id,
+                label: &label,
+                stderr: &stderr,
+                elapsed: started.elapsed(),
+            });
             let _ = result_tx.send(result);
         });
 
@@ -624,7 +624,11 @@ fn ensure_pi_session_file(path: &Path) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
-    let _file = OpenOptions::new().create(true).write(true).open(path)?;
+    let _file = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path)?;
     Ok(())
 }
 
@@ -855,18 +859,32 @@ fn handle_pi_event(
     }
 }
 
-fn finalize_pi_result(
+struct PiResultContext<'a> {
     run_end: PiRunEnd,
     timeout: Duration,
-    exit: Option<&ExitStatus>,
-    wait_error: Option<&io::Error>,
-    write_error: Option<&str>,
+    exit: Option<&'a ExitStatus>,
+    wait_error: Option<&'a io::Error>,
+    write_error: Option<&'a str>,
     state: PiStreamState,
-    session_id: &str,
-    label: &str,
-    stderr: &str,
+    session_id: &'a str,
+    label: &'a str,
+    stderr: &'a str,
     elapsed: Duration,
-) -> ExecutionResult {
+}
+
+fn finalize_pi_result(context: PiResultContext<'_>) -> ExecutionResult {
+    let PiResultContext {
+        run_end,
+        timeout,
+        exit,
+        wait_error,
+        write_error,
+        state,
+        session_id,
+        label,
+        stderr,
+        elapsed,
+    } = context;
     let mut status = state.final_status;
     let mut error = state.final_error;
     if matches!(run_end, PiRunEnd::DeadlineExceeded) {
@@ -1562,14 +1580,11 @@ cat > /dev/null
             .await;
         assert_eq!(catalog.models.len(), 1);
         assert!(catalog.models[0].default);
-        assert_eq!(
-            catalog.models[0].thinking.as_ref().unwrap().default_level,
-            "high"
-        );
-        assert!(!catalog.models[0]
-            .thinking
-            .as_ref()
-            .unwrap()
+        let Some(thinking) = catalog.models[0].thinking.as_ref() else {
+            panic!("Pi model should expose thinking metadata");
+        };
+        assert_eq!(thinking.default_level, "high");
+        assert!(!thinking
             .supported_levels
             .iter()
             .any(|level| level.value == "max"));

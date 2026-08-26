@@ -289,9 +289,10 @@ mod tests {
     use chrono::TimeZone as _;
 
     fn at(hour: u32, minute: u32) -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(2026, 8, 23, hour, minute, 0)
-            .single()
-            .expect("timestamp")
+        match Utc.with_ymd_and_hms(2026, 8, 23, hour, minute, 0).single() {
+            Some(timestamp) => timestamp,
+            None => panic!("timestamp"),
+        }
     }
 
     #[test]
@@ -316,13 +317,15 @@ mod tests {
             next_retry_at: Some(at(12, 1)),
         };
         assert_eq!(
-            plans_for_trigger(
+            match plans_for_trigger(
                 &cache,
                 &Scope::new(AUTOPILOT_TRIGGER_SCOPE, "trigger"),
                 at(12, 2),
                 &latest,
-            )
-            .expect("plans"),
+            ) {
+                Ok(plans) => plans,
+                Err(error) => panic!("plans: {error}"),
+            },
             vec![plan_time]
         );
     }
@@ -339,14 +342,16 @@ mod tests {
                 last_fired_at: None,
             },
         )]));
-        assert!(plans_for_trigger(
+        let plans = match plans_for_trigger(
             &cache,
             &Scope::new(AUTOPILOT_TRIGGER_SCOPE, "trigger"),
             at(12, 10),
             &LatestPlanInfo::default(),
-        )
-        .expect("plans")
-        .is_empty());
+        ) {
+            Ok(plans) => plans,
+            Err(error) => panic!("plans: {error}"),
+        };
+        assert!(plans.is_empty());
     }
 
     #[test]

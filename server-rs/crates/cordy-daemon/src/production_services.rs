@@ -467,7 +467,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             );
             return false;
         }
-        let payload = result.unwrap_or_else(|error| model_list_failed_payload(error));
+        let payload = result.unwrap_or_else(model_list_failed_payload);
         self.report_model_list_result_with_retry(
             &ctx,
             &target.provider,

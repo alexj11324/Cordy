@@ -258,8 +258,8 @@ impl<H: DaemonTaskExecutionHost> TaskExecutionOrchestrator<H> {
                 tasks.push(tokio::spawn(async move {
                     let _slot_release = TaskSlotRelease::new(slot, slot_release, task_nudge);
                     let _activity_guard = activity_guard;
-                    execute_claimed_task(
-                        task_ctx,
+                    execute_claimed_task(ClaimedTaskContext {
+                        parent_ctx: task_ctx,
                         task,
                         slot,
                         client,
@@ -267,7 +267,7 @@ impl<H: DaemonTaskExecutionHost> TaskExecutionOrchestrator<H> {
                         reconcile,
                         cancel_poll_interval,
                         daemon_id,
-                    )
+                    })
                     .await;
                 }));
             }
@@ -340,7 +340,7 @@ impl Drop for TaskSlotRelease {
     }
 }
 
-async fn execute_claimed_task<H: DaemonTaskExecutionHost>(
+struct ClaimedTaskContext<H> {
     parent_ctx: Ctx,
     task: Task,
     slot: usize,
@@ -349,7 +349,19 @@ async fn execute_claimed_task<H: DaemonTaskExecutionHost>(
     reconcile: Arc<ReconcileBroadcaster>,
     cancel_poll_interval: Duration,
     daemon_id: String,
-) {
+}
+
+async fn execute_claimed_task<H: DaemonTaskExecutionHost>(context: ClaimedTaskContext<H>) {
+    let ClaimedTaskContext {
+        parent_ctx,
+        task,
+        slot,
+        client,
+        host,
+        reconcile,
+        cancel_poll_interval,
+        daemon_id,
+    } = context;
     let Some(target) = host.execution_target_for_runtime(&task.runtime_id) else {
         tracing::warn!(
             task = %task.id,

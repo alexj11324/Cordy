@@ -1,7 +1,6 @@
 use anyhow::{bail, Result};
 
-mod client_scope;
-pub(super) use client_scope::{
+pub(super) use crate::client_scope::{
     required_workspace_id, resolve_current_workspace_id, resolve_workspace_id,
 };
 

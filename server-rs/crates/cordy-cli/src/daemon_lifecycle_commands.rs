@@ -8,9 +8,7 @@ use anyhow::{bail, Context, Result};
 use std::sync::Arc;
 
 use super::config::Environment;
-use super::daemon_launch_inputs::{
-    ensure_restart_is_background, parse_cli_duration, validate_daemon_health_port,
-};
+use super::daemon_launch_inputs::{ensure_restart_is_background, validate_daemon_health_port};
 use super::daemon_lifecycle_output::{render_daemon_restart_outcome, render_daemon_start_outcome};
 use super::{
     config, daemon, dispatch_daemon_after_setup, Cli, DaemonRestartArgs, DaemonStartArgs,
@@ -91,7 +89,7 @@ pub(crate) async fn run_daemon_start(
     let options = start.bootstrap_options();
     let checkout_registry = Arc::new(cordy_daemon::health::RepoCheckoutRegistry::default());
     cordy_daemon::assembly::run_production_daemon(options, move |context| {
-        start.production_assembly_with_local_catalog(&context, CLIENT_VERSION, checkout_registry)
+        start.production_assembly_with_local_catalog(context, CLIENT_VERSION, checkout_registry)
     })
     .await
     .context("run foreground daemon")?;

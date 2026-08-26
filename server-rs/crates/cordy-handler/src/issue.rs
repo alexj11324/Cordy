@@ -16,7 +16,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{NaiveDate, SecondsFormat};
 use cordy_db::models::{
     AgentTaskQueue, Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber,
@@ -32,7 +32,7 @@ use cordy_service::issue_service::{
     IssueCreateError, IssueCreateOpts, IssueCreateParams, IssueTriggerInput, IssueTriggerProbe,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
@@ -6596,7 +6596,11 @@ impl From<&Attachment> for AttachmentResponse {
 }
 
 fn object_or_empty(value: Value) -> Value {
-    if value.is_object() { value } else { json!({}) }
+    if value.is_object() {
+        value
+    } else {
+        json!({})
+    }
 }
 
 #[derive(Debug, Serialize)]

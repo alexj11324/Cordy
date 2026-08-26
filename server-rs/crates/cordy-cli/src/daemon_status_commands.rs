@@ -8,7 +8,7 @@ use anyhow::{bail, Context, Result};
 use super::config::Environment;
 use super::daemon_profile_discovery::require_known_daemon_profile;
 use super::daemon_status_output::render_daemon_status;
-use super::{Cli, DaemonStatusArgs, OutputFormat, RunOutput};
+use super::{Cli, DaemonStatusArgs, RunOutput};
 
 pub(crate) async fn run_daemon_status(
     cli: &Cli,

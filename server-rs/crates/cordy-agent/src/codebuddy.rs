@@ -376,14 +376,14 @@ async fn read_stream(
     }
 }
 
+type CodebuddyCompletion = (
+    io::Result<ExitStatus>,
+    Result<CodebuddyStreamState, JoinError>,
+    Result<io::Result<()>, JoinError>,
+);
+
 enum RunOutcome {
-    Completed(
-        (
-            io::Result<ExitStatus>,
-            Result<CodebuddyStreamState, JoinError>,
-            Result<io::Result<()>, JoinError>,
-        ),
-    ),
+    Completed(CodebuddyCompletion),
     Cancelled,
     TimedOut,
 }

@@ -1,8 +1,8 @@
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::Path;
 
-use super::{Cli, Environment, RunOutput, http_timeout, new_api_client};
+use super::{http_timeout, new_api_client, Cli, Environment, RunOutput};
 
 fn escape_markdown_label(label: &str) -> String {
     let mut escaped = String::with_capacity(label.len());

@@ -1,7 +1,7 @@
 use super::*;
 use axum::extract::Request;
-use axum::http::{HeaderMap, StatusCode};
-use axum::routing::{delete as delete_route, get, patch, post, put};
+use axum::http::HeaderMap;
+use axum::routing::{delete as delete_route, get, patch, post};
 use axum::{Json, Router};
 use clap::Parser;
 use std::io::Cursor;
@@ -10,7 +10,7 @@ use tokio::net::TcpListener;
 
 #[test]
 fn autopilot_read_parser_matches_go_registry() {
-    let list = Cli::try_parse_from([
+    Cli::try_parse_from([
         "cordy",
         "autopilot",
         "list",
@@ -1164,17 +1164,14 @@ async fn autopilot_prefix_errors_match_go_resolver_contract() {
     assert!(
         error
             .to_string()
-            .starts_with("ambiguous autopilot id prefix \"abcd\"; matches:")
+            .starts_with("ambiguous autopilot id prefix \"abcd\"; matches:"),
+        "actual error: {error:#}"
     );
-    assert!(
-        error
-            .to_string()
-            .contains("abcd0000-1111-2222-3333-444444444444")
-    );
-    assert!(
-        error
-            .to_string()
-            .contains("abcd9999-1111-2222-3333-444444444444")
-    );
+    assert!(error
+        .to_string()
+        .contains("abcd0000-1111-2222-3333-444444444444"));
+    assert!(error
+        .to_string()
+        .contains("abcd9999-1111-2222-3333-444444444444"));
     server.abort();
 }

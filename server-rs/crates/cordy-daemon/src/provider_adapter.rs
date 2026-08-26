@@ -12,7 +12,6 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::Context as _;
 use cordy_agent::{ExecutionResult, Message, MessageType, Session};
 use cordy_protocol::DaemonHeartbeatAckPayload;
 use serde_json::{Map, Value};
@@ -142,9 +141,11 @@ impl ProductionProviderAdapter {
             temp_dir: temp_dir.clone(),
             default_model,
             codex_version: launch.version.clone(),
-            openclaw_bin: (target.provider == "openclaw")
-                .then(|| launch.command_path.clone())
-                .unwrap_or_default(),
+            openclaw_bin: if target.provider == "openclaw" {
+                launch.command_path.clone()
+            } else {
+                String::new()
+            },
             launch_prefix: launch.fixed_args.clone(),
             path: provider_path(),
             ..ProviderExecutionInputs::default()
@@ -831,9 +832,11 @@ fn result_outcome(
             work_dir: env.work_dir.clone(),
             env_root: env.root_dir.clone(),
             failure_reason,
-            retired_session_id: resume_rejected
-                .then(|| requested_session_id.to_string())
-                .unwrap_or_default(),
+            retired_session_id: if resume_rejected {
+                requested_session_id.to_string()
+            } else {
+                String::new()
+            },
             usage,
             ..TaskResult::default()
         },
