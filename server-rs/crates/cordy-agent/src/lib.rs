@@ -12,6 +12,7 @@ pub mod codebuddy;
 pub mod codebuddy_discovery;
 pub mod codex;
 pub(crate) mod codex_usage;
+pub mod claude;
 pub mod command;
 pub mod contract;
 pub mod cursor;
@@ -39,6 +40,7 @@ pub use acp_mcp::{
 };
 pub use antigravity::{AntigravityBackend, AntigravityConfig};
 pub use codebuddy::{CodebuddyBackend, CodebuddyConfig};
+pub use claude::{build_claude_args, ClaudeBackend, ClaudeConfig};
 pub use command::{BlockedArgMode, FilteredArgs, RuntimeCommand};
 pub use codex::{build_codex_args, CodexBackend, CodexConfig};
 pub use contract::{
