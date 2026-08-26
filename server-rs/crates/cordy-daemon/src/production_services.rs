@@ -10,15 +10,20 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use cordy_agent::{BackendConfig, RuntimeCommand};
+use cordy_agent::{
+    AntigravityBackend, AntigravityConfig, BackendConfig, CatalogCache, CodebuddyBackend,
+    CodebuddyConfig, DimBackend, DimConfig, DshBackend, DshConfig, GrokBackend, GrokConfig,
+    HermesBackend, HermesConfig, KimiBackend, KimiConfig, KiroBackend, KiroConfig, QoderBackend,
+    QoderConfig, ReasonixBackend, ReasonixConfig, RuntimeCommand, TraecliBackend, TraecliConfig,
+};
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
-use serde_json::Value;
+use serde_json::{json, Value};
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
 use crate::activity::DaemonActivity;
 use crate::agents_refresh::{AGENT_DISCOVERY_INTERVAL, AGENT_VERSION_REFRESH_INTERVAL};
-use crate::client::Client;
+use crate::client::{request_status_code, Client};
 use crate::config::{
     Config, DEFAULT_WORKSPACE_BOOTSTRAP_SYNC_INTERVAL, DEFAULT_WORKSPACE_LEGACY_SYNC_INTERVAL,
     DEFAULT_WORKSPACE_SYNC_INTERVAL, DEFAULT_WORKSPACE_SYNC_MAX_BACKOFF,
@@ -45,6 +50,13 @@ use crate::wakeup::jitter_duration;
 const REPO_WARMUP_QUEUE_CAPACITY: usize = 64;
 const REPO_WARMUP_CONCURRENCY: usize = 2;
 const REPO_WARMUP_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+const ACP_MODEL_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
+const RUNTIME_REPORT_BACKOFFS: &[Duration] = &[
+    Duration::ZERO,
+    Duration::from_millis(500),
+    Duration::from_secs(2),
+    Duration::from_secs(4),
+];
 
 #[async_trait::async_trait]
 pub trait ProviderRuntimeAdapter: Send + Sync + 'static {
@@ -196,6 +208,7 @@ pub struct DaemonProductionServices<P: ProviderRuntimeAdapter, R: RuntimeRegistr
     launch_registry: Arc<RuntimeLaunchRegistry>,
     repo_warmups: mpsc::Sender<RepoWarmupRequest>,
     repo_warmup_rx: Mutex<Option<mpsc::Receiver<RepoWarmupRequest>>>,
+    model_cache: Arc<CatalogCache>,
 }
 
 impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionServices<P, R> {
@@ -227,7 +240,274 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             launch_registry,
             repo_warmups,
             repo_warmup_rx: Mutex::new(Some(repo_warmup_rx)),
+            model_cache: Arc::new(CatalogCache::default()),
         }
+    }
+
+    /// Completes Rust-backed model-list contracts from the same accepted launch
+    /// identity used by task execution. Custom profile runtimes therefore
+    /// discover against their pinned executable and fixed prefix.
+    async fn handle_acp_model_list(
+        &self,
+        ctx: Ctx,
+        registry: Arc<RuntimeRegistry>,
+        runtime_id: &str,
+        request_id: &str,
+    ) -> bool {
+        let Some(target) = registry.execution_target_for_runtime(runtime_id) else {
+            return false;
+        };
+        if !matches!(
+            target.provider.as_str(),
+            "hermes"
+                | "kimi"
+                | "kiro"
+                | "reasonix"
+                | "grok"
+                | "qoder"
+                | "qoderclicn"
+                | "traecli"
+                | "antigravity"
+                | "codebuddy"
+                | "dsh"
+                | "qwen"
+                | "qwenpaw"
+                | "mcode"
+                | "dim"
+        ) {
+            return false;
+        }
+
+        let result = async {
+            let workspace_id = registry
+                .workspace_for_runtime(runtime_id)
+                .ok_or_else(|| anyhow::anyhow!("runtime {runtime_id} has no workspace"))?;
+            let launch = self
+                .launch_registry
+                .resolve(&workspace_id, &target)
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "no accepted launch registered for workspace {workspace_id:?} and provider {}",
+                        target.provider
+                    )
+                })?;
+            anyhow::ensure!(
+                !launch.command_path.trim().is_empty(),
+                "accepted {} launch has no executable path",
+                target.provider
+            );
+            let command = RuntimeCommand::new(launch.command_path, launch.fixed_args);
+            let runtime_scope = format!(
+                "{}\0workspace={workspace_id}\0runtime={runtime_id}\0profile={}",
+                target.provider,
+                target.profile_id
+            );
+            let catalog = match target.provider.as_str() {
+                "hermes" => HermesBackend::new(HermesConfig {
+                    command,
+                    env: BTreeMap::new(),
+                    builtin_runtime: target.profile_id.is_empty(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "kimi" => KimiBackend::new(KimiConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime_result(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await
+                .map_err(|error| anyhow::anyhow!(error))?,
+                "kiro" => KiroBackend::new(KiroConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "reasonix" => ReasonixBackend::new(ReasonixConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "grok" => GrokBackend::new(GrokConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "qoder" | "qoderclicn" => {
+                    let default_command = if target.provider == "qoderclicn" {
+                        "qoderclicn"
+                    } else {
+                        "qodercli"
+                    };
+                    QoderBackend::new(QoderConfig {
+                        command,
+                        env: BTreeMap::new(),
+                        default_command: default_command.to_string(),
+                        provider: target.provider.clone(),
+                        ..QoderConfig::default()
+                    })
+                    .discover_models_for_runtime(
+                        &runtime_scope,
+                        &self.model_cache,
+                        ctx.token().clone(),
+                        ACP_MODEL_DISCOVERY_TIMEOUT,
+                    )
+                    .await
+                }
+                "traecli" => TraecliBackend::new(TraecliConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "antigravity" => AntigravityBackend::new(AntigravityConfig {
+                    command,
+                    env: BTreeMap::new(),
+                    catalog_cache: Arc::clone(&self.model_cache),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "codebuddy" => CodebuddyBackend::new(CodebuddyConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "dsh" => DshBackend::new(DshConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "qwen" | "qwenpaw" | "mcode" => cordy_agent::Catalog::default(),
+                "dim" => DimBackend::new(DimConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                _ => unreachable!("provider filtered above"),
+            };
+            Ok::<_, anyhow::Error>(model_list_completed_payload(&target.provider, catalog))
+        }
+        .await;
+
+        if ctx.err().is_some() {
+            tracing::debug!(
+                %runtime_id,
+                %request_id,
+                provider = %target.provider,
+                "ACP model-list action cancelled; leaving pending action unhandled"
+            );
+            return false;
+        }
+        let payload = result.unwrap_or_else(|error| model_list_failed_payload(error));
+        self.report_model_list_result_with_retry(
+            &ctx,
+            &target.provider,
+            runtime_id,
+            request_id,
+            payload,
+        )
+        .await
+    }
+
+    async fn report_model_list_result_with_retry(
+        &self,
+        ctx: &Ctx,
+        provider: &str,
+        runtime_id: &str,
+        request_id: &str,
+        payload: Value,
+    ) -> bool {
+        for (attempt, wait) in RUNTIME_REPORT_BACKOFFS.iter().copied().enumerate() {
+            if !wait.is_zero() {
+                tokio::select! {
+                    () = ctx.cancelled() => return false,
+                    _ = tokio::time::sleep(wait) => {}
+                }
+            }
+            match self
+                .client
+                .report_model_list_result(ctx, runtime_id, request_id, payload.clone())
+                .await
+            {
+                Ok(()) => return true,
+                Err(error) => {
+                    let permanent = request_status_code(&error)
+                        .is_some_and(|status| (400..500).contains(&status));
+                    if permanent || attempt + 1 == RUNTIME_REPORT_BACKOFFS.len() {
+                        tracing::error!(
+                            %runtime_id,
+                            %request_id,
+                            %provider,
+                            error = %error,
+                            "ACP model-list report failed"
+                        );
+                        return false;
+                    }
+                    tracing::warn!(
+                        %runtime_id,
+                        %request_id,
+                        %provider,
+                        error = %error,
+                        "ACP model-list report failed; retrying"
+                    );
+                }
+            }
+        }
+        false
     }
 
     fn sync_base_interval(&self, registry: &RuntimeRegistry) -> Duration {
@@ -488,6 +768,22 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
     }
 }
 
+fn model_list_completed_payload(provider: &str, catalog: cordy_agent::Catalog) -> Value {
+    json!({
+        "status": "completed",
+        "models": catalog.models,
+        "supported": cordy_agent::registry::model_selection_supported(provider),
+        "fallback": catalog.fallback,
+    })
+}
+
+fn model_list_failed_payload(error: impl std::fmt::Display) -> Value {
+    json!({
+        "status": "failed",
+        "error": error.to_string(),
+    })
+}
+
 struct TaskRepoRefGuard {
     state: Arc<DaemonRepoState>,
     workspace_id: String,
@@ -561,8 +857,16 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
         ctx: Ctx,
         registry: Arc<RuntimeRegistry>,
         runtime_id: String,
-        ack: DaemonHeartbeatAckPayload,
+        mut ack: DaemonHeartbeatAckPayload,
     ) {
+        if let Some(request) = ack.pending_model_list.clone() {
+            if self
+                .handle_acp_model_list(ctx.child(), Arc::clone(&registry), &runtime_id, &request.id)
+                .await
+            {
+                ack.pending_model_list = None;
+            }
+        }
         self.provider
             .handle_non_update_heartbeat_actions(ctx, registry, runtime_id, ack)
             .await;

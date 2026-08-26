@@ -98,7 +98,24 @@ impl AntigravityBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        let Some(key) = ModelDiscoveryCacheKey::new("antigravity", &self.config.command) else {
+        self.discover_models_for_runtime("antigravity", cancellation, timeout)
+            .await
+    }
+
+    /// Discovers against a daemon runtime identity so custom profiles cannot
+    /// share a catalog with the built-in Antigravity runtime.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        let scope = if runtime_scope.trim().is_empty() {
+            "antigravity"
+        } else {
+            runtime_scope
+        };
+        let Some(key) = ModelDiscoveryCacheKey::new(scope, &self.config.command) else {
             return Catalog::default();
         };
         if let Some(catalog) = self.config.catalog_cache.get(&key) {
@@ -109,13 +126,16 @@ impl AntigravityBackend {
         } else {
             timeout
         };
-        let models = discover_once(&self.config, cancellation, timeout)
+        let models = discover_once(&self.config, cancellation.clone(), timeout)
             .await
             .unwrap_or_default();
         let catalog = Catalog {
             models,
             fallback: false,
         };
+        if cancellation.is_cancelled() {
+            return Catalog::default();
+        }
         let _ = self.config.catalog_cache.insert(key, catalog.clone());
         catalog
     }
@@ -416,7 +436,7 @@ async fn discover_once(
     } else {
         &config.command.path
     };
-    let argv = config.command.argv(&["models".to_string()]);
+    let argv = build_discovery_args(&config.command);
     let mut command = Command::new(command_path);
     command
         .args(argv)
@@ -458,6 +478,13 @@ async fn discover_once(
             Ok(Vec::new())
         }
     }
+}
+
+fn build_discovery_args(command: &RuntimeCommand) -> Vec<String> {
+    let prefix = filter_launch_prefix(&command.prefix, &BLOCKED_ARGS);
+    let mut argv = prefix.args;
+    argv.push("models".to_string());
+    argv
 }
 
 fn parse_models(output: &str) -> Vec<Model> {
@@ -633,6 +660,22 @@ mod tests {
             .windows(2)
             .any(|pair| pair == ["--conversation", "cid"]));
         assert!(args.windows(2).any(|pair| pair == ["--add-dir", "/extra"]));
+    }
+
+    #[test]
+    fn discovery_filters_protocol_owned_fixed_arguments() {
+        let command = RuntimeCommand::new(
+            "agy",
+            vec![
+                "-p".to_string(),
+                "fixed prompt".to_string(),
+                "--wrapper".to_string(),
+            ],
+        );
+        assert_eq!(
+            build_discovery_args(&command),
+            vec!["--wrapper".to_string(), "models".to_string()]
+        );
     }
 
     #[test]

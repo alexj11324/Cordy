@@ -26,7 +26,10 @@ use crate::contract::{
     COST_USD_TICKS_PER_USD,
 };
 use crate::kimi_usage::{scan_kimi_session_usage, KimiUsageScan};
-use crate::model::{parse_acp_session_models, Catalog, CatalogCache, ModelDiscoveryCacheKey};
+use crate::model::{
+    parse_acp_session_models, Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelThinking,
+    ThinkingLevel,
+};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
 use crate::version::check_minimum;
@@ -306,7 +309,20 @@ impl QoderBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        discover_models(&self.config, cache, cancellation, timeout).await
+        self.discover_models_for_runtime(&self.config.provider, cache, cancellation, timeout)
+            .await
+    }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Qoder executable do not share an account/profile catalog entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models_with_scope(&self.config, runtime_scope, cache, cancellation, timeout).await
     }
 }
 
@@ -346,9 +362,31 @@ impl HermesBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        self.inner
-            .discover_models(cache, cancellation, timeout)
+        self.discover_models_for_runtime("hermes", cache, cancellation, timeout)
             .await
+    }
+
+    /// Discovers against a daemon runtime identity rather than only the
+    /// protocol family. Two accepted Hermes runtimes can intentionally share
+    /// one executable and fixed prefix while resolving different account or
+    /// profile state, so their successful catalogs must not share a memo entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        let mut catalog = discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await;
+        normalize_hermes_providers(&mut catalog.models);
+        catalog
     }
 }
 
@@ -414,6 +452,26 @@ impl TraecliBackend {
             .discover_models(cache, cancellation, timeout)
             .await
     }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Trae CLI executable do not share an account/profile catalog
+    /// entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await
+    }
 }
 
 #[async_trait]
@@ -477,6 +535,25 @@ impl KiroBackend {
         self.inner
             .discover_models(cache, cancellation, timeout)
             .await
+    }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Kiro executable do not share an account/profile catalog entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await
     }
 }
 
@@ -574,6 +651,44 @@ impl KimiBackend {
     ) -> Catalog {
         discover_kimi_models(&self.inner.config, cache, cancellation, timeout).await
     }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Kimi executable do not share an account/profile catalog entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_kimi_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await
+    }
+
+    /// Preserves transient Kimi discovery failures for callers that need to
+    /// distinguish them from a successful empty catalog.
+    pub async fn discover_models_for_runtime_result(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Result<Catalog, String> {
+        discover_kimi_models_with_scope_result(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await
+    }
 }
 
 #[async_trait]
@@ -636,6 +751,26 @@ impl ReasonixBackend {
             .discover_models(cache, cancellation, timeout)
             .await
     }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Reasonix executable do not share an account/profile catalog
+    /// entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await
+    }
 }
 
 #[async_trait]
@@ -686,9 +821,109 @@ impl GrokBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        self.inner
-            .discover_models(cache, cancellation, timeout)
+        self.discover_models_for_runtime("grok", cache, cancellation, timeout)
             .await
+    }
+
+    /// Discovers against a daemon runtime identity so accepted runtimes that
+    /// share a Grok executable do not share an account/profile catalog entry.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        let mut catalog = discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await;
+        if catalog.models.is_empty() {
+            return grok_fallback_catalog();
+        }
+        normalize_grok_providers(&mut catalog.models);
+        annotate_grok_thinking(&mut catalog.models);
+        catalog
+    }
+}
+
+fn normalize_grok_providers(models: &mut [Model]) {
+    for model in models {
+        if model.provider.is_empty() || model.provider == "grok" {
+            model.provider = "xai".to_string();
+        }
+    }
+}
+
+fn normalize_kimi_providers(models: &mut [Model]) {
+    for model in models {
+        if model.id.contains('/') {
+            model.provider.clear();
+        }
+    }
+}
+
+fn normalize_hermes_providers(models: &mut [Model]) {
+    for model in models {
+        model.provider = model
+            .id
+            .split_once(':')
+            .map(|(provider, _)| provider.trim())
+            .filter(|provider| !provider.is_empty())
+            .unwrap_or_default()
+            .to_string();
+    }
+}
+
+fn grok_fallback_catalog() -> Catalog {
+    let mut models = vec![
+        Model {
+            id: "grok-4.5".to_string(),
+            label: "Grok 4.5".to_string(),
+            provider: "xai".to_string(),
+            default: true,
+            ..Model::default()
+        },
+        Model {
+            id: "grok-composer-2.5-fast".to_string(),
+            label: "Grok Composer 2.5 Fast".to_string(),
+            provider: "xai".to_string(),
+            ..Model::default()
+        },
+    ];
+    annotate_grok_thinking(&mut models);
+    Catalog {
+        models,
+        fallback: true,
+    }
+}
+
+fn annotate_grok_thinking(models: &mut [Model]) {
+    if let Some(model) = models.iter_mut().find(|model| model.id == "grok-4.5") {
+        model.thinking = Some(ModelThinking {
+            supported_levels: vec![
+                ThinkingLevel {
+                    value: "low".to_string(),
+                    label: "Low".to_string(),
+                    description: String::new(),
+                },
+                ThinkingLevel {
+                    value: "medium".to_string(),
+                    label: "Medium".to_string(),
+                    description: String::new(),
+                },
+                ThinkingLevel {
+                    value: "high".to_string(),
+                    label: "High".to_string(),
+                    description: String::new(),
+                },
+            ],
+            default_level: String::new(),
+        });
     }
 }
 
@@ -782,9 +1017,34 @@ impl DimBackend {
         cancellation: CancellationToken,
         timeout: Duration,
     ) -> Catalog {
-        self.inner
-            .discover_models(cache, cancellation, timeout)
+        self.discover_models_for_runtime("dim", cache, cancellation, timeout)
             .await
+    }
+
+    /// Discovers against a daemon runtime identity and preserves Dim's
+    /// non-authoritative empty fallback when its ACP catalog is unavailable.
+    pub async fn discover_models_for_runtime(
+        &self,
+        runtime_scope: &str,
+        cache: &CatalogCache,
+        cancellation: CancellationToken,
+        timeout: Duration,
+    ) -> Catalog {
+        let catalog = discover_models_with_scope(
+            &self.inner.config,
+            runtime_scope,
+            cache,
+            cancellation,
+            timeout,
+        )
+        .await;
+        if catalog.models.is_empty() {
+            return Catalog {
+                models: Vec::new(),
+                fallback: true,
+            };
+        }
+        catalog
     }
 }
 
@@ -906,19 +1166,25 @@ fn blocked_args(provider: &str) -> &'static BTreeMap<&'static str, BlockedArgMod
     }
 }
 
-async fn discover_models(
+async fn discover_models_with_scope(
     config: &QoderConfig,
+    runtime_scope: &str,
     cache: &CatalogCache,
     cancellation: CancellationToken,
     timeout: Duration,
 ) -> Catalog {
-    let Some(key) = ModelDiscoveryCacheKey::new(&config.provider, &config.command) else {
+    let scope = if runtime_scope.trim().is_empty() {
+        config.provider.as_str()
+    } else {
+        runtime_scope
+    };
+    let Some(key) = ModelDiscoveryCacheKey::new(scope, &config.command) else {
         return Catalog::default();
     };
     if let Some(catalog) = cache.get(&key) {
         return catalog;
     }
-    let catalog = discover_acp_session(config, cancellation, timeout)
+    let catalog = discover_acp_session(config, cancellation.clone(), timeout)
         .await
         .map_or_else(Catalog::default, |(initialize, session)| {
             if let Some(minimum) = config.minimum_agent_version {
@@ -927,7 +1193,7 @@ async fn discover_models(
                 }
             }
             let mut models = parse_acp_session_models(&session, &config.provider);
-            if matches!(config.provider.as_str(), "reasonix" | "dim") {
+            if matches!(config.provider.as_str(), "hermes" | "reasonix" | "dim") {
                 annotate_acp_effort(&mut models, &session);
             }
             Catalog {
@@ -935,6 +1201,9 @@ async fn discover_models(
                 fallback: false,
             }
         });
+    if cancellation.is_cancelled() {
+        return Catalog::default();
+    }
     let _ = cache.insert(key, catalog.clone());
     catalog
 }
@@ -944,6 +1213,16 @@ async fn discover_acp_session(
     cancellation: CancellationToken,
     timeout: Duration,
 ) -> Option<(Value, Value)> {
+    discover_acp_session_result(config, cancellation, timeout)
+        .await
+        .ok()
+}
+
+async fn discover_acp_session_result(
+    config: &QoderConfig,
+    cancellation: CancellationToken,
+    timeout: Duration,
+) -> Result<(Value, Value), String> {
     let command_path = if config.command.path.is_empty() {
         config.default_command.as_str()
     } else {
@@ -961,7 +1240,9 @@ async fn discover_acp_session(
             Ok(directory) => Some(directory),
             Err(error) => {
                 tracing::debug!(provider = "reasonix", error = %error, "ACP model discovery state isolation failed");
-                return None;
+                return Err(format!(
+                    "ACP model discovery state isolation failed: {error}"
+                ));
             }
         }
     } else {
@@ -985,16 +1266,18 @@ async fn discover_acp_session(
         Ok(tree) => tree,
         Err(error) => {
             tracing::debug!(provider = %config.provider, error = %error, "ACP model discovery process failed to start");
-            return None;
+            return Err(format!(
+                "ACP model discovery process failed to start: {error}"
+            ));
         }
     };
     let Some(stdin) = tree.child_mut().stdin.take() else {
         let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-        return None;
+        return Err("ACP model discovery process has no stdin".to_string());
     };
     let Some(stdout) = tree.child_mut().stdout.take() else {
         let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
-        return None;
+        return Err("ACP model discovery process has no stdout".to_string());
     };
     let provider = config.provider.clone();
     let explicit_authentication = config.explicit_authentication;
@@ -1044,9 +1327,13 @@ async fn discover_acp_session(
         timeout
     };
     let result = tokio::select! {
-        result = &mut handshake => result.ok().and_then(Result::ok),
-        () = cancellation.cancelled() => None,
-        () = tokio::time::sleep(timeout) => None,
+        result = &mut handshake => result
+            .map_err(|error| format!("ACP model discovery task failed: {error}"))
+            .and_then(|result| result.map_err(|error| error.to_string())),
+        () = cancellation.cancelled() => Err("ACP model discovery cancelled".to_string()),
+        () = tokio::time::sleep(timeout) => {
+            Err(format!("ACP model discovery timed out after {timeout:?}"))
+        },
     };
     let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
     if !handshake.is_finished() {
@@ -1061,19 +1348,52 @@ async fn discover_kimi_models(
     cancellation: CancellationToken,
     timeout: Duration,
 ) -> Catalog {
-    let Some(key) = ModelDiscoveryCacheKey::new("kimi", &config.command) else {
-        return Catalog::default();
+    discover_kimi_models_with_scope(config, "kimi", cache, cancellation, timeout).await
+}
+
+async fn discover_kimi_models_with_scope(
+    config: &QoderConfig,
+    runtime_scope: &str,
+    cache: &CatalogCache,
+    cancellation: CancellationToken,
+    timeout: Duration,
+) -> Catalog {
+    discover_kimi_models_with_scope_result(config, runtime_scope, cache, cancellation, timeout)
+        .await
+        .unwrap_or_else(|error| {
+            tracing::debug!(provider = "kimi", error = %error, "Kimi model discovery failed");
+            Catalog::default()
+        })
+}
+
+async fn discover_kimi_models_with_scope_result(
+    config: &QoderConfig,
+    runtime_scope: &str,
+    cache: &CatalogCache,
+    cancellation: CancellationToken,
+    timeout: Duration,
+) -> Result<Catalog, String> {
+    let scope = if runtime_scope.trim().is_empty() {
+        "kimi"
+    } else {
+        runtime_scope
+    };
+    let Some(key) = ModelDiscoveryCacheKey::new(scope, &config.command) else {
+        return Err("Kimi model discovery scope is invalid".to_string());
     };
     if let Some(catalog) = cache.get(&key) {
-        return catalog;
+        return Ok(catalog);
     }
-    let Some((initialize, session)) =
-        discover_acp_session(config, cancellation.clone(), timeout).await
-    else {
-        return Catalog::default();
-    };
+    let (initialize, session) = discover_acp_session_result(config, cancellation.clone(), timeout)
+        .await
+        .map_err(|error| format!("Kimi model discovery failed: {error}"))?;
+    if cancellation.is_cancelled() {
+        return Err("Kimi model discovery cancelled".to_string());
+    }
+    let mut models = parse_acp_session_models(&session, "kimi");
+    normalize_kimi_providers(&mut models);
     let mut catalog = Catalog {
-        models: parse_acp_session_models(&session, "kimi"),
+        models,
         fallback: false,
     };
     let version = initialize
@@ -1083,12 +1403,15 @@ async fn discover_kimi_models(
         .and_then(Value::as_str)
         .unwrap_or_default();
     if check_minimum(version, KIMI_THINKING_MIN_VERSION, false).is_ok() {
-        if let Some(thinking) = discover_kimi_thinking(config, cancellation, timeout).await {
+        if let Some(thinking) = discover_kimi_thinking(config, cancellation.clone(), timeout).await
+        {
             for model in &mut catalog.models {
                 if let Some(model_thinking) = thinking.get(&model.id) {
                     model.thinking = Some(model_thinking.clone());
                 }
             }
+        } else if cancellation.is_cancelled() {
+            return Err("Kimi model discovery cancelled".to_string());
         } else {
             tracing::debug!(
                 provider = "kimi",
@@ -1097,8 +1420,11 @@ async fn discover_kimi_models(
             );
         }
     }
+    if cancellation.is_cancelled() {
+        return Err("Kimi model discovery cancelled".to_string());
+    }
     let _ = cache.insert(key, catalog.clone());
-    catalog
+    Ok(catalog)
 }
 
 async fn discover_kimi_thinking(
@@ -3697,6 +4023,30 @@ mod tests {
     }
 
     #[test]
+    fn grok_fallback_catalog_matches_static_model_contract() {
+        let catalog = grok_fallback_catalog();
+        assert!(catalog.fallback);
+        assert_eq!(
+            catalog
+                .models
+                .iter()
+                .map(|model| model.id.as_str())
+                .collect::<Vec<_>>(),
+            ["grok-4.5", "grok-composer-2.5-fast"]
+        );
+        assert_eq!(catalog.models[0].provider, "xai");
+        assert!(catalog.models[0].default);
+        assert_eq!(
+            catalog.models[0]
+                .thinking
+                .as_ref()
+                .map(|thinking| thinking.supported_levels.len()),
+            Some(3)
+        );
+        assert!(catalog.models[1].thinking.is_none());
+    }
+
+    #[test]
     fn mcode_arguments_keep_acp_and_login_ui_owned() {
         let args = build_mcode_args(&ExecOptions {
             extra_args: ["acp", "--verbose"].map(str::to_string).to_vec(),
@@ -3956,6 +4306,56 @@ mod tests {
             provider_error("qoder", tracker.found(), "xxxxx", ""),
             Some("qoder provider reported a terminal upstream error on stderr".to_string())
         );
+    }
+
+    #[test]
+    fn grok_normalizes_empty_and_internal_provider_names() {
+        let mut models = vec![
+            Model {
+                id: "grok-4.5".to_string(),
+                provider: String::new(),
+                ..Model::default()
+            },
+            Model {
+                id: "grok-composer".to_string(),
+                provider: "grok".to_string(),
+                ..Model::default()
+            },
+            Model {
+                id: "custom".to_string(),
+                provider: "other".to_string(),
+                ..Model::default()
+            },
+        ];
+        normalize_grok_providers(&mut models);
+        assert_eq!(models[0].provider, "xai");
+        assert_eq!(models[1].provider, "xai");
+        assert_eq!(models[2].provider, "other");
+    }
+
+    #[test]
+    fn kimi_keeps_slash_form_models_ungrouped() {
+        let mut models = vec![
+            Model {
+                id: "kimi-code/k3".to_string(),
+                provider: "kimi-code".to_string(),
+                ..Model::default()
+            },
+            Model {
+                id: "kimi-code/plain".to_string(),
+                provider: "kimi-code".to_string(),
+                ..Model::default()
+            },
+            Model {
+                id: "kimi:k2".to_string(),
+                provider: "kimi".to_string(),
+                ..Model::default()
+            },
+        ];
+        normalize_kimi_providers(&mut models);
+        assert!(models[0].provider.is_empty());
+        assert!(models[1].provider.is_empty());
+        assert_eq!(models[2].provider, "kimi");
     }
 
     #[test]
@@ -4245,6 +4645,96 @@ mod tests {
             builtin_runtime,
         });
         (directory, requests, backend)
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn hermes_discovery_preserves_colon_providers_and_effort() {
+        let (_directory, _requests, backend) = fake_hermes_backend(
+            r#"#!/bin/sh
+test "$1" = acp || exit 20
+test "$HERMES_YOLO_MODE" = 1 || exit 21
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"discovery","models":{"currentModelId":"nous:moonshotai/kimi-k2.6","availableModels":[{"modelId":"nous:moonshotai/kimi-k2.6","name":"Kimi K2.6"},{"modelId":"moonshotai/kimi-k2.5","name":"Kimi K2.5"}]},"configOptions":[{"id":"effort","category":"thought_level","currentValue":"high","options":[{"value":"low","name":"Low"},{"value":"high","name":"High"}]}]}}\n' "$id" ;;
+  esac
+done
+"#,
+            true,
+        );
+        let catalog = backend
+            .discover_models(
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        assert_eq!(catalog.models.len(), 2);
+        assert_eq!(catalog.models[0].provider, "nous");
+        assert!(catalog.models[0].default);
+        let thinking = catalog.models[0]
+            .thinking
+            .as_ref()
+            .unwrap_or_else(|| panic!("Hermes effort metadata missing"));
+        assert_eq!(thinking.default_level, "high");
+        assert_eq!(thinking.supported_levels.len(), 2);
+        assert!(catalog.models[1].provider.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn hermes_runtime_scoped_discovery_cache_does_not_cross_runtime_ids() {
+        let (_directory, requests, backend) = fake_hermes_backend(
+            r#"#!/bin/sh
+test "$1" = acp || exit 20
+test "$HERMES_YOLO_MODE" = 1 || exit 21
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$HERMES_REQUESTS"
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"discovery","models":{"currentModelId":"hermes:model","availableModels":[{"modelId":"hermes:model","name":"Hermes Model"}]}}}\n' "$id" ;;
+  esac
+done
+"#,
+            true,
+        );
+        let cache = CatalogCache::default();
+        let first = backend
+            .discover_models_for_runtime(
+                "hermes\0workspace=one\0runtime=one\0profile=",
+                &cache,
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        let same_runtime = backend
+            .discover_models_for_runtime(
+                "hermes\0workspace=one\0runtime=one\0profile=",
+                &cache,
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+        let other_runtime = backend
+            .discover_models_for_runtime(
+                "hermes\0workspace=two\0runtime=two\0profile=",
+                &cache,
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await;
+
+        assert_eq!(first.models.len(), 1);
+        assert_eq!(same_runtime.models, first.models);
+        assert_eq!(other_runtime.models, first.models);
+        let starts = std::fs::read_to_string(requests)
+            .unwrap_or_else(|error| panic!("read Hermes discovery requests: {error}"))
+            .matches("\"method\":\"initialize\"")
+            .count();
+        assert_eq!(starts, 2, "each runtime scope should launch discovery once");
     }
 
     #[cfg(unix)]
@@ -4649,7 +5139,8 @@ done
 "#,
         );
         let catalog = backend
-            .discover_models(
+            .discover_models_for_runtime(
+                "kiro\0workspace=test\0runtime=test\0profile=",
                 &CatalogCache::default(),
                 CancellationToken::new(),
                 Duration::from_secs(5),
@@ -4886,6 +5377,7 @@ done
             )
             .await;
         assert_eq!(catalog.models.len(), 2);
+        assert!(catalog.models.iter().all(|model| model.provider.is_empty()));
         assert!(catalog.models[0].default);
         let thinking = catalog.models[0]
             .thinking
@@ -4901,6 +5393,55 @@ done
             ["low", "high", "max"]
         );
         assert!(catalog.models[1].thinking.is_none());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kimi_discovery_preserves_acp_failures_as_errors() {
+        let (_directory, _requests, backend) = fake_kimi_backend(
+            r#"#!/bin/sh
+exit 42
+"#,
+        );
+        let error = backend
+            .discover_models_for_runtime_result(
+                "kimi\0workspace=test\0runtime=test\0profile=",
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await
+            .err()
+            .unwrap_or_else(|| panic!("failed Kimi discovery must return an error"));
+        assert!(error.contains("Kimi model discovery failed"));
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn kimi_discovery_keeps_successful_empty_catalog_as_success() {
+        let (_directory, _requests, backend) = fake_kimi_backend(
+            r#"#!/bin/sh
+test "$1" = acp || exit 20
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"empty"}}\n' "$id" ;;
+  esac
+done
+"#,
+        );
+        let catalog = backend
+            .discover_models_for_runtime_result(
+                "kimi\0workspace=test\0runtime=test\0profile=empty",
+                &CatalogCache::default(),
+                CancellationToken::new(),
+                Duration::from_secs(5),
+            )
+            .await
+            .unwrap_or_else(|error| panic!("empty Kimi catalog should succeed: {error}"));
+        assert!(catalog.models.is_empty());
+        assert!(!catalog.fallback);
     }
 
     #[cfg(unix)]
@@ -4930,7 +5471,8 @@ done
 "#,
         );
         let catalog = backend
-            .discover_models(
+            .discover_models_for_runtime(
+                "qoder\0workspace=test\0runtime=test\0profile=",
                 &CatalogCache::default(),
                 CancellationToken::new(),
                 Duration::from_secs(5),
@@ -5053,7 +5595,8 @@ while IFS= read -r line; do
   case "$line" in
     *'"method":"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"authMethods":[{"id":"cached_token"},{"id":"xai.api_key"}]}}\n' "$id" ;;
     *'"method":"authenticate"'*)
-      case "$line" in *'"methodId":"xai.api_key"'*'"headless":true'*) ;; *) exit 41 ;; esac
+      case "$line" in *'"methodId":"xai.api_key"'*) ;; *) exit 41 ;; esac
+      case "$line" in *'"headless":true'*) ;; *) exit 41 ;; esac
       printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id"
       ;;
     *'"method":"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"grok-1"}}\n' "$id" ;;
@@ -5107,7 +5650,8 @@ done
 "#,
         );
         let catalog = backend
-            .discover_models(
+            .discover_models_for_runtime(
+                "grok\0workspace=test\0runtime=test\0profile=",
                 &CatalogCache::default(),
                 CancellationToken::new(),
                 Duration::from_secs(5),
