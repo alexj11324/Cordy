@@ -8,6 +8,8 @@
 // integration; silence dead-code until then.
 #![allow(dead_code)]
 
+#[cfg(windows)]
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 
 /// `canonicalExecutablePath` (config.go:835–847): absolutize, then resolve
@@ -935,17 +937,49 @@ fn executable_candidates(path: PathBuf) -> Vec<PathBuf> {
 
 #[cfg(windows)]
 fn executable_candidates(path: PathBuf) -> Vec<PathBuf> {
-    if path.extension().is_some() {
+    executable_candidates_with_extensions(path, &pathext())
+}
+
+#[cfg(windows)]
+fn executable_candidates_with_extensions(path: PathBuf, extensions: &[OsString]) -> Vec<PathBuf> {
+    if extensions.is_empty() {
         return vec![path];
     }
-    let extensions = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".to_string());
-    extensions
-        .split(';')
-        .filter_map(|ext| {
-            let ext = ext.trim().trim_start_matches('.');
-            (!ext.is_empty()).then(|| path.with_extension(ext))
-        })
+    std::iter::once(path.clone())
+        .chain(extensions.iter().map(|extension| {
+            let mut candidate = path.as_os_str().to_os_string();
+            candidate.push(extension);
+            PathBuf::from(candidate)
+        }))
         .collect()
+}
+
+#[cfg(windows)]
+fn pathext() -> Vec<OsString> {
+    parse_pathext(std::env::var_os("PATHEXT").as_deref())
+}
+
+#[cfg(windows)]
+fn parse_pathext(value: Option<&OsStr>) -> Vec<OsString> {
+    match value {
+        Some(value) if !value.is_empty() => value
+            .to_string_lossy()
+            .split(';')
+            .filter(|extension| !extension.is_empty())
+            .map(|extension| {
+                let extension = extension.to_ascii_lowercase();
+                if extension.starts_with('.') {
+                    OsString::from(extension)
+                } else {
+                    OsString::from(format!(".{extension}"))
+                }
+            })
+            .collect(),
+        _ => [".com", ".exe", ".bat", ".cmd"]
+            .into_iter()
+            .map(OsString::from)
+            .collect(),
+    }
 }
 
 fn is_executable_file_cmd(path: &str) -> bool {
@@ -1344,5 +1378,48 @@ mod tests {
         for p in default_gc_artifact_patterns() {
             assert!(!p.contains('/') && !p.contains('\\'));
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_candidates_keep_existing_extension_before_pathext() {
+        let candidates = executable_candidates_with_extensions(
+            PathBuf::from(r"C:\bin\tool.exe"),
+            &[OsString::from(".com"), OsString::from(".exe")],
+        );
+        let names = candidates
+            .iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            names,
+            vec![
+                r"C:\bin\tool.exe",
+                r"C:\bin\tool.exe.com",
+                r"C:\bin\tool.exe.exe"
+            ]
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_pathext_parser_normalizes_case_and_dot_prefix() {
+        assert_eq!(
+            parse_pathext(Some(OsStr::new(".EXE;bat;.;"))),
+            vec![
+                OsString::from(".exe"),
+                OsString::from(".bat"),
+                OsString::from(".")
+            ]
+        );
+        assert_eq!(
+            parse_pathext(Some(OsStr::new(""))),
+            vec![
+                OsString::from(".com"),
+                OsString::from(".exe"),
+                OsString::from(".bat"),
+                OsString::from(".cmd")
+            ]
+        );
     }
 }
