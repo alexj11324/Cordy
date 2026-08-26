@@ -402,8 +402,18 @@ jobs:
         include:
           - os: ubuntu-latest
             target: linux
+            arch: x64
+          - os: ubuntu-latest
+            target: linux
+            arch: arm64
           - os: windows-latest
             target: win
+            arch: x64
+            msvc_arch: amd64
+          - os: windows-latest
+            target: win
+            arch: arm64
+            msvc_arch: amd64_arm64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -416,18 +426,31 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y rpm
 
       - name: Install Linux ARM64 linker
-        if: matrix.target == 'linux'
+        if: matrix.target == 'linux' && matrix.arch == 'arm64'
         run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Setup MSVC linker (Windows)
+        if: matrix.target == 'win'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          # Keep the linker and SDK library search paths aligned with the
+          # Rust target built by this job. amd64_arm64 is the x64-hosted
+          # ARM64 cross compiler required by aarch64-pc-windows-msvc.
+          arch: ${{ matrix.msvc_arch }}
 
       - name: Setup Rust toolchain
         shell: bash
         run: |
           rustup toolchain install stable --profile minimal
           rustup default stable
-          if [[ "${{ matrix.target }}" == "linux" ]]; then
-            rustup target add x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu
+          if [[ "${{ matrix.target }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
+            rustup target add aarch64-unknown-linux-gnu
+          elif [[ "${{ matrix.target }}" == "linux" ]]; then
+            rustup target add x86_64-unknown-linux-gnu
+          elif [[ "${{ matrix.arch }}" == "arm64" ]]; then
+            rustup target add aarch64-pc-windows-msvc
           else
-            rustup target add x86_64-pc-windows-msvc aarch64-pc-windows-msvc
+            rustup target add x86_64-pc-windows-msvc
           fi
 
       - name: Setup pnpm
@@ -454,6 +477,7 @@ jobs:
           # Windows signing later.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
           # The Rust desktop bundler cross-compiles the Linux ARM64 CLI with
-          # the linker installed above. Windows uses the runner's MSVC linker.
+          # the linker installed above. Windows uses the MSVC environment
+          # configured for the target architecture in this job.
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
-        run: node scripts/package.mjs --${{ matrix.target }} --x64 --arm64 --publish always
+        run: node scripts/package.mjs --${{ matrix.target }} --${{ matrix.arch }} --publish always

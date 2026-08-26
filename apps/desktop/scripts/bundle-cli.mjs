@@ -17,13 +17,13 @@ import { access, chmod, copyFile, mkdir, rm } from "node:fs/promises";
 import { constants } from "node:fs";
 import { execFileSync, execSync } from "node:child_process";
 import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, "..", "..", "..");
 const serverRsDir = join(repoRoot, "server-rs");
 
-const PLATFORM_TO_GOOS = {
+const PLATFORM_TO_OS = {
   darwin: "darwin",
   linux: "linux",
   win32: "windows",
@@ -58,15 +58,15 @@ function runtimeArchFromArgs(argv) {
   return argv[flagIndex + 1] ?? "";
 }
 
-function normalizeRuntimePlatform(platform) {
-  if (platform in PLATFORM_TO_GOOS) return platform;
+export function normalizeRuntimePlatform(platform) {
+  if (Object.hasOwn(PLATFORM_TO_OS, platform)) return platform;
   throw new Error(
     `[bundle-cli] unsupported target platform: ${platform}. ` +
       "Use darwin, linux, or win32.",
   );
 }
 
-function normalizeRuntimeArch(arch) {
+export function normalizeRuntimeArch(arch) {
   if (SUPPORTED_ARCHS.has(arch)) return arch;
   throw new Error(
     `[bundle-cli] unsupported target architecture: ${arch}. ` +
@@ -74,12 +74,15 @@ function normalizeRuntimeArch(arch) {
   );
 }
 
-function binaryNameForPlatform(platform) {
+export function binaryNameForPlatform(platform) {
   return platform === "win32" ? "cordy.exe" : "cordy";
 }
 
-function rustTargetFor(platform, arch) {
-  const target = RUST_TARGETS[platform]?.[arch];
+export function rustTargetFor(platform, arch) {
+  const platformTargets = Object.hasOwn(RUST_TARGETS, platform)
+    ? RUST_TARGETS[platform]
+    : undefined;
+  const target = platformTargets?.[arch];
   if (!target) {
     throw new Error(
       `[bundle-cli] no Rust target for ${platform}/${arch}. ` +
@@ -88,18 +91,6 @@ function rustTargetFor(platform, arch) {
   }
   return target;
 }
-
-const targetPlatform = normalizeRuntimePlatform(
-  runtimePlatformFromArgs(process.argv.slice(2)),
-);
-const targetArch = normalizeRuntimeArch(runtimeArchFromArgs(process.argv.slice(2)));
-const goos = PLATFORM_TO_GOOS[targetPlatform];
-const goarch = targetArch === "x64" ? "amd64" : targetArch;
-const rustTarget = rustTargetFor(targetPlatform, targetArch);
-const binName = binaryNameForPlatform(targetPlatform);
-const srcBinary = join(serverRsDir, "target", rustTarget, "release", binName);
-const destDir = join(repoRoot, "apps", "desktop", "resources", "bin");
-const destBinary = join(destDir, binName);
 
 // Hand git arguments straight to the binary (no shell). A match pattern like
 // `v[0-9]*` must reach git as one literal argument; routing it through a shell
@@ -132,72 +123,99 @@ async function exists(p) {
   }
 }
 
-if (hasCargo()) {
-  const version =
-    git("describe", "--tags", "--match", "v[0-9]*", "--always", "--dirty") ||
-    "dev";
-  const commit = git("rev-parse", "--short", "HEAD") || "unknown";
-  const date = new Date().toISOString().replace(/\.\d+Z$/, "Z");
-
-  console.log(
-    `[bundle-cli] cargo build → ${srcBinary} (${goos}/${goarch}, target=${rustTarget}, version=${version} commit=${commit})`,
+async function main() {
+  const argv = process.argv.slice(2);
+  const targetPlatform = normalizeRuntimePlatform(
+    runtimePlatformFromArgs(argv),
   );
-  execFileSync(
-    "cargo",
-    [
-      "build",
-      "--release",
-      "--locked",
-      "-p",
-      "cordy-cli",
-      "--target",
-      rustTarget,
-    ],
-    {
-      cwd: serverRsDir,
-      stdio: "inherit",
-      env: {
-        ...process.env,
-        CORDY_BUILD_VERSION: version,
-        CORDY_BUILD_COMMIT: commit,
-        CORDY_BUILD_DATE: date,
-        CORDY_BUILD_GO_VERSION: "unknown",
-        CORDY_GIT_COMMIT: commit,
+  const targetArch = normalizeRuntimeArch(runtimeArchFromArgs(argv));
+  const targetOs = PLATFORM_TO_OS[targetPlatform];
+  const targetArchLabel = targetArch === "x64" ? "amd64" : targetArch;
+  const rustTarget = rustTargetFor(targetPlatform, targetArch);
+  const binName = binaryNameForPlatform(targetPlatform);
+  const srcBinary = join(serverRsDir, "target", rustTarget, "release", binName);
+  const destDir = join(repoRoot, "apps", "desktop", "resources", "bin");
+  const destBinary = join(destDir, binName);
+
+  if (hasCargo()) {
+    const version =
+      git("describe", "--tags", "--match", "v[0-9]*", "--always", "--dirty") ||
+      "dev";
+    const commit = git("rev-parse", "--short", "HEAD") || "unknown";
+    const date = new Date().toISOString().replace(/\.\d+Z$/, "Z");
+
+    console.log(
+      `[bundle-cli] cargo build → ${srcBinary} (${targetOs}/${targetArchLabel}, target=${rustTarget}, version=${version} commit=${commit})`,
+    );
+    execFileSync(
+      "cargo",
+      [
+        "build",
+        "--release",
+        "--locked",
+        "-p",
+        "cordy-cli",
+        "--target",
+        rustTarget,
+      ],
+      {
+        cwd: serverRsDir,
+        stdio: "inherit",
+        env: {
+          ...process.env,
+          CORDY_BUILD_VERSION: version,
+          CORDY_BUILD_COMMIT: commit,
+          CORDY_BUILD_DATE: date,
+          CORDY_BUILD_GO_VERSION: "unknown",
+          CORDY_GIT_COMMIT: commit,
+        },
       },
-    },
-  );
-} else {
-  console.warn(
-    "[bundle-cli] `cargo` not found in PATH — skipping CLI build. " +
-      "Desktop will use whatever is already in resources/bin/, or fall back " +
-      "to auto-installing the latest release at runtime.",
-  );
-}
-
-if (!(await exists(srcBinary))) {
-  console.warn(
-    `[bundle-cli] ${srcBinary} not present — Desktop will fall back to ` +
-      `auto-installing the latest release at runtime.`,
-  );
-  await rm(destDir, { recursive: true, force: true });
-  process.exit(0);
-}
-
-await rm(destDir, { recursive: true, force: true });
-await mkdir(destDir, { recursive: true });
-await copyFile(srcBinary, destBinary);
-await chmod(destBinary, 0o755);
-
-// macOS: ad-hoc sign so Gatekeeper doesn't complain when the parent app
-// (which itself may be unsigned in dev) spawns the child.
-if (process.platform === "darwin") {
-  try {
-    execSync(`codesign -s - --force ${JSON.stringify(destBinary)}`, {
-      stdio: "pipe",
-    });
-  } catch {
-    // Non-fatal. Unsigned binaries still run when the parent app is trusted.
+    );
+  } else {
+    console.warn(
+      "[bundle-cli] `cargo` not found in PATH — skipping CLI build. " +
+        "Desktop will use whatever is already in resources/bin/, or fall back " +
+        "to auto-installing the latest release at runtime.",
+    );
   }
+
+  if (!(await exists(srcBinary))) {
+    console.warn(
+      `[bundle-cli] ${srcBinary} not present — Desktop will fall back to ` +
+        `auto-installing the latest release at runtime.`,
+    );
+    await rm(destDir, { recursive: true, force: true });
+    return;
+  }
+
+  await rm(destDir, { recursive: true, force: true });
+  await mkdir(destDir, { recursive: true });
+  await copyFile(srcBinary, destBinary);
+  await chmod(destBinary, 0o755);
+
+  // macOS: ad-hoc sign a macOS child so Gatekeeper doesn't complain when the
+  // parent app (which itself may be unsigned in dev) spawns it. A macOS host
+  // can package Linux/Windows targets too, and those binaries are not
+  // codesignable Mach-O objects.
+  if (process.platform === "darwin" && targetPlatform === "darwin") {
+    try {
+      execFileSync("codesign", ["-s", "-", "--force", destBinary], {
+        stdio: "pipe",
+      });
+    } catch {
+      // Non-fatal. Unsigned binaries still run when the parent app is trusted.
+    }
+  }
+
+  console.log(`[bundle-cli] bundled ${srcBinary} → ${destBinary}`);
 }
 
-console.log(`[bundle-cli] bundled ${srcBinary} → ${destBinary}`);
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  main().catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
