@@ -905,9 +905,15 @@ impl ProductionProviderAdapter {
         }
         plan.drop_resume();
         tokio::select! {
-            result = prepare_isolated(ctx, &helper_command, plan.prepare_params()) => result
-                .map(|environment| (environment, false))
-                .map_err(|error| anyhow::anyhow!("prepare execution environment: {error:#}")),
+            result = prepare_isolated(ctx, &helper_command, plan.prepare_params()) => {
+                if let Some(cause) = ctx.err() {
+                    Err(anyhow::anyhow!(cause.to_string()))
+                } else {
+                    result
+                        .map(|environment| (environment, false))
+                        .map_err(|error| anyhow::anyhow!("prepare execution environment: {error:#}"))
+                }
+            },
             () = ctx.cancelled() => Err(anyhow::anyhow!(ctx.cause().to_string())),
         }
     }
