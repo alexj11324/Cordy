@@ -2,16 +2,16 @@
 //! `server/cmd/server/{subscriber,activity}_listeners.go`.
 
 use std::collections::HashSet;
-use std::sync::OnceLock;
 
 use cordy_db::models::ActivityLog;
 use cordy_db::queries::{activity, agent, issue, subscriber};
 use cordy_events::{Bus, Event};
 use cordy_service::attribution::{delegated_subscriber, SubscriptionFacts};
-use regex::Regex;
 use serde_json::{json, Map, Value};
 use sqlx::PgPool;
 use uuid::Uuid;
+
+use cordy_util::mentions::parse_mentions;
 
 #[derive(Debug)]
 struct IssueFields {
@@ -27,12 +27,6 @@ struct IssueFields {
     priority: String,
     start_date: Option<String>,
     due_date: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Mention {
-    user_type: String,
-    user_id: String,
 }
 
 pub(crate) async fn handle_event(pool: &PgPool, bus: &Bus, event: &Event) {
@@ -586,26 +580,10 @@ fn is_assignment_recipient(user_type: &str) -> bool {
     matches!(user_type, "member" | "agent")
 }
 
-fn parse_mentions(content: &str) -> Vec<Mention> {
-    static MENTION_RE: OnceLock<Regex> = OnceLock::new();
-    let re = MENTION_RE.get_or_init(|| {
-        Regex::new(r"\[@?(.+?)\]\(mention://(member|agent|squad|issue|all)/([0-9a-fA-F-]+|all)\)")
-            .expect("mention regex is valid")
-    });
-    let mut seen = HashSet::new();
-    re.captures_iter(content)
-        .filter_map(|captures| {
-            let user_type = captures.get(2)?.as_str().to_string();
-            let user_id = captures.get(3)?.as_str().to_string();
-            seen.insert((user_type.clone(), user_id.clone()))
-                .then_some(Mention { user_type, user_id })
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use cordy_util::mentions::Mention;
 
     #[test]
     fn mentions_preserve_first_seen_order_and_deduplicate_by_type_and_id() {
