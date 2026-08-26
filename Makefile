@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev server daemon cli cordy rust-cli build-rust-cli build test migrate-up migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
+.PHONY: help makehelp dev server daemon cli cordy go-cordy rust-cli build-rust-cli build test migrate-up migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -269,10 +269,13 @@ server: ## Run only the Go server for the current checkout
 daemon: ## Restart the local agent daemon using the CLI's stored auth/session
 	@$(MAKE) cordy CORDY_ARGS="daemon restart --profile local"
 
-cli: ## Run the cordy CLI with ARGS or CORDY_ARGS from source
+cli: ## Run the Rust cordy CLI with ARGS or CORDY_ARGS from source
 	@$(MAKE) cordy CORDY_ARGS="$(CORDY_ARGS)"
 
-cordy: ## Run the cordy CLI entrypoint directly from the Go source tree
+cordy: ## Run the Rust cordy CLI entrypoint
+	@$(MAKE) rust-cli CORDY_ARGS="$(CORDY_ARGS)"
+
+go-cordy: ## Run the legacy Go CLI entrypoint during the migration
 	cd server && go run -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" ./cmd/cordy $(CORDY_ARGS)
 
 rust-cli: ## Run the migrated Rust CLI slice with ARGS or CORDY_ARGS

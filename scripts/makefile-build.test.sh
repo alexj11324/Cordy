@@ -21,6 +21,19 @@ fail() {
   exit 1
 }
 
+# The source-facing CLI entrypoints are part of the migration contract. They
+# must resolve to the Rust binary so daemon and local CLI invocations stop
+# silently re-entering the legacy Go command. Keep an explicit go-cordy escape
+# hatch until the final Go source deletion, but never make it the default.
+for target in cli cordy; do
+  rust_output="$(make -n "$target" CORDY_ARGS=version)"
+  grep -Fq -- "cargo run -p cordy-cli -- version" <<<"$rust_output" ||
+    fail "$target: expected the Rust CLI entrypoint, got:\n$rust_output"
+  if grep -Fq -- "cd server && go run" <<<"$rust_output"; then
+    fail "$target: unexpectedly resolved to the legacy Go CLI:\n$rust_output"
+  fi
+done
+
 # The recipe reads `-o bin/server$(EXE) ./cmd/server`, so the trailing space is
 # what keeps an expected `bin/server` from matching an emitted `bin/server.exe`.
 require_outputs() {
