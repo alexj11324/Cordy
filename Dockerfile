@@ -35,12 +35,6 @@ WORKDIR /src/server-rs
 COPY server-rs/Cargo.toml server-rs/Cargo.lock ./
 COPY server-rs/.sqlx/ ./.sqlx/
 COPY server-rs/crates/ ./crates/
-# These are compile-time inputs of the Rust crates. Their relative include
-# paths resolve from /src/server-rs to /src/server/..., so stage them at the
-# same repository-relative location rather than copying them into crates/.
-COPY server/internal/service/builtin_agents/ /src/server/internal/service/builtin_agents/
-COPY server/internal/service/builtin_skills/ /src/server/internal/service/builtin_skills/
-COPY server/internal/handler/reserved_slugs.json /src/server/internal/handler/reserved_slugs.json
 
 # The Rust crates embed these Go-owned assets through paths relative to the
 # repository root. Keep that root-level layout in the Rust build stage.
