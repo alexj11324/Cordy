@@ -1,13 +1,15 @@
-//! Explicit comment-trigger routing.
+//! Comment-trigger routing.
 //!
-//! This is the handler-side port of the explicit `@agent` / `@squad` branch in
-//! `server/internal/handler/comment.go` (MUL-4525).  It deliberately keeps
-//! target resolution separate from execution: two named targets may resolve to
-//! one agent, while the API still returns one outcome for every named target.
+//! This is the handler-side port of the explicit `@agent` / `@squad` branch and
+//! the implicit reply/conversation/assignee branches in
+//! `server/internal/handler/comment.go`. It deliberately keeps target
+//! resolution separate from execution: two named targets may resolve to one
+//! agent, while the API still returns one outcome for every named target.
 
 use crate::state::HandlerState;
-use cordy_db::models::{Agent, Issue};
-use cordy_db::queries::{agent, agent_invocation_target, member, squad};
+use chrono::{Duration, Utc};
+use cordy_db::models::{Agent, AgentTaskQueue, Comment, Issue};
+use cordy_db::queries::{agent, agent_invocation_target, comment, member, squad, workspace};
 use cordy_service::agent_ready::agent_readiness;
 use cordy_service::dispatch_reason::ReasonCode;
 use cordy_service::task_service::{pending_slot_taken_err, TaskServiceError};
@@ -57,11 +59,49 @@ struct Mention {
     id: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TriggerSource {
+    IssueAssignee,
+    MentionAgent,
+    MentionSquadLeader,
+    ThreadParent,
+    Conversation,
+}
+
+impl TriggerSource {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::IssueAssignee => "issue_assignee",
+            Self::MentionAgent => "mention_agent",
+            Self::MentionSquadLeader => "mention_squad_leader",
+            Self::ThreadParent => "thread_parent",
+            Self::Conversation => "conversation_continuation",
+        }
+    }
+
+    fn uses_delegation_attribution(self) -> bool {
+        !matches!(self, Self::IssueAssignee)
+    }
+
+    fn schedules_escalation(self) -> bool {
+        matches!(self, Self::ThreadParent | Self::Conversation)
+    }
+}
+
+#[derive(Debug, Clone)]
+struct EscalationFallback {
+    agent: Agent,
+    squad_id: Option<Uuid>,
+}
+
 #[derive(Debug, Clone)]
 struct Trigger {
     agent: Agent,
     squad_id: Option<Uuid>,
     is_leader: bool,
+    source: TriggerSource,
+    already_pending: bool,
+    escalation_fallback: Option<EscalationFallback>,
 }
 
 #[derive(Debug, Clone)]
@@ -77,6 +117,7 @@ struct EnqueueResult {
     status: DispatchStatus,
     reason: ReasonCode,
     execution_squad_id: Option<Uuid>,
+    task_id: Option<Uuid>,
 }
 
 fn parse_mentions(content: &str) -> Vec<Mention> {
@@ -304,6 +345,9 @@ async fn resolve_explicit(
                     agent,
                     squad_id: None,
                     is_leader: false,
+                    source: TriggerSource::MentionAgent,
+                    already_pending: false,
+                    escalation_fallback: None,
                 },
             );
             targets.push(Target {
@@ -378,6 +422,9 @@ async fn resolve_explicit(
                 agent: leader,
                 squad_id: Some(squad.id),
                 is_leader: true,
+                source: TriggerSource::MentionSquadLeader,
+                already_pending: false,
+                escalation_fallback: None,
             },
         );
         targets.push(Target {
@@ -389,6 +436,507 @@ async fn resolve_explicit(
     }
 
     (triggers, targets)
+}
+
+async fn has_pending_task(
+    state: &HandlerState,
+    issue: &Issue,
+    agent_id: Uuid,
+    exclude_trigger_comment_id: Option<Uuid>,
+) -> Result<bool, ReasonCode> {
+    let head = state.tasks.resolve_issue_review_sha(issue.id).await;
+    let head = (!head.is_empty()).then_some(head);
+    let value = match exclude_trigger_comment_id {
+        Some(comment_id) => {
+            agent::has_pending_task_for_issue_and_agent_excluding_trigger_comment(
+                &state.pool,
+                issue.id,
+                agent_id,
+                comment_id,
+                head.as_deref(),
+            )
+            .await
+        }
+        None => {
+            agent::has_pending_task_for_issue_and_agent(
+                &state.pool,
+                issue.id,
+                agent_id,
+                head.as_deref(),
+            )
+            .await
+        }
+    }
+    .map_err(|_| ReasonCode::InternalError)?;
+    Ok(value.unwrap_or(false))
+}
+
+async fn route_agent(
+    state: &HandlerState,
+    issue: &Issue,
+    agent_id: Uuid,
+    source: TriggerSource,
+    squad_id: Option<Uuid>,
+    actor_type: &str,
+    actor_id: Uuid,
+    originator_user_id: Option<Uuid>,
+    exclude_trigger_comment_id: Option<Uuid>,
+) -> Option<Trigger> {
+    let agent = agent::get_agent_in_workspace(&state.pool, agent_id, issue.workspace_id)
+        .await
+        .ok()??;
+    if agent.archived_at.is_some() || agent.runtime_id.is_none() {
+        return None;
+    }
+    if !can_invoke_agent(
+        state,
+        &agent,
+        actor_type,
+        actor_id,
+        originator_user_id,
+        issue.workspace_id,
+    )
+    .await
+    {
+        return None;
+    }
+    let already_pending = has_pending_task(state, issue, agent.id, exclude_trigger_comment_id)
+        .await
+        .ok()?;
+    Some(Trigger {
+        agent,
+        squad_id,
+        is_leader: matches!(source, TriggerSource::MentionSquadLeader)
+            || (matches!(
+                source,
+                TriggerSource::IssueAssignee | TriggerSource::Conversation
+            ) && squad_id.is_some()),
+        source,
+        already_pending,
+        escalation_fallback: None,
+    })
+}
+
+async fn should_suppress_squad_leader_self_trigger(
+    state: &HandlerState,
+    issue_id: Uuid,
+    leader_id: Uuid,
+    squad_id: Uuid,
+) -> bool {
+    let latest =
+        agent::get_latest_task_role_for_issue_and_agent(&state.pool, issue_id, leader_id).await;
+    let Ok(Some(latest)) = latest else {
+        // Go treats a role-query failure as an unavailable suppression proof and
+        // lets the normal enqueue path decide what to do.
+        return false;
+    };
+    if latest.is_leader_task {
+        return true;
+    }
+    latest.squad_id != Some(squad_id)
+}
+
+async fn route_assignee_fallback(
+    state: &HandlerState,
+    issue: &Issue,
+    actor_type: &str,
+    actor_id: Uuid,
+    originator_user_id: Option<Uuid>,
+    exclude_trigger_comment_id: Option<Uuid>,
+) -> Option<Trigger> {
+    let (assignee_type, assignee_id) = (issue.assignee_type.as_deref()?, issue.assignee_id?);
+    match assignee_type {
+        "agent" => {
+            route_agent(
+                state,
+                issue,
+                assignee_id,
+                TriggerSource::IssueAssignee,
+                None,
+                actor_type,
+                actor_id,
+                originator_user_id,
+                exclude_trigger_comment_id,
+            )
+            .await
+        }
+        "squad" => {
+            let assigned_squad =
+                squad::get_squad_in_workspace(&state.pool, assignee_id, issue.workspace_id)
+                    .await
+                    .ok()??;
+            if actor_type == "agent"
+                && actor_id == assigned_squad.leader_id
+                && should_suppress_squad_leader_self_trigger(
+                    state,
+                    issue.id,
+                    assigned_squad.leader_id,
+                    assigned_squad.id,
+                )
+                .await
+            {
+                return None;
+            }
+            route_agent(
+                state,
+                issue,
+                assigned_squad.leader_id,
+                TriggerSource::IssueAssignee,
+                Some(assigned_squad.id),
+                actor_type,
+                actor_id,
+                originator_user_id,
+                exclude_trigger_comment_id,
+            )
+            .await
+        }
+        _ => None,
+    }
+}
+
+async fn route_conversation_owner(
+    state: &HandlerState,
+    issue: &Issue,
+    agent_id: Uuid,
+    squad_id: Option<Uuid>,
+    member_id: Uuid,
+    exclude_trigger_comment_id: Option<Uuid>,
+) -> Option<Trigger> {
+    let squad_id = if let Some(candidate) = squad_id {
+        if squad::get_squad_in_workspace(&state.pool, candidate, issue.workspace_id)
+            .await
+            .ok()
+            .flatten()
+            .is_some()
+        {
+            Some(candidate)
+        } else {
+            // A stale historical squad id does not prevent the conversation
+            // from continuing with the agent, matching Go's best-effort
+            // squad lookup.
+            None
+        }
+    } else {
+        None
+    };
+    route_agent(
+        state,
+        issue,
+        agent_id,
+        TriggerSource::Conversation,
+        squad_id,
+        "member",
+        member_id,
+        Some(member_id),
+        exclude_trigger_comment_id,
+    )
+    .await
+}
+
+async fn route_first_explicit_root_owner(
+    state: &HandlerState,
+    issue: &Issue,
+    root: &Comment,
+    member_id: Uuid,
+    exclude_trigger_comment_id: Option<Uuid>,
+) -> (bool, Option<Trigger>) {
+    for mention in parse_mentions(&root.content) {
+        match mention.kind.as_str() {
+            "agent" => {
+                let Ok(agent_id) = Uuid::parse_str(&mention.id) else {
+                    return (true, None);
+                };
+                return (
+                    true,
+                    route_conversation_owner(
+                        state,
+                        issue,
+                        agent_id,
+                        None,
+                        member_id,
+                        exclude_trigger_comment_id,
+                    )
+                    .await,
+                );
+            }
+            "squad" => {
+                let Ok(squad_id) = Uuid::parse_str(&mention.id) else {
+                    return (true, None);
+                };
+                let Ok(Some(assigned_squad)) =
+                    squad::get_squad_in_workspace(&state.pool, squad_id, issue.workspace_id).await
+                else {
+                    return (true, None);
+                };
+                return (
+                    true,
+                    route_conversation_owner(
+                        state,
+                        issue,
+                        assigned_squad.leader_id,
+                        Some(assigned_squad.id),
+                        member_id,
+                        exclude_trigger_comment_id,
+                    )
+                    .await,
+                );
+            }
+            _ => {}
+        }
+    }
+    (false, None)
+}
+
+async fn route_conversation_owners(
+    state: &HandlerState,
+    issue: &Issue,
+    root: &Comment,
+    member_id: Uuid,
+    exclude_trigger_comment_id: Option<Uuid>,
+) -> (Vec<Trigger>, bool) {
+    if root.author_type != "member" || root.issue_id != issue.id {
+        return (Vec::new(), false);
+    }
+    let (has_explicit_owner, owner) =
+        route_first_explicit_root_owner(state, issue, root, member_id, exclude_trigger_comment_id)
+            .await;
+    if has_explicit_owner {
+        return (owner.into_iter().collect(), true);
+    }
+
+    let tasks = match agent::list_tasks_by_issue(&state.pool, issue.id).await {
+        Ok(tasks) => tasks,
+        Err(_) => return (Vec::new(), false),
+    };
+    let mut owner_indexes = HashMap::<Uuid, usize>::new();
+    let mut owners = Vec::<(Uuid, Option<Uuid>)>::new();
+    for task in tasks {
+        if task.trigger_comment_id != Some(root.id)
+            || exclude_trigger_comment_id == task.trigger_comment_id
+        {
+            continue;
+        }
+        if let Some(index) = owner_indexes.get(&task.agent_id).copied() {
+            if owners[index].1.is_none() {
+                owners[index].1 = task.squad_id;
+            }
+        } else {
+            owner_indexes.insert(task.agent_id, owners.len());
+            owners.push((task.agent_id, task.squad_id));
+        }
+    }
+    if owners.is_empty() {
+        return (Vec::new(), false);
+    }
+
+    let mut triggers = Vec::with_capacity(owners.len());
+    for (agent_id, squad_id) in owners {
+        if let Some(trigger) = route_conversation_owner(
+            state,
+            issue,
+            agent_id,
+            squad_id,
+            member_id,
+            exclude_trigger_comment_id,
+        )
+        .await
+        {
+            triggers.push(trigger);
+        }
+    }
+    (triggers, true)
+}
+
+async fn route_implicit(
+    state: &HandlerState,
+    issue: &Issue,
+    parent: Option<&Comment>,
+    actor_type: &str,
+    actor_id: Uuid,
+    originator_user_id: Option<Uuid>,
+    exclude_trigger_comment_id: Option<Uuid>,
+) -> Vec<Trigger> {
+    if actor_type != "member" {
+        if issue.assignee_type.as_deref() == Some("squad") {
+            return route_assignee_fallback(
+                state,
+                issue,
+                actor_type,
+                actor_id,
+                originator_user_id,
+                exclude_trigger_comment_id,
+            )
+            .await
+            .into_iter()
+            .collect();
+        }
+        return Vec::new();
+    }
+
+    if let Some(parent) = parent {
+        if parent.author_type == "agent" {
+            let Some(mut trigger) = route_agent(
+                state,
+                issue,
+                parent.author_id,
+                TriggerSource::ThreadParent,
+                None,
+                actor_type,
+                actor_id,
+                originator_user_id,
+                exclude_trigger_comment_id,
+            )
+            .await
+            else {
+                return Vec::new();
+            };
+            if let Some(fallback) = route_assignee_fallback(
+                state,
+                issue,
+                actor_type,
+                actor_id,
+                originator_user_id,
+                exclude_trigger_comment_id,
+            )
+            .await
+            .filter(|fallback| fallback.agent.id != trigger.agent.id)
+            {
+                trigger.escalation_fallback = Some(EscalationFallback {
+                    agent: fallback.agent,
+                    squad_id: fallback.squad_id,
+                });
+            }
+            return vec![trigger];
+        }
+
+        if let Ok(Some(root)) =
+            comment::get_thread_root(&state.pool, parent.id, issue.workspace_id).await
+        {
+            let (triggers, handled) = route_conversation_owners(
+                state,
+                issue,
+                &root,
+                actor_id,
+                exclude_trigger_comment_id,
+            )
+            .await;
+            if handled {
+                if triggers.len() == 1 {
+                    let mut triggers = triggers;
+                    if let Some(fallback) = route_assignee_fallback(
+                        state,
+                        issue,
+                        actor_type,
+                        actor_id,
+                        originator_user_id,
+                        exclude_trigger_comment_id,
+                    )
+                    .await
+                    .filter(|fallback| fallback.agent.id != triggers[0].agent.id)
+                    {
+                        triggers[0].escalation_fallback = Some(EscalationFallback {
+                            agent: fallback.agent,
+                            squad_id: fallback.squad_id,
+                        });
+                    }
+                    return triggers;
+                }
+                return triggers;
+            }
+        }
+
+        // A member-to-member reply is a human discussion, not an assignee
+        // fallback. A missing/invalid root is conservatively treated the same.
+        if parent.author_type == "member" {
+            return Vec::new();
+        }
+    }
+
+    route_assignee_fallback(
+        state,
+        issue,
+        actor_type,
+        actor_id,
+        originator_user_id,
+        exclude_trigger_comment_id,
+    )
+    .await
+    .into_iter()
+    .collect()
+}
+
+async fn resolve_comment_triggers(
+    state: &HandlerState,
+    issue: &Issue,
+    content: &str,
+    parent: Option<&Comment>,
+    actor_type: &str,
+    actor_id: Uuid,
+    originator_user_id: Option<Uuid>,
+    exclude_trigger_comment_id: Option<Uuid>,
+    suppressed_agent_ids: &HashSet<Uuid>,
+) -> (Vec<Trigger>, Vec<Target>) {
+    if is_note_comment(content) {
+        return (Vec::new(), Vec::new());
+    }
+    let mentions = parse_mentions(content);
+    let has_explicit = mentions
+        .iter()
+        .any(|mention| matches!(mention.kind.as_str(), "agent" | "squad"));
+    let (mut triggers, targets) = if has_explicit {
+        resolve_explicit(
+            state,
+            issue,
+            content,
+            actor_type,
+            actor_id,
+            originator_user_id,
+            suppressed_agent_ids,
+        )
+        .await
+    } else if mentions
+        .iter()
+        .any(|mention| matches!(mention.kind.as_str(), "all" | "member"))
+    {
+        (Vec::new(), Vec::new())
+    } else {
+        (
+            route_implicit(
+                state,
+                issue,
+                parent,
+                actor_type,
+                actor_id,
+                originator_user_id,
+                exclude_trigger_comment_id,
+            )
+            .await,
+            Vec::new(),
+        )
+    };
+    triggers.retain(|trigger| !suppressed_agent_ids.contains(&trigger.agent.id));
+    (triggers, targets)
+}
+
+async fn comment_routing_escalation_delay(state: &HandlerState, workspace_id: Uuid) -> Duration {
+    const DEFAULT_SECONDS: i64 = 5 * 60;
+    let default = Duration::seconds(DEFAULT_SECONDS);
+    let Ok(Some(workspace)) = workspace::get_workspace(&state.pool, workspace_id).await else {
+        return default;
+    };
+    let Some(seconds) = workspace
+        .settings
+        .get("comment_routing")
+        .and_then(|value| value.get("escalation_seconds"))
+        .and_then(Value::as_i64)
+    else {
+        return default;
+    };
+    if seconds <= 0 {
+        Duration::zero()
+    } else {
+        Duration::seconds(seconds)
+    }
 }
 
 fn attribution_blocked(error: &TaskServiceError) -> bool {
@@ -418,7 +966,12 @@ async fn merge_into_pending(
 ) -> Result<bool, ReasonCode> {
     let attr = state
         .tasks
-        .attribution_for_merged_comment(issue.workspace_id, Some(comment_id), true, &trigger.agent)
+        .attribution_for_merged_comment(
+            issue.workspace_id,
+            Some(comment_id),
+            trigger.source.uses_delegation_attribution(),
+            &trigger.agent,
+        )
         .await
         .map_err(|error| {
             if attribution_blocked(&error) {
@@ -496,6 +1049,77 @@ async fn register_planned(
     .map_err(|_| ReasonCode::InternalError)
 }
 
+async fn enqueue_fresh_trigger(
+    state: &HandlerState,
+    issue: &Issue,
+    trigger: &Trigger,
+    comment_id: Uuid,
+) -> Result<AgentTaskQueue, TaskServiceError> {
+    match trigger.source {
+        TriggerSource::IssueAssignee => {
+            if let Some(squad_id) = trigger.squad_id {
+                state
+                    .tasks
+                    .enqueue_task_for_squad_leader(
+                        issue,
+                        trigger.agent.id,
+                        squad_id,
+                        Some(comment_id),
+                    )
+                    .await
+            } else {
+                state
+                    .tasks
+                    .enqueue_task_for_issue(issue, Some(comment_id))
+                    .await
+            }
+        }
+        TriggerSource::MentionAgent => {
+            state
+                .tasks
+                .enqueue_task_for_mention(issue, trigger.agent.id, Some(comment_id))
+                .await
+        }
+        TriggerSource::MentionSquadLeader => {
+            state
+                .tasks
+                .enqueue_task_for_squad_leader(
+                    issue,
+                    trigger.agent.id,
+                    trigger
+                        .squad_id
+                        .expect("squad mention trigger always carries a squad"),
+                    Some(comment_id),
+                )
+                .await
+        }
+        TriggerSource::ThreadParent => {
+            state
+                .tasks
+                .enqueue_task_for_thread_parent(issue, trigger.agent.id, Some(comment_id))
+                .await
+        }
+        TriggerSource::Conversation => {
+            if let Some(squad_id) = trigger.squad_id {
+                state
+                    .tasks
+                    .enqueue_task_for_squad_leader(
+                        issue,
+                        trigger.agent.id,
+                        squad_id,
+                        Some(comment_id),
+                    )
+                    .await
+            } else {
+                state
+                    .tasks
+                    .enqueue_task_for_thread_parent(issue, trigger.agent.id, Some(comment_id))
+                    .await
+            }
+        }
+    }
+}
+
 async fn enqueue_trigger(
     state: &HandlerState,
     issue: &Issue,
@@ -505,92 +1129,89 @@ async fn enqueue_trigger(
     // A duplicate insert is resolved by an atomic same-head merge or a
     // claim-receipt planned id. Never report success for a merge that did not
     // complete; bounded retries make sustained concurrent churn visible.
+    let mut pending = trigger.already_pending;
     let mut lost_race = false;
     for _ in 0..4 {
-        match state
-            .tasks
-            .enqueue_mention_task(
-                issue,
-                trigger.agent.id,
-                Some(comment_id),
-                Vec::new(),
-                trigger.is_leader,
-                trigger.squad_id,
-                false,
-                "",
-                None,
-                None,
-            )
-            .await
-        {
-            Ok(_) => {
+        if pending {
+            match merge_into_pending(state, issue, trigger, comment_id).await {
+                Ok(true) => {
+                    return EnqueueResult {
+                        status: DispatchStatus::Coalesced,
+                        reason: ReasonCode::Coalesced,
+                        execution_squad_id: trigger.squad_id,
+                        task_id: None,
+                    };
+                }
+                Err(reason) => {
+                    return EnqueueResult {
+                        status: DispatchStatus::Blocked,
+                        reason,
+                        execution_squad_id: trigger.squad_id,
+                        task_id: None,
+                    };
+                }
+                Ok(false) if lost_race => {
+                    match register_planned(state, issue, trigger, comment_id).await {
+                        Ok(true) => {
+                            return EnqueueResult {
+                                status: DispatchStatus::Deferred,
+                                reason: ReasonCode::Deferred,
+                                execution_squad_id: trigger.squad_id,
+                                task_id: None,
+                            };
+                        }
+                        Err(reason) => {
+                            return EnqueueResult {
+                                status: DispatchStatus::Blocked,
+                                reason,
+                                execution_squad_id: trigger.squad_id,
+                                task_id: None,
+                            };
+                        }
+                        Ok(false) => {}
+                    }
+                }
+                Ok(false) => {
+                    match agent::has_active_task_for_issue_and_agent(
+                        &state.pool,
+                        issue.id,
+                        trigger.agent.id,
+                    )
+                    .await
+                    {
+                        Ok(Some(true)) => {
+                            return EnqueueResult {
+                                status: DispatchStatus::Deferred,
+                                reason: ReasonCode::Deferred,
+                                execution_squad_id: trigger.squad_id,
+                                task_id: None,
+                            };
+                        }
+                        Ok(Some(false)) | Ok(None) => {}
+                        Err(_) => {
+                            return EnqueueResult {
+                                status: DispatchStatus::Blocked,
+                                reason: ReasonCode::InternalError,
+                                execution_squad_id: trigger.squad_id,
+                                task_id: None,
+                            };
+                        }
+                    }
+                }
+            }
+        }
+
+        match enqueue_fresh_trigger(state, issue, trigger, comment_id).await {
+            Ok(task) => {
                 return EnqueueResult {
                     status: DispatchStatus::Queued,
                     reason: ReasonCode::Queued,
                     execution_squad_id: trigger.squad_id,
+                    task_id: Some(task.id),
                 };
             }
             Err(error) if pending_slot_taken_err(&error) => {
-                match merge_into_pending(state, issue, trigger, comment_id).await {
-                    Ok(true) => {
-                        return EnqueueResult {
-                            status: DispatchStatus::Coalesced,
-                            reason: ReasonCode::Coalesced,
-                            execution_squad_id: trigger.squad_id,
-                        };
-                    }
-                    Err(reason) => {
-                        return EnqueueResult {
-                            status: DispatchStatus::Blocked,
-                            reason,
-                            execution_squad_id: trigger.squad_id,
-                        };
-                    }
-                    Ok(false) if lost_race => {
-                        match register_planned(state, issue, trigger, comment_id).await {
-                            Ok(true) => {
-                                return EnqueueResult {
-                                    status: DispatchStatus::Deferred,
-                                    reason: ReasonCode::Deferred,
-                                    execution_squad_id: trigger.squad_id,
-                                };
-                            }
-                            Err(reason) => {
-                                return EnqueueResult {
-                                    status: DispatchStatus::Blocked,
-                                    reason,
-                                    execution_squad_id: trigger.squad_id,
-                                };
-                            }
-                            Ok(false) => {}
-                        }
-                    }
-                    Ok(false) => {
-                        match agent::has_active_task_for_issue_and_agent(
-                            &state.pool,
-                            issue.id,
-                            trigger.agent.id,
-                        )
-                        .await
-                        {
-                            Ok(Some(true)) => {
-                                return EnqueueResult {
-                                    status: DispatchStatus::Deferred,
-                                    reason: ReasonCode::Deferred,
-                                    execution_squad_id: trigger.squad_id,
-                                };
-                            }
-                            Ok(Some(false)) | Ok(None) => {}
-                            Err(_) => {
-                                return EnqueueResult {
-                                    status: DispatchStatus::Blocked,
-                                    reason: ReasonCode::InternalError,
-                                    execution_squad_id: trigger.squad_id,
-                                };
-                            }
-                        }
-                    }
-                }
+                pending = true;
                 lost_race = true;
             }
             Err(error) => {
@@ -598,6 +1219,7 @@ async fn enqueue_trigger(
                     status: DispatchStatus::Blocked,
                     reason: enqueue_failure_reason(&error),
                     execution_squad_id: trigger.squad_id,
+                    task_id: None,
                 };
             }
         }
@@ -606,38 +1228,82 @@ async fn enqueue_trigger(
         status: DispatchStatus::Blocked,
         reason: ReasonCode::InternalError,
         execution_squad_id: trigger.squad_id,
+        task_id: None,
     }
 }
 
-pub(crate) async fn trigger_explicit_mentions(
+async fn schedule_escalation(
     state: &HandlerState,
     issue: &Issue,
-    content: &str,
+    trigger: &Trigger,
     comment_id: Uuid,
-    actor_type: &str,
-    actor_id: Uuid,
-    originator_user_id: Option<Uuid>,
-    suppressed_agent_ids: &[Uuid],
-) -> Vec<CommentTriggerOutcome> {
-    let suppressed = suppressed_agent_ids.iter().copied().collect();
-    let (triggers, targets) = resolve_explicit(
-        state,
-        issue,
-        content,
-        actor_type,
-        actor_id,
-        originator_user_id,
-        &suppressed,
-    )
-    .await;
-    let mut results = HashMap::new();
-    for trigger in &triggers {
-        results.insert(
-            trigger.agent.id,
-            enqueue_trigger(state, issue, trigger, comment_id).await,
+    result: &EnqueueResult,
+) {
+    if !trigger.source.schedules_escalation()
+        || result.status != DispatchStatus::Queued
+        || result.task_id.is_none()
+    {
+        return;
+    }
+    let Some(fallback) = trigger.escalation_fallback.as_ref() else {
+        return;
+    };
+    let delay = comment_routing_escalation_delay(state, issue.workspace_id).await;
+    if delay <= Duration::zero() {
+        return;
+    }
+    let Some(fire_at) = Utc::now().checked_add_signed(delay) else {
+        tracing::warn!(
+            issue_id = %issue.id,
+            agent_id = %trigger.agent.id,
+            "comment routing escalation delay overflowed"
+        );
+        return;
+    };
+    if let Err(error) = state
+        .tasks
+        .enqueue_deferred_assignee_fallback(
+            issue,
+            fallback.agent.id,
+            fallback.squad_id,
+            result.task_id.expect("checked above"),
+            Some(comment_id),
+            fire_at,
+        )
+        .await
+    {
+        // The primary route is already queued. Escalation is deliberately
+        // best-effort and must not turn a successful primary dispatch into a
+        // false failure, matching the Go handler contract.
+        tracing::warn!(
+            %error,
+            issue_id = %issue.id,
+            primary_agent_id = %trigger.agent.id,
+            fallback_agent_id = %fallback.agent.id,
+            "failed to enqueue deferred comment routing fallback"
         );
     }
+}
 
+async fn dispatch_triggers(
+    state: &HandlerState,
+    issue: &Issue,
+    comment_id: Uuid,
+    triggers: &[Trigger],
+) -> HashMap<Uuid, EnqueueResult> {
+    let mut results = HashMap::with_capacity(triggers.len());
+    for trigger in triggers {
+        let result = enqueue_trigger(state, issue, trigger, comment_id).await;
+        schedule_escalation(state, issue, trigger, comment_id, &result).await;
+        results.insert(trigger.agent.id, result);
+    }
+    results
+}
+
+fn outcomes_for_targets(
+    targets: Vec<Target>,
+    results: &HashMap<Uuid, EnqueueResult>,
+) -> Vec<CommentTriggerOutcome> {
     targets
         .into_iter()
         .filter_map(|target| {
@@ -672,21 +1338,64 @@ pub(crate) async fn trigger_explicit_mentions(
         .collect()
 }
 
-pub(crate) async fn preview_explicit_mentions(
+fn trigger_reason(source: TriggerSource) -> &'static str {
+    match source {
+        TriggerSource::IssueAssignee => "Current issue assignment will trigger this agent.",
+        TriggerSource::MentionAgent => "This agent was mentioned in the comment.",
+        TriggerSource::MentionSquadLeader => "A mentioned squad will trigger its leader.",
+        TriggerSource::ThreadParent => "This reply will trigger the parent comment's author.",
+        TriggerSource::Conversation => {
+            "This follow-up will continue the recent agent conversation."
+        }
+    }
+}
+
+pub(crate) async fn trigger_comment(
     state: &HandlerState,
     issue: &Issue,
-    content: &str,
+    comment: &Comment,
+    parent: Option<&Comment>,
     actor_type: &str,
     actor_id: Uuid,
     originator_user_id: Option<Uuid>,
-) -> PreviewResponse {
-    let (triggers, targets) = resolve_explicit(
+    suppressed_agent_ids: &[Uuid],
+) -> Vec<CommentTriggerOutcome> {
+    let suppressed = suppressed_agent_ids.iter().copied().collect();
+    let (triggers, targets) = resolve_comment_triggers(
         state,
         issue,
-        content,
+        &comment.content,
+        parent,
         actor_type,
         actor_id,
         originator_user_id,
+        Some(comment.id),
+        &suppressed,
+    )
+    .await;
+    let results = dispatch_triggers(state, issue, comment.id, &triggers).await;
+    outcomes_for_targets(targets, &results)
+}
+
+pub(crate) async fn preview_comment_triggers(
+    state: &HandlerState,
+    issue: &Issue,
+    content: &str,
+    parent: Option<&Comment>,
+    actor_type: &str,
+    actor_id: Uuid,
+    originator_user_id: Option<Uuid>,
+    exclude_trigger_comment_id: Option<Uuid>,
+) -> PreviewResponse {
+    let (triggers, targets) = resolve_comment_triggers(
+        state,
+        issue,
+        content,
+        parent,
+        actor_type,
+        actor_id,
+        originator_user_id,
+        exclude_trigger_comment_id,
         &HashSet::new(),
     )
     .await;
@@ -696,16 +1405,8 @@ pub(crate) async fn preview_explicit_mentions(
             id: trigger.agent.id,
             name: trigger.agent.name,
             avatar_url: trigger.agent.avatar_url,
-            source: if trigger.is_leader {
-                "mention_squad_leader".to_string()
-            } else {
-                "mention_agent".to_string()
-            },
-            reason: if trigger.is_leader {
-                "A mentioned squad will trigger its leader.".to_string()
-            } else {
-                "This agent was mentioned in the comment.".to_string()
-            },
+            source: trigger.source.as_str().to_string(),
+            reason: trigger_reason(trigger.source).to_string(),
         })
         .collect();
     let blocked = targets
@@ -761,5 +1462,27 @@ mod tests {
         let value = serde_json::to_value(outcome).unwrap();
         assert_eq!(value["status"], "blocked");
         assert_eq!(value["reason_code"], "invocation_not_allowed");
+    }
+
+    #[test]
+    fn implicit_sources_match_go_contract() {
+        assert_eq!(TriggerSource::IssueAssignee.as_str(), "issue_assignee");
+        assert_eq!(TriggerSource::ThreadParent.as_str(), "thread_parent");
+        assert_eq!(
+            TriggerSource::Conversation.as_str(),
+            "conversation_continuation"
+        );
+        assert_eq!(
+            trigger_reason(TriggerSource::ThreadParent),
+            "This reply will trigger the parent comment's author."
+        );
+    }
+
+    #[test]
+    fn only_routed_sources_schedule_escalation() {
+        assert!(!TriggerSource::IssueAssignee.schedules_escalation());
+        assert!(!TriggerSource::MentionAgent.schedules_escalation());
+        assert!(TriggerSource::ThreadParent.schedules_escalation());
+        assert!(TriggerSource::Conversation.schedules_escalation());
     }
 }
