@@ -80,6 +80,10 @@ pub fn build_backend(
             command: config.command,
             env: config.env,
         }))),
+        "codex" => Ok(Arc::new(CodexBackend::new(CodexConfig {
+            command: config.command,
+            env: config.env,
+        }))),
         "qwen" => Ok(Arc::new(QwenBackend::new(QwenConfig {
             command: config.command,
             env: config.env,
@@ -566,6 +570,9 @@ mod tests {
 
         let codebuddy = build_backend("codebuddy", BackendConfig::default());
         assert!(codebuddy.is_ok());
+
+        let codex = build_backend("codex", BackendConfig::default());
+        assert!(codex.is_ok());
 
         let antigravity = build_backend("antigravity", BackendConfig::default());
         assert!(antigravity.is_ok());
