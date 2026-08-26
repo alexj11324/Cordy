@@ -276,15 +276,50 @@ async fn preview_triggers(
         Ok(issue) => issue,
         Err(response) => return response,
     };
-    let content = clean_content(&request.content);
-    if let Some(raw) = request.editing_comment_id.as_deref() {
+    let requested_parent_id = match request
+        .parent_id
+        .as_deref()
+        .map(Uuid::parse_str)
+        .transpose()
+    {
+        Ok(value) => value,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid parent_id"),
+    };
+    let (editing_id, editing_parent_id) = if let Some(raw) = request.editing_comment_id.as_deref() {
         let Ok(id) = Uuid::parse_str(raw) else {
             return error_response(StatusCode::BAD_REQUEST, "invalid editing_comment_id");
         };
-        if !matches!(comment::get_comment_in_workspace(&state.pool, id, issue.workspace_id).await, Ok(Some(editing)) if editing.issue_id == issue.id && editing.parent_id.map(|id| id.to_string()) == request.parent_id)
-        {
-            return error_response(StatusCode::BAD_REQUEST, "invalid editing comment");
+        let editing =
+            match comment::get_comment_in_workspace(&state.pool, id, issue.workspace_id).await {
+                Ok(Some(editing)) if editing.issue_id == issue.id => editing,
+                _ => return error_response(StatusCode::BAD_REQUEST, "invalid editing comment"),
+            };
+        if requested_parent_id.is_some() && requested_parent_id != editing.parent_id {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "parent_id does not match editing comment",
+            );
         }
+        (Some(id), editing.parent_id)
+    } else {
+        (None, None)
+    };
+    let parent_id = requested_parent_id.or(editing_parent_id);
+    let parent = if let Some(parent_id) = parent_id {
+        match comment::get_comment_in_workspace(&state.pool, parent_id, issue.workspace_id).await {
+            Ok(Some(parent)) if parent.issue_id == issue.id => Some(parent),
+            _ => return error_response(StatusCode::BAD_REQUEST, "invalid parent comment"),
+        }
+    } else {
+        None
+    };
+    let content = clean_content(&request.content);
+    if content.is_empty() {
+        return Json(crate::comment_triggers::PreviewResponse {
+            agents: Vec::new(),
+            blocked: Vec::new(),
+        })
+        .into_response();
     }
     let (actor_type, actor_id, task_id) =
         crate::issue::mutation_actor(&state, &context, &headers).await;
@@ -303,14 +338,16 @@ async fn preview_triggers(
     } else {
         None
     };
-    let preview = crate::comment_triggers::preview_explicit_mentions(
+    let preview = crate::comment_triggers::preview_comment_triggers(
         &state,
         &issue,
         &content,
+        parent.as_ref(),
         &actor_type,
         actor_id,
         originator_user_id,
         autopilot_delegation_authority_user_id,
+        editing_id,
     )
     .await;
     Json(preview).into_response()
@@ -348,12 +385,14 @@ async fn create(
         Ok(value) => value,
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid parent_id"),
     };
-    if let Some(parent_id) = parent_id {
-        if !matches!(comment::get_comment_in_workspace(&state.pool, parent_id, issue.workspace_id).await, Ok(Some(parent)) if parent.issue_id == issue.id)
-        {
-            return error_response(StatusCode::BAD_REQUEST, "invalid parent comment");
+    let parent_comment = if let Some(parent_id) = parent_id {
+        match comment::get_comment_in_workspace(&state.pool, parent_id, issue.workspace_id).await {
+            Ok(Some(parent)) if parent.issue_id == issue.id => Some(parent),
+            _ => return error_response(StatusCode::BAD_REQUEST, "invalid parent comment"),
         }
-    }
+    } else {
+        None
+    };
     let (author_type, author_id, task_id) =
         crate::issue::mutation_actor(&state, &context, &headers).await;
     if author_type == "agent" {
@@ -454,11 +493,17 @@ async fn create(
     } else {
         None
     };
-    let outcomes = crate::comment_triggers::trigger_explicit_mentions(
+    if author_type == "agent" {
+        state
+            .tasks
+            .cancel_deferred_escalations_for_issue_agent(issue.id, author_id)
+            .await;
+    }
+    let outcomes = crate::comment_triggers::trigger_comment(
         &state,
         &issue,
-        &content,
-        id,
+        &created,
+        parent_comment.as_ref(),
         &author_type,
         author_id,
         originator_user_id,
@@ -555,19 +600,57 @@ async fn update(
             );
         }
     };
-    let cancelled = match state
-        .tasks
-        .cancel_tasks_by_trigger_comment(current.id)
-        .await
-    {
-        Ok(cancelled) => cancelled,
-        Err(error) => {
-            tracing::warn!(%error, comment_id = %current.id, "failed to cancel tasks for edited trigger comment");
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to prepare comment edit",
-            );
+    let content_changed = content != current.content;
+    let (parent_comment, parent_lookup_failed) = if content_changed {
+        match current.parent_id {
+            Some(parent_id) => match comment::get_comment_in_workspace(
+                &state.pool,
+                parent_id,
+                current.workspace_id,
+            )
+            .await
+            {
+                Ok(Some(parent)) if parent.issue_id == trigger_issue.id => (Some(parent), false),
+                Ok(_) => {
+                    tracing::warn!(
+                        comment_id = %current.id,
+                        parent_id = %parent_id,
+                        "parent comment is unavailable; skipping routing for edited comment"
+                    );
+                    (None, true)
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        comment_id = %current.id,
+                        parent_id = %parent_id,
+                        "failed to load parent comment; skipping routing for edited comment"
+                    );
+                    (None, true)
+                }
+            },
+            None => (None, false),
         }
+    } else {
+        (None, false)
+    };
+    let cancelled = if content_changed {
+        match state
+            .tasks
+            .cancel_tasks_by_trigger_comment(current.id)
+            .await
+        {
+            Ok(cancelled) => cancelled,
+            Err(error) => {
+                tracing::warn!(%error, comment_id = %current.id, "failed to cancel tasks for edited trigger comment");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to prepare comment edit",
+                );
+            }
+        }
+    } else {
+        Vec::new()
     };
     let mut tx = match state.pool.begin().await {
         Ok(tx) => tx,
@@ -632,6 +715,12 @@ async fn update(
         .expect("updated comment");
     let mut value = comment_json(&state, &comment).await;
     retrigger_cancelled_survivors(&state, &trigger_issue, &cancelled, Some(current.id)).await;
+    if content_changed && actor_type == "agent" {
+        state
+            .tasks
+            .cancel_deferred_escalations_for_issue_agent(trigger_issue.id, actor_id)
+            .await;
+    }
     let originator_user_id =
         crate::comment_triggers::invocation_originator(&state, &actor_type, actor_id, task_id)
             .await;
@@ -647,18 +736,22 @@ async fn update(
     } else {
         None
     };
-    let outcomes = crate::comment_triggers::trigger_explicit_mentions(
-        &state,
-        &trigger_issue,
-        &content,
-        current.id,
-        &actor_type,
-        actor_id,
-        originator_user_id,
-        autopilot_delegation_authority_user_id,
-        &suppressed,
-    )
-    .await;
+    let outcomes = if !content_changed || parent_lookup_failed {
+        Vec::new()
+    } else {
+        crate::comment_triggers::trigger_comment(
+            &state,
+            &trigger_issue,
+            &comment,
+            parent_comment.as_ref(),
+            &actor_type,
+            actor_id,
+            originator_user_id,
+            autopilot_delegation_authority_user_id,
+            &suppressed,
+        )
+        .await
+    };
     if let Some(object) = value.as_object_mut() {
         object.insert("issue_revision".into(), json!(updated.issue_revision));
         if !outcomes.is_empty() {
