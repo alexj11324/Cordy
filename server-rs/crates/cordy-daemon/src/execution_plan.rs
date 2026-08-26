@@ -30,8 +30,8 @@ use crate::openclaw_runtime_config::decode_openclaw_runtime_config;
 use crate::prompt::{
     backend_resume_continuity_notice, comment_reply_threads, task_is_squad_leader,
 };
-use crate::thread_name::derive_task_thread_name_from_task;
 use crate::task_execution::InvalidTaskIdentity;
+use crate::thread_name::derive_task_thread_name_from_task;
 use crate::types::{AgentData, RuntimeExecutionTarget, Task};
 
 const TASK_CONFIG_ROOT_ENV: &str = "CORDY_TASK_CONFIG_ROOT";
@@ -548,10 +548,8 @@ impl ProviderExecutionPlan {
             .iter()
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect::<HashMap<_, _>>();
-        let authorized_explicit: Vec<String> =
-            self.child_env.custom_env.keys().cloned().collect();
-        let include_only =
-            codex_shell_env_allowlist(&inherited, &explicit, &authorized_explicit);
+        let authorized_explicit: Vec<String> = self.child_env.custom_env.keys().cloned().collect();
+        let include_only = codex_shell_env_allowlist(&inherited, &explicit, &authorized_explicit);
         ensure_codex_shell_env_policy_config(
             &Path::new(codex_home).join("config.toml").to_string_lossy(),
             &include_only,
@@ -759,6 +757,7 @@ fn blocked_custom_env_key(key: &str) -> bool {
                 | "TEMP"
                 | "CODEX_HOME"
                 | "REASONIX_STATE_HOME"
+                | "DSH_TELEMETRY_DISABLED"
                 | "CURSOR_DATA_DIR"
                 | "CURSOR_MCP_AUTH_SOURCE"
                 | "OPENCLAW_CONFIG_PATH"
@@ -1047,6 +1046,18 @@ mod tests {
         assert!(config.contains("CORDY_TOKEN"));
         assert!(!config.contains("owner-secret"));
         assert!(!config.contains("/evil"));
+    }
+
+    #[test]
+    fn blocks_dsh_telemetry_override_case_insensitively() {
+        let custom = std::collections::HashMap::from([
+            ("dsh_telemetry_disabled".to_string(), "0".to_string()),
+            ("DSH_TELEMETRY_DISABLED".to_string(), "0".to_string()),
+            ("Dsh_Telemetry_Disabled".to_string(), "0".to_string()),
+        ]);
+
+        let sanitized = sanitize_custom_env(Some(&custom)).unwrap();
+        assert!(sanitized.is_empty());
     }
 
     #[test]
