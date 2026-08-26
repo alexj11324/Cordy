@@ -88,7 +88,11 @@ async fn load(
         .ok_or_else(|| error_response(StatusCode::NOT_FOUND, "attachment not found"))
 }
 
-async fn response_json(state: &HandlerState, att: &Attachment, capability: bool) -> Value {
+pub(crate) async fn response_json(
+    state: &HandlerState,
+    att: &Attachment,
+    capability: bool,
+) -> Value {
     let stable = format!("/api/attachments/{}/download", att.id);
     let mut download_url = stable.clone();
     let mut attachment_download_url = None;
