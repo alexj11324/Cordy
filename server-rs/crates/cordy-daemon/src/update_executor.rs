@@ -68,6 +68,7 @@ impl UpdateFailureKind {
 pub struct UpdateExecutorError {
     pub kind: UpdateFailureKind,
     message: String,
+    source: Option<anyhow::Error>,
 }
 
 impl UpdateExecutorError {
@@ -75,6 +76,19 @@ impl UpdateExecutorError {
         Self {
             kind,
             message: message.into(),
+            source: None,
+        }
+    }
+
+    fn with_source(
+        kind: UpdateFailureKind,
+        message: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            kind,
+            message: message.into(),
+            source: Some(anyhow::Error::new(source)),
         }
     }
 }
@@ -85,7 +99,11 @@ impl fmt::Display for UpdateExecutorError {
     }
 }
 
-impl std::error::Error for UpdateExecutorError {}
+impl std::error::Error for UpdateExecutorError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.source.as_ref().map(|source| source.as_ref())
+    }
+}
 
 type Result<T> = std::result::Result<T, UpdateExecutorError>;
 
@@ -907,66 +925,12 @@ fn replace_binary(temporary: &Path, executable: &Path) -> Result<()> {
 }
 
 fn resolve_executable() -> Result<PathBuf> {
-    if let Ok(path) = std::env::current_exe() {
-        return validate_executable(path);
-    }
-    let argv0 = std::env::args_os()
-        .next()
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| {
-            UpdateExecutorError::new(UpdateFailureKind::ResolveExecutable, "argv[0] is empty")
-        })?;
-    let candidate = if Path::new(&argv0).components().count() > 1 {
-        std::env::current_dir()
-            .map_err(|err| {
-                classified_io(
-                    UpdateFailureKind::ResolveExecutable,
-                    "read current directory",
-                    err,
-                )
-            })?
-            .join(argv0)
-    } else {
-        find_on_path(&argv0).ok_or_else(|| {
-            UpdateExecutorError::new(
-                UpdateFailureKind::ResolveExecutable,
-                "executable is absent from PATH",
-            )
-        })?
-    };
-    validate_executable(candidate)
-}
-
-fn validate_executable(path: PathBuf) -> Result<PathBuf> {
-    let absolute = if path.is_absolute() {
-        path
-    } else {
-        std::env::current_dir()
-            .map_err(|err| {
-                classified_io(
-                    UpdateFailureKind::ResolveExecutable,
-                    "read current directory",
-                    err,
-                )
-            })?
-            .join(path)
-    };
-    let metadata = fs::metadata(&absolute).map_err(|err| {
-        classified_io(UpdateFailureKind::ResolveExecutable, "stat executable", err)
-    })?;
-    if !metadata.is_file() {
-        return Err(UpdateExecutorError::new(
+    cordy_util::self_exec::resolve().map_err(|error| {
+        UpdateExecutorError::with_source(
             UpdateFailureKind::ResolveExecutable,
-            "resolved executable is not a regular file",
-        ));
-    }
-    Ok(absolute)
-}
-
-fn find_on_path(name: &OsStr) -> Option<PathBuf> {
-    std::env::split_paths(&std::env::var_os("PATH")?).find_map(|directory| {
-        let candidate = directory.join(name);
-        candidate.is_file().then_some(candidate)
+            error.to_string(),
+            error,
+        )
     })
 }
 

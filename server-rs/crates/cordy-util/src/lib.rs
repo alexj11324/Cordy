@@ -5,6 +5,7 @@
 
 pub mod channel_media;
 pub mod secretbox;
+pub mod self_exec;
 
 use serde::{Deserialize, Serialize};
 
