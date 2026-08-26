@@ -11,6 +11,7 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 
 mod channel_runtime;
+mod profiling;
 mod realtime_runtime;
 
 struct ProductionApp {
@@ -587,6 +588,7 @@ async fn main() -> anyhow::Result<()> {
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.server.port));
     let listener = tokio::net::TcpListener::bind(addr).await?;
     tracing::info!(%addr, "listening");
+    let profiling_runtime = profiling::Runtime::spawn();
     let ProductionApp {
         router,
         root_cancel,
@@ -766,6 +768,7 @@ async fn main() -> anyhow::Result<()> {
     if let Some(metrics_runtime) = metrics_runtime {
         metrics_runtime.shutdown().await;
     }
+    profiling_runtime.shutdown().await;
     serve_result?;
     Ok(())
 }
