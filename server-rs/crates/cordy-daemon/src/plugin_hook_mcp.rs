@@ -341,9 +341,12 @@ async fn handle_call(
         &tool.hook_key.clone(),
         &arguments,
     );
-    let output = match tokio::time::timeout(PLUGIN_HOOK_MCP_CALL_TIMEOUT, call).await {
-        Ok(result) => result,
-        Err(_) => Err(anyhow!("context deadline exceeded")),
+    let output = tokio::select! {
+        _ = state.ctx.cancelled() => Err(anyhow!(state.ctx.cause().to_string())),
+        result = tokio::time::timeout(PLUGIN_HOOK_MCP_CALL_TIMEOUT, call) => match result {
+            Ok(result) => result,
+            Err(_) => Err(anyhow!("context deadline exceeded")),
+        },
     };
     match output {
         Ok(output) => {
@@ -591,5 +594,48 @@ mod tests {
         let response = post(&state, json!({"jsonrpc":"2.0","id":5,"method":"bogus"})).await;
         let decoded: Value = serde_json::from_slice(&response.body).unwrap();
         assert_eq!(decoded["error"]["code"], -32601);
+    }
+
+    #[tokio::test]
+    async fn cancellation_stops_an_inflight_hook_call() {
+        let started = Arc::new(tokio::sync::Notify::new());
+        let invoke: PluginHookInvoker = Arc::new({
+            let started = Arc::clone(&started);
+            move |_ctx: &crate::repocache::Ctx,
+                  _task: &str,
+                  _inst: &str,
+                  _hook: &str,
+                  _input: &Value| {
+                let started = Arc::clone(&started);
+                Box::pin(async move {
+                    started.notify_one();
+                    std::future::pending::<anyhow::Result<Value>>().await
+                })
+            }
+        });
+        let (state, _) = state_with(invoke);
+        let ctx = state.ctx.clone();
+        let response = post(
+            &state,
+            json!({
+                "jsonrpc":"2.0","id":1,"method":"tools/call",
+                "params":{"name":"fixture.read","arguments":{}}
+            }),
+        );
+        tokio::pin!(response);
+        tokio::select! {
+            _ = started.notified() => ctx.cancel_with(crate::repocache::CancelCause::Cancelled),
+            _ = &mut response => panic!("hook call completed before cancellation"),
+        }
+        let response = tokio::time::timeout(Duration::from_secs(1), &mut response)
+            .await
+            .expect("cancellation should finish the hook call");
+        assert_eq!(response.status, StatusCode::OK);
+        let decoded: Value = serde_json::from_slice(&response.body).unwrap();
+        assert_eq!(decoded["result"]["isError"], true);
+        assert!(decoded["result"]["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("context canceled"));
     }
 }

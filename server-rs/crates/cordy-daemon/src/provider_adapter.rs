@@ -261,6 +261,9 @@ impl ProductionProviderAdapter {
         slot: usize,
         runtime: ProviderRuntimeContext,
     ) -> TaskRunOutcome {
+        if let Err(error) = crate::execution_plan::validate_identity(&task, &target) {
+            return failed(error, None);
+        }
         let _active = CounterGuard::new(&self.active_tasks);
         let assignment = match local_directory_assignment_for_task(&task, &self.config.daemon_id) {
             Ok(assignment) => assignment,
