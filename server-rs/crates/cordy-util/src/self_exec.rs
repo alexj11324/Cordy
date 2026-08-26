@@ -239,13 +239,11 @@ fn path_candidates(directory: &Path, name: &OsStr) -> Vec<PathBuf> {
 #[cfg(windows)]
 fn path_candidates_with(directory: &Path, name: &OsStr, extensions: &[OsString]) -> Vec<PathBuf> {
     let path = directory.join(name);
-    if extensions.is_empty() {
-        return vec![path];
-    }
-
-    std::iter::once(path.clone())
+    let literal = Path::new(name).extension().is_some().then_some(path);
+    literal
+        .into_iter()
         .chain(extensions.iter().map(|extension| {
-            let mut candidate = path.as_os_str().to_os_string();
+            let mut candidate = directory.join(name).as_os_str().to_os_string();
             candidate.push(extension);
             PathBuf::from(candidate)
         }))
@@ -625,6 +623,21 @@ mod tests {
         );
         assert!(has_path_separator(OsStr::new(r"C:\bin\tool")));
         assert!(has_path_separator(OsStr::new(r"bin\tool")));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_bare_names_require_a_pathext_suffix() {
+        let candidates = path_candidates_with(
+            Path::new(r"C:\bin"),
+            OsStr::new("tool"),
+            &[OsString::from(".com"), OsString::from(".exe")],
+        );
+        let names = candidates
+            .iter()
+            .map(|path| path.as_os_str().to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(names, vec![r"C:\bin\tool.com", r"C:\bin\tool.exe"]);
     }
 
     #[cfg(windows)]
