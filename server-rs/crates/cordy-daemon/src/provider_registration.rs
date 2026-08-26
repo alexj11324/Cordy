@@ -730,6 +730,16 @@ impl RuntimeLaunchRegistry {
             .insert(workspace_id.to_string(), builtins);
     }
 
+    fn workspace_builtins(&self, workspace_id: &str) -> Vec<RuntimeLaunchSpec> {
+        self.state
+            .read()
+            .unwrap()
+            .builtins
+            .get(workspace_id)
+            .map(|builtins| builtins.values().cloned().collect())
+            .unwrap_or_default()
+    }
+
     /// Resolves the accepted built-in launch at the actual process-launch
     /// boundary. A successful heal is copied back only when the workspace has
     /// not accepted a newer registration in the meantime.
@@ -1111,7 +1121,15 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
                     .push(profile_failure(&profile, &error.reason)),
             }
         }
-        payload.profile_set_signature = Some(profile_signature);
+        if payload.failed_profiles.is_empty() {
+            payload.profile_set_signature = Some(profile_signature);
+        } else {
+            // The profile list was fetched, but this round did not produce an
+            // authoritative launch set. Clear the cached signature so the
+            // next reconnect retries the unresolved profile instead of
+            // treating the failed round as converged.
+            payload.profile_set_signature = Some(String::new());
+        }
         self.pending_profiles
             .lock()
             .unwrap()
@@ -1120,8 +1138,23 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
     }
 
     fn registration_applied(&self, workspace_id: &str) {
+        let mut builtin_launches = self.builtin_launches.clone();
+        let mut present = builtin_launches
+            .iter()
+            .map(|spec| spec.target.provider.clone())
+            .collect::<BTreeSet<_>>();
+        for spec in self.launches.workspace_builtins(workspace_id) {
+            if self.preserve_providers.contains(&spec.target.provider)
+                && present.insert(spec.target.provider.clone())
+            {
+                // The provider probe was not authoritative for this provider;
+                // keep its last accepted launch identity in lockstep with the
+                // registry row that the registration merge preserved.
+                builtin_launches.push(spec);
+            }
+        }
         self.launches
-            .replace_builtins(workspace_id, self.builtin_launches.clone());
+            .replace_builtins(workspace_id, builtin_launches);
         let Some(specs) = self.pending_profiles.lock().unwrap().remove(workspace_id) else {
             return;
         };
@@ -1216,10 +1249,12 @@ pub(crate) fn profile_set_signature(profiles: &[RuntimeProfile]) -> String {
         }
     };
     const FIELD_SEPARATOR: &str = "\x1f";
-    for profile in sorted {
-        feed(&profile.id);
-        feed(FIELD_SEPARATOR);
-        feed(if profile.enabled { "true" } else { "false" });
+        for profile in sorted {
+            feed(&profile.id);
+            feed(FIELD_SEPARATOR);
+            feed(&profile.display_name);
+            feed(FIELD_SEPARATOR);
+            feed(if profile.enabled { "true" } else { "false" });
         feed(FIELD_SEPARATOR);
         feed(&profile.protocol_family);
         feed(FIELD_SEPARATOR);
@@ -1305,11 +1340,21 @@ mod tests {
         let forward = profile_set_signature(&[one.clone(), two.clone()]);
         let reverse = profile_set_signature(&[two, one.clone()]);
         assert_eq!(forward, reverse);
+        // Known vector from the Go byte stream: FNV-1a over the sorted
+        // profile fields with the 0x1f/0x1e separators and lowercase hex.
+        assert_eq!(forward, "e6112d7efb73453a");
         assert_ne!(forward, "0");
 
-        let mut changed = one;
+        let mut changed = one.clone();
         changed.fixed_args.push("--verbose".to_string());
         assert_ne!(forward, profile_set_signature(&[changed]));
+        let mut renamed = one;
+        renamed.display_name = "Renamed".to_string();
+        let unchanged_two = profile("profile-2", false, "claude", "claude", "workspace", &[]);
+        assert_ne!(
+            forward,
+            profile_set_signature(&[renamed, unchanged_two])
+        );
         assert_eq!(profile_set_signature(&[]), "0");
     }
 

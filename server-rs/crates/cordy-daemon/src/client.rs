@@ -849,9 +849,9 @@ pub struct RuntimeProfile {
 /// `RuntimeProfilesResponse` (client.go:911).
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct RuntimeProfilesResponse {
-    #[serde(rename = "workspace_id")]
+    #[serde(rename = "workspace_id", default)]
     pub workspace_id: String,
-    #[serde(rename = "runtime_profiles")]
+    #[serde(rename = "runtime_profiles", default)]
     pub runtime_profiles: Vec<RuntimeProfile>,
 }
 

@@ -80,6 +80,13 @@ const PREPARATION_PENDING: u8 = 0;
 const PREPARATION_COMPLETE: u8 = 1;
 const PREPARATION_TIMED_OUT: u8 = 2;
 
+/// Mirrors Go's providerNeedsInlineSystemPrompt. These runtimes do not
+/// reliably load the provider-native file written into the task workdir, so
+/// the same stable brief must also be carried in ExecOptions.
+fn provider_needs_inline_system_prompt(provider: &str) -> bool {
+    matches!(provider, "openclaw" | "kimi" | "traecli" | "qwenpaw")
+}
+
 /// Task-owned MCP listeners and the effective provider configuration. The
 /// listener sets deliberately live until this value is dropped, including on
 /// every early-return path before provider execution starts.
@@ -680,21 +687,35 @@ impl ProductionProviderAdapter {
                 task.prior_session_id.clear();
                 task.prior_session_resume_unavailable = true;
             }
-            if let Err(error) = inject_runtime_config(
+            let mut runtime_brief = match inject_runtime_config(
                 &environment.work_dir,
                 &target.provider,
                 plan.task_context(),
             ) {
-                tracing::warn!(
-                    task = %task.id,
-                    provider = %target.provider,
-                    error = %format!("{error:#}"),
-                    "execenv: runtime config injection failed (non-fatal)"
-                );
-            }
+                Ok(brief) => brief,
+                Err(error) => {
+                    tracing::warn!(
+                        task = %task.id,
+                        provider = %target.provider,
+                        error = %format!("{error:#}"),
+                        "execenv: runtime config injection failed (non-fatal)"
+                    );
+                    // Go's InjectRuntimeConfig returns the rendered brief
+                    // alongside a write error, so inline-only providers can
+                    // still receive their workflow even when the file target
+                    // is unavailable.
+                    crate::runtime_config_sections::build_meta_skill_content(
+                        &target.provider,
+                        plan.task_context(),
+                    )
+                }
+            };
             let mut bound = plan.bind_environment(
                 &environment,
                 PreparedEnvironmentInputs {
+                    system_prompt: provider_needs_inline_system_prompt(&target.provider)
+                        .then(|| runtime_brief.clone())
+                        .unwrap_or_default(),
                     cancellation: ctx.token().clone(),
                     openclaw_include_roots: environment.openclaw_include_root.clone(),
                     ..PreparedEnvironmentInputs::default()
@@ -776,10 +797,32 @@ impl ProductionProviderAdapter {
                 task.prior_session_id.clear();
                 task.prior_session_resume_unavailable = true;
                 plan.drop_resume();
+                runtime_brief = match inject_runtime_config(
+                    &environment.work_dir,
+                    &target.provider,
+                    plan.task_context(),
+                ) {
+                    Ok(brief) => brief,
+                    Err(error) => {
+                        tracing::warn!(
+                            task = %task.id,
+                            provider = %target.provider,
+                            error = %format!("{error:#}"),
+                            "execenv: cold runtime config injection failed (non-fatal)"
+                        );
+                        crate::runtime_config_sections::build_meta_skill_content(
+                            &target.provider,
+                            plan.task_context(),
+                        )
+                    }
+                };
                 let fresh_prompt = build_prompt(task.clone(), &target.provider);
                 let retry = match plan.bind_environment(
                     &environment,
                     PreparedEnvironmentInputs {
+                        system_prompt: provider_needs_inline_system_prompt(&target.provider)
+                            .then(|| runtime_brief.clone())
+                            .unwrap_or_default(),
                         cancellation: ctx.token().clone(),
                         openclaw_include_roots: environment.openclaw_include_root.clone(),
                         ..PreparedEnvironmentInputs::default()
@@ -1954,6 +1997,22 @@ mod tests {
     use cordy_agent::TokenUsage;
     #[cfg(unix)]
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn inline_runtime_brief_provider_matrix_matches_go() {
+        for (provider, expected) in [
+            ("openclaw", true),
+            ("kimi", true),
+            ("traecli", true),
+            ("qwenpaw", true),
+            ("claude", false),
+            ("codex", false),
+            ("omp", false),
+            ("pi", false),
+        ] {
+            assert_eq!(provider_needs_inline_system_prompt(provider), expected, "{provider}");
+        }
+    }
 
     fn resume_gate_fixture(provider: &str) -> (Task, ProviderExecutionPlan) {
         let task = Task {

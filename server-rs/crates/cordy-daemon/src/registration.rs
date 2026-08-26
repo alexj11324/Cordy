@@ -316,7 +316,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             if !is_tracked || needs_recovery || profile_changed {
                 needs_registration.push((
                     workspace.clone(),
-                    !is_tracked || (needs_recovery && !profile_changed),
+                    !is_tracked || needs_recovery,
                     profile_changed,
                 ));
             }
@@ -436,6 +436,12 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
         let workspace = registry
             .workspace(workspace_id)
             .ok_or_else(|| anyhow::anyhow!("workspace {workspace_id} is not tracked"))?;
+        if !self
+            .workspace_profiles_changed(&ctx, registry, workspace_id)
+            .await?
+        {
+            return Ok(());
+        }
         let round = self.source.begin_round(ctx.child()).await?;
         self.register_workspace(
             ctx,
@@ -581,6 +587,17 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
     ) -> anyhow::Result<()> {
         let serial = self.workspace_lock(&workspace.id);
         let _guard = serial.lock().await;
+        if allow_empty_refresh
+            && !self
+                .workspace_profiles_changed(&ctx, registry, &workspace.id)
+                .await?
+        {
+            // A reconnect/profile notification can race with another refresh
+            // task. Recheck after taking the workspace serial so a duplicate
+            // event cannot re-register an already-converged profile set.
+            return Ok(());
+        }
+        let preserve_providers = round.preserve_providers();
         let payload = round
             .payload_for_workspace(ctx.child(), &workspace.id)
             .await?;
@@ -595,12 +612,14 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             // Publish zero locally first so WebSocket/heartbeat/claim stop
             // using stale IDs, then take those rows offline server-side while
             // the workspace registration serial remains held.
-            let delta = registry.apply_registration_with_profile_signature(
-                workspace.id.clone(),
-                workspace.name.clone(),
-                Vec::new(),
-                payload.profile_set_signature.as_deref(),
-            )?;
+            let delta = registry
+                .apply_registration_preserving_builtins_with_profile_signature(
+                    workspace.id.clone(),
+                    workspace.name.clone(),
+                    Vec::new(),
+                    &preserve_providers,
+                    payload.profile_set_signature.as_deref(),
+                )?;
             round.registration_applied(&workspace.id);
             self.queue_and_flush_dropped(&ctx, &delta.dropped).await;
             tracing::info!(
@@ -611,7 +630,6 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             return Ok(());
         }
         let (runtime_ids, repos, settings, delta) = {
-            let preserve_providers = round.preserve_providers();
             // A failed deregistration may be retried while this workspace is
             // being re-added. Fence the server register and authoritative
             // apply together so an old retry cannot take a newly accepted,
