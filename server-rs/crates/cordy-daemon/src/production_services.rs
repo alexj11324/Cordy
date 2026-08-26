@@ -10,7 +10,12 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use cordy_agent::{BackendConfig, CatalogCache, HermesBackend, HermesConfig, RuntimeCommand};
+use cordy_agent::{
+    AntigravityBackend, AntigravityConfig, BackendConfig, CatalogCache, CodebuddyBackend,
+    CodebuddyConfig, DimBackend, DimConfig, DshBackend, DshConfig, GrokBackend, GrokConfig,
+    HermesBackend, HermesConfig, KimiBackend, KimiConfig, KiroBackend, KiroConfig, QoderBackend,
+    QoderConfig, ReasonixBackend, ReasonixConfig, RuntimeCommand, TraecliBackend, TraecliConfig,
+};
 use cordy_protocol::{DaemonHeartbeatAckPayload, RuntimeProfilesChangedPayload};
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
@@ -45,7 +50,7 @@ use crate::wakeup::jitter_duration;
 const REPO_WARMUP_QUEUE_CAPACITY: usize = 64;
 const REPO_WARMUP_CONCURRENCY: usize = 2;
 const REPO_WARMUP_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
-const HERMES_MODEL_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
+const ACP_MODEL_DISCOVERY_TIMEOUT: Duration = Duration::from_secs(15);
 const RUNTIME_REPORT_BACKOFFS: &[Duration] = &[
     Duration::ZERO,
     Duration::from_millis(500),
@@ -239,11 +244,10 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         }
     }
 
-    /// Completes the Hermes model-list contract from the same accepted launch
+    /// Completes Rust-backed model-list contracts from the same accepted launch
     /// identity used by task execution. Custom profile runtimes therefore
-    /// discover against their pinned executable and fixed prefix, even when
-    /// the host has no built-in Hermes binary.
-    async fn handle_hermes_model_list(
+    /// discover against their pinned executable and fixed prefix.
+    async fn handle_acp_model_list(
         &self,
         ctx: Ctx,
         registry: Arc<RuntimeRegistry>,
@@ -253,7 +257,24 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         let Some(target) = registry.execution_target_for_runtime(runtime_id) else {
             return false;
         };
-        if target.provider != "hermes" {
+        if !matches!(
+            target.provider.as_str(),
+            "hermes"
+                | "kimi"
+                | "kiro"
+                | "reasonix"
+                | "grok"
+                | "qoder"
+                | "qoderclicn"
+                | "traecli"
+                | "antigravity"
+                | "codebuddy"
+                | "dsh"
+                | "qwen"
+                | "qwenpaw"
+                | "mcode"
+                | "dim"
+        ) {
             return false;
         }
 
@@ -266,46 +287,186 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 .resolve(&workspace_id, &target)
                 .ok_or_else(|| {
                     anyhow::anyhow!(
-                        "no accepted launch registered for workspace {workspace_id:?} and provider hermes"
+                        "no accepted launch registered for workspace {workspace_id:?} and provider {}",
+                        target.provider
                     )
                 })?;
             anyhow::ensure!(
                 !launch.command_path.trim().is_empty(),
-                "accepted Hermes launch has no executable path"
+                "accepted {} launch has no executable path",
+                target.provider
             );
-            let backend = HermesBackend::new(HermesConfig {
-                command: RuntimeCommand::new(launch.command_path, launch.fixed_args),
-                env: BTreeMap::new(),
-                builtin_runtime: target.profile_id.is_empty(),
-            });
+            let command = RuntimeCommand::new(launch.command_path, launch.fixed_args);
             let runtime_scope = format!(
-                "hermes\0workspace={workspace_id}\0runtime={runtime_id}\0profile={}",
+                "{}\0workspace={workspace_id}\0runtime={runtime_id}\0profile={}",
+                target.provider,
                 target.profile_id
             );
-            let catalog = backend
+            let catalog = match target.provider.as_str() {
+                "hermes" => HermesBackend::new(HermesConfig {
+                    command,
+                    env: BTreeMap::new(),
+                    builtin_runtime: target.profile_id.is_empty(),
+                })
                 .discover_models_for_runtime(
                     &runtime_scope,
                     &self.model_cache,
                     ctx.token().clone(),
-                    HERMES_MODEL_DISCOVERY_TIMEOUT,
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
                 )
-                .await;
-            Ok::<_, anyhow::Error>(hermes_model_list_completed_payload(catalog))
+                .await,
+                "kimi" => KimiBackend::new(KimiConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime_result(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await
+                .map_err(|error| anyhow::anyhow!(error))?,
+                "kiro" => KiroBackend::new(KiroConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "reasonix" => ReasonixBackend::new(ReasonixConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "grok" => GrokBackend::new(GrokConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "qoder" | "qoderclicn" => {
+                    let default_command = if target.provider == "qoderclicn" {
+                        "qoderclicn"
+                    } else {
+                        "qodercli"
+                    };
+                    QoderBackend::new(QoderConfig {
+                        command,
+                        env: BTreeMap::new(),
+                        default_command: default_command.to_string(),
+                        provider: target.provider.clone(),
+                        ..QoderConfig::default()
+                    })
+                    .discover_models_for_runtime(
+                        &runtime_scope,
+                        &self.model_cache,
+                        ctx.token().clone(),
+                        ACP_MODEL_DISCOVERY_TIMEOUT,
+                    )
+                    .await
+                }
+                "traecli" => TraecliBackend::new(TraecliConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "antigravity" => AntigravityBackend::new(AntigravityConfig {
+                    command,
+                    env: BTreeMap::new(),
+                    catalog_cache: Arc::clone(&self.model_cache),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "codebuddy" => CodebuddyBackend::new(CodebuddyConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "dsh" => DshBackend::new(DshConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                "qwen" | "qwenpaw" | "mcode" => cordy_agent::Catalog::default(),
+                "dim" => DimBackend::new(DimConfig {
+                    command,
+                    env: BTreeMap::new(),
+                })
+                .discover_models_for_runtime(
+                    &runtime_scope,
+                    &self.model_cache,
+                    ctx.token().clone(),
+                    ACP_MODEL_DISCOVERY_TIMEOUT,
+                )
+                .await,
+                _ => unreachable!("provider filtered above"),
+            };
+            Ok::<_, anyhow::Error>(model_list_completed_payload(&target.provider, catalog))
         }
         .await;
 
         if ctx.err().is_some() {
-            tracing::debug!(%runtime_id, %request_id, "Hermes model-list action cancelled; leaving pending action unhandled");
+            tracing::debug!(
+                %runtime_id,
+                %request_id,
+                provider = %target.provider,
+                "ACP model-list action cancelled; leaving pending action unhandled"
+            );
             return false;
         }
-        let payload = result.unwrap_or_else(|error| hermes_model_list_failed_payload(error));
-        self.report_model_list_result_with_retry(&ctx, runtime_id, request_id, payload)
-            .await
+        let payload = result.unwrap_or_else(|error| model_list_failed_payload(error));
+        self.report_model_list_result_with_retry(
+            &ctx,
+            &target.provider,
+            runtime_id,
+            request_id,
+            payload,
+        )
+        .await
     }
 
     async fn report_model_list_result_with_retry(
         &self,
         ctx: &Ctx,
+        provider: &str,
         runtime_id: &str,
         request_id: &str,
         payload: Value,
@@ -330,16 +491,18 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                         tracing::error!(
                             %runtime_id,
                             %request_id,
+                            %provider,
                             error = %error,
-                            "Hermes model-list report failed"
+                            "ACP model-list report failed"
                         );
                         return false;
                     }
                     tracing::warn!(
                         %runtime_id,
                         %request_id,
+                        %provider,
                         error = %error,
-                        "Hermes model-list report failed; retrying"
+                        "ACP model-list report failed; retrying"
                     );
                 }
             }
@@ -605,16 +768,16 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
     }
 }
 
-fn hermes_model_list_completed_payload(catalog: cordy_agent::Catalog) -> Value {
+fn model_list_completed_payload(provider: &str, catalog: cordy_agent::Catalog) -> Value {
     json!({
         "status": "completed",
         "models": catalog.models,
-        "supported": cordy_agent::registry::model_selection_supported("hermes"),
+        "supported": cordy_agent::registry::model_selection_supported(provider),
         "fallback": catalog.fallback,
     })
 }
 
-fn hermes_model_list_failed_payload(error: impl std::fmt::Display) -> Value {
+fn model_list_failed_payload(error: impl std::fmt::Display) -> Value {
     json!({
         "status": "failed",
         "error": error.to_string(),
@@ -698,12 +861,7 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonCoreServices
     ) {
         if let Some(request) = ack.pending_model_list.clone() {
             if self
-                .handle_hermes_model_list(
-                    ctx.child(),
-                    Arc::clone(&registry),
-                    &runtime_id,
-                    &request.id,
-                )
+                .handle_acp_model_list(ctx.child(), Arc::clone(&registry), &runtime_id, &request.id)
                 .await
             {
                 ack.pending_model_list = None;
