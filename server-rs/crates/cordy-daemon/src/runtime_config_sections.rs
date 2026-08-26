@@ -139,12 +139,20 @@ pub(crate) fn build_task_initiator_block(
 /// port; the daemon mirrors just the slug→title heuristic locally so no
 /// cross-crate dependency is needed for a cosmetic fallback.
 fn toolkit_slug_fallback(slug: &str) -> String {
+    match slug {
+        "github" => return "GitHub".to_string(),
+        "gmail" => return "Gmail".to_string(),
+        "linkedin" => return "LinkedIn".to_string(),
+        _ => {}
+    }
     slug.split(&['-', '_'][..])
         .filter(|p| !p.is_empty())
         .map(|p| {
             let mut cs = p.chars();
             match cs.next() {
-                Some(first) => first.to_uppercase().collect::<String>() + cs.as_str(),
+                Some(first) => {
+                    first.to_uppercase().collect::<String>() + &cs.as_str().to_ascii_lowercase()
+                }
                 None => String::new(),
             }
         })
@@ -166,7 +174,7 @@ pub(crate) fn build_connected_apps_block(apps: &[ConnectedApp]) -> String {
         }
         let mut name = sanitize_name_for_brief_markdown(&app.toolkit_name);
         if name.is_empty() {
-            name = sanitize_name_for_brief_markdown(&toolkit_slug_fallback(&app.toolkit_slug));
+            name = sanitize_name_for_brief_markdown(&toolkit_slug_fallback(&toolkit_slug));
         }
         if name.is_empty() {
             name = toolkit_slug.clone();
@@ -659,11 +667,14 @@ fn skill_disables_model_invocation(skill: &SkillContextForEnv) -> bool {
     let Ok(value) = serde_yaml::from_str::<Value>(&frontmatter) else {
         return false;
     };
-    value
+    let disabled = value
         .get("disable-model-invocation")
-        .and_then(Value::as_bool)
-        .unwrap_or(false)
-        && ok
+        .is_some_and(|value| match value {
+            Value::Bool(disabled) => *disabled,
+            Value::String(disabled) => disabled.trim().eq_ignore_ascii_case("true"),
+            _ => false,
+        });
+    disabled && ok
 }
 
 fn model_visible_skills(skills: &[SkillContextForEnv]) -> Vec<SkillContextForEnv> {
@@ -846,6 +857,12 @@ mod tests {
         let out = build_connected_apps_block(&[app]);
         assert!(out.starts_with("## Connected Apps"));
         assert!(out.contains("- GitHub (`github`) via MCP server `github-main`"));
+        let fallback = build_connected_apps_block(&[ConnectedApp {
+            server_name: "github-main".into(),
+            toolkit_slug: "github".into(),
+            ..Default::default()
+        }]);
+        assert!(fallback.contains("- GitHub (`github`) via MCP server `github-main`"));
         // An app with empty tokens contributes nothing; all-empty → "".
         let bad = ConnectedApp {
             server_name: String::new(),
@@ -927,9 +944,9 @@ mod tests {
         let issue_brief = build_meta_skill_content("codex", &issue);
         assert!(issue_brief.starts_with("# Cordy Agent Runtime"));
         assert!(issue_brief.contains("## Available Commands"));
-        assert!(issue_brief.contains("## Comment Formatting"));
-        assert!(issue_brief.contains("## Issue Metadata"));
-        assert!(issue_brief.contains("## Sub-issue Creation"));
+        assert!(issue_brief.contains("\n## Comment Formatting\n"));
+        assert!(issue_brief.contains("\n## Issue Metadata\n"));
+        assert!(issue_brief.contains("\n## Sub-issue Creation\n"));
         assert!(issue_brief.contains("- **issue-review**"));
 
         let chat = TaskContextForEnv {
@@ -939,9 +956,9 @@ mod tests {
         };
         let chat_brief = build_meta_skill_content("claude", &chat);
         assert!(chat_brief.contains("**You are in chat mode.**"));
-        assert!(!chat_brief.contains("## Comment Formatting"));
-        assert!(!chat_brief.contains("## Issue Metadata"));
-        assert!(!chat_brief.contains("## Sub-issue Creation"));
+        assert!(!chat_brief.contains("\n## Comment Formatting\n"));
+        assert!(!chat_brief.contains("\n## Issue Metadata\n"));
+        assert!(!chat_brief.contains("\n## Sub-issue Creation\n"));
     }
 
     #[test]
@@ -957,13 +974,13 @@ mod tests {
             },
             SkillContextForEnv {
                 name: "Hidden".into(),
-                content: "---\ndisable-model-invocation: true\n---\nbody".into(),
+                content: "---\ndisable-model-invocation: \"true\"\n---\nbody".into(),
                 ..Default::default()
             },
         ];
         let visible = model_visible_skills(&skills);
         assert_eq!(visible.len(), 2);
         assert_eq!(visible[0].name, "a-b");
-        assert_eq!(visible[1].name, "a-b-2");
+        assert_eq!(visible[1].name, "a-b-cordy");
     }
 }

@@ -7,7 +7,7 @@
 //! finalized.
 
 use std::fs;
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Write};
 use std::path::Path;
 
 use anyhow::Context;
@@ -19,25 +19,24 @@ pub(crate) const RUNTIME_MARKER_BEGIN: &str =
 pub(crate) const RUNTIME_MARKER_END: &str = "<!-- END CORDY-RUNTIME -->";
 pub(crate) const RUNTIME_MANAGED_SEPARATOR: &str = "\n\n";
 
-fn set_file_mode_0644(path: &Path) -> std::io::Result<()> {
+fn write_new_or_existing(path: &Path, bytes: &[u8], _was_missing: bool) -> anyhow::Result<()> {
+    // Match Go's os.WriteFile(path, bytes, 0o644): the requested mode is
+    // applied only when creating a file and the kernel still applies umask.
+    // Calling set_permissions after fs::write would force 0644 even under a
+    // restrictive umask, making task/user context readable by other users on
+    // a shared host.
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create(true).truncate(true);
     #[cfg(unix)]
     {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(path, fs::Permissions::from_mode(0o644))?;
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o644);
     }
-    #[cfg(not(unix))]
-    {
-        let _ = path;
-    }
-    Ok(())
-}
-
-fn write_new_or_existing(path: &Path, bytes: &[u8], was_missing: bool) -> anyhow::Result<()> {
-    fs::write(path, bytes).with_context(|| format!("write runtime config {}", path.display()))?;
-    if was_missing {
-        set_file_mode_0644(path)
-            .with_context(|| format!("set runtime config mode {}", path.display()))?;
-    }
+    let mut file = options
+        .open(path)
+        .with_context(|| format!("write runtime config {}", path.display()))?;
+    file.write_all(bytes)
+        .with_context(|| format!("write runtime config {}", path.display()))?;
     Ok(())
 }
 
