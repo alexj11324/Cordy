@@ -642,6 +642,7 @@ impl ProductionProviderAdapter {
                     ..PreparedEnvironmentInputs::default()
                 },
             )?;
+            plan.configure_codex_shell_environment(&bound)?;
             let backend_config = runtime.backend_config_from_launch(
                 &launch,
                 &target,
@@ -721,19 +722,24 @@ impl ProductionProviderAdapter {
                         ..PreparedEnvironmentInputs::default()
                     },
                 ) {
-                    Ok(bound) => execute_and_drain(
-                        &ctx,
-                        backend.as_ref(),
-                        &fresh_prompt,
-                        bound.options,
-                        &target.provider,
-                        &client,
-                        &task.id,
-                        &environment.work_dir,
-                        &environment.codex_home,
-                        &mut message_seq,
-                    )
-                    .await,
+                    Ok(bound) => match plan.configure_codex_shell_environment(&bound) {
+                        Ok(()) => {
+                            execute_and_drain(
+                                &ctx,
+                                backend.as_ref(),
+                                &fresh_prompt,
+                                bound.options,
+                                &target.provider,
+                                &client,
+                                &task.id,
+                                &environment.work_dir,
+                                &environment.codex_home,
+                                &mut message_seq,
+                            )
+                            .await
+                        }
+                        Err(error) => Err(error.context("configure Codex shell environment")),
+                    },
                     Err(error) => Err(error.context("bind fresh-session retry")),
                 };
                 match &retry {
