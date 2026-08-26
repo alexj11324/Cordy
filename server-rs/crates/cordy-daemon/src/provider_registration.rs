@@ -1121,7 +1121,15 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
                     .push(profile_failure(&profile, &error.reason)),
             }
         }
-        payload.profile_set_signature = Some(profile_signature);
+        if payload.failed_profiles.is_empty() {
+            payload.profile_set_signature = Some(profile_signature);
+        } else {
+            // The profile list was fetched, but this round did not produce an
+            // authoritative launch set. Clear the cached signature so the
+            // next reconnect retries the unresolved profile instead of
+            // treating the failed round as converged.
+            payload.profile_set_signature = Some(String::new());
+        }
         self.pending_profiles
             .lock()
             .unwrap()
@@ -1241,10 +1249,12 @@ pub(crate) fn profile_set_signature(profiles: &[RuntimeProfile]) -> String {
         }
     };
     const FIELD_SEPARATOR: &str = "\x1f";
-    for profile in sorted {
-        feed(&profile.id);
-        feed(FIELD_SEPARATOR);
-        feed(if profile.enabled { "true" } else { "false" });
+        for profile in sorted {
+            feed(&profile.id);
+            feed(FIELD_SEPARATOR);
+            feed(&profile.display_name);
+            feed(FIELD_SEPARATOR);
+            feed(if profile.enabled { "true" } else { "false" });
         feed(FIELD_SEPARATOR);
         feed(&profile.protocol_family);
         feed(FIELD_SEPARATOR);
@@ -1332,12 +1342,19 @@ mod tests {
         assert_eq!(forward, reverse);
         // Known vector from the Go byte stream: FNV-1a over the sorted
         // profile fields with the 0x1f/0x1e separators and lowercase hex.
-        assert_eq!(forward, "486b94f6b01deb3e");
+        assert_eq!(forward, "e6112d7efb73453a");
         assert_ne!(forward, "0");
 
-        let mut changed = one;
+        let mut changed = one.clone();
         changed.fixed_args.push("--verbose".to_string());
         assert_ne!(forward, profile_set_signature(&[changed]));
+        let mut renamed = one;
+        renamed.display_name = "Renamed".to_string();
+        let unchanged_two = profile("profile-2", false, "claude", "claude", "workspace", &[]);
+        assert_ne!(
+            forward,
+            profile_set_signature(&[renamed, unchanged_two])
+        );
         assert_eq!(profile_set_signature(&[]), "0");
     }
 

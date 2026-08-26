@@ -316,7 +316,7 @@ impl<S: RuntimeRegistrationSource> RuntimeRegistrationService<S> {
             if !is_tracked || needs_recovery || profile_changed {
                 needs_registration.push((
                     workspace.clone(),
-                    !is_tracked || (needs_recovery && !profile_changed),
+                    !is_tracked || needs_recovery,
                     profile_changed,
                 ));
             }
