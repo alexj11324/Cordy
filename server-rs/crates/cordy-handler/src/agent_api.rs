@@ -8,6 +8,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
+use cordy_config::agent_concurrency;
 use cordy_db::models::{Agent, AgentInvocationTarget};
 use cordy_db::queries::{
     agent, agent_invocation_target, chat, issue_label, runtime, skill, workspace,
@@ -766,11 +767,13 @@ async fn create_agent(
             "description must be 255 characters or fewer",
         );
     }
-    let max_concurrent_tasks = request.max_concurrent_tasks.unwrap_or(6);
-    if !(1..=50).contains(&max_concurrent_tasks) {
+    let max_concurrent_tasks = request
+        .max_concurrent_tasks
+        .unwrap_or(agent_concurrency::DEFAULT_MAX_CONCURRENT_TASKS);
+    if let Err(error) = agent_concurrency::validate_max_concurrent_tasks(max_concurrent_tasks) {
         return error_response(
             StatusCode::BAD_REQUEST,
-            "max_concurrent_tasks must be between 1 and 50",
+            &format!("max_concurrent_tasks {error}"),
         );
     }
     let runtime_id = match request
@@ -1015,14 +1018,13 @@ async fn update_agent(
             "description must be 255 characters or fewer",
         );
     }
-    if request
-        .max_concurrent_tasks
-        .is_some_and(|value| !(1..=50).contains(&value))
-    {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "max_concurrent_tasks must be between 1 and 50",
-        );
+    if let Some(value) = request.max_concurrent_tasks {
+        if let Err(error) = agent_concurrency::validate_max_concurrent_tasks(value) {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                &format!("max_concurrent_tasks {error}"),
+            );
+        }
     }
     if raw_request.get("custom_env").is_some() {
         return error_response(

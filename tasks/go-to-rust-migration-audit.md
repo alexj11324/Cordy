@@ -189,7 +189,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 | AUDIT-003A | 部分完成 | CPU/cmdline/symbol pprof 已接入 Rust | heap/trace 等 Go profiling 能力完成等价迁移，或形成明确替代与运维证据 | PR #524；详见 §12 | 主 agent；review/fix subagent |
 | AUDIT-003B | 部分完成 | logger 配置、TTY、component、request attrs 已接入 Rust | 决定并验证剩余时间布局兼容性，不扩大为新日志框架 | PR #525；详见 §13 | 主 agent；review/fix subagent |
 | AUDIT-003C | Ready PR | squad avatar 读写已接入既有 avatar capability | 等待异步 review/fix，并纳入生产对象存储 smoke | PR #526；详见 §14 | 主 agent；review/fix subagent |
-| AUDIT-003D | 待办 | handler 与 daemon 存在并发任务配置 | 对齐默认值、范围、调用边界并保留单一契约证据 | §6.2 | 主 agent；缺陷交 review/fix subagent |
+| AUDIT-003D | 当前切片 | agent 的每实体限额已集中为默认 6、范围 1..50；daemon 的进程级 slot pool 独立保持默认 20、要求 >0 | 完成机械验证并创建 Ready PR；生产 daemon 生命周期 smoke 继续归 AUDIT-005 | 当前切片；§6.2、§19 | 主 agent；缺陷交 review/fix subagent |
 | AUDIT-004 | 待办 | provider Rust wiring 已存在 | 完成各 integration 的真实配置、正/负路径、重试、media、shutdown 矩阵 | §5.3、§6.2 | 主 agent；review/fix subagent |
 | AUDIT-005 | 待办 | daemon production stack 和 provider adapter 已存在 | 按 control/health、reconcile、execution、GC、MCP 等真实调用链验收 | §5.2、§6.2 | 主 agent；review/fix subagent |
 | AUDIT-006 | 进行中 | 三个 backfill 业务能力已由 PR #518/#519/#520 交付，默认镜像入口已开始切 Rust | 收口 migration/backfill 的 Makefile、image、release、锁、取消和恢复证据 | PR #518/#519/#520/#523；§6.2 | 主 agent；review/fix subagent |
@@ -228,7 +228,7 @@ Rust 不是 Go 文件的机械镜像。当前最大的 Rust 落点是：
 - pprof：Rust `cordy-server::profiling` 已在 127.0.0.1:6060 启动独立 listener，迁移 CPU profile、index、cmdline 和 symbol；heap/trace 尚未等价，必须继续迁移或明确替代并保持运维文档诚实。
 - logger：Go 的 LOG_LEVEL、TTY color、component、request_id/user_id/client metadata 已在 Rust 入口对账；Rust 保留 RUST_LOG 作为未设置 LOG_LEVEL 时的兼容回退，默认级别与 Go 一样是 debug。
 - Squad avatar：Rust `cordy-handler::squad` 已把响应接到现有 `avatar::resolve_url`，创建/更新接到 `avatar::accept_url`；这复用了已有 HMAC、存储归属和 standalone-image 发布校验，不重复实现 signer。私有对象的 squad 读写契约已迁移并接线；avatar endpoint 的下载策略与剩余 Go 退休仍需整体生产验证。
-- agentconfig：Go 默认 max concurrent tasks 为 6、合法范围 1..50；Rust handler 有 inline 1..50，但 daemon config 有独立默认值。必须确认这是两个不同边界还是迁移遗漏，形成单一 contract 证据。
+- agentconfig：Go 默认 max concurrent tasks 为 6、合法范围 1..50；Rust 由 `cordy-config::agent_concurrency` 统一 CLI/API contract。daemon 的默认 20 是独立的进程级 task slot pool，不是 agent 默认值；它从 `CORDY_DAEMON_MAX_CONCURRENT_TASKS`/CLI override 进入 `cordy-daemon::task_execution`，要求大于 0。
 - 退出证据：每个 leaf 明确为“Rust 迁移并接线”“已由现有模块吸收”或“仍需迁移”，并有对应测试/生产路径。
 - owner：主 agent 负责真正迁移；Volta 负责 review/fix。
 
@@ -510,3 +510,26 @@ health/control 的成功和失败路径有记录，并把剩余 API/WS/事务/wo
   记录为测试通过。Linnaeus 只执行 review（submission
   `01a043b2-de54-7850-9828-03d77f3304aa`）；其结束并关闭后，由新的 fix agent
   接手这 7 个错误，主迁移不等待。
+
+## 19. AUDIT-003D 执行更新：agent 与 daemon concurrency contract
+
+当前切片 `codex/cord-196-agent-concurrency-contract-rust-v2` 收口 Go
+`internal/agentconfig/concurrency.go`，并明确它与 daemon 全局槽位不是同一个配置：
+
+- Go 能力：agent create/update/copy 的 `max_concurrent_tasks` 默认 6、合法范围
+  1..50；daemon 另以默认 20 限制单进程同时执行的 task 总数。
+- Rust 入口：`cordy-config::agent_concurrency` 是 agent contract 的单一来源，
+  `cordy-cli` 与 `cordy-handler::agent_api` 共同调用；daemon 继续由
+  `cordy-daemon::config::DEFAULT_MAX_CONCURRENT_TASKS` 和
+  `cordy-daemon::task_execution` 管理独立的全局 slot pool。
+- 生产路径状态：agent CLI/API 已接入共享 contract；Rust daemon production
+  assembly 已把独立的正数全局上限传给 task executor。这里不增加第三套抽象或
+  把两个不同范围强行合并。
+- Go 是否可下线：否。该 leaf contract 已迁移，但 daemon 生命周期 smoke、其余
+  AUDIT-001..009 以及最终全仓 Go 退休门槛尚未完成。
+- 验证状态：`cordy-config` 的 agent contract 定向测试 2/2 通过；触及 Rust
+  文件的固定 stable rustfmt、`git diff --check`、offline locked metadata 通过。
+  受影响包的 offline locked check 在本切片代码编译后，被已登记的
+  `cordy-slack` 1 个 exhaustiveness 错误和 `cordy-daemon` 7 个
+  Hermes/OpenClaw 编译错误阻断；独立 fix subagent 正在处理，主 agent 不等待、
+  不在本切片夹带修复。

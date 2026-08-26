@@ -19,6 +19,7 @@ use axum::Router;
 use chrono::{DateTime, FixedOffset};
 use clap::{ArgGroup, Args, Parser, Subcommand, ValueEnum};
 use config::Environment;
+use cordy_config::agent_concurrency;
 use rand::RngCore;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
@@ -7670,8 +7671,8 @@ async fn run_agent_create<R: Read>(
         .filter(|value| !value.is_empty())
         .context("--runtime-id is required")?;
     if let Some(value) = args.max_concurrent_tasks {
-        if !(1..=50).contains(&value) {
-            bail!("--max-concurrent-tasks must be between 1 and 50 (got {value})");
+        if let Err(error) = agent_concurrency::validate_max_concurrent_tasks(value) {
+            bail!("--max-concurrent-tasks {error} (got {value})");
         }
     }
 
@@ -7771,8 +7772,8 @@ async fn run_agent_update<R: Read>(
 ) -> Result<RunOutput> {
     let client = new_api_client(cli, environment)?;
     if let Some(value) = args.max_concurrent_tasks {
-        if !(1..=50).contains(&value) {
-            bail!("--max-concurrent-tasks must be between 1 and 50 (got {value})");
+        if let Err(error) = agent_concurrency::validate_max_concurrent_tasks(value) {
+            bail!("--max-concurrent-tasks {error} (got {value})");
         }
     }
     let mut body = serde_json::Map::new();
@@ -8221,8 +8222,8 @@ async fn run_agent_copy<R: Read>(
     input: &mut R,
 ) -> Result<RunOutput> {
     if let Some(value) = args.max_concurrent_tasks {
-        if !(1..=50).contains(&value) {
-            bail!("--max-concurrent-tasks must be between 1 and 50 (got {value})");
+        if let Err(error) = agent_concurrency::validate_max_concurrent_tasks(value) {
+            bail!("--max-concurrent-tasks {error} (got {value})");
         }
     }
     let client = new_api_client(cli, environment)?;
@@ -8395,10 +8396,11 @@ async fn run_agent_copy<R: Read>(
 
 fn copied_agent_max_concurrent_tasks(value: Option<&Value>) -> Option<i32> {
     let value = value?.as_f64()?;
-    if value.fract() != 0.0 || !(1.0..=50.0).contains(&value) {
+    if value.fract() != 0.0 {
         return None;
     }
-    Some(value as i32)
+    let value = value as i32;
+    agent_concurrency::is_valid_max_concurrent_tasks(value).then_some(value)
 }
 
 fn apply_agent_permission_args(

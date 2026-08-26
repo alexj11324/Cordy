@@ -13,6 +13,8 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+pub mod agent_concurrency;
+
 /// Top-level configuration.
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default)]
