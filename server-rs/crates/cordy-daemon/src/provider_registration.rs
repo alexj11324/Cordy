@@ -730,6 +730,16 @@ impl RuntimeLaunchRegistry {
             .insert(workspace_id.to_string(), builtins);
     }
 
+    fn workspace_builtins(&self, workspace_id: &str) -> Vec<RuntimeLaunchSpec> {
+        self.state
+            .read()
+            .unwrap()
+            .builtins
+            .get(workspace_id)
+            .map(|builtins| builtins.values().cloned().collect())
+            .unwrap_or_default()
+    }
+
     /// Resolves the accepted built-in launch at the actual process-launch
     /// boundary. A successful heal is copied back only when the workspace has
     /// not accepted a newer registration in the meantime.
@@ -1120,8 +1130,23 @@ impl<C: ProviderCatalog> RuntimeRegistrationRound for ProviderRegistrationRound<
     }
 
     fn registration_applied(&self, workspace_id: &str) {
+        let mut builtin_launches = self.builtin_launches.clone();
+        let mut present = builtin_launches
+            .iter()
+            .map(|spec| spec.target.provider.clone())
+            .collect::<BTreeSet<_>>();
+        for spec in self.launches.workspace_builtins(workspace_id) {
+            if self.preserve_providers.contains(&spec.target.provider)
+                && present.insert(spec.target.provider.clone())
+            {
+                // The provider probe was not authoritative for this provider;
+                // keep its last accepted launch identity in lockstep with the
+                // registry row that the registration merge preserved.
+                builtin_launches.push(spec);
+            }
+        }
         self.launches
-            .replace_builtins(workspace_id, self.builtin_launches.clone());
+            .replace_builtins(workspace_id, builtin_launches);
         let Some(specs) = self.pending_profiles.lock().unwrap().remove(workspace_id) else {
             return;
         };
@@ -1305,6 +1330,9 @@ mod tests {
         let forward = profile_set_signature(&[one.clone(), two.clone()]);
         let reverse = profile_set_signature(&[two, one.clone()]);
         assert_eq!(forward, reverse);
+        // Known vector from the Go byte stream: FNV-1a over the sorted
+        // profile fields with the 0x1f/0x1e separators and lowercase hex.
+        assert_eq!(forward, "486b94f6b01deb3e");
         assert_ne!(forward, "0");
 
         let mut changed = one;
