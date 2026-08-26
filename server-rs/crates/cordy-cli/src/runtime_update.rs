@@ -3,7 +3,8 @@ use serde_json::Value;
 use std::time::{Duration, Instant};
 
 use super::{
-    http_timeout, new_api_client, value_string, Cli, Environment, OutputFormat, RunOutput,
+    format_runtime_update_result, http_timeout, new_api_client, value_string, Cli, Environment,
+    OutputFormat, RunOutput,
 };
 
 pub(super) async fn run_runtime_update(

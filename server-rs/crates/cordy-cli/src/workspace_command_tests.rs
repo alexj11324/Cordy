@@ -310,7 +310,8 @@ fn workspace_create_validates_required_and_safe_input_flags() {
             create_workspace_args(&missing_name),
             &mut Cursor::new(Vec::<u8>::new())
         )
-        .expect_err("missing name")
+        .err()
+        .expect("missing name")
         .to_string(),
         "--name is required"
     );
@@ -332,7 +333,8 @@ fn workspace_create_validates_required_and_safe_input_flags() {
             create_workspace_args(&dual_stdin),
             &mut Cursor::new(b"ambiguous".to_vec())
         )
-        .expect_err("dual stdin")
+        .err()
+        .expect("dual stdin")
         .to_string()
         .contains("a single stdin cannot feed both fields")
     );
@@ -354,7 +356,8 @@ fn workspace_create_validates_required_and_safe_input_flags() {
             create_workspace_args(&empty_prefix),
             &mut Cursor::new(Vec::<u8>::new())
         )
-        .expect_err("empty issue prefix")
+        .err()
+        .expect("empty issue prefix")
         .to_string()
         .contains("omit it to use the server-generated prefix")
     );

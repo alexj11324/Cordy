@@ -3,14 +3,9 @@
 //! Environment capture and atomic persistence live in `config_environment`;
 //! profile schema and launch precedence live in `config_profile`.
 
-mod config_environment;
-mod config_persistence;
-mod config_profile_resolution;
-mod config_profile_schema;
-
-pub use config_environment::{Environment, SetupProfileInput, TASK_CONFIG_ROOT_ENV};
-pub use config_profile_resolution::resolve_daemon_launch_overrides;
-pub use config_profile_schema::{
+pub use crate::config_environment::{Environment, SetupProfileInput, TASK_CONFIG_ROOT_ENV};
+pub use crate::config_profile_resolution::resolve_daemon_launch_overrides;
+pub use crate::config_profile_schema::{
     BackendOverrides, CliConfig, DaemonLaunchFlags, OpenClawOverride,
 };
 
