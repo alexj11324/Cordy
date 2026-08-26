@@ -6,13 +6,16 @@
 //! provider contract as the other local runtimes.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::fs::File;
 use std::io;
-use std::path::Path;
+use std::io::{BufRead, BufReader as StdBufReader};
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, LazyLock};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 use async_trait::async_trait;
+use chrono::DateTime;
 use serde_json::{Map, Value};
 use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::process::{ChildStderr, ChildStdin, ChildStdout, Command};
@@ -37,6 +40,7 @@ const DEFAULT_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 const TERMINATION_GRACE: Duration = Duration::from_millis(500);
 const KILL_GRACE: Duration = Duration::from_secs(10);
 const MAX_PATCH_BYTES: usize = 64 * 1024;
+const MAX_ROLLOUT_LINE_BYTES: usize = 1024 * 1024;
 
 static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
     LazyLock::new(|| BTreeMap::from([("--listen", BlockedArgMode::WithValue)]));
@@ -574,6 +578,7 @@ impl Backend for CodexBackend {
         let client = CodexClient::new(stdin, event_tx);
         let observer = CodexObserver::new(messages_tx, activity_tx, turn_done_tx);
         let started = Instant::now();
+        let wall_started = SystemTime::now();
         let prompt = prompt.to_string();
         let cancellation = options.cancellation.clone();
         let config = self.config.clone();
@@ -593,6 +598,7 @@ impl Backend for CodexBackend {
                 options,
                 config,
                 started,
+                wall_started,
             )
             .await;
             drop(cancellation);
@@ -1498,8 +1504,9 @@ async fn run_codex(
     result_tx: oneshot::Sender<ExecutionResult>,
     prompt: String,
     options: ExecOptions,
-    _config: CodexConfig,
+    config: CodexConfig,
     started: Instant,
+    wall_started: SystemTime,
 ) {
     let stderr_tail = SharedDiagnosticBuffer::new(DEFAULT_TAIL_BYTES);
     let reader_task: JoinHandle<()> =
@@ -1886,24 +1893,45 @@ async fn run_codex(
         error = with_stderr(&error, "codex", &sanitize_diagnostic(&stderr));
     }
 
+    let mut usage_tokens = snapshot.usage;
+    let mut usage_model = options.model.clone();
+    if usage_tokens.input_tokens == 0
+        && usage_tokens.output_tokens == 0
+        && usage_tokens.cache_read_tokens == 0
+        && usage_tokens.cache_write_tokens == 0
+    {
+        let codex_home = config.env.get("CODEX_HOME").cloned();
+        let scan_thread = snapshot.thread_id.clone();
+        if let Ok(Some(scanned)) = tokio::task::spawn_blocking(move || {
+            scan_codex_session_usage(wall_started, codex_home.as_deref(), &scan_thread, resumed)
+        })
+        .await
+        {
+            usage_tokens = scanned.usage;
+            if usage_model.is_empty() {
+                usage_model = scanned.model;
+            }
+        }
+    }
+
     let output = if !snapshot.final_answer.is_empty() {
         snapshot.final_answer
     } else {
         snapshot.last_agent_message
     };
     let mut usage = BTreeMap::new();
-    if snapshot.usage.input_tokens > 0
-        || snapshot.usage.output_tokens > 0
-        || snapshot.usage.cache_read_tokens > 0
-        || snapshot.usage.cache_write_tokens > 0
+    if usage_tokens.input_tokens > 0
+        || usage_tokens.output_tokens > 0
+        || usage_tokens.cache_read_tokens > 0
+        || usage_tokens.cache_write_tokens > 0
     {
         usage.insert(
-            if options.model.is_empty() {
+            if usage_model.is_empty() {
                 "unknown".to_string()
             } else {
-                options.model
+                usage_model
             },
-            snapshot.usage,
+            usage_tokens,
         );
     }
     let _ = result_tx.send(ExecutionResult {
@@ -2309,6 +2337,412 @@ fn mcp_tool_result(item: &Map<String, Value>, status: &str) -> String {
     output
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct RawCodexUsage {
+    input_tokens: i64,
+    output_tokens: i64,
+    cached_input_tokens: i64,
+    cache_read_input_tokens: i64,
+    reasoning_output_tokens: i64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct CodexSessionUsage {
+    usage: TokenUsage,
+    model: String,
+}
+
+/// Reads usage from the rollout owned by one Codex thread. Rollout files are
+/// append-only and resumed sessions report cumulative totals, so the scanner
+/// computes a post-start delta rather than billing the whole history again.
+fn scan_codex_session_usage(
+    start_time: SystemTime,
+    codex_home: Option<&str>,
+    thread_id: &str,
+    resumed: bool,
+) -> Option<CodexSessionUsage> {
+    let root = codex_session_root(codex_home)?;
+    if thread_id.trim().is_empty() {
+        return None;
+    }
+    let mut candidates = Vec::new();
+    for path in find_codex_session_rollouts(&root, thread_id) {
+        let Ok(metadata) = std::fs::metadata(&path) else {
+            continue;
+        };
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        if modified < start_time {
+            continue;
+        }
+        candidates.push((path, modified));
+    }
+    if candidates.is_empty() {
+        return None;
+    }
+    candidates.sort_by(|(left_path, left_time), (right_path, right_time)| {
+        system_time_key(*left_time)
+            .cmp(&system_time_key(*right_time))
+            .then_with(|| left_path.cmp(right_path))
+    });
+    let result = parse_codex_session_file_since(&candidates.last()?.0, start_time, resumed)?;
+    let usage = result.usage;
+    if usage.input_tokens == 0
+        && usage.output_tokens == 0
+        && usage.cache_read_tokens == 0
+        && usage.cache_write_tokens == 0
+    {
+        None
+    } else {
+        Some(result)
+    }
+}
+
+fn system_time_key(value: SystemTime) -> Duration {
+    value
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or(Duration::ZERO)
+}
+
+fn codex_session_root(codex_home: Option<&str>) -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(home) = codex_home.filter(|home| !home.trim().is_empty()) {
+        candidates.push(PathBuf::from(home).join("sessions"));
+    } else if let Ok(home) = std::env::var("CODEX_HOME") {
+        if !home.trim().is_empty() {
+            candidates.push(PathBuf::from(home).join("sessions"));
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.trim().is_empty() {
+            candidates.push(PathBuf::from(home).join(".codex").join("sessions"));
+        }
+    }
+    candidates.into_iter().find(|path| path.is_dir())
+}
+
+fn find_codex_session_rollouts(root: &Path, thread_id: &str) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    let mut add_rollouts = |directory: &Path| {
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if entry.file_type().is_ok_and(|kind| kind.is_file()) && is_codex_rollout_file(&path) {
+                candidates.push(path);
+            }
+        }
+    };
+    add_rollouts(root);
+    let Ok(years) = std::fs::read_dir(root) else {
+        return filter_codex_rollouts(candidates, thread_id);
+    };
+    for year in years.flatten() {
+        if !year.file_type().is_ok_and(|kind| kind.is_dir()) {
+            continue;
+        }
+        let Ok(months) = std::fs::read_dir(year.path()) else {
+            continue;
+        };
+        for month in months.flatten() {
+            if !month.file_type().is_ok_and(|kind| kind.is_dir()) {
+                continue;
+            }
+            let Ok(days) = std::fs::read_dir(month.path()) else {
+                continue;
+            };
+            for day in days.flatten() {
+                if day.file_type().is_ok_and(|kind| kind.is_dir()) {
+                    add_rollouts(&day.path());
+                }
+            }
+        }
+    }
+    filter_codex_rollouts(candidates, thread_id)
+}
+
+fn is_codex_rollout_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with("rollout-") && name.ends_with(".jsonl"))
+}
+
+fn filter_codex_rollouts(paths: Vec<PathBuf>, thread_id: &str) -> Vec<PathBuf> {
+    let suffix = format!("-{thread_id}.jsonl");
+    let mut filename_matches = Vec::new();
+    for path in &paths {
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !name.ends_with(&suffix) {
+            continue;
+        }
+        if let Some(metadata_id) = read_codex_rollout_thread_id(path) {
+            if metadata_id != thread_id {
+                continue;
+            }
+        }
+        filename_matches.push(path.clone());
+    }
+    if !filename_matches.is_empty() {
+        return filename_matches;
+    }
+    paths
+        .into_iter()
+        .filter(|path| read_codex_rollout_thread_id(path).as_deref() == Some(thread_id))
+        .collect()
+}
+
+fn read_codex_rollout_thread_id(path: &Path) -> Option<String> {
+    let file = File::open(path).ok()?;
+    let mut reader = StdBufReader::new(file);
+    for _ in 0..64 {
+        let line = match read_bounded_rollout_line(&mut reader, MAX_ROLLOUT_LINE_BYTES).ok()? {
+            BoundedRolloutLine::End => break,
+            BoundedRolloutLine::Oversized => continue,
+            BoundedRolloutLine::Complete(line) => line,
+        };
+        if !line
+            .windows(b"session_meta".len())
+            .any(|window| window == b"session_meta")
+        {
+            continue;
+        }
+        let value = serde_json::from_slice::<Value>(&line).ok()?;
+        if value.get("type").and_then(Value::as_str) != Some("session_meta") {
+            continue;
+        }
+        let id = value
+            .get("payload")
+            .and_then(Value::as_object)
+            .and_then(|payload| payload.get("id"))
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty())?;
+        return Some(id.to_string());
+    }
+    None
+}
+
+fn parse_codex_session_file_since(
+    path: &Path,
+    start_time: SystemTime,
+    resumed: bool,
+) -> Option<CodexSessionUsage> {
+    let file = File::open(path).ok()?;
+    let mut reader = StdBufReader::new(file);
+    let mut result = CodexSessionUsage::default();
+    let mut previous_total = RawCodexUsage::default();
+    let mut previous_total_found = false;
+    let mut accumulated = RawCodexUsage::default();
+    let mut final_usage = RawCodexUsage::default();
+    let mut final_usage_found = false;
+    let mut after_start_boundary = false;
+
+    loop {
+        let line = match read_bounded_rollout_line(&mut reader, MAX_ROLLOUT_LINE_BYTES).ok()? {
+            BoundedRolloutLine::End => break,
+            BoundedRolloutLine::Oversized => continue,
+            BoundedRolloutLine::Complete(line) => line,
+        };
+        if !line
+            .windows(b"token_count".len())
+            .any(|window| window == b"token_count")
+            && !line
+                .windows(b"turn_context".len())
+                .any(|window| window == b"turn_context")
+        {
+            continue;
+        }
+        let Ok(event) = serde_json::from_slice::<Value>(&line) else {
+            continue;
+        };
+        let timestamp = event.get("timestamp").and_then(parse_codex_timestamp);
+        let timestamp_after_start = timestamp.is_some_and(|timestamp| timestamp > start_time);
+        if timestamp_after_start {
+            after_start_boundary = true;
+        }
+        let Some(payload) = event.get("payload").and_then(Value::as_object) else {
+            continue;
+        };
+
+        if event.get("type").and_then(Value::as_str) == Some("turn_context") {
+            if let Some(model) = payload.get("model").and_then(Value::as_str) {
+                result.model = model.to_string();
+            }
+            continue;
+        }
+        if payload.get("type").and_then(Value::as_str) != Some("token_count") {
+            continue;
+        }
+        let Some(info) = payload.get("info").and_then(Value::as_object) else {
+            continue;
+        };
+        let after_start = start_time == SystemTime::UNIX_EPOCH
+            || timestamp_after_start
+            || (timestamp.is_none() && (!resumed || after_start_boundary));
+        if let Some(total) = info.get("total_token_usage") {
+            let current = normalize_raw_codex_usage(raw_codex_usage(total));
+            if after_start {
+                let delta = if previous_total_found {
+                    subtract_raw_codex_usage(current, previous_total)
+                } else {
+                    current
+                };
+                accumulated = add_raw_codex_usage(accumulated, delta);
+                final_usage = accumulated;
+                final_usage_found = true;
+            }
+            previous_total = current;
+            previous_total_found = true;
+        } else if let Some(last) = info.get("last_token_usage").filter(|_| after_start) {
+            final_usage = normalize_raw_codex_usage(raw_codex_usage(last));
+            final_usage_found = true;
+        }
+        if let Some(model) = info.get("model").and_then(Value::as_str) {
+            result.model = model.to_string();
+        }
+    }
+
+    if !final_usage_found {
+        return None;
+    }
+    result.usage = TokenUsage {
+        input_tokens: final_usage
+            .input_tokens
+            .saturating_sub(final_usage.cached_input_tokens)
+            .max(0),
+        output_tokens: final_usage.output_tokens,
+        cache_read_tokens: final_usage.cached_input_tokens,
+        ..TokenUsage::default()
+    };
+    Some(result)
+}
+
+enum BoundedRolloutLine {
+    End,
+    Complete(Vec<u8>),
+    Oversized,
+}
+
+fn read_bounded_rollout_line<R: BufRead>(
+    reader: &mut R,
+    max_bytes: usize,
+) -> io::Result<BoundedRolloutLine> {
+    let mut line = Vec::with_capacity(max_bytes.min(4096));
+    let mut oversized = false;
+    loop {
+        let buffer = reader.fill_buf()?;
+        if buffer.is_empty() {
+            if line.is_empty() && !oversized {
+                return Ok(BoundedRolloutLine::End);
+            }
+            return Ok(if oversized {
+                BoundedRolloutLine::Oversized
+            } else {
+                BoundedRolloutLine::Complete(line)
+            });
+        }
+
+        let newline = buffer.iter().position(|byte| *byte == b'\n');
+        let chunk_len = newline.map_or(buffer.len(), |index| index + 1);
+        if !oversized {
+            let remaining = max_bytes.saturating_sub(line.len());
+            let copy_len = chunk_len.min(remaining);
+            line.extend_from_slice(&buffer[..copy_len]);
+            if copy_len < chunk_len {
+                oversized = true;
+            }
+        }
+        reader.consume(chunk_len);
+        if newline.is_some() {
+            return Ok(if oversized {
+                BoundedRolloutLine::Oversized
+            } else {
+                BoundedRolloutLine::Complete(line)
+            });
+        }
+    }
+}
+
+fn parse_codex_timestamp(value: &Value) -> Option<SystemTime> {
+    let text = value.as_str()?;
+    let parsed = DateTime::parse_from_rfc3339(text).ok()?;
+    let seconds = parsed.timestamp();
+    let nanos = u64::from(parsed.timestamp_subsec_nanos());
+    if seconds >= 0 {
+        SystemTime::UNIX_EPOCH.checked_add(Duration::new(seconds as u64, nanos as u32))
+    } else {
+        SystemTime::UNIX_EPOCH.checked_sub(Duration::new((-seconds) as u64, nanos as u32))
+    }
+}
+
+fn raw_codex_usage(value: &Value) -> RawCodexUsage {
+    let Some(object) = value.as_object() else {
+        return RawCodexUsage::default();
+    };
+    RawCodexUsage {
+        input_tokens: value_i64(object, "input_tokens"),
+        output_tokens: value_i64(object, "output_tokens"),
+        cached_input_tokens: value_i64(object, "cached_input_tokens"),
+        cache_read_input_tokens: value_i64(object, "cache_read_input_tokens"),
+        reasoning_output_tokens: value_i64(object, "reasoning_output_tokens"),
+    }
+}
+
+fn value_i64(object: &Map<String, Value>, key: &str) -> i64 {
+    object.get(key).and_then(Value::as_i64).unwrap_or_default()
+}
+
+fn normalize_raw_codex_usage(mut value: RawCodexUsage) -> RawCodexUsage {
+    if value.cached_input_tokens == 0 {
+        value.cached_input_tokens = value.cache_read_input_tokens;
+    }
+    value.cache_read_input_tokens = 0;
+    value
+}
+
+fn subtract_raw_codex_usage(total: RawCodexUsage, baseline: RawCodexUsage) -> RawCodexUsage {
+    let total = normalize_raw_codex_usage(total);
+    let baseline = normalize_raw_codex_usage(baseline);
+    RawCodexUsage {
+        input_tokens: nonnegative_token_delta(total.input_tokens, baseline.input_tokens),
+        output_tokens: nonnegative_token_delta(total.output_tokens, baseline.output_tokens),
+        cached_input_tokens: nonnegative_token_delta(
+            total.cached_input_tokens,
+            baseline.cached_input_tokens,
+        ),
+        cache_read_input_tokens: 0,
+        reasoning_output_tokens: nonnegative_token_delta(
+            total.reasoning_output_tokens,
+            baseline.reasoning_output_tokens,
+        ),
+    }
+}
+
+fn add_raw_codex_usage(left: RawCodexUsage, right: RawCodexUsage) -> RawCodexUsage {
+    RawCodexUsage {
+        input_tokens: left.input_tokens.saturating_add(right.input_tokens),
+        output_tokens: left.output_tokens.saturating_add(right.output_tokens),
+        cached_input_tokens: left
+            .cached_input_tokens
+            .saturating_add(right.cached_input_tokens),
+        cache_read_input_tokens: 0,
+        reasoning_output_tokens: left
+            .reasoning_output_tokens
+            .saturating_add(right.reasoning_output_tokens),
+    }
+}
+
+fn nonnegative_token_delta(total: i64, baseline: i64) -> i64 {
+    if total < baseline {
+        total
+    } else {
+        total - baseline
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
@@ -2688,6 +3122,120 @@ done
         assert!(messages
             .iter()
             .any(|message| message.content == "fake answer"));
+    }
+
+    #[test]
+    fn rollout_scanner_uses_thread_metadata_and_resume_delta() {
+        let directory = tempdir().unwrap_or_else(|error| panic!("temp dir: {error}"));
+        let sessions = directory
+            .path()
+            .join("sessions")
+            .join("2026")
+            .join("02")
+            .join("03");
+        std::fs::create_dir_all(&sessions)
+            .unwrap_or_else(|error| panic!("create sessions: {error}"));
+        let path = sessions.join("rollout-drift.jsonl");
+        let start = parse_codex_timestamp(&serde_json::json!("2026-01-15T00:00:00Z"))
+            .unwrap_or_else(|| panic!("parse start timestamp"));
+        let content = concat!(
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"thread-main\"}}\n",
+            "{\"type\":\"turn_context\",\"payload\":{\"model\":\"gpt-5.5\"}}\n",
+            "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"type\":\"response\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":100,\"cached_input_tokens\":20,\"output_tokens\":50,\"reasoning_output_tokens\":5}}}}\n",
+            "{\"timestamp\":\"2026-02-01T00:00:00Z\",\"type\":\"response\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":140,\"cached_input_tokens\":30,\"output_tokens\":70,\"reasoning_output_tokens\":10},\"model\":\"gpt-5.5\"}}}\n"
+        );
+        std::fs::write(&path, content).unwrap_or_else(|error| panic!("write rollout: {error}"));
+        let home = directory.path().to_string_lossy().to_string();
+        let result = scan_codex_session_usage(start, Some(&home), "thread-main", true)
+            .unwrap_or_else(|| panic!("scan rollout usage"));
+        assert_eq!(result.model, "gpt-5.5");
+        assert_eq!(result.usage.input_tokens, 30);
+        assert_eq!(result.usage.cache_read_tokens, 10);
+        assert_eq!(result.usage.output_tokens, 20);
+    }
+
+    #[test]
+    fn rollout_scanner_rejects_filename_metadata_collision() {
+        let directory = tempdir().unwrap_or_else(|error| panic!("temp dir: {error}"));
+        let sessions = directory.path().join("sessions");
+        std::fs::create_dir_all(&sessions)
+            .unwrap_or_else(|error| panic!("create sessions: {error}"));
+        let collision = sessions.join("rollout-2026-thread-main.jsonl");
+        std::fs::write(
+            &collision,
+            "{\"type\":\"session_meta\",\"payload\":{\"id\":\"thread-other\"}}\n",
+        )
+        .unwrap_or_else(|error| panic!("write collision: {error}"));
+        let drift = sessions.join("rollout-future-format.jsonl");
+        std::fs::write(
+            &drift,
+            concat!(
+                "{\"type\":\"session_meta\",\"payload\":{\"id\":\"thread-main\"}}\n",
+                "{\"timestamp\":\"2026-02-01T00:00:00Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":2,\"output_tokens\":3}}}}\n"
+            ),
+        )
+        .unwrap_or_else(|error| panic!("write drift rollout: {error}"));
+        let start = parse_codex_timestamp(&serde_json::json!("2026-01-01T00:00:00Z"))
+            .unwrap_or_else(|| panic!("parse start timestamp"));
+        let home = directory.path().to_string_lossy().to_string();
+        let result = scan_codex_session_usage(start, Some(&home), "thread-main", false)
+            .unwrap_or_else(|| panic!("scan metadata-owned rollout"));
+        assert_eq!(result.usage.input_tokens, 2);
+        assert_eq!(result.usage.output_tokens, 3);
+    }
+
+    #[test]
+    fn rollout_parser_handles_cache_alias_and_counter_reset() {
+        let directory = tempdir().unwrap_or_else(|error| panic!("temp dir: {error}"));
+        let path = directory.path().join("rollout.jsonl");
+        let content = concat!(
+            "{\"timestamp\":\"2026-01-01T00:00:00Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":10,\"cache_read_input_tokens\":4,\"output_tokens\":8}}}}\n",
+            "{\"timestamp\":\"2026-02-01T00:00:00Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"total_token_usage\":{\"input_tokens\":3,\"cached_input_tokens\":1,\"output_tokens\":2,\"reasoning_output_tokens\":1}}}}\n"
+        );
+        std::fs::write(&path, content).unwrap_or_else(|error| panic!("write rollout: {error}"));
+        let start = parse_codex_timestamp(&serde_json::json!("2025-12-01T00:00:00Z"))
+            .unwrap_or_else(|| panic!("parse start timestamp"));
+        let result = parse_codex_session_file_since(&path, start, false)
+            .unwrap_or_else(|| panic!("parse rollout"));
+        assert_eq!(result.usage.input_tokens, 8);
+        assert_eq!(result.usage.cache_read_tokens, 5);
+        assert_eq!(result.usage.output_tokens, 10);
+    }
+
+    #[test]
+    fn rollout_parser_discards_oversized_records_before_json_allocation() {
+        let directory = tempdir().unwrap_or_else(|error| panic!("temp dir: {error}"));
+        let path = directory.path().join("rollout.jsonl");
+        let oversized = format!(
+            "{{\"padding\":\"{}\"}}\n",
+            "x".repeat(MAX_ROLLOUT_LINE_BYTES)
+        );
+        let valid = "{\"timestamp\":\"2026-02-01T00:00:00Z\",\"payload\":{\"type\":\"token_count\",\"info\":{\"last_token_usage\":{\"input_tokens\":2,\"output_tokens\":3}}}}\n";
+        std::fs::write(&path, format!("{oversized}{valid}"))
+            .unwrap_or_else(|error| panic!("write rollout: {error}"));
+        let start = parse_codex_timestamp(&serde_json::json!("2025-12-01T00:00:00Z"))
+            .unwrap_or_else(|| panic!("parse start timestamp"));
+        let result = parse_codex_session_file_since(&path, start, false)
+            .unwrap_or_else(|| panic!("parse rollout"));
+        assert_eq!(result.usage.input_tokens, 2);
+        assert_eq!(result.usage.output_tokens, 3);
+    }
+
+    #[test]
+    fn rollout_metadata_reader_discards_oversized_records() {
+        let directory = tempdir().unwrap_or_else(|error| panic!("temp dir: {error}"));
+        let path = directory.path().join("rollout.jsonl");
+        let oversized = format!(
+            "{{\"type\":\"session_meta\",\"payload\":{{\"id\":\"wrong\",\"padding\":\"{}\"}}}}\n",
+            "x".repeat(MAX_ROLLOUT_LINE_BYTES)
+        );
+        let valid = "{\"type\":\"session_meta\",\"payload\":{\"id\":\"thread-main\"}}\n";
+        std::fs::write(&path, format!("{oversized}{valid}"))
+            .unwrap_or_else(|error| panic!("write rollout: {error}"));
+        assert_eq!(
+            read_codex_rollout_thread_id(&path).as_deref(),
+            Some("thread-main")
+        );
     }
 
     #[test]
