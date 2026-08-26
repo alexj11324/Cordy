@@ -90,6 +90,9 @@ pub(crate) fn builtin_runtime_commands() -> Vec<&'static str> {
 /// (pkg/agent/builtin_runtimes.go). Adding a new fork is an entry here.
 pub(crate) struct BuiltinRuntimeDesc {
     pub id: &'static str,
+    /// Protocol-family provider whose backend and native config contract this
+    /// runtime identity inherits.
+    pub protocol_family: &'static str,
     pub env_prefix: &'static str,
     pub default_command: &'static str,
     pub display_name: &'static str,
@@ -97,6 +100,7 @@ pub(crate) struct BuiltinRuntimeDesc {
 
 pub(crate) const BUILTIN_RUNTIMES: &[BuiltinRuntimeDesc] = &[BuiltinRuntimeDesc {
     id: "omp",
+    protocol_family: "pi",
     env_prefix: "CORDY_OMP",
     default_command: "omp",
     display_name: "Oh-My-Pi",
