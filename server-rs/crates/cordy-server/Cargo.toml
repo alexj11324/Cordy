@@ -36,7 +36,9 @@ async-trait = { workspace = true }
 axum = { workspace = true }
 chrono = { workspace = true }
 http-body-util = { workspace = true }
+pprof = { workspace = true }
 redis = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true }
 tokio = { workspace = true }

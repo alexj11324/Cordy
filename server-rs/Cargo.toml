@@ -127,6 +127,7 @@ tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
 walkdir = "2"
 tempfile = "3"
 libc = "0.2"
+pprof = { version = "0.15.0", default-features = false, features = ["protobuf-codec"] }
 
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
