@@ -610,6 +610,22 @@ impl ProductionProviderAdapter {
                 tracing::debug!(task = %task.id, %error, "report launching progress failed");
             }
 
+            let resumed = gate_resume_to_reused_workdir(
+                &mut task,
+                &mut plan,
+                &environment,
+                resumed,
+                &target.provider,
+            );
+            if resumed {
+                gate_codex_resume_to_rollout_presence(
+                    &mut task,
+                    &mut plan,
+                    &target.provider,
+                    &environment,
+                );
+            }
+
             // A prior provider session is authoritative only together with a
             // reusable daemon-owned workdir. Starting fresh while forwarding
             // an unrelated session id is a cross-task state leak.
@@ -1604,6 +1620,77 @@ fn reusable_workdir(workspaces_root: &str, task: &Task) -> bool {
         }
 }
 
+/// Keeps a provider resume pointer only when this run can reach the store that
+/// owns it. CLI providers normally key sessions by workdir; Hermes keys them
+/// by its mounted session database, so a matching path is not sufficient when
+/// that database is absent or empty.
+fn gate_resume_to_reused_workdir(
+    task: &mut Task,
+    plan: &mut ProviderExecutionPlan,
+    environment: &Environment,
+    env_reused: bool,
+    provider: &str,
+) -> bool {
+    let session_home_reachable = if provider == "hermes" {
+        if !environment.hermes_session_store.is_empty() {
+            environment.hermes_session_history_present
+        } else {
+            env_reused
+        }
+    } else {
+        true
+    };
+    let reused = !task.prior_work_dir.is_empty()
+        && environment.work_dir == task.prior_work_dir
+        && session_home_reachable;
+    if !reused && !task.prior_session_id.is_empty() {
+        tracing::info!(
+            task = %task.id,
+            provider,
+            session_id = %task.prior_session_id,
+            prior_workdir = %task.prior_work_dir,
+            workdir = %environment.work_dir,
+            session_home_reachable,
+            "dropping prior session: session store not reachable from this run"
+        );
+        task.prior_session_id.clear();
+        task.prior_session_resume_unavailable = true;
+        plan.drop_resume();
+    }
+    reused
+}
+
+/// Codex can expose a session id before its rollout has landed in the
+/// task-local CODEX_HOME. Do not forward such a pointer on a reused env: the
+/// CLI otherwise starts a fresh thread silently while the brief claims
+/// continuity.
+fn gate_codex_resume_to_rollout_presence(
+    task: &mut Task,
+    plan: &mut ProviderExecutionPlan,
+    provider: &str,
+    environment: &Environment,
+) -> bool {
+    if provider != "codex"
+        || task.prior_session_id.is_empty()
+        || environment.codex_home.is_empty()
+    {
+        return true;
+    }
+    if codex_resume_rollout_present(&environment.codex_home, &task.prior_session_id) {
+        return true;
+    }
+    tracing::warn!(
+        task = %task.id,
+        session_id = %task.prior_session_id,
+        codex_home = %environment.codex_home,
+        "dropping prior codex session: rollout not present in task CODEX_HOME; starting a fresh thread"
+    );
+    task.prior_session_id.clear();
+    task.prior_session_resume_unavailable = true;
+    plan.drop_resume();
+    false
+}
+
 fn provider_path() -> String {
     let inherited = std::env::var("PATH").unwrap_or_default();
     let Ok(executable) = std::env::current_exe() else {
@@ -1628,6 +1715,45 @@ fn provider_path() -> String {
 mod tests {
     use super::*;
     use cordy_agent::TokenUsage;
+
+    fn resume_gate_fixture(provider: &str) -> (Task, ProviderExecutionPlan) {
+        let task = Task {
+            id: "task-resume-gate".into(),
+            workspace_id: "workspace-resume-gate".into(),
+            runtime_id: "runtime-resume-gate".into(),
+            agent_id: "agent-resume-gate".into(),
+            issue_id: "issue-resume-gate".into(),
+            prior_work_dir: "/workspaces/workspace-resume-gate/prior/workdir".into(),
+            prior_session_id: "session-resume-gate".into(),
+            auth_token: "mat_resume_gate".into(),
+            agent: Some(crate::types::AgentData {
+                id: "agent-resume-gate".into(),
+                name: "Resume Gate".into(),
+                ..Default::default()
+            }),
+            ..Task::default()
+        };
+        let target = RuntimeExecutionTarget {
+            provider: provider.into(),
+            profile_id: String::new(),
+        };
+        let config = Config {
+            server_base_url: "http://localhost".into(),
+            workspaces_root: "/workspaces".into(),
+            ..Config::default()
+        };
+        let plan = ProviderExecutionPlan::build(
+            &config,
+            &task,
+            &target,
+            ProviderExecutionInputs {
+                temp_dir: "/tmp/task-resume-gate".into(),
+                ..ProviderExecutionInputs::default()
+            },
+        )
+        .unwrap();
+        (task, plan)
+    }
 
     fn resolvable_skill_bundle(
         source: &str,
@@ -1796,6 +1922,68 @@ mod tests {
         let failure = outcome.failure.unwrap();
         assert_eq!(failure.failure_reason, "timeout");
         assert!(failure.message.contains("task preparation timed out"));
+    }
+
+    #[test]
+    fn hermes_resume_requires_a_real_session_store_history() {
+        let (mut task, mut plan) = resume_gate_fixture("hermes");
+        let environment = Environment {
+            work_dir: task.prior_work_dir.clone(),
+            hermes_session_store: "/shared/hermes/state.db".into(),
+            hermes_session_history_present: false,
+            ..Environment::default()
+        };
+
+        assert!(!gate_resume_to_reused_workdir(
+            &mut task,
+            &mut plan,
+            &environment,
+            true,
+            "hermes",
+        ));
+        assert!(task.prior_session_id.is_empty());
+        assert!(task.prior_session_resume_unavailable);
+        assert!(plan.resume_session_id().is_empty());
+    }
+
+    #[test]
+    fn resume_gate_keeps_matching_non_hermes_session() {
+        let (mut task, mut plan) = resume_gate_fixture("claude");
+        let environment = Environment {
+            work_dir: task.prior_work_dir.clone(),
+            ..Environment::default()
+        };
+
+        assert!(gate_resume_to_reused_workdir(
+            &mut task,
+            &mut plan,
+            &environment,
+            false,
+            "claude",
+        ));
+        assert_eq!(task.prior_session_id, "session-resume-gate");
+        assert!(!task.prior_session_resume_unavailable);
+        assert_eq!(plan.resume_session_id(), "session-resume-gate");
+    }
+
+    #[test]
+    fn codex_resume_gate_drops_missing_rollout() {
+        let (mut task, mut plan) = resume_gate_fixture("codex");
+        let codex_home = tempfile::tempdir().unwrap();
+        let environment = Environment {
+            codex_home: codex_home.path().to_string_lossy().into_owned(),
+            ..Environment::default()
+        };
+
+        assert!(!gate_codex_resume_to_rollout_presence(
+            &mut task,
+            &mut plan,
+            "codex",
+            &environment,
+        ));
+        assert!(task.prior_session_id.is_empty());
+        assert!(task.prior_session_resume_unavailable);
+        assert!(plan.resume_session_id().is_empty());
     }
 
     #[test]
