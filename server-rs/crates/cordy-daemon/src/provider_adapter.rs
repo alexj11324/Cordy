@@ -43,6 +43,10 @@ use crate::local_directory::{
     LocalDirectoryAssignment, LocalPathLocker, PathLockRelease,
 };
 use crate::plugin_hook_mcp::{start_task_plugin_hook_mcp, PluginHookInvoker, PluginHookMCPSet};
+use crate::poisoned::{
+    classify_poisoned_error, classify_poisoned_output, classify_resume_unsafe_timeout,
+    classify_resume_unsafe_transport,
+};
 use crate::production_services::{ProviderRuntimeAdapter, ProviderRuntimeContext};
 use crate::prompt::build_prompt;
 use crate::remote_mcp_broker::{
@@ -1420,6 +1424,7 @@ fn result_outcome(
     session_rollout_missing: bool,
 ) -> TaskRunOutcome {
     let resume_rejected = result.resume_rejected && !requested_session_id.is_empty();
+    let mut retired_session_id = retired_session_id.to_string();
     let mut usage = result
         .usage
         .into_iter()
@@ -1445,7 +1450,7 @@ fn result_outcome(
         result.status.as_str(),
         "completed" | "cancelled" | "timeout" | "idle_watchdog"
     );
-    let (status, comment, mut failure_reason) = match result.status.as_str() {
+    let (mut status, comment, mut failure_reason) = match result.status.as_str() {
         "completed" => ("completed", result.output, String::new()),
         "cancelled" => (
             "cancelled",
@@ -1478,6 +1483,46 @@ fn result_outcome(
     };
     if resume_rejected {
         failure_reason = "resume_rejected".to_string();
+    } else if status == "completed" {
+        if let Some(reason) = classify_poisoned_output(&comment) {
+            tracing::warn!(
+                provider = %provider,
+                failure_reason = %reason,
+                "agent completed with poisoned fallback output"
+            );
+            status = "blocked";
+            failure_reason = reason.to_string();
+        }
+    } else if failure_reason == "timeout" {
+        if let Some(reason) = classify_resume_unsafe_timeout(provider, &comment) {
+            tracing::warn!(
+                provider = %provider,
+                failure_reason = %reason,
+                "agent timeout is unsafe to resume"
+            );
+            failure_reason = reason.to_string();
+        }
+    } else if failure_reason.is_empty() {
+        if let Some(reason) = classify_poisoned_error(&comment) {
+            tracing::warn!(
+                provider = %provider,
+                failure_reason = %reason,
+                "agent error poisoned the resumable session"
+            );
+            failure_reason = reason.to_string();
+        } else if let Some(reason) = classify_resume_unsafe_transport(provider, &comment) {
+            tracing::warn!(
+                provider = %provider,
+                failure_reason = %reason,
+                "agent transport error is unsafe to resume"
+            );
+            failure_reason = reason.to_string();
+            if retired_session_id.is_empty() && !requested_session_id.is_empty() {
+                retired_session_id = requested_session_id.to_string();
+            }
+        } else {
+            failure_reason = cordy_task_failure::classify(&comment).to_string();
+        }
     }
     let comment = if annotate_provider_error {
         annotate_hermes_provider_unconfigured(&comment, provider, !env.hermes_home.is_empty())
@@ -1495,7 +1540,7 @@ fn result_outcome(
             session_rollout_missing,
             retired_session_id: resume_rejected
                 .then(|| requested_session_id.to_string())
-                .unwrap_or_else(|| retired_session_id.to_string()),
+                .unwrap_or(retired_session_id),
             usage,
             ..TaskResult::default()
         },
@@ -2800,6 +2845,80 @@ mod tests {
         );
         assert_eq!(outcome.result.failure_reason, "resume_rejected");
         assert_eq!(outcome.result.retired_session_id, "session-poisoned");
+    }
+
+    #[test]
+    fn poisoned_completion_is_blocked_and_classified() {
+        let outcome = result_outcome(
+            "qwen",
+            ExecutionResult {
+                status: "completed".to_string(),
+                output: "I reached the iteration limit and stopped".to_string(),
+                ..ExecutionResult::default()
+            },
+            &Environment::default(),
+            "",
+            "",
+            false,
+        );
+
+        assert_eq!(outcome.result.status, "blocked");
+        assert_eq!(outcome.result.failure_reason, "iteration_limit");
+    }
+
+    #[test]
+    fn resume_unsafe_timeout_overrides_generic_timeout_reason() {
+        let outcome = result_outcome(
+            "codex",
+            ExecutionResult {
+                status: "timeout".to_string(),
+                error: "codex semantic inactivity timeout".to_string(),
+                ..ExecutionResult::default()
+            },
+            &Environment::default(),
+            "session-stuck",
+            "",
+            false,
+        );
+
+        assert_eq!(outcome.result.failure_reason, "codex_semantic_inactivity");
+    }
+
+    #[test]
+    fn poisoned_transport_classification_retains_requested_session_for_retirement() {
+        let outcome = result_outcome(
+            "codex",
+            ExecutionResult {
+                status: "failed".to_string(),
+                error: "thread/resume failed: token too long".to_string(),
+                ..ExecutionResult::default()
+            },
+            &Environment::default(),
+            "session-overflow",
+            "",
+            false,
+        );
+
+        assert_eq!(outcome.result.failure_reason, "codex_resume_oversized");
+        assert_eq!(outcome.result.retired_session_id, "session-overflow");
+    }
+
+    #[test]
+    fn invalid_request_error_is_classified_before_agent_taxonomy() {
+        let outcome = result_outcome(
+            "claude",
+            ExecutionResult {
+                status: "failed".to_string(),
+                error: "API Error: 400 invalid_request_error".to_string(),
+                ..ExecutionResult::default()
+            },
+            &Environment::default(),
+            "",
+            "",
+            false,
+        );
+
+        assert_eq!(outcome.result.failure_reason, "api_invalid_request");
     }
 
     #[test]
