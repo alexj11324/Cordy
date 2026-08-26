@@ -266,20 +266,22 @@ server: ## Run only the Go server for the current checkout
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
 	cd server && go run ./cmd/server
 
+RUST_CLI_CMD = cd server-rs && CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" cargo run -p cordy-cli --
+
 daemon: ## Restart the local agent daemon using the CLI's stored auth/session
-	@$(MAKE) cordy CORDY_ARGS="daemon restart --profile local"
+	@$(RUST_CLI_CMD) daemon restart --profile local
 
 cli: ## Run the Rust cordy CLI with ARGS or CORDY_ARGS from source
-	@$(MAKE) cordy CORDY_ARGS="$(CORDY_ARGS)"
+	@$(RUST_CLI_CMD) $(CORDY_ARGS)
 
 cordy: ## Run the Rust cordy CLI entrypoint
-	@$(MAKE) rust-cli CORDY_ARGS="$(CORDY_ARGS)"
+	@$(RUST_CLI_CMD) $(CORDY_ARGS)
 
 go-cordy: ## Run the legacy Go CLI entrypoint during the migration
 	cd server && go run -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" ./cmd/cordy $(CORDY_ARGS)
 
 rust-cli: ## Run the migrated Rust CLI slice with ARGS or CORDY_ARGS
-	cd server-rs && CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" cargo run -p cordy-cli -- $(CORDY_ARGS)
+	@$(RUST_CLI_CMD) $(CORDY_ARGS)
 
 build-rust-cli: ## Build the migrated Rust CLI slice in release mode
 	cd server-rs && CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" cargo build --release -p cordy-cli
