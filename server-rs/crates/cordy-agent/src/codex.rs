@@ -49,6 +49,8 @@ const DISCOVERY_CLEANUP_TIMEOUT: Duration = Duration::from_secs(2);
 const TERMINATION_GRACE: Duration = Duration::from_millis(500);
 const KILL_GRACE: Duration = Duration::from_secs(10);
 const MAX_PATCH_BYTES: usize = 64 * 1024;
+const MODEL_CATALOG_REFRESH_FAILURE: &str = "failed to refresh available models";
+const MODEL_CATALOG_REFRESH_RETRY_BACKOFF: Duration = Duration::from_millis(500);
 
 static BLOCKED_ARGS: LazyLock<BTreeMap<&'static str, BlockedArgMode>> =
     LazyLock::new(|| BTreeMap::from([("--listen", BlockedArgMode::WithValue)]));
@@ -1327,13 +1329,22 @@ async fn cleanup_codex(
     stderr_task: JoinHandle<()>,
     event_task: JoinHandle<()>,
     stderr_tail: &SharedDiagnosticBuffer,
-) -> String {
+) -> CleanupResult {
     client.close_stdin().await;
-    let _ = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
+    let confirmed = tree.shutdown(TERMINATION_GRACE, KILL_GRACE).await;
     reader_task.abort();
     event_task.abort();
     let _ = tokio::time::timeout(Duration::from_secs(2), stderr_task).await;
-    stderr_tail.tail()
+    CleanupResult {
+        stderr: stderr_tail.tail(),
+        confirmed,
+    }
+}
+
+#[derive(Debug)]
+struct CleanupResult {
+    stderr: String,
+    confirmed: bool,
 }
 
 #[derive(Clone)]
@@ -1342,6 +1353,7 @@ struct CodexObserver {
     messages: mpsc::Sender<Message>,
     activity: mpsc::Sender<String>,
     turn_done: mpsc::Sender<bool>,
+    held_running_status: Arc<Mutex<Vec<Message>>>,
 }
 
 #[derive(Debug, Default)]
@@ -1392,6 +1404,14 @@ impl CodexObserver {
             messages,
             activity,
             turn_done,
+            held_running_status: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    async fn flush_held_running_status(&self) {
+        let held = std::mem::take(&mut *self.held_running_status.lock().await);
+        for message in held {
+            let _ = self.messages.try_send(message);
         }
     }
 
@@ -1855,7 +1875,14 @@ impl CodexObserver {
     }
 
     async fn emit(&self, message: Message, activity: &str) {
-        let _ = self.messages.try_send(message);
+        let is_running_status =
+            message.message_type == MessageType::Status && message.status == "running";
+        if is_running_status {
+            self.held_running_status.lock().await.push(message);
+        } else {
+            self.flush_held_running_status().await;
+            let _ = self.messages.try_send(message);
+        }
         if !activity.is_empty() {
             let _ = self.activity.try_send(activity.to_string());
         }
@@ -1951,7 +1978,7 @@ async fn run_codex(
         )
         .await;
     if let Err(error) = initialization {
-        let stderr = cleanup_codex(
+        let cleanup = cleanup_codex(
             &mut tree,
             &client,
             reader_task,
@@ -1960,9 +1987,14 @@ async fn run_codex(
             &stderr_tail,
         )
         .await;
+        let stderr = cleanup.stderr;
         let task_deadline_exhausted =
             options.timeout > Duration::ZERO && started.elapsed() >= options.timeout;
-        if attempt == 1 && !task_deadline_exhausted && is_initialize_retryable(&error) {
+        if attempt == 1
+            && cleanup.confirmed
+            && !task_deadline_exhausted
+            && is_initialize_retryable(&error)
+        {
             tokio::select! {
                 _ = tokio::time::sleep(Duration::from_millis(75)) => {}
                 _ = options.cancellation.cancelled() => {
@@ -2079,7 +2111,7 @@ async fn run_codex(
                 return;
             }
             Err(error) if is_transport_error(&error) => {
-                let stderr = cleanup_codex(
+                let cleanup = cleanup_codex(
                     &mut tree,
                     &client,
                     reader_task,
@@ -2088,6 +2120,7 @@ async fn run_codex(
                     &stderr_tail,
                 )
                 .await;
+                let stderr = cleanup.stderr;
                 let mut message = format!("codex thread/resume failed: {error}");
                 if !stderr.is_empty() {
                     message = with_stderr(&message, "codex", &sanitize_diagnostic(&stderr));
@@ -2133,7 +2166,7 @@ async fn run_codex(
         {
             Ok(value) => thread_id = extract_thread_id(&value),
             Err(error) => {
-                let stderr = cleanup_codex(
+                let cleanup = cleanup_codex(
                     &mut tree,
                     &client,
                     reader_task,
@@ -2142,6 +2175,7 @@ async fn run_codex(
                     &stderr_tail,
                 )
                 .await;
+                let stderr = cleanup.stderr;
                 let mut message = format!("codex thread/start failed: {error}");
                 if !stderr.is_empty() {
                     message = with_stderr(&message, "codex", &sanitize_diagnostic(&stderr));
@@ -2158,7 +2192,7 @@ async fn run_codex(
     }
 
     if thread_id.is_empty() {
-        let stderr = cleanup_codex(
+        let cleanup = cleanup_codex(
             &mut tree,
             &client,
             reader_task,
@@ -2167,10 +2201,12 @@ async fn run_codex(
             &stderr_tail,
         )
         .await;
+        let stderr = cleanup.stderr;
         let mut message = "codex thread/start returned no thread ID".to_string();
         if !stderr.is_empty() {
             message = with_stderr(&message, "codex", &sanitize_diagnostic(&stderr));
         }
+        observer.flush_held_running_status().await;
         let _ = result_tx.send(ExecutionResult {
             status: "failed".to_string(),
             error: message,
@@ -2196,7 +2232,7 @@ async fn run_codex(
     let input = if options.resume_expected && !resumed {
         format!("{}{}", options.resume_continuity_notice, prompt)
     } else {
-        prompt
+        prompt.clone()
     };
     let mut turn_params = serde_json::json!({
         "threadId": thread_id,
@@ -2213,7 +2249,7 @@ async fn run_codex(
         )
         .await
     {
-        let stderr = cleanup_codex(
+        let cleanup = cleanup_codex(
             &mut tree,
             &client,
             reader_task,
@@ -2222,10 +2258,12 @@ async fn run_codex(
             &stderr_tail,
         )
         .await;
+        let stderr = cleanup.stderr;
         let mut message = format!("codex turn/start failed: {error}");
         if !stderr.is_empty() {
             message = with_stderr(&message, "codex", &sanitize_diagnostic(&stderr));
         }
+        observer.flush_held_running_status().await;
         let _ = result_tx.send(ExecutionResult {
             status: "failed".to_string(),
             error: message,
@@ -2336,7 +2374,7 @@ async fn run_codex(
     if status == "failed" && error.is_empty() {
         error = snapshot.turn_error.clone();
     }
-    let stderr = cleanup_codex(
+    let cleanup = cleanup_codex(
         &mut tree,
         &client,
         reader_task,
@@ -2345,8 +2383,91 @@ async fn run_codex(
         &stderr_tail,
     )
     .await;
+    let cleanup_confirmed = cleanup.confirmed;
+    let stderr = cleanup.stderr;
     if status != "completed" && !stderr.is_empty() {
         error = with_stderr(&error, "codex", &sanitize_diagnostic(&stderr));
+    }
+
+    // Codex may reach turn/started and then stall while refreshing its model
+    // catalog. The Go backend treats this as a startup-only retry: no tool or
+    // user-visible content has progressed, the process tree is confirmed gone,
+    // and a fresh attempt avoids replaying a possibly submitted turn. Keep the
+    // overall task deadline and drop a prior resume pointer so the new thread
+    // receives the caller's continuity notice instead of duplicating input.
+    if is_startup_refresh_retry_safe(
+        &status,
+        &error,
+        first_progress,
+        &stderr,
+        cleanup_confirmed,
+        &options,
+        started,
+        attempt,
+    ) {
+        let retry_cancelled = tokio::select! {
+            _ = tokio::time::sleep(MODEL_CATALOG_REFRESH_RETRY_BACKOFF) => false,
+            _ = options.cancellation.cancelled() => {
+                observer.flush_held_running_status().await;
+                true
+            }
+        };
+        if !retry_cancelled && !options.cancellation.is_cancelled() {
+            let mut retry_options = options.clone();
+            if retry_options.timeout > Duration::ZERO {
+                retry_options.timeout = retry_options.timeout.saturating_sub(started.elapsed());
+            }
+            // The first attempt remains the terminal result if the backoff itself
+            // consumed the task deadline. Never turn an exhausted timeout into the
+            // zero-means-unbounded ExecOptions value on the retry.
+            if retry_options.timeout > Duration::ZERO || options.timeout == Duration::ZERO {
+                let (retry_event_tx, retry_event_rx) = mpsc::channel(256);
+                let (retry_activity_tx, retry_activity_rx) = mpsc::channel(ACTIVITY_BUFFER);
+                let (retry_turn_done_tx, retry_turn_done_rx) = mpsc::channel(8);
+                if !retry_options.resume_session_id.is_empty() {
+                    retry_options.resume_session_id.clear();
+                    retry_options.resume_expected = true;
+                }
+                match spawn_codex_process(&config, &retry_options, retry_event_tx).await {
+                    Ok(process) => {
+                        let retry_observer = CodexObserver::new(
+                            observer.messages.clone(),
+                            retry_activity_tx,
+                            retry_turn_done_tx,
+                        );
+                        Box::pin(run_codex(
+                            process.tree,
+                            process.client,
+                            retry_observer,
+                            process.stdout,
+                            process.stderr,
+                            retry_event_rx,
+                            retry_activity_rx,
+                            retry_turn_done_rx,
+                            result_tx,
+                            prompt,
+                            retry_options,
+                            config,
+                            started,
+                            wall_started,
+                            attempt + 1,
+                        ))
+                        .await;
+                        return;
+                    }
+                    Err(spawn_error) => {
+                        observer.flush_held_running_status().await;
+                        let _ = result_tx.send(ExecutionResult {
+                            status: "failed".to_string(),
+                            error: format!("codex retry spawn failed: {spawn_error}"),
+                            duration_ms: started.elapsed().as_millis() as i64,
+                            ..ExecutionResult::default()
+                        });
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     let mut usage_tokens = snapshot.usage;
@@ -2390,6 +2511,7 @@ async fn run_codex(
             usage_tokens,
         );
     }
+    observer.flush_held_running_status().await;
     let _ = result_tx.send(ExecutionResult {
         status,
         output,
@@ -2491,6 +2613,31 @@ fn is_initialize_retryable(error: &AgentError) -> bool {
     text.contains("initialize")
         && text.contains("handshake timeout")
         && !text.contains("execution cancelled")
+}
+
+fn is_startup_refresh_retry_safe(
+    status: &str,
+    error: &str,
+    first_progress: bool,
+    stderr: &str,
+    cleanup_confirmed: bool,
+    options: &ExecOptions,
+    started: Instant,
+    attempt: u8,
+) -> bool {
+    if attempt != 1
+        || status != "timeout"
+        || first_progress
+        || !error.contains("no progress timeout")
+        || !stderr
+            .to_ascii_lowercase()
+            .contains(MODEL_CATALOG_REFRESH_FAILURE)
+        || !cleanup_confirmed
+    {
+        return false;
+    }
+    options.timeout == Duration::ZERO
+        || options.timeout.saturating_sub(started.elapsed()) > MODEL_CATALOG_REFRESH_RETRY_BACKOFF
 }
 
 fn string_field(object: &Map<String, Value>, key: &str) -> String {
