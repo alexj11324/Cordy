@@ -9,7 +9,7 @@ missing=()
 command -v node >/dev/null 2>&1 || missing+=("node")
 command -v pnpm >/dev/null 2>&1 || missing+=("pnpm")
 command -v go >/dev/null 2>&1 || missing+=("go")
-command -v cargo >/dev/null 2>&1 || missing+=("cargo")
+./scripts/run-rust-server.sh --version >/dev/null 2>&1 || missing+=("cargo")
 command -v docker >/dev/null 2>&1 || missing+=("docker")
 
 if [ ${#missing[@]} -gt 0 ]; then
@@ -64,6 +64,10 @@ echo "  Frontend: http://localhost:${FRONTEND_PORT:-3000}"
 echo ""
 
 trap 'kill 0' EXIT
-(cd server-rs && cargo run -p cordy-server) &
+CORDY_BUILD_VERSION="$(git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)" \
+CORDY_BUILD_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+CORDY_BUILD_DATE="$(git show -s --format=%cI HEAD 2>/dev/null || echo unknown)" \
+CORDY_GIT_COMMIT="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)" \
+./scripts/run-rust-server.sh run -p cordy-server &
 pnpm dev:web &
 wait

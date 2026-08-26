@@ -43,7 +43,7 @@ endef
 # The Rust HTTP server is the default source entrypoint. Keep the build commit
 # in the process environment so metrics retain the same release metadata as
 # the legacy Go command during the staged migration.
-RUST_SERVER_CMD = cd server-rs && CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" CORDY_GIT_COMMIT="$(COMMIT)" CORDY_SHUTDOWN_HOLD_DURATION="$(CORDY_SHUTDOWN_HOLD_DURATION)" cargo run -p cordy-server
+RUST_SERVER_CMD = CORDY_BUILD_VERSION="$(VERSION)" CORDY_BUILD_COMMIT="$(COMMIT)" CORDY_BUILD_DATE="$(RUST_BUILD_DATE)" CORDY_BUILD_GO_VERSION="$(GO_VERSION)" CORDY_GIT_COMMIT="$(COMMIT)" CORDY_SHUTDOWN_HOLD_DURATION="$(CORDY_SHUTDOWN_HOLD_DURATION)" ./scripts/run-rust-server.sh run -p cordy-server
 
 # Self-hosting requires the Docker Compose CLI plugin (`docker compose`).
 # The self-host compose files use compose-spec syntax (top-level `name:`, no
@@ -297,8 +297,8 @@ build-rust-cli: ## Build the migrated Rust CLI slice in release mode
 VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
-GO_VERSION ?= $(shell go env GOVERSION 2>/dev/null || echo unknown)
 RUST_BUILD_DATE ?= $(shell git show -s --format=%cI HEAD 2>/dev/null || echo unknown)
+GO_VERSION ?= unknown
 # Windows will not execute an extensionless binary, so a source build there has
 # to name its outputs the way the target platform expects — otherwise the CLI
 # builds fine and then fails to re-exec itself as a daemon (#7255). GOOS reaches
@@ -311,6 +311,7 @@ RUST_BUILD_DATE ?= $(shell git show -s --format=%cI HEAD 2>/dev/null || echo unk
 # recursive one — which prints `go: Command not found` on frontend-only
 # checkouts with no Go toolchain installed.
 build: EXE = $(if $(filter windows,$(or $(GOOS),$(shell go env GOOS))),.exe,)
+build: GO_VERSION = $(shell go env GOVERSION 2>/dev/null || echo unknown)
 build: ## Build the server, CLI, and migrate binaries into server/bin
 	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT)" -o bin/server$(EXE) ./cmd/server
 	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o bin/cordy$(EXE) ./cmd/cordy

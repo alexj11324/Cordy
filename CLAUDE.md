@@ -84,7 +84,7 @@ make remove-worktree WORKTREE=../path  # drop a linked worktree DB, then remove 
 make server           # run Rust server only
 make go-server        # run legacy Go server only
 make daemon           # run local daemon
-make test             # local verification (Rust-first)
+make test             # Go tests (Rust checks are run by make check)
 make sqlc             # regenerate sqlc code after SQL changes
 pnpm install
 pnpm dev:web

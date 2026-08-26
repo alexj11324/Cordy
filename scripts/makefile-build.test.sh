@@ -45,7 +45,7 @@ grep -Fq -- './scripts/run-rust-cli.sh issue create --title "hello world"' <<<"$
 # but never make it the default for local start/check workflows.
 for target in server rust-server; do
   rust_server_output="$(make -n "$target")"
-  grep -Fq -- "cargo run -p cordy-server" <<<"$rust_server_output" ||
+  grep -Fq -- "./scripts/run-rust-server.sh run -p cordy-server" <<<"$rust_server_output" ||
     fail "$target: expected the Rust server entrypoint, got:\n$rust_server_output"
   if grep -Fq -- "cd server && go run ./cmd/server" <<<"$rust_server_output"; then
     fail "$target: unexpectedly resolved to the legacy Go server:\n$rust_server_output"

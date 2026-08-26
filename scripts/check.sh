@@ -106,7 +106,7 @@ bash scripts/test-go.sh || { EXIT_CODE=1; exit 1; }
 # --------------------------------------------------------------------------
 echo ""
 echo "==> [4/6] Building Rust server..."
-(cd server-rs && cargo build --locked -p cordy-server) || { EXIT_CODE=1; exit 1; }
+./scripts/run-rust-server.sh build --locked -p cordy-server || { EXIT_CODE=1; exit 1; }
 
 # --------------------------------------------------------------------------
 # Step 5: Start services for E2E (only if not already running)
@@ -118,7 +118,7 @@ if curl -sf "http://localhost:${PORT}/health" > /dev/null 2>&1; then
   echo "    Backend already running on :$PORT"
 else
   echo "    Starting backend (Rust)..."
-  (cd server-rs && cargo run -p cordy-server) > /tmp/cordy-check-backend.log 2>&1 &
+  ./scripts/run-rust-server.sh run -p cordy-server > /tmp/cordy-check-backend.log 2>&1 &
   BACKEND_PID=$!
   STARTED_BACKEND=true
   wait_for_port "$PORT" "Backend" 90 "/health"

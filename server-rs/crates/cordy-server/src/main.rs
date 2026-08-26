@@ -831,7 +831,7 @@ fn shutdown_hold_duration() -> Duration {
     }
 }
 
-async fn shutdown_signal() {
+async fn wait_for_shutdown_signal() {
     let ctrl_c = async {
         if let Err(error) = tokio::signal::ctrl_c().await {
             tracing::error!(%error, "failed to install Ctrl-C handler");
@@ -854,10 +854,21 @@ async fn shutdown_signal() {
         () = ctrl_c => {},
         () = terminate => {},
     }
+}
+
+async fn shutdown_signal() {
+    wait_for_shutdown_signal().await;
     let hold = shutdown_hold_duration();
     if !hold.is_zero() {
         tracing::info!(?hold, "holding before shutdown");
-        tokio::time::sleep(hold).await;
+        tokio::select! {
+            () = tokio::time::sleep(hold) => {
+                tracing::info!(?hold, "shutdown hold complete");
+            }
+            () = wait_for_shutdown_signal() => {
+                tracing::info!(?hold, "shutdown hold interrupted by a second signal");
+            }
+        }
     }
     tracing::info!("shutdown signal received; draining HTTP server");
 }
@@ -1047,6 +1058,22 @@ mod tests {
 
         cfg.auth.jwt_secret = Some("a-long-random-production-secret".into());
         assert!(validate_auth_config(&cfg).is_ok());
+    }
+
+    #[test]
+    fn shutdown_hold_duration_matches_go_duration_syntax() {
+        assert_eq!(parse_shutdown_hold_duration(""), Some(Duration::ZERO));
+        assert_eq!(parse_shutdown_hold_duration("0"), Some(Duration::ZERO));
+        assert_eq!(
+            parse_shutdown_hold_duration("1m250ms"),
+            Some(Duration::from_millis(60_250))
+        );
+        assert_eq!(
+            parse_shutdown_hold_duration("500us"),
+            Some(Duration::from_micros(500))
+        );
+        assert_eq!(parse_shutdown_hold_duration("-1s"), None);
+        assert_eq!(parse_shutdown_hold_duration("1day"), None);
     }
 
     #[tokio::test]
