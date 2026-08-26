@@ -633,15 +633,11 @@ fn resolve_skills_dir(
     Ok(skills_dir)
 }
 
-// S9-integration: pkg/agent.BuiltinRuntimeByID descriptor registry lands with
-// the daemon runtime-probe port; until then only the SkillsDir projection is
-// needed here. Extend this map when new built-in identities (e.g. more pi-
-// family forks) are ported.
+// `pkg/agent.BuiltinRuntimeByID` is the canonical descriptor registry in Rust
+// too; keep the execenv projection derived from it so new runtime identities
+// inherit their native skills directory without another daemon-side map.
 fn builtin_runtime_skills_dir(provider: &str) -> Option<&'static str> {
-    match provider {
-        "omp" => Some(".omp/skills"),
-        _ => None,
-    }
+    cordy_agent::builtin_runtime(provider).map(|runtime| runtime.skills_dir)
 }
 
 /// Returns the provider-native skills parent directory under work_dir WITHOUT

@@ -1,7 +1,9 @@
 #![allow(dead_code)] // S9-integration: consumed by daemon.go core wiring (S8)
 //! Port of `server/internal/daemon/agents_probe.go` — discovery of installed
 //! built-in agent CLIs (PATH lookup + login-shell fallback + Codex Desktop
-//! app-bundle probe + DSH profile probe).
+//! app-bundle probe + DSH profile probe). Built-in runtime identities are
+//! sourced from `cordy_agent::registry`, the canonical Rust counterpart of
+//! `pkg/agent.BuiltinRuntime`.
 //!
 //! Symbol map:
 //! - `probeAgentCLIs` → [`probe_agent_clis`]
@@ -83,31 +85,10 @@ pub(crate) fn default_agent_command_names() -> Vec<&'static str> {
 
 /// `agent.BuiltinRuntimes` default commands (pkg/agent/builtin_runtimes.go).
 pub(crate) fn builtin_runtime_commands() -> Vec<&'static str> {
-    vec!["omp"]
-}
-
-/// Built-in runtime identity descriptors the daemon probes independently
-/// (pkg/agent/builtin_runtimes.go). Adding a new fork is an entry here.
-pub(crate) struct BuiltinRuntimeDesc {
-    pub id: &'static str,
-    /// Protocol-family provider whose backend and native config contract this
-    /// runtime identity inherits.
-    pub protocol_family: &'static str,
-    pub env_prefix: &'static str,
-    pub default_command: &'static str,
-    pub display_name: &'static str,
-}
-
-pub(crate) const BUILTIN_RUNTIMES: &[BuiltinRuntimeDesc] = &[BuiltinRuntimeDesc {
-    id: "omp",
-    protocol_family: "pi",
-    env_prefix: "CORDY_OMP",
-    default_command: "omp",
-    display_name: "Oh-My-Pi",
-}];
-
-pub(crate) fn builtin_runtime_by_id(id: &str) -> Option<&'static BuiltinRuntimeDesc> {
-    BUILTIN_RUNTIMES.iter().find(|d| d.id == id)
+    cordy_agent::registry::BUILTIN_RUNTIMES
+        .iter()
+        .map(|runtime| runtime.default_command)
+        .collect()
 }
 
 /// `codexDesktopAppBundlePaths`: candidate macOS app-bundle locations for the
@@ -263,7 +244,7 @@ pub(crate) fn probe_agent_clis() -> BTreeMap<String, AgentEntry> {
     add("pi", probe("CORDY_PI_PATH", "pi", "CORDY_PI_MODEL"));
     // Built-in runtime identities are derived from the descriptor registry so
     // adding a new fork is a descriptor entry, not a probe edit.
-    for desc in BUILTIN_RUNTIMES {
+    for desc in cordy_agent::registry::BUILTIN_RUNTIMES {
         let path_env = format!("{}_PATH", desc.env_prefix);
         let model_env = format!("{}_MODEL", desc.env_prefix);
         add(desc.id, probe(&path_env, desc.default_command, &model_env));
@@ -389,8 +370,8 @@ mod tests {
             assert!(names.contains(&expected), "missing {expected}");
         }
         assert_eq!(builtin_runtime_commands(), vec!["omp"]);
-        assert!(builtin_runtime_by_id("omp").is_some());
-        assert!(builtin_runtime_by_id("nope").is_none());
+        assert!(cordy_agent::builtin_runtime("omp").is_some());
+        assert!(cordy_agent::builtin_runtime("nope").is_none());
     }
 
     #[test]

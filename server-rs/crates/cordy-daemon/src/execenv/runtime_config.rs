@@ -44,7 +44,7 @@ fn write_new_or_existing(path: &Path, bytes: &[u8], was_missing: bool) -> anyhow
 /// Return the provider-native config path, or `None` when the provider has no
 /// file target and must receive the brief through its inline prompt path.
 pub(crate) fn runtime_config_path(work_dir: &str, provider: &str) -> Option<String> {
-    let family = crate::agents_probe::builtin_runtime_by_id(provider)
+    let family = cordy_agent::builtin_runtime(provider)
         .map(|runtime| runtime.protocol_family)
         .unwrap_or(provider);
     let filename = match family {
