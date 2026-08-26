@@ -1563,6 +1563,7 @@ struct CodexObserver {
     messages: mpsc::Sender<Message>,
     activity: mpsc::Sender<String>,
     turn_done: mpsc::Sender<bool>,
+    held_running_status: Arc<Mutex<Vec<Message>>>,
 }
 
 #[derive(Debug, Default)]
@@ -1612,6 +1613,14 @@ impl CodexObserver {
             messages,
             activity,
             turn_done,
+            held_running_status: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    async fn flush_held_running_status(&self) {
+        let held = std::mem::take(&mut *self.held_running_status.lock().await);
+        for message in held {
+            let _ = self.messages.try_send(message);
         }
     }
 
@@ -2107,7 +2116,14 @@ impl CodexObserver {
     }
 
     async fn emit(&self, message: Message, activity: &str) {
-        let _ = self.messages.try_send(message);
+        let is_running_status =
+            message.message_type == MessageType::Status && message.status == "running";
+        if is_running_status {
+            self.held_running_status.lock().await.push(message);
+        } else {
+            self.flush_held_running_status().await;
+            let _ = self.messages.try_send(message);
+        }
         if !activity.is_empty() {
             let _ = self.activity.try_send(activity.to_string());
         }
@@ -2504,6 +2520,7 @@ async fn run_codex(
             )
             .await;
             let message = format!("codex turn/start failed: {error}");
+            observer.flush_held_running_status().await;
             let _ = result_tx.send(ExecutionResult {
                 status: "failed".to_string(),
                 error: message,
@@ -2656,6 +2673,7 @@ async fn run_codex(
         tokio::select! {
             _ = tokio::time::sleep(Duration::from_millis(500)) => {}
             _ = options.cancellation.cancelled() => {
+                observer.flush_held_running_status().await;
                 let _ = result_tx.send(codex_aborted_result(started));
                 return;
             }
@@ -2666,6 +2684,7 @@ async fn run_codex(
                     std::future::pending::<()>().await;
                 }
             } => {
+                observer.flush_held_running_status().await;
                 let _ = result_tx.send(codex_timeout_result(options.timeout, started));
                 return;
             }
@@ -2676,6 +2695,7 @@ async fn run_codex(
         let spawn_result = tokio::select! {
             result = spawn_codex_process(&config, &retry_options, retry_event_tx) => result,
             _ = options.cancellation.cancelled() => {
+                observer.flush_held_running_status().await;
                 let _ = result_tx.send(codex_aborted_result(started));
                 return;
             }
@@ -2684,6 +2704,7 @@ async fn run_codex(
             Ok(process) => {
                 if options.cancellation.is_cancelled() {
                     stop_spawned_codex_process(process).await;
+                    observer.flush_held_running_status().await;
                     let _ = result_tx.send(codex_aborted_result(started));
                     return;
                 }
@@ -2691,6 +2712,7 @@ async fn run_codex(
                     .is_some_and(|deadline| deadline <= tokio::time::Instant::now())
                 {
                     stop_spawned_codex_process(process).await;
+                    observer.flush_held_running_status().await;
                     let _ = result_tx.send(codex_timeout_result(options.timeout, started));
                     return;
                 }
@@ -2772,6 +2794,7 @@ async fn run_codex(
             usage_tokens,
         );
     }
+    observer.flush_held_running_status().await;
     let _ = result_tx.send(ExecutionResult {
         status,
         output,
@@ -4314,6 +4337,126 @@ done
         assert_eq!(result.output, "retried after catalog refresh");
         assert_eq!(result.session_id, "thread-refresh");
         assert!(marker.exists());
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn backend_retries_model_refresh_once_without_leaking_resume_pin() {
+        let directory = tempdir().unwrap_or_else(|error| panic!("temp dir: {error}"));
+        let attempt_path = directory.path().join("attempt");
+        let capture_path = directory.path().join("requests");
+        let script = r#"
+count=0
+if [ -f "$CODEX_REFRESH_ATTEMPT" ]; then count=$(cat "$CODEX_REFRESH_ATTEMPT"); fi
+count=$((count + 1))
+printf '%s\n' "$count" > "$CODEX_REFRESH_ATTEMPT"
+while IFS= read -r line; do
+  printf '%s\n' "$line" >> "$CODEX_REFRESH_CAPTURE"
+  case "$count:$line" in
+    1:*'"method":"initialize"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{}}'
+      ;;
+    1:*'"method":"thread/resume"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-old"}}}'
+      ;;
+    1:*'"method":"turn/start"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-old","turn":{"id":"turn-old"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":{}}'
+      printf '%s\n' 'ERROR codex_models_manager::manager: failed to refresh available models: stream disconnected before completion' >&2
+      while IFS= read -r ignored; do :; done
+      ;;
+    2:*'"method":"initialize"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{}}'
+      ;;
+    2:*'"method":"thread/resume"'*)
+      printf '%s\n' 'unexpected resume on refresh retry' >&2
+      exit 12
+      ;;
+    2:*'"method":"thread/start"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","id":2,"result":{"thread":{"id":"thread-new"}}}'
+      ;;
+    2:*'"method":"turn/start"'*)
+      printf '%s\n' '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thread-new","turn":{"id":"turn-new"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thread-new","item":{"type":"agentMessage","phase":"final_answer","text":"retried"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","method":"turn/completed","params":{"threadId":"thread-new","turn":{"id":"turn-new","status":"completed"}}}'
+      printf '%s\n' '{"jsonrpc":"2.0","id":3,"result":{}}'
+      ;;
+    3:*)
+      printf '%s\n' 'unexpected third Codex attempt' >&2
+      exit 13
+      ;;
+  esac
+done
+"#;
+        let backend = CodexBackend::new(CodexConfig {
+            command: RuntimeCommand::new("sh", vec!["-c".to_string(), script.to_string()]),
+            env: BTreeMap::from([
+                (
+                    "CODEX_REFRESH_ATTEMPT".to_string(),
+                    attempt_path.to_string_lossy().to_string(),
+                ),
+                (
+                    "CODEX_REFRESH_CAPTURE".to_string(),
+                    capture_path.to_string_lossy().to_string(),
+                ),
+            ]),
+            ..CodexConfig::default()
+        });
+        let options = ExecOptions {
+            handshake_timeout: Duration::from_secs(1),
+            timeout: Duration::from_secs(3),
+            semantic_inactivity_timeout: Duration::from_secs(2),
+            first_turn_no_progress_timeout: Duration::from_millis(100),
+            resume_session_id: "thread-old".to_string(),
+            resume_expected: true,
+            resume_continuity_notice: "CONTINUITY\n".to_string(),
+            ..ExecOptions::default()
+        };
+        let mut session = backend
+            .execute("hello", options)
+            .await
+            .unwrap_or_else(|error| panic!("start refresh retry fake Codex: {error}"));
+        let mut messages = Vec::new();
+        while let Some(message) = session.messages.recv().await {
+            messages.push(message);
+        }
+        let result = session
+            .result
+            .await
+            .unwrap_or_else(|error| panic!("refresh retry result: {error}"));
+        assert_eq!(result.status, "completed");
+        assert_eq!(result.output, "retried");
+        assert_eq!(result.session_id, "thread-new");
+        assert_eq!(
+            std::fs::read_to_string(&attempt_path)
+                .unwrap_or_else(|error| panic!("read attempt count: {error}"))
+                .trim(),
+            "2"
+        );
+        let requests = std::fs::read_to_string(&capture_path)
+            .unwrap_or_else(|error| panic!("read fake requests: {error}"));
+        assert_eq!(requests.matches(r#""method":"thread/resume""#).count(), 1);
+        assert_eq!(requests.matches(r#""method":"thread/start""#).count(), 1);
+        assert!(requests.contains(r#""text":"CONTINUITY\nhello""#));
+        assert!(!messages.iter().any(|message| {
+            message.message_type == MessageType::Status
+                && message.status == "running"
+                && message.session_id == "thread-old"
+        }));
+        assert_eq!(
+            messages
+                .iter()
+                .filter(|message| {
+                    message.message_type == MessageType::Status && message.status == "running"
+                })
+                .count(),
+            1
+        );
+        assert!(messages.iter().any(|message| {
+            message.message_type == MessageType::Status
+                && message.status == "running"
+                && message.session_id == "thread-new"
+        }));
     }
 
     #[test]
