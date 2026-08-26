@@ -9,6 +9,7 @@ use crate::codebuddy::{CodebuddyBackend, CodebuddyConfig};
 use crate::command::RuntimeCommand;
 use crate::contract::{AgentError, Backend};
 use crate::copilot::{CopilotBackend, CopilotConfig};
+use crate::cursor::{CursorBackend, CursorConfig};
 use crate::deveco::{DevecoBackend, DevecoConfig};
 use crate::dsh::{DshBackend, DshConfig};
 use crate::openclaw::{OpenclawBackend, OpenclawConfig};
@@ -63,6 +64,10 @@ pub fn build_backend(
             env: config.env,
         }))),
         "copilot" => Ok(Arc::new(CopilotBackend::new(CopilotConfig {
+            command: config.command,
+            env: config.env,
+        }))),
+        "cursor" => Ok(Arc::new(CursorBackend::new(CursorConfig {
             command: config.command,
             env: config.env,
         }))),
@@ -545,6 +550,9 @@ mod tests {
         assert!(claude.is_ok());
         let copilot = build_backend("copilot", BackendConfig::default());
         assert!(copilot.is_ok());
+
+        let cursor = build_backend("cursor", BackendConfig::default());
+        assert!(cursor.is_ok());
 
         let qwen = build_backend("qwen", BackendConfig::default());
         assert!(qwen.is_ok());
