@@ -13,15 +13,13 @@ RUN cd server && go mod download
 COPY server/ ./server/
 RUN go version | awk '{print $3}' > /tmp/go-version
 
-# Build binaries that still have Go-only consumers during the staged
-# migration. Keep the old CLI under an explicit name while the default
-# `cordy` binary is supplied by the Rust stage below.
+# Build the Go CLI only as an explicit rollback binary during the staged
+# migration. The default `cordy` binary and backfill aliases are supplied by
+# the Rust stage below.
 ARG VERSION=dev
 ARG COMMIT=unknown
 ARG DATE=unknown
 RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" -o bin/go-cordy ./cmd/cordy
-RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/backfill_task_usage_hourly ./cmd/backfill_task_usage_hourly
-RUN cd server && CGO_ENABLED=0 go build -ldflags "-s -w" -o bin/backfill_codex_usage_cache ./cmd/backfill_codex_usage_cache
 
 # --- Rust HTTP server, migration runner, and CLI ---
 FROM rust:1-alpine AS rust-server-builder
@@ -71,12 +69,13 @@ COPY --from=rust-server-builder /src/server-rs/target/release/cordy-server serve
 COPY --from=rust-server-builder /src/server-rs/target/release/cordy-migrate migrate
 COPY --from=rust-server-builder /src/server-rs/target/release/cordy cordy
 COPY --from=builder /src/server/bin/go-cordy .
-COPY --from=builder /src/server/bin/backfill_task_usage_hourly .
-COPY --from=builder /src/server/bin/backfill_codex_usage_cache .
 COPY server/migrations/ ./migrations/
 COPY LICENSE NOTICE ./
 COPY docker/entrypoint.sh .
 RUN sed -i 's/\r$//' entrypoint.sh && chmod +x entrypoint.sh
+RUN ln -s migrate backfill_task_usage_hourly \
+    && ln -s migrate backfill_issue_last_activity \
+    && ln -s migrate backfill_codex_usage_cache
 
 EXPOSE 8080
 

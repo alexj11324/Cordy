@@ -11,7 +11,7 @@ mod hooks;
 mod index_maps;
 mod runner;
 
-use std::{env, time::Duration};
+use std::{env, ffi::OsStr, path::Path, time::Duration};
 
 use chrono::{DateTime, Utc};
 use sqlx::postgres::PgPoolOptions;
@@ -31,8 +31,12 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    let args: Vec<String> = env::args().skip(1).collect();
-    let command = parse_command(&args)?;
+    let mut raw_args = env::args_os();
+    let program = raw_args.next();
+    let args: Vec<String> = raw_args
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
+    let command = parse_invocation(program.as_deref(), &args)?;
 
     if let Command::BackfillTaskUsageHourly(options) = &command {
         return run_operator_command(BackfillCommand::TaskUsage(options.clone())).await;
@@ -109,6 +113,31 @@ fn parse_command(args: &[String]) -> anyhow::Result<Command> {
             "usage: cordy-migrate up|down|status | cordy-migrate backfill task-usage-hourly [flags] | cordy-migrate backfill issue-last-activity [flags] | cordy-migrate backfill codex-usage-cache [flags]"
         ),
     }
+}
+
+/// Preserve the standalone Go backfill command names while routing them to
+/// the Rust migration runner. The self-host image installs these names as
+/// symlinks to `migrate`, and operators may also invoke the same aliases from
+/// a locally built binary.
+fn parse_invocation(program: Option<&OsStr>, args: &[String]) -> anyhow::Result<Command> {
+    let program_name = program
+        .and_then(|program| Path::new(program).file_stem())
+        .and_then(OsStr::to_str)
+        .unwrap_or("cordy-migrate");
+    let Some([command, subcommand]) = (match program_name {
+        "backfill_task_usage_hourly" => Some(["backfill", "task-usage-hourly"]),
+        "backfill_issue_last_activity" => Some(["backfill", "issue-last-activity"]),
+        "backfill_codex_usage_cache" => Some(["backfill", "codex-usage-cache"]),
+        _ => None,
+    }) else {
+        return parse_command(args);
+    };
+
+    let mut translated = Vec::with_capacity(args.len() + 2);
+    translated.push(command.to_string());
+    translated.push(subcommand.to_string());
+    translated.extend(args.iter().cloned());
+    parse_command(&translated)
 }
 
 fn parse_operator_options(args: &[String]) -> anyhow::Result<OperatorOptions> {
@@ -555,6 +584,38 @@ mod tests {
         assert_eq!(options.sleep_between_batches, Duration::from_millis(100));
         assert_eq!(options.max_batches, 0);
         assert_eq!(options.max_stalled_passes, 10);
+    }
+
+    #[test]
+    fn legacy_backfill_program_names_route_to_rust_commands() {
+        let task_args = vec!["--dry-run".to_string()];
+        let Command::BackfillTaskUsageHourly(options) = parse_invocation(
+            Some(OsStr::new("/app/backfill_task_usage_hourly")),
+            &task_args,
+        )
+        .expect("task alias should parse") else {
+            panic!("expected task usage backfill command");
+        };
+        assert!(options.dry_run);
+
+        let issue_args = vec!["--max-batches".to_string(), "1".to_string()];
+        let Command::BackfillIssueLastActivity(options) = parse_invocation(
+            Some(OsStr::new("backfill_issue_last_activity")),
+            &issue_args,
+        )
+        .expect("issue alias should parse") else {
+            panic!("expected issue activity backfill command");
+        };
+        assert_eq!(options.max_batches, 1);
+
+        let codex_args = vec!["--cutoff".to_string(), "2000-01-01T00:00:00Z".to_string()];
+        let Command::BackfillCodexUsage(_) = parse_invocation(
+            Some(OsStr::new("backfill_codex_usage_cache.exe")),
+            &codex_args,
+        )
+        .expect("Codex alias should parse") else {
+            panic!("expected Codex usage backfill command");
+        };
     }
 
     #[test]
