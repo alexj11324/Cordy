@@ -829,7 +829,12 @@ impl ProductionProviderAdapter {
                 return Ok((environment, true));
             }
         }
-        plan.drop_resume();
+        // Keep the original resume id through preparation. The post-StartTask
+        // gate is the source of truth: a fresh env can still be the correct
+        // session home for a cwd-keyed provider (notably local_directory),
+        // while Hermes/Codex need the prepared store/rollout evidence before
+        // deciding. Clearing here would also leave task and plan context
+        // disagreeing when the gate later decides that the session is safe.
         tokio::select! {
             result = prepare(plan.prepare_params()) => result
                 .map(|environment| (environment, false))
@@ -1944,6 +1949,8 @@ mod tests {
         assert!(task.prior_session_id.is_empty());
         assert!(task.prior_session_resume_unavailable);
         assert!(plan.resume_session_id().is_empty());
+        assert!(!plan.task_context().prior_session_resumed);
+        assert!(plan.task_context().prior_session_resume_unavailable);
     }
 
     #[test]
@@ -1964,6 +1971,8 @@ mod tests {
         assert_eq!(task.prior_session_id, "session-resume-gate");
         assert!(!task.prior_session_resume_unavailable);
         assert_eq!(plan.resume_session_id(), "session-resume-gate");
+        assert!(plan.task_context().prior_session_resumed);
+        assert!(!plan.task_context().prior_session_resume_unavailable);
     }
 
     #[test]
